@@ -406,14 +406,16 @@ const WordPressConnector: React.FC = () => {
       return;
     }
 
-    // Initialize sync record
+    // Initialize sync record - include WordPress core files
     const syncData = {
       connectionId: site.id!,
       connectionName: site.name || site.url,
       syncPath: localPath,
-      totalFiles: posts.length + media.length
+      totalFiles: posts.length + media.length + 5 // +5 for core WordPress files
     };
 
+    const fileDetails: SyncFileDetail[] = [];
+    
     try {
       const syncRecordResult = await window.electron.sync.saveHistory(syncData);
       if (!syncRecordResult.success) {
@@ -428,12 +430,10 @@ const WordPressConnector: React.FC = () => {
         isSyncing: true,
         progress: 0,
         currentFile: '동기화 시작...',
-        totalFiles: posts.length + media.length,
+        totalFiles: posts.length + media.length + 5, // +5 for WordPress core files
         syncedFiles: 0,
         errors: []
       }));
-
-      const fileDetails: SyncFileDetail[] = [];
 
       // Create local folders
       setSyncStatus(prev => ({ ...prev, currentFile: '로컬 폴더 생성 중...' }));
@@ -642,6 +642,72 @@ const WordPressConnector: React.FC = () => {
         });
       }
 
+      // Sync WordPress core files (index.php, wp-config.php, etc.)
+      setSyncStatus(prev => ({ 
+        ...prev, 
+        currentFile: 'WordPress 핵심 파일 동기화 중...',
+        progress: 80
+      }));
+
+      const coreFiles = [
+        { name: 'index.php', content: generateIndexPhp(site, posts) },
+        { name: 'wp-config-sample.php', content: generateWpConfigSample(site) },
+        { name: '.htaccess', content: generateHtaccess() },
+        { name: 'wp-content/themes/sample-theme/style.css', content: generateSampleThemeCSS() },
+        { name: 'wp-content/themes/sample-theme/index.php', content: generateSampleThemeIndex() }
+      ];
+
+      for (let i = 0; i < coreFiles.length; i++) {
+        const file = coreFiles[i];
+        const filePath = `${localPath}/${file.name}`;
+        
+        setSyncStatus(prev => ({
+          ...prev,
+          currentFile: `WordPress 파일 생성 중: ${file.name}`,
+          progress: 80 + ((i + 1) / coreFiles.length) * 20
+        }));
+
+        try {
+          // Create directory structure if needed
+          const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+          if (dirPath !== localPath) {
+            await window.electron.fileSystem.createFolder(dirPath);
+          }
+
+          // Save the core file
+          const saveResult = await (window.electron.wordpress as any).syncSavePost(filePath, file.content);
+          
+          if (saveResult.success) {
+            const fileDetail: SyncFileDetail = {
+              path: file.name,
+              name: file.name,
+              type: 'post', // Using 'post' type for core files
+              status: 'synced',
+              localPath: filePath,
+              size: saveResult.size,
+              syncedAt: new Date().toISOString()
+            };
+            fileDetails.push(fileDetail);
+            
+            addLog(`✅ WordPress 파일 생성 완료: ${file.name}`);
+          } else {
+            throw new Error(`WordPress 파일 저장 실패: ${file.name} - ${saveResult.error}`);
+          }
+        } catch (error) {
+          console.error(`Failed to create WordPress file ${file.name}:`, error);
+          const fileDetail: SyncFileDetail = {
+            path: file.name,
+            name: file.name,
+            type: 'post',
+            status: 'failed',
+            localPath: filePath,
+            syncedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+          fileDetails.push(fileDetail);
+        }
+      }
+
       // Update site with sync path
       if (selectedSite) {
         const updatedSite = { ...selectedSite, local_sync_path: localPath };
@@ -651,8 +717,8 @@ const WordPressConnector: React.FC = () => {
 
       // Complete sync record
       await window.electron.sync.complete(syncRecord.id, {
-        syncedFiles: posts.length + media.length,
-        failedFiles: 0,
+        syncedFiles: fileDetails.filter(f => f.status === 'synced').length,
+        failedFiles: fileDetails.filter(f => f.status === 'failed').length,
         fileDetails: fileDetails,
         status: 'completed'
       });
@@ -661,8 +727,8 @@ const WordPressConnector: React.FC = () => {
       await window.electron.wordpress.notifySyncCompletion({
         syncPath: localPath,
         connectionName: site.name || site.url,
-        totalFiles: posts.length + media.length,
-        syncedFiles: posts.length + media.length
+        totalFiles: fileDetails.length,
+        syncedFiles: fileDetails.filter(f => f.status === 'synced').length
       });
 
       // Reload sync history
@@ -673,7 +739,7 @@ const WordPressConnector: React.FC = () => {
         isSyncing: false,
         progress: 100,
         currentFile: '동기화 완료!',
-        syncedFiles: posts.length + media.length
+        syncedFiles: fileDetails.filter(f => f.status === 'synced').length
       }));
     } catch (error) {
       console.error('Sync failed:', error);
@@ -682,8 +748,8 @@ const WordPressConnector: React.FC = () => {
       if (currentSyncId) {
         await window.electron.sync.complete(currentSyncId, {
           syncedFiles: syncStatus.syncedFiles,
-          failedFiles: posts.length + media.length - syncStatus.syncedFiles,
-          fileDetails: [],
+          failedFiles: fileDetails.length - syncStatus.syncedFiles,
+          fileDetails: fileDetails,
           status: 'failed',
           errors: [error instanceof Error ? error.message : 'Unknown error']
         });
@@ -951,6 +1017,370 @@ ${postsXML}
       case 'page': return '페이지';
       default: return type;
     }
+  };
+
+  // Helper function to add logs (for WordPress core file sync)
+  const addLog = (message: string) => {
+    console.log(`[WordPress Sync] ${message}`);
+  };
+
+  // Generate WordPress index.php file
+  const generateIndexPhp = (site: WordPressSite, posts: WordPressPost[]): string => {
+    const siteName = site.name || 'WordPress Site';
+    
+    // Create PHP array of posts data
+    const postsData = posts.map(post => ({
+      id: post.id,
+      title: post.title,
+      author: post.author,
+      date: post.date,
+      status: getStatusText(post.status),
+      excerpt: post.excerpt
+    }));
+
+    return `<?php
+/**
+ * WordPress Index File
+ * Generated by EGDesk WordPress Connector
+ * Site: ${siteName}
+ * Generated: ${new Date().toLocaleString('ko-KR')}
+ */
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/');
+}
+
+// Posts data (embedded from WordPress sync)
+$posts_data = ${JSON.stringify(postsData, null, 2)};
+
+// Sample WordPress-like functionality
+function wp_head() {
+    echo '<meta charset="UTF-8">';
+    echo '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
+    echo '<title>${siteName} - WordPress Site</title>';
+}
+
+function wp_footer() {
+    echo '<script>console.log("WordPress footer loaded");</script>';
+}
+
+function get_header() {
+    echo '<!DOCTYPE html>';
+    echo '<html lang="ko">';
+    echo '<head>';
+    wp_head();
+    echo '<style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background: #f1f1f1; 
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .header { 
+            background: #0073aa; 
+            color: white; 
+            padding: 30px 20px; 
+            border-radius: 8px; 
+            margin-bottom: 30px; 
+            text-align: center; 
+        }
+        .content { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .post-item { 
+            border-bottom: 1px solid #eee; 
+            padding: 20px 0; 
+        }
+        .post-item:last-child { 
+            border-bottom: none; 
+        }
+        .post-meta { 
+            color: #666; 
+            font-size: 14px; 
+            margin: 10px 0; 
+        }
+        .post-meta span { 
+            margin-right: 15px; 
+        }
+        .excerpt { 
+            color: #333; 
+            line-height: 1.6; 
+        }
+        .footer { 
+            text-align: center; 
+            margin-top: 30px; 
+            color: #666; 
+        }
+    </style>';
+    echo '</head>';
+    echo '<body>';
+    echo '<div class="container">';
+    echo '<div class="header">';
+    echo '<h1>${siteName}</h1>';
+    echo '<p>WordPress 사이트 - EGDesk로 동기화됨</p>';
+    echo '</div>';
+}
+
+function get_footer() {
+    echo '<div class="footer">';
+    echo '<p>&copy; 2025 ${siteName} - EGDesk WordPress Connector로 생성됨</p>';
+    echo '</div>';
+    echo '</div>';
+    wp_footer();
+    echo '</body>';
+    echo '</html>';
+}
+
+// Display the page
+get_header();
+
+echo '<div class="content">';
+echo '<h2>📝 포스트 목록</h2>';
+echo '<p>총 ' . count($posts_data) . '개의 포스트가 동기화되었습니다.</p>';
+
+if (count($posts_data) > 0) {
+    echo '<div class="posts-list">';
+    
+    foreach ($posts_data as $post) {
+        echo '<div class="post-item">';
+        echo '<h3><a href="#post-' . $post['id'] . '">' . htmlspecialchars($post['title']) . '</a></h3>';
+        echo '<div class="post-meta">';
+        echo '<span class="author">👤 ' . htmlspecialchars($post['author']) . '</span>';
+        echo '<span class="date">📅 ' . htmlspecialchars($post['date']) . '</span>';
+        echo '<span class="status">📊 ' . htmlspecialchars($post['status']) . '</span>';
+        echo '</div>';
+        echo '<div class="excerpt">' . htmlspecialchars($post['excerpt']) . '</div>';
+        echo '</div>';
+    }
+    
+    echo '</div>';
+} else {
+    echo '<p>동기화된 포스트가 없습니다.</p>';
+}
+
+echo '</div>';
+
+get_footer();
+?>`;
+  };
+
+  // Generate WordPress wp-config-sample.php file
+  const generateWpConfigSample = (site: WordPressSite): string => {
+    return `<?php
+/**
+ * WordPress Configuration Sample
+ * Generated by EGDesk WordPress Connector
+ * Site: ${site.name || site.url}
+ * Generated: ${new Date().toLocaleString('ko-KR')}
+ */
+
+// ** MySQL settings - You can get this info from your web host ** //
+/** The name of the database for WordPress */
+define( 'DB_NAME', 'wordpress' );
+
+/** MySQL database username */
+define( 'DB_USER', 'root' );
+
+/** MySQL database password */
+define( 'DB_PASSWORD', '' );
+
+/** MySQL hostname */
+define( 'DB_HOST', 'localhost' );
+
+/** Database Charset to use in creating database tables. */
+define( 'DB_CHARSET', 'utf8' );
+
+/** The Database Collate type. Don't change this if in doubt. */
+define( 'DB_COLLATE', '' );
+
+/**#@+
+ * Authentication Unique Keys and Salts.
+ *
+ * Change these to different unique phrases!
+ * You can generate these using the {@link https://api.wordpress.org/secret-key/1.1/salt/ WordPress.org secret-key service}
+ * You can change these at any point in time to invalidate all existing cookies. This will force all users to have to log in again.
+ *
+ * @since 2.6.0
+ */
+define( 'AUTH_KEY',         'put your unique phrase here' );
+define( 'SECURE_AUTH_KEY',  'put your unique phrase here' );
+define( 'LOGGED_IN_KEY',    'put your unique phrase here' );
+define( 'NONCE_KEY',        'put your unique phrase here' );
+define( 'AUTH_SALT',        'put your unique phrase here' );
+define( 'SECURE_AUTH_SALT', 'put your unique phrase here' );
+define( 'LOGGED_IN_SALT',   'put your unique phrase here' );
+define( 'NONCE_SALT',       'put your unique phrase here' );
+
+/**#@-*/
+
+/**
+ * WordPress Database Table prefix.
+ *
+ * You can have multiple installations in one database if you give each
+ * a unique prefix. Only numbers, letters, and underscores please!
+ */
+$table_prefix = 'wp_';
+
+/**
+ * For developers: WordPress debugging mode.
+ *
+ * Change this to true to enable the display of notices during development.
+ * It is strongly recommended that plugin and theme developers use WP_DEBUG
+ * in their development environments.
+ *
+ * For information on other constants that can be used for debugging,
+ * visit the documentation.
+ *
+ * @link https://wordpress.org/support/article/debugging-in-wordpress/
+ */
+define( 'WP_DEBUG', true );
+define( 'WP_DEBUG_LOG', true );
+define( 'WP_DEBUG_DISPLAY', false );
+
+// Disable automatic updates for development
+define( 'AUTOMATIC_UPDATER_DISABLED', true );
+
+// Disable file editing in admin for security
+define( 'DISALLOW_FILE_EDIT', true );
+
+// Set memory limit
+define( 'WP_MEMORY_LIMIT', '256M' );
+
+// Set maximum upload size
+define( 'WP_MAX_MEMORY_LIMIT', '512M' );
+
+/* Add any custom values between this line and the "stop editing" comment. */
+
+/* That's all, stop editing! Happy publishing. */
+
+/** Absolute path to the WordPress directory. */
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/' );
+}
+
+/** Sets up WordPress vars and included files. */
+require_once ABSPATH . 'wp-settings.php';`;
+  };
+
+  // Generate WordPress .htaccess file
+  const generateHtaccess = (): string => {
+    return `# WordPress .htaccess
+# Generated by EGDesk WordPress Connector
+# Generated: ${new Date().toLocaleString('ko-KR')}
+
+RewriteEngine On
+RewriteBase /
+
+# Handle WordPress core files
+RewriteRule ^index\\.php$ - [L]
+
+# Handle static files
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route all other requests to index.php
+RewriteRule . /index.php [L]
+
+# Security headers
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Prevent access to sensitive files
+<FilesMatch "^\\.(htaccess|htpasswd|ini|log|sh|sql|conf)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Enable compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+</IfModule>`;
+  };
+
+  // Generate sample theme CSS
+  const generateSampleThemeCSS = (): string => {
+    return `/*
+Theme Name: EGDesk Sample Theme
+Description: A sample theme generated by EGDesk WordPress Connector
+Version: 1.0.0
+Author: EGDesk
+*/
+
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    background: #f4f4f4;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+h1 {
+    color: #333;
+    border-bottom: 2px solid #0073aa;
+    padding-bottom: 10px;
+}
+
+p {
+    color: #666;
+    margin-bottom: 15px;
+}`;
+  };
+
+  // Generate sample theme index.php
+  const generateSampleThemeIndex = (): string => {
+    return `<?php
+/**
+ * Sample WordPress Theme
+ * Generated by EGDesk WordPress Connector
+ * Generated: ${new Date().toLocaleString('ko-KR')}
+ */
+
+get_header(); ?>
+
+<div class="container">
+    <h1>EGDesk Sample WordPress Theme</h1>
+    <p>이것은 EGDesk WordPress Connector로 생성된 샘플 테마입니다.</p>
+    <p>이 파일을 수정하여 테마 개발을 테스트할 수 있습니다.</p>
+    
+    <h2>테마 기능</h2>
+    <ul>
+        <li>기본 HTML 구조</li>
+        <li>CSS 스타일링</li>
+        <li>PHP 통합</li>
+        <li>WordPress 템플릿 태그</li>
+    </ul>
+</div>
+
+<?php get_footer(); ?>`;
   };
 
   const handleSiteSelect = async (site: WordPressSite) => {

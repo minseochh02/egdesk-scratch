@@ -99,6 +99,312 @@ ipcMain.handle('wp-navigate-to-synced-folder', async (event, navigationData) => 
   }
 });
 
+// WordPress Server Management IPC handlers
+let wordpressServerProcess: any = null;
+let wordpressServerPort = 8000;
+let wordpressServerFolder = '';
+
+// Helper function to detect the best serving root (similar to wordpress-server.js)
+function detectBestServingRoot(selectedPath: string): string {
+  // Check if the selected path itself is a good serving root
+  if (isGoodServingRoot(selectedPath)) {
+    return selectedPath;
+  }
+  
+  // Look for common subdirectories that should be served instead
+  const possibleRoots = [
+    path.join(selectedPath, 'www'),           // Your FTP structure
+    path.join(selectedPath, 'wordpress'),    // Standard WordPress folder
+    path.join(selectedPath, 'public_html'),  // Common hosting structure
+    path.join(selectedPath, 'public'),       // Alternative hosting structure
+    path.join(selectedPath, 'htdocs'),       // XAMPP structure
+    selectedPath                             // Fallback to selected directory
+  ];
+
+  for (const root of possibleRoots) {
+    if (isGoodServingRoot(root)) {
+      console.log(`Detected best serving root: ${root}`);
+      return root;
+    }
+  }
+
+  // Default fallback to selected path
+  console.log('No better serving root detected, using selected path');
+  return selectedPath;
+}
+
+function isGoodServingRoot(dirPath: string): boolean {
+  if (!fs.existsSync(dirPath)) {
+    return false;
+  }
+
+  try {
+    const files = fs.readdirSync(dirPath);
+    
+    // Check for WordPress core files
+    const wordpressFiles = [
+      'wp-config.php',
+      'wp-config-sample.php',
+      'wp-load.php',
+      'wp-blog-header.php',
+      'index.php'
+    ];
+
+    // Check for WordPress directories
+    const wordpressDirs = [
+      'wp-admin',
+      'wp-content',
+      'wp-includes'
+    ];
+
+    // Check for HTML files (www folder structure)
+    const htmlFiles = files.filter(file => 
+      file.endsWith('.html') || file.endsWith('.htm')
+    );
+
+    // If it's a www folder with HTML files, it's likely your structure
+    if (dirPath.includes('www') && htmlFiles.length > 0) {
+      console.log(`Found www folder with ${htmlFiles.length} HTML files`);
+      return true;
+    }
+
+    // Check for WordPress core files
+    const hasWordPressFiles = wordpressFiles.some(file => 
+      fs.existsSync(path.join(dirPath, file))
+    );
+
+    // Check for WordPress directories
+    const hasWordPressDirs = wordpressDirs.some(dir => 
+      fs.existsSync(path.join(dirPath, dir))
+    );
+
+    return hasWordPressFiles || hasWordPressDirs || htmlFiles.length > 0;
+  } catch (error) {
+    console.error('Error checking serving root:', error);
+    return false;
+  }
+}
+
+// Analyze WordPress folder
+ipcMain.handle('wp-server-analyze-folder', async (event, folderPath) => {
+  try {
+    if (!fs.existsSync(folderPath)) {
+      return { success: false, error: 'Folder does not exist' };
+    }
+
+    // Detect the best serving root
+    const actualServingRoot = detectBestServingRoot(folderPath);
+    
+    // Analyze the actual serving root
+    const hasIndexPhp = fs.existsSync(path.join(actualServingRoot, 'index.php'));
+    const hasWpContent = fs.existsSync(path.join(actualServingRoot, 'wp-content'));
+    const hasWpAdmin = fs.existsSync(path.join(actualServingRoot, 'wp-admin'));
+    const hasWpIncludes = fs.existsSync(path.join(actualServingRoot, 'wp-includes'));
+    
+    // Get file counts from the serving root
+    const files = fs.readdirSync(actualServingRoot);
+    const htmlFiles = files.filter(file => file.endsWith('.html') || file.endsWith('.htm'));
+    const phpFiles = files.filter(file => file.endsWith('.php'));
+    
+    const htmlFileCount = htmlFiles.length;
+    const phpFileCount = phpFiles.length;
+    const hasHtmlFiles = htmlFileCount > 0;
+    
+    // Determine folder type and server compatibility
+    let folderType: 'www' | 'wordpress' | 'mixed' | 'unknown' = 'unknown';
+    let hasWordPress = false;
+    let detectedRoot: string | undefined = actualServingRoot;
+    
+    // Traditional WordPress detection
+    const isTraditionalWordPress = hasIndexPhp && hasWpContent && (hasWpAdmin || hasWpIncludes);
+    
+    // www folder detection (HTML files present)
+    const isWwwFolder = actualServingRoot.includes('www') && htmlFileCount > 0;
+    
+    // Any folder with files can be served by PHP server
+    const hasAnyServeableFiles = htmlFileCount > 0 || phpFileCount > 0 || files.length > 0;
+    
+    if (isTraditionalWordPress && hasHtmlFiles) {
+      folderType = 'mixed';
+      hasWordPress = true;
+    } else if (isTraditionalWordPress) {
+      folderType = 'wordpress';
+      hasWordPress = true;
+    } else if (isWwwFolder || hasHtmlFiles) {
+      folderType = 'www';
+      hasWordPress = true; // www folders are valid for PHP server
+    } else if (hasAnyServeableFiles) {
+      folderType = 'unknown';
+      hasWordPress = true; // Any folder with files can be served
+    } else {
+      folderType = 'unknown';
+      hasWordPress = false;
+    }
+    
+    // Check PHP version if available
+    let phpVersion: string | undefined;
+    try {
+      const { execSync } = require('child_process');
+      const version = execSync('/opt/homebrew/bin/php -v', { encoding: 'utf8' });
+      phpVersion = version.split('\n')[0];
+    } catch (error) {
+      phpVersion = 'PHP not available';
+    }
+
+    return {
+      success: true,
+      info: {
+        path: folderPath,
+        exists: true,
+        hasWordPress,
+        hasIndexPhp,
+        hasWpContent,
+        hasWpAdmin,
+        hasWpIncludes,
+        hasHtmlFiles,
+        htmlFileCount,
+        phpFileCount,
+        folderType,
+        detectedRoot,
+        availableFiles: htmlFiles.concat(phpFiles).slice(0, 10), // Limit to first 10 files
+        phpVersion
+      }
+    };
+  } catch (error) {
+    console.error('Error analyzing WordPress folder:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Start WordPress server
+ipcMain.handle('wp-server-start', async (event, folderPath, port = 8000) => {
+  try {
+    if (wordpressServerProcess) {
+      return { success: false, error: 'Server is already running' };
+    }
+
+    if (!fs.existsSync(folderPath)) {
+      return { success: false, error: 'Folder does not exist' };
+    }
+
+    const { spawn } = require('child_process');
+    
+    // Detect the best serving root (like wordpress-server.js does)
+    const actualServingRoot = detectBestServingRoot(folderPath);
+    
+    console.log(`Starting WordPress server on http://localhost:${port}`);
+    console.log(`Selected folder: ${folderPath}`);
+    console.log(`Serving from: ${actualServingRoot}`);
+    
+    // Check what we're serving (similar to wordpress-server.js logic)
+    const files = fs.readdirSync(actualServingRoot);
+    const htmlFiles = files.filter(f => f.endsWith('.html') || f.endsWith('.htm'));
+    const phpFiles = files.filter(f => f.endsWith('.php'));
+    const folders = files.filter(f => fs.statSync(path.join(actualServingRoot, f)).isDirectory());
+    
+    console.log(`Found ${files.length} total files/directories`);
+    if (htmlFiles.length > 0) console.log(`HTML files: ${htmlFiles.length}`);
+    if (phpFiles.length > 0) console.log(`PHP files: ${phpFiles.length}`);
+    if (folders.length > 0) console.log(`Folders: ${folders.join(', ')}`);
+    
+    // If it's a www folder with HTML files, show the main entry points
+    if (actualServingRoot.includes('www') && htmlFiles.length > 0) {
+      console.log(`\n🌐 Main HTML files available:`);
+      htmlFiles.forEach(file => {
+        console.log(`   http://localhost:${port}/${file}`);
+      });
+    }
+    
+    wordpressServerProcess = spawn('/opt/homebrew/bin/php', [
+      '-S',
+      `localhost:${port}`,
+      '-t',
+      actualServingRoot
+    ]);
+
+    wordpressServerPort = port;
+    wordpressServerFolder = actualServingRoot;
+
+    wordpressServerProcess.stdout.on('data', (data: Buffer) => {
+      console.log('WordPress Server:', data.toString());
+    });
+
+    wordpressServerProcess.stderr.on('data', (data: Buffer) => {
+      console.error('WordPress Server Error:', data.toString());
+    });
+
+    wordpressServerProcess.on('close', (code: number) => {
+      console.log(`WordPress Server stopped with code ${code}`);
+      wordpressServerProcess = null;
+    });
+
+    wordpressServerProcess.on('error', (error: Error) => {
+      console.error('WordPress Server spawn error:', error);
+      wordpressServerProcess = null;
+    });
+
+    // Wait a bit for server to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    return { success: true, port };
+  } catch (error) {
+    console.error('Error starting WordPress server:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Stop WordPress server
+ipcMain.handle('wp-server-stop', async (event) => {
+  try {
+    if (wordpressServerProcess) {
+      wordpressServerProcess.kill();
+      wordpressServerProcess = null;
+      return { success: true };
+    }
+    return { success: false, error: 'No server running' };
+  } catch (error) {
+    console.error('Error stopping WordPress server:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Get WordPress server status
+ipcMain.handle('wp-server-status', async (event) => {
+  try {
+    return {
+      success: true,
+      status: {
+        isRunning: !!wordpressServerProcess,
+        port: wordpressServerPort,
+        url: `http://localhost:${wordpressServerPort}`,
+        folderPath: wordpressServerFolder,
+        pid: wordpressServerProcess?.pid
+      }
+    };
+  } catch (error) {
+    console.error('Error getting WordPress server status:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Pick WordPress folder
+ipcMain.handle('wp-server-pick-folder', async (event) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory'],
+      title: 'Select WordPress Folder'
+    });
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      return { success: true, folderPath: result.filePaths[0] };
+    }
+    return { success: false, error: 'No folder selected' };
+  } catch (error) {
+    console.error('Error picking WordPress folder:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('wp-get-connections', async () => {
   try {
     const connections = store.get('wordpressConnections', []) as any[];
@@ -394,6 +700,28 @@ ipcMain.handle('fs-get-file-info', async (event, filePath: string) => {
     };
   } catch (error) {
     console.error('Error getting file info:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Read file content
+ipcMain.handle('fs-read-file', async (event, filePath: string) => {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    return { success: true, content };
+  } catch (error) {
+    console.error('Error reading file:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Write file content
+ipcMain.handle('fs-write-file', async (event, filePath: string, content: string) => {
+  try {
+    await fs.promises.writeFile(filePath, content, 'utf8');
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing file:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

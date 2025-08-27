@@ -1,6 +1,8 @@
 import { MemoryRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import WordPressConnector from './components/WordPressConnector';
+import LocalServer from './components/LocalServer';
+import CodeEditor from './components/CodeEditor';
 import './App.css';
 
 interface FileSystemItem {
@@ -412,6 +414,18 @@ function NavigationBar() {
         >
           🌐 WordPress
         </Link>
+        <Link 
+          to="/local-server" 
+          className={`nav-link ${location.pathname === '/local-server' ? 'active' : ''}`}
+        >
+          🖥️ Local Server
+        </Link>
+        <Link 
+          to="/code-editor" 
+          className={`nav-link ${location.pathname === '/code-editor' ? 'active' : ''}`}
+        >
+          💻 Code Editor
+        </Link>
       </nav>
     </div>
   );
@@ -425,6 +439,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<FinderUI />} />
           <Route path="/wordpress" element={<WordPressConnector />} />
+          <Route path="/local-server" element={<LocalServer />} />
+          <Route path="/code-editor" element={<CodeEditor />} />
         </Routes>
       </div>
     </Router>
