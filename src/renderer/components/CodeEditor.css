@@ -1,7 +1,7 @@
 .code-editor {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1;
   background-color: #1e1e1e;
   color: #d4d4d4;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;

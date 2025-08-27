@@ -612,6 +612,52 @@ ipcMain.handle('sync-clear-history', async (event, connectionId) => {
   }
 });
 
+// Store IPC handlers for AI Keys
+ipcMain.handle('store-get', async (event, key: string) => {
+  try {
+    return store.get(key);
+  } catch (error) {
+    console.error('Error getting store value:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('store-set', async (event, key: string, value: any) => {
+  try {
+    store.set(key, value);
+  } catch (error) {
+    console.error('Error setting store value:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('store-delete', async (event, key: string) => {
+  try {
+    store.delete(key);
+  } catch (error) {
+    console.error('Error deleting store value:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('store-has', async (event, key: string) => {
+  try {
+    return store.has(key);
+  } catch (error) {
+    console.error('Error checking store key:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('store-clear', async () => {
+  try {
+    store.clear();
+  } catch (error) {
+    console.error('Error clearing store:', error);
+    throw error;
+  }
+});
+
 // File system IPC handlers
 ipcMain.handle('fs-read-directory', async (event, dirPath: string) => {
   try {
