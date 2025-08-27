@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import WordPressConnector from './components/WordPressConnector';
 import LocalServer from './components/LocalServer';
 import CodeEditor from './components/CodeEditor';
+import { AIKeysManager } from './components/AIKeysManager';
+import { ChatInterface } from './components/ChatInterface';
 import './App.css';
 
 interface FileSystemItem {
@@ -426,6 +428,18 @@ function NavigationBar() {
         >
           💻 Code Editor
         </Link>
+        <Link 
+          to="/ai-keys" 
+          className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
+        >
+          🤖 AI Keys
+        </Link>
+        <Link 
+          to="/chat" 
+          className={`nav-link ${location.pathname === '/chat' ? 'active' : ''}`}
+        >
+          💬 AI Chat
+        </Link>
       </nav>
     </div>
   );
@@ -436,12 +450,16 @@ export default function App() {
     <Router>
       <div className="app-container">
         <NavigationBar />
-        <Routes>
-          <Route path="/" element={<FinderUI />} />
-          <Route path="/wordpress" element={<WordPressConnector />} />
-          <Route path="/local-server" element={<LocalServer />} />
-          <Route path="/code-editor" element={<CodeEditor />} />
-        </Routes>
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<FinderUI />} />
+            <Route path="/wordpress" element={<WordPressConnector />} />
+            <Route path="/local-server" element={<LocalServer />} />
+            <Route path="/code-editor" element={<CodeEditor />} />
+            <Route path="/ai-keys" element={<AIKeysManager />} />
+            <Route path="/chat" element={<ChatInterface />} />
+          </Routes>
+        </main>
       </div>
     </Router>
   );

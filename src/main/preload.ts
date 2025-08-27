@@ -118,6 +118,14 @@ export interface PreferencesAPI {
   set: (preferences: UserPreferences) => Promise<{ success: boolean; error?: string }>;
 }
 
+export interface StoreAPI {
+  get: (key: string) => Promise<any>;
+  set: (key: string, value: any) => Promise<void>;
+  delete: (key: string) => Promise<void>;
+  has: (key: string) => Promise<boolean>;
+  clear: () => Promise<void>;
+}
+
 export interface WordPressServerAPI {
   analyzeFolder: (folderPath: string) => Promise<{ success: boolean; info?: FolderInfo; error?: string }>;
   startServer: (folderPath: string, port?: number) => Promise<{ success: boolean; port?: number; error?: string }>;
@@ -205,6 +213,13 @@ const electronHandler = {
     get: () => ipcRenderer.invoke('prefs-get'),
     set: (preferences: UserPreferences) => ipcRenderer.invoke('prefs-set', preferences),
   } as PreferencesAPI,
+  store: {
+    get: (key: string) => ipcRenderer.invoke('store-get', key),
+    set: (key: string, value: any) => ipcRenderer.invoke('store-set', key, value),
+    delete: (key: string) => ipcRenderer.invoke('store-delete', key),
+    has: (key: string) => ipcRenderer.invoke('store-has', key),
+    clear: () => ipcRenderer.invoke('store-clear'),
+  } as StoreAPI,
   wordpressServer: {
     analyzeFolder: (folderPath: string) => ipcRenderer.invoke('wp-server-analyze-folder', folderPath),
     startServer: (folderPath: string, port?: number) => ipcRenderer.invoke('wp-server-start', folderPath, port),
