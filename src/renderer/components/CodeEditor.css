@@ -1,0 +1,489 @@
+.code-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+/* Toolbar */
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  min-height: 40px;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-btn {
+  background: none;
+  border: none;
+  color: #d4d4d4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.toolbar-btn:hover {
+  background-color: #3e3e42;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.path-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+}
+
+.breadcrumb-item {
+  color: #007acc;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.breadcrumb-item:hover {
+  background-color: #3e3e42;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.editor-settings {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbar-btn.active {
+  background-color: #007acc;
+  color: white;
+}
+
+.status-text {
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+/* Main Content */
+.editor-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* File Explorer Sidebar */
+.file-explorer {
+  width: 280px;
+  background-color: #252526;
+  border-right: 1px solid #3e3e42;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+}
+
+.file-explorer.collapsed {
+  width: 40px;
+}
+
+.explorer-header {
+  padding: 12px 16px;
+  background-color: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.explorer-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cccccc;
+}
+
+.explorer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.file-tree {
+  padding: 0 8px;
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  font-size: 13px;
+}
+
+.file-tree-item:hover {
+  background-color: #2a2d2e;
+}
+
+.file-tree-item.folder {
+  color: #4ec9b0;
+}
+
+.file-tree-item.file {
+  color: #d4d4d4;
+}
+
+.file-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Main Editor */
+.main-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #1e1e1e;
+}
+
+/* File Tabs */
+.file-tabs {
+  display: flex;
+  background-color: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  overflow-x: auto;
+  min-height: 35px;
+}
+
+.file-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: #2d2d30;
+  border-right: 1px solid #3e3e42;
+  cursor: pointer;
+  min-width: 120px;
+  max-width: 200px;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.file-tab:hover {
+  background-color: #3e3e42;
+}
+
+.file-tab.active {
+  background-color: #1e1e1e;
+  border-bottom: 2px solid #007acc;
+}
+
+.file-tab.modified::before {
+  content: '●';
+  color: #f39c12;
+  font-size: 12px;
+  position: absolute;
+  left: 8px;
+}
+
+.tab-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.tab-close:hover {
+  background-color: #3e3e42;
+  color: #d4d4d4;
+}
+
+/* Editor Area */
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.file-language {
+  font-size: 12px;
+  color: #8a8a8a;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.save-btn {
+  background-color: #007acc;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.save-btn:hover:not(:disabled) {
+  background-color: #005a9e;
+}
+
+.save-btn:disabled {
+  background-color: #3e3e42;
+  color: #8a8a8a;
+  cursor: not-allowed;
+}
+
+.editor-wrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.line-numbers {
+  background-color: #1e1e1e;
+  color: #858585;
+  font-size: 12px;
+  padding: 16px 8px 16px 16px;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid #3e3e42;
+  min-width: 50px;
+}
+
+.line-number {
+  line-height: 1.5;
+  padding: 0 4px;
+}
+
+.code-textarea {
+  flex: 1;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  border: none;
+  outline: none;
+  padding: 16px 16px 16px 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  tab-size: 2;
+}
+
+.code-textarea.word-wrap {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.code-textarea::placeholder {
+  color: #8a8a8a;
+}
+
+/* Welcome Screen */
+.welcome-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background-color: #1e1e1e;
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 500px;
+  padding: 40px;
+}
+
+.welcome-content h2 {
+  margin: 0 0 16px 0;
+  color: #cccccc;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.welcome-content p {
+  margin: 0 0 32px 0;
+  color: #8a8a8a;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.welcome-features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  background-color: #2d2d30;
+  border-radius: 8px;
+  border: 1px solid #3e3e42;
+}
+
+.feature-icon {
+  font-size: 32px;
+}
+
+.feature span:last-child {
+  color: #cccccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Loading and Error States */
+.loading-indicator,
+.error-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #3e3e42;
+  border-top: 2px solid #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-indicator p,
+.error-indicator p {
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 14px;
+}
+
+.error-indicator p {
+  color: #f39c12;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .file-explorer {
+    width: 200px;
+  }
+  
+  .file-explorer.collapsed {
+    width: 30px;
+  }
+  
+  .welcome-features {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Status Bar */
+.editor-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #007acc;
+  color: white;
+  font-size: 12px;
+  min-height: 24px;
+}
+
+.status-left,
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Scrollbar Styling */
+.file-explorer::-webkit-scrollbar,
+.code-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.file-explorer::-webkit-scrollbar-track,
+.code-textarea::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.file-explorer::-webkit-scrollbar-thumb,
+.code-textarea::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 4px;
+}
+
+.file-explorer::-webkit-scrollbar-thumb:hover,
+.code-textarea::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+}

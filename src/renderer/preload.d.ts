@@ -1,11 +1,11 @@
 export interface IElectronAPI {
   ipcRenderer: {
-    sendMessage(channel: 'ipc-example', args: unknown[]): void;
+    sendMessage(channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder', args: unknown[]): void;
     on(
-      channel: 'ipc-example' | 'sync-completed',
+      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder',
       func: (...args: unknown[]) => void
     ): (() => void) | undefined;
-    once(channel: 'ipc-example', func: (...args: unknown[]) => void): void;
+    once(channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder', func: (...args: unknown[]) => void): void;
   };
   fileSystem: {
     readDirectory(path: string): Promise<{ success: boolean; items?: any[]; error?: string }>;
@@ -16,6 +16,8 @@ export interface IElectronAPI {
     deleteItem(path: string): Promise<{ success: boolean; error?: string }>;
     renameItem(oldPath: string, newPath: string): Promise<{ success: boolean; error?: string }>;
     pickFolder(): Promise<{ success: boolean; folderPath?: string; error?: string }>;
+    readFile(path: string): Promise<{ success: boolean; content?: string; error?: string }>;
+    writeFile(path: string, content: string): Promise<{ success: boolean; error?: string }>;
   };
   wordpress: {
     saveConnection(connection: any): Promise<{ success: boolean; connections?: any[]; error?: string }>;
@@ -23,6 +25,10 @@ export interface IElectronAPI {
     deleteConnection(connectionId: string): Promise<{ success: boolean; connections?: any[]; error?: string }>;
     updateConnection(connectionId: string, updates: any): Promise<{ success: boolean; connection?: any; error?: string }>;
     notifySyncCompletion(syncData: any): Promise<{ success: boolean; error?: string }>;
+    navigateToSyncedFolder(navigationData: { syncPath: string; connectionName: string }): Promise<{ success: boolean; error?: string }>;
+    syncCreateFolders(basePath: string): Promise<{ success: boolean; error?: string }>;
+    syncSavePost(filePath: string, content: string): Promise<{ success: boolean; size?: number; error?: string }>;
+    syncDownloadMedia(mediaUrl: string, filePath: string): Promise<{ success: boolean; size?: number; error?: string }>;
   };
   sync: {
     saveHistory(syncData: any): Promise<{ success: boolean; syncRecord?: any; error?: string }>;
@@ -35,6 +41,13 @@ export interface IElectronAPI {
   preferences: {
     get(): Promise<{ success: boolean; preferences?: any; error?: string }>;
     set(preferences: any): Promise<{ success: boolean; error?: string }>;
+  };
+  wordpressServer: {
+    analyzeFolder(folderPath: string): Promise<{ success: boolean; info?: any; error?: string }>;
+    startServer(folderPath: string, port?: number): Promise<{ success: boolean; port?: number; error?: string }>;
+    stopServer(): Promise<{ success: boolean; error?: string }>;
+    getServerStatus(): Promise<{ success: boolean; status?: any; error?: string }>;
+    pickFolder(): Promise<{ success: boolean; folderPath?: string; error?: string }>;
   };
 }
 

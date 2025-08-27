@@ -40,6 +40,8 @@ export interface FileSystemAPI {
   deleteItem: (path: string) => Promise<{ success: boolean; error?: string }>;
   renameItem: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>;
   pickFolder: () => Promise<{ success: boolean; folderPath?: string; error?: string }>;
+  readFile: (path: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  writeFile: (path: string, content: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export interface WordPressConnection {
@@ -116,6 +118,40 @@ export interface PreferencesAPI {
   set: (preferences: UserPreferences) => Promise<{ success: boolean; error?: string }>;
 }
 
+export interface WordPressServerAPI {
+  analyzeFolder: (folderPath: string) => Promise<{ success: boolean; info?: FolderInfo; error?: string }>;
+  startServer: (folderPath: string, port?: number) => Promise<{ success: boolean; port?: number; error?: string }>;
+  stopServer: () => Promise<{ success: boolean; error?: string }>;
+  getServerStatus: () => Promise<{ success: boolean; status?: ServerStatus; error?: string }>;
+  pickFolder: () => Promise<{ success: boolean; folderPath?: string; error?: string }>;
+}
+
+export interface FolderInfo {
+  path: string;
+  exists: boolean;
+  hasWordPress: boolean;
+  hasIndexPhp: boolean;
+  hasWpContent: boolean;
+  hasWpAdmin: boolean;
+  hasWpIncludes: boolean;
+  hasHtmlFiles: boolean;
+  htmlFileCount: number;
+  phpFileCount: number;
+  folderType: 'www' | 'wordpress' | 'mixed' | 'unknown';
+  detectedRoot?: string;
+  availableFiles?: string[];
+  phpVersion?: string;
+}
+
+export interface ServerStatus {
+  isRunning: boolean;
+  port: number;
+  url: string;
+  pid?: number;
+  folderPath?: string;
+  error?: string;
+}
+
 const electronHandler = {
   ipcRenderer: {
     sendMessage(channel: Channels, ...args: unknown[]) {
@@ -143,6 +179,8 @@ const electronHandler = {
     deleteItem: (path: string) => ipcRenderer.invoke('fs-delete-item', path),
     renameItem: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs-rename-item', oldPath, newPath),
     pickFolder: () => ipcRenderer.invoke('fs-pick-folder'),
+    readFile: (path: string) => ipcRenderer.invoke('fs-read-file', path),
+    writeFile: (path: string, content: string) => ipcRenderer.invoke('fs-write-file', path, content),
   } as FileSystemAPI,
   wordpress: {
     saveConnection: (connection: WordPressConnection) => ipcRenderer.invoke('wp-save-connection', connection),
@@ -167,6 +205,13 @@ const electronHandler = {
     get: () => ipcRenderer.invoke('prefs-get'),
     set: (preferences: UserPreferences) => ipcRenderer.invoke('prefs-set', preferences),
   } as PreferencesAPI,
+  wordpressServer: {
+    analyzeFolder: (folderPath: string) => ipcRenderer.invoke('wp-server-analyze-folder', folderPath),
+    startServer: (folderPath: string, port?: number) => ipcRenderer.invoke('wp-server-start', folderPath, port),
+    stopServer: () => ipcRenderer.invoke('wp-server-stop'),
+    getServerStatus: () => ipcRenderer.invoke('wp-server-status'),
+    pickFolder: () => ipcRenderer.invoke('wp-server-pick-folder'),
+  } as WordPressServerAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
