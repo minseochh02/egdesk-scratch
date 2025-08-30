@@ -386,11 +386,14 @@ export class ChatService {
     if (!usage) return 0;
     
     const pricing: Record<string, { input: number; output: number }> = {
-      'gemini-pro': { input: 0.0005, output: 0.0015 },
-      'gemini-pro-vision': { input: 0.0005, output: 0.0015 }
+        'gemini-2.5-flash': { input: 0.0005, output: 0.0015 },
+  'gemini-2.5-flash-lite': { input: 0.0005, output: 0.0015 },
+  'gemini-2.5-pro': { input: 0.0005, output: 0.0015 },
+  'gemini-1.5-flash-latest': { input: 0.0005, output: 0.0015 },
+  'gemini-1.5-pro': { input: 0.0005, output: 0.0015 }
     };
 
-    const modelPricing = pricing[model] || pricing['gemini-pro'];
+    const modelPricing = pricing[model] || pricing['gemini-2.5-flash'];
     const inputCost = (usage.promptTokenCount / 1000) * modelPricing.input;
     const outputCost = (usage.candidatesTokenCount / 1000) * modelPricing.output;
     

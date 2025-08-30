@@ -1,6 +1,7 @@
 import { ChatSession, ChatMessage, ChatConfig, ChatState, CHAT_PROVIDERS } from '../types';
 import { ChatService } from '../services/chatService';
 import { AIKey } from '../../AIKeysManager/types';
+import { CodespaceChatService, EnhancedChatMessage } from '../services/codespaceChatService';
 
 class ChatStore {
   private state: ChatState = {
@@ -18,8 +19,10 @@ class ChatStore {
   };
 
   private listeners: Set<(state: ChatState) => void> = new Set();
+  private codespaceService: CodespaceChatService;
 
   constructor() {
+    this.codespaceService = CodespaceChatService.getInstance();
     this.loadSavedSessions();
   }
 
@@ -141,6 +144,31 @@ class ChatStore {
   }
 
   /**
+   * Set workspace path for codespace context
+   */
+  async setWorkspacePath(workspacePath: string): Promise<void> {
+    await this.codespaceService.setWorkspacePath(workspacePath);
+  }
+
+  /**
+   * Get codespace context information
+   */
+  getCodespaceInfo() {
+    return {
+      isAvailable: this.codespaceService.isCodespaceAvailable(),
+      workspacePath: this.codespaceService.getCurrentWorkspacePath(),
+      cacheStatus: this.codespaceService.getCacheStatus()
+    };
+  }
+
+  /**
+   * Refresh codespace analysis
+   */
+  async refreshCodespace(): Promise<void> {
+    await this.codespaceService.refreshCodespace();
+  }
+
+  /**
    * Add message to current session
    */
   async addMessage(content: string, role: 'user' | 'assistant' | 'system' = 'user'): Promise<void> {
@@ -185,12 +213,21 @@ class ChatStore {
     try {
       this.setState({ isLoading: true, error: null });
 
-      // Add user message
-      await this.addMessage(content, 'user');
+      // Enhance message with codespace context
+      const enhancedMessage = await this.codespaceService.enhanceMessageWithContext(content);
+      
+      // Add enhanced user message
+      await this.addMessage(enhancedMessage.content, 'user');
 
       // Get updated session
       const updatedSession = this.getCurrentSession();
       if (!updatedSession) return;
+
+      // Create contextual system prompt
+      const contextualSystemPrompt = this.codespaceService.createContextualSystemPrompt(
+        this.state.config.systemPrompt,
+        enhancedMessage.codespaceContext
+      );
 
       // Send to AI service
       const response = await ChatService.sendMessage(
@@ -200,7 +237,7 @@ class ChatStore {
         {
           temperature: this.state.config.temperature,
           maxTokens: this.state.config.maxTokens,
-          systemPrompt: this.state.config.systemPrompt
+          systemPrompt: contextualSystemPrompt
         }
       );
 

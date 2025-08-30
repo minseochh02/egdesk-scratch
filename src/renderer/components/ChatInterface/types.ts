@@ -156,21 +156,48 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     supportsImages: false,
     models: [
       {
-        id: 'gemini-pro',
-        name: 'Gemini Pro',
+        id: 'gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
         provider: 'google',
-        maxTokens: 32768,
+        maxTokens: 1000000,
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
       },
       {
-        id: 'gemini-pro-vision',
-        name: 'Gemini Pro Vision',
+        id: 'gemini-2.5-flash-lite',
+        name: 'Gemini 2.5 Flash Lite',
         provider: 'google',
-        maxTokens: 32768,
+        maxTokens: 1000000,
         supportsChat: true,
-        supportsImages: true,
+        supportsImages: false,
+        pricing: { input: 0.0005, output: 0.0015 }
+      },
+      {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        provider: 'google',
+        maxTokens: 1000000,
+        supportsChat: true,
+        supportsImages: false,
+        pricing: { input: 0.0005, output: 0.0015 }
+      },
+      {
+        id: 'gemini-1.5-flash-latest',
+        name: 'Gemini 1.5 Flash',
+        provider: 'google',
+        maxTokens: 1000000,
+        supportsChat: true,
+        supportsImages: false,
+        pricing: { input: 0.0005, output: 0.0015 }
+      },
+      {
+        id: 'gemini-1.5-pro',
+        name: 'Gemini 1.5 Pro',
+        provider: 'google',
+        maxTokens: 1000000,
+        supportsChat: true,
+        supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
       }
     ]

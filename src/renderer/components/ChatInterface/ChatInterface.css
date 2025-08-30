@@ -56,11 +56,245 @@
   background: #e2e8f0;
 }
 
+.button-secondary {
+  padding: 8px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.button-secondary:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.button-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Settings Panel */
 .settings-panel {
   background: white;
   border-bottom: 1px solid #e2e8f0;
   padding: 20px 24px;
+}
+
+/* Codespace Context Panel */
+.codespace-panel {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 20px 24px;
+}
+
+.codespace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.codespace-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.codespace-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codespace-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-available {
+  color: #059669;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.status-unavailable {
+  color: #dc2626;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.workspace-input {
+  margin-bottom: 16px;
+}
+
+.workspace-input label {
+  display: block;
+  font-weight: 500;
+  color: #374151;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.input-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.input-group input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.cache-info {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.cache-info span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.codespace-tip {
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #1e40af;
+  line-height: 1.5;
+}
+
+.codespace-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #dc2626;
+  line-height: 1.5;
+}
+
+.codespace-info {
+  background: #f0f9ff;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #0369a1;
+  line-height: 1.5;
+}
+
+.demo-toggle-btn {
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.demo-toggle-btn:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+/* Demo Panel */
+.demo-panel {
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 20px 24px;
+}
+
+.demo-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.demo-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.demo-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.demo-examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.demo-example {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.demo-example h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demo-example p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  color: #374151;
+  font-size: 14px;
+}
+
+.demo-example small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.demo-tip {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #92400e;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .settings-panel h3 {
@@ -683,3 +917,4 @@
     margin: 20px;
   }
 }
+

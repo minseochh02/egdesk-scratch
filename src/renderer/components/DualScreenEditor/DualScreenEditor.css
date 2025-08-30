@@ -1,0 +1,346 @@
+/* Dual Screen Editor - Embedded Component */
+.dual-screen-editor {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #1e1e1e;
+  color: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Header Styles */
+.dual-screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  background-color: #2d2d2d;
+  border-bottom: 2px solid #404040;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 10000;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-left h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.mode-indicator {
+  padding: 0.5rem 1rem;
+  background-color: #404040;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.header-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.mode-toggle-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mode-toggle-btn.editing {
+  background-color: #007acc;
+  color: white;
+}
+
+.mode-toggle-btn.editing:hover {
+  background-color: #005a9e;
+}
+
+.mode-toggle-btn.server {
+  background-color: #28a745;
+  color: white;
+}
+
+.mode-toggle-btn.server:hover {
+  background-color: #1e7e34;
+}
+
+
+
+.close-btn {
+  padding: 1rem 1.5rem;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.close-btn:hover {
+  background-color: #c82333;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.close-btn:active {
+  transform: scale(0.95);
+}
+
+/* Content Area */
+.dual-screen-content {
+  display: flex;
+  flex-direction: row; /* Explicitly set horizontal layout */
+  flex: 1;
+  overflow: hidden;
+  min-height: 0; /* Ensure flexbox works properly */
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 2px solid #404040;
+  min-width: 0; /* Ensure panels can shrink properly */
+  min-height: 0; /* Ensure panels can shrink properly */
+}
+
+/* Left panel (Chat) - 30% width */
+.left-panel {
+  flex: 0 0 30%;
+  max-width: 30%;
+}
+
+/* Right panel (Preview) - 70% width */
+.right-panel {
+  flex: 0 0 70%;
+  max-width: 70%;
+}
+
+.panel:last-child {
+  border-right: none;
+}
+
+.panel-header {
+  padding: 1rem 1.5rem;
+  background-color: #2d2d2d;
+  border-bottom: 1px solid #404040;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.panel-description {
+  font-size: 0.85rem;
+  color: #cccccc;
+  margin-top: 0.25rem;
+  display: block;
+  font-weight: 400;
+}
+
+.panel-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Status Bar */
+.dual-screen-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background-color: #2d2d2d;
+  border-top: 1px solid #404040;
+  font-size: 0.85rem;
+  color: #cccccc;
+}
+
+.status-left, .status-right {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.status-left span, .status-right span {
+  padding: 0.25rem 0.5rem;
+  background-color: #404040;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  /* Keep horizontal layout but adjust sizing */
+  .dual-screen-content {
+    flex-direction: row;
+  }
+  
+  .panel {
+    border-right: 2px solid #404040;
+    border-bottom: none;
+  }
+  
+  .panel:last-child {
+    border-right: none;
+  }
+  
+  /* Maintain 30/70 ratio on medium screens */
+  .left-panel {
+    flex: 0 0 30%;
+    max-width: 30%;
+  }
+  
+  .right-panel {
+    flex: 0 0 70%;
+    max-width: 70%;
+  }
+  
+  .header-controls {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .mode-toggle-btn, .close-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* Panel Content Overrides */
+.panel-content .ai-editor-sidebar {
+  height: 100%;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+/* Ensure horizontal layout is maintained */
+.dual-screen-content {
+  flex-direction: row !important; /* Force horizontal layout on all screen sizes above 768px */
+}
+
+@media (max-width: 768px) {
+  .dual-screen-content {
+    flex-direction: column !important; /* Only stack on very small screens */
+  }
+}
+
+.panel-content .ai-editor-sidebar .sidebar-header {
+  display: none; /* Hide the AI Editor header since we have our own */
+}
+
+.panel-content .ai-editor-sidebar .sidebar-content {
+  height: calc(100% - 20px);
+  padding-top: 10px;
+}
+
+/* Local Server Panel Adjustments */
+.panel-content > div:not(.ai-editor-sidebar) {
+  height: 100%;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/* Smooth Transitions */
+.panel-content {
+  transition: all 0.3s ease;
+}
+
+.mode-toggle-btn, .swap-panels-btn, .close-btn {
+  transition: all 0.2s ease;
+}
+
+/* Focus States */
+.mode-toggle-btn:focus,
+.close-btn:focus {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
+}
+
+/* Loading States */
+.panel-content.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1e1e1e;
+}
+
+.panel-content.loading::after {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border: 4px solid #404040;
+  border-top: 4px solid #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Demo Closed State */
+.dual-screen-demo-closed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: #1e1e1e;
+  color: #ffffff;
+  text-align: center;
+  padding: 2rem;
+}
+
+.dual-screen-demo-closed h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  color: #007acc;
+}
+
+.dual-screen-demo-closed p {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  color: #cccccc;
+}
+
+.reopen-btn {
+  padding: 1rem 2rem;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.reopen-btn:hover {
+  background-color: #1e7e34;
+}

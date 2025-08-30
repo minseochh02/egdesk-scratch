@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import ProjectSelector from './ProjectSelector';
+import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
 import './LocalServer.css';
 
 interface ServerStatus {
@@ -34,6 +36,22 @@ const LocalServer: React.FC = () => {
   const [folderInfo, setFolderInfo] = useState<FolderInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
+
+  // Subscribe to project context changes
+  useEffect(() => {
+    const unsubscribe = ProjectContextService.getInstance().subscribe((context) => {
+      setCurrentProject(context.currentProject);
+      
+      // If current project changes and we have folder info, update the folder
+      if (context.currentProject && context.currentProject.path !== currentFolder) {
+        setCurrentFolder(context.currentProject.path);
+        analyzeFolder(context.currentProject.path);
+      }
+    });
+
+    return unsubscribe;
+  }, [currentFolder]);
 
   // Check if server is running on component mount
   useEffect(() => {
@@ -88,6 +106,8 @@ const LocalServer: React.FC = () => {
     try {
       const result = await window.electron.wordpressServer.pickFolder();
       if (result.success && result.folderPath) {
+        // Set as current project
+        await ProjectContextService.getInstance().setCurrentProject(result.folderPath);
         await analyzeFolder(result.folderPath);
       } else {
         addLog(`❌ No folder selected: ${result.error}`);
@@ -177,11 +197,70 @@ const LocalServer: React.FC = () => {
     setLogs([]);
   };
 
+  const handleProjectSelect = (project: ProjectInfo) => {
+    setCurrentFolder(project.path);
+    analyzeFolder(project.path);
+    addLog(`📁 Switched to project: ${project.name} (${project.path})`);
+  };
+
   return (
     <div className="local-server">
       <div className="server-header">
         <h2>🖥️ Local WordPress Server</h2>
         <p>Manage your local PHP server for WordPress development</p>
+      </div>
+
+      {/* Project Context Section */}
+      <div className="project-context-section">
+        <h3>📁 Project Context</h3>
+        <div className="project-context-content">
+          <ProjectSelector
+            onProjectSelect={handleProjectSelect}
+            showCurrentProject={true}
+            showRecentProjects={true}
+            showAvailableProjects={false}
+            className="server-project-selector"
+          />
+          
+          {currentProject && (
+            <div className="project-details">
+              <div className="project-metadata">
+                <div className="metadata-item">
+                  <strong>Type:</strong> {currentProject.type}
+                </div>
+                <div className="metadata-item">
+                  <strong>Language:</strong> {currentProject.metadata.language}
+                </div>
+                <div className="metadata-item">
+                  <strong>Framework:</strong> {currentProject.metadata.framework}
+                </div>
+                {currentProject.metadata.version && (
+                  <div className="metadata-item">
+                    <strong>Version:</strong> {currentProject.metadata.version}
+                  </div>
+                )}
+                <div className="metadata-item">
+                  <strong>Last Accessed:</strong> {currentProject.lastAccessed.toLocaleDateString()}
+                </div>
+              </div>
+              
+              <div className="project-actions">
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => ProjectContextService.getInstance().updateProjectMetadata(currentProject.id)}
+                >
+                  🔄 Refresh Metadata
+                </button>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => ProjectContextService.getInstance().refreshAllProjects()}
+                >
+                  🔄 Refresh All Projects
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="server-controls">
@@ -289,6 +368,9 @@ const LocalServer: React.FC = () => {
               <p><strong>Port:</strong> {serverStatus.port}</p>
               <p><strong>URL:</strong> <a href={serverStatus.url} target="_blank" rel="noopener noreferrer">{serverStatus.url}</a></p>
               <p><strong>Folder:</strong> {currentFolder}</p>
+              {currentProject && (
+                <p><strong>Project:</strong> {currentProject.name} ({currentProject.type})</p>
+              )}
             </div>
           )}
           
@@ -353,6 +435,24 @@ const LocalServer: React.FC = () => {
               {folderInfo.detectedRoot && (
                 <div className="info-item">
                   <strong>Detected Root:</strong> {folderInfo.detectedRoot}
+                </div>
+              )}
+            </>
+          )}
+          {currentProject && (
+            <>
+              <div className="info-item">
+                <strong>Current Project:</strong> {currentProject.name}
+              </div>
+              <div className="info-item">
+                <strong>Project Type:</strong> {currentProject.type}
+              </div>
+              <div className="info-item">
+                <strong>Project Language:</strong> {currentProject.metadata.language}
+              </div>
+              {currentProject.metadata.version && (
+                <div className="info-item">
+                  <strong>Project Version:</strong> {currentProject.metadata.version}
                 </div>
               )}
             </>
