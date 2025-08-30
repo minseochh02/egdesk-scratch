@@ -15,6 +15,9 @@ export const ChatInterface: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
   const [messageInput, setMessageInput] = useState('');
   const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
+  const [workspacePath, setWorkspacePath] = useState<string>('');
+  const [codespaceInfo, setCodespaceInfo] = useState(chatStore.getCodespaceInfo());
+  const [showDemo, setShowDemo] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -25,10 +28,23 @@ export const ChatInterface: React.FC = () => {
       setAiKeys(keyState.keys.filter(key => key.isActive));
     });
 
+    // Update codespace info when store changes
+    const updateCodespaceInfo = () => {
+      setCodespaceInfo(chatStore.getCodespaceInfo());
+    };
+
+    // Initial load
+    updateCodespaceInfo();
+
     return () => {
       unsubscribeChat();
       unsubscribeKeys();
     };
+  }, []);
+
+  // Auto-detect workspace on mount
+  useEffect(() => {
+    handleAutoDetectWorkspace();
   }, []);
 
   useEffect(() => {
@@ -80,6 +96,37 @@ export const ChatInterface: React.FC = () => {
       } catch (error) {
         console.error('Failed to delete session:', error);
       }
+    }
+  };
+
+  const handleWorkspacePathChange = async (path: string) => {
+    setWorkspacePath(path);
+    try {
+      await chatStore.setWorkspacePath(path);
+      setCodespaceInfo(chatStore.getCodespaceInfo());
+    } catch (error) {
+      console.error('Failed to set workspace path:', error);
+    }
+  };
+
+  const handleRefreshCodespace = async () => {
+    try {
+      await chatStore.refreshCodespace();
+      setCodespaceInfo(chatStore.getCodespaceInfo());
+    } catch (error) {
+      console.error('Failed to refresh codespace:', error);
+    }
+  };
+
+  const handleAutoDetectWorkspace = async () => {
+    try {
+      // Try to get the current working directory or project path
+      const homeDir = await window.electron.fileSystem.getHomeDirectory();
+      if (homeDir) {
+        await handleWorkspacePathChange(homeDir);
+      }
+    } catch (error) {
+      console.error('Failed to auto-detect workspace:', error);
     }
   };
 
@@ -167,6 +214,130 @@ export const ChatInterface: React.FC = () => {
               />
               <small>Instructions for the AI behavior</small>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Codespace Context Panel */}
+      <div className="codespace-panel">
+        <div className="codespace-header">
+          <h3>🔍 Codespace Context</h3>
+          <div className="codespace-controls">
+            <div className="codespace-status">
+              {codespaceInfo.isAvailable ? (
+                <span className="status-available">✅ Available</span>
+              ) : (
+                <span className="status-unavailable">❌ Not Available</span>
+              )}
+            </div>
+            <button
+              className="demo-toggle-btn"
+              onClick={() => setShowDemo(!showDemo)}
+              title="Toggle demo mode"
+            >
+              {showDemo ? '🎭 Hide Demo' : '🎭 Show Demo'}
+            </button>
+          </div>
+        </div>
+        
+        <div className="workspace-input">
+          <label>Workspace Path:</label>
+          <div className="input-group">
+            <input
+              type="text"
+              value={workspacePath}
+              onChange={(e) => setWorkspacePath(e.target.value)}
+              placeholder="Enter workspace path (e.g., /path/to/project)"
+              onBlur={(e) => handleWorkspacePathChange(e.target.value)}
+            />
+            <button
+              className="button-secondary"
+              onClick={handleAutoDetectWorkspace}
+              title="Auto-detect workspace"
+            >
+              🔍 Auto-detect
+            </button>
+            <button
+              className="button-secondary"
+              onClick={handleRefreshCodespace}
+              disabled={!codespaceInfo.isAvailable}
+              title="Refresh codespace analysis"
+            >
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+
+        {codespaceInfo.isAvailable && codespaceInfo.cacheStatus && (
+          <div className="cache-info">
+            <span>Cache: {codespaceInfo.cacheStatus.hasCache ? '✅' : '❌'}</span>
+            {codespaceInfo.cacheStatus.hasCache && codespaceInfo.cacheStatus.cacheAge && (
+              <span>Age: {codespaceInfo.cacheStatus.cacheAge} minutes</span>
+            )}
+            {codespaceInfo.cacheStatus.totalFiles && (
+              <span>Files: {codespaceInfo.cacheStatus.totalFiles}</span>
+            )}
+          </div>
+        )}
+
+        {codespaceInfo.isAvailable && (
+          <div className="codespace-tip">
+            💡 <strong>Pro Tip:</strong> The AI will now automatically search your codebase 
+            and provide context-aware responses based on your actual code!
+          </div>
+        )}
+
+        {!codespaceInfo.isAvailable && workspacePath && (
+          <div className="codespace-error">
+            ⚠️ <strong>Codespace Analysis Failed:</strong> Unable to analyze the specified workspace. 
+            Please check the path and ensure it contains source code files.
+          </div>
+        )}
+
+        {!workspacePath && (
+          <div className="codespace-info">
+            ℹ️ <strong>No Workspace Set:</strong> Set a workspace path to enable intelligent code context in your AI chat.
+          </div>
+        )}
+      </div>
+
+      {/* Demo Mode */}
+      {showDemo && (
+        <div className="demo-panel">
+          <div className="demo-header">
+            <h3>🎭 Demo Mode - Try These Examples</h3>
+            <p>These examples show how the AI will use your codespace context</p>
+          </div>
+          
+          <div className="demo-examples">
+            <div className="demo-example">
+              <h4>🔍 Code Search</h4>
+              <p>"How do I implement authentication in this project?"</p>
+              <small>The AI will search your codebase for auth-related files and provide specific guidance.</small>
+            </div>
+            
+            <div className="demo-example">
+              <h4>🐛 Bug Investigation</h4>
+              <p>"Why is the login form not working?"</p>
+              <small>The AI will examine your login implementation and identify potential issues.</small>
+            </div>
+            
+            <div className="demo-example">
+              <h4>🚀 Feature Development</h4>
+              <p>"I want to add a new API endpoint for user profiles"</p>
+              <small>The AI will understand your current API structure and suggest the best approach.</small>
+            </div>
+            
+            <div className="demo-example">
+              <h4>📚 Code Understanding</h4>
+              <p>"Explain how the routing works in this application"</p>
+              <small>The AI will analyze your routing files and provide a comprehensive explanation.</small>
+            </div>
+          </div>
+          
+          <div className="demo-tip">
+            💡 <strong>Pro Tip:</strong> The more specific your questions are about your code, 
+            the better the AI can leverage the codespace context to help you!
           </div>
         </div>
       )}

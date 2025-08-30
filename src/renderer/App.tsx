@@ -5,6 +5,8 @@ import LocalServer from './components/LocalServer';
 import CodeEditor from './components/CodeEditor';
 import { AIKeysManager } from './components/AIKeysManager';
 import { ChatInterface } from './components/ChatInterface';
+import { AIEditor } from './components/AIEditor';
+import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import './App.css';
 
 interface FileSystemItem {
@@ -440,6 +442,13 @@ function NavigationBar() {
         >
           💬 AI Chat
         </Link>
+        <Link 
+          to="/dual-screen" 
+          className={`nav-link ${location.pathname === '/dual-screen' ? 'active' : ''}`}
+        >
+          🖥️ Dual Screen
+        </Link>
+
       </nav>
     </div>
   );
@@ -458,6 +467,8 @@ export default function App() {
             <Route path="/code-editor" element={<CodeEditor />} />
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/chat" element={<ChatInterface />} />
+            <Route path="/dual-screen" element={<DualScreenDemo />} />
+    
           </Routes>
         </main>
       </div>
