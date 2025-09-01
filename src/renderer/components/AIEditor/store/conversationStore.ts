@@ -12,7 +12,10 @@ class ConversationStoreClass {
   private storageKey = 'ai_editor_conversations';
 
   constructor() {
-    this.loadConversations();
+    // Initialize with empty state, load conversations asynchronously
+    this.loadConversations().catch(() => {
+      // Silent fail - conversations will load on next access
+    });
   }
 
   /**
@@ -46,6 +49,11 @@ class ConversationStoreClass {
       if (stored) {
         const parsed = JSON.parse(stored);
         
+        // Validate parsed data
+        if (!parsed.conversations || !Array.isArray(parsed.conversations)) {
+          throw new Error('Invalid conversation data format');
+        }
+        
         // Convert date strings back to Date objects
         this.state.conversations = parsed.conversations.map((conv: any) => ({
           ...conv,
@@ -57,11 +65,14 @@ class ConversationStoreClass {
           }))
         }));
         
-        console.log('💬 Loaded', this.state.conversations.length, 'conversations from storage');
+
       }
     } catch (error) {
-      console.error('💬 Failed to load conversations:', error);
-      this.state.error = 'Failed to load conversations';
+      this.state.error = error instanceof Error ? error.message : 'Failed to load conversations';
+      
+      // Reset to safe state
+      this.state.conversations = [];
+      this.state.currentConversationId = null;
     } finally {
       this.state.isLoading = false;
       this.notifyListeners();
@@ -75,7 +86,6 @@ class ConversationStoreClass {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.state));
     } catch (error) {
-      console.error('💬 Failed to save conversations:', error);
       this.state.error = 'Failed to save conversations';
       this.notifyListeners();
     }
@@ -102,7 +112,7 @@ class ConversationStoreClass {
     this.saveConversations();
     this.notifyListeners();
     
-    console.log('💬 Created new conversation:', conversation.id);
+
     return conversation.id;
   }
 
@@ -111,13 +121,11 @@ class ConversationStoreClass {
    */
   addMessage(content: string, type: 'user' | 'ai', metadata?: ConversationMessage['metadata']): void {
     if (!this.state.currentConversationId) {
-      console.warn('💬 No current conversation to add message to');
       return;
     }
 
     const conversation = this.state.conversations.find(c => c.id === this.state.currentConversationId);
     if (!conversation) {
-      console.warn('💬 Current conversation not found');
       return;
     }
 
@@ -140,7 +148,7 @@ class ConversationStoreClass {
     this.saveConversations();
     this.notifyListeners();
     
-    console.log('💬 Added message to conversation:', conversation.id);
+
   }
 
   /**
@@ -163,7 +171,7 @@ class ConversationStoreClass {
    * Get conversations for a specific project
    */
   getConversationsForProject(projectPath: string): Conversation[] {
-    return this.state.conversations.filter(c => c.path === projectPath);
+    return this.state.conversations.filter(c => c.projectPath === projectPath);
   }
 
   /**
@@ -198,7 +206,7 @@ class ConversationStoreClass {
       this.saveConversations();
       this.notifyListeners();
       
-      console.log('💬 Deleted conversation:', conversationId);
+
     }
   }
 
@@ -296,10 +304,10 @@ class ConversationStoreClass {
       this.saveConversations();
       this.notifyListeners();
       
-      console.log('💬 Imported conversation:', conversation.id);
+
       return true;
     } catch (error) {
-      console.error('💬 Failed to import conversation:', error);
+
       return false;
     }
   }
@@ -314,7 +322,7 @@ class ConversationStoreClass {
     this.saveConversations();
     this.notifyListeners();
     
-    console.log('💬 Cleared all conversations');
+
   }
 
   /**
