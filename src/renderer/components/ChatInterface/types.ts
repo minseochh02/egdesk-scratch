@@ -34,6 +34,12 @@ export interface ChatState {
   isLoading: boolean;
   error: string | null;
   config: ChatConfig;
+  lastContextReads?: Array<{
+    path: string;
+    relativePath?: string;
+    start: number;
+    end: number;
+  }>;
 }
 
 export interface ChatResponse {

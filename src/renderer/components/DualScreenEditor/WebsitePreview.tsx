@@ -8,6 +8,7 @@ export const WebsitePreview: React.FC<{
 }> = ({ isEditing = false, onToggleEditing }) => {
   const [showPreview, setShowPreview] = useState(true);
   const [iframeKey, setIframeKey] = useState(0); // Force iframe refresh
+  const [previewUrl, setPreviewUrl] = useState<string>('http://localhost:3000');
 
   const refreshIframe = () => {
     setIframeKey(prev => prev + 1);
@@ -52,7 +53,13 @@ export const WebsitePreview: React.FC<{
         
         {/* Compact LocalServer component */}
         <div className="compact-server">
-          <LocalServer />
+          <LocalServer onStatusChange={(status) => {
+            if (status?.url) {
+              setPreviewUrl(status.url);
+            } else if (status?.port) {
+              setPreviewUrl(`http://localhost:${status.port}`);
+            }
+          }} />
         </div>
       </div>
 
@@ -104,7 +111,7 @@ export const WebsitePreview: React.FC<{
             <div className="preview-modal-content">
               <iframe
                 key={iframeKey}
-                src="http://localhost:3000"
+                src={previewUrl}
                 title="Website Preview"
                 className="website-iframe"
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"

@@ -99,6 +99,7 @@ export interface AIEditorConfig {
   maxTokens: number;
   systemPrompt: string;
   includeContext: boolean;
+  maxContextFiles?: number;
   autoApply: boolean;
   requireConfirmation: boolean;
 }

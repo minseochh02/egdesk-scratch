@@ -62,6 +62,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             <CodeEditor 
               isEditing={isEditing}
               onToggleEditing={toggleEditingMode}
+              instanceId="dual-screen"
             />
           ) : (
             <WebsitePreview 

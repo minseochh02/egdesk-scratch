@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Conversation, ConversationMessage } from './types';
 import { EnhancedAIEditorService } from './services/enhancedAIEditorService';
 import { CodespaceVectorService } from './services/codespaceVectorService';
+import { CodespaceChatService } from '../ChatInterface/services/codespaceChatService';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../ChatInterface/types';
@@ -74,6 +75,10 @@ export const AIEditor: React.FC<AIEditorProps> = ({
   
   // Context management state
   const [showContextManagement, setShowContextManagement] = useState(false);
+  const [codespaceChatService, setCodespaceChatService] = useState<CodespaceChatService | null>(null);
+  
+  // Debug state - always on
+  const [debugPayload, setDebugPayload] = useState<any>(null);
   
   const [config, setConfig] = useState<AIEditorConfig>({
     provider: 'openai',
@@ -114,11 +119,7 @@ When suggesting code changes, you can use either:
 
 SEARCH/REPLACE FORMAT (for specific changes):
 \`\`\`
-<<<<<<< ORIGINAL
 // ... original code goes here
-=======
-// ... updated code goes here
->>>>>>> UPDATED
 \`\`\`
 
 CODE BLOCK FORMAT (for suggestions):
@@ -131,6 +132,7 @@ CODE BLOCK FORMAT (for suggestions):
 
 You can work with individual files or dynamically discover and analyze files across the entire project. Instead of having all files pre-loaded, you can search for relevant files, read their contents, and understand the codebase structure as needed. Always maintain code style and follow best practices.`,
     includeContext: true,
+    maxContextFiles: 5,
     autoApply: false,
     requireConfirmation: true
   });
@@ -236,6 +238,10 @@ You can work with individual files or dynamically discover and analyze files acr
   useEffect(() => {
     if (projectContext?.currentProject) {
       loadProjectFiles(projectContext.currentProject.path);
+      // Initialize CodespaceChatService for enhanced context
+      const chatService = CodespaceChatService.getInstance();
+      chatService.setWorkspacePath(projectContext.currentProject.path);
+      setCodespaceChatService(chatService);
     }
   }, [projectContext]);
 
@@ -367,18 +373,7 @@ You can work with individual files or dynamically discover and analyze files acr
     }
   };
 
-  /**
-   * Search codespace for relevant files
-   */
-  const searchCodespace = async (userInstruction: string) => {
-    try {
-      const results = await EnhancedAIEditorService.searchCodespace(userInstruction, 5);
-      return results;
-    } catch (error) {
-      console.error('Codespace search failed:', error);
-      return [];
-    }
-  };
+  // Removed legacy semantic search; we now rely on CodespaceChatService.enhanceMessageWithContext
 
   // Handle edit request
   const handleRequestEdit = async () => {
@@ -408,20 +403,84 @@ You can work with individual files or dynamically discover and analyze files acr
         console.log('🔍 Normalized file path from absolute to relative:', normalizedPath);
         console.log('🔍 Project root directory:', projectRoot);
       }
+
+      // Use enhanced context discovery like ChatInterface
+      let enhancedUserInstruction = userInstruction;
+      let relevantFilesContext = '';
+      let hasEnhancedContext = false;
+      
+      if (codespaceChatService && config.includeContext) {
+        try {
+          console.log('🔍 Using enhanced context discovery for AI Editor...');
+          const enhancedMessage = await codespaceChatService.enhanceMessageWithContext(
+            userInstruction,
+            selectedKey,
+            selectedModel
+          );
+          
+          // Extract primary files with full content and secondary metadata
+          if (enhancedMessage.codespaceContext?.primaryFiles?.length && enhancedMessage.codespaceContext.primaryFiles.length > 0) {
+            hasEnhancedContext = true;
+            
+            // Use primary files (full content) instead of search snippets
+            const primaryFileContexts = enhancedMessage.codespaceContext.primaryFiles
+              .map(pf => {
+                const lang = pf.path.split('.').pop() || 'txt';
+                return `\n--- ${pf.path} ---\n\`\`\`${lang}\n${pf.content}\n\`\`\``;
+              })
+              .join('\n');
+            
+            // Add secondary/technical metadata if available
+            let secondaryContext = '';
+            if (enhancedMessage.codespaceContext.secondaryTechMeta && enhancedMessage.codespaceContext.secondaryTechMeta.length > 0) {
+              secondaryContext = '\n\nSecondary/Technical References:\n' + 
+                enhancedMessage.codespaceContext.secondaryTechMeta
+                  .map(meta => `- ${meta.category.toUpperCase()}: ${meta.path}${meta.description ? ' — ' + meta.description : ''}`)
+                  .join('\n');
+            }
+            
+            relevantFilesContext = `\n\n## Primary Project Files (Full Content):\n${primaryFileContexts}${secondaryContext}`;
+            // When enhanced context exists, use ONLY the enhanced context, not the current file
+            enhancedUserInstruction = userInstruction + relevantFilesContext;
+            
+            console.log('🔍 Enhanced instruction with PRIMARY files:', enhancedMessage.codespaceContext.primaryFiles.length, 'files');
+          }
+        } catch (error) {
+          console.warn('🔍 Failed to enhance context, using basic context:', error);
+        }
+      }
       
       const request: AIEditRequest = {
         filePath: normalizedPath,
-        fileContent: currentFileData.content,
-        userInstruction: userInstruction,
+        // Disabled: avoid sending currently opened file content when enhanced context exists
+        fileContent: hasEnhancedContext ? '' : currentFileData.content,
+        userInstruction: enhancedUserInstruction,
         language: currentFileData.language,
         projectRoot: projectRoot, // Add project root for codespace analysis
-        context: config.includeContext ? fileContext ? {
+        // Disabled: avoid appending per-open-file symbols when enhanced analyzer context is present
+        context: hasEnhancedContext ? undefined : (config.includeContext ? (fileContext ? {
           imports: fileContext.imports || [],
           classes: fileContext.classes || [],
           functions: fileContext.functions || [],
           variables: fileContext.variables || []
-        } : undefined : undefined
+        } : undefined) : undefined)
       };
+
+      // Always capture debug payload
+      setDebugPayload({
+        request,
+        enhancedContext: hasEnhancedContext,
+        originalUserInstruction: userInstruction,
+        enhancedUserInstruction,
+        relevantFilesContext,
+        config: {
+          provider: config.provider,
+          model: selectedModel,
+          temperature: config.temperature,
+          maxTokens: config.maxTokens,
+          includeContext: config.includeContext
+        }
+      });
 
       // Save user message to conversation
       conversationStore.addMessage(userInstruction, 'user', {
@@ -549,13 +608,20 @@ You can work with individual files or dynamically discover and analyze files acr
       for (const edit of edits) {
         try {
           if (edit.type === 'create' && edit.filePath && edit.newText) {
-            // Create new file
-            const result = await window.electron.fileSystem.writeFile(edit.filePath, edit.newText);
+            // Create new file, suggest unique path using codespace vector
+            let targetPath = edit.filePath;
+            try {
+              if (projectContext?.currentProject?.path) {
+                const vector = CodespaceVectorService.getInstance();
+                targetPath = vector.suggestUniquePath(projectContext.currentProject.path, edit.filePath);
+              }
+            } catch {}
+            const result = await window.electron.fileSystem.writeFile(targetPath, edit.newText);
             if (result.success) {
-              modifiedFiles.push(edit.filePath);
-              console.log(`Created file: ${edit.filePath}`);
+              modifiedFiles.push(targetPath);
+              console.log(`Created file: ${targetPath}`);
             } else {
-              errors.push(`Failed to create ${edit.filePath}: ${result.error}`);
+              errors.push(`Failed to create ${targetPath}: ${result.error}`);
             }
           } else if (edit.type === 'delete_file' && edit.filePath) {
             // Delete file
@@ -677,6 +743,14 @@ You can work with individual files or dynamically discover and analyze files acr
                 title="Show conversation history"
               >
                 📚
+              </button>
+              
+              <button
+                className="debug-clear-btn"
+                onClick={() => setDebugPayload(null)}
+                title="Clear debug payload"
+              >
+                🧹
               </button>
               
               {currentConversation && (
@@ -853,6 +927,61 @@ You can work with individual files or dynamically discover and analyze files acr
                   {streamedContent}
               </div>
                     </div>
+          </div>
+        )}
+
+        {/* Debug Payload Display */}
+        {debugPayload && (
+          <div className="message debug-message">
+            <div className="message-content">
+              <div className="response-header">
+                <span className="response-title">🐛 Debug Payload</span>
+                <div className="response-actions">
+                  <button 
+                    onClick={() => setDebugPayload(null)}
+                    className="close-btn"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              
+              <div className="debug-payload-content">
+                <h4>Enhanced Context: {debugPayload.enhancedContext ? '✅ Yes' : '❌ No'}</h4>
+                
+                <details open>
+                  <summary><strong>Original User Instruction:</strong></summary>
+                  <pre>{debugPayload.originalUserInstruction}</pre>
+                </details>
+                
+                <details open>
+                  <summary><strong>Enhanced User Instruction (sent to AI):</strong></summary>
+                  <pre>{debugPayload.enhancedUserInstruction}</pre>
+                </details>
+                
+                <details>
+                  <summary><strong>Full Request Object:</strong></summary>
+                  <pre>{JSON.stringify(debugPayload.request, null, 2)}</pre>
+                </details>
+                
+                <details>
+                  <summary><strong>Config:</strong></summary>
+                  <pre>{JSON.stringify(debugPayload.config, null, 2)}</pre>
+                </details>
+              </div>
+              
+              <div className="debug-actions">
+                <button 
+                  onClick={() => {
+                    setDebugPayload(null);
+                    handleRequestEdit(); // Actually send the request
+                  }}
+                  className="send-anyway-btn"
+                >
+                  🚀 Send to AI Anyway
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

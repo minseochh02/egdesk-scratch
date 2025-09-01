@@ -213,8 +213,12 @@ class ChatStore {
     try {
       this.setState({ isLoading: true, error: null });
 
-      // Enhance message with codespace context
-      const enhancedMessage = await this.codespaceService.enhanceMessageWithContext(content);
+      // Enhance message with codespace context, using keyword-driven pre-search when possible
+      const enhancedMessage = await this.codespaceService.enhanceMessageWithContext(
+        content,
+        aiKey,
+        model
+      );
       
       // Add enhanced user message
       await this.addMessage(enhancedMessage.content, 'user');
@@ -265,8 +269,10 @@ class ChatStore {
           s.id === currentSession.id ? finalSession : s
         );
 
+        // Save last context reads for UI hint (Read [path] [lines])
+        const reads = enhancedMessage.codespaceContext?.reads || [];
         await this.saveSessions(finalSessions);
-        this.setState({ sessions: finalSessions });
+        this.setState({ sessions: finalSessions, lastContextReads: reads });
       } else {
         throw new Error(response.error || 'Failed to get AI response');
       }

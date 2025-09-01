@@ -1,5 +1,83 @@
 /* AI Editor Sidebar Styles */
 @import './CodeEditBlock.css';
+
+/* Debug Styles */
+.debug-clear-btn {
+  padding: 6px 8px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.debug-clear-btn:hover {
+  background-color: #5a6268;
+}
+
+.debug-message {
+  border-left: 4px solid #dc3545;
+  background-color: rgba(220, 53, 69, 0.1);
+}
+
+.debug-payload-content {
+  margin: 16px 0;
+}
+
+.debug-payload-content details {
+  margin: 12px 0;
+  padding: 8px;
+  border: 1px solid #495057;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.debug-payload-content summary {
+  cursor: pointer;
+  padding: 8px;
+  background-color: rgba(108, 117, 125, 0.2);
+  margin: -8px;
+  border-radius: 4px 4px 0 0;
+  font-weight: 500;
+}
+
+.debug-payload-content pre {
+  background-color: rgba(0, 0, 0, 0.4);
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 8px 0;
+  border: 1px solid #495057;
+}
+
+.debug-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #495057;
+  display: flex;
+  gap: 8px;
+}
+
+.send-anyway-btn {
+  padding: 8px 16px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.send-anyway-btn:hover {
+  background-color: #218838;
+}
 .ai-editor-sidebar {
   width: 400px;
   height: 100%;

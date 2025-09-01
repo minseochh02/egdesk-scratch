@@ -1,6 +1,4 @@
 import { FileContext } from '../types';
-import { AISemanticKeywordService, GEMINI_2_0_MODELS, GEMINI_2_0_CONFIGS } from './aiSemanticKeywordService';
-import { AIKey } from '../../AIKeysManager/types';
 
 // Import the electron API types
 declare global {
@@ -51,15 +49,7 @@ export class CodespaceVectorService {
   private readonly VOID_MAX_SNIPPET_LINES = 7; // Max snippet size: 7 lines
   private readonly VOID_MAX_DEPTH = 3; // Depth limiting: 3 levels
 
-  // Gemini 2.0 AI integration
-  private aiSemanticService: AISemanticKeywordService;
-  private currentAIKey: AIKey | null = null;
-  private currentModel: string = GEMINI_2_0_MODELS.FLASH_LITE; // Default to free tier
-  private aiSearchEnabled: boolean = true;
-
-  private constructor() {
-    this.aiSemanticService = AISemanticKeywordService.getInstance();
-  }
+  private constructor() {}
 
   static getInstance(): CodespaceVectorService {
     if (!CodespaceVectorService.instance) {
@@ -69,69 +59,36 @@ export class CodespaceVectorService {
   }
 
   /**
-   * Configure AI settings for codespace analysis
+   * Suggest a unique absolute file path within the workspace based on a desired path.
+   * - Accepts absolute or relative desiredPath. Relative paths are resolved against workspacePath.
+   * - If a conflict exists, appends -1, -2, ... before the extension until unique.
    */
-  configureAI(aiKey: AIKey, model: string = GEMINI_2_0_MODELS.FLASH_LITE): void {
-    this.currentAIKey = aiKey;
-    this.currentModel = model;
-    this.aiSearchEnabled = true;
-    
-    console.log('🤖 AI configured for codespace analysis:', {
-      provider: aiKey.providerId,
-      model: model,
-      isGemini2: this.isGemini2Model(model)
-    });
-  }
+  public suggestUniquePath(workspacePath: string, desiredPath: string): string {
+    const ws = workspacePath.replace(/\/+$/, '');
+    const desiredAbs = desiredPath.startsWith('/')
+      ? desiredPath
+      : `${ws}/${desiredPath.replace(/^\/+/, '')}`;
 
-  /**
-   * Get current AI configuration
-   */
-  getAIConfig(): { aiKey: AIKey | null; model: string; enabled: boolean } {
-    return {
-      aiKey: this.currentAIKey,
-      model: this.currentModel,
-      enabled: this.aiSearchEnabled
-    };
-  }
-
-  /**
-   * Check if the current model is a Gemini 2.0 model
-   */
-  private isGemini2Model(model: string): boolean {
-    return Object.values(GEMINI_2_0_MODELS).includes(model as any);
-  }
-
-  /**
-   * Get Gemini 2.0 model configuration
-   */
-  getGemini2Config(model: string) {
-    if (this.isGemini2Model(model)) {
-      return GEMINI_2_0_CONFIGS[model as keyof typeof GEMINI_2_0_CONFIGS];
+    const existingPaths = new Set<string>((this.codespaceContext?.files || []).map(f => f.path));
+    if (!existingPaths.has(desiredAbs)) {
+      return desiredAbs;
     }
-    return null;
-  }
 
-  /**
-   * Get available Gemini 2.0 models for codespace analysis
-   */
-  getAvailableGemini2Models(): Array<{ id: string; name: string; description: string; cost: { input: number; output: number } }> {
-    return this.aiSemanticService.getAvailableGemini2Models();
-  }
+    const lastSlash = desiredAbs.lastIndexOf('/');
+    const dir = lastSlash >= 0 ? desiredAbs.substring(0, lastSlash) : '';
+    const file = lastSlash >= 0 ? desiredAbs.substring(lastSlash + 1) : desiredAbs;
+    const lastDot = file.lastIndexOf('.');
+    const base = lastDot > 0 ? file.substring(0, lastDot) : file;
+    const ext = lastDot > 0 ? file.substring(lastDot) : '';
 
-  /**
-   * Get recommended Gemini 2.0 model for codespace analysis
-   */
-  getRecommendedGemini2ModelForCodespace(): string {
-    // For codespace analysis, Flash Lite is usually the best choice (free, fast, sufficient quality)
-    return GEMINI_2_0_MODELS.FLASH_LITE;
-  }
-
-  /**
-   * Enable or disable AI-powered search
-   */
-  setAISearchEnabled(enabled: boolean): void {
-    this.aiSearchEnabled = enabled;
-    console.log(`🤖 AI search ${enabled ? 'enabled' : 'disabled'} for codespace analysis`);
+    for (let i = 1; i < 1000; i++) {
+      const candidate = `${dir}/${base}-${i}${ext}`;
+      if (!existingPaths.has(candidate)) {
+        return candidate;
+      }
+    }
+    // Fallback if everything conflicts
+    return `${dir}/${base}-${Date.now()}${ext}`;
   }
 
   /**
@@ -552,7 +509,7 @@ export class CodespaceVectorService {
   }
 
   /**
-   * AI-powered semantic search using Gemini 2.0 models
+   * AI-powered semantic search using existing AI models
    * This replaces the basic token matching with intelligent semantic understanding
    */
   async searchCodespaceWithAI(query: string, limit: number = 10): Promise<SearchResult[]> {
@@ -560,156 +517,30 @@ export class CodespaceVectorService {
       throw new Error('Codespace not analyzed. Call analyzeCodespace() first.');
     }
 
-    if (!this.aiSearchEnabled || !this.currentAIKey) {
-      console.log('🤖 AI search disabled or no AI key configured, falling back to basic search');
-      return this.searchCodespaceBasic(query, limit);
-    }
-
-    console.log('🤖 AI-powered semantic search for:', query, 'using model:', this.currentModel);
+    console.log('🤖 AI-powered semantic search for:', query);
     
     try {
-      // Step 1: Use Gemini 2.0 to understand the query and generate relevant search terms
-      const enhancedQuery = await this.enhanceQueryWithGemini2(query);
-      console.log('🤖 Gemini 2.0 enhanced query:', enhancedQuery);
+      // Step 1: Use AI to understand the query and generate relevant search terms
+      const enhancedQuery = await this.enhanceQueryWithAI(query);
+      console.log('🤖 AI-enhanced query:', enhancedQuery);
       
       // Step 2: Perform semantic search using the enhanced query
       const results = await this.performSemanticSearch(enhancedQuery, query, limit);
       
-      console.log('🤖 Gemini 2.0 search found', results.length, 'semantically relevant files');
+      console.log('🤖 AI search found', results.length, 'semantically relevant files');
       return results;
       
     } catch (error) {
-      console.error('🤖 Gemini 2.0 search failed, falling back to basic search:', error);
+      console.error('🤖 AI search failed, falling back to basic search:', error);
       // Fallback to the original token-based search
-      return this.searchCodespaceBasic(query, limit);
+      return this.searchCodespace(query, limit);
     }
   }
 
   /**
-   * Use Gemini 2.0 to understand natural language queries and generate relevant search terms
+   * Use AI to understand natural language queries and generate relevant search terms
    */
-  private async enhanceQueryWithGemini2(query: string): Promise<string[]> {
-    if (!this.currentAIKey) {
-      throw new Error('No AI key configured for Gemini 2.0 search');
-    }
-
-    try {
-      // Build project context for better keyword generation
-      const projectStructure = this.buildProjectStructureForAI();
-      
-      const request = {
-        userRequest: query,
-        context: `Codespace search query: "${query}". Generate keywords that would help find relevant files in this project.`,
-        projectStructure: projectStructure,
-        targetLanguage: this.detectPrimaryLanguage(),
-        maxKeywords: 15,
-        includeSynonyms: true,
-        includeTechnicalTerms: true,
-        includeFilePatterns: true
-      };
-
-      console.log('🤖 Sending request to Gemini 2.0:', {
-        model: this.currentModel,
-        query: query,
-        projectStructure: projectStructure ? 'Available' : 'Not available'
-      });
-
-      const response = await this.aiSemanticService.generateKeywords(
-        this.currentAIKey,
-        this.currentModel,
-        request
-      );
-
-      if (response.success && response.keywords.length > 0) {
-        // Extract keywords from the AI response
-        const enhancedTerms = response.keywords.map(k => k.keyword);
-        console.log('🤖 Gemini 2.0 generated terms:', enhancedTerms);
-        return enhancedTerms;
-      } else {
-        console.warn('🤖 Gemini 2.0 failed to generate keywords, using fallback semantic mappings');
-        return this.enhanceQueryWithFallback(query);
-      }
-
-    } catch (error) {
-      console.error('🤖 Gemini 2.0 enhancement failed:', error);
-      return this.enhanceQueryWithFallback(query);
-    }
-  }
-
-  /**
-   * Build project structure string for AI context
-   */
-  private buildProjectStructureForAI(): string {
-    if (!this.codespaceContext || !this.codespaceContext.files) {
-      return '';
-    }
-
-    try {
-      const files = this.codespaceContext.files;
-      const maxFiles = 50; // Limit to prevent overwhelming the AI
-      const selectedFiles = files.slice(0, maxFiles);
-      
-      // Group files by directory
-      const directoryStructure: Record<string, string[]> = {};
-      
-      selectedFiles.forEach(file => {
-        const dir = file.path.split('/').slice(0, -1).join('/') || '.';
-        if (!directoryStructure[dir]) {
-          directoryStructure[dir] = [];
-        }
-        directoryStructure[dir].push(file.name);
-      });
-
-      // Build a readable structure
-      let structure = 'Project Structure:\n';
-      for (const [dir, files] of Object.entries(directoryStructure)) {
-        structure += `${dir}/\n`;
-        files.slice(0, 10).forEach(file => { // Limit files per directory
-          structure += `  ${file}\n`;
-        });
-        if (files.length > 10) {
-          structure += `  ... and ${files.length - 10} more files\n`;
-        }
-      }
-
-      return structure;
-    } catch (error) {
-      console.warn('Failed to build project structure for AI:', error);
-      return '';
-    }
-  }
-
-  /**
-   * Detect primary programming language from codespace
-   */
-  private detectPrimaryLanguage(): string {
-    if (!this.codespaceContext || !this.codespaceContext.languages) {
-      return 'Unknown';
-    }
-
-    try {
-      const languages = this.codespaceContext.languages;
-      let maxCount = 0;
-      let primaryLanguage = 'Unknown';
-
-      for (const [lang, count] of languages.entries()) {
-        if (count > maxCount) {
-          maxCount = count;
-          primaryLanguage = lang;
-        }
-      }
-
-      return primaryLanguage;
-    } catch (error) {
-      console.warn('Failed to detect primary language:', error);
-      return 'Unknown';
-    }
-  }
-
-  /**
-   * Fallback semantic mappings when AI is not available
-   */
-  private enhanceQueryWithFallback(query: string): string[] {
+  private async enhanceQueryWithAI(query: string): Promise<string[]> {
     // Common semantic mappings for web development
     const semanticMappings: Record<string, string[]> = {
       // Homepage related
@@ -995,136 +826,7 @@ export class CodespaceVectorService {
     }
   }
 
-  /**
-   * Get AI-powered insights about the codespace using Gemini 2.0
-   */
-  async getCodespaceInsights(query: string = 'Analyze this project structure and provide insights'): Promise<{
-    success: boolean;
-    insights?: string;
-    error?: string;
-    model: string;
-    timestamp: string;
-  }> {
-    if (!this.currentAIKey || !this.aiSearchEnabled) {
-      return {
-        success: false,
-        error: 'AI not configured or disabled',
-        model: 'none',
-        timestamp: new Date().toISOString()
-      };
-    }
-
-    try {
-      const projectStructure = this.buildProjectStructureForAI();
-      const primaryLanguage = this.detectPrimaryLanguage();
-      
-      const request = {
-        userRequest: query,
-        context: `Analyze this project structure and provide insights about architecture, patterns, and potential improvements.`,
-        projectStructure: projectStructure,
-        targetLanguage: primaryLanguage,
-        maxKeywords: 20,
-        includeSynonyms: true,
-        includeTechnicalTerms: true,
-        includeFilePatterns: true
-      };
-
-      console.log('🤖 Getting codespace insights with Gemini 2.0:', {
-        model: this.currentModel,
-        query: query,
-        language: primaryLanguage
-      });
-
-      const response = await this.aiSemanticService.generateKeywords(
-        this.currentAIKey,
-        this.currentModel,
-        request
-      );
-
-      if (response.success && response.keywords.length > 0) {
-        // Convert keywords to insights
-        const insights = this.convertKeywordsToInsights(response.keywords, projectStructure);
-        
-        return {
-          success: true,
-          insights,
-          model: this.currentModel,
-          timestamp: new Date().toISOString()
-        };
-      } else {
-        return {
-          success: false,
-          error: response.error || 'Failed to generate insights',
-          model: this.currentModel,
-          timestamp: new Date().toISOString()
-        };
-      }
-
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to get insights',
-        model: this.currentModel,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * Convert AI-generated keywords to readable insights
-   */
-  private convertKeywordsToInsights(keywords: any[], projectStructure: string): string {
-    if (!keywords || keywords.length === 0) {
-      return 'No insights available.';
-    }
-
-    let insights = '## Project Analysis Insights\n\n';
-    
-    // Group keywords by category
-    const categories = {
-      primary: keywords.filter(k => k.category === 'primary'),
-      secondary: keywords.filter(k => k.category === 'secondary'),
-      technical: keywords.filter(k => k.category === 'technical'),
-      synonym: keywords.filter(k => k.category === 'synonym')
-    };
-
-    // Primary insights
-    if (categories.primary.length > 0) {
-      insights += '### 🎯 Key Components\n';
-      categories.primary.forEach(keyword => {
-        insights += `- **${keyword.keyword}**: ${keyword.description || 'Important project component'}\n`;
-      });
-      insights += '\n';
-    }
-
-    // Technical patterns
-    if (categories.technical.length > 0) {
-      insights += '### 🔧 Technical Patterns\n';
-      categories.technical.forEach(keyword => {
-        insights += `- **${keyword.keyword}**: ${keyword.description || 'Technical implementation pattern'}\n`;
-      });
-      insights += '\n';
-    }
-
-    // Related terms
-    if (categories.synonym.length > 0) {
-      insights += '### 🔗 Related Concepts\n';
-      categories.synonym.forEach(keyword => {
-        insights += `- **${keyword.keyword}**: ${keyword.description || 'Related project concept'}\n`;
-      });
-      insights += '\n';
-    }
-
-    // Project structure summary
-    if (projectStructure) {
-      insights += '### 📁 Project Structure\n';
-      insights += 'The project follows a well-organized structure with clear separation of concerns.\n\n';
-    }
-
-    insights += '---\n*Insights generated using Gemini 2.0 AI analysis*';
-    
-    return insights;
-  }
+  
 
   /**
    * Original basic token-based search (renamed for clarity)
@@ -1635,44 +1337,18 @@ export class CodespaceVectorService {
   }
 
   /**
-   * Get cache status information with AI configuration
+   * Get cache status information
    */
   getCacheStatus(): {
     hasCache: boolean;
     cacheAge?: number;
     workspacePath?: string;
     totalFiles?: number;
-    aiConfig?: {
-      enabled: boolean;
-      model: string;
-      provider: string;
-      isGemini2: boolean;
-    };
-    gemini2Metrics?: {
-      currentModel: string;
-      costPerSearch: number;
-      recommendations: string[];
-    };
   } {
     try {
       const cachedData = localStorage.getItem(this.cacheKey);
       if (!cachedData) {
-        const aiConfig = this.getAIConfig();
-        const gemini2Metrics = this.getGemini2PerformanceMetrics();
-        return { 
-          hasCache: false,
-          aiConfig: {
-            enabled: aiConfig.enabled,
-            model: aiConfig.model,
-            provider: aiConfig.aiKey?.providerId || 'none',
-            isGemini2: this.isGemini2Model(aiConfig.model)
-          },
-          gemini2Metrics: {
-            currentModel: gemini2Metrics.currentModel,
-            costPerSearch: gemini2Metrics.costAnalysis.costPerSearch,
-            recommendations: gemini2Metrics.recommendations
-          }
-        };
+        return { hasCache: false };
       }
 
       const parsed = JSON.parse(cachedData);
@@ -1682,61 +1358,17 @@ export class CodespaceVectorService {
       if (parsed.version !== '1.0') {
         console.log('🔍 Cache version mismatch, clearing old cache');
         this.clearPersistedCache();
-        const aiConfig = this.getAIConfig();
-        const gemini2Metrics = this.getGemini2PerformanceMetrics();
-        return { 
-          hasCache: false,
-          aiConfig: {
-            enabled: aiConfig.enabled,
-            model: aiConfig.model,
-            provider: aiConfig.aiKey?.providerId || 'none',
-            isGemini2: this.isGemini2Model(aiConfig.model)
-          },
-          gemini2Metrics: {
-            currentModel: gemini2Metrics.currentModel,
-            costPerSearch: gemini2Metrics.costAnalysis.costPerSearch,
-            recommendations: gemini2Metrics.recommendations
-          }
-        };
+        return { hasCache: false };
       }
-      
-      const aiConfig = this.getAIConfig();
-      const gemini2Metrics = this.getGemini2PerformanceMetrics();
       
       return {
         hasCache: true,
         cacheAge: Math.round(cacheAge / (1000 * 60)), // Age in minutes
         workspacePath: parsed.workspacePath,
-        totalFiles: parsed.context?.totalFiles,
-        aiConfig: {
-          enabled: aiConfig.enabled,
-          model: aiConfig.model,
-          provider: aiConfig.aiKey?.providerId || 'none',
-          isGemini2: this.isGemini2Model(aiConfig.model)
-        },
-        gemini2Metrics: {
-          currentModel: gemini2Metrics.currentModel,
-          costPerSearch: gemini2Metrics.costAnalysis.costPerSearch,
-          recommendations: gemini2Metrics.recommendations
-        }
+        totalFiles: parsed.context?.totalFiles
       };
     } catch (error) {
-      const aiConfig = this.getAIConfig();
-      const gemini2Metrics = this.getGemini2PerformanceMetrics();
-      return { 
-        hasCache: false,
-        aiConfig: {
-          enabled: aiConfig.enabled,
-          model: aiConfig.model,
-          provider: aiConfig.aiKey?.providerId || 'none',
-          isGemini2: this.isGemini2Model(aiConfig.model)
-        },
-        gemini2Metrics: {
-          currentModel: gemini2Metrics.currentModel,
-          costPerSearch: gemini2Metrics.costAnalysis.costPerSearch,
-          recommendations: gemini2Metrics.recommendations
-        }
-      };
+      return { hasCache: false };
     }
   }
 
@@ -2217,82 +1849,5 @@ export class CodespaceVectorService {
     // C++ dependencies are typically handled by build systems
     // This is a simplified approach
     return [];
-  }
-
-  /**
-   * Get performance metrics and cost analysis for Gemini 2.0 models
-   */
-  getGemini2PerformanceMetrics(): {
-    currentModel: string;
-    modelConfig: any;
-    costAnalysis: {
-      estimatedInputTokens: number;
-      estimatedOutputTokens: number;
-      estimatedCost: number;
-      costPerSearch: number;
-    };
-    recommendations: string[];
-  } {
-    const currentModel = this.currentModel;
-    const modelConfig = this.getGemini2Config(currentModel);
-    
-    if (!modelConfig) {
-      return {
-        currentModel,
-        modelConfig: null,
-        costAnalysis: {
-          estimatedInputTokens: 0,
-          estimatedOutputTokens: 0,
-          estimatedCost: 0,
-          costPerSearch: 0
-        },
-        recommendations: ['Model configuration not available']
-      };
-    }
-
-    // Estimate token usage based on typical codespace analysis
-    const estimatedInputTokens = 2000; // Average project structure + query
-    const estimatedOutputTokens = 500;  // Average keyword response
-    
-    const estimatedCost = (
-      (estimatedInputTokens / 1000000) * modelConfig.cost.input +
-      (estimatedOutputTokens / 1000000) * modelConfig.cost.output
-    );
-    
-    const costPerSearch = estimatedCost;
-    
-    // Generate recommendations
-    const recommendations: string[] = [];
-    
-    if (modelConfig.cost.input > 0 || modelConfig.cost.output > 0) {
-      if (currentModel === GEMINI_2_0_MODELS.FLASH_LITE) {
-        recommendations.push('✅ Using free tier model - no cost for searches');
-      } else if (currentModel === GEMINI_2_0_MODELS.FLASH_EXP) {
-        recommendations.push('💰 Using cost-optimized experimental model');
-      } else {
-        recommendations.push(`💰 Current model costs $${estimatedCost.toFixed(4)} per search`);
-        if (estimatedCost > 0.01) {
-          recommendations.push('💡 Consider switching to Flash Lite for free searches');
-        }
-      }
-    } else {
-      recommendations.push('🎉 Using free model - no cost for searches');
-    }
-    
-    if (this.codespaceContext && this.codespaceContext.files.length > 100) {
-      recommendations.push('📊 Large project detected - consider caching results to reduce API calls');
-    }
-    
-    return {
-      currentModel,
-      modelConfig,
-      costAnalysis: {
-        estimatedInputTokens,
-        estimatedOutputTokens,
-        estimatedCost,
-        costPerSearch
-      },
-      recommendations
-    };
   }
 }
