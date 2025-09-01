@@ -442,6 +442,16 @@ export const ChatInterface: React.FC = () => {
                       <div className="message-content">
                         {message.content}
                       </div>
+                      {/* Read [path] [lines] hints for the latest turn */}
+                      {state.lastContextReads && message.role === 'assistant' && message.id === currentSession.messages[currentSession.messages.length - 1]?.id && (
+                        <div className="context-reads">
+                          {state.lastContextReads.map((r, i) => (
+                            <div key={i} className="context-read-item">
+                              Read [{r.path}] [lines {r.start}-{r.end}]
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}

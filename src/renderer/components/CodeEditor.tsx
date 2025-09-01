@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AIEditor } from './AIEditor';
 import { AIEdit } from './AIEditor/types';
 import ProjectSelector from './ProjectSelector';
@@ -26,7 +26,8 @@ interface OpenFile {
 const CodeEditor: React.FC<{
   isEditing?: boolean;
   onToggleEditing?: () => void;
-}> = ({ isEditing = false, onToggleEditing }) => {
+  instanceId?: string; // Add unique instance identifier
+}> = ({ isEditing = false, onToggleEditing, instanceId = 'main' }) => {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [fileItems, setFileItems] = useState<FileSystemItem[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -44,6 +45,16 @@ const CodeEditor: React.FC<{
 
 
 
+  // Guards to prevent duplicate opens and repeated auto-open
+  const openingFilesRef = useRef<Set<string>>(new Set());
+  const openFilesRef = useRef<OpenFile[]>([]);
+  const autoOpenStartedRef = useRef<Record<string, boolean>>({});
+  const autoOpenInProgressRef = useRef<boolean>(false);
+
+  // Keep a ref in sync with openFiles state for use in async callbacks
+  useEffect(() => {
+    openFilesRef.current = openFiles;
+  }, [openFiles]);
   // Initialize with home directory
   useEffect(() => {
     const initializeFileSystem = async () => {
@@ -205,8 +216,11 @@ const CodeEditor: React.FC<{
         console.log('Found project files:', files.length, files.map(f => f.name));
         setProjectFiles(files);
         
-        // Auto-open some key project files if none are open
-        if (openFiles.length === 0 && files.length > 0) {
+        // Auto-open some key project files if none are open (only once per project)
+        console.log('🔍 Checking auto-open: openFiles.length =', openFilesRef.current.length, 'files.length =', files.length);
+        if (!autoOpenStartedRef.current[projectPath] && openFilesRef.current.length === 0 && files.length > 0) {
+          autoOpenStartedRef.current[projectPath] = true;
+          console.log('🚀 Auto-opening project files...');
           await autoOpenProjectFiles(files);
         }
       }
@@ -218,26 +232,38 @@ const CodeEditor: React.FC<{
   // Auto-open key project files
   const autoOpenProjectFiles = async (projectFiles: any[]) => {
     try {
+      if (autoOpenInProgressRef.current) {
+        console.log('⏳ autoOpen already in progress, skipping');
+        return;
+      }
+      autoOpenInProgressRef.current = true;
+
+      console.log('📋 autoOpenProjectFiles called with:', projectFiles.map(f => f.name));
+      console.log('📋 Current openFiles state:', openFilesRef.current.map(f => f.path));
+      
       // Priority order for auto-opening files
       const priorityFiles = ['package.json', 'README.md', 'index.js', 'index.ts', 'main.py', 'app.py', 'index.html'];
       
       for (const priorityFile of priorityFiles) {
         const file = projectFiles.find(f => f.name === priorityFile);
         if (file) {
-          console.log('Auto-opening priority file:', file.name);
+          console.log('🎯 Auto-opening priority file:', file.name);
           await openFile(file.path, file.name);
           break; // Only open the first priority file found
         }
       }
       
       // If no priority files found, open the first available file
-      if (openFiles.length === 0 && projectFiles.length > 0) {
+      console.log('📋 After priority check, openFiles.length =', openFilesRef.current.length);
+      if (openFilesRef.current.length === 0 && projectFiles.length > 0) {
         const firstFile = projectFiles[0];
-        console.log('Auto-opening first available file:', firstFile.name);
+        console.log('🎯 Auto-opening first available file:', firstFile.name);
         await openFile(firstFile.path, firstFile.name);
       }
     } catch (error) {
       console.error('Failed to auto-open project files:', error);
+    } finally {
+      autoOpenInProgressRef.current = false;
     }
   };
 
@@ -251,10 +277,21 @@ const CodeEditor: React.FC<{
 
   const openFile = async (filePath: string, fileName: string) => {
     try {
+      console.log('🔍 openFile called:', filePath, 'Current openFiles:', openFilesRef.current.map(f => f.path));
+
+      // Prevent concurrent opens of the same file
+      if (openingFilesRef.current.has(filePath)) {
+        console.log('⏳ File is already opening, skipping:', filePath);
+        return;
+      }
+      openingFilesRef.current.add(filePath);
+      
       // Check if file is already open
-      const existingIndex = openFiles.findIndex(file => file.path === filePath);
+      const existingIndex = openFilesRef.current.findIndex(file => file.path === filePath);
       if (existingIndex >= 0) {
+        console.log('✅ File already open at index:', existingIndex);
         setActiveFileIndex(existingIndex);
+        openingFilesRef.current.delete(filePath);
         return;
       }
 
@@ -299,11 +336,26 @@ const CodeEditor: React.FC<{
         language
       };
 
-      setOpenFiles(prev => [...prev, newFile]);
-      setActiveFileIndex(openFiles.length);
+      console.log('📁 Adding new file to openFiles:', newFile.path);
+      setOpenFiles(prev => {
+        // Prevent duplicate adds even under race conditions
+        const alreadyExists = prev.some(f => f.path === filePath);
+        if (alreadyExists) {
+          console.log('⚠️ Duplicate detected in setOpenFiles, skipping add for:', filePath);
+          const idx = prev.findIndex(f => f.path === filePath);
+          if (idx >= 0) setActiveFileIndex(idx);
+          return prev;
+        }
+        const updated = [...prev, newFile];
+        console.log('📁 Updated openFiles:', updated.map(f => f.path));
+        setActiveFileIndex(updated.length - 1);
+        return updated;
+      });
     } catch (error) {
       console.error('Error opening file:', error);
       setError('파일을 열 수 없습니다.');
+    } finally {
+      openingFilesRef.current.delete(filePath);
     }
   };
 
@@ -655,7 +707,7 @@ const CodeEditor: React.FC<{
               <div className="file-tree">
                 {fileItems.map((item, index) => (
                   <div
-                    key={`${item.path}-${index}`}
+                    key={`${instanceId}-${item.path}-${index}`}
                     className={`file-tree-item ${item.isDirectory ? 'folder' : 'file'}`}
                     onClick={() => handleFileClick(item)}
                   >
@@ -674,7 +726,7 @@ const CodeEditor: React.FC<{
           <div className="file-tabs">
             {openFiles.map((file, index) => (
               <div
-                key={file.path}
+                key={`${instanceId}-${file.path}`}
                 className={`file-tab ${index === activeFileIndex ? 'active' : ''} ${file.isModified ? 'modified' : ''}`}
                 onClick={() => setActiveFileIndex(index)}
               >

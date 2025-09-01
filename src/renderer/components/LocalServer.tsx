@@ -25,7 +25,11 @@ interface FolderInfo {
   availableFiles?: string[];
 }
 
-const LocalServer: React.FC = () => {
+interface LocalServerProps {
+  onStatusChange?: (status: ServerStatus) => void;
+}
+
+const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     isRunning: false,
     port: 8000,
@@ -60,6 +64,13 @@ const LocalServer: React.FC = () => {
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Emit status to parent when it changes
+  useEffect(() => {
+    if (onStatusChange) {
+      onStatusChange(serverStatus);
+    }
+  }, [serverStatus, onStatusChange]);
 
   const checkServerStatus = async () => {
     try {
