@@ -155,7 +155,7 @@ You can work with individual files or dynamically discover and analyze files acr
           const status = await EnhancedAIEditorService.getCacheStatus();
           setCacheStatus(status);
         } catch (error) {
-          console.log('Could not check cache status:', error);
+          // Silent fail - cache status check failed
         }
       };
       checkCacheStatus();
@@ -165,6 +165,13 @@ You can work with individual files or dynamically discover and analyze files acr
   // Subscribe to conversation store
   useEffect(() => {
     const unsubscribe = conversationStore.subscribe((state) => {
+      // Handle store errors
+      if (state.error) {
+        setError(state.error);
+      } else {
+        setError(null);
+      }
+      
       if (state.currentConversationId) {
         const conversation = state.conversations.find(c => c.id === state.currentConversationId);
         setCurrentConversation(conversation || null);
@@ -217,7 +224,6 @@ You can work with individual files or dynamically discover and analyze files acr
   // Analyze file when current file changes
   useEffect(() => {
     if (currentFile && currentFile.path !== currentFileData?.path) {
-      console.log('🚀 File changed, clearing previous AI response');
       setCurrentFileData(currentFile);
       analyzeFile(currentFile.path, currentFile.content);
       setAiResponse(null);
@@ -228,12 +234,8 @@ You can work with individual files or dynamically discover and analyze files acr
 
   // Load project files when project context changes
   useEffect(() => {
-    console.log('AI Editor: Project context changed:', projectContext);
     if (projectContext?.currentProject) {
-      console.log('AI Editor: Loading project files from:', projectContext.currentProject.path);
       loadProjectFiles(projectContext.currentProject.path);
-    } else {
-      console.log('AI Editor: No current project in context');
     }
   }, [projectContext]);
 
@@ -250,9 +252,9 @@ You can work with individual files or dynamically discover and analyze files acr
   const loadProjectFiles = async (projectPath: string) => {
     try {
       // This would be implemented to load project files
-      console.log('Loading project files from:', projectPath);
+
     } catch (error) {
-      console.error('Failed to load project files:', error);
+
     }
   };
 
@@ -264,7 +266,7 @@ You can work with individual files or dynamically discover and analyze files acr
       const status = await EnhancedAIEditorService.getCacheStatus();
       setCacheStatus(status);
     } catch (error) {
-      console.error('Failed to get cache status:', error);
+
     }
   };
 
@@ -276,7 +278,7 @@ You can work with individual files or dynamically discover and analyze files acr
       const context = await EnhancedAIEditorService.analyzeFile(filePath, content);
       return context;
     } catch (error) {
-      console.error('Failed to analyze file:', error);
+
       return null;
     }
   };
@@ -301,7 +303,7 @@ You can work with individual files or dynamically discover and analyze files acr
         onChunk
       );
     } catch (error) {
-      console.error('Stream edit failed:', error);
+
       onChunk({
         type: 'error',
         error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -329,7 +331,6 @@ You can work with individual files or dynamically discover and analyze files acr
       );
       return response;
     } catch (error) {
-      console.error('Edit request failed:', error);
       return {
         success: false,
         edits: [],
@@ -346,7 +347,6 @@ You can work with individual files or dynamically discover and analyze files acr
       const newContent = EnhancedAIEditorService.applyEdits(content, edits);
       return newContent;
     } catch (error) {
-      console.error('Failed to apply edits:', error);
       return content;
     }
   };
@@ -654,71 +654,7 @@ You can work with individual files or dynamically discover and analyze files acr
       <div className="sidebar-content">
         {/* Compact Configuration Bar */}
         <div className="config-bar">
-          {/* Cache Status Display */}
-          {cacheStatus.hasCache && (
-            <div className="cache-status">
-              <span className="cache-indicator">💾</span>
-              <span className="cache-info">
-                Using cached analysis ({cacheStatus.cacheAge}min old, {cacheStatus.totalFiles} files)
-              </span>
-              <button 
-                className="refresh-cache-btn"
-                onClick={() => {
-                  if (projectContext?.currentProject?.path) {
-                    EnhancedAIEditorService.forceRefresh(projectContext.currentProject.path);
-                  }
-                }}
-                title="Force refresh codespace analysis"
-              >
-                🔄
-              </button>
-              <button 
-                className="test-search-btn"
-                onClick={async () => {
-                  if (userInstruction.trim()) {
-                    console.log('🧪 Testing semantic search for:', userInstruction);
-                    const results = await EnhancedAIEditorService.searchCodespace(userInstruction, 5);
-                    console.log('🧪 Search results:', results);
-                    alert(`Found ${results.length} relevant files! Check console for details.`);
-                  } else {
-                    alert('Please enter a search query first!');
-                  }
-                }}
-                title="Test semantic search with current instruction"
-              >
-                🧪 Test Search
-              </button>
-              <button 
-                className="test-ai-search-btn"
-                onClick={async () => {
-                  if (userInstruction.trim()) {
-                    console.log('🤖 Testing AI-powered semantic search for:', userInstruction);
-                    try {
-                      // Test the new AI search directly
-                      const vectorService = CodespaceVectorService.getInstance();
-                      const results = await vectorService.searchCodespaceWithAI(userInstruction, 5);
-                      console.log('🤖 AI Search results:', results);
-                      
-                      if (results.length > 0) {
-                        const topResult = results[0];
-                        alert(`🤖 AI found ${results.length} semantically relevant files!\n\nTop result: ${topResult.file.name}\nRelevance: ${topResult.relevance}\n\nCheck console for full details.`);
-                      } else {
-                        alert('🤖 AI search found no relevant files. This might indicate the query needs refinement.');
-                      }
-                    } catch (error) {
-                      console.error('🤖 AI search test failed:', error);
-                      alert('🤖 AI search test failed. Check console for details.');
-                    }
-                  } else {
-                    alert('Please enter a search query first!');
-                  }
-                }}
-                title="Test AI-powered semantic search"
-              >
-                🤖 Test AI Search
-              </button>
-            </div>
-          )}
+
 
           {/* Conversation Management */}
           <div className="conversation-controls">

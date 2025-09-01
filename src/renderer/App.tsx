@@ -7,6 +7,7 @@ import { AIKeysManager } from './components/AIKeysManager';
 import { ChatInterface } from './components/ChatInterface';
 import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
+import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
 import './App.css';
 
 interface FileSystemItem {
@@ -448,6 +449,12 @@ function NavigationBar() {
         >
           🖥️ Dual Screen
         </Link>
+        <Link 
+          to="/codespace-analysis" 
+          className={`nav-link ${location.pathname === '/codespace-analysis' ? 'active' : ''}`}
+        >
+          🔍 Codespace Analysis
+        </Link>
 
       </nav>
     </div>
@@ -468,6 +475,7 @@ export default function App() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/chat" element={<ChatInterface />} />
             <Route path="/dual-screen" element={<DualScreenDemo />} />
+            <Route path="/codespace-analysis" element={<CodespaceVectorAnalysis />} />
     
           </Routes>
         </main>
