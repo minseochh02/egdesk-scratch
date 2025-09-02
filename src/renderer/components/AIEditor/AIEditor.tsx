@@ -3,6 +3,8 @@ import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Con
 import { EnhancedAIEditorService } from './services/enhancedAIEditorService';
 import { CodespaceVectorService } from './services/codespaceVectorService';
 import { CodespaceChatService } from '../ChatInterface/services/codespaceChatService';
+import { SearchReplacePromptService } from './services/searchReplacePromptService';
+import { MessageContent } from '../ChatInterface/components';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../ChatInterface/types';
@@ -79,6 +81,10 @@ export const AIEditor: React.FC<AIEditorProps> = ({
   
   // Debug state - always on
   const [debugPayload, setDebugPayload] = useState<any>(null);
+  
+  // Search & Replace state
+  const [searchReplacePrompts, setSearchReplacePrompts] = useState<any[]>([]);
+  const [isGeneratingSearchReplace, setIsGeneratingSearchReplace] = useState(false);
   
   const [config, setConfig] = useState<AIEditorConfig>({
     provider: 'openai',
@@ -201,7 +207,7 @@ You can work with individual files or dynamically discover and analyze files acr
         conversationStore.createConversation(projectPath, projectName);
       }
     }
-  }, [projectContext?.currentProject?.path, currentConversation]);
+  }, [projectContext?.currentProject?.path]); // Remove currentConversation dependency to break circular dependency
 
   // Update config when selected key changes
   useEffect(() => {
@@ -221,7 +227,7 @@ You can work with individual files or dynamically discover and analyze files acr
       setSelectedKey(null);
       setSelectedModel('');
     }
-  }, [config.provider, selectedKey]);
+  }, [config.provider]); // Remove selectedKey dependency to prevent circular updates
 
   // Analyze file when current file changes
   useEffect(() => {
@@ -236,14 +242,14 @@ You can work with individual files or dynamically discover and analyze files acr
 
   // Load project files when project context changes
   useEffect(() => {
-    if (projectContext?.currentProject) {
+    if (projectContext?.currentProject?.path) {
       loadProjectFiles(projectContext.currentProject.path);
       // Initialize CodespaceChatService for enhanced context
       const chatService = CodespaceChatService.getInstance();
       chatService.setWorkspacePath(projectContext.currentProject.path);
       setCodespaceChatService(chatService);
     }
-  }, [projectContext]);
+  }, [projectContext?.currentProject?.path]); // Only depend on the path, not the entire projectContext object
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -374,6 +380,53 @@ You can work with individual files or dynamically discover and analyze files acr
   };
 
   // Removed legacy semantic search; we now rely on CodespaceChatService.enhanceMessageWithContext
+
+  // Generate search/replace prompts for the current request
+  const handleGenerateSearchReplace = async () => {
+    if (!selectedKey || !selectedModel || !userInstruction.trim()) {
+      return;
+    }
+
+    setIsGeneratingSearchReplace(true);
+    setSearchReplacePrompts([]);
+
+    try {
+      const service = SearchReplacePromptService.getInstance();
+      
+      // Use the enhanced context if available, otherwise use current file
+      if (debugPayload?.enhancedContext && debugPayload?.relevantFilesContext) {
+        // Generate prompts based on the enhanced context - use the primary files, not current file
+        const response = await service.generatePrompts(
+          selectedKey,
+          selectedModel,
+          userInstruction,
+          undefined, // Don't specify a target file - let the service use the enhanced context
+          debugPayload.relevantFilesContext // Pass the full enhanced context
+        );
+        
+        if (response.success) {
+          setSearchReplacePrompts(response.searchReplacePrompts);
+        }
+      } else if (currentFileData) {
+        // Generate prompts for the current file
+        const response = await service.generatePromptsForFile(
+          selectedKey,
+          selectedModel,
+          userInstruction,
+          currentFileData.path,
+          currentFileData.content
+        );
+        
+        if (response.success) {
+          setSearchReplacePrompts(response.searchReplacePrompts);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate search/replace prompts:', error);
+    } finally {
+      setIsGeneratingSearchReplace(false);
+    }
+  };
 
   // Handle edit request
   const handleRequestEdit = async () => {
@@ -985,6 +1038,87 @@ You can work with individual files or dynamically discover and analyze files acr
           </div>
         )}
 
+        {/* Search & Replace Prompts Display */}
+        {searchReplacePrompts.length > 0 && (
+          <div className="message search-replace-message">
+            <div className="message-content">
+              <div className="response-header">
+                <span className="response-title">🔍 Search & Replace Prompts</span>
+                <div className="response-actions">
+                  <button 
+                    onClick={() => setSearchReplacePrompts([])}
+                    className="close-btn"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              
+              <div className="search-replace-content">
+                <h4>Generated {searchReplacePrompts.length} search/replace operation(s)</h4>
+                
+                {searchReplacePrompts.map((prompt, index) => (
+                  <div key={prompt.id || index} className="prompt-item">
+                    <div className="prompt-header">
+                      <span className="prompt-number">#{index + 1}</span>
+                      <span className="prompt-description">{prompt.description}</span>
+                      <span className="prompt-confidence">{Math.round((prompt.confidence || 0.8) * 100)}%</span>
+                    </div>
+                    
+                    <div className="prompt-details">
+                      <div className="search-section">
+                        <h5>🔍 Search for:</h5>
+                        <pre className="search-text">{prompt.searchText}</pre>
+                      </div>
+                      
+                      <div className="replace-section">
+                        <h5>🔄 Replace with:</h5>
+                        <pre className="replace-text">{prompt.replaceText}</pre>
+                      </div>
+                      
+                      {prompt.filePath && (
+                        <div className="file-info">
+                          <strong>File:</strong> {prompt.filePath}
+                        </div>
+                      )}
+                      
+                      {prompt.notes && (
+                        <div className="notes">
+                          <strong>Notes:</strong> {prompt.notes}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="prompt-actions">
+                      <button 
+                        onClick={() => {
+                          // TODO: Implement actual search/replace execution
+                          console.log('Executing search/replace:', prompt);
+                        }}
+                        className="execute-btn"
+                        title="Execute this search/replace operation"
+                      >
+                        ✅ Execute
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          const text = `Search: ${prompt.searchText}\nReplace: ${prompt.replaceText}`;
+                          navigator.clipboard.writeText(text);
+                        }}
+                        className="copy-btn"
+                        title="Copy search/replace text"
+                      >
+                        📋 Copy
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* AI Response */}
            {aiResponse && aiResponse.success && (
              <div className="message ai-message">
@@ -1010,7 +1144,7 @@ You can work with individual files or dynamically discover and analyze files acr
 
                 {aiResponse.explanation && (
                   <div className="explanation">
-                     {aiResponse.explanation}
+                     <MessageContent content={aiResponse.explanation} role="assistant" />
                   </div>
                 )}
                 
@@ -1120,13 +1254,24 @@ You can work with individual files or dynamically discover and analyze files acr
               className="instruction-input"
               disabled={isLoading || isStreaming}
             />
-                    <button 
-              className="send-btn"
-                      onClick={handleRequestEdit}
-              disabled={!selectedKey || !selectedModel || !currentFileData || !userInstruction.trim() || isLoading || isStreaming}
-            >
-              {isLoading || isStreaming ? '⏳' : '🚀'}
-                    </button>
+            <div className="input-buttons">
+              <button 
+                className="send-btn"
+                onClick={handleRequestEdit}
+                disabled={!selectedKey || !selectedModel || !currentFileData || !userInstruction.trim() || isLoading || isStreaming}
+              >
+                {isLoading || isStreaming ? '⏳' : '🚀'}
+              </button>
+              
+              <button 
+                className="search-replace-btn"
+                onClick={handleGenerateSearchReplace}
+                disabled={!selectedKey || !selectedModel || !userInstruction.trim() || isGeneratingSearchReplace}
+                title="Generate search/replace operations"
+              >
+                {isGeneratingSearchReplace ? '⏳' : '🔍'}
+              </button>
+            </div>
                   </div>
                 </div>
       </div>
