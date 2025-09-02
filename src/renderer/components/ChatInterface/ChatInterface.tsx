@@ -3,6 +3,7 @@ import { ChatSession, ChatMessage, ChatConfig, CHAT_PROVIDERS } from './types';
 import { chatStore } from './store/chatStore';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
+import { MessageContent } from './components';
 import './ChatInterface.css';
 
 export const ChatInterface: React.FC = () => {
@@ -440,7 +441,7 @@ export const ChatInterface: React.FC = () => {
                         )}
                       </div>
                       <div className="message-content">
-                        {message.content}
+                        <MessageContent content={message.content} role={message.role} />
                       </div>
                       {/* Read [path] [lines] hints for the latest turn */}
                       {state.lastContextReads && message.role === 'assistant' && message.id === currentSession.messages[currentSession.messages.length - 1]?.id && (
