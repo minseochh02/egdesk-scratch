@@ -1,3 +1,3 @@
 export { DualScreenEditor } from './DualScreenEditor';
 export { DualScreenDemo } from './DualScreenDemo';
-export { WebsitePreview } from './WebsitePreview';
+export { BrowserWindow } from './BrowserWindow';
