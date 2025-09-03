@@ -11,9 +11,12 @@ import {
   faCompress,
   faChevronDown,
   faCircle,
-  faSquare as faSquareIcon
+  faSquare as faSquareIcon,
+  faCode,
+  faEye
 } from '@fortawesome/free-solid-svg-icons';
 import LocalServer from '../LocalServer';
+import { URLFileViewer } from './URLFileViewer';
 import './BrowserWindow.css';
 
 interface BrowserWindowProps {
@@ -31,6 +34,9 @@ interface BrowserWindowProps {
   onServerStatusChange?: (status: any) => void;
   halfScreenPosition?: 'left' | 'right' | 'custom'; // 'left' = left half, 'right' = right half, 'custom' = use width/height/x/y props
   resizeMainWindow?: boolean; // Whether to resize the main window for split-screen setup
+  showFileViewer?: boolean; // Whether to show file viewer instead of browser controls
+  filesToOpen?: string[]; // Files to display in the file viewer
+  onToggleView?: () => void; // Callback to toggle between browser and file viewer
 }
 
 export const BrowserWindow: React.FC<BrowserWindowProps> = ({
@@ -47,7 +53,10 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   serverStatus,
   onServerStatusChange,
   halfScreenPosition = 'right',
-  resizeMainWindow = true
+  resizeMainWindow = true,
+  showFileViewer = false,
+  filesToOpen = [],
+  onToggleView
 }) => {
   const [url, setUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -476,168 +485,217 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
     }
     return (
       <div ref={windowRef} className="browser-window embedded">
-        {/* Server Controls Section */}
-        <div className="server-controls-section">
-          <div className="controls-header">
-            <h3>🚀 Server Controls</h3>
-            <div className="control-buttons">
-              {/* Browser Selection Dropdown */}
-              <div className="browser-selector">
-                <button
-                  className="browser-select-btn"
-                  onClick={() => setShowBrowserDropdown(!showBrowserDropdown)}
-                  title="Select browser type"
-                >
-                  <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
-                  <span>{getBrowserName(selectedBrowser)}</span>
-                  <FontAwesomeIcon icon={faChevronDown} />
-                </button>
-                {showBrowserDropdown && (
-                  <div className="browser-dropdown">
+        {showFileViewer ? (
+          /* File Viewer Mode */
+          <div className="file-viewer-mode">
+            <div className="file-viewer-header">
+              <div className="file-viewer-controls">
+                <h3>
+                  <FontAwesomeIcon icon={faCode} />
+                  Route Files
+                </h3>
+                <div className="file-viewer-actions">
+                  <button
+                    className="view-toggle-btn"
+                    onClick={() => {
+                      if (onToggleView) {
+                        onToggleView();
+                      }
+                    }}
+                    title="Switch to Browser View"
+                  >
+                    <FontAwesomeIcon icon={faGlobe} />
+                    Browser View
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="file-viewer-content">
+              <URLFileViewer 
+                filesToOpen={filesToOpen}
+                instanceId="browser-embedded"
+              />
+            </div>
+          </div>
+        ) : (
+          /* Browser Controls Mode */
+          <>
+            {/* Server Controls Section */}
+            <div className="server-controls-section">
+              <div className="controls-header">
+                <h3>🚀 Server Controls</h3>
+                <div className="control-buttons">
+                  {/* Browser Selection Dropdown */}
+                  <div className="browser-selector">
                     <button
-                      className={`browser-option ${selectedBrowser === 'electron' ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedBrowser('electron');
-                        setShowBrowserDropdown(false);
-                      }}
+                      className="browser-select-btn"
+                      onClick={() => setShowBrowserDropdown(!showBrowserDropdown)}
+                      title="Select browser type"
                     >
-                      <FontAwesomeIcon icon={faGlobe} />
-                      <span>Electron</span>
+                      <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
+                      <span>{getBrowserName(selectedBrowser)}</span>
+                      <FontAwesomeIcon icon={faChevronDown} />
                     </button>
-                    <button
-                      className={`browser-option ${selectedBrowser === 'chrome' ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedBrowser('chrome');
-                        setShowBrowserDropdown(false);
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faCircle} />
-                      <span>Chrome</span>
-                    </button>
-                    <button
-                      className={`browser-option ${selectedBrowser === 'firefox' ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedBrowser('firefox');
-                        setShowBrowserDropdown(false);
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faSquareIcon} />
-                      <span>Firefox</span>
-                    </button>
-                    <button
-                      className={`browser-option ${selectedBrowser === 'safari' ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedBrowser('safari');
-                        setShowBrowserDropdown(false);
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faCircle} />
-                      <span>Safari</span>
-                    </button>
-                    <button
-                      className={`browser-option ${selectedBrowser === 'edge' ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedBrowser('edge');
-                        setShowBrowserDropdown(false);
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faSquareIcon} />
-                      <span>Edge</span>
-                    </button>
+                    {showBrowserDropdown && (
+                      <div className="browser-dropdown">
+                        <button
+                          className={`browser-option ${selectedBrowser === 'electron' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedBrowser('electron');
+                            setShowBrowserDropdown(false);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faGlobe} />
+                          <span>Electron</span>
+                        </button>
+                        <button
+                          className={`browser-option ${selectedBrowser === 'chrome' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedBrowser('chrome');
+                            setShowBrowserDropdown(false);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faCircle} />
+                          <span>Chrome</span>
+                        </button>
+                        <button
+                          className={`browser-option ${selectedBrowser === 'firefox' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedBrowser('firefox');
+                            setShowBrowserDropdown(false);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faSquareIcon} />
+                          <span>Firefox</span>
+                        </button>
+                        <button
+                          className={`browser-option ${selectedBrowser === 'safari' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedBrowser('safari');
+                            setShowBrowserDropdown(false);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faCircle} />
+                          <span>Safari</span>
+                        </button>
+                        <button
+                          className={`browser-option ${selectedBrowser === 'edge' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedBrowser('edge');
+                            setShowBrowserDropdown(false);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faSquareIcon} />
+                          <span>Edge</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                  
+                  <button
+                    className="browser-toggle-btn"
+                    onClick={() => {
+                      if (selectedBrowser === 'electron') {
+                        browserWindowId ? closeBrowserWindow() : createBrowserWindow();
+                      } else {
+                        externalBrowserProcess ? closeExternalBrowser() : launchExternalBrowser(selectedBrowser, url);
+                      }
+                    }}
+                    title={browserWindowId || externalBrowserProcess ? 'Close Browser & Restore Main Window' : `Open Browser (${halfScreenPosition} half-screen + resize main window)`}
+                  >
+                    {browserWindowId || externalBrowserProcess ? <><FontAwesomeIcon icon={faTimes} /> Close Browser</> : <><FontAwesomeIcon icon={faGlobe} /> Open Browser</>}
+                  </button>
+                  <button
+                    className="refresh-btn"
+                    onClick={refreshPage}
+                    title="Refresh browser"
+                    disabled={!browserWindowId && !externalBrowserProcess}
+                  >
+                    <FontAwesomeIcon icon={faRefresh} /> Refresh
+                  </button>
+                  <button
+                    className="external-btn"
+                    onClick={openInExternalBrowser}
+                    title="Open in system default browser"
+                  >
+                    <FontAwesomeIcon icon={faExternalLinkAlt} /> System
+                  </button>
+                  <button
+                    className="file-viewer-btn"
+                    onClick={() => {
+                      if (onToggleView) {
+                        onToggleView();
+                      }
+                    }}
+                    title="Switch to File Viewer"
+                  >
+                    <FontAwesomeIcon icon={faCode} />
+                    View Files
+                  </button>
+                </div>
               </div>
               
-                                        <button
-                            className="browser-toggle-btn"
-                            onClick={() => {
-                              if (selectedBrowser === 'electron') {
-                                browserWindowId ? closeBrowserWindow() : createBrowserWindow();
-                              } else {
-                                externalBrowserProcess ? closeExternalBrowser() : launchExternalBrowser(selectedBrowser, url);
-                              }
-                            }}
-                            title={browserWindowId || externalBrowserProcess ? 'Close Browser & Restore Main Window' : `Open Browser (${halfScreenPosition} half-screen + resize main window)`}
-                          >
-                            {browserWindowId || externalBrowserProcess ? <><FontAwesomeIcon icon={faTimes} /> Close Browser</> : <><FontAwesomeIcon icon={faGlobe} /> Open Browser</>}
-                          </button>
-              <button
-                className="refresh-btn"
-                onClick={refreshPage}
-                title="Refresh browser"
-                disabled={!browserWindowId && !externalBrowserProcess}
-              >
-                <FontAwesomeIcon icon={faRefresh} /> Refresh
-              </button>
-              <button
-                className="external-btn"
-                onClick={openInExternalBrowser}
-                title="Open in system default browser"
-              >
-                <FontAwesomeIcon icon={faExternalLinkAlt} /> System
-              </button>
+              {/* Compact LocalServer component */}
+              <div className="compact-server">
+                <LocalServer onStatusChange={handleServerStatusChange} />
+              </div>
             </div>
-          </div>
-          
-          {/* Compact LocalServer component */}
-          <div className="compact-server">
-            <LocalServer onStatusChange={handleServerStatusChange} />
-          </div>
-        </div>
 
-        {/* Browser Navigation Section */}
-        <div className="browser-nav-section">
-          <div className="browser-nav-bar">
-            <div className="nav-controls">
-              <button className="nav-btn" onClick={refreshPage} title="Refresh" disabled={!browserWindowId}>
-                <FontAwesomeIcon icon={faRefresh} />
-              </button>
+            {/* Browser Navigation Section */}
+            <div className="browser-nav-section">
+              <div className="browser-nav-bar">
+                <div className="nav-controls">
+                  <button className="nav-btn" onClick={refreshPage} title="Refresh" disabled={!browserWindowId}>
+                    <FontAwesomeIcon icon={faRefresh} />
+                  </button>
+                </div>
+                <form onSubmit={handleUrlSubmit} className="url-bar-form">
+                  <input
+                    type="text"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="url-input"
+                    placeholder="Enter URL..."
+                  />
+                  <button type="submit" className="go-btn">Go</button>
+                </form>
+              </div>
             </div>
-            <form onSubmit={handleUrlSubmit} className="url-bar-form">
-              <input
-                type="text"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="url-input"
-                placeholder="Enter URL..."
-              />
-              <button type="submit" className="go-btn">Go</button>
-            </form>
-          </div>
-        </div>
 
-        {/* Status Area */}
-        <div className="browser-status">
-          {isLoading && (
-            <div className="loading-status">
-              <FontAwesomeIcon icon={faGlobe} spin />
-              <span>Loading...</span>
+            {/* Status Area */}
+            <div className="browser-status">
+              {isLoading && (
+                <div className="loading-status">
+                  <FontAwesomeIcon icon={faGlobe} spin />
+                  <span>Loading...</span>
+                </div>
+              )}
+              {browserWindowId && (
+                <div className="browser-status-info">
+                  <span className="status-text">
+                    <FontAwesomeIcon icon={faGlobe} />
+                    Electron browser window is open
+                  </span>
+                  <span className="current-url">{currentUrl}</span>
+                </div>
+              )}
+              {externalBrowserProcess && (
+                <div className="browser-status-info">
+                  <span className="status-text">
+                    <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
+                    {getBrowserName(selectedBrowser)} browser is open (PID: {externalBrowserProcess.pid})
+                  </span>
+                  <span className="current-url">{currentUrl}</span>
+                </div>
+              )}
+              {!browserWindowId && !externalBrowserProcess && !isLoading && (
+                <div className="browser-status-info">
+                  <span className="status-text">Click "Open Browser" to launch {getBrowserName(selectedBrowser)} browser</span>
+                </div>
+              )}
             </div>
-          )}
-          {browserWindowId && (
-            <div className="browser-status-info">
-              <span className="status-text">
-                <FontAwesomeIcon icon={faGlobe} />
-                Electron browser window is open
-              </span>
-              <span className="current-url">{currentUrl}</span>
-            </div>
-          )}
-          {externalBrowserProcess && (
-            <div className="browser-status-info">
-              <span className="status-text">
-                <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
-                {getBrowserName(selectedBrowser)} browser is open (PID: {externalBrowserProcess.pid})
-              </span>
-              <span className="current-url">{currentUrl}</span>
-            </div>
-          )}
-          {!browserWindowId && !externalBrowserProcess && !isLoading && (
-            <div className="browser-status-info">
-              <span className="status-text">Click "Open Browser" to launch {getBrowserName(selectedBrowser)} browser</span>
-            </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     );
   }

@@ -133,10 +133,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     setRouteFiles(resolveFilesForUrl(url));
     PageRouteService.getInstance().setFilesToOpen(resolveFilesForUrl(url));
     // debounce AI requests per path
-    // if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    // debounceTimerRef.current = setTimeout(() => {
-    //   void suggestFilesWithAI(url);
-    // }, 400);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      void suggestFilesWithAI(url);
+    }, 400);
   };
 
   // Recursively gather project directory tree (relative paths), aligning with Codespace analysis
@@ -180,21 +180,21 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   };
 
   // Ask Gemini 1.5 to suggest files to open for editing based on URL path and project tree
-  // const suggestFilesWithAI = async (fullUrl: string) => {
-  //   if (aiRequestInFlightRef.current) return;
-  //   if (!currentProject?.path) return;
-  //   try {
-  //     aiRequestInFlightRef.current = true;
-  //     await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, fullUrl);
-  //     const mapping = PageRouteService.getInstance().getFilesForPath(currentProject.path, new URL(fullUrl).pathname || '/');
-  //     const abs = mapping.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
-  //     if (abs.length > 0) setRouteFiles(abs);
-  //   } catch {
-  //     // ignore
-  //   } finally {
-  //     aiRequestInFlightRef.current = false;
-  //   }
-  // };
+  const suggestFilesWithAI = async (fullUrl: string) => {
+    if (aiRequestInFlightRef.current) return;
+    if (!currentProject?.path) return;
+    try {
+      aiRequestInFlightRef.current = true;
+      await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, fullUrl);
+      const mapping = PageRouteService.getInstance().getFilesForPath(currentProject.path, new URL(fullUrl).pathname || '/');
+      const abs = mapping.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
+      if (abs.length > 0) setRouteFiles(abs);
+    } catch {
+      // ignore
+    } finally {
+      aiRequestInFlightRef.current = false;
+    }
+  };
 
   // Subscribe to global project context
   useEffect(() => {
@@ -311,14 +311,14 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           return;
         }
         // Request AI mapping once
-        // initialHomeRequestedRef.current = true;
-        // await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
-        // const rels = PageRouteService.getInstance().getFilesForPath(currentProject.path, path);
-        // const abs2 = rels.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
-        // if (abs2.length > 0) {
-        //   setRouteFiles(abs2);
-        //   lastPathRef.current = path;
-        // }
+        initialHomeRequestedRef.current = true;
+        await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
+        const rels = PageRouteService.getInstance().getFilesForPath(currentProject.path, path);
+        const abs2 = rels.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
+        if (abs2.length > 0) {
+          setRouteFiles(abs2);
+          lastPathRef.current = path;
+        }
       } catch {
         // ignore
       }
@@ -414,7 +414,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
                 console.log('[debug] calling PageRouteService for homepage (server already running for this project)');
               }
               const defaultUrl = currentUrl || 'http://localhost:8000/';
-              // await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
+              await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
             }
             return;
           } else {
@@ -476,7 +476,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
                 console.log('[debug] calling PageRouteService for homepage (after start)');
               }
               const defaultUrl = currentUrl || `http://localhost:${startResult.port || 8000}/`;
-              // await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
+              await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
             }
           } else {
             if (process.env.NODE_ENV === 'development') {
@@ -516,25 +516,21 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       {/* Right Panel - Code View/Website */}
       <div className="panel right-panel">
         <div className="panel-content">
-          {isEditing ? (
-            <URLFileViewer 
-              filesToOpen={routeFiles}
-              instanceId="dual-screen"
-            />
-          ) : (
-            <BrowserWindow
-              isVisible={serverEnsured}
-              onClose={() => {}}
-              initialUrl={currentUrl || 'http://localhost:8000'}
-              title="EGDesk Browser"
-              embedded={true}
-              onUrlChange={handleUrlChange}
-              serverStatus={serverStatus}
-              onServerStatusChange={handleServerStatusChange}
-              halfScreenPosition="right"
-              resizeMainWindow={true}
-            />
-          )}
+          <BrowserWindow
+            isVisible={serverEnsured}
+            onClose={() => {}}
+            initialUrl={currentUrl || 'http://localhost:8000'}
+            title="EGDesk Browser"
+            embedded={true}
+            onUrlChange={handleUrlChange}
+            serverStatus={serverStatus}
+            onServerStatusChange={handleServerStatusChange}
+            halfScreenPosition="right"
+            resizeMainWindow={true}
+            showFileViewer={isEditing}
+            filesToOpen={routeFiles}
+            onToggleView={toggleEditingMode}
+          />
         </div>
       </div>
     </div>
