@@ -161,7 +161,7 @@ class PageRouteService {
   }
 
   /**
-   * Call Gemini 1.5 with URL path and project tree to get files to open.
+   * Call OpenAI with URL path and project tree to get files to open.
    * Saves both mapping and current filesToOpen.
    */
   async requestFilesForUrl(projectRoot: string, fullUrl: string): Promise<void> {
@@ -176,10 +176,10 @@ class PageRouteService {
         console.log('[debug] creating project directory tree');
       }
       const tree = await this.gatherProjectTree(projectRoot, 5);
-      // Resolve Google/Gemini key and model
-      const googleKeys = aiKeysStore.getKeysByProvider('google');
-      const key = googleKeys[0];
-      const model = 'gemini-1.5-pro';
+      // Resolve OpenAI key and model
+      const openaiKeys = aiKeysStore.getKeysByProvider('openai');
+      const key = openaiKeys[0];
+      const model = 'gpt-4o-mini';
       if (!key) return;
 
       const systemPromptText = 'You are an expert code navigator for a local web project.';
@@ -200,7 +200,7 @@ class PageRouteService {
       ].join('\n');
 
       if (process.env.NODE_ENV === 'development') {
-        console.log('[debug] sending request to gemini with prompt:');
+        console.log('[debug] sending request to OpenAI with prompt:');
         console.log('--- system ---');
         console.log(systemPromptText);
         console.log('--- user ---');
@@ -243,7 +243,7 @@ class PageRouteService {
     }
   }
 
-  // Recursively gather project directory tree (relative paths), aligned with Codespace analysis
+  // Recursively gather project directory tree with proper hierarchy notation
   private async gatherProjectTree(root: string, maxDepth: number = 6, currentDepth: number = 0): Promise<string[]> {
     if (currentDepth > maxDepth) return [];
     const skipDirs = new Set([
@@ -257,23 +257,39 @@ class PageRouteService {
       '.rs', '.go', '.rb', '.swift', '.kt', '.scala', '.clj', '.hs', '.ml',
       '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.md', '.txt'
     ];
+    
     try {
       const result = await (window as any).electron?.fileSystem?.readDirectory?.(root);
       if (!result?.success || !Array.isArray(result.items)) return [];
+      
       const paths: string[] = [];
-      for (const item of result.items) {
+      const indent = '  '.repeat(currentDepth); // 2 spaces per depth level
+      
+      // Sort items: directories first, then files
+      const sortedItems = result.items.sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      for (const item of sortedItems) {
         if (!item?.name || !item?.path) continue;
+        
         if (item.isDirectory) {
           if (skipDirs.has(item.name) || item.isHidden) continue;
           const relDir = item.path.startsWith(root) ? item.path.substring(root.length).replace(/^\//, '') : item.path;
-          paths.push(relDir + '/');
+          // Add directory with proper indentation and tree notation
+          paths.push(`${indent}📁 ${item.name}/`);
+          
+          // Recursively get subdirectory contents
           const sub = await this.gatherProjectTree(item.path, maxDepth, currentDepth + 1);
           paths.push(...sub);
         } else if (item.isFile) {
           const lower = item.name.toLowerCase();
           if (codeExtensions.some(ext => lower.endsWith(ext))) {
-            const rel = item.path.startsWith(root) ? item.path.substring(root.length).replace(/^\//, '') : item.path;
-            paths.push(rel);
+            // Add file with proper indentation and file icon
+            const fileIcon = this.getFileIcon(lower);
+            paths.push(`${indent}${fileIcon} ${item.name}`);
           }
         }
       }
@@ -281,6 +297,20 @@ class PageRouteService {
     } catch {
       return [];
     }
+  }
+
+  // Helper method to get appropriate file icon based on extension
+  private getFileIcon(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const iconMap: { [key: string]: string } = {
+      'js': '📄', 'jsx': '⚛️', 'ts': '📘', 'tsx': '⚛️',
+      'php': '🐘', 'html': '🌐', 'css': '🎨', 'scss': '🎨', 'sass': '🎨',
+      'json': '📋', 'md': '📝', 'py': '🐍', 'java': '☕',
+      'cpp': '⚙️', 'c': '⚙️', 'cs': '🔷', 'go': '🐹',
+      'rs': '🦀', 'rb': '💎', 'xml': '📄', 'yaml': '📄', 'yml': '📄',
+      'vue': '💚', 'svelte': '🧡'
+    };
+    return iconMap[ext] || '📄';
   }
 
   private notify(): void {
