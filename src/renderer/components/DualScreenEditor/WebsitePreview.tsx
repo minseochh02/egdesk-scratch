@@ -1,14 +1,15 @@
 import React, { useRef, useState } from 'react';
 import LocalServer from '../LocalServer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGlobe, faEdit, faRefresh } from '@fortawesome/free-solid-svg-icons';
+import { faGlobe, faEdit, faRefresh, faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
 import './WebsitePreview.css';
 
 export const WebsitePreview: React.FC<{
   isEditing?: boolean;
   onToggleEditing?: () => void;
   onUrlChange?: (url: string) => void;
-}> = ({ isEditing = false, onToggleEditing, onUrlChange }) => {
+  onOpenBrowser?: () => void;
+}> = ({ isEditing = false, onToggleEditing, onUrlChange, onOpenBrowser }) => {
   const [showPreview, setShowPreview] = useState(true);
   const [iframeKey, setIframeKey] = useState(0); // Force iframe refresh
   const [previewUrl, setPreviewUrl] = useState<string>('http://localhost:3000');
@@ -75,6 +76,15 @@ export const WebsitePreview: React.FC<{
             >
               <FontAwesomeIcon icon={faRefresh} /> Refresh
             </button>
+            {onOpenBrowser && (
+              <button
+                className="browser-btn"
+                onClick={onOpenBrowser}
+                title="Open in browser window"
+              >
+                <FontAwesomeIcon icon={faExternalLinkAlt} /> Browser
+              </button>
+            )}
           </div>
         </div>
         
@@ -131,6 +141,15 @@ export const WebsitePreview: React.FC<{
                 >
                   <FontAwesomeIcon icon={faRefresh} />
                 </button>
+                {onOpenBrowser && (
+                  <button 
+                    className="browser-modal-btn"
+                    onClick={onOpenBrowser}
+                    title="Open in browser window"
+                  >
+                    <FontAwesomeIcon icon={faExternalLinkAlt} />
+                  </button>
+                )}
                 <button 
                   className="close-modal-btn"
                   onClick={togglePreview}

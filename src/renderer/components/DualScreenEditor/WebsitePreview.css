@@ -72,6 +72,21 @@
   background-color: #005a9e;
 }
 
+.browser-btn {
+  padding: 0.5rem 1rem;
+  background-color: #17a2b8;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.browser-btn:hover {
+  background-color: #138496;
+}
+
 .editor-toggle-btn {
   padding: 0.5rem 1rem;
   background-color: #6f42c1;
@@ -284,6 +299,22 @@
 
 .refresh-modal-btn:hover {
   background-color: #005a9e;
+  transform: scale(1.05);
+}
+
+.browser-modal-btn {
+  padding: 0.5rem;
+  background-color: #17a2b8;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.browser-modal-btn:hover {
+  background-color: #138496;
   transform: scale(1.05);
 }
 

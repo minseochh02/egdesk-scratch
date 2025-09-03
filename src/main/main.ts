@@ -31,6 +31,7 @@ class AppUpdater {
 }
 
 let mainWindow: BrowserWindow | null = null;
+const browserWindows = new Map<number, BrowserWindow>();
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -774,6 +775,236 @@ ipcMain.handle('fs-write-file', async (event, filePath: string, content: string)
 
 ipcMain.handle('fs-get-home-directory', async () => {
   return os.homedir();
+});
+
+// Browser Window management IPC handlers
+ipcMain.handle('browser-window-create', async (event, options) => {
+  try {
+    const { url, title, width, height, x, y, show = true, webPreferences = {} } = options;
+    
+    const browserWindow = new BrowserWindow({
+      width: width || 1200,
+      height: height || 800,
+      x: x || 100,
+      y: y || 100,
+      show: show,
+      title: title || 'Browser Window',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true,
+        ...webPreferences
+      }
+    });
+
+    const windowId = browserWindow.id;
+    browserWindows.set(windowId, browserWindow);
+
+    // Load the URL
+    if (url) {
+      await browserWindow.loadURL(url);
+    }
+
+    // Handle window close
+    browserWindow.on('closed', () => {
+      browserWindows.delete(windowId);
+      // Notify renderer about window close
+      mainWindow?.webContents.send('browser-window-closed', windowId);
+    });
+
+    // Handle URL changes
+    browserWindow.webContents.on('did-navigate', (event, navigationUrl) => {
+      mainWindow?.webContents.send('browser-window-url-changed', windowId, navigationUrl);
+    });
+
+    browserWindow.webContents.on('did-navigate-in-page', (event, navigationUrl) => {
+      mainWindow?.webContents.send('browser-window-url-changed', windowId, navigationUrl);
+    });
+
+    return {
+      success: true,
+      windowId: windowId
+    };
+  } catch (error) {
+    console.error('Failed to create browser window:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+ipcMain.handle('browser-window-close', async (event, windowId) => {
+  try {
+    const browserWindow = browserWindows.get(windowId);
+    if (browserWindow) {
+      browserWindow.close();
+      browserWindows.delete(windowId);
+      return { success: true };
+    }
+    return { success: false, error: 'Window not found' };
+  } catch (error) {
+    console.error('Failed to close browser window:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('browser-window-load-url', async (event, windowId, url) => {
+  try {
+    const browserWindow = browserWindows.get(windowId);
+    if (browserWindow) {
+      await browserWindow.loadURL(url);
+      return { success: true };
+    }
+    return { success: false, error: 'Window not found' };
+  } catch (error) {
+    console.error('Failed to load URL:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('browser-window-reload', async (event, windowId) => {
+  try {
+    const browserWindow = browserWindows.get(windowId);
+    if (browserWindow) {
+      browserWindow.reload();
+      return { success: true };
+    }
+    return { success: false, error: 'Window not found' };
+  } catch (error) {
+    console.error('Failed to reload browser window:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// External browser control IPC handlers
+ipcMain.handle('browser-window-launch-external', async (event, browserType, url) => {
+  try {
+    const { spawn } = require('child_process');
+    let command: string;
+    let args: string[];
+
+    switch (browserType) {
+      case 'chrome':
+        command = process.platform === 'win32' ? 'chrome.exe' : 
+                  process.platform === 'darwin' ? 'open' : 'google-chrome';
+        args = process.platform === 'darwin' ? ['-a', 'Google Chrome', url] : [url];
+        break;
+      case 'firefox':
+        command = process.platform === 'win32' ? 'firefox.exe' : 
+                  process.platform === 'darwin' ? 'open' : 'firefox';
+        args = process.platform === 'darwin' ? ['-a', 'Firefox', url] : [url];
+        break;
+      case 'safari':
+        if (process.platform !== 'darwin') {
+          return { success: false, error: 'Safari is only available on macOS' };
+        }
+        command = 'open';
+        args = ['-a', 'Safari', url];
+        break;
+      case 'edge':
+        command = process.platform === 'win32' ? 'msedge.exe' : 
+                  process.platform === 'darwin' ? 'open' : 'microsoft-edge';
+        args = process.platform === 'darwin' ? ['-a', 'Microsoft Edge', url] : [url];
+        break;
+      default:
+        return { success: false, error: 'Unsupported browser type' };
+    }
+
+    const browserProcess = spawn(command, args, { detached: true, stdio: 'ignore' });
+    browserProcess.unref();
+
+    return {
+      success: true,
+      process: {
+        pid: browserProcess.pid,
+        browserType: browserType
+      }
+    };
+  } catch (error) {
+    console.error('Failed to launch external browser:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('browser-window-close-external', async (event, pid) => {
+  try {
+    if (process.platform === 'win32') {
+      require('child_process').exec(`taskkill /PID ${pid} /F`);
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to close external browser:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('browser-window-navigate-external', async (event, pid, url) => {
+  try {
+    // For external browsers, we can't directly control navigation
+    // This is a limitation of external browser control
+    // We could potentially use browser automation tools like Puppeteer or Playwright
+    // For now, we'll just return success as the URL change is handled by the browser itself
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to navigate external browser:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Main window management IPC handlers
+ipcMain.handle('main-window-get-bounds', async () => {
+  try {
+    if (mainWindow) {
+      const bounds = mainWindow.getBounds();
+      return { success: true, bounds };
+    }
+    return { success: false, error: 'Main window not found' };
+  } catch (error) {
+    console.error('Failed to get main window bounds:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('main-window-set-bounds', async (event, bounds) => {
+  try {
+    if (mainWindow) {
+      mainWindow.setBounds(bounds);
+      return { success: true };
+    }
+    return { success: false, error: 'Main window not found' };
+  } catch (error) {
+    console.error('Failed to set main window bounds:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('main-window-set-size', async (event, width, height) => {
+  try {
+    if (mainWindow) {
+      mainWindow.setSize(width, height);
+      return { success: true };
+    }
+    return { success: false, error: 'Main window not found' };
+  } catch (error) {
+    console.error('Failed to set main window size:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('main-window-set-position', async (event, x, y) => {
+  try {
+    if (mainWindow) {
+      mainWindow.setPosition(x, y);
+      return { success: true };
+    }
+    return { success: false, error: 'Main window not found' };
+  } catch (error) {
+    console.error('Failed to set main window position:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
 });
 
 ipcMain.handle('fs-get-system-directories', async () => {

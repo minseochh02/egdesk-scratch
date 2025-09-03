@@ -227,6 +227,39 @@ const electronHandler = {
     getServerStatus: () => ipcRenderer.invoke('wp-server-status'),
     pickFolder: () => ipcRenderer.invoke('wp-server-pick-folder'),
   } as WordPressServerAPI,
+  browserWindow: {
+    createWindow: (options: any) => ipcRenderer.invoke('browser-window-create', options),
+    closeWindow: (windowId: number) => ipcRenderer.invoke('browser-window-close', windowId),
+    loadURL: (windowId: number, url: string) => ipcRenderer.invoke('browser-window-load-url', windowId, url),
+    reload: (windowId: number) => ipcRenderer.invoke('browser-window-reload', windowId),
+    launchExternalBrowser: (browserType: string, url: string) => ipcRenderer.invoke('browser-window-launch-external', browserType, url),
+    closeExternalBrowser: (pid: number) => ipcRenderer.invoke('browser-window-close-external', pid),
+    navigateExternalBrowser: (pid: number, url: string) => ipcRenderer.invoke('browser-window-navigate-external', pid, url),
+    onUrlChanged: (windowId: number, callback: (url: string) => void) => {
+      const listener = (_event: IpcRendererEvent, id: number, url: string) => {
+        if (id === windowId) {
+          callback(url);
+        }
+      };
+      ipcRenderer.on('browser-window-url-changed', listener);
+      return () => ipcRenderer.removeListener('browser-window-url-changed', listener);
+    },
+    onClosed: (windowId: number, callback: () => void) => {
+      const listener = (_event: IpcRendererEvent, id: number) => {
+        if (id === windowId) {
+          callback();
+        }
+      };
+      ipcRenderer.on('browser-window-closed', listener);
+      return () => ipcRenderer.removeListener('browser-window-closed', listener);
+    },
+  },
+  mainWindow: {
+    getBounds: () => ipcRenderer.invoke('main-window-get-bounds'),
+    setBounds: (bounds: any) => ipcRenderer.invoke('main-window-set-bounds', bounds),
+    setSize: (width: number, height: number) => ipcRenderer.invoke('main-window-set-size', width, height),
+    setPosition: (x: number, y: number) => ipcRenderer.invoke('main-window-set-position', x, y),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
