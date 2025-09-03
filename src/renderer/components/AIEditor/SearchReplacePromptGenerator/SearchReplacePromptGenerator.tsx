@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSearch, faRefresh, faCheck, faCopy, faClock, faRocket, faClipboard, faTimes, faLightbulb } from '@fortawesome/free-solid-svg-icons';
 import { SearchReplacePromptService, SearchReplacePromptRequest, SearchReplacePrompt } from '../services/searchReplacePromptService';
 import { AIKey } from '../../AIKeysManager/types';
 import './SearchReplacePromptGenerator.css';
@@ -90,7 +92,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
   return (
     <div className="search-replace-prompt-generator">
       <div className="generator-header">
-        <h3>🔍 Search & Replace Prompt Generator</h3>
+        <h3><FontAwesomeIcon icon={faSearch} /> Search & Replace Prompt Generator</h3>
         <p>Generate precise search and replace operations for code files</p>
       </div>
 
@@ -159,7 +161,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
             disabled={!aiKey || !model || !userRequest.trim() || isGenerating}
             className="generate-btn"
           >
-            {isGenerating ? '⏳ Generating...' : '🚀 Generate Prompts'}
+            {isGenerating ? <><FontAwesomeIcon icon={faClock} /> Generating...</> : <><FontAwesomeIcon icon={faRocket} /> Generate Prompts</>}
           </button>
           
           <button
@@ -174,13 +176,13 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
 
       {error && (
         <div className="error-message">
-          <p>❌ {error}</p>
+          <p><FontAwesomeIcon icon={faTimes} /> {error}</p>
         </div>
       )}
 
       {generatedPrompts.length > 0 && (
         <div className="generated-prompts">
-          <h4>✅ Generated Search & Replace Prompts</h4>
+          <h4><FontAwesomeIcon icon={faCheck} /> Generated Search & Replace Prompts</h4>
           
           {generatedPrompts.map((prompt, index) => (
             <div key={prompt.id} className="prompt-card">
@@ -192,12 +194,12 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
 
               <div className="prompt-content">
                 <div className="search-section">
-                  <h5>🔍 Search for:</h5>
+                  <h5><FontAwesomeIcon icon={faSearch} /> Search for:</h5>
                   <pre className="search-text">{prompt.searchText}</pre>
                 </div>
 
                 <div className="replace-section">
-                  <h5>🔄 Replace with:</h5>
+                  <h5><FontAwesomeIcon icon={faRefresh} /> Replace with:</h5>
                   <pre className="replace-text">{prompt.replaceText}</pre>
                 </div>
 
@@ -220,7 +222,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
                   className="copy-prompt-btn"
                   title="Copy formatted prompt"
                 >
-                  📋 Copy Prompt
+                  <FontAwesomeIcon icon={faClipboard} /> Copy Prompt
                 </button>
                 
                 <button
@@ -228,7 +230,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
                   className="copy-search-replace-btn"
                   title="Copy search/replace text only"
                 >
-                  🔍 Copy Search/Replace
+                  <FontAwesomeIcon icon={faCopy} /> Copy Search/Replace
                 </button>
               </div>
             </div>
@@ -237,7 +239,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
       )}
 
       <div className="usage-tips">
-        <h4>💡 Usage Tips</h4>
+        <h4><FontAwesomeIcon icon={faLightbulb} /> Usage Tips</h4>
         <ul>
           <li><strong>Exact Matching:</strong> The search text must be an EXACT match of existing code</li>
           <li><strong>Unique Context:</strong> Include enough surrounding context to make the search unique</li>

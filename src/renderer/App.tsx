@@ -8,6 +8,8 @@ import { ChatInterface } from './components/ChatInterface';
 import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFolder, faLink, faFile, faCode, faStar, faDesktop, faDownload, faImage, faMusic, faVideo, faRocket, faGlobe, faServer, faRobot, faSearch, faRefresh, faHome, faTimes, faComments } from '@fortawesome/free-solid-svg-icons';
 import './App.css';
 
 interface FileSystemItem {
@@ -19,6 +21,8 @@ interface FileSystemItem {
   isHidden: boolean;
   isSymlink: boolean;
 }
+
+import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 
 interface SystemDirectory {
   name: string;
@@ -196,30 +200,43 @@ function FinderUI() {
     await loadDirectory(homeDir);
   }, [loadDirectory]);
 
+  const getSystemDirectoryIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'desktop': return faDesktop;
+      case 'folder': return faFolder;
+      case 'download': return faDownload;
+      case 'image': return faImage;
+      case 'music': return faMusic;
+      case 'video': return faVideo;
+      case 'rocket': return faRocket;
+      default: return faFolder;
+    }
+  };
+
   const getFileIcon = (item: FileSystemItem) => {
-    if (item.isDirectory) return '📁';
-    if (item.isSymlink) return '🔗';
+    if (item.isDirectory) return faFolder;
+    if (item.isSymlink) return faLink;
     
     const ext = item.name.split('.').pop()?.toLowerCase();
     switch (ext) {
-      case 'pdf': return '📄';
+      case 'pdf': return faFile;
       case 'jpg':
       case 'jpeg':
       case 'png':
-      case 'gif': return '🖼️';
+      case 'gif': return faFile;
       case 'js':
       case 'ts':
       case 'jsx':
-      case 'tsx': return '💻';
-      case 'md': return '📝';
-      case 'txt': return '📄';
+      case 'tsx': return faCode;
+      case 'md': return faFile;
+      case 'txt': return faFile;
       case 'mp4':
       case 'avi':
-      case 'mov': return '🎬';
+      case 'mov': return faFile;
       case 'mp3':
       case 'wav':
-      case 'flac': return '🎵';
-      default: return '📄';
+      case 'flac': return faFile;
+      default: return faFile;
     }
   };
 
@@ -278,10 +295,10 @@ function FinderUI() {
             ←
           </button>
           <button className="toolbar-btn" onClick={navigateToHome}>
-            🏠
+            <FontAwesomeIcon icon={faHome} />
           </button>
           <button className="toolbar-btn" onClick={() => loadDirectory(currentPath)} title="새로고침">
-            🔄
+            <FontAwesomeIcon icon={faRefresh} />
           </button>
           <div className="path-breadcrumb">
             {pathParts.map((part, index) => (
@@ -316,7 +333,7 @@ function FinderUI() {
         <div className="finder-sidebar">
           <div className="sidebar-section">
             <div className="sidebar-section-header">
-              <span className="sidebar-icon">⭐</span>
+              <span className="sidebar-icon"><FontAwesomeIcon icon={faStar} /></span>
               <span className="sidebar-title">즐겨찾기</span>
             </div>
             <ul className="sidebar-items">
@@ -326,7 +343,7 @@ function FinderUI() {
                   className="sidebar-item"
                   onClick={() => loadDirectory(dir.path)}
                 >
-                  <span className="sidebar-icon">{dir.icon}</span>
+                  <span className="sidebar-icon"><FontAwesomeIcon icon={getSystemDirectoryIcon(dir.icon)} /></span>
                   <span>{dir.name}</span>
                 </li>
               ))}
@@ -361,11 +378,11 @@ function FinderUI() {
               </div>
             ) : error ? (
               <div className="error-indicator">
-                <p>❌ {error}</p>
+                <p><FontAwesomeIcon icon={faTimes} /> {error}</p>
               </div>
             ) : fileItems.length === 0 ? (
               <div className="empty-indicator">
-                <p>📁 이 폴더는 비어있습니다</p>
+                <p><FontAwesomeIcon icon={faFolder} /> 이 폴더는 비어있습니다</p>
               </div>
             ) : (
               fileItems.map((item, index) => (
@@ -375,7 +392,7 @@ function FinderUI() {
                   onClick={(e) => handleFileSelect(item.path, e.metaKey || e.ctrlKey)}
                   onDoubleClick={() => handleFileDoubleClick(item)}
                 >
-                  <div className="file-icon">{getFileIcon(item)}</div>
+                  <div className="file-icon"><FontAwesomeIcon icon={getFileIcon(item)} /></div>
                   <div className="file-name">{item.name}</div>
                   {viewMode === 'list' && (
                     <>
@@ -411,49 +428,49 @@ function NavigationBar() {
           to="/" 
           className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
         >
-          📁 파인더
+          <FontAwesomeIcon icon={faFolder} /> 파인더
         </Link>
         <Link 
           to="/wordpress" 
           className={`nav-link ${location.pathname === '/wordpress' ? 'active' : ''}`}
         >
-          🌐 WordPress
+          <FontAwesomeIcon icon={faGlobe} /> WordPress
         </Link>
         <Link 
           to="/local-server" 
           className={`nav-link ${location.pathname === '/local-server' ? 'active' : ''}`}
         >
-          🖥️ Local Server
+          <FontAwesomeIcon icon={faServer} /> Local Server
         </Link>
         <Link 
           to="/code-editor" 
           className={`nav-link ${location.pathname === '/code-editor' ? 'active' : ''}`}
         >
-          💻 Code Editor
+          <FontAwesomeIcon icon={faCode} /> Code Editor
         </Link>
         <Link 
           to="/ai-keys" 
           className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
         >
-          🤖 AI Keys
+          <FontAwesomeIcon icon={faRobot} /> AI Keys
         </Link>
         <Link 
           to="/chat" 
           className={`nav-link ${location.pathname === '/chat' ? 'active' : ''}`}
         >
-          💬 AI Chat
+          <FontAwesomeIcon icon={faComments} /> AI Chat
         </Link>
         <Link 
           to="/dual-screen" 
           className={`nav-link ${location.pathname === '/dual-screen' ? 'active' : ''}`}
         >
-          🖥️ Dual Screen
+          <FontAwesomeIcon icon={faServer} /> Dual Screen
         </Link>
         <Link 
           to="/codespace-analysis" 
           className={`nav-link ${location.pathname === '/codespace-analysis' ? 'active' : ''}`}
         >
-          🔍 Codespace Analysis
+          <FontAwesomeIcon icon={faSearch} /> Codespace Analysis
         </Link>
 
       </nav>

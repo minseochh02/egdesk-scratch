@@ -67,10 +67,13 @@ export interface ModelInfo {
   };
 }
 
+import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import { faRobot, faBrain, faSearch } from '@fortawesome/free-solid-svg-icons';
+
 export interface ChatProvider {
   id: string;
   name: string;
-  icon: string;
+  icon: IconDefinition;
   color: string;
   models: ModelInfo[];
   supportsStreaming: boolean;
@@ -82,7 +85,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
   {
     id: 'openai',
     name: 'OpenAI',
-    icon: '🤖',
+    icon: faRobot,
     color: '#10a37f',
     supportsStreaming: true,
     supportsImages: true,
@@ -119,7 +122,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
   {
     id: 'anthropic',
     name: 'Anthropic',
-    icon: '🧠',
+    icon: faBrain,
     color: '#d97706',
     supportsStreaming: true,
     supportsImages: false,
@@ -156,7 +159,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
   {
     id: 'google',
     name: 'Google AI',
-    icon: '🔍',
+    icon: faSearch,
     color: '#4285f4',
     supportsStreaming: true,
     supportsImages: false,

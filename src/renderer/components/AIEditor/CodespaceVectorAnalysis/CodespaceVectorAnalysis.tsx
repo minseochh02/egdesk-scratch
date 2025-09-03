@@ -6,6 +6,8 @@ import { AISemanticKeywordService, SemanticKeyword } from '../services/aiSemanti
 import { CHAT_PROVIDERS } from '../../ChatInterface/types';
 import { AIKey } from '../../AIKeysManager/types';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSearch, faRobot, faCheck, faTimes, faRefresh, faFolder, faFile, faEdit, faCog, faStar, faFlask, faClock, faSave, faKey, faPlay, faStop, faBuilding, faExclamationTriangle, faBug } from '@fortawesome/free-solid-svg-icons';
 import './CodespaceVectorAnalysis.css';
 
 // Helper function to get full project directory structure (no compression)
@@ -392,13 +394,13 @@ export const CodespaceVectorAnalysis: React.FC = () => {
     }
   };
 
-  const getCategoryIcon = (category: string): string => {
+  const getCategoryIcon = (category: string) => {
     switch (category) {
-      case 'primary': return '⭐';
-      case 'secondary': return '🔹';
-      case 'technical': return '⚙️';
-      case 'synonym': return '🔄';
-      default: return '📝';
+      case 'primary': return faStar;
+      case 'secondary': return faFile;
+      case 'technical': return faCog;
+      case 'synonym': return faRefresh;
+      default: return faEdit;
     }
   };
 
@@ -519,7 +521,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
   if (isLoading) {
     return (
       <div className="codespace-analysis">
-        <h2>🔍 Codespace Analysis</h2>
+        <h2><FontAwesomeIcon icon={faSearch} /> Codespace Analysis</h2>
         <div className="loading">Loading...</div>
       </div>
     );
@@ -528,10 +530,10 @@ export const CodespaceVectorAnalysis: React.FC = () => {
   if (error) {
     return (
       <div className="codespace-analysis">
-        <h2>🔍 Codespace Analysis</h2>
+        <h2><FontAwesomeIcon icon={faSearch} /> Codespace Analysis</h2>
         <div className="error">
-          <p>❌ {error}</p>
-          <button onClick={fetchContext} className="retry-btn">🔄 Retry</button>
+          <p><FontAwesomeIcon icon={faTimes} /> {error}</p>
+          <button onClick={fetchContext} className="retry-btn"><FontAwesomeIcon icon={faRefresh} /> Retry</button>
         </div>
       </div>
     );
@@ -540,7 +542,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
   if (!analysisData) {
     return (
       <div className="codespace-analysis">
-        <h2>🔍 Codespace Analysis</h2>
+        <h2><FontAwesomeIcon icon={faSearch} /> Codespace Analysis</h2>
         <div className="no-data">No data available</div>
       </div>
     );
@@ -551,7 +553,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {/* AI Model Configuration Panel */}
       <div className="ai-config-panel">
         <div className="config-header">
-          <h3>🤖 AI Model Configuration</h3>
+          <h3><FontAwesomeIcon icon={faRobot} /> AI Model Configuration</h3>
           <p>Configure AI settings for enhanced codespace analysis and keyword generation</p>
         </div>
         
@@ -570,7 +572,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
               <option value="">Select provider...</option>
               {CHAT_PROVIDERS.map(provider => (
                 <option key={provider.id} value={provider.id}>
-                  {provider.icon} {provider.name}
+                  {provider.name}
                 </option>
               ))}
             </select>
@@ -622,11 +624,11 @@ export const CodespaceVectorAnalysis: React.FC = () => {
         <div className="config-status">
           {selectedKey && selectedModel ? (
             <div className="status-success">
-              ✅ Configured: {getProviderInfo(selectedProvider)?.icon} {selectedProvider} • {selectedModel}
+              <FontAwesomeIcon icon={faCheck} /> Configured: {getProviderInfo(selectedProvider)?.name} • {selectedModel}
             </div>
           ) : (
             <div className="status-warning">
-              ⚠️ Please configure AI provider, model, and API key for enhanced features
+              <FontAwesomeIcon icon={faExclamationTriangle} /> Please configure AI provider, model, and API key for enhanced features
             </div>
           )}
         </div>
@@ -641,24 +643,24 @@ export const CodespaceVectorAnalysis: React.FC = () => {
               <pre className="directory-tree-pre">{generatedDirectoryTree}</pre>
             </div>
             <div className="directory-tree-info">
-              <span className="info-badge">📁 Complete File Listing</span>
+              <span className="info-badge"><FontAwesomeIcon icon={faFolder} /> Complete File Listing</span>
               <span className="info-text">Shows all files and directories for AI path generation</span>
             </div>
           </>
         ) : (
           <div className="directory-tree-loading">
-            <span className="loading-spinner">⏳</span>
+            <span className="loading-spinner"><FontAwesomeIcon icon={faClock} /></span>
             Generating project structure...
           </div>
         )}
       </div>
 
-      <h2>🔍 Codespace Analysis</h2>
+      <h2><FontAwesomeIcon icon={faSearch} /> Codespace Analysis</h2>
       
       {/* Current Project Display */}
       {currentProject ? (
         <div className="current-project">
-          <h3>📁 Current Project</h3>
+          <h3><FontAwesomeIcon icon={faFolder} /> Current Project</h3>
           <div className="project-info">
             <div className="project-name">{currentProject.name}</div>
             <div className="project-path">{currentProject.path}</div>
@@ -667,17 +669,17 @@ export const CodespaceVectorAnalysis: React.FC = () => {
         </div>
       ) : (
         <div className="no-project">
-          <p>⚠️ No active project selected. Please select a project from another tab first.</p>
+          <p><FontAwesomeIcon icon={faExclamationTriangle} /> No active project selected. Please select a project from another tab first.</p>
         </div>
       )}
       
       <div className="summary-stats">
         <div className="stat-card">
-          <h3>📁 Total Files</h3>
+          <h3><FontAwesomeIcon icon={faFolder} /> Total Files</h3>
           <p className="stat-value">{analysisData.totalFiles}</p>
         </div>
         <div className="stat-card">
-          <h3>📝 Total Lines</h3>
+          <h3><FontAwesomeIcon icon={faEdit} /> Total Lines</h3>
           <p className="stat-value">{analysisData.totalLines}</p>
         </div>
       </div>
@@ -685,7 +687,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {/* Cache Status Display */}
       {cacheStatus && cacheStatus.hasCache && (
         <div className="cache-status">
-          <span className="cache-indicator">💾</span>
+          <span className="cache-indicator"><FontAwesomeIcon icon={faSave} /></span>
           <span className="cache-info">
             Using cached analysis ({cacheStatus.cacheAge}min old, {cacheStatus.totalFiles} files)
           </span>
@@ -698,7 +700,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
             }}
             title="Force refresh codespace analysis"
           >
-            🔄
+            <FontAwesomeIcon icon={faRefresh} />
           </button>
           <button 
             className="test-search-btn"
@@ -742,7 +744,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
             }}
             title="Test AI search with current instruction"
           >
-            🧪 Test AI Search
+            <FontAwesomeIcon icon={faFlask} /> Test AI Search
           </button>
           <button 
             className="test-ai-search-btn"
@@ -753,7 +755,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
               : "Generate AI-powered keywords for enhanced search - shows keywords in UI for review before searching"
             }
           >
-            🤖 Generate Enhanced Keywords
+            <FontAwesomeIcon icon={faRobot} /> Generate Enhanced Keywords
           </button>
         </div>
       )}
@@ -780,7 +782,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
             : "Generate AI-powered file path keywords using project structure for better file discovery"
           }
         >
-          {isGeneratingKeywords ? '🔄 Generating...' : '🔑 Generate File Path Keywords'}
+          {isGeneratingKeywords ? <><FontAwesomeIcon icon={faClock} /> Generating...</> : <><FontAwesomeIcon icon={faKey} /> Generate File Path Keywords</>}
         </button>
       </div>
 
@@ -788,9 +790,9 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {generatedKeywords.length > 0 && (
         <div className="generated-keywords-section">
           <div className="keywords-header">
-            <h4>🔑 AI-Generated File Path Keywords</h4>
+            <h4><FontAwesomeIcon icon={faKey} /> AI-Generated File Path Keywords</h4>
             <div className="keywords-subtitle">
-              <span className="project-context-badge">🏗️ Project Structure Aware</span>
+              <span className="project-context-badge"><FontAwesomeIcon icon={faBuilding} /> Project Structure Aware</span>
               <span className="context-info">Generated using {currentProject?.name || 'project'} structure and {analysisData?.totalFiles || 0} files</span>
             </div>
             <button
@@ -798,7 +800,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
               className="use-keywords-btn"
               title="Use these keywords for enhanced search and file access"
             >
-              🔍 Use for Search
+              <FontAwesomeIcon icon={faSearch} /> Use for Search
             </button>
           </div>
           
@@ -809,7 +811,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
               <div key={index} className="keyword-card">
                 <div className="keyword-header">
                   <span className="category-icon" style={{ color: getCategoryColor(keyword.category) }}>
-                    {getCategoryIcon(keyword.category)}
+                    <FontAwesomeIcon icon={getCategoryIcon(keyword.category)} />
                   </span>
                   <span className="keyword-text">{keyword.keyword}</span>
                   <span className="category-badge" style={{ backgroundColor: getCategoryColor(keyword.category) }}>
@@ -849,7 +851,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {/* Search Results Display */}
       {isSearching && (
         <div className="search-loading">
-          <span className="loading-spinner">⏳</span>
+          <span className="loading-spinner"><FontAwesomeIcon icon={faClock} /></span>
           Searching...
         </div>
       )}
@@ -857,13 +859,13 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {searchResults.length > 0 && (
         <div className="search-results">
           <h3>
-            {searchType === 'semantic' ? '🧪 Semantic Search Results' : '🤖 AI Search Results (Enhanced)'}
+            {searchType === 'semantic' ? <><FontAwesomeIcon icon={faFlask} /> Semantic Search Results</> : <><FontAwesomeIcon icon={faRobot} /> AI Search Results (Enhanced)</>}
             <span className="results-count"> ({searchResults.length} files)</span>
           </h3>
           
           {searchType === 'ai' && (
             <div className="search-info">
-              <p>🔍 Searched {generatedKeywords.length} keywords individually and ranked by relevance</p>
+              <p><FontAwesomeIcon icon={faSearch} /> Searched {generatedKeywords.length} keywords individually and ranked by relevance</p>
             </div>
           )}
 
@@ -927,7 +929,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       {/* Depth Analysis Display */}
       {showDepthAnalysis && depthAnalysis.length > 0 && (
         <div className="depth-analysis">
-          <h3>🔍 VOID Alignment: Depth Analysis</h3>
+          <h3><FontAwesomeIcon icon={faSearch} /> VOID Alignment: Depth Analysis</h3>
           <p className="analysis-description">
             This query was detected as a landing page query. Files are scored based on their directory depth:
             <br />
@@ -936,7 +938,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
           
           {/* Debug: Show all files in codespace */}
           <div className="debug-section">
-            <h4>🔍 Debug: All Files in Codespace</h4>
+            <h4><FontAwesomeIcon icon={faSearch} /> Debug: All Files in Codespace</h4>
             <p>Looking for main index.php files...</p>
             <div className="debug-files">
               {analysisData.files && analysisData.files
@@ -949,7 +951,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
                 ))}
             </div>
             
-            <h4>🔍 Debug: All Files (First 20)</h4>
+            <h4><FontAwesomeIcon icon={faSearch} /> Debug: All Files (First 20)</h4>
             <p>Total files analyzed: {analysisData.files?.length || 0}</p>
             <div className="debug-files">
               {analysisData.files && analysisData.files
@@ -961,11 +963,11 @@ export const CodespaceVectorAnalysis: React.FC = () => {
                 ))}
             </div>
             
-            <h4>🔍 Debug: Workspace Path</h4>
+            <h4><FontAwesomeIcon icon={faSearch} /> Debug: Workspace Path</h4>
             <p>Current Project Path: {currentProject?.path}</p>
             <p>Expected main index.php should be at: {currentProject?.path}/www/index.php</p>
             
-            <h4>🔍 Debug: Manual File Check</h4>
+            <h4><FontAwesomeIcon icon={faSearch} /> Debug: Manual File Check</h4>
             <button 
               className="debug-check-btn"
               onClick={async () => {
@@ -984,7 +986,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
                 }
               }}
             >
-              🔍 Check if main www/index.php exists
+              <FontAwesomeIcon icon={faSearch} /> Check if main www/index.php exists
             </button>
             
             <button 
@@ -1005,7 +1007,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
                 }
               }}
             >
-              🔍 Test Manual Search
+              <FontAwesomeIcon icon={faSearch} /> Test Manual Search
             </button>
             
 
@@ -1044,7 +1046,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
 
       {analysisData.files && analysisData.files.length > 0 && (
         <div className="files-section">
-          <h3>📁 Files</h3>
+          <h3><FontAwesomeIcon icon={faFolder} /> Files</h3>
           <div className="files-list">
             {analysisData.files.map((file: any, index: number) => (
               <div key={index} className="file-item">
@@ -1061,7 +1063,7 @@ export const CodespaceVectorAnalysis: React.FC = () => {
       )}
 
       <div className="debug-section">
-        <h4>🐛 Raw Data</h4>
+        <h4><FontAwesomeIcon icon={faBug} /> Raw Data</h4>
         <details>
           <summary>Click to see raw data</summary>
           <pre className="debug-data">

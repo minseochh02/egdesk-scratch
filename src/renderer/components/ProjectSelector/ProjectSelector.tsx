@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ProjectContextService, { ProjectInfo } from '../../services/projectContextService';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFolder, faFolderOpen, faCode, faJava, faPython, faGlobe, faCog, faPlus, faTimes, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import './ProjectSelector.css';
 
 interface ProjectSelectorProps {
@@ -58,15 +60,15 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
-  const getProjectIcon = (project: ProjectInfo): string => {
+  const getProjectIcon = (project: ProjectInfo) => {
     switch (project.type) {
-      case 'wordpress': return '🐘';
-      case 'node': return '🟢';
-      case 'python': return '🐍';
-      case 'java': return '☕';
-      case 'cpp': return '⚙️';
-      case 'web': return '🌐';
-      default: return '📁';
+      case 'wordpress': return faCode;
+      case 'node': return faCode;
+      case 'python': return faPython;
+      case 'java': return faJava;
+      case 'cpp': return faCog;
+      case 'web': return faGlobe;
+      default: return faFolder;
     }
   };
 
@@ -89,14 +91,14 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       {/* Compact Current Project Display */}
       {showCurrentProject && currentProject && (
         <div className="current-project compact">
-          <span className="project-icon">{getProjectIcon(currentProject)}</span>
+          <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(currentProject)} /></span>
           <span className="project-name">{currentProject.name}</span>
           <button 
             className="project-menu-btn"
             onClick={() => setIsOpen(!isOpen)}
             title="Change project"
           >
-            ▼
+            <FontAwesomeIcon icon={faChevronDown} />
           </button>
         </div>
       )}
@@ -110,7 +112,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
               className="close-btn"
               onClick={() => setIsOpen(false)}
             >
-              ×
+              <FontAwesomeIcon icon={faTimes} />
             </button>
           </div>
 
@@ -121,7 +123,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
               onClick={handleNewProject}
               disabled={isLoading}
             >
-              {isLoading ? '...' : '➕ New Project'}
+              {isLoading ? '...' : <><FontAwesomeIcon icon={faPlus} /> New Project</>}
             </button>
           </div>
 
@@ -136,7 +138,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                     className={`project-item ${project.isActive ? 'active' : ''}`}
                     onClick={() => handleProjectSelect(project)}
                   >
-                    <span className="project-icon">{getProjectIcon(project)}</span>
+                    <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(project)} /></span>
                     <div className="project-details">
                       <div className="project-name">{project.name}</div>
                       <div className="project-meta">
@@ -162,7 +164,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                     className={`project-item ${project.isActive ? 'active' : ''}`}
                     onClick={() => handleProjectSelect(project)}
                   >
-                    <span className="project-icon">{getProjectIcon(project)}</span>
+                    <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(project)} /></span>
                     <div className="project-details">
                       <div className="project-name">{project.name}</div>
                       <div className="project-meta">

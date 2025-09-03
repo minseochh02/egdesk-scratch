@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Conversation, ConversationMessage } from './types';
-import { EnhancedAIEditorService } from './services/enhancedAIEditorService';
-import { CodespaceVectorService } from './services/codespaceVectorService';
+import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Conversation, ConversationMessage } from '../AIEditor/types';
+import { EnhancedAIEditorService } from '../AIEditor/services/enhancedAIEditorService';
+import { CodespaceVectorService } from '../AIEditor/services/codespaceVectorService';
 import { CodespaceChatService } from '../ChatInterface/services/codespaceChatService';
-import { SearchReplacePromptService } from './services/searchReplacePromptService';
+import { SearchReplacePromptService } from '../AIEditor/services/searchReplacePromptService';
 import { MessageContent } from '../ChatInterface/components';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../ChatInterface/types';
-import { CodeEditBlock } from './CodeEditBlock';
-import { conversationStore } from './store/conversationStore';
-import { ContextManagementPanel } from './ContextManagementPanel';
+import { CodeEditBlock } from '../AIEditor/CodeEditBlock';
+import { conversationStore } from '../AIEditor/store/conversationStore';
+import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faBrain, faSearch, faCheck, faRefresh, faClock, faGlobe, faEdit, faPlus, faCog, faFile, faRocket, faClipboard, faComments, faTimes, faExclamationTriangle, faBook, faBroom, faBug } from '@fortawesome/free-solid-svg-icons';
-import './AIEditor.css';
+import './DualScreenAIEditor.css';
 
-interface AIEditorProps {
+interface DualScreenAIEditorProps {
   isVisible: boolean;
   currentFile: {
     path: string;
@@ -31,20 +31,27 @@ interface AIEditorProps {
   };
   isEditing?: boolean;
   onToggleEditing?: () => void;
+  routeFiles?: Array<{
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  }>;
 }
 
-export const AIEditor: React.FC<AIEditorProps> = ({
+export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   isVisible,
   currentFile,
   onApplyEdits,
   onClose,
   projectContext,
   isEditing = false,
-  onToggleEditing
+  onToggleEditing,
+  routeFiles = []
 }) => {
   const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
   const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
-  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-pro');
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
   const [userInstruction, setUserInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -89,8 +96,8 @@ export const AIEditor: React.FC<AIEditorProps> = ({
   const [isGeneratingSearchReplace, setIsGeneratingSearchReplace] = useState(false);
   
   const [config, setConfig] = useState<AIEditorConfig>({
-    provider: 'openai',
-    model: 'gpt-3.5-turbo',
+    provider: 'google',
+    model: 'gemini-1.5-pro',
     temperature: 0.3,
     maxTokens: 2000,
     systemPrompt: `You are an expert coding assistant whose job is to help the user develop, run, and make changes to their codebase.
@@ -432,7 +439,12 @@ You can work with individual files or dynamically discover and analyze files acr
 
   // Handle edit request
   const handleRequestEdit = async () => {
-    if (!selectedKey || !selectedModel || !currentFileData || !userInstruction.trim()) {
+    if (!selectedKey || !selectedModel || !userInstruction.trim()) {
+      return;
+    }
+    
+    // We need either currentFileData or routeFiles to proceed
+    if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
       return;
     }
 
@@ -445,18 +457,25 @@ You can work with individual files or dynamically discover and analyze files acr
 
     try {
       // Normalize the file path to handle different path formats
-      let normalizedPath = currentFileData.path;
+      let normalizedPath = currentFileData?.path || (routeFiles && routeFiles.length > 0 ? routeFiles[0].path : '');
       let projectRoot = '';
       
-      // If the path is absolute and contains the project, extract the project root
-      if (normalizedPath.startsWith('/Users/') || normalizedPath.startsWith('C:\\')) {
-        // Extract the project directory path (parent of the file)
-        const pathParts = normalizedPath.split('/');
-        const fileName = pathParts.pop(); // Remove filename
-        projectRoot = pathParts.join('/'); // Keep the directory path
-        normalizedPath = fileName || currentFileData.name;
-        console.log('🔍 Normalized file path from absolute to relative:', normalizedPath);
-        console.log('🔍 Project root directory:', projectRoot);
+      // If we have a current file, normalize its path
+      if (currentFileData?.path) {
+        // If the path is absolute and contains the project, extract the project root
+        if (normalizedPath.startsWith('/Users/') || normalizedPath.startsWith('C:\\')) {
+          // Extract the project directory path (parent of the file)
+          const pathParts = normalizedPath.split('/');
+          const fileName = pathParts.pop(); // Remove filename
+          projectRoot = pathParts.join('/'); // Keep the directory path
+          normalizedPath = fileName || currentFileData.name;
+          console.log('🔍 Normalized file path from absolute to relative:', normalizedPath);
+          console.log('🔍 Project root directory:', projectRoot);
+        }
+      } else if (routeFiles && routeFiles.length > 0) {
+        // Use the first route file as the primary file
+        normalizedPath = routeFiles[0].name;
+        console.log('🔍 Using first route file as primary:', normalizedPath);
       }
 
       // Use enhanced context discovery like ChatInterface
@@ -464,7 +483,23 @@ You can work with individual files or dynamically discover and analyze files acr
       let relevantFilesContext = '';
       let hasEnhancedContext = false;
       
-      if (codespaceChatService && config.includeContext) {
+      // First, check if we have route files from URLFileViewer
+      if (routeFiles && routeFiles.length > 0) {
+        hasEnhancedContext = true;
+        console.log('🔍 Using route files from URLFileViewer:', routeFiles.length, 'files');
+        
+        const routeFileContexts = routeFiles
+          .map(file => {
+            const lang = file.language || file.path.split('.').pop() || 'txt';
+            return `\n--- ${file.path} ---\n\`\`\`${lang}\n${file.content}\n\`\`\``;
+          })
+          .join('\n');
+        
+        relevantFilesContext = `\n\n## Route Files (Current Page Context):\n${routeFileContexts}`;
+        enhancedUserInstruction = userInstruction + relevantFilesContext;
+        
+        console.log('🔍 Enhanced instruction with ROUTE files:', routeFiles.length, 'files');
+      } else if (codespaceChatService && config.includeContext) {
         try {
           console.log('🔍 Using enhanced context discovery for AI Editor...');
           const enhancedMessage = await codespaceChatService.enhanceMessageWithContext(
@@ -508,9 +543,9 @@ You can work with individual files or dynamically discover and analyze files acr
       const request: AIEditRequest = {
         filePath: normalizedPath,
         // Disabled: avoid sending currently opened file content when enhanced context exists
-        fileContent: hasEnhancedContext ? '' : currentFileData.content,
+        fileContent: hasEnhancedContext ? '' : (currentFileData?.content || ''),
         userInstruction: enhancedUserInstruction,
-        language: currentFileData.language,
+        language: currentFileData?.language || (routeFiles && routeFiles.length > 0 ? routeFiles[0].language : 'plaintext'),
         projectRoot: projectRoot, // Add project root for codespace analysis
         // Disabled: avoid appending per-open-file symbols when enhanced analyzer context is present
         context: hasEnhancedContext ? undefined : (config.includeContext ? (fileContext ? {
@@ -542,7 +577,7 @@ You can work with individual files or dynamically discover and analyze files acr
       // Save user message to conversation
       conversationStore.addMessage(userInstruction, 'user', {
         filePath: normalizedPath,
-        language: currentFileData.language
+        language: currentFileData?.language || (routeFiles && routeFiles.length > 0 ? routeFiles[0].language : 'plaintext')
       });
 
       // Always use Search & Replace generation (unified flow)
@@ -561,16 +596,18 @@ You can work with individual files or dynamically discover and analyze files acr
             return;
           }
         }
-        const resp = await service.generatePromptsForFile(
-          selectedKey,
-          selectedModel,
-          userInstruction,
-          currentFileData.path,
-          currentFileData.content
-        );
-        if (resp.success) {
-          setSearchReplacePrompts(resp.searchReplacePrompts);
-          return;
+        if (currentFileData) {
+          const resp = await service.generatePromptsForFile(
+            selectedKey,
+            selectedModel,
+            userInstruction,
+            currentFileData.path,
+            currentFileData.content
+          );
+          if (resp.success) {
+            setSearchReplacePrompts(resp.searchReplacePrompts);
+            return;
+          }
         }
         // Fallback: show a simple error if generation failed silently
         setError('Failed to generate search/replace operations.');
@@ -730,7 +767,7 @@ You can work with individual files or dynamically discover and analyze files acr
   if (!isVisible) return null;
 
   return (
-    <div className="ai-editor-sidebar">
+    <div className="dual-screen-ai-editor">
       
 
       <div className="sidebar-content">
@@ -1186,7 +1223,7 @@ You can work with individual files or dynamically discover and analyze files acr
               <button 
                 className="send-btn"
                 onClick={handleRequestEdit}
-                disabled={!selectedKey || !selectedModel || !currentFileData || !userInstruction.trim() || isLoading || isStreaming}
+                disabled={!selectedKey || !selectedModel || (!currentFileData && (!routeFiles || routeFiles.length === 0)) || !userInstruction.trim() || isLoading || isStreaming}
               >
                 {isLoading || isStreaming ? <FontAwesomeIcon icon={faClock} /> : <FontAwesomeIcon icon={faRocket} />}
               </button>

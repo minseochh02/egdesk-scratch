@@ -1,15 +1,17 @@
-/* Code Editor Styles */
-.code-editor {
+/* URL File Viewer - Matching CodeEditor Styles */
+.url-file-viewer {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: var(--bg-color, #1e1e1e);
   color: var(--text-color, #cccccc);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 0;
+  padding: 0;
 }
 
 /* Toolbar */
-.editor-toolbar {
+.url-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -26,7 +28,6 @@
   gap: 6px;
 }
 
-/* Toolbar Groups */
 .toolbar-group {
   display: flex;
   align-items: center;
@@ -62,47 +63,15 @@
   color: white;
 }
 
-.toolbar-btn.debug-btn {
-  background: var(--debug-bg, #5c3c3c);
-  border-color: var(--debug-border, #7c5c5c);
-  color: var(--debug-text, #ffcccc);
-  font-size: 11px;
-  min-width: 24px;
-  height: 24px;
-}
-
-.toolbar-btn.debug-btn:hover {
-  background: var(--debug-hover, #6c4c4c);
-}
-
-.project-selector-container {
-  margin: 0 6px;
-  display: flex;
-  align-items: center;
-}
-
-
-
-.editor-settings {
-  display: flex;
-  gap: 3px;
-  padding-right: 8px;
-  border-right: 1px solid var(--border-color, #5c5c5c);
-}
-
-
-
-
-
 /* Main Content */
-.editor-content {
+.url-content {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
 /* File Explorer Sidebar */
-.file-explorer {
+.url-file-explorer {
   width: 260px;
   background: var(--sidebar-bg, #252526);
   border-right: 1px solid var(--border-color, #3c3c3c);
@@ -111,23 +80,8 @@
   transition: width 0.3s ease;
 }
 
-.file-explorer.collapsed {
+.url-file-explorer.collapsed {
   width: 40px;
-}
-
-.file-explorer.collapsed .explorer-header {
-  padding: 8px 6px;
-  justify-content: center;
-  gap: 0;
-}
-
-.file-explorer.collapsed .explorer-header-left {
-  flex: 1;
-  justify-content: center;
-}
-
-.file-explorer.collapsed .explorer-header-right {
-  display: none;
 }
 
 .explorer-header {
@@ -146,47 +100,6 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.explorer-header-right {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  justify-content: flex-end;
-  min-width: 0;
-  height: 100%;
-}
-
-.explorer-header-right .project-selector-container {
-  margin: 0;
-  width: 100%;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  min-width: 0;
-  height: 100%;
-}
-
-.explorer-toggle-btn {
-  background: var(--button-bg, #3c3c3c);
-  border: 1px solid var(--border-color, #5c5c5c);
-  color: var(--text-color, #cccccc);
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  font-weight: 500;
-}
-
-.explorer-toggle-btn:hover {
-  background: var(--button-hover, #4c4c4c);
-  border-color: var(--accent-color, #007acc);
 }
 
 .explorer-header h3 {
@@ -226,20 +139,15 @@
   100% { transform: rotate(360deg); }
 }
 
-.error-indicator {
-  padding: 10px;
-  color: var(--error-text, #ff6b6b);
+.url-file-viewer-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--muted-text, #888888);
+  font-style: italic;
   text-align: center;
-}
-
-.info-indicator {
-  padding: 10px;
-  color: var(--info-text, #4ecdc4);
-  text-align: center;
-  background: var(--info-bg, rgba(78, 205, 196, 0.1));
-  border-radius: 3px;
-  margin: 4px;
-  border-left: 3px solid var(--info-text, #4ecdc4);
+  padding: 20px;
 }
 
 .file-tree {
@@ -262,27 +170,9 @@
   background: var(--hover-bg, #3c3c3c);
 }
 
-.file-tree-item.folder {
-  font-weight: 500;
-}
-
-.file-tree-item.folder.expanded {
-  background: var(--hover-bg, #3c3c3c);
-}
-
-.file-tree-item.file {
-  /* Remove indentation for files - they should be at the same level as folders */
-}
-
-.folder-toggle {
-  font-size: 10px;
-  color: var(--text-color, #cccccc);
-  user-select: none;
-  transition: transform 0.2s;
-}
-
-.folder-contents {
-  /* Nested folder contents */
+.file-tree-item.active {
+  background: var(--accent-color, #007acc);
+  color: white;
 }
 
 .file-icon {
@@ -293,6 +183,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--accent-color, #007acc);
+}
+
+.file-tree-item.active .file-icon {
+  color: white;
 }
 
 .file-name {
@@ -305,7 +200,7 @@
 }
 
 /* Main Editor Area */
-.main-editor {
+.url-main-editor {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -392,39 +287,6 @@
   flex-direction: column;
 }
 
-
-
-.editor-toggle-btn {
-  padding: 3px 8px;
-  background-color: #6f42c1;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.editor-toggle-btn:hover {
-  background-color: #5a32a3;
-}
-
-.editor-toggle-btn.editing {
-  background-color: #fd7e14;
-}
-
-.editor-toggle-btn.editing:hover {
-  background-color: #e8690b;
-}
-
-.editor-toggle-btn.server {
-  background-color: #6f42c1;
-}
-
-.editor-toggle-btn.server:hover {
-  background-color: #5a32a3;
-}
-
 .editor-wrapper {
   flex: 1;
   display: flex;
@@ -497,35 +359,8 @@
   line-height: 1.4;
 }
 
-.welcome-features {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-}
-
-.feature {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 12px;
-  background: var(--feature-bg, #2d2d30);
-  border: 1px solid var(--border-color, #3c3c3c);
-  border-radius: 6px;
-}
-
-.feature-icon {
-  font-size: 20px;
-}
-
-.feature span:last-child {
-  font-size: 11px;
-  color: var(--text-color, #cccccc);
-  font-weight: 500;
-}
-
 /* Status Bar */
-.editor-statusbar {
+.url-statusbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -562,69 +397,8 @@
   font-weight: 500;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .file-explorer {
-    width: 200px;
-  }
-  
-  .file-explorer.collapsed {
-    width: 36px;
-  }
-  
-  .explorer-header {
-    padding: 6px 8px;
-  }
-  
-  .explorer-header-right .project-selector-container {
-    max-width: 150px;
-  }
-  
-  .toolbar-left,
-  .toolbar-right {
-    gap: 3px;
-  }
-  
-  .toolbar-btn {
-    min-width: 24px;
-    height: 24px;
-    font-size: 11px;
-  }
-  
-  .path-breadcrumb {
-    margin-left: 6px;
-  }
-  
-  .breadcrumb-item {
-    font-size: 11px;
-    padding: 1px 4px;
-  }
-  
-  .welcome-features {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  
-  .feature {
-    padding: 8px;
-  }
-  
-  .feature-icon {
-    font-size: 18px;
-  }
-}
-
-/* AI Editor Integration */
-.editor-content.with-ai-sidebar {
-  position: relative;
-}
-
-.editor-content.with-ai-sidebar .main-editor {
-  margin-right: 400px; /* Width of AI Editor sidebar */
-}
-
 /* Scrollbar Styling */
-.file-explorer::-webkit-scrollbar,
+.url-file-explorer::-webkit-scrollbar,
 .line-numbers::-webkit-scrollbar,
 .code-textarea::-webkit-scrollbar,
 .file-tabs::-webkit-scrollbar {
@@ -632,14 +406,14 @@
   height: 6px;
 }
 
-.file-explorer::-webkit-scrollbar-track,
+.url-file-explorer::-webkit-scrollbar-track,
 .line-numbers::-webkit-scrollbar-track,
 .code-textarea::-webkit-scrollbar-track,
 .file-tabs::-webkit-scrollbar-track {
   background: var(--scrollbar-track, #2d2d30);
 }
 
-.file-explorer::-webkit-scrollbar-thumb,
+.url-file-explorer::-webkit-scrollbar-thumb,
 .line-numbers::-webkit-scrollbar-thumb,
 .code-textarea::-webkit-scrollbar-thumb,
 .file-tabs::-webkit-scrollbar-thumb {
@@ -647,7 +421,7 @@
   border-radius: 3px;
 }
 
-.file-explorer::-webkit-scrollbar-thumb:hover,
+.url-file-explorer::-webkit-scrollbar-thumb:hover,
 .line-numbers::-webkit-scrollbar-thumb:hover,
 .code-textarea::-webkit-scrollbar-thumb:hover,
 .file-tabs::-webkit-scrollbar-thumb:hover {

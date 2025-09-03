@@ -63,7 +63,7 @@ The Intelligent Context Management System automatically gathers, prioritizes, an
 - **Max Depth**: Prevents infinite dependency traversal
 - **Max File Size**: Prevents extremely large files from dominating context
 
-## 🔄 Context Gathering Process
+## Context Gathering Process
 
 ### 1. Proximity-Based Collection
 - Gathers code within 3 lines of cursor position

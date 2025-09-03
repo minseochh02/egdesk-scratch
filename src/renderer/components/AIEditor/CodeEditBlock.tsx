@@ -1,5 +1,7 @@
 import React from 'react';
 import { AIEdit } from './types';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faRefresh, faPlus, faMinus, faEdit, faFile, faCheck, faChartBar, faEye } from '@fortawesome/free-solid-svg-icons';
 import './CodeEditBlock.css';
 
 interface CodeEditBlockProps {
@@ -44,20 +46,20 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
     <div className="code-edit-block">
       <div className="edit-header">
         <div className="edit-summary">
-          <span className="edit-count">📝 {edits.length} edit{edits.length !== 1 ? 's' : ''}</span>
-          <span className="lines-changed">📊 ~{totalLinesChanged} line{totalLinesChanged !== 1 ? 's' : ''} changed</span>
+          <span className="edit-count"><FontAwesomeIcon icon={faEdit} /> {edits.length} edit{edits.length !== 1 ? 's' : ''}</span>
+          <span className="lines-changed"><FontAwesomeIcon icon={faChartBar} /> ~{totalLinesChanged} line{totalLinesChanged !== 1 ? 's' : ''} changed</span>
         </div>
         
         <div className="edit-actions">
           <button onClick={onPreviewToggle} className="preview-btn">
-            {showPreview ? '👁️ Hide Preview' : '👁️ Show Preview'}
+            {showPreview ? <><FontAwesomeIcon icon={faEye} /> Hide Preview</> : <><FontAwesomeIcon icon={faEye} /> Show Preview</>}
           </button>
           <button 
             className="apply-btn"
             onClick={onApply}
             disabled={!edits.length}
           >
-            ✅ Apply Changes
+            <FontAwesomeIcon icon={faCheck} /> Apply Changes
           </button>
         </div>
       </div>
@@ -66,7 +68,7 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
         {Object.entries(editsByFile).map(([filePath, fileEdits]) => (
           <div key={filePath} className="file-edit-group">
             <div className="file-header">
-              <span className="file-name">📄 {filePath.split('/').pop() || filePath}</span>
+              <span className="file-name"><FontAwesomeIcon icon={faFile} /> {filePath.split('/').pop() || filePath}</span>
               <span className="file-path">{filePath}</span>
               <span className="edit-count">{fileEdits.length} edit{fileEdits.length !== 1 ? 's' : ''}</span>
             </div>
@@ -76,7 +78,7 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
                 <div key={index} className="edit-item">
                   <div className="edit-meta">
                     <span className={`edit-type edit-type-${edit.type}`}>
-                      {getEditTypeIcon(edit.type)} {edit.type}
+                      <FontAwesomeIcon icon={getEditTypeIcon(edit.type)} /> {edit.type}
                     </span>
                     {edit.range && (
                       <span className="edit-range">
@@ -109,15 +111,15 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
   );
 };
 
-function getEditTypeIcon(type: string): string {
+function getEditTypeIcon(type: string) {
   switch (type) {
-    case 'replace': return '🔄';
-    case 'insert': return '➕';
-    case 'delete': return '➖';
-    case 'create': return '🆕';
-    case 'delete_file': return '🗑️';
-    case 'format': return '✨';
-    case 'refactor': return '🔧';
-    default: return '📝';
+    case 'replace': return faRefresh;
+    case 'insert': return faPlus;
+    case 'delete': return faMinus;
+    case 'create': return faPlus;
+    case 'delete_file': return faMinus;
+    case 'format': return faEdit;
+    case 'refactor': return faEdit;
+    default: return faEdit;
   }
 }
