@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFile, faCode, faTimes, faChevronRight, faChevronDown, faFolder, faEye, faEdit, faSave, faPalette, faRobot, faStar, faSearch, faRocket, faClipboard, faClock, faRefresh, faHome, faCheck, faInfo, faThLarge, faGlobe, faHashtag, faReply, faBug, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+import { faFile, faCode, faTimes, faEdit, faGlobe, faHashtag } from '@fortawesome/free-solid-svg-icons';
 import './URLFileViewer.css';
 
 interface OpenFile {
@@ -22,7 +22,7 @@ export const URLFileViewer: React.FC<URLFileViewerProps> = ({
 }) => {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [wordWrap, setWordWrap] = useState(false);
@@ -233,51 +233,6 @@ export const URLFileViewer: React.FC<URLFileViewerProps> = ({
 
       {/* Main Content */}
       <div className="url-content">
-        {/* File Explorer Sidebar */}
-        <div className={`url-file-explorer ${sidebarCollapsed ? 'collapsed' : ''}`}>
-          <div className="explorer-header">
-            <div className="explorer-header-left">
-              <button
-                className="toolbar-btn"
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-              >
-                <FontAwesomeIcon icon={faFolder} />
-              </button>
-              {!sidebarCollapsed && <h3>Route Files</h3>}
-            </div>
-          </div>
-          
-          <div className="explorer-content">
-            {isLoading ? (
-              <div className="loading-indicator">
-                <div className="spinner"></div>
-                <span>Loading files...</span>
-              </div>
-            ) : openFiles.length === 0 ? (
-              <div className="url-file-viewer-empty">
-                <p>No files selected for current route</p>
-              </div>
-            ) : (
-              <div className="file-tree">
-                {openFiles.map((file, index) => (
-                  <div
-                    key={file.path}
-                    className={`file-tree-item ${index === activeFileIndex ? 'active' : ''}`}
-                    onClick={() => setActiveFileIndex(index)}
-                  >
-                    <FontAwesomeIcon 
-                      icon={getFileIcon(file.name)} 
-                      className="file-icon"
-                    />
-                    <span className="file-name">{file.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Main Editor Area */}
         <div className="url-main-editor">
           {/* File Tabs */}

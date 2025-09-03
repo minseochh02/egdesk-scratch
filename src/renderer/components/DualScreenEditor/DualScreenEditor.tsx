@@ -216,54 +216,54 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   }, [currentProject?.path, currentProject?.id]);
 
   // Function to load content for route files
-  // const loadRouteFilesContent = async (filePaths: string[]) => {
-  //   if (!filePaths || filePaths.length === 0) {
-  //     setRouteFilesWithContent([]);
-  //     return;
-  //   }
+  const loadRouteFilesContent = async (filePaths: string[]) => {
+    if (!filePaths || filePaths.length === 0) {
+      setRouteFilesWithContent([]);
+      return;
+    }
 
-  //   try {
-  //     const filesWithContent = await Promise.all(
-  //       filePaths.map(async (filePath) => {
-  //         try {
-  //           const result = await window.electron.fileSystem.readFile(filePath);
-  //           if (result.success && result.content) {
-  //             const fileName = filePath.split('/').pop() || filePath;
-  //             const extension = fileName.split('.').pop()?.toLowerCase();
-  //             const languageMap: { [key: string]: string } = {
-  //               'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
-  //               'php': 'php', 'html': 'html', 'css': 'css', 'scss': 'scss', 'sass': 'sass',
-  //               'json': 'json', 'md': 'markdown', 'py': 'python', 'java': 'java', 'cpp': 'cpp',
-  //               'c': 'c', 'cs': 'csharp', 'go': 'go', 'rs': 'rust', 'rb': 'ruby',
-  //               'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml'
-  //             };
+    try {
+      const filesWithContent = await Promise.all(
+        filePaths.map(async (filePath) => {
+          try {
+            const result = await window.electron.fileSystem.readFile(filePath);
+            if (result.success && result.content) {
+              const fileName = filePath.split('/').pop() || filePath;
+              const extension = fileName.split('.').pop()?.toLowerCase();
+              const languageMap: { [key: string]: string } = {
+                'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
+                'php': 'php', 'html': 'html', 'css': 'css', 'scss': 'scss', 'sass': 'sass',
+                'json': 'json', 'md': 'markdown', 'py': 'python', 'java': 'java', 'cpp': 'cpp',
+                'c': 'c', 'cs': 'csharp', 'go': 'go', 'rs': 'rust', 'rb': 'ruby',
+                'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml'
+              };
               
-  //             return {
-  //               path: filePath,
-  //               name: fileName,
-  //               content: result.content,
-  //               language: languageMap[extension || ''] || 'plaintext'
-  //             };
-  //           }
-  //           return null;
-  //         } catch (error) {
-  //           console.error(`Failed to read file ${filePath}:`, error);
-  //           return null;
-  //         }
-  //       })
-  //     );
+              return {
+                path: filePath,
+                name: fileName,
+                content: result.content,
+                language: languageMap[extension || ''] || 'plaintext'
+              };
+            }
+            return null;
+          } catch (error) {
+            console.error(`Failed to read file ${filePath}:`, error);
+            return null;
+          }
+        })
+      );
 
-  //     const validFiles = filesWithContent.filter(file => file !== null);
-  //     setRouteFilesWithContent(validFiles);
+      const validFiles = filesWithContent.filter(file => file !== null);
+      setRouteFilesWithContent(validFiles);
       
-  //     if (process.env.NODE_ENV === 'development') {
-  //       console.log(`[Route Files Content] Loaded ${validFiles.length} files with content`);
-  //     }
-  //   } catch (error) {
-  //     console.error('Failed to load route files content:', error);
-  //     setRouteFilesWithContent([]);
-  //   }
-  // };
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Route Files Content] Loaded ${validFiles.length} files with content`);
+      }
+    } catch (error) {
+      console.error('Failed to load route files content:', error);
+      setRouteFilesWithContent([]);
+    }
+  };
 
   useEffect(() => {
     const svc = PageRouteService.getInstance();
@@ -283,7 +283,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       if (state.filesToOpen && state.filesToOpen.length > 0) {
         setRouteFiles(state.filesToOpen);
         // Load content for AI context
-        // loadRouteFilesContent(state.filesToOpen);
+        loadRouteFilesContent(state.filesToOpen);
       } else {
         setRouteFilesWithContent([]);
       }
