@@ -3,6 +3,8 @@ import { AIKey, AIProvider } from './types';
 import { aiKeysStore } from './store/aiKeysStore';
 import { AddEditKeyDialog } from './AddEditKeyDialog';
 import { TestResult } from './services/apiTester';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faRobot, faPlus, faCheck, faFlask, faTrash, faTimes, faClock, faKey, faBuilding, faEdit } from '@fortawesome/free-solid-svg-icons';
 import './AIKeysManager.css';
 
 export const AIKeysManager: React.FC = () => {
@@ -127,7 +129,7 @@ export const AIKeysManager: React.FC = () => {
       {/* Header */}
       <div className="manager-header">
         <div className="header-left">
-          <h1>🤖 AI Keys Manager</h1>
+          <h1><FontAwesomeIcon icon={faRobot} /> AI Keys Manager</h1>
           <p>Manage your AI service API keys and configurations</p>
         </div>
         <div className="header-right">
@@ -135,7 +137,7 @@ export const AIKeysManager: React.FC = () => {
             className="add-key-btn"
             onClick={() => setShowAddDialog(true)}
           >
-            ➕ Add New Key
+            <FontAwesomeIcon icon={faPlus} /> Add New Key
           </button>
         </div>
       </div>
@@ -143,21 +145,21 @@ export const AIKeysManager: React.FC = () => {
       {/* Stats */}
       <div className="stats-container">
         <div className="stat-card">
-          <div className="stat-icon">🔑</div>
+          <div className="stat-icon"><FontAwesomeIcon icon={faKey} /></div>
           <div className="stat-content">
             <div className="stat-value">{state.keys.length}</div>
             <div className="stat-label">Total Keys</div>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">✅</div>
+          <div className="stat-icon"><FontAwesomeIcon icon={faCheck} /></div>
           <div className="stat-content">
             <div className="stat-value">{getActiveKeysCount()}</div>
             <div className="stat-label">Active Keys</div>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🏢</div>
+          <div className="stat-icon"><FontAwesomeIcon icon={faBuilding} /></div>
           <div className="stat-content">
             <div className="stat-value">{new Set(state.keys.map(k => k.providerId)).size}</div>
             <div className="stat-label">Providers</div>
@@ -177,7 +179,7 @@ export const AIKeysManager: React.FC = () => {
       <div className="keys-container">
         {state.keys.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">🔑</div>
+            <div className="empty-icon"><FontAwesomeIcon icon={faKey} /></div>
             <h3>No AI Keys Found</h3>
             <p>Get started by adding your first AI service API key</p>
             <button
@@ -239,7 +241,7 @@ export const AIKeysManager: React.FC = () => {
                         title="Test Connection"
                         disabled={testingKeyId === key.id}
                       >
-                        {testingKeyId === key.id ? '⏳' : '🧪'} {testingKeyId === key.id ? 'Testing...' : 'Test'}
+                        {testingKeyId === key.id ? <FontAwesomeIcon icon={faClock} /> : <FontAwesomeIcon icon={faFlask} />} {testingKeyId === key.id ? 'Testing...' : 'Test'}
                       </button>
                       <button
                         className="action-btn edit-btn"
@@ -249,7 +251,7 @@ export const AIKeysManager: React.FC = () => {
                         }}
                         title="Edit Key"
                       >
-                        ✏️ Edit
+                        <FontAwesomeIcon icon={faEdit} /> Edit
                       </button>
                       <button
                         className={`action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
@@ -269,7 +271,7 @@ export const AIKeysManager: React.FC = () => {
                         }}
                         title="Delete Key"
                       >
-                        🗑️
+                        <FontAwesomeIcon icon={faTrash} />
                       </button>
                     </div>
                   </div>
@@ -279,7 +281,7 @@ export const AIKeysManager: React.FC = () => {
                     <div className={`test-result ${testResults[key.id].success ? 'success' : 'error'}`}>
                       <div className="test-result-header">
                         <span className="test-result-icon">
-                          {testResults[key.id].success ? '✅' : '❌'}
+                          {testResults[key.id].success ? <FontAwesomeIcon icon={faCheck} /> : <FontAwesomeIcon icon={faTimes} />}
                         </span>
                         <span className="test-result-message">
                           {testResults[key.id].message}
@@ -371,7 +373,7 @@ export const AIKeysManager: React.FC = () => {
           <div className="dialog-overlay" onClick={() => setShowDeleteConfirm(null)} />
           <div className="dialog-content">
             <div className="dialog-header">
-              <h3>🗑️ Delete AI Key</h3>
+              <h3><FontAwesomeIcon icon={faTrash} /> Delete AI Key</h3>
             </div>
             <div className="dialog-body">
               <p>Are you sure you want to delete this AI key? This action cannot be undone.</p>

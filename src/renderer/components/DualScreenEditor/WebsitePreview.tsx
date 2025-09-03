@@ -1,14 +1,41 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import LocalServer from '../LocalServer';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faGlobe, faEdit, faRefresh } from '@fortawesome/free-solid-svg-icons';
 import './WebsitePreview.css';
 
 export const WebsitePreview: React.FC<{
   isEditing?: boolean;
   onToggleEditing?: () => void;
-}> = ({ isEditing = false, onToggleEditing }) => {
+  onUrlChange?: (url: string) => void;
+}> = ({ isEditing = false, onToggleEditing, onUrlChange }) => {
   const [showPreview, setShowPreview] = useState(true);
   const [iframeKey, setIframeKey] = useState(0); // Force iframe refresh
   const [previewUrl, setPreviewUrl] = useState<string>('http://localhost:3000');
+  const lastNotifiedUrlRef = useRef<string>('');
+  
+  const computePageLabel = (url: string): string => {
+    try {
+      const u = new URL(url);
+      const path = u.pathname || '/';
+      if (path === '/' || path === '') return 'home';
+      const last = path.split('/').filter(Boolean).pop() || 'home';
+      const noExt = last.replace(/\.(php|html|htm)$/i, '');
+      return noExt || 'home';
+    } catch {
+      return 'page';
+    }
+  };
+  
+  const notifyUrlChange = (url: string) => {
+    if (url === lastNotifiedUrlRef.current) return;
+    lastNotifiedUrlRef.current = url;
+    if (onUrlChange) {
+      try {
+        onUrlChange(url);
+      } catch (_) {}
+    }
+  };
 
   const refreshIframe = () => {
     setIframeKey(prev => prev + 1);
@@ -30,7 +57,7 @@ export const WebsitePreview: React.FC<{
               onClick={togglePreview}
               title={showPreview ? 'Hide Website Preview' : 'Show Website Preview'}
             >
-              {showPreview ? '🌐 Hide Preview' : '🌐 Show Preview'}
+              {showPreview ? <><FontAwesomeIcon icon={faGlobe} /> Hide Preview</> : <><FontAwesomeIcon icon={faGlobe} /> Show Preview</>}
             </button>
             {onToggleEditing && (
               <button
@@ -38,7 +65,7 @@ export const WebsitePreview: React.FC<{
                 onClick={onToggleEditing}
                 title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
               >
-                {isEditing ? '🌐 Show Server' : '✏️ Show Editor'}
+                {isEditing ? <><FontAwesomeIcon icon={faGlobe} /> Show Server</> : <><FontAwesomeIcon icon={faEdit} /> Show Editor</>}
               </button>
             )}
             <button
@@ -46,7 +73,7 @@ export const WebsitePreview: React.FC<{
               onClick={refreshIframe}
               title="Refresh website preview"
             >
-              🔄 Refresh
+              <FontAwesomeIcon icon={faRefresh} /> Refresh
             </button>
           </div>
         </div>
@@ -54,10 +81,15 @@ export const WebsitePreview: React.FC<{
         {/* Compact LocalServer component */}
         <div className="compact-server">
           <LocalServer onStatusChange={(status) => {
-            if (status?.url) {
+            if (status?.url && status.url !== previewUrl) {
               setPreviewUrl(status.url);
+              notifyUrlChange(status.url);
             } else if (status?.port) {
-              setPreviewUrl(`http://localhost:${status.port}`);
+              const next = `http://localhost:${status.port}`;
+              if (next !== previewUrl) {
+                setPreviewUrl(next);
+                notifyUrlChange(next);
+              }
             }
           }} />
         </div>
@@ -67,7 +99,7 @@ export const WebsitePreview: React.FC<{
       {showPreview && (
         <div className="preview-section">
           <div className="preview-header">
-            <h3>🌐 Website Preview</h3>
+            <h3><FontAwesomeIcon icon={faGlobe} /> Website Preview</h3>
           </div>
           
           <div className="preview-content">
@@ -76,7 +108,7 @@ export const WebsitePreview: React.FC<{
                 <h4>🚀 Website Preview</h4>
                 <p>Use the server controls above to start your local development server.</p>
                 <div className="preview-placeholder">
-                  <div className="placeholder-icon">🌐</div>
+                  <div className="placeholder-icon"><FontAwesomeIcon icon={faGlobe} /></div>
                   <p>Website preview will appear here</p>
                 </div>
               </div>
@@ -90,14 +122,14 @@ export const WebsitePreview: React.FC<{
         <div className="preview-modal-overlay">
           <div className="preview-modal">
             <div className="preview-modal-header">
-              <span className="modal-title">🌐 Live Website Preview</span>
+              <span className="modal-title"><FontAwesomeIcon icon={faGlobe} /> Looking at: {computePageLabel(previewUrl)} page</span>
               <div className="modal-controls">
                 <button 
                   className="refresh-modal-btn"
                   onClick={refreshIframe}
                   title="Refresh preview"
                 >
-                  🔄
+                  <FontAwesomeIcon icon={faRefresh} />
                 </button>
                 <button 
                   className="close-modal-btn"
@@ -115,6 +147,17 @@ export const WebsitePreview: React.FC<{
                 title="Website Preview"
                 className="website-iframe"
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                onLoad={(e) => {
+                  try {
+                    const target = e.currentTarget as HTMLIFrameElement;
+                    const href = target.contentWindow?.location?.href;
+                    if (href) {
+                      notifyUrlChange(href);
+                    }
+                  } catch (_) {
+                    // Cross-origin or other issues; ignore
+                  }
+                }}
               />
             </div>
           </div>

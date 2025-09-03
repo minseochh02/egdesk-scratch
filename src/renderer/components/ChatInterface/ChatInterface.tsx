@@ -4,6 +4,8 @@ import { chatStore } from './store/chatStore';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { MessageContent } from './components';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faRobot, faBrain, faSearch, faComments, faCheck, faTimes, faLightbulb, faInfo, faUser, faRocket, faRefresh, faPlus, faCog, faBug } from '@fortawesome/free-solid-svg-icons';
 import './ChatInterface.css';
 
 export const ChatInterface: React.FC = () => {
@@ -43,10 +45,8 @@ export const ChatInterface: React.FC = () => {
     };
   }, []);
 
-  // Auto-detect workspace on mount
-  useEffect(() => {
-    handleAutoDetectWorkspace();
-  }, []);
+  // Removed auto-detect workspace on mount to prevent infinite reload
+  // Users can manually set workspace path or use the auto-detect button
 
   useEffect(() => {
     scrollToBottom();
@@ -101,6 +101,11 @@ export const ChatInterface: React.FC = () => {
   };
 
   const handleWorkspacePathChange = async (path: string) => {
+    // Prevent unnecessary changes if path is the same
+    if (path === workspacePath) {
+      return;
+    }
+    
     setWorkspacePath(path);
     try {
       await chatStore.setWorkspacePath(path);
@@ -123,7 +128,7 @@ export const ChatInterface: React.FC = () => {
     try {
       // Try to get the current working directory or project path
       const homeDir = await window.electron.fileSystem.getHomeDirectory();
-      if (homeDir) {
+      if (homeDir && homeDir !== workspacePath) {
         await handleWorkspacePathChange(homeDir);
       }
     } catch (error) {
@@ -157,7 +162,7 @@ export const ChatInterface: React.FC = () => {
       {/* Header */}
       <div className="chat-header">
         <div className="header-left">
-          <h1>💬 AI Chat</h1>
+          <h1><FontAwesomeIcon icon={faComments} /> AI Chat</h1>
           <p>Chat with AI using your saved API keys</p>
         </div>
         <div className="header-right">
@@ -165,13 +170,13 @@ export const ChatInterface: React.FC = () => {
             className="new-session-btn"
             onClick={() => setShowNewSessionDialog(true)}
           >
-            ➕ New Chat
+            <FontAwesomeIcon icon={faPlus} /> New Chat
           </button>
           <button
             className="settings-btn"
             onClick={() => setShowSettings(!showSettings)}
           >
-            ⚙️ Settings
+            <FontAwesomeIcon icon={faCog} /> Settings
           </button>
         </div>
       </div>
@@ -222,13 +227,13 @@ export const ChatInterface: React.FC = () => {
       {/* Codespace Context Panel */}
       <div className="codespace-panel">
         <div className="codespace-header">
-          <h3>🔍 Codespace Context</h3>
+          <h3><FontAwesomeIcon icon={faSearch} /> Codespace Context</h3>
           <div className="codespace-controls">
             <div className="codespace-status">
               {codespaceInfo.isAvailable ? (
-                <span className="status-available">✅ Available</span>
+                <span className="status-available"><FontAwesomeIcon icon={faCheck} /> Available</span>
               ) : (
-                <span className="status-unavailable">❌ Not Available</span>
+                <span className="status-unavailable"><FontAwesomeIcon icon={faTimes} /> Not Available</span>
               )}
             </div>
             <button
@@ -256,7 +261,7 @@ export const ChatInterface: React.FC = () => {
               onClick={handleAutoDetectWorkspace}
               title="Auto-detect workspace"
             >
-              🔍 Auto-detect
+              <FontAwesomeIcon icon={faSearch} /> Auto-detect
             </button>
             <button
               className="button-secondary"
@@ -264,14 +269,14 @@ export const ChatInterface: React.FC = () => {
               disabled={!codespaceInfo.isAvailable}
               title="Refresh codespace analysis"
             >
-              🔄 Refresh
+              <FontAwesomeIcon icon={faRefresh} /> Refresh
             </button>
           </div>
         </div>
 
         {codespaceInfo.isAvailable && codespaceInfo.cacheStatus && (
           <div className="cache-info">
-            <span>Cache: {codespaceInfo.cacheStatus.hasCache ? '✅' : '❌'}</span>
+            <span>Cache: {codespaceInfo.cacheStatus.hasCache ? <FontAwesomeIcon icon={faCheck} /> : <FontAwesomeIcon icon={faTimes} />}</span>
             {codespaceInfo.cacheStatus.hasCache && codespaceInfo.cacheStatus.cacheAge && (
               <span>Age: {codespaceInfo.cacheStatus.cacheAge} minutes</span>
             )}
@@ -283,7 +288,7 @@ export const ChatInterface: React.FC = () => {
 
         {codespaceInfo.isAvailable && (
           <div className="codespace-tip">
-            💡 <strong>Pro Tip:</strong> The AI will now automatically search your codebase 
+            <FontAwesomeIcon icon={faLightbulb} /> <strong>Pro Tip:</strong> The AI will now automatically search your codebase 
             and provide context-aware responses based on your actual code!
           </div>
         )}
@@ -297,7 +302,7 @@ export const ChatInterface: React.FC = () => {
 
         {!workspacePath && (
           <div className="codespace-info">
-            ℹ️ <strong>No Workspace Set:</strong> Set a workspace path to enable intelligent code context in your AI chat.
+            <FontAwesomeIcon icon={faInfo} /> <strong>No Workspace Set:</strong> Set a workspace path to enable intelligent code context in your AI chat.
           </div>
         )}
       </div>
@@ -312,19 +317,19 @@ export const ChatInterface: React.FC = () => {
           
           <div className="demo-examples">
             <div className="demo-example">
-              <h4>🔍 Code Search</h4>
+              <h4><FontAwesomeIcon icon={faSearch} /> Code Search</h4>
               <p>"How do I implement authentication in this project?"</p>
               <small>The AI will search your codebase for auth-related files and provide specific guidance.</small>
             </div>
             
             <div className="demo-example">
-              <h4>🐛 Bug Investigation</h4>
+              <h4><FontAwesomeIcon icon={faBug} /> Bug Investigation</h4>
               <p>"Why is the login form not working?"</p>
               <small>The AI will examine your login implementation and identify potential issues.</small>
             </div>
             
             <div className="demo-example">
-              <h4>🚀 Feature Development</h4>
+              <h4><FontAwesomeIcon icon={faRocket} /> Feature Development</h4>
               <p>"I want to add a new API endpoint for user profiles"</p>
               <small>The AI will understand your current API structure and suggest the best approach.</small>
             </div>
@@ -337,7 +342,7 @@ export const ChatInterface: React.FC = () => {
           </div>
           
           <div className="demo-tip">
-            💡 <strong>Pro Tip:</strong> The more specific your questions are about your code, 
+            <FontAwesomeIcon icon={faLightbulb} /> <strong>Pro Tip:</strong> The more specific your questions are about your code, 
             the better the AI can leverage the codespace context to help you!
           </div>
         </div>
@@ -371,7 +376,7 @@ export const ChatInterface: React.FC = () => {
                     <div className="session-name">{session.name}</div>
                     <div className="session-meta">
                       <span className="provider-icon" style={{ color: getProviderInfo(session.provider)?.color }}>
-                        {getProviderInfo(session.provider)?.icon}
+                        <FontAwesomeIcon icon={getProviderInfo(session.provider)?.icon} />
                       </span>
                       <span className="model-name">{session.model}</span>
                       <span className="message-count">{session.messages.length} messages</span>
@@ -424,7 +429,7 @@ export const ChatInterface: React.FC = () => {
                     >
                       <div className="message-header">
                         <span className="message-role">
-                          {message.role === 'user' ? '👤 You' : '🤖 AI'}
+                          {message.role === 'user' ? <><FontAwesomeIcon icon={faUser} /> You</> : <><FontAwesomeIcon icon={faRobot} /> AI</>}
                         </span>
                         <span className="message-time">
                           {formatDate(message.timestamp)}
@@ -487,7 +492,7 @@ export const ChatInterface: React.FC = () => {
                   </div>
                   <div className="session-info-display">
                     <span className="provider-badge" style={{ color: getProviderInfo(currentSession.provider)?.color }}>
-                      {getProviderInfo(currentSession.provider)?.icon} {currentSession.provider}
+                      <FontAwesomeIcon icon={getProviderInfo(currentSession.provider)?.icon} /> {currentSession.provider}
                     </span>
                     <span className="model-badge">{currentSession.model}</span>
                   </div>
@@ -551,7 +556,7 @@ export const ChatInterface: React.FC = () => {
                 >
                   {CHAT_PROVIDERS.map(provider => (
                     <option key={provider.id} value={provider.id}>
-                      {provider.icon} {provider.name}
+                      {provider.name}
                     </option>
                   ))}
                 </select>

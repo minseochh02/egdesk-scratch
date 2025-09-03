@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ContextManagementService } from './services/contextManagementService';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faRefresh, faSearch, faCog, faBullseye, faTrash, faSave, faExclamationTriangle, faTimes, faBrain, faChartBar, faChartLine } from '@fortawesome/free-solid-svg-icons';
 import './ContextManagementPanel.css';
 
 interface ContextManagementPanelProps {
@@ -67,13 +69,13 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
   return (
     <div className="context-management-panel">
       <div className="panel-header">
-        <h3>🧠 Intelligent Context Management</h3>
-        <button className="close-btn" onClick={onClose}>×</button>
+        <h3><FontAwesomeIcon icon={faBrain} /> Intelligent Context Management</h3>
+        <button className="close-btn" onClick={onClose}><FontAwesomeIcon icon={faTimes} /></button>
       </div>
 
       <div className="panel-content">
         <div className="config-section">
-          <h4>📊 Context Window Configuration</h4>
+          <h4><FontAwesomeIcon icon={faChartBar} /> Context Window Configuration</h4>
           
           <div className="config-group">
             <label>
@@ -137,7 +139,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
         </div>
 
         <div className="config-section">
-          <h4>🔍 Context Gathering Settings</h4>
+          <h4><FontAwesomeIcon icon={faSearch} /> Context Gathering Settings</h4>
           
           <div className="config-group">
             <label>
@@ -210,12 +212,12 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
 
         <details className="advanced-section" open={showAdvanced}>
           <summary onClick={() => setShowAdvanced(!showAdvanced)}>
-            ⚙️ Advanced Settings
+            <FontAwesomeIcon icon={faCog} /> Advanced Settings
           </summary>
           
           <div className="advanced-content">
             <div className="config-section">
-              <h4>🎯 Context Prioritization</h4>
+              <h4><FontAwesomeIcon icon={faBullseye} /> Context Prioritization</h4>
               
               <div className="priority-info">
                 <div className="priority-item">
@@ -245,7 +247,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
             </div>
 
             <div className="config-section">
-              <h4>🔄 Cache Management</h4>
+              <h4><FontAwesomeIcon icon={faRefresh} /> Cache Management</h4>
               
               <div className="cache-controls">
                 <button 
@@ -253,7 +255,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
                   onClick={handleClearCache}
                   title="Clear all cached context snippets"
                 >
-                  🗑️ Clear Context Cache
+                  <FontAwesomeIcon icon={faTrash} /> Clear Context Cache
                 </button>
                 
                 <div className="cache-info">
@@ -266,7 +268,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
         </details>
 
         <div className="config-section">
-          <h4>📈 Performance Impact</h4>
+          <h4><FontAwesomeIcon icon={faChartLine} /> Performance Impact</h4>
           
           <div className="performance-metrics">
             <div className="metric">
@@ -299,7 +301,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
             onClick={handleReset}
             disabled={!isDirty}
           >
-            🔄 Reset
+            <FontAwesomeIcon icon={faRefresh} /> Reset
           </button>
           
           <button 
@@ -307,13 +309,13 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
             onClick={handleSave}
             disabled={!isDirty}
           >
-            💾 Save Configuration
+            <FontAwesomeIcon icon={faSave} /> Save Configuration
           </button>
         </div>
         
         {isDirty && (
           <div className="dirty-indicator">
-            ⚠️ Configuration has unsaved changes
+            <FontAwesomeIcon icon={faExclamationTriangle} /> Configuration has unsaved changes
           </div>
         )}
       </div>

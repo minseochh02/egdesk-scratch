@@ -784,31 +784,31 @@ ipcMain.handle('fs-get-system-directories', async () => {
   
   if (platform === 'darwin') { // macOS
     systemDirs = [
-      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: '🖥️' },
-      { name: '문서', path: path.join(homeDir, 'Documents'), icon: '📁' },
-      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: '⬇️' },
-      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: '🖼️' },
-      { name: '음악', path: path.join(homeDir, 'Music'), icon: '🎵' },
-      { name: '영화', path: path.join(homeDir, 'Movies'), icon: '🎬' },
-      { name: '애플리케이션', path: '/Applications', icon: '🚀' }
+      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: 'desktop' },
+      { name: '문서', path: path.join(homeDir, 'Documents'), icon: 'folder' },
+      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: 'download' },
+      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: 'image' },
+      { name: '음악', path: path.join(homeDir, 'Music'), icon: 'music' },
+      { name: '영화', path: path.join(homeDir, 'Movies'), icon: 'video' },
+      { name: '애플리케이션', path: '/Applications', icon: 'rocket' }
     ];
   } else if (platform === 'win32') { // Windows
     systemDirs = [
-      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: '🖥️' },
-      { name: '문서', path: path.join(homeDir, 'Documents'), icon: '📁' },
-      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: '⬇️' },
-      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: '🖼️' },
-      { name: '음악', path: path.join(homeDir, 'Music'), icon: '🎵' },
-      { name: '비디오', path: path.join(homeDir, 'Videos'), icon: '🎬' }
+      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: 'desktop' },
+      { name: '문서', path: path.join(homeDir, 'Documents'), icon: 'folder' },
+      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: 'download' },
+      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: 'image' },
+      { name: '음악', path: path.join(homeDir, 'Music'), icon: 'music' },
+      { name: '비디오', path: path.join(homeDir, 'Videos'), icon: 'video' }
     ];
   } else { // Linux
     systemDirs = [
-      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: '🖥️' },
-      { name: '문서', path: path.join(homeDir, 'Documents'), icon: '📁' },
-      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: '⬇️' },
-      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: '🖼️' },
-      { name: '음악', path: path.join(homeDir, 'Music'), icon: '🎵' },
-      { name: '비디오', path: path.join(homeDir, 'Videos'), icon: '🎬' }
+      { name: '바탕화면', path: path.join(homeDir, 'Desktop'), icon: 'desktop' },
+      { name: '문서', path: path.join(homeDir, 'Documents'), icon: 'folder' },
+      { name: '다운로드', path: path.join(homeDir, 'Downloads'), icon: 'download' },
+      { name: '사진', path: path.join(homeDir, 'Pictures'), icon: 'image' },
+      { name: '음악', path: path.join(homeDir, 'Music'), icon: 'music' },
+      { name: '비디오', path: path.join(homeDir, 'Videos'), icon: 'video' }
     ];
   }
   

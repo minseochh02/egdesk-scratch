@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import ProjectSelector from './ProjectSelector';
 import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faGlobe, faTimes, faQuestion, faRefresh, faCode } from '@fortawesome/free-solid-svg-icons';
 import './LocalServer.css';
 
 interface ServerStatus {
@@ -97,7 +99,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
             addLog(`🎯 Will serve from: ${result.info.detectedRoot}`);
           }
           if (result.info.htmlFileCount > 0) {
-            addLog(`🌐 HTML files: ${result.info.htmlFileCount}`);
+            addLog(`HTML files: ${result.info.htmlFileCount}`);
           }
           if (result.info.phpFileCount > 0) {
             addLog(`🐘 PHP files: ${result.info.phpFileCount}`);
@@ -106,10 +108,10 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
           addLog(`⚠️  Folder structure not recognized, but server can still try to serve it: ${folderPath}`);
         }
       } else {
-        addLog(`❌ Error analyzing folder: ${result.error}`);
+        addLog(`Error analyzing folder: ${result.error}`);
       }
     } catch (error) {
-      addLog(`❌ Error analyzing folder: ${error}`);
+      addLog(`Error analyzing folder: ${error}`);
     }
   };
 
@@ -121,22 +123,22 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
         await ProjectContextService.getInstance().setCurrentProject(result.folderPath);
         await analyzeFolder(result.folderPath);
       } else {
-        addLog(`❌ No folder selected: ${result.error}`);
+        addLog(`No folder selected: ${result.error}`);
       }
     } catch (error) {
-      addLog(`❌ Error selecting folder: ${error}`);
+      addLog(`Error selecting folder: ${error}`);
     }
   };
 
   const startServer = async () => {
     if (!folderInfo) {
-      addLog('❌ Please select a folder first');
+      addLog('Please select a folder first');
       return;
     }
     
     // Allow any folder that exists - the server can handle various structures
     if (!folderInfo.exists) {
-      addLog('❌ Selected folder does not exist');
+      addLog('Selected folder does not exist');
       return;
     }
 
@@ -158,12 +160,12 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
           error: undefined
         }));
       } else {
-        const errorMsg = `❌ Failed to start server: ${result.error}`;
+        const errorMsg = `Failed to start server: ${result.error}`;
         addLog(errorMsg);
         setServerStatus(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (error) {
-      const errorMsg = `❌ Failed to start server: ${error}`;
+      const errorMsg = `Failed to start server: ${error}`;
       addLog(errorMsg);
       setServerStatus(prev => ({ ...prev, error: errorMsg }));
     } finally {
@@ -184,10 +186,10 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
           isRunning: false
         }));
       } else {
-        addLog(`❌ Error stopping server: ${result.error}`);
+        addLog(`Error stopping server: ${result.error}`);
       }
     } catch (error) {
-      addLog(`❌ Error stopping server: ${error}`);
+      addLog(`Error stopping server: ${error}`);
     } finally {
       setIsLoading(false);
     }
@@ -260,13 +262,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   className="btn btn-secondary"
                   onClick={() => ProjectContextService.getInstance().updateProjectMetadata(currentProject.id)}
                 >
-                  🔄 Refresh Metadata
+                  <FontAwesomeIcon icon={faRefresh} /> Refresh Metadata
                 </button>
                 <button 
                   className="btn btn-secondary"
                   onClick={() => ProjectContextService.getInstance().refreshAllProjects()}
                 >
-                  🔄 Refresh All Projects
+                  <FontAwesomeIcon icon={faRefresh} /> Refresh All Projects
                 </button>
               </div>
             </div>
@@ -300,16 +302,16 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 {folderInfo.hasWordPress ? '✅' : '⚠️'} Server Compatible
               </div>
               <div className={`status-indicator ${folderInfo.folderType === 'www' ? 'success' : folderInfo.folderType === 'wordpress' ? 'success' : folderInfo.folderType === 'mixed' ? 'success' : 'warning'}`}>
-                {folderInfo.folderType === 'www' ? '🌐' : folderInfo.folderType === 'wordpress' ? '🐘' : folderInfo.folderType === 'mixed' ? '🔄' : '❓'} {folderInfo.folderType}
+                {folderInfo.folderType === 'www' ? <FontAwesomeIcon icon={faGlobe} /> : folderInfo.folderType === 'wordpress' ? <FontAwesomeIcon icon={faCode} /> : folderInfo.folderType === 'mixed' ? <FontAwesomeIcon icon={faRefresh} /> : <FontAwesomeIcon icon={faQuestion} />} {folderInfo.folderType}
               </div>
               {folderInfo.htmlFileCount > 0 && (
                 <div className="status-indicator success">
-                  🌐 {folderInfo.htmlFileCount} HTML files
+                  <FontAwesomeIcon icon={faGlobe} /> {folderInfo.htmlFileCount} HTML files
                 </div>
               )}
               {folderInfo.phpFileCount > 0 && (
                 <div className="status-indicator success">
-                  🐘 {folderInfo.phpFileCount} PHP files
+                  <FontAwesomeIcon icon={faCode} /> {folderInfo.phpFileCount} PHP files
                 </div>
               )}
               {folderInfo.folderType === 'wordpress' || folderInfo.folderType === 'mixed' ? (

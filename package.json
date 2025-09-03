@@ -106,6 +106,9 @@
   },
   "dependencies": {
     "@electron/notarize": "^3.0.0",
+    "@fortawesome/fontawesome-svg-core": "^7.0.0",
+    "@fortawesome/free-solid-svg-icons": "^7.0.0",
+    "@fortawesome/react-fontawesome": "^3.0.2",
     "electron-debug": "^4.1.0",
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",

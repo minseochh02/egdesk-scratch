@@ -15,27 +15,12 @@ export const DualScreenDemo: React.FC = () => {
     // In a real implementation, this would apply the edits to the files
   };
 
-  // Mock project context for demonstration
-  const projectContext = {
-    currentProject: {
-      name: 'Demo Project',
-      path: '/demo/project',
-      type: 'web'
-    },
-    availableFiles: [
-      { name: 'index.html', path: '/demo/project/index.html', type: 'file' },
-      { name: 'style.css', path: '/demo/project/style.css', type: 'file' },
-      { name: 'script.js', path: '/demo/project/script.js', type: 'file' }
-    ]
-  };
-
   return (
     <DualScreenEditor
       isVisible={true}
       currentFile={currentFile}
       onApplyEdits={handleApplyEdits}
       onClose={() => {}} // No longer needed
-      projectContext={projectContext}
     />
   );
 };

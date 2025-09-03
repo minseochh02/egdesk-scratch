@@ -1,4 +1,6 @@
 import React from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faComments, faSearch, faRefresh } from '@fortawesome/free-solid-svg-icons';
 import './MessageContent.css';
 
 interface MessageContentProps {
@@ -218,7 +220,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
     <div className="message-content-structured">
       {/* Show the original content first */}
       <div className="original-content">
-        <h4>💬 AI Response</h4>
+        <h4><FontAwesomeIcon icon={faComments} /> AI Response</h4>
         <div className="content-text">
           {content}
         </div>
@@ -226,7 +228,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
       
       {/* Show detected search/replace operations */}
       <div className="search-replace-operations">
-        <h4>🔍 Detected {searchReplaceOps.length} Search/Replace Operation(s)</h4>
+        <h4><FontAwesomeIcon icon={faSearch} /> Detected {searchReplaceOps.length} Search/Replace Operation(s)</h4>
         
         {searchReplaceOps.map((op, index) => (
           <div key={index} className="operation-card">
@@ -242,12 +244,12 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
             
             <div className="operation-content">
               <div className="search-section">
-                <h5>🔍 Search for:</h5>
+                <h5><FontAwesomeIcon icon={faSearch} /> Search for:</h5>
                 <pre className="search-text">{op.searchText}</pre>
               </div>
               
               <div className="replace-section">
-                <h5>🔄 Replace with:</h5>
+                <h5><FontAwesomeIcon icon={faRefresh} /> Replace with:</h5>
                 <pre className="replace-text">{op.replaceText}</pre>
               </div>
             </div>

@@ -3,6 +3,8 @@ import { AIEditor } from './AIEditor';
 import { AIEdit } from './AIEditor/types';
 import ProjectSelector from './ProjectSelector';
 import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFolder, faLink, faFile, faCode, faSave, faPalette, faRobot, faStar, faSearch, faRocket, faClipboard, faClock, faRefresh, faHome, faTimes, faEye, faCheck, faInfo, faThLarge, faGlobe, faEdit, faHashtag, faReply, faBug, faArrowUp } from '@fortawesome/free-solid-svg-icons';
 import './CodeEditor.css';
 
 interface FileSystemItem {
@@ -27,7 +29,9 @@ const CodeEditor: React.FC<{
   isEditing?: boolean;
   onToggleEditing?: () => void;
   instanceId?: string; // Add unique instance identifier
-}> = ({ isEditing = false, onToggleEditing, instanceId = 'main' }) => {
+  initialFilesToOpen?: string[]; // Open once on mount
+  filesToOpen?: string[]; // Open on change
+}> = ({ isEditing = false, onToggleEditing, instanceId = 'main', initialFilesToOpen, filesToOpen }) => {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [fileItems, setFileItems] = useState<FileSystemItem[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -42,6 +46,8 @@ const CodeEditor: React.FC<{
   const [showAIEditor, setShowAIEditor] = useState(false);
   const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
   const [projectFiles, setProjectFiles] = useState<any[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [folderContents, setFolderContents] = useState<Map<string, FileSystemItem[]>>(new Map());
 
 
 
@@ -50,11 +56,42 @@ const CodeEditor: React.FC<{
   const openFilesRef = useRef<OpenFile[]>([]);
   const autoOpenStartedRef = useRef<Record<string, boolean>>({});
   const autoOpenInProgressRef = useRef<boolean>(false);
+  const initialFilesOpenedRef = useRef<boolean>(false);
 
   // Keep a ref in sync with openFiles state for use in async callbacks
   useEffect(() => {
     openFilesRef.current = openFiles;
   }, [openFiles]);
+
+  // Open initial files once
+  useEffect(() => {
+    const openInitial = async () => {
+      if (initialFilesOpenedRef.current) return;
+      if (initialFilesToOpen && initialFilesToOpen.length > 0) {
+        initialFilesOpenedRef.current = true;
+        for (const filePath of initialFilesToOpen) {
+          const name = filePath.split('/').pop() || filePath;
+          await openFile(filePath, name);
+        }
+      }
+    };
+    openInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFilesToOpen]);
+
+  // Open any files passed via prop when it changes
+  useEffect(() => {
+    const openIncoming = async () => {
+      if (filesToOpen && filesToOpen.length > 0) {
+        for (const filePath of filesToOpen) {
+          const name = filePath.split('/').pop() || filePath;
+          await openFile(filePath, name);
+        }
+      }
+    };
+    openIncoming();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filesToOpen && filesToOpen.join('|')]);
   // Initialize with home directory
   useEffect(() => {
     const initializeFileSystem = async () => {
@@ -113,15 +150,19 @@ const CodeEditor: React.FC<{
   };
 
   const loadDirectory = useCallback(async (path: string) => {
+    console.log('🔍 loadDirectory called with path:', path, 'currentPath:', currentPath, 'isLoading:', isLoading);
     if (currentPath === path && !isLoading) {
+      console.log('⏭️ Skipping loadDirectory - same path and not loading');
       return;
     }
 
+    console.log('📁 Starting to load directory:', path);
     setIsLoading(true);
     setError('');
     
     try {
       const result = await window.electron.fileSystem.readDirectory(path);
+      console.log('📁 Directory read result:', result);
       
       if (result.success && result.items) {
         const validItems = result.items.filter(item => {
@@ -131,14 +172,17 @@ const CodeEditor: React.FC<{
           return true;
         });
         
+        console.log('📁 Valid items found:', validItems.length, validItems.map(i => `${i.name} (${i.isDirectory ? 'dir' : 'file'})`));
         setFileItems(validItems);
         setCurrentPath(path);
+        console.log(`✅ Loaded ${validItems.length} items from ${path}`);
       } else {
+        console.error('❌ Failed to load directory:', result.error);
         setError(result.error || '폴더를 읽을 수 없습니다.');
         setFileItems([]);
       }
     } catch (error) {
-      console.error('Error loading directory:', error);
+      console.error('❌ Error loading directory:', error);
       setError('폴더를 로드하는 중 오류가 발생했습니다.');
       setFileItems([]);
     } finally {
@@ -174,55 +218,77 @@ const CodeEditor: React.FC<{
     return unsubscribe;
   }, [currentPath]); // Remove loadDirectory from dependencies to avoid circular dependency
 
+  // Recursively scan directory for project files
+  const scanDirectoryRecursively = async (dirPath: string, maxDepth: number = 10, currentDepth: number = 0): Promise<any[]> => {
+    if (currentDepth >= maxDepth) {
+      console.log(`Max depth reached for ${dirPath}`);
+      return [];
+    }
+
+    try {
+      const result = await window.electron.fileSystem.readDirectory(dirPath);
+      if (!result.success || !result.items) {
+        return [];
+      }
+
+      const allFiles: any[] = [];
+      
+      for (const item of result.items) {
+        if (item.isFile) {
+          // Check if file is supported
+          const ext = item.name.split('.').pop()?.toLowerCase();
+          const isSupported = [
+            // Code files
+            'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'cpp', 'c', 'php', 'html', 'css', 
+            // Config files
+            'json', 'yaml', 'yml', 'toml', 'ini', 'conf',
+            // Documentation
+            'md', 'markdown', 'txt', 'rst',
+            // Database
+            'sql', 'db', 'sqlite',
+            // Shell scripts
+            'sh', 'bash', 'zsh', 'fish',
+            // Docker
+            'dockerfile', 'docker',
+            // Other common files
+            'xml', 'csv', 'tsv', 'log'
+          ].includes(ext || 'unknown');
+          
+          if (isSupported) {
+            allFiles.push({
+              path: item.path,
+              name: item.name,
+              type: ext || 'unknown'
+            });
+          }
+        } else if (item.isDirectory && !item.isHidden) {
+          // Recursively scan subdirectories (skip hidden folders like .git, .node_modules, etc.)
+          const subFiles = await scanDirectoryRecursively(item.path, maxDepth, currentDepth + 1);
+          allFiles.push(...subFiles);
+        }
+      }
+      
+      return allFiles;
+    } catch (error) {
+      console.error(`Error scanning directory ${dirPath}:`, error);
+      return [];
+    }
+  };
+
   // Load project files for AI Editor
   const loadProjectFiles = async (projectPath: string) => {
     try {
-      console.log('Loading project files from:', projectPath);
-      const result = await window.electron.fileSystem.readDirectory(projectPath);
-      if (result.success && result.items) {
-        console.log('CodeEditor: Raw items:', result.items);
-        
-        const fileItems = result.items.filter(item => item.isFile);
-        console.log('CodeEditor: File items only:', fileItems);
-        
-        const files = fileItems
-          .filter(item => {
-            const ext = item.name.split('.').pop()?.toLowerCase();
-            console.log('CodeEditor: Checking file:', item.name, 'extension:', ext);
-            const isSupported = [
-              // Code files
-              'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'cpp', 'c', 'php', 'html', 'css', 
-              // Config files
-              'json', 'yaml', 'yml', 'toml', 'ini', 'conf',
-              // Documentation
-              'md', 'markdown', 'txt', 'rst',
-              // Database
-              'sql', 'db', 'sqlite',
-              // Shell scripts
-              'sh', 'bash', 'zsh', 'fish',
-              // Docker
-              'dockerfile', 'docker',
-              // Other common files
-              'xml', 'csv', 'tsv', 'log'
-            ].includes(ext || 'unknown');
-            console.log('CodeEditor: Is supported:', isSupported);
-            return isSupported;
-          })
-          .map(item => ({
-            path: item.path,
-            name: item.name,
-            type: item.name.split('.').pop() || 'unknown'
-          }));
-        console.log('Found project files:', files.length, files.map(f => f.name));
-        setProjectFiles(files);
-        
-        // Auto-open some key project files if none are open (only once per project)
-        console.log('🔍 Checking auto-open: openFiles.length =', openFilesRef.current.length, 'files.length =', files.length);
-        if (!autoOpenStartedRef.current[projectPath] && openFilesRef.current.length === 0 && files.length > 0) {
-          autoOpenStartedRef.current[projectPath] = true;
-          console.log('🚀 Auto-opening project files...');
-          await autoOpenProjectFiles(files);
-        }
+      console.log('Loading project files recursively from:', projectPath);
+      const files = await scanDirectoryRecursively(projectPath);
+      console.log('Found project files:', files.length, files.map(f => f.name));
+      setProjectFiles(files);
+      
+      // Auto-open some key project files if none are open (only once per project)
+      console.log('🔍 Checking auto-open: openFiles.length =', openFilesRef.current.length, 'files.length =', files.length);
+      if (!autoOpenStartedRef.current[projectPath] && openFilesRef.current.length === 0 && files.length > 0) {
+        autoOpenStartedRef.current[projectPath] = true;
+        console.log('🚀 Auto-opening project files...');
+        await autoOpenProjectFiles(files);
       }
     } catch (error) {
       console.error('Failed to load project files:', error);
@@ -268,12 +334,66 @@ const CodeEditor: React.FC<{
   };
 
   const handleFileClick = useCallback(async (item: FileSystemItem) => {
-    if (item.isDirectory) {
-      await loadDirectory(item.path);
-    } else if (item.isFile) {
-      await openFile(item.path, item.name);
+    console.log('🔍 handleFileClick called:', item.name, 'isDirectory:', item.isDirectory, 'isFile:', item.isFile);
+    try {
+      if (item.isDirectory) {
+        console.log('📁 Toggling folder expansion:', item.path);
+        await toggleFolderExpansion(item);
+      } else if (item.isFile) {
+        console.log('📄 Opening file:', item.path);
+        await openFile(item.path, item.name);
+      }
+    } catch (error) {
+      console.error('❌ Error in handleFileClick:', error);
+      setError(`Failed to open ${item.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [loadDirectory]);
+  }, []);
+
+  const toggleFolderExpansion = useCallback(async (folder: FileSystemItem) => {
+    const folderPath = folder.path;
+    
+    setExpandedFolders(prev => {
+      const isExpanded = prev.has(folderPath);
+      
+      if (isExpanded) {
+        // Collapse folder
+        console.log(`📁 Collapsing folder ${folder.name}`);
+        const newSet = new Set(prev);
+        newSet.delete(folderPath);
+        return newSet;
+      } else {
+        // Expand folder - load its contents
+        console.log(`📁 Expanding folder ${folder.name}`);
+        
+        // Mark folder as expanded first
+        const newSet = new Set(prev).add(folderPath);
+        
+        // Load folder contents asynchronously
+        window.electron.fileSystem.readDirectory(folderPath).then(result => {
+          if (result.success && result.items) {
+            const validItems = result.items.filter(item => {
+              if (!item.name || !item.path) {
+                return false;
+              }
+              return true;
+            });
+            
+            // Store folder contents
+            setFolderContents(prevContents => new Map(prevContents).set(folderPath, validItems));
+            console.log(`📁 Loaded ${validItems.length} items for folder ${folder.name}`);
+          } else {
+            console.error('❌ Failed to load folder contents:', result.error);
+            setError(result.error || 'Failed to load folder contents');
+          }
+        }).catch(error => {
+          console.error('❌ Error loading folder contents:', error);
+          setError('Failed to load folder contents');
+        });
+        
+        return newSet;
+      }
+    });
+  }, []);
 
   const openFile = async (filePath: string, fileName: string) => {
     try {
@@ -403,34 +523,67 @@ const CodeEditor: React.FC<{
   };
 
   const getFileIcon = (item: FileSystemItem) => {
-    if (item.isDirectory) return '📁';
-    if (item.isSymlink) return '🔗';
+    if (item.isDirectory) return faFolder;
+    if (item.isSymlink) return faLink;
     
     const ext = item.name.split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'js':
       case 'ts':
       case 'jsx':
-      case 'tsx': return '💻';
-      case 'html': return '🌐';
-      case 'css': return '🎨';
-      case 'php': return '🐘';
-      case 'py': return '🐍';
-      case 'java': return '☕';
+      case 'tsx': return faCode;
+      case 'html': return faFile;
+      case 'css': return faPalette;
+      case 'php': return faCode;
+      case 'py': return faCode;
+      case 'java': return faCode;
       case 'cpp':
       case 'cc':
       case 'cxx':
-      case 'c': return '⚙️';
-      case 'json': return '📋';
-      case 'xml': return '📄';
-      case 'md': return '📝';
-      case 'sql': return '🗄️';
+      case 'c': return faCode;
+      case 'json': return faFile;
+      case 'xml': return faFile;
+      case 'md': return faFile;
+      case 'sql': return faFile;
       case 'sh':
-      case 'bash': return '💻';
+      case 'bash': return faCode;
       case 'yaml':
-      case 'yml': return '⚙️';
-      default: return '📄';
+      case 'yml': return faFile;
+      default: return faFile;
     }
+  };
+
+  const renderTreeItem = (item: FileSystemItem, depth: number = 0) => {
+    const isExpanded = expandedFolders.has(item.path);
+    const contents = folderContents.get(item.path) || [];
+    
+    return (
+      <div key={`${instanceId}-${item.path}`}>
+        <div
+          className={`file-tree-item ${item.isDirectory ? 'folder' : 'file'} ${isExpanded ? 'expanded' : ''}`}
+          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          onClick={() => handleFileClick(item)}
+        >
+          <div className="file-icon">
+            {item.isDirectory && (
+              <span className="folder-toggle" style={{ marginRight: '4px' }}>
+                {isExpanded ? '▼' : '▶'}
+              </span>
+            )}
+            <FontAwesomeIcon icon={getFileIcon(item)} />
+          </div>
+          <div className="file-name">{item.name}</div>
+        </div>
+        
+        {item.isDirectory && isExpanded && contents.length > 0 && (
+          <div className="folder-contents">
+            {contents.map((childItem, index) => 
+              renderTreeItem(childItem, depth + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const pathParts = currentPath.split('/').filter(Boolean).map((part, index) => ({
@@ -481,7 +634,7 @@ const CodeEditor: React.FC<{
   // Function to open localhost:8000 in browser
   const openLocalhost8000 = () => {
     setIsOpeningBrowser(true);
-    setInfoMessage('🔄 Opening browser to show AI changes...');
+    setInfoMessage('Opening browser to show AI changes...');
     
     // Check if this is a WordPress project
     const isWordPressProject = currentProject?.type === 'wordpress' || 
@@ -490,7 +643,7 @@ const CodeEditor: React.FC<{
                               currentPath.includes('wp-content');
     
     if (!isWordPressProject) {
-      setInfoMessage('ℹ️ Not a WordPress project. Opening localhost:8000 anyway for general web development.');
+      setInfoMessage('Not a WordPress project. Opening localhost:8000 anyway for general web development.');
     }
     
     try {
@@ -506,7 +659,7 @@ const CodeEditor: React.FC<{
             
             // Show success message to user
             setError(''); // Clear any previous errors
-            setInfoMessage(`✅ AI changes applied! Opening ${url} to show results...`);
+            setInfoMessage(`AI changes applied! Opening ${url} to show results...`);
             
             // Clear info message after 5 seconds
             setTimeout(() => {
@@ -569,7 +722,7 @@ const CodeEditor: React.FC<{
         }, 5000);
       } catch (fallbackError) {
         console.error('Fallback also failed:', fallbackError);
-        setError('❌ Failed to open browser. Please manually navigate to localhost:8000 to see changes.');
+        setError('Failed to open browser. Please manually navigate to localhost:8000 to see changes.');
         setIsOpeningBrowser(false);
       }
     }
@@ -582,48 +735,18 @@ const CodeEditor: React.FC<{
         <div className="toolbar-left">
           {/* Navigation Controls */}
           <div className="toolbar-group">
-            <button className="toolbar-btn" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} title="사이드바 토글">
-              {sidebarCollapsed ? '▶' : '◀'}
-            </button>
             <button className="toolbar-btn" onClick={navigateToParent} disabled={currentPath === '/'} title="상위 폴더">
-              ⬆️
+              <FontAwesomeIcon icon={faArrowUp} />
             </button>
             <button className="toolbar-btn" onClick={navigateToHome} title="홈 디렉토리">
-              🏠
+              <FontAwesomeIcon icon={faHome} />
             </button>
             <button className="toolbar-btn" onClick={() => loadDirectory(currentPath)} title="새로고침">
-              🔄
+              <FontAwesomeIcon icon={faRefresh} />
             </button>
           </div>
           
-          {/* Project Selector */}
-          <div className="project-selector-container">
-            <ProjectSelector
-              onProjectSelect={(project) => {
-                console.log('Project selected from toolbar:', project.path);
-                setCurrentPath(project.path);
-                loadDirectory(project.path);
-                loadProjectFiles(project.path);
-              }}
-              showCurrentProject={true}
-              showRecentProjects={false}
-              showAvailableProjects={false}
-              className="compact"
-            />
-          </div>
-          
-          {/* Path Breadcrumb */}
-          <div className="path-breadcrumb">
-            {pathParts.map((part, index) => (
-              <span 
-                key={index}
-                onClick={() => loadDirectory(part.path)}
-                className="breadcrumb-item"
-              >
-                {part.name}
-              </span>
-            ))}
-          </div>
+
         </div>
         
         <div className="toolbar-right">
@@ -634,36 +757,25 @@ const CodeEditor: React.FC<{
               onClick={() => setShowAIEditor(!showAIEditor)}
               title="AI 에디터 토글"
             >
-              🤖
+              <FontAwesomeIcon icon={faRobot} />
             </button>
             <button
               className={`toolbar-btn ${showLineNumbers ? 'active' : ''}`}
               onClick={() => setShowLineNumbers(!showLineNumbers)}
               title="줄 번호 표시/숨김"
             >
-              🔢
+              <FontAwesomeIcon icon={faHashtag} />
             </button>
             <button
               className={`toolbar-btn ${wordWrap ? 'active' : ''}`}
               onClick={() => setWordWrap(!wordWrap)}
               title="자동 줄바꿈"
             >
-              ↩️
+              <FontAwesomeIcon icon={faReply} />
             </button>
           </div>
           
-          {/* File Status */}
-          <div className="file-status">
-            <span className="status-text">
-              {openFiles.length > 0 ? `${openFiles.length} 파일 열림` : '파일이 열려있지 않음'}
-            </span>
-            {activeFileIndex >= 0 && openFiles[activeFileIndex] && (
-              <span className="current-file-info">
-                📄 {openFiles[activeFileIndex].name}
-                {openFiles[activeFileIndex].isModified && <span className="modified-indicator">●</span>}
-              </span>
-            )}
-          </div>
+
           
           {/* Debug Button */}
           {process.env.NODE_ENV === 'development' && (
@@ -677,7 +789,7 @@ const CodeEditor: React.FC<{
               }}
               title="Debug Info"
             >
-              🐛
+              <FontAwesomeIcon icon={faBug} />
             </button>
           )}
         </div>
@@ -687,7 +799,27 @@ const CodeEditor: React.FC<{
         {/* File Explorer Sidebar */}
         <div className={`file-explorer ${sidebarCollapsed ? 'collapsed' : ''}`}>
           <div className="explorer-header">
-            <h3>📁 파일 탐색기</h3>
+            <div className="explorer-header-left">
+              <button className="explorer-toggle-btn" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} title="사이드바 토글">
+                {sidebarCollapsed ? '▶' : '◀'}
+              </button>
+            </div>
+            <div className="explorer-header-right">
+              <div className="project-selector-container">
+                <ProjectSelector
+                  onProjectSelect={(project) => {
+                    console.log('Project selected from explorer:', project.path);
+                    setCurrentPath(project.path);
+                    loadDirectory(project.path);
+                    loadProjectFiles(project.path);
+                  }}
+                  showCurrentProject={true}
+                  showRecentProjects={false}
+                  showAvailableProjects={false}
+                  className="compact"
+                />
+              </div>
+            </div>
           </div>
           <div className="explorer-content">
             {isLoading ? (
@@ -697,7 +829,7 @@ const CodeEditor: React.FC<{
               </div>
             ) : error ? (
               <div className="error-indicator">
-                <p>❌ {error}</p>
+                <p><FontAwesomeIcon icon={faTimes} /> {error}</p>
               </div>
             ) : infoMessage ? (
               <div className="info-indicator">
@@ -705,16 +837,7 @@ const CodeEditor: React.FC<{
               </div>
             ) : (
               <div className="file-tree">
-                {fileItems.map((item, index) => (
-                  <div
-                    key={`${instanceId}-${item.path}-${index}`}
-                    className={`file-tree-item ${item.isDirectory ? 'folder' : 'file'}`}
-                    onClick={() => handleFileClick(item)}
-                  >
-                    <span className="file-icon">{getFileIcon(item)}</span>
-                    <span className="file-name">{item.name}</span>
-                  </div>
-                ))}
+                {fileItems.map((item, index) => renderTreeItem(item, 0))}
               </div>
             )}
           </div>
@@ -748,35 +871,7 @@ const CodeEditor: React.FC<{
           <div className="editor-area">
             {activeFileIndex >= 0 && openFiles[activeFileIndex] ? (
               <div className="editor-container">
-                <div className="editor-header">
-                  <div className="file-info">
-                    <span className="file-language">{openFiles[activeFileIndex].language}</span>
-                    <span className="file-path">{openFiles[activeFileIndex].path}</span>
-                    {openFiles[activeFileIndex].isModified && (
-                      <span className="modified-status">● 수정됨</span>
-                    )}
-                  </div>
-                  <div className="editor-actions">
-                    {onToggleEditing && (
-                      <button
-                        className={`editor-toggle-btn ${isEditing ? 'editing' : 'server'}`}
-                        onClick={onToggleEditing}
-                        title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
-                      >
-                        {isEditing ? '🌐 Show Server' : '✏️ Show Editor'}
-                      </button>
-                    )}
-                    <button
-                      className="save-btn"
-                      onClick={() => saveFile(activeFileIndex)}
-                      disabled={!openFiles[activeFileIndex].isModified}
-                      title="Ctrl+S로 저장"
-                    >
-                      💾 저장
-                    </button>
-                    <span className="shortcut-hint">Ctrl+S</span>
-                  </div>
-                </div>
+
                 <div className="editor-wrapper">
                   {showLineNumbers && (
                     <div className="line-numbers">
@@ -800,27 +895,27 @@ const CodeEditor: React.FC<{
             ) : (
               <div className="welcome-screen">
                 <div className="welcome-content">
-                  <h2>👋 코드 에디터에 오신 것을 환영합니다</h2>
+                  <h2>코드 에디터에 오신 것을 환영합니다</h2>
                   <p>왼쪽 파일 탐색기에서 파일을 선택하여 편집을 시작하세요.</p>
                   <div className="welcome-features">
                     <div className="feature">
-                      <span className="feature-icon">📁</span>
+                      <span className="feature-icon"><FontAwesomeIcon icon={faFolder} /></span>
                       <span>파일 탐색기</span>
                     </div>
                     <div className="feature">
-                      <span className="feature-icon">💻</span>
+                      <span className="feature-icon"><FontAwesomeIcon icon={faCode} /></span>
                       <span>코드 편집</span>
                     </div>
                     <div className="feature">
-                      <span className="feature-icon">💾</span>
+                      <span className="feature-icon"><FontAwesomeIcon icon={faSave} /></span>
                       <span>자동 저장</span>
                     </div>
                     <div className="feature">
-                      <span className="feature-icon">🎨</span>
+                      <span className="feature-icon"><FontAwesomeIcon icon={faPalette} /></span>
                       <span>구문 강조</span>
                     </div>
                     <div className="feature">
-                      <span className="feature-icon">🤖</span>
+                      <span className="feature-icon"><FontAwesomeIcon icon={faRobot} /></span>
                       <span>AI 편집</span>
                     </div>
                   </div>
@@ -857,13 +952,13 @@ const CodeEditor: React.FC<{
           {activeFileIndex >= 0 && openFiles[activeFileIndex] && (
             <>
               <span className="status-item">
-                📄 {openFiles[activeFileIndex].name}
+                <FontAwesomeIcon icon={faFile} /> {openFiles[activeFileIndex].name}
               </span>
               <span className="status-item">
                 💾 {openFiles[activeFileIndex].isModified ? '수정됨' : '저장됨'}
               </span>
               <span className="status-item">
-                🎨 {openFiles[activeFileIndex].language}
+                <FontAwesomeIcon icon={faPalette} /> {openFiles[activeFileIndex].language}
               </span>
             </>
           )}
@@ -888,7 +983,7 @@ const CodeEditor: React.FC<{
           )}
           {isOpeningBrowser && (
             <span className="status-item">
-              🌐 브라우저 열는 중...
+              <FontAwesomeIcon icon={faGlobe} /> 브라우저 열는 중...
             </span>
           )}
         </div>
