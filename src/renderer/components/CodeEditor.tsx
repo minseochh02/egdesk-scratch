@@ -874,7 +874,7 @@ const CodeEditor: React.FC<{
 
                 <div className="editor-wrapper">
                   {showLineNumbers && (
-                    <div className="line-numbers">
+                    <div className="line-numbers" id={`line-numbers-${instanceId}`}>
                       {openFiles[activeFileIndex].content.split('\n').map((_, index) => (
                         <div key={index} className="line-number">
                           {index + 1}
@@ -884,11 +884,19 @@ const CodeEditor: React.FC<{
                   )}
                   <textarea
                     className={`code-textarea ${wordWrap ? 'word-wrap' : ''}`}
+                    id={`code-textarea-${instanceId}`}
                     value={openFiles[activeFileIndex].content}
                     onChange={(e) => updateFileContent(activeFileIndex, e.target.value)}
                     placeholder="코드를 입력하세요..."
                     spellCheck={false}
                     wrap={wordWrap ? 'soft' : 'off'}
+                    onScroll={(e) => {
+                      // Synchronize line numbers scrolling with textarea
+                      const lineNumbers = document.getElementById(`line-numbers-${instanceId}`);
+                      if (lineNumbers) {
+                        lineNumbers.scrollTop = e.currentTarget.scrollTop;
+                      }
+                    }}
                   />
                 </div>
               </div>

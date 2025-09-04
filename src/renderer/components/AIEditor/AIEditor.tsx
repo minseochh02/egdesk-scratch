@@ -126,9 +126,19 @@ When suggesting code changes, you can use either:
 - Code block suggestions with explanations
 
 SEARCH/REPLACE FORMAT (for specific changes):
+\`\`\`search-replace
+FILE: complete/relative/path/from/project/root/file.ext
+LINES: startLineNumber-endLineNumber
+SEARCH: exact code to find
+REPLACE: exact code to replace it with
 \`\`\`
-// ... original code goes here
-\`\`\`
+
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
 
 CODE BLOCK FORMAT (for suggestions):
 \`\`\`[language]
@@ -454,7 +464,24 @@ You can work with individual files or dynamically discover and analyze files acr
         const pathParts = normalizedPath.split('/');
         const fileName = pathParts.pop(); // Remove filename
         projectRoot = pathParts.join('/'); // Keep the directory path
-        normalizedPath = fileName || currentFileData.name;
+        
+        // Create relative path from project root instead of just filename
+        // Find the project root within the absolute path
+        const projectRootIndex = pathParts.findIndex(part => 
+          part.includes('EGDesk-scratch') || part.includes('egdesk-scratch')
+        );
+        
+        if (projectRootIndex !== -1) {
+          // Create relative path from project root
+          const relativeParts = pathParts.slice(projectRootIndex + 1);
+          normalizedPath = relativeParts.length > 0 
+            ? `${relativeParts.join('/')}/${fileName}`
+            : fileName || currentFileData.name;
+        } else {
+          // Fallback to just filename if project root not found
+          normalizedPath = fileName || currentFileData.name;
+        }
+        
         console.log('🔍 Normalized file path from absolute to relative:', normalizedPath);
         console.log('🔍 Project root directory:', projectRoot);
       }

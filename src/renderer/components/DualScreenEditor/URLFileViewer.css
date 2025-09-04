@@ -290,17 +290,20 @@
 .editor-wrapper {
   flex: 1;
   display: flex;
-  overflow: hidden;
+  overflow: auto; /* Make the wrapper scrollable */
+  height: 100%; /* Ensure full height */
+  position: relative; /* For proper positioning */
 }
 
 .line-numbers {
   background: var(--line-numbers-bg, #1e1e1e);
   border-right: 1px solid var(--border-color, #3c3c3c);
   padding: 4px 0;
-  overflow-y: auto;
+  overflow: visible; /* Allow line numbers to be visible */
   min-width: 40px;
   text-align: right;
   user-select: none;
+  flex-shrink: 0; /* Prevent line numbers from shrinking */
 }
 
 .line-number {
@@ -309,6 +312,35 @@
   font-size: 11px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   line-height: 1.4;
+}
+
+.line-number.deleted-line {
+  background-color: #4a2a2a;
+  color: #ffaaaa;
+  font-weight: bold;
+}
+
+.line-number.added-line {
+  background-color: #2a4a2a;
+  color: #90ee90;
+  font-weight: bold;
+  font-style: italic;
+}
+
+.code-line.deleted-line {
+  background-color: #4a2a2a;
+  color: #ffaaaa;
+  border-left: 3px solid #ff4444;
+  padding-left: 7px;
+  margin: 2px 0;
+}
+
+.code-line.added-line {
+  background-color: #2a4a2a;
+  color: #90ee90;
+  border-left: 3px solid #00ff00;
+  padding-left: 7px;
+  margin: 2px 0;
 }
 
 .code-textarea {
@@ -322,10 +354,31 @@
   line-height: 1.4;
   padding: 4px 8px;
   resize: none;
-  overflow: auto;
+  overflow: auto; /* Only the textarea should scroll */
+  height: 100%; /* Ensure full height */
 }
 
 .code-textarea.word-wrap {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.code-content {
+  flex: 1;
+  overflow: visible; /* Content should not scroll, wrapper handles it */
+  background: var(--editor-bg, #1e1e1e);
+  color: var(--code-text, #d4d4d4);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre;
+  padding: 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  min-height: 400px;
+}
+
+.code-content.word-wrap {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
@@ -399,7 +452,6 @@
 
 /* Scrollbar Styling */
 .url-file-explorer::-webkit-scrollbar,
-.line-numbers::-webkit-scrollbar,
 .code-textarea::-webkit-scrollbar,
 .file-tabs::-webkit-scrollbar {
   width: 6px;
@@ -407,14 +459,12 @@
 }
 
 .url-file-explorer::-webkit-scrollbar-track,
-.line-numbers::-webkit-scrollbar-track,
 .code-textarea::-webkit-scrollbar-track,
 .file-tabs::-webkit-scrollbar-track {
   background: var(--scrollbar-track, #2d2d30);
 }
 
 .url-file-explorer::-webkit-scrollbar-thumb,
-.line-numbers::-webkit-scrollbar-thumb,
 .code-textarea::-webkit-scrollbar-thumb,
 .file-tabs::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb, #5c5c5c);
@@ -422,7 +472,6 @@
 }
 
 .url-file-explorer::-webkit-scrollbar-thumb:hover,
-.line-numbers::-webkit-scrollbar-thumb:hover,
 .code-textarea::-webkit-scrollbar-thumb:hover,
 .file-tabs::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover, #6c6c6c);

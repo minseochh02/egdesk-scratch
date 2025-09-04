@@ -1,16 +1,6 @@
 import { FileContext } from '../types';
 
-// Import the electron API types
-declare global {
-  interface Window {
-    electron: {
-      fileSystem: {
-        readDirectory(path: string): Promise<{ success: boolean; items?: any[]; error?: string }>;
-        readFile(path: string): Promise<{ success: boolean; content?: string; error?: string }>;
-      };
-    };
-  }
-}
+// Import the electron API types (using main preload.d.ts declaration)
 
 export interface CodespaceContext {
   workspacePath: string;

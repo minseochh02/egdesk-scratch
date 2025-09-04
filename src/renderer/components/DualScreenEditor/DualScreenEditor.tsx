@@ -37,6 +37,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
   const [serverEnsured, setServerEnsured] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<any>(null);
+  const [diffData, setDiffData] = useState<{
+    filePath: string;
+    diff: { before: string; after: string; lineNumber: number };
+  } | null>(null);
   const aiRequestInFlightRef = useRef<boolean>(false);
   const lastPathRef = useRef<string>('');
   const debounceTimerRef = useRef<any>(null);
@@ -45,7 +49,25 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   
   // Toggle between editing and non-editing states
   const toggleEditingMode = () => {
+    console.log('toggleEditingMode: Current state:', isEditing, 'Switching to:', !isEditing);
     setIsEditing(!isEditing);
+  };
+
+  // Handle diff display from AI Editor
+  const handleShowDiff = (filePath: string, diff: { before: string; after: string; lineNumber: number }) => {
+    console.log('🔍 DualScreenEditor: handleShowDiff called', {
+      filePath,
+      diff,
+      isEditing
+    });
+    
+    setDiffData({ filePath, diff });
+    
+    // Switch to editing mode if not already in editing mode
+    if (!isEditing) {
+      console.log('🔄 Switching to editing mode to show diff');
+      setIsEditing(true);
+    }
   };
 
   // Handle server status changes
@@ -509,6 +531,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           isEditing={isEditing}
           onToggleEditing={toggleEditingMode}
           routeFiles={routeFilesWithContent}
+          onShowDiff={handleShowDiff}
         />
         </div>
       </div>
@@ -530,6 +553,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             showFileViewer={isEditing}
             filesToOpen={routeFiles}
             onToggleView={toggleEditingMode}
+            diffData={diffData}
           />
         </div>
       </div>

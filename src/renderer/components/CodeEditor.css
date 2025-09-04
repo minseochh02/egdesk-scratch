@@ -271,7 +271,7 @@
 }
 
 .file-tree-item.file {
-  /* Remove indentation for files - they should be at the same level as folders */
+  /* Files are at the same level as folders */
 }
 
 .folder-toggle {
@@ -282,7 +282,7 @@
 }
 
 .folder-contents {
-  /* Nested folder contents */
+  /* Nested folder contents are displayed when expanded */
 }
 
 .file-icon {
@@ -429,16 +429,19 @@
   flex: 1;
   display: flex;
   overflow: hidden;
+  height: 100%; /* Ensure full height */
+  position: relative; /* For proper positioning */
 }
 
 .line-numbers {
   background: var(--line-numbers-bg, #1e1e1e);
   border-right: 1px solid var(--border-color, #3c3c3c);
   padding: 4px 0;
-  overflow-y: auto;
+  overflow: hidden; /* Prevent separate scrolling */
   min-width: 40px;
   text-align: right;
   user-select: none;
+  height: 100%; /* Match textarea height */
 }
 
 .line-number {
@@ -460,7 +463,8 @@
   line-height: 1.4;
   padding: 4px 8px;
   resize: none;
-  overflow: auto;
+  overflow: auto; /* Only the textarea should scroll */
+  height: 100%; /* Ensure full height */
 }
 
 .code-textarea.word-wrap {
@@ -625,7 +629,6 @@
 
 /* Scrollbar Styling */
 .file-explorer::-webkit-scrollbar,
-.line-numbers::-webkit-scrollbar,
 .code-textarea::-webkit-scrollbar,
 .file-tabs::-webkit-scrollbar {
   width: 6px;
@@ -633,14 +636,12 @@
 }
 
 .file-explorer::-webkit-scrollbar-track,
-.line-numbers::-webkit-scrollbar-track,
 .code-textarea::-webkit-scrollbar-track,
 .file-tabs::-webkit-scrollbar-track {
   background: var(--scrollbar-track, #2d2d30);
 }
 
 .file-explorer::-webkit-scrollbar-thumb,
-.line-numbers::-webkit-scrollbar-thumb,
 .code-textarea::-webkit-scrollbar-thumb,
 .file-tabs::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb, #5c5c5c);
@@ -648,7 +649,6 @@
 }
 
 .file-explorer::-webkit-scrollbar-thumb:hover,
-.line-numbers::-webkit-scrollbar-thumb:hover,
 .code-textarea::-webkit-scrollbar-thumb:hover,
 .file-tabs::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover, #6c6c6c);

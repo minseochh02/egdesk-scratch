@@ -1,0 +1,966 @@
+export interface FileDiscoveryRequest {
+  userPrompt: string;
+  projectRoot: string;
+  availableFiles: string[]; // Just file names/paths, no content
+}
+
+export interface FileDiscoveryResponse {
+  success: boolean;
+  filesToExamine: string[];
+  reasoning: string;
+  error?: string;
+}
+
+export interface LineRangeRequest {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  context?: string; // Why this range is needed
+}
+
+export interface LineRangeResponse {
+  success: boolean;
+  content: string;
+  lineCount: number;
+  error?: string;
+}
+
+export interface IterativeReadingState {
+  phase: 'discovery' | 'reading' | 'analysis' | 'complete';
+  currentFile?: string;
+  readRanges: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    content: string;
+  }>;
+  totalContentRead: number;
+  maxContentLimit: number;
+}
+
+export interface AIReadingDecision {
+  action: 'read_file' | 'read_range' | 'continue_reading' | 'analyze_and_respond' | 'need_more_context';
+  filePath?: string;
+  startLine?: number;
+  endLine?: number;
+  reasoning: string;
+  confidence: number;
+}
+
+export class IterativeFileReaderService {
+  private static instance: IterativeFileReaderService;
+  private currentState: IterativeReadingState | null = null;
+  private conversationHistory: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+  }> = [];
+
+  private constructor() {}
+
+  static getInstance(): IterativeFileReaderService {
+    if (!IterativeFileReaderService.instance) {
+      IterativeFileReaderService.instance = new IterativeFileReaderService();
+    }
+    return IterativeFileReaderService.instance;
+  }
+
+  /**
+   * Start the iterative file reading process
+   */
+  async startIterativeReading(
+    userPrompt: string,
+    projectRoot: string,
+    availableFiles: string[],
+    aiKey: any,
+    model: string,
+    maxContentLimit: number = 50000
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    error?: string;
+  }> {
+    try {
+      // Initialize state
+      this.currentState = {
+        phase: 'discovery',
+        readRanges: [],
+        totalContentRead: 0,
+        maxContentLimit
+      };
+
+      // Add user prompt to conversation history
+      this.addToConversationHistory('user', userPrompt);
+
+      // Phase 1: File Discovery
+      const discoveryResponse = await this.performFileDiscovery(
+        userPrompt,
+        projectRoot,
+        availableFiles,
+        aiKey,
+        model
+      );
+
+      if (!discoveryResponse.success) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: 'Failed to discover relevant files',
+            confidence: 0
+          },
+          error: discoveryResponse.error
+        };
+      }
+
+      // Add AI reasoning to conversation history
+      this.addToConversationHistory('assistant', discoveryResponse.reasoning);
+
+      // Determine next action based on discovery
+      const nextAction: AIReadingDecision = {
+        action: discoveryResponse.filesToExamine.length > 0 ? 'read_file' : 'analyze_and_respond',
+        filePath: discoveryResponse.filesToExamine[0],
+        reasoning: `Discovered ${discoveryResponse.filesToExamine.length} relevant files. Starting with: ${discoveryResponse.filesToExamine[0] || 'none'}`,
+        confidence: 0.9
+      };
+
+      return {
+        success: true,
+        nextAction
+      };
+
+    } catch (error) {
+      console.error('Failed to start iterative reading:', error);
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Error during initialization',
+          confidence: 0
+        },
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Continue the iterative reading process based on AI decision
+   */
+  async continueIterativeReading(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    if (!this.currentState) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'No active reading session',
+          confidence: 0
+        },
+        error: 'No active reading session'
+      };
+    }
+
+    try {
+      switch (aiDecision.action) {
+        case 'read_file':
+          return await this.handleReadFile(aiDecision, aiKey, model);
+        
+        case 'read_range':
+          return await this.handleReadRange(aiDecision, aiKey, model);
+        
+        case 'continue_reading':
+          return await this.handleContinueReading(aiDecision, aiKey, model);
+        
+        case 'analyze_and_respond':
+          return await this.handleAnalyzeAndRespond(aiDecision, aiKey, model);
+        
+        case 'need_more_context':
+          return await this.handleNeedMoreContext(aiDecision, aiKey, model);
+        
+        default:
+          return {
+            success: false,
+            nextAction: {
+              action: 'analyze_and_respond',
+              reasoning: 'Unknown action type',
+              confidence: 0
+            },
+            error: 'Unknown action type'
+          };
+      }
+    } catch (error) {
+      console.error('Failed to continue iterative reading:', error);
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Error during processing',
+          confidence: 0
+        },
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Phase 1: File Discovery - Send only file names to AI
+   */
+  private async performFileDiscovery(
+    userPrompt: string,
+    projectRoot: string,
+    availableFiles: string[],
+    aiKey: any,
+    model: string
+  ): Promise<FileDiscoveryResponse> {
+    const prompt = `## File Discovery Phase
+
+You are a coding assistant that will be making direct changes to code files. The user cannot edit code themselves - YOU are responsible for all code modifications.
+
+## User Request:
+${userPrompt}
+
+## Available Files in Project:
+${availableFiles.map((file, index) => `${index + 1}. ${file}`).join('\n')}
+
+## Your Task:
+1. Analyze the user request to understand what code changes are needed
+2. Select the files that will need to be modified to fulfill the request (max 5 files)
+3. Focus on files that contain code that needs to be changed, not just referenced
+4. Consider file types, naming patterns, and the specific changes required
+
+## Response Format:
+Return a JSON object with this exact structure:
+\`\`\`json
+{
+  "filesToExamine": ["path/to/file1.ext", "path/to/file2.ext"],
+  "reasoning": "Brief explanation of why these files need to be modified for the user's request"
+}
+\`\`\`
+
+Remember: You will be making actual code changes to these files. Select files that need modification, not just files that are related to the topic.`;
+
+    try {
+      const response = await this.sendToAI(aiKey, model, prompt, {
+        temperature: 0.3,
+        maxTokens: 1000
+      });
+
+      if (!response.success) {
+        return {
+          success: false,
+          filesToExamine: [],
+          reasoning: '',
+          error: response.error
+        };
+      }
+
+      // Parse AI response
+      const jsonMatch = response.content?.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (!jsonMatch) {
+        return {
+          success: false,
+          filesToExamine: [],
+          reasoning: 'Failed to parse AI response',
+          error: 'Invalid response format'
+        };
+      }
+
+      const decision = JSON.parse(jsonMatch[1]);
+      
+      return {
+        success: true,
+        filesToExamine: decision.filesToExamine || [],
+        reasoning: decision.reasoning || 'No reasoning provided'
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        filesToExamine: [],
+        reasoning: '',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Handle reading an entire file
+   */
+  private async handleReadFile(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    if (!aiDecision.filePath) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'No file path specified',
+          confidence: 0
+        },
+        error: 'No file path specified'
+      };
+    }
+
+    try {
+      // Read the entire file
+      const result = await window.electron.fileSystem.readFile(aiDecision.filePath);
+      
+      if (!result.success) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: `Failed to read file: ${aiDecision.filePath}`,
+            confidence: 0
+          },
+          error: result.error
+        };
+      }
+
+      const content = result.content || '';
+      const lineCount = content.split('\n').length;
+
+      // Add to read ranges
+      this.currentState!.readRanges.push({
+        filePath: aiDecision.filePath,
+        startLine: 1,
+        endLine: lineCount,
+        content
+      });
+
+      this.currentState!.totalContentRead += content.length;
+
+      // Add content to conversation history
+      this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} (${lineCount} lines, ${content.length} chars)`);
+
+      // Determine next action
+      const nextAction = await this.determineNextAction(aiKey, model, content);
+
+      return {
+        success: true,
+        nextAction,
+        content
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: `Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          confidence: 0
+        },
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Handle reading a specific line range
+   */
+  private async handleReadRange(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    if (!aiDecision.filePath || !aiDecision.startLine || !aiDecision.endLine) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Missing file path or line range',
+          confidence: 0
+        },
+        error: 'Missing file path or line range'
+      };
+    }
+
+    try {
+      // Read the entire file first
+      const result = await window.electron.fileSystem.readFile(aiDecision.filePath);
+      
+      if (!result.success) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: `Failed to read file: ${aiDecision.filePath}`,
+            confidence: 0
+          },
+          error: result.error
+        };
+      }
+
+      const lines = result.content?.split('\n') || [];
+      const startLine = Math.max(1, aiDecision.startLine);
+      const endLine = Math.min(lines.length, aiDecision.endLine);
+      
+      const rangeContent = lines.slice(startLine - 1, endLine).join('\n');
+      const lineCount = endLine - startLine + 1;
+
+      // Add to read ranges
+      this.currentState!.readRanges.push({
+        filePath: aiDecision.filePath,
+        startLine,
+        endLine,
+        content: rangeContent
+      });
+
+      this.currentState!.totalContentRead += rangeContent.length;
+
+      // Add content to conversation history
+      this.addToConversationHistory('assistant', `Read lines ${startLine}-${endLine} from ${aiDecision.filePath} (${lineCount} lines)`);
+
+      // Determine next action
+      const nextAction = await this.determineNextAction(aiKey, model, rangeContent);
+
+      return {
+        success: true,
+        nextAction,
+        content: rangeContent
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: `Error reading line range: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          confidence: 0
+        },
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Handle continue reading decision
+   */
+  private async handleContinueReading(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    // This would implement logic to continue reading based on AI's decision
+    // For now, move to analysis phase
+    return {
+      success: true,
+      nextAction: {
+        action: 'analyze_and_respond',
+        reasoning: 'Continuing to analysis phase',
+        confidence: 0.8
+      }
+    };
+  }
+
+  /**
+   * Handle analyze and respond decision
+   */
+  private async handleAnalyzeAndRespond(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    this.currentState!.phase = 'analysis';
+
+    // Build context from all read content
+    const context = this.buildContextFromReadContent();
+    
+    const prompt = `## Analysis and Response Phase
+
+Based on the files and content I've read, provide your analysis and response to the user's original request.
+
+## Original User Request:
+${this.conversationHistory.find(msg => msg.role === 'user')?.content || ''}
+
+## Content Read:
+${context}
+
+## Your Task:
+You are a coding assistant with the ability to directly edit code files. The user cannot access or edit the code themselves - YOU are responsible for making all necessary code changes.
+
+Provide a comprehensive response that includes:
+1. Analysis of the current code
+2. Specific changes that need to be made
+3. **MANDATORY: Generate search/replace operations for ALL code changes**
+
+## CRITICAL REQUIREMENTS:
+- If the user requests ANY code changes, you MUST provide search/replace operations
+- Do NOT say "no search/replace operations needed" - if code needs to change, provide the operations
+- You are the ONLY one who can edit the code - the user cannot do it themselves
+- Be specific and actionable - provide exact search/replace operations for every change
+
+## Search/Replace Format:
+For each change, provide the COMPLETE relative path and line numbers:
+\`\`\`search-replace
+FILE: complete/relative/path/from/project/root/file.ext
+LINES: startLineNumber-endLineNumber
+SEARCH: exact code to find
+REPLACE: exact code to replace it with
+\`\`\`
+
+CRITICAL REQUIREMENTS:
+- Use the FULL relative path from the project root (e.g., "www/index.php", "src/components/Button.tsx")
+- Do NOT use just the filename (e.g., "index.php")
+- Include the complete directory structure
+- ALWAYS specify the line numbers where the change occurs (e.g., "LINES: 15-15" for single line, "LINES: 10-12" for multiple lines)
+- Line numbers help with precise diff visualization
+
+Remember: You are responsible for making the code changes. Provide search/replace operations for everything that needs to be modified.`;
+
+    try {
+      const response = await this.sendToAI(aiKey, model, prompt, {
+        temperature: 0.3,
+        maxTokens: 3000
+      });
+
+      if (!response.success) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: 'Failed to generate analysis',
+            confidence: 0
+          },
+          error: response.error
+        };
+      }
+
+      this.currentState!.phase = 'complete';
+      this.addToConversationHistory('assistant', response.content || '');
+
+      return {
+        success: true,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Analysis complete',
+          confidence: 1.0
+        },
+        content: response.content
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Error during analysis',
+          confidence: 0
+        },
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Handle need more context decision
+   */
+  private async handleNeedMoreContext(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    // This would implement logic to gather more context
+    // For now, move to analysis phase
+    return {
+      success: true,
+      nextAction: {
+        action: 'analyze_and_respond',
+        reasoning: 'Moving to analysis with available context',
+        confidence: 0.7
+      }
+    };
+  }
+
+  /**
+   * Determine next action based on current state and content
+   */
+  private async determineNextAction(
+    aiKey: any,
+    model: string,
+    content: string
+  ): Promise<AIReadingDecision> {
+    // Check if we've hit content limits
+    if (this.currentState!.totalContentRead >= this.currentState!.maxContentLimit) {
+      return {
+        action: 'analyze_and_respond',
+        reasoning: 'Reached content limit, proceeding to analysis',
+        confidence: 0.9
+      };
+    }
+
+    // For now, move to analysis after reading content
+    // In a more sophisticated implementation, this would ask AI what to do next
+    return {
+      action: 'analyze_and_respond',
+      reasoning: 'Sufficient content read, proceeding to analysis',
+      confidence: 0.8
+    };
+  }
+
+  /**
+   * Build context string from all read content
+   */
+  private buildContextFromReadContent(): string {
+    if (!this.currentState) return '';
+
+    return this.currentState.readRanges
+      .map(range => {
+        // Use the full relative path instead of just the filename
+        const relativePath = range.filePath;
+        return `\n--- ${relativePath} (lines ${range.startLine}-${range.endLine}) ---\n${range.content}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * Add message to conversation history
+   */
+  private addToConversationHistory(role: 'user' | 'assistant', content: string): void {
+    this.conversationHistory.push({
+      role,
+      content,
+      timestamp: new Date()
+    });
+  }
+
+  /**
+   * Send request to AI provider
+   */
+  private async sendToAI(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    options: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const provider = aiKey.providerId;
+      
+      switch (provider) {
+        case 'openai':
+          return await this.sendOpenAIRequest(aiKey, model, prompt, options);
+        case 'anthropic':
+          return await this.sendAnthropicRequest(aiKey, model, prompt, options);
+        case 'google':
+          return await this.sendGoogleRequest(aiKey, model, prompt, options);
+        case 'azure':
+          return await this.sendAzureRequest(aiKey, model, prompt, options);
+        case 'custom':
+          return await this.sendCustomRequest(aiKey, model, prompt, options);
+        default:
+          return {
+            success: false,
+            error: `Unsupported provider: ${provider}`
+          };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Send request to OpenAI
+   */
+  private async sendOpenAIRequest(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    config: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${aiKey.fields.apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content || '';
+      
+      return {
+        success: true,
+        content
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'OpenAI request failed'
+      };
+    }
+  }
+
+  /**
+   * Send request to Anthropic
+   */
+  private async sendAnthropicRequest(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    config: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': aiKey.fields.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: config.maxTokens,
+          temperature: config.temperature,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.content[0]?.text || '';
+      
+      return {
+        success: true,
+        content
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Anthropic request failed'
+      };
+    }
+  }
+
+  /**
+   * Send request to Google
+   */
+  private async sendGoogleRequest(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    config: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey.fields.apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: config.temperature,
+            maxOutputTokens: config.maxTokens
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      return {
+        success: true,
+        content
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Google request failed'
+      };
+    }
+  }
+
+  /**
+   * Send request to Azure OpenAI
+   */
+  private async sendAzureRequest(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    config: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const endpoint = aiKey.fields.endpoint;
+      const apiKey = aiKey.fields.apiKey;
+      
+      if (!endpoint || !apiKey) {
+        throw new Error('Azure OpenAI configuration incomplete');
+      }
+
+      const response = await fetch(`${endpoint}/openai/deployments/${model}/chat/completions?api-version=2023-12-01-preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': apiKey
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: prompt }],
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content || '';
+      
+      return {
+        success: true,
+        content
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Azure request failed'
+      };
+    }
+  }
+
+  /**
+   * Send request to Custom provider
+   */
+  private async sendCustomRequest(
+    aiKey: any,
+    model: string,
+    prompt: string,
+    config: { temperature: number; maxTokens: number }
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const apiKey = aiKey.fields.apiKey;
+      const endpoint = aiKey.fields.endpoint;
+
+      if (!endpoint) {
+        throw new Error('Custom provider configuration incomplete');
+      }
+
+      // Try to send in OpenAI-compatible format first
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || data.content || data.message || '';
+      
+      return {
+        success: true,
+        content
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Custom provider request failed'
+      };
+    }
+  }
+
+  /**
+   * Get current reading state
+   */
+  getCurrentState(): IterativeReadingState | null {
+    return this.currentState;
+  }
+
+  /**
+   * Get conversation history
+   */
+  getConversationHistory(): Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+  }> {
+    return [...this.conversationHistory];
+  }
+
+  /**
+   * Reset the service state
+   */
+  reset(): void {
+    this.currentState = null;
+    this.conversationHistory = [];
+  }
+}

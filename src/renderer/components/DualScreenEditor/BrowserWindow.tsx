@@ -37,6 +37,10 @@ interface BrowserWindowProps {
   showFileViewer?: boolean; // Whether to show file viewer instead of browser controls
   filesToOpen?: string[]; // Files to display in the file viewer
   onToggleView?: () => void; // Callback to toggle between browser and file viewer
+  diffData?: {
+    filePath: string;
+    diff: { before: string; after: string; lineNumber: number };
+  } | null; // Diff data to highlight in the file viewer
 }
 
 export const BrowserWindow: React.FC<BrowserWindowProps> = ({
@@ -56,7 +60,8 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   resizeMainWindow = true,
   showFileViewer = false,
   filesToOpen = [],
-  onToggleView
+  onToggleView,
+  diffData
 }) => {
   const [url, setUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -514,6 +519,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
               <URLFileViewer 
                 filesToOpen={filesToOpen}
                 instanceId="browser-embedded"
+                diffData={diffData}
               />
             </div>
           </div>
