@@ -47,11 +47,17 @@ export interface AIEdit {
   range?: {
     start: number;
     end: number;
+    startLine?: number;
+    endLine?: number;
+    startColumn?: number;
+    endColumn?: number;
   };
+  oldText?: string; // For search/replace operations
   newText?: string;
   description: string;
   confidence?: number;
   filePath?: string; // For file creation/deletion operations
+  isImplicitFormat?: boolean; // Flag to indicate this needs special handling for implicit search/replace format
 }
 
 export interface FileContext {

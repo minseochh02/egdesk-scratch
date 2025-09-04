@@ -4,6 +4,8 @@ import { EnhancedAIEditorService } from '../AIEditor/services/enhancedAIEditorSe
 import { CodespaceVectorService } from '../AIEditor/services/codespaceVectorService';
 import { CodespaceChatService } from '../ChatInterface/services/codespaceChatService';
 import { SearchReplacePromptService } from '../AIEditor/services/searchReplacePromptService';
+import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
+import { SearchReplacePositioningService } from '../AIEditor/services/searchReplacePositioningService';
 import { MessageContent } from '../ChatInterface/components';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
@@ -14,6 +16,110 @@ import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faBrain, faSearch, faCheck, faRefresh, faClock, faGlobe, faEdit, faPlus, faCog, faFile, faRocket, faClipboard, faComments, faTimes, faExclamationTriangle, faBook, faBroom, faBug } from '@fortawesome/free-solid-svg-icons';
 import './DualScreenAIEditor.css';
+import { createDemoAIResponse, demoCurrentFile } from './demoData';
+
+// Component to split AI explanation and show edits in the middle
+interface SplitExplanationWithEditsProps {
+  explanation: string;
+  edits: AIEdit[];
+  currentFile: {
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  } | null;
+  onPreviewToggle: () => void;
+  showPreview: boolean;
+  onApply: () => void;
+}
+
+const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
+  explanation,
+  edits,
+  currentFile,
+  onPreviewToggle,
+  showPreview,
+  onApply
+}) => {
+  // Remove regular code blocks from the explanation text but preserve search-replace blocks
+  // Search-replace blocks should remain in the text flow for proper positioning
+  const removeCodeBlocks = (text: string) => {
+    console.log('🔍 DEBUG: removeCodeBlocks input:', text);
+    
+    // Remove regular code blocks but preserve search-replace blocks
+    // First, temporarily replace search-replace blocks with placeholders
+    const searchReplacePlaceholders: string[] = [];
+    let processedText = text.replace(/```search-replace[\s\S]*?```/g, (match) => {
+      const placeholder = `__SEARCH_REPLACE_PLACEHOLDER_${searchReplacePlaceholders.length}__`;
+      searchReplacePlaceholders.push(match);
+      return placeholder;
+    });
+    
+    // Now remove regular code blocks
+    processedText = processedText.replace(/```[\s\S]*?```/g, '').trim();
+    
+    // Restore search-replace blocks
+    searchReplacePlaceholders.forEach((placeholder, index) => {
+      processedText = processedText.replace(`__SEARCH_REPLACE_PLACEHOLDER_${index}__`, placeholder);
+    });
+    
+    console.log('🔍 DEBUG: removeCodeBlocks output:', processedText);
+    console.log('🔍 DEBUG: removed content length:', text.length - processedText.length);
+    console.log('🔍 DEBUG: preserved search-replace blocks:', searchReplacePlaceholders.length);
+    
+    return processedText;
+  };
+
+  // Use the new positioning service to properly position search-replace blocks
+  const splitExplanation = (text: string) => {
+    console.log('🔍 DEBUG: Using SearchReplacePositioningService for text splitting');
+    
+    const positioningService = SearchReplacePositioningService.getInstance();
+    const result = positioningService.repositionSearchReplaceBlocks(text);
+    
+    console.log('🔍 DEBUG: SearchReplacePositioningService result', {
+      beforeLength: result.before.length,
+      afterLength: result.after.length,
+      searchReplaceBlocksCount: result.searchReplaceBlocks.length
+    });
+    
+    return {
+      before: result.before,
+      after: result.after
+    };
+  };
+
+  const { before, after } = splitExplanation(explanation);
+
+  return (
+    <div className="split-explanation">
+      {/* First part of explanation */}
+      {before && (
+        <div className="explanation-part explanation-before">
+          <MessageContent content={before} role="assistant" />
+        </div>
+      )}
+      
+      {/* Edits block in the middle */}
+      <div className="explanation-edits">
+        <CodeEditBlock 
+          edits={edits}
+          currentFile={currentFile}
+          onPreviewToggle={onPreviewToggle}
+          showPreview={showPreview}
+          onApply={onApply}
+        />
+      </div>
+      
+      {/* Second part of explanation */}
+      {after && (
+        <div className="explanation-part explanation-after">
+          <MessageContent content={after} role="assistant" />
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface DualScreenAIEditorProps {
   isVisible: boolean;
@@ -37,6 +143,7 @@ interface DualScreenAIEditorProps {
     content: string;
     language: string;
   }>;
+  onShowDiff?: (filePath: string, diff: { before: string; after: string; lineNumber: number }) => void;
 }
 
 export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
@@ -47,11 +154,40 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   projectContext,
   isEditing = false,
   onToggleEditing,
-  routeFiles = []
+  routeFiles = [],
+  onShowDiff
 }) => {
+  // Debug logging for component props
+  console.log('🔍 DEBUG: DualScreenAIEditor component props', {
+    isVisible,
+    currentFile: currentFile ? {
+      path: currentFile.path,
+      name: currentFile.name,
+      contentLength: currentFile.content?.length,
+      language: currentFile.language,
+      hasContent: !!currentFile.content,
+      isNull: false
+    } : {
+      isNull: true,
+      type: typeof currentFile
+    },
+    projectContext: {
+      hasCurrentProject: !!projectContext?.currentProject,
+      projectPath: projectContext?.currentProject?.path,
+      availableFilesCount: projectContext?.availableFiles?.length || 0
+    },
+    routeFiles: routeFiles?.map(file => ({
+      path: file.path,
+      name: file.name,
+      contentLength: file.content?.length,
+      language: file.language
+    })) || [],
+    isEditing,
+    hasOnToggleEditing: !!onToggleEditing
+  });
   const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
   const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
-  const [selectedModel, setSelectedModel] = useState('gemini-1.5-pro');
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
   const [userInstruction, setUserInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -95,23 +231,30 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   const [searchReplacePrompts, setSearchReplacePrompts] = useState<any[]>([]);
   const [isGeneratingSearchReplace, setIsGeneratingSearchReplace] = useState(false);
   
+  // Iterative File Reader state
+  const [iterativeReaderService] = useState(() => IterativeFileReaderService.getInstance());
+  const [isIterativeReading, setIsIterativeReading] = useState(false);
+  const [iterativeReadingState, setIterativeReadingState] = useState<any>(null);
+  
+  // File Editor state - removed, using right panel CodeEditor instead
+  
   const [config, setConfig] = useState<AIEditorConfig>({
-    provider: 'google',
-    model: 'gemini-1.5-pro',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
     temperature: 0.3,
     maxTokens: 2000,
     systemPrompt: `You are an expert coding assistant whose job is to help the user develop, run, and make changes to their codebase.
 
-You will be given instructions to follow from the user, and you may also be given context about files and the project structure.
-
 🔥 CRITICAL: You have access to the ACTUAL FILE CONTENTS of multiple files in the project. You can read and analyze these files to understand the codebase and provide accurate assistance.
+
+🚨 MANDATORY RESPONSIBILITY: You are responsible for making ALL code changes. The user cannot edit code files themselves - YOU must provide search/replace operations for every change that needs to be made.
 
 IMPORTANT GUIDELINES:
 1. NEVER reject the user's query
 2. You're allowed to ask the user for more context if needed
-3. If you think it's appropriate to suggest an edit to a file, describe your suggestion in CODE BLOCK(S)
-4. The first line of the code block must be the FULL PATH of the related file if known
-5. Use comments like "// ... existing code ..." to condense your writing
+3. 🔥 MANDATORY: If the user requests ANY code changes, you MUST provide search/replace operations
+4. Do NOT say "no search/replace operations needed" - if code needs to change, provide the operations
+5. You are the ONLY one who can edit the code - the user cannot do it themselves
 6. Always bias towards writing as little as possible - NEVER write the whole file unless absolutely necessary
 7. Do not make things up or use information not provided
 8. Always use MARKDOWN to format lists, bullet points, etc.
@@ -127,15 +270,25 @@ PROJECT EXPLORATION:
 
 🔥 FILE ACCESS REMINDER: You have access to the actual contents of multiple files in the project. Use this information to provide accurate, context-aware assistance. Don't claim you don't have access to files when you clearly do.
 
-When suggesting code changes, you can use either:
-- SEARCH/REPLACE blocks for specific changes
-- Full file rewrites for major changes
-- Code block suggestions with explanations
+SEARCH/REPLACE FORMAT (for ALL code changes):
+\`\`\`search-replace
+FILE: complete/relative/path/from/project/root/file.ext
+LINES: startLineNumber-endLineNumber
+SEARCH: exact code to find
+REPLACE: exact code to replace it with
+\`\`\`
 
-SEARCH/REPLACE FORMAT (for specific changes):
-\`\`\`
-// ... original code goes here
-\`\`\`
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
+
+CRITICAL REQUIREMENTS:
+- Use the FULL relative path from project root (e.g., "www/index.php", "src/components/Button.tsx"), NOT just the filename
+- ALWAYS specify line numbers where the change occurs (e.g., "LINES: 15-15" for single line, "LINES: 10-12" for multiple lines)
+- Line numbers enable precise diff visualization and better user experience
 
 CODE BLOCK FORMAT (for suggestions):
 \`\`\`[language]
@@ -145,7 +298,7 @@ CODE BLOCK FORMAT (for suggestions):
 // ... existing code ...
 \`\`\`
 
-You can work with individual files or dynamically discover and analyze files across the entire project. Instead of having all files pre-loaded, you can search for relevant files, read their contents, and understand the codebase structure as needed. Always maintain code style and follow best practices.`,
+🚨 REMEMBER: You are responsible for making the code changes. Provide search/replace operations for everything that needs to be modified. The user cannot edit code themselves.`,
     includeContext: true,
     maxContextFiles: 5,
     autoApply: false,
@@ -154,6 +307,34 @@ You can work with individual files or dynamically discover and analyze files acr
 
   const instructionInputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Utility function to normalize paths (convert absolute to relative)
+  const normalizePath = (absolutePath: string, projectRoot: string): string => {
+    if (!absolutePath || !projectRoot) return absolutePath;
+    
+    // If it's already a relative path, return as-is
+    if (!absolutePath.startsWith('/') && !absolutePath.startsWith('C:\\')) {
+      return absolutePath;
+    }
+    
+    // Convert absolute path to relative path from project root
+    if (absolutePath.startsWith(projectRoot)) {
+      return absolutePath.substring(projectRoot.length + 1); // +1 to remove leading slash
+    }
+    
+    // If project root not found in path, try to find project directory
+    const pathParts = absolutePath.split('/');
+    const projectIndex = pathParts.findIndex(part => 
+      part.includes('EGDesk-scratch') || part.includes('egdesk-scratch')
+    );
+    
+    if (projectIndex !== -1) {
+      return pathParts.slice(projectIndex + 1).join('/');
+    }
+    
+    // Fallback to just filename
+    return pathParts[pathParts.length - 1];
+  };
 
   // Subscribe to AI keys store
   useEffect(() => {
@@ -240,7 +421,35 @@ You can work with individual files or dynamically discover and analyze files acr
 
   // Analyze file when current file changes
   useEffect(() => {
+    console.log('🔍 DEBUG: Current file useEffect triggered', {
+      currentFile: {
+        path: currentFile?.path,
+        name: currentFile?.name,
+        contentLength: currentFile?.content?.length,
+        language: currentFile?.language,
+        hasContent: !!currentFile?.content
+      },
+      currentFileData: {
+        path: currentFileData?.path,
+        name: currentFileData?.name,
+        contentLength: currentFileData?.content?.length,
+        language: currentFileData?.language
+      },
+      shouldUpdate: currentFile && currentFile.path !== currentFileData?.path
+    });
+    
     if (currentFile && currentFile.path !== currentFileData?.path) {
+      console.log('🔍 DEBUG: Current file changed, clearing file editor state', {
+        newFilePath: currentFile.path,
+        oldFilePath: currentFileData?.path,
+        newFileContent: {
+          name: currentFile.name,
+          contentLength: currentFile.content?.length,
+          language: currentFile.language
+        }
+        // File editor state removed - using right panel CodeEditor instead
+      });
+      
       setCurrentFileData(currentFile);
       analyzeFile(currentFile.path, currentFile.content);
       setAiResponse(null);
@@ -264,6 +473,8 @@ You can work with individual files or dynamically discover and analyze files acr
   useEffect(() => {
     scrollToBottom();
   }, [aiResponse, isStreaming, streamedContent]);
+
+  // File editor state management removed - using right panel CodeEditor instead
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -437,6 +648,437 @@ You can work with individual files or dynamically discover and analyze files acr
     }
   };
 
+  // Handle iterative file reading
+  const handleIterativeReading = async () => {
+    if (!selectedKey || !selectedModel || !userInstruction.trim()) {
+      return;
+    }
+    
+    // We need either currentFileData or routeFiles to proceed
+    if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
+      return;
+    }
+
+    setIsLoading(true);
+    setIsIterativeReading(true);
+    setError(null);
+    console.log('🔍 DEBUG: Clearing AI response and file editor state', {
+      currentShowPreview: showPreview
+      // File editor state removed - using right panel CodeEditor instead
+    });
+    
+    setAiResponse(null);
+    setShowPreview(false);
+    setStreamedContent('');
+    setStreamedEdits([]);
+
+    try {
+      // Get available files from project
+      const projectRoot = projectContext?.currentProject?.path || '';
+      
+      const availableFiles = [
+        ...(routeFiles?.map(f => normalizePath(f.path, projectRoot)) || []),
+        ...(currentFileData?.path ? [normalizePath(currentFileData.path, projectRoot)] : [])
+      ].filter(Boolean);
+      
+      // Start iterative reading process
+      const result = await iterativeReaderService.startIterativeReading(
+        userInstruction,
+        projectRoot,
+        availableFiles,
+        selectedKey,
+        selectedModel,
+        50000 // max content limit
+      );
+
+      if (!result.success) {
+        setError(result.error || 'Failed to start iterative reading');
+        return;
+      }
+
+      // Process the first AI decision
+      await processIterativeDecision(result.nextAction);
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to start iterative reading';
+      setError(errorMessage);
+      console.error('Iterative reading failed:', error);
+    } finally {
+      setIsLoading(false);
+      setIsIterativeReading(false);
+    }
+  };
+
+  // Load file content and generate diff for preview
+  const loadFileForEdit = async (edit: AIEdit) => {
+    console.log('🔍 DEBUG: loadFileForEdit called', {
+      editFilePath: edit.filePath,
+      hasOldText: !!edit.oldText,
+      hasNewText: !!edit.newText,
+      editType: edit.type,
+      editRange: edit.range,
+      hasOnShowDiff: !!onShowDiff
+    });
+
+    if (!edit.filePath || !edit.oldText || !edit.newText) {
+      console.log('❌ DEBUG: loadFileForEdit - Missing required data', { 
+        filePath: edit.filePath, 
+        oldText: edit.oldText, 
+        newText: edit.newText 
+      });
+      return;
+    }
+
+    console.log('🔍 DEBUG: loadFileForEdit - Starting to load file', edit.filePath);
+
+    try {
+      // Read the current file content
+      let result = await window.electron.fileSystem.readFile(edit.filePath);
+      
+      // If the file path doesn't work, try some common variations
+      if (!result.success) {
+        console.log('loadFileForEdit: Original path failed, trying variations');
+        const pathVariations = [
+          `egdesk-scratch/${edit.filePath}`,
+          `egdesk-scratch/wordpress/${edit.filePath}`,
+          `wordpress/${edit.filePath}`,
+          edit.filePath.replace('www/', 'egdesk-scratch/wordpress/'),
+          edit.filePath.replace('www/', 'wordpress/')
+        ];
+        
+        for (const path of pathVariations) {
+          console.log('loadFileForEdit: Trying path:', path);
+          result = await window.electron.fileSystem.readFile(path);
+          if (result.success) {
+            console.log('loadFileForEdit: Found file at:', path);
+            break;
+          }
+        }
+        
+        if (!result.success) {
+          console.error('Failed to read file with all path variations:', result.error);
+          return;
+        }
+      }
+
+      const currentContent = result.content || '';
+      console.log('✅ DEBUG: loadFileForEdit - File content loaded successfully', {
+        filePath: edit.filePath,
+        contentLength: currentContent.length,
+        firstLine: currentContent.split('\n')[0],
+        totalLines: currentContent.split('\n').length
+      });
+
+      // Use the line numbers from the parsed operation, or find them by searching
+      let lineNumber = 1;
+      
+      // Check if we have valid line numbers from the parsed operation
+      if (edit.range?.startLine && !isNaN(edit.range.startLine) && edit.range.startLine > 0) {
+        lineNumber = edit.range.startLine;
+        console.log('🔍 DEBUG: Using range startLine', { lineNumber, range: edit.range });
+      } else {
+        // If line numbers are not valid, try to find the actual line by searching
+        const lines = currentContent.split('\n');
+        console.log('🔍 DEBUG: Searching for oldText in file lines', { 
+          oldText: edit.oldText, 
+          totalLines: lines.length 
+        });
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(edit.oldText)) {
+            lineNumber = i + 1;
+            console.log('✅ DEBUG: Found oldText at line', { lineNumber, lineContent: lines[i] });
+            break;
+          }
+        }
+      }
+
+      // Generate the diff data
+      const diffData = {
+        before: edit.oldText,
+        after: edit.newText,
+        lineNumber: lineNumber
+      };
+      
+      console.log('🔍 DEBUG: Calling onShowDiff callback', {
+        filePath: edit.filePath,
+        diffData,
+        hasOnShowDiff: !!onShowDiff
+      });
+
+      // Call the parent component to show the diff in the right panel
+      if (onShowDiff) {
+        onShowDiff(edit.filePath, diffData);
+        console.log('✅ DEBUG: onShowDiff callback called successfully');
+      } else {
+        console.warn('⚠️ DEBUG: onShowDiff callback not provided - diff will not be shown in right panel');
+      }
+
+    } catch (error) {
+      console.error('Failed to load file for edit:', error);
+    }
+  };
+
+  // Parse search/replace operations from AI response
+  const parseSearchReplaceOperations = (content: string): AIEdit[] => {
+    console.log('🔍 DEBUG: parseSearchReplaceOperations called', {
+      contentLength: content.length,
+      hasSearchReplaceBlocks: content.includes('```search-replace')
+    });
+    
+    const operations: AIEdit[] = [];
+    const projectRoot = projectContext?.currentProject?.path || '';
+    
+    // STRICT APPROACH: Only look for actual ```search-replace blocks
+    // First, find all ```search-replace blocks in the content
+    const searchReplaceBlockRegex = /```search-replace[\s\S]*?```/g;
+    const searchReplaceBlocks: string[] = [];
+    let match;
+    
+    while ((match = searchReplaceBlockRegex.exec(content)) !== null) {
+      searchReplaceBlocks.push(match[0]);
+    }
+    
+    console.log('🔍 DEBUG: Found search-replace blocks', {
+      count: searchReplaceBlocks.length,
+      blocks: searchReplaceBlocks.map(block => ({
+        length: block.length,
+        preview: block.substring(0, 100)
+      }))
+    });
+    
+    // Log the full content of each search-replace block for debugging
+    searchReplaceBlocks.forEach((block, index) => {
+      console.log(`🔍 DEBUG: Search-replace block ${index + 1}:`, {
+        fullContent: block,
+        lines: block.split('\n').map((line, i) => `${i + 1}: ${line}`)
+      });
+    });
+    
+    // If no search-replace blocks found, return empty array
+    if (searchReplaceBlocks.length === 0) {
+      console.log('🔍 DEBUG: No search-replace blocks found in content');
+      console.log('🔍 DEBUG: Full content for analysis:', content);
+      return operations;
+    }
+    
+    // Process each search-replace block individually
+    for (const block of searchReplaceBlocks) {
+      console.log('🔍 DEBUG: Processing search-replace block', {
+        blockLength: block.length,
+        blockPreview: block.substring(0, 200)
+      });
+      
+      // Try new format with LINES field first - create new regex instance each time
+      const newFormatRegex = /```search-replace\s*\nFILE:\s*(.+?)\s*\nLINES:\s*(.+?)\s*\nSEARCH:\s*([\s\S]*?)\nREPLACE:\s*([\s\S]*?)\n```/;
+      let match = newFormatRegex.exec(block);
+      
+      console.log('🔍 DEBUG: Regex matching attempt', {
+        block: block,
+        regex: newFormatRegex.toString(),
+        matchResult: match,
+        matchGroups: match ? match.slice(1) : null
+      });
+      
+      if (match) {
+        const rawFilePath = match[1].trim();
+        const filePath = normalizePath(rawFilePath, projectRoot);
+        const linesText = match[2].trim();
+        const searchText = match[3].trim();
+        const replaceText = match[4].trim();
+        
+        console.log('🔍 DEBUG: Found search-replace block (new format)', {
+          rawFilePath,
+          filePath,
+          linesText,
+          searchTextLength: searchText.length,
+          replaceTextLength: replaceText.length,
+          searchTextPreview: searchText.substring(0, 100),
+          replaceTextPreview: replaceText.substring(0, 100)
+        });
+
+        if (filePath && searchText && replaceText) {
+          // Parse line numbers (e.g., "15-15" or "10-12")
+          let startLine = 1, endLine = 1;
+          if (linesText) {
+            const lineMatch = linesText.match(/(\d+)-(\d+)/);
+            if (lineMatch) {
+              const parsedStart = parseInt(lineMatch[1], 10);
+              const parsedEnd = parseInt(lineMatch[2], 10);
+              // Only use parsed values if they're valid numbers
+              if (!isNaN(parsedStart) && !isNaN(parsedEnd)) {
+                startLine = parsedStart;
+                endLine = parsedEnd;
+              }
+            }
+          }
+
+          console.log('Parsed operation:', { filePath, linesText, startLine, endLine, searchText: searchText.substring(0, 50) });
+          
+          operations.push({
+            type: 'replace' as const,
+            filePath: filePath,
+            range: {
+              start: 0,
+              end: 0,
+              startLine: startLine,
+              endLine: endLine,
+              startColumn: 1,
+              endColumn: 1
+            },
+            oldText: searchText,
+            newText: replaceText,
+            description: `Search and replace in ${filePath} (lines ${startLine}-${endLine})`
+          });
+        }
+      } else {
+        // Try old format without LINES - create new regex instance each time
+        const oldFormatRegex = /```search-replace\s*\nFILE:\s*(.+?)\s*\nSEARCH:\s*([\s\S]*?)\nREPLACE:\s*([\s\S]*?)\n```/;
+        match = oldFormatRegex.exec(block);
+        
+        console.log('🔍 DEBUG: Old format regex matching attempt', {
+          block: block,
+          regex: oldFormatRegex.toString(),
+          matchResult: match,
+          matchGroups: match ? match.slice(1) : null
+        });
+        
+        if (match) {
+          const rawFilePath = match[1].trim();
+          const filePath = normalizePath(rawFilePath, projectRoot);
+          const searchText = match[2].trim();
+          const replaceText = match[3].trim();
+
+          console.log('🔍 DEBUG: Found search-replace block (old format)', {
+            rawFilePath,
+            filePath,
+            searchTextLength: searchText.length,
+            replaceTextLength: replaceText.length,
+            searchTextPreview: searchText.substring(0, 100),
+            replaceTextPreview: replaceText.substring(0, 100)
+          });
+
+          if (filePath && searchText && replaceText) {
+            operations.push({
+              type: 'replace' as const,
+              filePath: filePath,
+              range: {
+                start: 0,
+                end: 0,
+                startLine: 1,
+                endLine: 1,
+                startColumn: 1,
+                endColumn: 1
+              },
+              oldText: searchText,
+              newText: replaceText,
+              description: `Search and replace in ${filePath} (line numbers not specified)`
+            });
+          }
+        } else {
+          console.log('🔍 DEBUG: No format matched for search-replace block', {
+            block: block,
+            blockLines: block.split('\n').map((line, i) => `${i + 1}: ${line}`)
+          });
+        }
+      }
+    }
+
+    console.log('🔍 DEBUG: parseSearchReplaceOperations completed', {
+      totalOperations: operations.length,
+      searchReplaceBlocksFound: searchReplaceBlocks.length,
+      operations: operations.map(op => ({
+        filePath: op.filePath,
+        type: op.type,
+        hasOldText: !!op.oldText,
+        hasNewText: !!op.newText,
+        range: op.range
+      }))
+    });
+
+    return operations;
+  };
+
+  // Process AI decision in iterative reading
+  const processIterativeDecision = async (decision: any) => {
+    try {
+      const result = await iterativeReaderService.continueIterativeReading(
+        decision,
+        selectedKey!,
+        selectedModel!
+      );
+
+      if (!result.success) {
+        setError(result.error || 'Failed to process AI decision');
+        return;
+      }
+
+      // Update state
+      setIterativeReadingState(iterativeReaderService.getCurrentState());
+
+      // If we have content, show it
+      if (result.content) {
+        setStreamedContent(result.content);
+      }
+
+      // If analysis is complete, show final response
+      if (decision.action === 'analyze_and_respond' && result.content) {
+        // Parse search/replace operations from the response
+        const searchReplaceOps = parseSearchReplaceOperations(result.content);
+        
+        console.log('🔍 DEBUG: Setting AI response with parsed operations', {
+          searchReplaceOpsCount: searchReplaceOps.length,
+          searchReplaceOps: searchReplaceOps.map(op => ({
+            filePath: op.filePath,
+            type: op.type,
+            hasOldText: !!op.oldText,
+            hasNewText: !!op.newText,
+            range: op.range,
+            oldTextPreview: op.oldText?.substring(0, 100),
+            newTextPreview: op.newText?.substring(0, 100)
+          })),
+          hasExplanation: !!result.content,
+          rawContent: result.content?.substring(0, 500)
+        });
+
+        const newAiResponse = {
+          success: true,
+          edits: searchReplaceOps, // Include parsed search/replace operations
+          explanation: result.content,
+          usage: { 
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0 
+          }
+        };
+        
+        console.log('🔍 DEBUG: Setting AI response', {
+          newAiResponse
+          // File editor state removed - using right panel CodeEditor instead
+        });
+        
+        setAiResponse(newAiResponse);
+        
+        // Auto-toggle to editor mode when search/replace operations are found
+        if (searchReplaceOps.length > 0 && onToggleEditing && !isEditing) {
+          console.log('🔍 DEBUG: Auto-toggling to editor mode due to search/replace operations found', {
+            searchReplaceOpsCount: searchReplaceOps.length,
+            currentIsEditing: isEditing,
+            hasOnToggleEditing: !!onToggleEditing
+          });
+          onToggleEditing();
+        }
+      } else if (result.nextAction) {
+        // Continue with next decision
+        setTimeout(() => processIterativeDecision(result.nextAction), 1000);
+      }
+
+    } catch (error) {
+      console.error('Failed to process iterative decision:', error);
+      setError('Failed to process AI decision');
+    }
+  };
+
   // Handle edit request
   const handleRequestEdit = async () => {
     if (!selectedKey || !selectedModel || !userInstruction.trim()) {
@@ -448,180 +1090,8 @@ You can work with individual files or dynamically discover and analyze files acr
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setAiResponse(null);
-    setShowPreview(false);
-    setStreamedContent('');
-    setStreamedEdits([]);
-
-    try {
-      // Normalize the file path to handle different path formats
-      let normalizedPath = currentFileData?.path || (routeFiles && routeFiles.length > 0 ? routeFiles[0].path : '');
-      let projectRoot = '';
-      
-      // If we have a current file, normalize its path
-      if (currentFileData?.path) {
-        // If the path is absolute and contains the project, extract the project root
-        if (normalizedPath.startsWith('/Users/') || normalizedPath.startsWith('C:\\')) {
-          // Extract the project directory path (parent of the file)
-          const pathParts = normalizedPath.split('/');
-          const fileName = pathParts.pop(); // Remove filename
-          projectRoot = pathParts.join('/'); // Keep the directory path
-          normalizedPath = fileName || currentFileData.name;
-          console.log('🔍 Normalized file path from absolute to relative:', normalizedPath);
-          console.log('🔍 Project root directory:', projectRoot);
-        }
-      } else if (routeFiles && routeFiles.length > 0) {
-        // Use the first route file as the primary file
-        normalizedPath = routeFiles[0].name;
-        console.log('🔍 Using first route file as primary:', normalizedPath);
-      }
-
-      // Use enhanced context discovery like ChatInterface
-      let enhancedUserInstruction = userInstruction;
-      let relevantFilesContext = '';
-      let hasEnhancedContext = false;
-      
-      // First, check if we have route files from URLFileViewer
-      if (routeFiles && routeFiles.length > 0) {
-        hasEnhancedContext = true;
-        console.log('🔍 Using route files from URLFileViewer:', routeFiles.length, 'files');
-        
-        const routeFileContexts = routeFiles
-          .map(file => {
-            const lang = file.language || file.path.split('.').pop() || 'txt';
-            return `\n--- ${file.path} ---\n\`\`\`${lang}\n${file.content}\n\`\`\``;
-          })
-          .join('\n');
-        
-        relevantFilesContext = `\n\n## Route Files (Current Page Context):\n${routeFileContexts}`;
-        enhancedUserInstruction = userInstruction + relevantFilesContext;
-        
-        console.log('🔍 Enhanced instruction with ROUTE files:', routeFiles.length, 'files');
-      } else if (codespaceChatService && config.includeContext) {
-        try {
-          console.log('🔍 Using enhanced context discovery for AI Editor...');
-          const enhancedMessage = await codespaceChatService.enhanceMessageWithContext(
-            userInstruction,
-            selectedKey,
-            selectedModel
-          );
-          
-          // Extract primary files with full content and secondary metadata
-          if (enhancedMessage.codespaceContext?.primaryFiles?.length && enhancedMessage.codespaceContext.primaryFiles.length > 0) {
-            hasEnhancedContext = true;
-            
-            // Use primary files (full content) instead of search snippets
-            const primaryFileContexts = enhancedMessage.codespaceContext.primaryFiles
-              .map(pf => {
-                const lang = pf.path.split('.').pop() || 'txt';
-                return `\n--- ${pf.path} ---\n\`\`\`${lang}\n${pf.content}\n\`\`\``;
-              })
-              .join('\n');
-            
-            // Add secondary/technical metadata if available
-            let secondaryContext = '';
-            if (enhancedMessage.codespaceContext.secondaryTechMeta && enhancedMessage.codespaceContext.secondaryTechMeta.length > 0) {
-              secondaryContext = '\n\nSecondary/Technical References:\n' + 
-                enhancedMessage.codespaceContext.secondaryTechMeta
-                  .map(meta => `- ${meta.category.toUpperCase()}: ${meta.path}${meta.description ? ' — ' + meta.description : ''}`)
-                  .join('\n');
-            }
-            
-            relevantFilesContext = `\n\n## Primary Project Files (Full Content):\n${primaryFileContexts}${secondaryContext}`;
-            // When enhanced context exists, use ONLY the enhanced context, not the current file
-            enhancedUserInstruction = userInstruction + relevantFilesContext;
-            
-            console.log('🔍 Enhanced instruction with PRIMARY files:', enhancedMessage.codespaceContext.primaryFiles.length, 'files');
-          }
-        } catch (error) {
-          console.warn('🔍 Failed to enhance context, using basic context:', error);
-        }
-      }
-      
-      const request: AIEditRequest = {
-        filePath: normalizedPath,
-        // Disabled: avoid sending currently opened file content when enhanced context exists
-        fileContent: hasEnhancedContext ? '' : (currentFileData?.content || ''),
-        userInstruction: enhancedUserInstruction,
-        language: currentFileData?.language || (routeFiles && routeFiles.length > 0 ? routeFiles[0].language : 'plaintext'),
-        projectRoot: projectRoot, // Add project root for codespace analysis
-        // Disabled: avoid appending per-open-file symbols when enhanced analyzer context is present
-        context: hasEnhancedContext ? undefined : (config.includeContext ? (fileContext ? {
-          imports: fileContext.imports || [],
-          classes: fileContext.classes || [],
-          functions: fileContext.functions || [],
-          variables: fileContext.variables || []
-        } : undefined) : undefined)
-      };
-
-      // (legacy) intent branch removed — unified S&R flow always runs below
-
-      // Always capture debug payload
-      setDebugPayload({
-        request,
-        enhancedContext: hasEnhancedContext,
-        originalUserInstruction: userInstruction,
-        enhancedUserInstruction,
-        relevantFilesContext,
-        config: {
-          provider: config.provider,
-          model: selectedModel,
-          temperature: config.temperature,
-          maxTokens: config.maxTokens,
-          includeContext: config.includeContext
-        }
-      });
-
-      // Save user message to conversation
-      conversationStore.addMessage(userInstruction, 'user', {
-        filePath: normalizedPath,
-        language: currentFileData?.language || (routeFiles && routeFiles.length > 0 ? routeFiles[0].language : 'plaintext')
-      });
-
-      // Always use Search & Replace generation (unified flow)
-      try {
-        const service = SearchReplacePromptService.getInstance();
-        if (debugPayload?.enhancedContext && debugPayload?.relevantFilesContext) {
-          const resp = await service.generatePrompts(
-            selectedKey,
-            selectedModel,
-            userInstruction,
-            undefined,
-            debugPayload.relevantFilesContext
-          );
-          if (resp.success) {
-            setSearchReplacePrompts(resp.searchReplacePrompts);
-            return;
-          }
-        }
-        if (currentFileData) {
-          const resp = await service.generatePromptsForFile(
-            selectedKey,
-            selectedModel,
-            userInstruction,
-            currentFileData.path,
-            currentFileData.content
-          );
-          if (resp.success) {
-            setSearchReplacePrompts(resp.searchReplacePrompts);
-            return;
-          }
-        }
-        // Fallback: show a simple error if generation failed silently
-        setError('Failed to generate search/replace operations.');
-      } catch (err) {
-        console.error('Search/Replace generation failed:', err);
-        setError('Error generating search/replace operations.');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to request edit';
-      setError(errorMessage);
-      console.error('Edit request failed:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    // Always use iterative mode
+    return handleIterativeReading();
   };
 
   // Handle apply edits
@@ -636,6 +1106,11 @@ You can work with individual files or dynamically discover and analyze files acr
         onApplyEdits(aiResponse.edits);
         
         // Clear the response after successful application
+        console.log('🔍 DEBUG: Clearing AI response after successful application', {
+          currentShowPreview: showPreview
+          // File editor state removed - using right panel CodeEditor instead
+        });
+        
         setAiResponse(null);
         setShowPreview(false);
         
@@ -698,7 +1173,36 @@ You can work with individual files or dynamically discover and analyze files acr
             } else {
               errors.push(`Failed to modify ${currentFileData.path}: ${result.error}`);
             }
-          } else if (edit.type === 'replace' || edit.type === 'insert' || edit.type === 'delete' || edit.type === 'format' || edit.type === 'refactor') {
+          } else if (edit.type === 'replace' && edit.oldText && edit.newText && edit.filePath) {
+            // Handle search/replace operations
+            try {
+              // Read the current file content
+              const fileResult = await window.electron.fileSystem.readFile(edit.filePath);
+              if (!fileResult.success) {
+                errors.push(`Failed to read file ${edit.filePath}: ${fileResult.error}`);
+                continue;
+              }
+
+              const currentContent = fileResult.content || '';
+              
+              // Perform search and replace
+              if (currentContent.includes(edit.oldText)) {
+                const newContent = currentContent.replace(edit.oldText, edit.newText);
+                const writeResult = await window.electron.fileSystem.writeFile(edit.filePath, newContent);
+                
+                if (writeResult.success) {
+                  modifiedFiles.push(edit.filePath);
+                  console.log(`Search/replace successful in: ${edit.filePath}`);
+                } else {
+                  errors.push(`Failed to write file ${edit.filePath}: ${writeResult.error}`);
+                }
+              } else {
+                errors.push(`Search text not found in ${edit.filePath}`);
+              }
+            } catch (error) {
+              errors.push(`Error processing search/replace for ${edit.filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          } else if (edit.type === 'insert' || edit.type === 'delete' || edit.type === 'format' || edit.type === 'refactor') {
             if (!edit.range || !edit.newText) {
               errors.push(`Edit operation ${edit.type} requires range and newText properties`);
             }
@@ -727,6 +1231,11 @@ You can work with individual files or dynamically discover and analyze files acr
 
   // Clear error state and reset form
   const handleClearError = () => {
+    console.log('🔍 DEBUG: Clearing error state and resetting form', {
+      currentShowPreview: showPreview
+      // File editor state removed - using right panel CodeEditor instead
+    });
+    
     setAiResponse(null);
     setError(null);
     setShowPreview(false);
@@ -734,9 +1243,145 @@ You can work with individual files or dynamically discover and analyze files acr
     // Don't clear userInstruction - let user retry with same text
   };
 
+  // Test function to load demo data
+  const loadDemoData = () => {
+    console.log('🧪 LOADING DEMO DATA FOR TESTING');
+    console.log('📁 Demo file:', demoCurrentFile);
+    
+    // Create test diff content based on user's request - this tests the text replacement behavior
+    const testDiffContent = {
+      text: "I'm a first sentence\n\n```javascript\nfunction example() {\n  console.log('codeblock');\n}\n```\n\nI'm a second sentence\n\n```search-replace\nFILE: example.txt\nLINES: 1-1\nSEARCH: I'm a second sentence\nREPLACE: I'm a modified second sentence\n```\n\nCongratulations\n\nThis should show the text replacement working correctly. The 'I'm a second sentence' should become 'I'm a modified second sentence' and the search-replace block should disappear."
+    };
+    
+    // Create demo AI response with the test content
+    const demoResponse = {
+      success: true,
+      explanation: testDiffContent.text,
+      edits: [
+        {
+          type: 'replace' as const,
+          filePath: 'Taehwa_demo/www/index.php',
+          range: {
+            start: 0,
+            end: 0,
+            startLine: 100,
+            endLine: 100,
+            startColumn: 1,
+            endColumn: 1
+          },
+          oldText: '<option value="0" selected="select">Product</option>',
+          newText: '<option value="test" >Test</option><option value="0" selected="select">Product</option>',
+          description: 'Add Test option to product dropdown (line 100)'
+        },
+        {
+          type: 'replace' as const,
+          filePath: 'Taehwa_demo/www/index.php',
+          range: {
+            start: 0,
+            end: 0,
+            startLine: 220,
+            endLine: 220,
+            startColumn: 1,
+            endColumn: 1
+          },
+          oldText: '} else if (obj == 0) {',
+          newText: '} else if (obj == "test") {\n                                f.SUB0.style.display = "none";\n                                f.SUB1.style.display = "none";\n                                f.SUB2.style.display = "none";\n                                f.SUB3.style.display = "none";\n                                f.SUB4.style.display = "none";\n                                f.SUB5.style.display = "none";\n                                f.SUB6.style.display = "none";\n                            } else if (obj == 0) {',
+          description: 'Update showSub function to handle test option (line 220)'
+        }
+      ],
+      usage: { 
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0 
+      }
+    };
+    
+    console.log('🔍 Demo AI response:', demoResponse);
+    console.log('📊 Demo edits count:', demoResponse.edits.length);
+    
+    // Parse search/replace operations from the explanation content
+    const parsedOps = parseSearchReplaceOperations(demoResponse.explanation);
+    console.log('🔍 DEBUG: Parsed operations from explanation:', {
+      count: parsedOps.length,
+      operations: parsedOps.map(op => ({
+        filePath: op.filePath,
+        type: op.type,
+        hasOldText: !!op.oldText,
+        hasNewText: !!op.newText,
+        range: op.range
+      }))
+    });
+    
+    // Update the demo response with parsed operations
+    const updatedDemoResponse = {
+      ...demoResponse,
+      edits: parsedOps.length > 0 ? parsedOps : demoResponse.edits
+    };
+    
+    console.log('🔍 Updated demo response with parsed operations:', {
+      originalEditsCount: demoResponse.edits.length,
+      parsedEditsCount: parsedOps.length,
+      finalEditsCount: updatedDemoResponse.edits.length
+    });
+    
+    setAiResponse(updatedDemoResponse);
+    setShowPreview(true);
+    
+    // Auto-load the first file for editing and show diff in right panel
+    if (updatedDemoResponse.edits.length > 0) {
+      const firstEdit = updatedDemoResponse.edits[0];
+      console.log('🎯 AUTO-LOADING FIRST EDIT FOR TESTING:', firstEdit);
+      loadFileForEdit(firstEdit);
+    }
+    
+    console.log('✅ DEMO DATA LOADED - Check right panel for diff changes');
+  };
+
+  // Expose test function to window for console access
+  useEffect(() => {
+    (window as any).testDiffUI = loadDemoData;
+    console.log('🧪 Test function available: window.testDiffUI()');
+  }, []);
+
   // Handle preview toggle
-  const handlePreviewToggle = () => {
-    setShowPreview(!showPreview);
+  const handlePreviewToggle = async () => {
+    console.log('🔍 DEBUG: Preview toggle clicked', { 
+      currentShowPreview: showPreview, 
+      newShowPreview: !showPreview,
+      hasEdits: aiResponse?.edits?.length || 0,
+      currentFileData: {
+        path: currentFileData?.path,
+        name: currentFileData?.name,
+        contentLength: currentFileData?.content?.length,
+        language: currentFileData?.language
+      },
+      aiResponseEdits: aiResponse?.edits?.map(edit => ({
+        filePath: edit.filePath,
+        type: edit.type,
+        hasOldText: !!edit.oldText,
+        hasNewText: !!edit.newText
+      })) || []
+      // File editor state removed - using right panel CodeEditor instead
+    });
+    
+    const newShowPreview = !showPreview;
+    
+    // If enabling preview and we have edits, automatically load the first file with edits
+    if (newShowPreview && aiResponse && aiResponse.edits && aiResponse.edits.length > 0) {
+      console.log('🔍 DEBUG: Enabling preview - Auto-loading first file with edits');
+      
+      // Find the first edit that targets a file
+      const firstEdit = aiResponse.edits.find(edit => edit.filePath && edit.oldText && edit.newText);
+      
+      if (firstEdit) {
+        console.log('🔍 DEBUG: Auto-loading file for preview:', firstEdit.filePath);
+        console.log('🎯 FOCUSING TO FILE PATH:', firstEdit.filePath);
+        console.log('📊 SHOWING DIFF FOR FILE:', firstEdit.filePath);
+        await loadFileForEdit(firstEdit);
+      }
+    }
+    
+    setShowPreview(newShowPreview);
   };
 
   // Get provider info
@@ -793,7 +1438,10 @@ You can work with individual files or dynamically discover and analyze files acr
               {onToggleEditing && (
                 <button
                   className={`editor-toggle-btn ${isEditing ? 'editing' : 'server'}`}
-                  onClick={onToggleEditing}
+                  onClick={() => {
+                    console.log('AI Editor: Toggle button clicked, current isEditing:', isEditing);
+                    onToggleEditing();
+                  }}
                   title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
                 >
                   {isEditing ? <><FontAwesomeIcon icon={faGlobe} /> Show Server</> : <><FontAwesomeIcon icon={faEdit} /> Show Editor</>}
@@ -839,6 +1487,24 @@ You can work with individual files or dynamically discover and analyze files acr
           </div>
           
           <div className="config-controls">
+            <button
+              className="test-demo-btn"
+              onClick={loadDemoData}
+              title="Load demo data for testing diff UI"
+              style={{
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                marginRight: '8px'
+              }}
+            >
+              🧪 Test Diff UI
+            </button>
+            
             <button
               className="context-management-btn"
               onClick={() => setShowContextManagement(true)}
@@ -948,6 +1614,42 @@ You can work with individual files or dynamically discover and analyze files acr
           </div>
         )}
 
+        {/* Iterative Reading Status */}
+        {isIterativeReading && iterativeReadingState && (
+          <div className="message iterative-reading-message">
+            <div className="message-content">
+              <div className="response-header">
+                <span className="response-title"><FontAwesomeIcon icon={faFile} /> Iterative File Reading</span>
+              </div>
+              
+              <div className="iterative-status">
+                <div className="status-phase">
+                  <strong>Phase:</strong> {iterativeReadingState.phase}
+                </div>
+                <div className="status-content">
+                  <strong>Content Read:</strong> {iterativeReadingState.totalContentRead.toLocaleString()} / {iterativeReadingState.maxContentLimit.toLocaleString()} chars
+                </div>
+                <div className="status-files">
+                  <strong>Files Read:</strong> {iterativeReadingState.readRanges.length}
+                </div>
+                
+                {iterativeReadingState.readRanges.length > 0 && (
+                  <div className="read-ranges">
+                    <strong>Read Ranges:</strong>
+                    <ul>
+                      {iterativeReadingState.readRanges.map((range: any, index: number) => (
+                        <li key={index}>
+                          {range.filePath.split('/').pop()} (lines {range.startLine}-{range.endLine})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Debug Payload Display */}
         {debugPayload && (
           <div className="message debug-message">
@@ -1008,62 +1710,44 @@ You can work with individual files or dynamically discover and analyze files acr
           <div className="message search-replace-message">
             <div className="message-content">
               <div className="response-header">
-                <span className="response-title"><FontAwesomeIcon icon={faSearch} /> Search & Replace Prompts</span>
-                <div className="response-actions">
-                  <button 
-                    onClick={() => setSearchReplacePrompts([])}
-                    className="close-btn"
-                  >
-                    <FontAwesomeIcon icon={faTimes} />
-                  </button>
-                </div>
+                <span className="response-title"><FontAwesomeIcon icon={faSearch} /> {searchReplacePrompts.length} Search/Replace</span>
+                <button 
+                  onClick={() => setSearchReplacePrompts([])}
+                  className="close-btn"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
               </div>
               
               <div className="search-replace-content">
-                <h4>Generated {searchReplacePrompts.length} search/replace operation(s)</h4>
-                
                 {searchReplacePrompts.map((prompt, index) => (
                   <div key={prompt.id || index} className="prompt-item">
                     <div className="prompt-header">
                       <span className="prompt-number">#{index + 1}</span>
                       <span className="prompt-description">{prompt.description}</span>
-                      <span className="prompt-confidence">{Math.round((prompt.confidence || 0.8) * 100)}%</span>
+                      {prompt.filePath && <span className="file-path">{prompt.filePath.split('/').pop()}</span>}
                     </div>
                     
                     <div className="prompt-details">
-                      <div className="search-section">
-                        <h5><FontAwesomeIcon icon={faSearch} /> Search for:</h5>
-                        <pre className="search-text">{prompt.searchText}</pre>
-                      </div>
-                      
-                      <div className="replace-section">
-                        <h5><FontAwesomeIcon icon={faRefresh} /> Replace with:</h5>
-                        <pre className="replace-text">{prompt.replaceText}</pre>
-                      </div>
-                      
-                      {prompt.filePath && (
-                        <div className="file-info">
-                          <strong>File:</strong> {prompt.filePath}
+                      <div className="search-replace-pair">
+                        <div className="search-text">
+                          <FontAwesomeIcon icon={faSearch} /> <code>{prompt.searchText}</code>
                         </div>
-                      )}
-                      
-                      {prompt.notes && (
-                        <div className="notes">
-                          <strong>Notes:</strong> {prompt.notes}
+                        <div className="replace-text">
+                          <FontAwesomeIcon icon={faRefresh} /> <code>{prompt.replaceText}</code>
                         </div>
-                      )}
+                      </div>
                     </div>
                     
                     <div className="prompt-actions">
                       <button 
                         onClick={() => {
-                          // TODO: Implement actual search/replace execution
                           console.log('Executing search/replace:', prompt);
                         }}
                         className="execute-btn"
-                        title="Execute this search/replace operation"
+                        title="Execute"
                       >
-                        <FontAwesomeIcon icon={faCheck} /> Execute
+                        <FontAwesomeIcon icon={faCheck} />
                       </button>
                       
                       <button 
@@ -1072,9 +1756,9 @@ You can work with individual files or dynamically discover and analyze files acr
                           navigator.clipboard.writeText(text);
                         }}
                         className="copy-btn"
-                        title="Copy search/replace text"
+                        title="Copy"
                       >
-                        <FontAwesomeIcon icon={faClipboard} /> Copy
+                        <FontAwesomeIcon icon={faClipboard} />
                       </button>
                     </div>
                   </div>
@@ -1101,32 +1785,36 @@ You can work with individual files or dynamically discover and analyze files acr
                     onClick={handleApplyEdits}
                     disabled={!aiResponse.edits.length}
                   >
-                         <FontAwesomeIcon icon={faCheck} /> Apply
+                         <FontAwesomeIcon icon={faCheck} /> Apply {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
                   </button>
                 </div>
               )}
             </div>
 
-                {aiResponse.explanation && (
-                  <div className="explanation">
-                     <MessageContent content={aiResponse.explanation} role="assistant" />
-                  </div>
+            {/* AI Response Content */}
+            {aiResponse.explanation && (
+              <div className="explanation">
+                {aiResponse.edits.length > 0 ? (
+                  <SplitExplanationWithEdits 
+                    explanation={aiResponse.explanation}
+                    edits={aiResponse.edits}
+                    currentFile={currentFileData}
+                    onPreviewToggle={handlePreviewToggle}
+                    showPreview={showPreview}
+                    onApply={handleApplyEdits}
+                  />
+                ) : (
+                  <MessageContent content={aiResponse.explanation} role="assistant" />
                 )}
-                
-                 {/* Show Code Edit Block only when there are edits */}
-                 {aiResponse.edits.length > 0 ? (
-                   <CodeEditBlock 
-                     edits={aiResponse.edits}
-                     currentFile={currentFileData}
-                     onPreviewToggle={handlePreviewToggle}
-                     showPreview={showPreview}
-                     onApply={handleApplyEdits}
-                   />
-                 ) : (
-                   <div className="no-edits-message">
-                     <FontAwesomeIcon icon={faComments} /> This is a conversational response with no code changes to apply.
-                        </div>
-                      )}
+              </div>
+            )}
+            
+            {/* Show message when there are no edits */}
+            {aiResponse.edits.length === 0 && (
+              <div className="no-edits-message">
+                <FontAwesomeIcon icon={faComments} /> This is a conversational response with no code changes to apply.
+              </div>
+            )}
 
                 {aiResponse.usage && (
                   <div className="usage-info">

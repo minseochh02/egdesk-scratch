@@ -171,12 +171,19 @@ Return ONLY a JSON array in this exact format:
     "description": "Brief description of what this change does",
     "searchText": "EXACT text to find (include surrounding context)",
     "replaceText": "EXACT text to replace it with",
-    "filePath": "path/to/file.ext",
+    "filePath": "complete/relative/path/from/project/root/file.ext",
     "confidence": 0.95,
     "notes": "Any important notes about this change"
   }
 ]
 \`\`\`
+
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
 
 ## CRITICAL REQUIREMENTS:
 

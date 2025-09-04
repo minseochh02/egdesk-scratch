@@ -20,10 +20,44 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
   const detectSearchReplaceOperations = (text: string): SearchReplaceOperation[] => {
     const operations: SearchReplaceOperation[] = [];
     
-    // Pattern 1: Search/Replace blocks with clear markers
-    const searchReplacePattern = /(?:search|find|replace|change|update).*?:\s*\n?```[^\n]*\n([\s\S]*?)```\s*\n?(?:with|to|replace with|change to|update to).*?:\s*\n?```[^\n]*\n([\s\S]*?)```/gi;
+    // Only look for explicit search-replace blocks, not regular code blocks
+    // Pattern 1: Explicit ```search-replace blocks
+    const searchReplaceBlockPattern = /```search-replace[\s\S]*?```/gi;
     
     let match;
+    while ((match = searchReplaceBlockPattern.exec(text)) !== null) {
+      const block = match[0];
+      
+      // Parse the search-replace block content
+      const newFormatRegex = /```search-replace\s*\nFILE:\s*(.+?)\s*\nLINES:\s*(.+?)\s*\nSEARCH:\s*([\s\S]*?)\nREPLACE:\s*([\s\S]*?)\n```/g;
+      let blockMatch = newFormatRegex.exec(block);
+      
+      if (blockMatch) {
+        operations.push({
+          searchText: blockMatch[3].trim(),
+          replaceText: blockMatch[4].trim(),
+          filePath: blockMatch[1].trim(),
+          description: 'Search and replace operation'
+        });
+      } else {
+        // Try old format without LINES
+        const oldFormatRegex = /```search-replace\s*\nFILE:\s*(.+?)\s*\nSEARCH:\s*([\s\S]*?)\nREPLACE:\s*([\s\S]*?)\n```/g;
+        blockMatch = oldFormatRegex.exec(block);
+        
+        if (blockMatch) {
+          operations.push({
+            searchText: blockMatch[2].trim(),
+            replaceText: blockMatch[3].trim(),
+            filePath: blockMatch[1].trim(),
+            description: 'Search and replace operation'
+          });
+        }
+      }
+    }
+    
+    // Pattern 2: Search/Replace blocks with clear markers (only if they explicitly mention search/replace)
+    const searchReplacePattern = /(?:search|find|replace|change|update).*?:\s*\n?```[^\n]*\n([\s\S]*?)```\s*\n?(?:with|to|replace with|change to|update to).*?:\s*\n?```[^\n]*\n([\s\S]*?)```/gi;
+    
     while ((match = searchReplacePattern.exec(text)) !== null) {
       operations.push({
         searchText: match[1].trim(),
@@ -32,7 +66,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
       });
     }
     
-    // Pattern 2: Before/After format
+    // Pattern 3: Before/After format (only if explicitly mentioned)
     const beforeAfterPattern = /(?:before|current|existing).*?:\s*\n?```[^\n]*\n([\s\S]*?)```\s*\n?(?:after|new|updated|result).*?:\s*\n?```[^\n]*\n([\s\S]*?)```/gi;
     
     while ((match = beforeAfterPattern.exec(text)) !== null) {
@@ -43,7 +77,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
       });
     }
     
-    // Pattern 3: Explicit search/replace markers
+    // Pattern 4: Explicit search/replace markers
     const explicitPattern = /```search\s*\n([\s\S]*?)```\s*\n```replace\s*\n([\s\S]*?)```/gi;
     
     while ((match = explicitPattern.exec(text)) !== null) {
@@ -52,146 +86,6 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, role })
         replaceText: match[2].trim(),
         description: 'Explicit search and replace'
       });
-    }
-    
-    // Pattern 4: File path with search/replace
-    const filePattern = /(?:in|file|path):\s*([^\n]+)\s*\n(?:search|find|replace|change|update).*?:\s*\n?```[^\n]*\n([\s\S]*?)```\s*\n?(?:with|to|replace with|change to|update to).*?:\s*\n?```[^\n]*\n([\s\S]*?)```/gi;
-    
-    while ((match = filePattern.exec(text)) !== null) {
-      operations.push({
-        searchText: match[2].trim(),
-        replaceText: match[3].trim(),
-        filePath: match[1].trim(),
-        description: 'File-specific search and replace'
-      });
-    }
-    
-    // Pattern 5: Code changes with comments (like the AI response format)
-    const codeChangePattern = /```(?:php|html|javascript|js|css|php|html|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl|php|html|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl)\s*\n([\s\S]*?)```/gi;
-    
-    while ((match = codeChangePattern.exec(text)) !== null) {
-      const codeContent = match[1].trim();
-      
-      // Look for patterns like "// ... existing code ..." followed by new code
-      const existingCodePattern = /\/\/\s*\.\.\.\s*existing\s+code\s*\.\.\.\s*\n([\s\S]*?)(?=\/\/\s*\.\.\.\s*existing\s+code\s*\.\.\.|$)/gi;
-      const existingMatch = existingCodePattern.exec(codeContent);
-      
-      if (existingMatch) {
-        // Extract the new code part
-        const newCode = existingMatch[1].trim();
-        
-        // Try to find the original code context from the surrounding text
-        const beforeCode = text.substring(0, match.index);
-        const afterCode = text.substring(match.index + match[0].length);
-        
-        // Look for file paths in the context
-        const filePathMatch = beforeCode.match(/(?:in|file|path):\s*([^\n]+)/i) || 
-                             afterCode.match(/(?:in|file|path):\s*([^\n]+)/i);
-        
-        operations.push({
-          searchText: '// ... existing code ...',
-          replaceText: newCode,
-          filePath: filePathMatch ? filePathMatch[1].trim() : undefined,
-          description: 'Code modification with context'
-        });
-      }
-    }
-    
-    // Pattern 6: Direct code blocks with file paths
-    const directCodePattern = /```(?:php|html|javascript|js|css|php|html|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl)\s*\n([\s\S]*?)```/gi;
-    
-    while ((match = directCodePattern.exec(text)) !== null) {
-      const codeContent = match[1].trim();
-      
-      // Look for file paths in the surrounding context
-      const beforeCode = text.substring(0, match.index);
-      const afterCode = text.substring(match.index + match[0].length);
-      
-      const filePathMatch = beforeCode.match(/(?:in|file|path):\s*([^\n]+)/i) || 
-                           afterCode.match(/(?:in|file|path):\s*([^\n]+)/i);
-      
-      if (filePathMatch) {
-        operations.push({
-          searchText: '// ... existing code ...',
-          replaceText: codeContent,
-          filePath: filePathMatch[1].trim(),
-          description: 'Code modification for specific file'
-        });
-      }
-    }
-    
-    // Pattern 7: AI response format with file paths and code changes
-    const aiResponsePattern = /```(?:php|html|javascript|js|css|php|html|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl)\s*\n([\s\S]*?)```/gi;
-    
-    while ((match = aiResponsePattern.exec(text)) !== null) {
-      const codeContent = match[1].trim();
-      
-      // Look for file paths in the surrounding context
-      const beforeCode = text.substring(0, match.index);
-      const afterCode = text.substring(match.index + match[0].length);
-      
-      // Look for file paths in the context
-      const filePathMatch = beforeCode.match(/(?:in|file|path):\s*([^\n]+)/i) || 
-                           afterCode.match(/(?:in|file|path):\s*([^\n]+)/i);
-      
-      if (filePathMatch) {
-        operations.push({
-          searchText: '// ... existing code ...',
-          replaceText: codeContent,
-          filePath: filePathMatch[1].trim(),
-          description: 'Code modification for specific file'
-        });
-      }
-    }
-    
-    // Pattern 8: Simple code blocks without explicit search/replace markers
-    const simpleCodePattern = /```(?:php|html|javascript|js|css|php|html|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl)\s*\n([\s\S]*?)```/gi;
-    
-    while ((match = simpleCodePattern.exec(text)) !== null) {
-      const codeContent = match[1].trim();
-      
-      // Look for file paths in the surrounding context
-      const beforeCode = text.substring(0, match.index);
-      const afterCode = text.substring(match.index + match[0].length);
-      
-      // Look for file paths in the context
-      const filePathMatch = beforeCode.match(/(?:in|file|path):\s*([^\n]+)/i) || 
-                           afterCode.match(/(?:in|file|path):\s*([^\n]+)/i);
-      
-      if (filePathMatch) {
-        operations.push({
-          searchText: '// ... existing code ...',
-          replaceText: codeContent,
-          filePath: filePathMatch[1].trim(),
-          description: 'Code modification for specific file'
-        });
-      }
-    }
-    
-    // Pattern 9: Simple code blocks with file paths (like your example)
-    const simpleCodeBlockPattern = /```(?:php|html|javascript|js|css|xml|json|yaml|yml|sql|bash|sh|python|py|java|cpp|c|cs|go|rust|swift|kotlin|scala|r|ruby|perl)\s*\n([\s\S]*?)```/gi;
-    
-    while ((match = simpleCodeBlockPattern.exec(text)) !== null) {
-      const codeContent = match[1].trim();
-      
-      // Look for file paths in the code content itself (first line is often the file path)
-      const lines = codeContent.split('\n');
-      const firstLine = lines[0]?.trim();
-      
-      // Check if first line looks like a file path
-      const filePathMatch = firstLine?.match(/^([^\n]*\.(?:php|html|js|css|xml|json|yaml|yml|sql|bash|sh|py|java|cpp|c|cs|go|rust|swift|kt|scala|r|rb|pl))/i);
-      
-      if (filePathMatch) {
-        // Remove the file path from the code content
-        const codeWithoutPath = lines.slice(1).join('\n').trim();
-        
-        operations.push({
-          searchText: '// ... existing code ...',
-          replaceText: codeWithoutPath,
-          filePath: filePathMatch[1].trim(),
-          description: 'Code modification for specific file'
-        });
-      }
     }
     
     return operations;

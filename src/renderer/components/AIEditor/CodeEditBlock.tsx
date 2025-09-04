@@ -96,7 +96,7 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
                     {edit.description}
                   </div>
                   
-                  {edit.newText && (
+                  {edit.newText && showPreview && (
                     <div className="edit-preview">
                       <pre className="code-preview">{edit.newText}</pre>
                     </div>
