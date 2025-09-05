@@ -15,6 +15,7 @@ interface CodeEditBlockProps {
   onPreviewToggle: () => void;
   showPreview: boolean;
   onApply: () => void;
+  autoApplied?: boolean;
 }
 
 export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
@@ -22,7 +23,8 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
   currentFile,
   onPreviewToggle,
   showPreview,
-  onApply
+  onApply,
+  autoApplied = false
 }) => {
   // Group edits by file
   const editsByFile = edits.reduce((acc, edit) => {
@@ -54,13 +56,28 @@ export const CodeEditBlock: React.FC<CodeEditBlockProps> = ({
           <button onClick={onPreviewToggle} className="preview-btn">
             {showPreview ? <><FontAwesomeIcon icon={faEye} /> Hide Preview</> : <><FontAwesomeIcon icon={faEye} /> Show Preview</>}
           </button>
-          <button 
-            className="apply-btn"
-            onClick={onApply}
-            disabled={!edits.length}
-          >
-            <FontAwesomeIcon icon={faCheck} /> Apply Changes
-          </button>
+          {autoApplied ? (
+            <button 
+              className="auto-applied-btn"
+              disabled={true}
+              style={{
+                backgroundColor: '#28a745',
+                color: 'white',
+                cursor: 'default',
+                opacity: 0.8
+              }}
+            >
+              <FontAwesomeIcon icon={faCheck} /> Auto-Applied
+            </button>
+          ) : (
+            <button 
+              className="apply-btn"
+              onClick={onApply}
+              disabled={!edits.length}
+            >
+              <FontAwesomeIcon icon={faCheck} /> Apply Changes
+            </button>
+          )}
         </div>
       </div>
 

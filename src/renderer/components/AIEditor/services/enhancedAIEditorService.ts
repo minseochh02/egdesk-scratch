@@ -587,8 +587,51 @@ export class EnhancedAIEditorService {
     };
   }
 
+  /**
+   * Apply edits to content using the comprehensive FileWriterService
+   */
   static applyEdits(originalContent: string, edits: AIEdit[]): string {
-    // Simple edit application
-    return originalContent;
+    try {
+      // Import and use the FileWriterService for proper edit application
+      const { FileWriterService } = require('../../../services/fileWriterService');
+      const fileWriter = FileWriterService.getInstance();
+      
+      const result = fileWriter.applyEditsToContent(originalContent, edits);
+      
+      if (result.success) {
+        console.log(`✅ Successfully applied ${edits.length} edits to content`);
+        return result.content;
+      } else {
+        console.error(`❌ Failed to apply edits:`, result.errors);
+        return originalContent; // Return original content on failure
+      }
+    } catch (error) {
+      console.error('❌ Error in applyEdits:', error);
+      return originalContent; // Return original content on error
+    }
+  }
+
+  /**
+   * Apply edits directly to files (enhanced version)
+   */
+  static async applyEditsToFiles(edits: AIEdit[]): Promise<{
+    success: boolean;
+    modifiedFiles: string[];
+    errors: string[];
+    backupPaths?: string[];
+  }> {
+    try {
+      const { FileWriterService } = require('../../../services/fileWriterService');
+      const fileWriter = FileWriterService.getInstance();
+      
+      return await fileWriter.applyChangesToFiles(edits);
+    } catch (error) {
+      console.error('❌ Error applying edits to files:', error);
+      return {
+        success: false,
+        modifiedFiles: [],
+        errors: [`Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      };
+    }
   }
 }

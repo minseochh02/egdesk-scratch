@@ -49,6 +49,18 @@ export interface IElectronAPI {
     getServerStatus(): Promise<{ success: boolean; status?: any; error?: string }>;
     pickFolder(): Promise<{ success: boolean; folderPath?: string; error?: string }>;
   };
+  browserWindow: {
+    createWindow(options: any): Promise<{ success: boolean; windowId?: number; error?: string }>;
+    closeWindow(windowId: number): Promise<{ success: boolean; error?: string }>;
+    loadURL(windowId: number, url: string): Promise<{ success: boolean; error?: string }>;
+    reload(windowId: number): Promise<{ success: boolean; error?: string }>;
+    refreshAllLocalhost(): Promise<{ success: boolean; refreshedCount?: number; error?: string }>;
+    launchExternalBrowser(browserType: string, url: string): Promise<{ success: boolean; process?: any; error?: string }>;
+    closeExternalBrowser(pid: number): Promise<{ success: boolean; error?: string }>;
+    navigateExternalBrowser(pid: number, url: string): Promise<{ success: boolean; error?: string }>;
+    onUrlChanged(windowId: number, callback: (url: string) => void): void;
+    removeUrlChangedListener(windowId: number): void;
+  };
 }
 
 declare global {
