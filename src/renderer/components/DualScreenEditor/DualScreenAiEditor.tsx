@@ -14,9 +14,10 @@ import { CodeEditBlock } from '../AIEditor/CodeEditBlock';
 import { conversationStore } from '../AIEditor/store/conversationStore';
 import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faRobot, faBrain, faSearch, faCheck, faRefresh, faClock, faGlobe, faEdit, faPlus, faCog, faFile, faRocket, faClipboard, faComments, faTimes, faExclamationTriangle, faBook, faBroom, faBug } from '@fortawesome/free-solid-svg-icons';
+import { faRobot, faBrain, faSearch, faCheck, faRefresh, faClock, faGlobe, faEdit, faPlus, faCog, faFile, faRocket, faClipboard, faComments, faTimes, faExclamationTriangle, faBook, faBroom, faBug, faFlask } from '@fortawesome/free-solid-svg-icons';
 import './DualScreenAIEditor.css';
 import { createDemoAIResponse, demoCurrentFile } from './demoData';
+import { FileWriterTest } from '../FileWriterTest';
 
 // Component to split AI explanation and show edits in the middle
 interface SplitExplanationWithEditsProps {
@@ -31,6 +32,7 @@ interface SplitExplanationWithEditsProps {
   onPreviewToggle: () => void;
   showPreview: boolean;
   onApply: () => void;
+  autoApplied?: boolean;
 }
 
 const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
@@ -39,7 +41,8 @@ const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
   currentFile,
   onPreviewToggle,
   showPreview,
-  onApply
+  onApply,
+  autoApplied = false
 }) => {
   // Remove regular code blocks from the explanation text but preserve search-replace blocks
   // Search-replace blocks should remain in the text flow for proper positioning
@@ -108,6 +111,7 @@ const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
           onPreviewToggle={onPreviewToggle}
           showPreview={showPreview}
           onApply={onApply}
+          autoApplied={autoApplied}
         />
       </div>
       
@@ -223,6 +227,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   // Context management state
   const [showContextManagement, setShowContextManagement] = useState(false);
   const [codespaceChatService, setCodespaceChatService] = useState<CodespaceChatService | null>(null);
+
+  // File Writer Test state
+  const [showFileWriterTest, setShowFileWriterTest] = useState(false);
   
   // Debug state - always on
   const [debugPayload, setDebugPayload] = useState<any>(null);
@@ -301,8 +308,8 @@ CODE BLOCK FORMAT (for suggestions):
 🚨 REMEMBER: You are responsible for making the code changes. Provide search/replace operations for everything that needs to be modified. The user cannot edit code themselves.`,
     includeContext: true,
     maxContextFiles: 5,
-    autoApply: false,
-    requireConfirmation: true
+    autoApply: true,
+    requireConfirmation: false
   });
 
   const instructionInputRef = useRef<HTMLTextAreaElement>(null);
@@ -729,21 +736,37 @@ CODE BLOCK FORMAT (for suggestions):
       return;
     }
 
-    console.log('🔍 DEBUG: loadFileForEdit - Starting to load file', edit.filePath);
+    // Construct the full file path using project context
+    const projectPath = projectContext?.currentProject?.path;
+    if (!projectPath) {
+      console.error('❌ DEBUG: loadFileForEdit - No project context available');
+      return;
+    }
+
+    // If edit.filePath is already absolute, use it; otherwise construct full path
+    const fullFilePath = edit.filePath.startsWith('/') || edit.filePath.startsWith('C:\\') 
+      ? edit.filePath 
+      : `${projectPath}/${edit.filePath}`;
+
+    console.log('🔍 DEBUG: loadFileForEdit - Starting to load file', {
+      originalPath: edit.filePath,
+      fullPath: fullFilePath,
+      projectPath
+    });
 
     try {
-      // Read the current file content
-      let result = await window.electron.fileSystem.readFile(edit.filePath);
+      // Read the current file content using the full path
+      let result = await window.electron.fileSystem.readFile(fullFilePath);
       
       // If the file path doesn't work, try some common variations
       if (!result.success) {
         console.log('loadFileForEdit: Original path failed, trying variations');
         const pathVariations = [
-          `egdesk-scratch/${edit.filePath}`,
-          `egdesk-scratch/wordpress/${edit.filePath}`,
-          `wordpress/${edit.filePath}`,
-          edit.filePath.replace('www/', 'egdesk-scratch/wordpress/'),
-          edit.filePath.replace('www/', 'wordpress/')
+          `${projectPath}/egdesk-scratch/${edit.filePath}`,
+          `${projectPath}/egdesk-scratch/wordpress/${edit.filePath}`,
+          `${projectPath}/wordpress/${edit.filePath}`,
+          `${projectPath}/${edit.filePath.replace('www/', 'egdesk-scratch/wordpress/')}`,
+          `${projectPath}/${edit.filePath.replace('www/', 'wordpress/')}`
         ];
         
         for (const path of pathVariations) {
@@ -1068,6 +1091,24 @@ CODE BLOCK FORMAT (for suggestions):
           });
           onToggleEditing();
         }
+
+        // Auto-apply edits (always enabled) if we have valid edits
+        if (searchReplaceOps.length > 0) {
+          console.log('🚀 Auto-applying edits (always enabled)', {
+            editsCount: searchReplaceOps.length,
+            requireConfirmation: config.requireConfirmation
+          });
+          
+          // Set a brief timeout to allow UI to update before applying
+          setTimeout(async () => {
+            try {
+              await handleApplyEdits();
+            } catch (error) {
+              console.error('Auto-apply failed:', error);
+              setError(`Auto-apply failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          }, 500); // 500ms delay to allow UI to show the response first
+        }
       } else if (result.nextAction) {
         // Continue with next decision
         setTimeout(() => processIterativeDecision(result.nextAction), 1000);
@@ -1094,11 +1135,124 @@ CODE BLOCK FORMAT (for suggestions):
     return handleIterativeReading();
   };
 
-  // Handle apply edits
+  // Function to refresh browser windows showing localhost
+  const refreshBrowserWindows = async () => {
+    try {
+      console.log('🔄 Attempting to refresh browser windows showing localhost...');
+      
+      if (window.electron && window.electron.browserWindow) {
+        // Try to refresh all browser windows showing localhost
+        try {
+          const refreshResult = await window.electron.browserWindow.refreshAllLocalhost();
+          if (refreshResult.success) {
+            console.log(`✅ Refreshed ${refreshResult.refreshedCount} localhost browser window(s)`);
+          } else {
+            console.warn('⚠️ Failed to refresh browser windows:', refreshResult.error);
+          }
+        } catch (error) {
+          console.log('ℹ️ Browser window refresh method not available, using alternative approach');
+        }
+      }
+      
+      // Alternative approach: Use postMessage to refresh any localhost pages
+      // This works for pages opened with window.open() from this app
+      try {
+        // Send refresh message to any child windows
+        const refreshMessage = { type: 'REFRESH_LOCALHOST', timestamp: Date.now() };
+        
+        // Try to refresh via BroadcastChannel (works for same-origin pages)
+        if (typeof BroadcastChannel !== 'undefined') {
+          const refreshChannel = new BroadcastChannel('localhost-refresh');
+          refreshChannel.postMessage(refreshMessage);
+          console.log('📡 Sent refresh message via BroadcastChannel');
+          
+          // Close the channel after a short delay
+          setTimeout(() => {
+            refreshChannel.close();
+          }, 1000);
+        }
+        
+        // Also try localStorage approach for cross-tab communication
+        localStorage.setItem('localhost-refresh-trigger', JSON.stringify(refreshMessage));
+        // Remove it immediately to trigger storage event
+        setTimeout(() => {
+          localStorage.removeItem('localhost-refresh-trigger');
+        }, 100);
+        
+      } catch (error) {
+        console.log('ℹ️ Browser refresh alternatives not available:', error);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error refreshing browser windows:', error);
+    }
+  };
+
+  // Function to restart server after applying changes
+  const restartServer = async () => {
+    try {
+      console.log('🔄 Attempting to restart server after applying changes...');
+      
+      if (window.electron && window.electron.wordpressServer) {
+        // Stop the server first
+        const stopResult = await window.electron.wordpressServer.stopServer();
+        if (stopResult.success) {
+          console.log('✅ Server stopped successfully');
+          
+          // Wait a moment before restarting
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Start the server again
+          const startResult = await window.electron.wordpressServer.startServer(
+            projectContext?.currentProject?.path,
+            8000
+          );
+          
+          if (startResult.success) {
+            console.log('✅ Server restarted successfully');
+            
+            // Refresh any existing browser windows showing localhost
+            await refreshBrowserWindows();
+            
+            // Open the URL to show changes (as backup)
+            const url = `http://localhost:${startResult.port || 8000}`;
+            setTimeout(() => {
+              window.open(url, '_blank');
+              console.log(`🌐 Opened ${url} to show applied changes`);
+            }, 2000); // Wait 2 seconds for server to fully start
+            
+            return { success: true, url };
+          } else {
+            console.warn('⚠️ Failed to restart server, but changes were applied');
+            return { success: false, error: startResult.error };
+          }
+        } else {
+          console.warn('⚠️ Failed to stop server, trying direct restart');
+          return { success: false, error: stopResult.error };
+        }
+      } else {
+        console.log('ℹ️ Not in Electron environment, opening localhost:8000 directly');
+        
+        // Still try to refresh existing browser windows
+        await refreshBrowserWindows();
+        
+        setTimeout(() => {
+          window.open('http://localhost:8000', '_blank');
+        }, 1000);
+        return { success: true, url: 'http://localhost:8000' };
+      }
+    } catch (error) {
+      console.error('❌ Error restarting server:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  };
+
+  // Handle apply edits - now automatically applies and restarts server
   const handleApplyEdits = async () => {
     if (!aiResponse?.success || !aiResponse.edits.length) return;
 
     try {
+      console.log('🚀 Auto-applying edits without user confirmation...');
       const result = await applyEditsToFiles(aiResponse.edits);
       
       if (result.success) {
@@ -1114,20 +1268,66 @@ CODE BLOCK FORMAT (for suggestions):
         setAiResponse(null);
         setShowPreview(false);
         
-        // Show success message
-        alert(`Successfully applied ${aiResponse.edits.length} edit(s) to ${result.modifiedFiles.length} file(s)`);
+        // Show success message briefly
+        console.log(`✅ Successfully applied ${aiResponse.edits.length} edit(s) to ${result.modifiedFiles.length} file(s)`);
+        
+        // Automatically restart server and show changes
+        console.log('🔄 Auto-restarting server to show changes...');
+        const serverResult = await restartServer();
+        
+        if (serverResult.success) {
+          console.log('✅ Server restarted and changes are visible at:', serverResult.url);
+        } else {
+          console.warn('⚠️ Changes applied but server restart failed:', serverResult.error);
+          // Still try to open localhost:8000 as fallback
+          setTimeout(() => {
+            window.open('http://localhost:8000', '_blank');
+          }, 1000);
+        }
+        
       } else {
         console.error('❌ Failed to apply edits:', result.errors);
-        alert(`Failed to apply some edits:\n${result.errors.join('\n')}`);
+        setError(`Failed to apply some edits: ${result.errors.join(', ')}`);
       }
     } catch (error) {
       console.error('Failed to apply edits:', error);
-      alert(`Error applying edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`Error applying edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  // Apply edits directly to files (Cursor-style)
+  // Apply edits directly to files using the enhanced FileWriterService
   const applyEditsToFiles = async (edits: AIEdit[]): Promise<{
+    success: boolean;
+    modifiedFiles: string[];
+    errors: string[];
+    backupPaths?: string[];
+  }> => {
+    try {
+      console.log(`🚀 Using enhanced FileWriterService to apply ${edits.length} edits`);
+      
+      // Use the enhanced service from EnhancedAIEditorService
+      const result = await EnhancedAIEditorService.applyEditsToFiles(edits);
+      
+      console.log(`📊 FileWriterService results:`, {
+        success: result.success,
+        modifiedFiles: result.modifiedFiles.length,
+        errors: result.errors.length,
+        backups: result.backupPaths?.length || 0
+      });
+      
+      return result;
+    } catch (error) {
+      const errorMessage = `Enhanced file writer failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error('❌', errorMessage);
+      
+      // Fallback to the original implementation
+      console.log('🔄 Falling back to original file writing implementation');
+      return await applyEditsToFilesLegacy(edits);
+    }
+  };
+
+  // Legacy file writing implementation as fallback
+  const applyEditsToFilesLegacy = async (edits: AIEdit[]): Promise<{
     success: boolean;
     modifiedFiles: string[];
     errors: string[];
@@ -1135,24 +1335,19 @@ CODE BLOCK FORMAT (for suggestions):
     const modifiedFiles: string[] = [];
     const errors: string[] = [];
     
+    console.log('⚠️ Using legacy file writing implementation');
+    
     try {
       for (const edit of edits) {
         try {
           if (edit.type === 'create' && edit.filePath && edit.newText) {
-            // Create new file, suggest unique path using codespace vector
-            let targetPath = edit.filePath;
-            try {
-              if (projectContext?.currentProject?.path) {
-                const vector = CodespaceVectorService.getInstance();
-                targetPath = vector.suggestUniquePath(projectContext.currentProject.path, edit.filePath);
-              }
-            } catch {}
-            const result = await window.electron.fileSystem.writeFile(targetPath, edit.newText);
+            // Create new file
+            const result = await window.electron.fileSystem.writeFile(edit.filePath, edit.newText);
             if (result.success) {
-              modifiedFiles.push(targetPath);
-              console.log(`Created file: ${targetPath}`);
+              modifiedFiles.push(edit.filePath);
+              console.log(`Created file: ${edit.filePath}`);
             } else {
-              errors.push(`Failed to create ${targetPath}: ${result.error}`);
+              errors.push(`Failed to create ${edit.filePath}: ${result.error}`);
             }
           } else if (edit.type === 'delete_file' && edit.filePath) {
             // Delete file
@@ -1163,51 +1358,29 @@ CODE BLOCK FORMAT (for suggestions):
             } else {
               errors.push(`Failed to delete ${edit.filePath}: ${result.error}`);
             }
-          } else if (edit.range && edit.newText && currentFileData) {
-            // Modify existing file content
-            const newContent = applyEdits(currentFileData.content, [edit]);
-            const result = await window.electron.fileSystem.writeFile(currentFileData.path, newContent);
-            if (result.success) {
-              modifiedFiles.push(currentFileData.path);
-              console.log(`Modified file: ${currentFileData.path}`);
-            } else {
-              errors.push(`Failed to modify ${currentFileData.path}: ${result.error}`);
-            }
           } else if (edit.type === 'replace' && edit.oldText && edit.newText && edit.filePath) {
             // Handle search/replace operations
-            try {
-              // Read the current file content
-              const fileResult = await window.electron.fileSystem.readFile(edit.filePath);
-              if (!fileResult.success) {
-                errors.push(`Failed to read file ${edit.filePath}: ${fileResult.error}`);
-                continue;
-              }
+            const fileResult = await window.electron.fileSystem.readFile(edit.filePath);
+            if (!fileResult.success) {
+              errors.push(`Failed to read file ${edit.filePath}: ${fileResult.error}`);
+              continue;
+            }
 
-              const currentContent = fileResult.content || '';
+            const currentContent = fileResult.content || '';
+            
+            if (currentContent.includes(edit.oldText)) {
+              const newContent = currentContent.replace(edit.oldText, edit.newText);
+              const writeResult = await window.electron.fileSystem.writeFile(edit.filePath, newContent);
               
-              // Perform search and replace
-              if (currentContent.includes(edit.oldText)) {
-                const newContent = currentContent.replace(edit.oldText, edit.newText);
-                const writeResult = await window.electron.fileSystem.writeFile(edit.filePath, newContent);
-                
-                if (writeResult.success) {
-                  modifiedFiles.push(edit.filePath);
-                  console.log(`Search/replace successful in: ${edit.filePath}`);
-                } else {
-                  errors.push(`Failed to write file ${edit.filePath}: ${writeResult.error}`);
-                }
+              if (writeResult.success) {
+                modifiedFiles.push(edit.filePath);
+                console.log(`Search/replace successful in: ${edit.filePath}`);
               } else {
-                errors.push(`Search text not found in ${edit.filePath}`);
+                errors.push(`Failed to write file ${edit.filePath}: ${writeResult.error}`);
               }
-            } catch (error) {
-              errors.push(`Error processing search/replace for ${edit.filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            } else {
+              errors.push(`Search text not found in ${edit.filePath}`);
             }
-          } else if (edit.type === 'insert' || edit.type === 'delete' || edit.type === 'format' || edit.type === 'refactor') {
-            if (!edit.range || !edit.newText) {
-              errors.push(`Edit operation ${edit.type} requires range and newText properties`);
-            }
-          } else {
-            errors.push(`Invalid edit operation: ${edit.type} - missing required properties`);
           }
         } catch (error) {
           errors.push(`Error processing edit: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1512,6 +1685,14 @@ CODE BLOCK FORMAT (for suggestions):
             >
               <FontAwesomeIcon icon={faBrain} /> Context
             </button>
+
+            <button
+              className="file-writer-test-btn"
+              onClick={() => setShowFileWriterTest(!showFileWriterTest)}
+              title="Test file writing functionality"
+            >
+              <FontAwesomeIcon icon={faFlask} /> Test Writer
+            </button>
             
             <select
               className="model-select"
@@ -1780,13 +1961,9 @@ CODE BLOCK FORMAT (for suggestions):
                        <button onClick={handlePreviewToggle} className="preview-btn">
                          {showPreview ? 'Hide' : 'Preview'}
                   </button>
-                  <button 
-                    className="apply-btn"
-                    onClick={handleApplyEdits}
-                    disabled={!aiResponse.edits.length}
-                  >
-                         <FontAwesomeIcon icon={faCheck} /> Apply {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
-                  </button>
+                  <div className="auto-applied-indicator">
+                    <FontAwesomeIcon icon={faCheck} /> Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
+                  </div>
                 </div>
               )}
             </div>
@@ -1801,7 +1978,8 @@ CODE BLOCK FORMAT (for suggestions):
                     currentFile={currentFileData}
                     onPreviewToggle={handlePreviewToggle}
                     showPreview={showPreview}
-                    onApply={handleApplyEdits}
+                    onApply={() => {}}
+                    autoApplied={true}
                   />
                 ) : (
                   <MessageContent content={aiResponse.explanation} role="assistant" />
@@ -1925,6 +2103,25 @@ CODE BLOCK FORMAT (for suggestions):
         isVisible={showContextManagement}
         onClose={() => setShowContextManagement(false)}
       />
+
+      {/* File Writer Test Panel */}
+      {showFileWriterTest && (
+        <div className="file-writer-test-overlay">
+          <div className="file-writer-test-modal">
+            <div className="file-writer-test-header">
+              <h3><FontAwesomeIcon icon={faFlask} /> File Writer Test Suite</h3>
+              <button
+                className="close-test-btn"
+                onClick={() => setShowFileWriterTest(false)}
+                title="Close test panel"
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            <FileWriterTest projectContext={projectContext} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

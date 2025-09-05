@@ -927,6 +927,36 @@ ipcMain.handle('browser-window-launch-external', async (event, browserType, url)
   }
 });
 
+// Global refresh for all localhost browser windows
+ipcMain.handle('browser-window-refresh-all-localhost', async () => {
+  try {
+    console.log('🔄 Refreshing all browser windows showing localhost...');
+    let refreshedCount = 0;
+    
+    // Iterate through all browser windows
+    for (const [windowId, browserWindow] of browserWindows.entries()) {
+      try {
+        const currentUrl = browserWindow.webContents.getURL();
+        
+        // Check if the window is showing localhost
+        if (currentUrl && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
+          console.log(`🔄 Refreshing browser window ${windowId} showing ${currentUrl}`);
+          browserWindow.reload();
+          refreshedCount++;
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to refresh browser window ${windowId}:`, error);
+      }
+    }
+    
+    console.log(`✅ Refreshed ${refreshedCount} localhost browser window(s)`);
+    return { success: true, refreshedCount };
+  } catch (error) {
+    console.error('❌ Failed to refresh localhost browser windows:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('browser-window-close-external', async (event, pid) => {
   try {
     if (process.platform === 'win32') {

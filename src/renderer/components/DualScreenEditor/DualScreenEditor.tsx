@@ -532,6 +532,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           onToggleEditing={toggleEditingMode}
           routeFiles={routeFilesWithContent}
           onShowDiff={handleShowDiff}
+          projectContext={{
+            currentProject: currentProject,
+            availableFiles: routeFilesWithContent
+          }}
         />
         </div>
       </div>
