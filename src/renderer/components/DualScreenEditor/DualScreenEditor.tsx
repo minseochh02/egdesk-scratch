@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { DualScreenAIEditor } from './DualScreenAiEditor';
+import { DualScreenAIEditor } from './DualScreenAIEditor';
 import { BrowserWindow } from './BrowserWindow';
 import CodeEditor from '../CodeEditor';
 import { URLFileViewer } from './URLFileViewer';
