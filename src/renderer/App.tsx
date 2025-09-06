@@ -8,7 +8,6 @@ import { ChatInterface } from './components/ChatInterface';
 import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
-import SearchReplaceDemo from './components/SearchReplaceDemo';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolder, faLink, faFile, faCode, faStar, faDesktop, faDownload, faImage, faMusic, faVideo, faRocket, faGlobe, faServer, faRobot, faSearch, faRefresh, faHome, faTimes, faComments } from '@fortawesome/free-solid-svg-icons';
 import './App.css';
@@ -473,12 +472,6 @@ function NavigationBar() {
         >
           <FontAwesomeIcon icon={faSearch} /> Codespace Analysis
         </Link>
-        <Link 
-          to="/search-replace-demo" 
-          className={`nav-link ${location.pathname === '/search-replace-demo' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faCode} /> Search/Replace Demo
-        </Link>
 
       </nav>
     </div>
@@ -500,7 +493,6 @@ export default function App() {
             <Route path="/chat" element={<ChatInterface />} />
             <Route path="/dual-screen" element={<DualScreenDemo />} />
             <Route path="/codespace-analysis" element={<CodespaceVectorAnalysis />} />
-            <Route path="/search-replace-demo" element={<SearchReplaceDemo />} />
     
           </Routes>
         </main>

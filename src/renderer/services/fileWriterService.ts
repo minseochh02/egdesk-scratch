@@ -21,7 +21,7 @@ export class FileWriterService {
   /**
    * Apply code changes to files safely with backup and validation
    */
-  async applyChangesToFiles(edits: AIEdit[]): Promise<{
+  async applyChangesToFiles(edits: AIEdit[], projectRoot?: string): Promise<{
     success: boolean;
     modifiedFiles: string[];
     errors: string[];
@@ -39,12 +39,14 @@ export class FileWriterService {
       
       for (const [filePath, fileEdits] of editsByFile.entries()) {
         try {
-          console.log(`📝 Processing ${fileEdits.length} edits for file: ${filePath}`);
+          // Resolve relative paths to absolute paths
+          const absoluteFilePath = this.resolveFilePath(filePath, projectRoot);
+          console.log(`📝 Processing ${fileEdits.length} edits for file: ${filePath} -> ${absoluteFilePath}`);
           
           // Create backup if enabled
           let backupPath: string | null = null;
           if (this.backupEnabled) {
-            backupPath = await this.createBackup(filePath);
+            backupPath = await this.createBackup(absoluteFilePath);
             if (backupPath) {
               backupPaths.push(backupPath);
               console.log(`💾 Created backup: ${backupPath}`);
@@ -52,19 +54,19 @@ export class FileWriterService {
           }
 
           // Apply edits to the file
-          const result = await this.applyEditsToSingleFile(filePath, fileEdits);
+          const result = await this.applyEditsToSingleFile(absoluteFilePath, fileEdits);
           
           if (result.success) {
-            modifiedFiles.push(filePath);
-            console.log(`✅ Successfully applied ${fileEdits.length} edits to: ${filePath}`);
+            modifiedFiles.push(absoluteFilePath);
+            console.log(`✅ Successfully applied ${fileEdits.length} edits to: ${absoluteFilePath}`);
           } else {
             errors.push(`Failed to apply edits to ${filePath}: ${result.error}`);
             console.error(`❌ Failed to apply edits to ${filePath}:`, result.error);
             
             // Restore from backup if available
             if (backupPath) {
-              await this.restoreFromBackup(filePath, backupPath);
-              console.log(`🔄 Restored ${filePath} from backup due to error`);
+              await this.restoreFromBackup(absoluteFilePath, backupPath);
+              console.log(`🔄 Restored ${absoluteFilePath} from backup due to error`);
             }
           }
         } catch (error) {
@@ -467,6 +469,31 @@ export class FileWriterService {
     } catch (error) {
       console.warn(`⚠️ Error cleaning up backups:`, error);
     }
+  }
+
+  /**
+   * Resolve file path to absolute path
+   */
+  private resolveFilePath(filePath: string, projectRoot?: string): string {
+    // If it's already an absolute path, return as-is
+    if (filePath.startsWith('/') || filePath.startsWith('C:\\')) {
+      return filePath;
+    }
+    
+    // If we have a project root, prepend it
+    if (projectRoot) {
+      return `${projectRoot}/${filePath}`;
+    }
+    
+    // Fallback: try to find the project root from the current working directory
+    const cwd = process.cwd();
+    if (cwd.includes('EGDesk-scratch') || cwd.includes('egdesk-scratch')) {
+      return `${cwd}/${filePath}`;
+    }
+    
+    // Last resort: return the path as-is (might fail)
+    console.warn(`⚠️ Could not resolve absolute path for: ${filePath}`);
+    return filePath;
   }
 
   /**

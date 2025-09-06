@@ -1,129 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Conversation, ConversationMessage } from '../AIEditor/types';
 import { EnhancedAIEditorService } from '../AIEditor/services/enhancedAIEditorService';
-import { CodespaceVectorService } from '../AIEditor/services/codespaceVectorService';
-import { CodespaceChatService } from '../ChatInterface/services/codespaceChatService';
-import { SearchReplacePromptService } from '../AIEditor/services/searchReplacePromptService';
 import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
-import { SearchReplacePositioningService } from '../AIEditor/services/searchReplacePositioningService';
 import { MessageContent } from '../ChatInterface/components';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../ChatInterface/types';
-import { CodeEditBlock } from '../AIEditor/CodeEditBlock';
 import { conversationStore } from '../AIEditor/store/conversationStore';
 import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faBrain, faSearch, faCheck, faRefresh, faClock, faGlobe, faEdit, faPlus, faCog, faFile, faRocket, faClipboard, faComments, faTimes, faExclamationTriangle, faBook, faBroom, faBug, faFlask } from '@fortawesome/free-solid-svg-icons';
 import './DualScreenAIEditor.css';
-import { createDemoAIResponse, demoCurrentFile } from './demoData';
-import { FileWriterTest } from '../FileWriterTest';
+import { SplitExplanationWithEdits } from './SplitExplanationWithEdits';
 
-// Component to split AI explanation and show edits in the middle
-interface SplitExplanationWithEditsProps {
-  explanation: string;
-  edits: AIEdit[];
-  currentFile: {
-    path: string;
-    name: string;
-    content: string;
-    language: string;
-  } | null;
-  onPreviewToggle: () => void;
-  showPreview: boolean;
-  onApply: () => void;
-  autoApplied?: boolean;
-}
-
-const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
-  explanation,
-  edits,
-  currentFile,
-  onPreviewToggle,
-  showPreview,
-  onApply,
-  autoApplied = false
-}) => {
-  // Remove regular code blocks from the explanation text but preserve search-replace blocks
-  // Search-replace blocks should remain in the text flow for proper positioning
-  const removeCodeBlocks = (text: string) => {
-    console.log('🔍 DEBUG: removeCodeBlocks input:', text);
-    
-    // Remove regular code blocks but preserve search-replace blocks
-    // First, temporarily replace search-replace blocks with placeholders
-    const searchReplacePlaceholders: string[] = [];
-    let processedText = text.replace(/```search-replace[\s\S]*?```/g, (match) => {
-      const placeholder = `__SEARCH_REPLACE_PLACEHOLDER_${searchReplacePlaceholders.length}__`;
-      searchReplacePlaceholders.push(match);
-      return placeholder;
-    });
-    
-    // Now remove regular code blocks
-    processedText = processedText.replace(/```[\s\S]*?```/g, '').trim();
-    
-    // Restore search-replace blocks
-    searchReplacePlaceholders.forEach((placeholder, index) => {
-      processedText = processedText.replace(`__SEARCH_REPLACE_PLACEHOLDER_${index}__`, placeholder);
-    });
-    
-    console.log('🔍 DEBUG: removeCodeBlocks output:', processedText);
-    console.log('🔍 DEBUG: removed content length:', text.length - processedText.length);
-    console.log('🔍 DEBUG: preserved search-replace blocks:', searchReplacePlaceholders.length);
-    
-    return processedText;
-  };
-
-  // Use the new positioning service to properly position search-replace blocks
-  const splitExplanation = (text: string) => {
-    console.log('🔍 DEBUG: Using SearchReplacePositioningService for text splitting');
-    
-    const positioningService = SearchReplacePositioningService.getInstance();
-    const result = positioningService.repositionSearchReplaceBlocks(text);
-    
-    console.log('🔍 DEBUG: SearchReplacePositioningService result', {
-      beforeLength: result.before.length,
-      afterLength: result.after.length,
-      searchReplaceBlocksCount: result.searchReplaceBlocks.length
-    });
-    
-    return {
-      before: result.before,
-      after: result.after
-    };
-  };
-
-  const { before, after } = splitExplanation(explanation);
-
-  return (
-    <div className="split-explanation">
-      {/* First part of explanation */}
-      {before && (
-        <div className="explanation-part explanation-before">
-          <MessageContent content={before} role="assistant" />
-        </div>
-      )}
-      
-      {/* Edits block in the middle */}
-      <div className="explanation-edits">
-        <CodeEditBlock 
-          edits={edits}
-          currentFile={currentFile}
-          onPreviewToggle={onPreviewToggle}
-          showPreview={showPreview}
-          onApply={onApply}
-          autoApplied={autoApplied}
-        />
-      </div>
-      
-      {/* Second part of explanation */}
-      {after && (
-        <div className="explanation-part explanation-after">
-          <MessageContent content={after} role="assistant" />
-        </div>
-      )}
-    </div>
-  );
-};
 
 interface DualScreenAIEditorProps {
   isVisible: boolean;
@@ -161,38 +49,24 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   routeFiles = [],
   onShowDiff
 }) => {
-  // Debug logging for component props
-  console.log('🔍 DEBUG: DualScreenAIEditor component props', {
-    isVisible,
-    currentFile: currentFile ? {
-      path: currentFile.path,
-      name: currentFile.name,
-      contentLength: currentFile.content?.length,
-      language: currentFile.language,
-      hasContent: !!currentFile.content,
-      isNull: false
-    } : {
-      isNull: true,
-      type: typeof currentFile
-    },
-    projectContext: {
-      hasCurrentProject: !!projectContext?.currentProject,
-      projectPath: projectContext?.currentProject?.path,
-      availableFilesCount: projectContext?.availableFiles?.length || 0
-    },
-    routeFiles: routeFiles?.map(file => ({
-      path: file.path,
-      name: file.name,
-      contentLength: file.content?.length,
-      language: file.language
-    })) || [],
-    isEditing,
-    hasOnToggleEditing: !!onToggleEditing
-  });
+  // Dynamic import for FontAwesomeIcon to handle ES module compatibility
+  const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
+
+  useEffect(() => {
+    const loadFontAwesome = async () => {
+      try {
+        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        setFontAwesomeIcon(() => FAIcon);
+      } catch (error) {
+        console.warn('Failed to load FontAwesome:', error);
+      }
+    };
+    loadFontAwesome();
+  }, []);
+
   const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
   const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
-  const [fileContext, setFileContext] = useState<FileContext | null>(null);
   const [userInstruction, setUserInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState<AIEditResponse | null>(null);
@@ -226,10 +100,8 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   
   // Context management state
   const [showContextManagement, setShowContextManagement] = useState(false);
-  const [codespaceChatService, setCodespaceChatService] = useState<CodespaceChatService | null>(null);
 
   // File Writer Test state
-  const [showFileWriterTest, setShowFileWriterTest] = useState(false);
   
   // Debug state - always on
   const [debugPayload, setDebugPayload] = useState<any>(null);
@@ -410,21 +282,19 @@ CODE BLOCK FORMAT (for suggestions):
   useEffect(() => {
     if (selectedKey) {
       setConfig(prev => ({ ...prev, provider: selectedKey.providerId }));
-      // Set default model for the provider
+      // Only set default model if no model is currently selected or if the current model doesn't belong to the selected key's provider
       const provider = CHAT_PROVIDERS.find(p => p.id === selectedKey.providerId);
       if (provider && provider.models.length > 0) {
-        setSelectedModel(provider.models[0].id);
+        const currentProvider = CHAT_PROVIDERS.find(p => p.id === config.provider);
+        const currentModelBelongsToProvider = currentProvider?.models.some(m => m.id === selectedModel);
+        
+        if (!selectedModel || !currentModelBelongsToProvider) {
+          setSelectedModel(provider.models[0].id);
+        }
       }
     }
   }, [selectedKey]);
 
-  // Update provider when config changes
-  useEffect(() => {
-    if (config.provider && (!selectedKey || selectedKey.providerId !== config.provider)) {
-      setSelectedKey(null);
-      setSelectedModel('');
-    }
-  }, [config.provider]); // Remove selectedKey dependency to prevent circular updates
 
   // Analyze file when current file changes
   useEffect(() => {
@@ -459,6 +329,17 @@ CODE BLOCK FORMAT (for suggestions):
       
       setCurrentFileData(currentFile);
       analyzeFile(currentFile.path, currentFile.content);
+      
+      // Console log for AI response clearing when file changes
+      console.log('📁 AI RESPONSE CLEARED DUE TO FILE CHANGE:', {
+        hadResponse: !!aiResponse,
+        responseSuccess: aiResponse?.success,
+        editsCount: aiResponse?.edits?.length || 0,
+        newFilePath: currentFile.path,
+        oldFilePath: currentFileData?.path,
+        timestamp: new Date().toISOString()
+      });
+      
       setAiResponse(null);
       setError(null);
       setShowPreview(false);
@@ -469,10 +350,6 @@ CODE BLOCK FORMAT (for suggestions):
   useEffect(() => {
     if (projectContext?.currentProject?.path) {
       loadProjectFiles(projectContext.currentProject.path);
-      // Initialize CodespaceChatService for enhanced context
-      const chatService = CodespaceChatService.getInstance();
-      chatService.setWorkspacePath(projectContext.currentProject.path);
-      setCodespaceChatService(chatService);
     }
   }, [projectContext?.currentProject?.path]); // Only depend on the path, not the entire projectContext object
 
@@ -521,140 +398,6 @@ CODE BLOCK FORMAT (for suggestions):
       return null;
     }
   };
-
-  /**
-   * Request AI edit with streaming
-   */
-  const requestEditStream = async (
-    aiKey: any,
-    model: string,
-    request: any,
-    config: any,
-    onChunk: (chunk: any) => void
-  ) => {
-    try {
-      // Use our new Void-based EnhancedAIEditorService for streaming
-      await EnhancedAIEditorService.requestEditStream(
-        aiKey,
-        model,
-        request,
-        config,
-        onChunk
-      );
-    } catch (error) {
-
-      onChunk({
-        type: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        isComplete: true
-      });
-    }
-  };
-
-  /**
-   * Request AI edit without streaming
-   */
-  const requestEdit = async (
-    aiKey: any,
-    model: string,
-    request: any,
-    config: any
-  ) => {
-    try {
-      // Use our new Void-based EnhancedAIEditorService for non-streaming
-      const response = await EnhancedAIEditorService.requestEdit(
-        aiKey,
-        model,
-        request,
-        config
-      );
-      return response;
-    } catch (error) {
-      return {
-        success: false,
-        edits: [],
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  };
-
-  /**
-   * Apply edits to content
-   */
-  const applyEdits = (content: string, edits: AIEdit[]) => {
-    try {
-      const newContent = EnhancedAIEditorService.applyEdits(content, edits);
-      return newContent;
-    } catch (error) {
-      return content;
-    }
-  };
-
-  /**
-   * Force refresh of codespace analysis
-   */
-  const forceRefresh = async () => {
-    try {
-      if (projectContext?.currentProject?.path) {
-        EnhancedAIEditorService.forceRefresh(projectContext.currentProject.path);
-        await getCacheStatus();
-      } else {
-        console.warn('No project context available for refresh');
-      }
-    } catch (error) {
-      console.error('Failed to force refresh:', error);
-    }
-  };
-
-  // Removed legacy semantic search; we now rely on CodespaceChatService.enhanceMessageWithContext
-
-  // Generate search/replace prompts for the current request
-  const handleGenerateSearchReplace = async () => {
-    if (!selectedKey || !selectedModel || !userInstruction.trim()) {
-      return;
-    }
-
-    setIsGeneratingSearchReplace(true);
-    setSearchReplacePrompts([]);
-
-    try {
-      const service = SearchReplacePromptService.getInstance();
-      
-      // Use the enhanced context if available, otherwise use current file
-      if (debugPayload?.enhancedContext && debugPayload?.relevantFilesContext) {
-        // Generate prompts based on the enhanced context - use the primary files, not current file
-        const response = await service.generatePrompts(
-          selectedKey,
-          selectedModel,
-          userInstruction,
-          undefined, // Don't specify a target file - let the service use the enhanced context
-          debugPayload.relevantFilesContext // Pass the full enhanced context
-        );
-        
-        if (response.success) {
-          setSearchReplacePrompts(response.searchReplacePrompts);
-        }
-      } else if (currentFileData) {
-        // Generate prompts for the current file
-        const response = await service.generatePromptsForFile(
-          selectedKey,
-          selectedModel,
-          userInstruction,
-          currentFileData.path,
-          currentFileData.content
-        );
-        
-        if (response.success) {
-          setSearchReplacePrompts(response.searchReplacePrompts);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to generate search/replace prompts:', error);
-    } finally {
-      setIsGeneratingSearchReplace(false);
-    }
-  };
-
   // Handle iterative file reading
   const handleIterativeReading = async () => {
     if (!selectedKey || !selectedModel || !userInstruction.trim()) {
@@ -682,12 +425,26 @@ CODE BLOCK FORMAT (for suggestions):
     try {
       // Get available files from project
       const projectRoot = projectContext?.currentProject?.path || '';
+      console.log('🔍 DEBUG: Project root:', projectRoot);
       
       const availableFiles = [
         ...(routeFiles?.map(f => normalizePath(f.path, projectRoot)) || []),
         ...(currentFileData?.path ? [normalizePath(currentFileData.path, projectRoot)] : [])
       ].filter(Boolean);
+
+      console.log('🔍 DEBUG: Available files:', availableFiles);
       
+      // Prepare cached files from current file and route files
+      const cachedFiles = [
+        ...(currentFileData ? [currentFileData] : []),
+        ...(routeFiles || [])
+      ].filter(Boolean);
+
+      console.log('🔍 DEBUG: Starting iterative reading with cached files', {
+        cachedFilesCount: cachedFiles.length,
+        cachedFiles: cachedFiles.map(f => ({ path: f.path, name: f.name, contentLength: f.content.length }))
+      });
+
       // Start iterative reading process
       const result = await iterativeReaderService.startIterativeReading(
         userInstruction,
@@ -695,13 +452,18 @@ CODE BLOCK FORMAT (for suggestions):
         availableFiles,
         selectedKey,
         selectedModel,
-        50000 // max content limit
+        50000, // max content limit
+        cachedFiles
       );
+
+      console.log('🔍 DEBUG: Iterative reading result:', result);
 
       if (!result.success) {
         setError(result.error || 'Failed to start iterative reading');
         return;
       }
+
+      console.log('🔍 DEBUG: Iterative reading next action:', result.nextAction);
 
       // Process the first AI decision
       await processIterativeDecision(result.nextAction);
@@ -1025,6 +787,12 @@ CODE BLOCK FORMAT (for suggestions):
   // Process AI decision in iterative reading
   const processIterativeDecision = async (decision: any) => {
     try {
+      console.log('🔍 DEBUG: Processing iterative decision', {
+        decision: decision,
+        selectedKey: selectedKey,
+        selectedModel: selectedModel
+      });
+
       const result = await iterativeReaderService.continueIterativeReading(
         decision,
         selectedKey!,
@@ -1078,6 +846,22 @@ CODE BLOCK FORMAT (for suggestions):
         console.log('🔍 DEBUG: Setting AI response', {
           newAiResponse
           // File editor state removed - using right panel CodeEditor instead
+        });
+        
+        // Add console log for AI response
+        console.log('🤖 AI RESPONSE RECEIVED:', {
+          success: newAiResponse.success,
+          explanationLength: newAiResponse.explanation?.length || 0,
+          editsCount: newAiResponse.edits.length,
+          edits: newAiResponse.edits.map(edit => ({
+            filePath: edit.filePath,
+            type: edit.type,
+            oldTextLength: edit.oldText?.length || 0,
+            newTextLength: edit.newText?.length || 0,
+            range: edit.range
+          })),
+          usage: newAiResponse.usage,
+          fullExplanation: newAiResponse.explanation
         });
         
         setAiResponse(newAiResponse);
@@ -1265,6 +1049,15 @@ CODE BLOCK FORMAT (for suggestions):
           // File editor state removed - using right panel CodeEditor instead
         });
         
+        // Console log for AI response clearing after successful application
+        console.log('✅ AI RESPONSE CLEARED AFTER SUCCESSFUL APPLICATION:', {
+          hadResponse: !!aiResponse,
+          responseSuccess: aiResponse?.success,
+          editsCount: aiResponse?.edits.length || 0,
+          modifiedFilesCount: result.modifiedFiles.length,
+          timestamp: new Date().toISOString()
+        });
+        
         setAiResponse(null);
         setShowPreview(false);
         
@@ -1305,8 +1098,12 @@ CODE BLOCK FORMAT (for suggestions):
     try {
       console.log(`🚀 Using enhanced FileWriterService to apply ${edits.length} edits`);
       
+      // Get the project root
+      const projectRoot = projectContext?.currentProject?.path;
+      console.log(`🔍 Project root for file operations: ${projectRoot}`);
+      
       // Use the enhanced service from EnhancedAIEditorService
-      const result = await EnhancedAIEditorService.applyEditsToFiles(edits);
+      const result = await EnhancedAIEditorService.applyEditsToFiles(edits, projectRoot);
       
       console.log(`📊 FileWriterService results:`, {
         success: result.success,
@@ -1337,32 +1134,43 @@ CODE BLOCK FORMAT (for suggestions):
     
     console.log('⚠️ Using legacy file writing implementation');
     
+    // Get the project root for path resolution
+    const projectRoot = projectContext?.currentProject?.path;
+    
     try {
       for (const edit of edits) {
         try {
-          if (edit.type === 'create' && edit.filePath && edit.newText) {
+          // Resolve file path to absolute path
+          let absoluteFilePath = edit.filePath || '';
+          if (absoluteFilePath && !absoluteFilePath.startsWith('/') && !absoluteFilePath.startsWith('C:\\')) {
+            if (projectRoot) {
+              absoluteFilePath = `${projectRoot}/${absoluteFilePath}`;
+            }
+          }
+          
+          if (edit.type === 'create' && absoluteFilePath && edit.newText) {
             // Create new file
-            const result = await window.electron.fileSystem.writeFile(edit.filePath, edit.newText);
+            const result = await window.electron.fileSystem.writeFile(absoluteFilePath, edit.newText);
             if (result.success) {
-              modifiedFiles.push(edit.filePath);
-              console.log(`Created file: ${edit.filePath}`);
+              modifiedFiles.push(absoluteFilePath);
+              console.log(`Created file: ${absoluteFilePath}`);
             } else {
-              errors.push(`Failed to create ${edit.filePath}: ${result.error}`);
+              errors.push(`Failed to create ${absoluteFilePath}: ${result.error}`);
             }
-          } else if (edit.type === 'delete_file' && edit.filePath) {
+          } else if (edit.type === 'delete_file' && absoluteFilePath) {
             // Delete file
-            const result = await window.electron.fileSystem.deleteItem(edit.filePath);
+            const result = await window.electron.fileSystem.deleteItem(absoluteFilePath);
             if (result.success) {
-              modifiedFiles.push(edit.filePath);
-              console.log(`Deleted file: ${edit.filePath}`);
+              modifiedFiles.push(absoluteFilePath);
+              console.log(`Deleted file: ${absoluteFilePath}`);
             } else {
-              errors.push(`Failed to delete ${edit.filePath}: ${result.error}`);
+              errors.push(`Failed to delete ${absoluteFilePath}: ${result.error}`);
             }
-          } else if (edit.type === 'replace' && edit.oldText && edit.newText && edit.filePath) {
+          } else if (edit.type === 'replace' && edit.oldText && edit.newText && absoluteFilePath) {
             // Handle search/replace operations
-            const fileResult = await window.electron.fileSystem.readFile(edit.filePath);
+            const fileResult = await window.electron.fileSystem.readFile(absoluteFilePath);
             if (!fileResult.success) {
-              errors.push(`Failed to read file ${edit.filePath}: ${fileResult.error}`);
+              errors.push(`Failed to read file ${absoluteFilePath}: ${fileResult.error}`);
               continue;
             }
 
@@ -1370,16 +1178,16 @@ CODE BLOCK FORMAT (for suggestions):
             
             if (currentContent.includes(edit.oldText)) {
               const newContent = currentContent.replace(edit.oldText, edit.newText);
-              const writeResult = await window.electron.fileSystem.writeFile(edit.filePath, newContent);
+              const writeResult = await window.electron.fileSystem.writeFile(absoluteFilePath, newContent);
               
               if (writeResult.success) {
-                modifiedFiles.push(edit.filePath);
-                console.log(`Search/replace successful in: ${edit.filePath}`);
+                modifiedFiles.push(absoluteFilePath);
+                console.log(`Search/replace successful in: ${absoluteFilePath}`);
               } else {
-                errors.push(`Failed to write file ${edit.filePath}: ${writeResult.error}`);
+                errors.push(`Failed to write file ${absoluteFilePath}: ${writeResult.error}`);
               }
             } else {
-              errors.push(`Search text not found in ${edit.filePath}`);
+              errors.push(`Search text not found in ${absoluteFilePath}`);
             }
           }
         } catch (error) {
@@ -1409,6 +1217,14 @@ CODE BLOCK FORMAT (for suggestions):
       // File editor state removed - using right panel CodeEditor instead
     });
     
+    // Console log for AI response clearing
+    console.log('🧹 AI RESPONSE CLEARED:', {
+      hadResponse: !!aiResponse,
+      responseSuccess: aiResponse?.success,
+      editsCount: aiResponse?.edits?.length || 0,
+      timestamp: new Date().toISOString()
+    });
+    
     setAiResponse(null);
     setError(null);
     setShowPreview(false);
@@ -1416,105 +1232,7 @@ CODE BLOCK FORMAT (for suggestions):
     // Don't clear userInstruction - let user retry with same text
   };
 
-  // Test function to load demo data
-  const loadDemoData = () => {
-    console.log('🧪 LOADING DEMO DATA FOR TESTING');
-    console.log('📁 Demo file:', demoCurrentFile);
-    
-    // Create test diff content based on user's request - this tests the text replacement behavior
-    const testDiffContent = {
-      text: "I'm a first sentence\n\n```javascript\nfunction example() {\n  console.log('codeblock');\n}\n```\n\nI'm a second sentence\n\n```search-replace\nFILE: example.txt\nLINES: 1-1\nSEARCH: I'm a second sentence\nREPLACE: I'm a modified second sentence\n```\n\nCongratulations\n\nThis should show the text replacement working correctly. The 'I'm a second sentence' should become 'I'm a modified second sentence' and the search-replace block should disappear."
-    };
-    
-    // Create demo AI response with the test content
-    const demoResponse = {
-      success: true,
-      explanation: testDiffContent.text,
-      edits: [
-        {
-          type: 'replace' as const,
-          filePath: 'Taehwa_demo/www/index.php',
-          range: {
-            start: 0,
-            end: 0,
-            startLine: 100,
-            endLine: 100,
-            startColumn: 1,
-            endColumn: 1
-          },
-          oldText: '<option value="0" selected="select">Product</option>',
-          newText: '<option value="test" >Test</option><option value="0" selected="select">Product</option>',
-          description: 'Add Test option to product dropdown (line 100)'
-        },
-        {
-          type: 'replace' as const,
-          filePath: 'Taehwa_demo/www/index.php',
-          range: {
-            start: 0,
-            end: 0,
-            startLine: 220,
-            endLine: 220,
-            startColumn: 1,
-            endColumn: 1
-          },
-          oldText: '} else if (obj == 0) {',
-          newText: '} else if (obj == "test") {\n                                f.SUB0.style.display = "none";\n                                f.SUB1.style.display = "none";\n                                f.SUB2.style.display = "none";\n                                f.SUB3.style.display = "none";\n                                f.SUB4.style.display = "none";\n                                f.SUB5.style.display = "none";\n                                f.SUB6.style.display = "none";\n                            } else if (obj == 0) {',
-          description: 'Update showSub function to handle test option (line 220)'
-        }
-      ],
-      usage: { 
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0 
-      }
-    };
-    
-    console.log('🔍 Demo AI response:', demoResponse);
-    console.log('📊 Demo edits count:', demoResponse.edits.length);
-    
-    // Parse search/replace operations from the explanation content
-    const parsedOps = parseSearchReplaceOperations(demoResponse.explanation);
-    console.log('🔍 DEBUG: Parsed operations from explanation:', {
-      count: parsedOps.length,
-      operations: parsedOps.map(op => ({
-        filePath: op.filePath,
-        type: op.type,
-        hasOldText: !!op.oldText,
-        hasNewText: !!op.newText,
-        range: op.range
-      }))
-    });
-    
-    // Update the demo response with parsed operations
-    const updatedDemoResponse = {
-      ...demoResponse,
-      edits: parsedOps.length > 0 ? parsedOps : demoResponse.edits
-    };
-    
-    console.log('🔍 Updated demo response with parsed operations:', {
-      originalEditsCount: demoResponse.edits.length,
-      parsedEditsCount: parsedOps.length,
-      finalEditsCount: updatedDemoResponse.edits.length
-    });
-    
-    setAiResponse(updatedDemoResponse);
-    setShowPreview(true);
-    
-    // Auto-load the first file for editing and show diff in right panel
-    if (updatedDemoResponse.edits.length > 0) {
-      const firstEdit = updatedDemoResponse.edits[0];
-      console.log('🎯 AUTO-LOADING FIRST EDIT FOR TESTING:', firstEdit);
-      loadFileForEdit(firstEdit);
-    }
-    
-    console.log('✅ DEMO DATA LOADED - Check right panel for diff changes');
-  };
 
-  // Expose test function to window for console access
-  useEffect(() => {
-    (window as any).testDiffUI = loadDemoData;
-    console.log('🧪 Test function available: window.testDiffUI()');
-  }, []);
 
   // Handle preview toggle
   const handlePreviewToggle = async () => {
@@ -1557,30 +1275,8 @@ CODE BLOCK FORMAT (for suggestions):
     setShowPreview(newShowPreview);
   };
 
-  // Get provider info
-  const getProviderInfo = (providerId: string) => {
-    return CHAT_PROVIDERS.find(p => p.id === providerId);
-  };
-
-  // Get models for provider
-  const getModelsForProvider = (providerId: string) => {
-    const provider = CHAT_PROVIDERS.find(p => p.id === providerId);
-    return provider?.models || [];
-  };
-
-  // Get all models across all providers (used to show all models)
-  const getAllModels = () => {
-    return CHAT_PROVIDERS.flatMap(provider =>
-      (provider.models || []).map(model => ({
-        ...model,
-        providerId: provider.id,
-        providerName: provider.name
-      }))
-    );
-  };
-
-  // Filter available keys by provider
-  const availableKeys = aiKeys.filter(key => key.providerId === config.provider);
+  // Show all available keys, not filtered by provider
+  const availableKeys = aiKeys;
 
   if (!isVisible) return null;
 
@@ -1591,18 +1287,12 @@ CODE BLOCK FORMAT (for suggestions):
       <div className="sidebar-content">
         {/* Compact Configuration Bar */}
         <div className="config-bar">
-
-
           {/* Conversation Management */}
           <div className="conversation-controls">
             <div className="conversation-info">
-              <span className="conversation-indicator"><FontAwesomeIcon icon={faComments} /></span>
-              <span className="conversation-title">
-                {currentConversation?.title || 'New Conversation'}
-              </span>
               {currentConversation && (
                 <span className="conversation-stats">
-                  {currentConversation.messages.length} messages
+                  {currentConversation.messages.length}msgs
                 </span>
               )}
             </div>
@@ -1617,7 +1307,7 @@ CODE BLOCK FORMAT (for suggestions):
                   }}
                   title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
                 >
-                  {isEditing ? <><FontAwesomeIcon icon={faGlobe} /> Show Server</> : <><FontAwesomeIcon icon={faEdit} /> Show Editor</>}
+                  {isEditing ? <>{FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />} Server</> : <>{FontAwesomeIcon && <FontAwesomeIcon icon={faEdit} />} Editor</>}
                 </button>
               )}
               <button
@@ -1625,15 +1315,7 @@ CODE BLOCK FORMAT (for suggestions):
                 onClick={() => setShowConversationHistory(!showConversationHistory)}
                 title="Show conversation history"
               >
-                <FontAwesomeIcon icon={faBook} />
-              </button>
-              
-              <button
-                className="debug-clear-btn"
-                onClick={() => setDebugPayload(null)}
-                title="Clear debug payload"
-              >
-                <FontAwesomeIcon icon={faBroom} />
+                {FontAwesomeIcon && <FontAwesomeIcon icon={faBook} />}
               </button>
               
               {currentConversation && (
@@ -1649,102 +1331,12 @@ CODE BLOCK FORMAT (for suggestions):
                   }}
                   title="Start new conversation"
                 >
-                  <FontAwesomeIcon icon={faPlus} />
+                  {FontAwesomeIcon && <FontAwesomeIcon icon={faPlus} />}
                 </button>
               )}
-              
-              <button className="close-btn" onClick={onClose} title="Close AI Editor">
-                <FontAwesomeIcon icon={faTimes} />
-              </button>
             </div>
           </div>
           
-          <div className="config-controls">
-            <button
-              className="test-demo-btn"
-              onClick={loadDemoData}
-              title="Load demo data for testing diff UI"
-              style={{
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                padding: '6px 12px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                marginRight: '8px'
-              }}
-            >
-              🧪 Test Diff UI
-            </button>
-            
-            <button
-              className="context-management-btn"
-              onClick={() => setShowContextManagement(true)}
-              title="Configure intelligent context management"
-            >
-              <FontAwesomeIcon icon={faBrain} /> Context
-            </button>
-
-            <button
-              className="file-writer-test-btn"
-              onClick={() => setShowFileWriterTest(!showFileWriterTest)}
-              title="Test file writing functionality"
-            >
-              <FontAwesomeIcon icon={faFlask} /> Test Writer
-            </button>
-            
-            <select
-              className="model-select"
-              value={selectedModel ? `${config.provider}::${selectedModel}` : ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (!value) {
-                  setSelectedModel('');
-                  return;
-                }
-                const [providerId, modelId] = value.split('::');
-                // Update provider to match chosen model
-                setConfig(prev => ({ ...prev, provider: providerId }));
-                setSelectedModel(modelId);
-              }}
-            >
-              <option value="">Model...</option>
-              {CHAT_PROVIDERS.map(provider => (
-                <optgroup key={provider.id} label={provider.name}>
-                  {provider.models.map(model => (
-                    <option key={`${provider.id}::${model.id}`} value={`${provider.id}::${model.id}`}>
-                      {model.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-
-            <select
-              className="api-key-select"
-                value={selectedKey?.id || ''}
-                onChange={(e) => {
-                  const key = aiKeys.find(k => k.id === e.target.value);
-                  setSelectedKey(key || null);
-                }}
-                disabled={availableKeys.length === 0}
-              >
-                <option value="">
-                  {availableKeys.length === 0 
-                    ? 'No keys available' 
-                  : 'Select API key'
-                  }
-                </option>
-                {availableKeys.map(key => (
-                  <option key={key.id} value={key.id}>
-                    {key.name} ({key.providerId})
-                  </option>
-                ))}
-              </select>
-
-            
-          </div>
         </div>
 
         {/* File Info - removed as requested */}
@@ -1764,15 +1356,15 @@ CODE BLOCK FORMAT (for suggestions):
                   <li>Create new files and components</li>
                 </ul>
                 <p>Just describe what you'd like me to do with your code!</p>
-                      </div>
-                    </div>
-                  )}
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
             <div className="message error-message">
               <div className="message-content">
-                <p><FontAwesomeIcon icon={faExclamationTriangle} /> {error}</p>
+                <p>{FontAwesomeIcon && <FontAwesomeIcon icon={faExclamationTriangle} />} {error}</p>
                 <button onClick={handleClearError} className="retry-btn">Try Again</button>
                 </div>
             </div>
@@ -1800,7 +1392,7 @@ CODE BLOCK FORMAT (for suggestions):
           <div className="message iterative-reading-message">
             <div className="message-content">
               <div className="response-header">
-                <span className="response-title"><FontAwesomeIcon icon={faFile} /> Iterative File Reading</span>
+                <span className="response-title">{FontAwesomeIcon && <FontAwesomeIcon icon={faFile} />} Iterative File Reading</span>
               </div>
               
               <div className="iterative-status">
@@ -1836,19 +1428,19 @@ CODE BLOCK FORMAT (for suggestions):
           <div className="message debug-message">
             <div className="message-content">
               <div className="response-header">
-                <span className="response-title"><FontAwesomeIcon icon={faBug} /> Debug Payload</span>
+                <span className="response-title">{FontAwesomeIcon && <FontAwesomeIcon icon={faBug} />} Debug Payload</span>
                 <div className="response-actions">
                   <button 
                     onClick={() => setDebugPayload(null)}
                     className="close-btn"
                   >
-                    <FontAwesomeIcon icon={faTimes} />
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
                   </button>
                 </div>
               </div>
               
               <div className="debug-payload-content">
-                <h4>Enhanced Context: {debugPayload.enhancedContext ? <><FontAwesomeIcon icon={faCheck} /> Yes</> : <><FontAwesomeIcon icon={faTimes} /> No</>}</h4>
+                <h4>Enhanced Context: {debugPayload.enhancedContext ? <>{FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />} Yes</> : <>{FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />} No</>}</h4>
                 
                 <details open>
                   <summary><strong>Original User Instruction:</strong></summary>
@@ -1879,7 +1471,7 @@ CODE BLOCK FORMAT (for suggestions):
                   }}
                   className="send-anyway-btn"
                 >
-                  <FontAwesomeIcon icon={faRocket} /> Send to AI Anyway
+                  {FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />} Send to AI Anyway
                 </button>
               </div>
             </div>
@@ -1891,12 +1483,12 @@ CODE BLOCK FORMAT (for suggestions):
           <div className="message search-replace-message">
             <div className="message-content">
               <div className="response-header">
-                <span className="response-title"><FontAwesomeIcon icon={faSearch} /> {searchReplacePrompts.length} Search/Replace</span>
+                <span className="response-title">{FontAwesomeIcon && <FontAwesomeIcon icon={faSearch} />} {searchReplacePrompts.length} Search/Replace</span>
                 <button 
                   onClick={() => setSearchReplacePrompts([])}
                   className="close-btn"
                 >
-                  <FontAwesomeIcon icon={faTimes} />
+                  {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
                 </button>
               </div>
               
@@ -1912,10 +1504,10 @@ CODE BLOCK FORMAT (for suggestions):
                     <div className="prompt-details">
                       <div className="search-replace-pair">
                         <div className="search-text">
-                          <FontAwesomeIcon icon={faSearch} /> <code>{prompt.searchText}</code>
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faSearch} />} <code>{prompt.searchText}</code>
                         </div>
                         <div className="replace-text">
-                          <FontAwesomeIcon icon={faRefresh} /> <code>{prompt.replaceText}</code>
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faRefresh} />} <code>{prompt.replaceText}</code>
                         </div>
                       </div>
                     </div>
@@ -1928,7 +1520,7 @@ CODE BLOCK FORMAT (for suggestions):
                         className="execute-btn"
                         title="Execute"
                       >
-                        <FontAwesomeIcon icon={faCheck} />
+                        {FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />}
                       </button>
                       
                       <button 
@@ -1939,7 +1531,7 @@ CODE BLOCK FORMAT (for suggestions):
                         className="copy-btn"
                         title="Copy"
                       >
-                        <FontAwesomeIcon icon={faClipboard} />
+                        {FontAwesomeIcon && <FontAwesomeIcon icon={faClipboard} />}
                       </button>
                     </div>
                   </div>
@@ -1954,7 +1546,7 @@ CODE BLOCK FORMAT (for suggestions):
              <div className="message ai-message">
                <div className="message-content">
             <div className="response-header">
-                   <span className="response-title"><FontAwesomeIcon icon={faRobot} /> AI Response</span>
+                   <span className="response-title">{FontAwesomeIcon && <FontAwesomeIcon icon={faRobot} />} AI Response</span>
                    {/* Only show edit actions if there are actual code edits */}
                    {aiResponse.edits.length > 0 && (
                 <div className="response-actions">
@@ -1962,11 +1554,23 @@ CODE BLOCK FORMAT (for suggestions):
                          {showPreview ? 'Hide' : 'Preview'}
                   </button>
                   <div className="auto-applied-indicator">
-                    <FontAwesomeIcon icon={faCheck} /> Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />} Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
                   </div>
                 </div>
               )}
             </div>
+            
+            {/* Console log for AI response display */}
+            {(() => {
+              console.log('🎨 AI RESPONSE DISPLAYED:', {
+                success: aiResponse.success,
+                explanationLength: aiResponse.explanation?.length || 0,
+                editsCount: aiResponse.edits.length,
+                showPreview: showPreview,
+                timestamp: new Date().toISOString()
+              });
+              return null;
+            })()}
 
             {/* AI Response Content */}
             {aiResponse.explanation && (
@@ -1990,7 +1594,7 @@ CODE BLOCK FORMAT (for suggestions):
             {/* Show message when there are no edits */}
             {aiResponse.edits.length === 0 && (
               <div className="no-edits-message">
-                <FontAwesomeIcon icon={faComments} /> This is a conversational response with no code changes to apply.
+                {FontAwesomeIcon && <FontAwesomeIcon icon={faComments} />} This is a conversational response with no code changes to apply.
               </div>
             )}
 
@@ -2014,12 +1618,12 @@ CODE BLOCK FORMAT (for suggestions):
         {showConversationHistory && (
           <div className="conversation-history-panel">
             <div className="history-header">
-              <h4><FontAwesomeIcon icon={faComments} /> Conversation History</h4>
+              <h4>{FontAwesomeIcon && <FontAwesomeIcon icon={faComments} />} Conversation History</h4>
               <button
                 className="close-history-btn"
                 onClick={() => setShowConversationHistory(false)}
               >
-                <FontAwesomeIcon icon={faTimes} />
+                {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
               </button>
             </div>
             
@@ -2086,12 +1690,73 @@ CODE BLOCK FORMAT (for suggestions):
               disabled={isLoading || isStreaming}
             />
             <div className="input-buttons">
+              <div className="config-controls">
+                <select
+                  className="dualscreen-model-select"
+                  value={selectedModel ? `${config.provider}::${selectedModel}` : ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) {
+                      setSelectedModel('');
+                      return;
+                    }
+                    const [providerId, modelId] = value.split('::');
+                    // Update provider to match chosen model
+                    setConfig(prev => ({ ...prev, provider: providerId }));
+                    setSelectedModel(modelId);
+                    
+                    // Auto-select a compatible API key for the new provider
+                    const compatibleKeys = aiKeys.filter(key => key.providerId === providerId);
+                    if (compatibleKeys.length > 0) {
+                      setSelectedKey(compatibleKeys[0]);
+                    } else {
+                      setSelectedKey(null);
+                    }
+                  }}
+                >
+                  <option value="">Model...</option>
+                  {CHAT_PROVIDERS.map(provider => (
+                    <optgroup key={provider.id} label={provider.name}>
+                      {provider.models.map(model => (
+                        <option key={`${provider.id}::${model.id}`} value={`${provider.id}::${model.id}`}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+
+                <select
+                  className="api-key-select"
+                  value={selectedKey?.id || ''}
+                  onChange={(e) => {
+                    const key = aiKeys.find(k => k.id === e.target.value);
+                    setSelectedKey(key || null);
+                    
+                    // Update provider to match selected key
+                    if (key) {
+                      setConfig(prev => ({ ...prev, provider: key.providerId }));
+                    }
+                  }}
+                  disabled={availableKeys.length === 0}
+                >
+                  <option value="">
+                    {availableKeys.length === 0  ? 'No keys available' : 'Select API key'}
+                  </option>
+                  {availableKeys.map(key => (
+                    <option key={key.id} value={key.id}>
+                      {key.name} ({key.providerId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
               <button 
                 className="send-btn"
                 onClick={handleRequestEdit}
                 disabled={!selectedKey || !selectedModel || (!currentFileData && (!routeFiles || routeFiles.length === 0)) || !userInstruction.trim() || isLoading || isStreaming}
               >
-                {isLoading || isStreaming ? <FontAwesomeIcon icon={faClock} /> : <FontAwesomeIcon icon={faRocket} />}
+                {isLoading || isStreaming ? (FontAwesomeIcon && <FontAwesomeIcon icon={faClock} />) : (FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />)}
               </button>
             </div>
                   </div>
@@ -2104,24 +1769,6 @@ CODE BLOCK FORMAT (for suggestions):
         onClose={() => setShowContextManagement(false)}
       />
 
-      {/* File Writer Test Panel */}
-      {showFileWriterTest && (
-        <div className="file-writer-test-overlay">
-          <div className="file-writer-test-modal">
-            <div className="file-writer-test-header">
-              <h3><FontAwesomeIcon icon={faFlask} /> File Writer Test Suite</h3>
-              <button
-                className="close-test-btn"
-                onClick={() => setShowFileWriterTest(false)}
-                title="Close test panel"
-              >
-                <FontAwesomeIcon icon={faTimes} />
-              </button>
-            </div>
-            <FileWriterTest projectContext={projectContext} />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

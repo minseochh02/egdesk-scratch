@@ -595,8 +595,25 @@ export class EnhancedAIEditorService {
       // Import and use the FileWriterService for proper edit application
       const { FileWriterService } = require('../../../services/fileWriterService');
       const fileWriter = FileWriterService.getInstance();
+
+      console.log('🔍 DEBUG: Applying edits to content', {
+        originalContentLength: originalContent.length,
+        editsLength: edits.length,
+        edits: edits.map(e => ({
+          type: e.type,
+          filePath: e.filePath,
+          oldText: e.oldText,
+          newText: e.newText
+        }))
+      });
       
       const result = fileWriter.applyEditsToContent(originalContent, edits);
+
+      console.log('🔍 DEBUG: Result of applying edits to content', {
+        success: result.success,
+        contentLength: result.content.length,
+        errors: result.errors
+      });
       
       if (result.success) {
         console.log(`✅ Successfully applied ${edits.length} edits to content`);
@@ -614,7 +631,7 @@ export class EnhancedAIEditorService {
   /**
    * Apply edits directly to files (enhanced version)
    */
-  static async applyEditsToFiles(edits: AIEdit[]): Promise<{
+  static async applyEditsToFiles(edits: AIEdit[], projectRoot?: string): Promise<{
     success: boolean;
     modifiedFiles: string[];
     errors: string[];
@@ -624,7 +641,8 @@ export class EnhancedAIEditorService {
       const { FileWriterService } = require('../../../services/fileWriterService');
       const fileWriter = FileWriterService.getInstance();
       
-      return await fileWriter.applyChangesToFiles(edits);
+      console.log(`🔍 DEBUG: Applying edits with project root: ${projectRoot}`);
+      return await fileWriter.applyChangesToFiles(edits, projectRoot);
     } catch (error) {
       console.error('❌ Error applying edits to files:', error);
       return {

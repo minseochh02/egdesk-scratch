@@ -523,16 +523,16 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       {/* Left Panel - Chat/AI Editor */}
       <div className="panel left-panel">
         <div className="panel-content">
-                  <DualScreenAIEditor
-          isVisible={true}
-          currentFile={currentFile}
-          onApplyEdits={onApplyEdits}
-          onClose={() => {}} // Don't close, just hide
-          isEditing={isEditing}
-          onToggleEditing={toggleEditingMode}
-          routeFiles={routeFilesWithContent}
-          onShowDiff={handleShowDiff}
-          projectContext={{
+          <DualScreenAIEditor
+            isVisible={true}
+            currentFile={currentFile}
+            onApplyEdits={onApplyEdits}
+            onClose={() => {}} // Don't close, just hide
+            isEditing={isEditing}
+            onToggleEditing={toggleEditingMode}
+            routeFiles={routeFilesWithContent}
+            onShowDiff={handleShowDiff}
+            projectContext={{
             currentProject: currentProject,
             availableFiles: routeFilesWithContent
           }}

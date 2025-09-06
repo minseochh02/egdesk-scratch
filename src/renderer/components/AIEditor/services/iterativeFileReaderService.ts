@@ -28,6 +28,13 @@ export interface LineRangeResponse {
 export interface IterativeReadingState {
   phase: 'discovery' | 'reading' | 'analysis' | 'complete';
   currentFile?: string;
+  projectRoot: string;
+  cachedFiles: Array<{
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  }>;
   readRanges: Array<{
     filePath: string;
     startLine: number;
@@ -74,7 +81,13 @@ export class IterativeFileReaderService {
     availableFiles: string[],
     aiKey: any,
     model: string,
-    maxContentLimit: number = 50000
+    maxContentLimit: number = 50000,
+    cachedFiles: Array<{
+      path: string;
+      name: string;
+      content: string;
+      language: string;
+    }> = []
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -84,6 +97,8 @@ export class IterativeFileReaderService {
       // Initialize state
       this.currentState = {
         phase: 'discovery',
+        projectRoot,
+        cachedFiles,
         readRanges: [],
         totalContentRead: 0,
         maxContentLimit
@@ -292,6 +307,45 @@ Remember: You will be making actual code changes to these files. Select files th
   }
 
   /**
+   * Check if file content is available in cache
+   */
+  private getCachedFileContent(filePath: string): string | null {
+    if (!this.currentState?.cachedFiles) return null;
+    
+    // Try exact match first
+    let cachedFile = this.currentState.cachedFiles.find(f => f.path === filePath);
+    
+    // Try relative path matching
+    if (!cachedFile) {
+      const relativePath = filePath.replace(this.currentState.projectRoot + '/', '');
+      cachedFile = this.currentState.cachedFiles.find(f => 
+        f.path === relativePath || 
+        f.path.endsWith(relativePath) ||
+        relativePath.endsWith(f.path)
+      );
+    }
+    
+    // Try www/ to wordpress/ path conversion
+    if (!cachedFile && filePath.includes('www/')) {
+      const wordpressPath = filePath.replace('www/', 'wordpress/');
+      cachedFile = this.currentState.cachedFiles.find(f => 
+        f.path === wordpressPath || 
+        f.path.endsWith(wordpressPath) ||
+        wordpressPath.endsWith(f.path)
+      );
+    }
+    
+    console.log('🔍 DEBUG: getCachedFileContent', {
+      requestedPath: filePath,
+      foundCached: !!cachedFile,
+      cachedPath: cachedFile?.path,
+      contentLength: cachedFile?.content?.length
+    });
+    
+    return cachedFile?.content || null;
+  }
+
+  /**
    * Handle reading an entire file
    */
   private async handleReadFile(
@@ -317,15 +371,82 @@ Remember: You will be making actual code changes to these files. Select files th
     }
 
     try {
+      // First, try to get content from cache
+      const cachedContent = this.getCachedFileContent(aiDecision.filePath);
+      
+      if (cachedContent) {
+        console.log('🔍 DEBUG: handleReadFile - Using cached content', {
+          originalPath: aiDecision.filePath,
+          contentLength: cachedContent.length
+        });
+        
+        const content = cachedContent;
+        const lineCount = content.split('\n').length;
+
+        // Add to read ranges
+        this.currentState!.readRanges.push({
+          filePath: aiDecision.filePath,
+          startLine: 1,
+          endLine: lineCount,
+          content
+        });
+
+        this.currentState!.totalContentRead += content.length;
+
+        // Add content to conversation history
+        this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} from cache (${lineCount} lines, ${content.length} chars)`);
+
+        // Determine next action
+        const nextAction = await this.determineNextAction(aiKey, model, content);
+
+        return {
+          success: true,
+          nextAction,
+          content
+        };
+      }
+
+      // If not in cache, try file system with path resolution
+      const fullFilePath = aiDecision.filePath.startsWith('/') || aiDecision.filePath.startsWith('C:\\') 
+        ? aiDecision.filePath 
+        : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
+
+      console.log('🔍 DEBUG: handleReadFile - Not in cache, attempting to read from file system', {
+        originalPath: aiDecision.filePath,
+        fullPath: fullFilePath,
+        projectRoot: this.currentState!.projectRoot
+      });
+
       // Read the entire file
-      const result = await window.electron.fileSystem.readFile(aiDecision.filePath);
+      let result = await window.electron.fileSystem.readFile(fullFilePath);
+      
+      // If the file path doesn't work, try some common variations
+      if (!result.success) {
+        console.log('handleReadFile: Original path failed, trying variations');
+        const pathVariations = [
+          `${this.currentState!.projectRoot}/egdesk-scratch/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/egdesk-scratch/wordpress/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/wordpress/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'egdesk-scratch/wordpress/')}`,
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`
+        ];
+        
+        for (const path of pathVariations) {
+          console.log('handleReadFile: Trying path:', path);
+          result = await window.electron.fileSystem.readFile(path);
+          if (result.success) {
+            console.log('handleReadFile: Found file at:', path);
+            break;
+          }
+        }
+      }
       
       if (!result.success) {
         return {
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
-            reasoning: `Failed to read file: ${aiDecision.filePath}`,
+            reasoning: `Failed to read file: ${aiDecision.filePath} (tried cache and multiple path variations)`,
             confidence: 0
           },
           error: result.error
@@ -396,15 +517,88 @@ Remember: You will be making actual code changes to these files. Select files th
     }
 
     try {
+      // First, try to get content from cache
+      const cachedContent = this.getCachedFileContent(aiDecision.filePath);
+      
+      if (cachedContent) {
+        console.log('🔍 DEBUG: handleReadRange - Using cached content', {
+          originalPath: aiDecision.filePath,
+          contentLength: cachedContent.length,
+          startLine: aiDecision.startLine,
+          endLine: aiDecision.endLine
+        });
+        
+        const lines = cachedContent.split('\n');
+        const startLine = Math.max(1, aiDecision.startLine);
+        const endLine = Math.min(lines.length, aiDecision.endLine);
+        const content = lines.slice(startLine - 1, endLine).join('\n');
+
+        // Add to read ranges
+        this.currentState!.readRanges.push({
+          filePath: aiDecision.filePath,
+          startLine,
+          endLine,
+          content
+        });
+
+        this.currentState!.totalContentRead += content.length;
+
+        // Add content to conversation history
+        this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} lines ${startLine}-${endLine} from cache (${content.length} chars)`);
+
+        // Determine next action
+        const nextAction = await this.determineNextAction(aiKey, model, content);
+
+        return {
+          success: true,
+          nextAction,
+          content
+        };
+      }
+
+      // If not in cache, try file system with path resolution
+      const fullFilePath = aiDecision.filePath.startsWith('/') || aiDecision.filePath.startsWith('C:\\') 
+        ? aiDecision.filePath 
+        : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
+
+      console.log('🔍 DEBUG: handleReadRange - Not in cache, attempting to read from file system', {
+        originalPath: aiDecision.filePath,
+        fullPath: fullFilePath,
+        projectRoot: this.currentState!.projectRoot,
+        startLine: aiDecision.startLine,
+        endLine: aiDecision.endLine
+      });
+
       // Read the entire file first
-      const result = await window.electron.fileSystem.readFile(aiDecision.filePath);
+      let result = await window.electron.fileSystem.readFile(fullFilePath);
+      
+      // If the file path doesn't work, try some common variations
+      if (!result.success) {
+        console.log('handleReadRange: Original path failed, trying variations');
+        const pathVariations = [
+          `${this.currentState!.projectRoot}/egdesk-scratch/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/egdesk-scratch/wordpress/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/wordpress/${aiDecision.filePath}`,
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'egdesk-scratch/wordpress/')}`,
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`
+        ];
+        
+        for (const path of pathVariations) {
+          console.log('handleReadRange: Trying path:', path);
+          result = await window.electron.fileSystem.readFile(path);
+          if (result.success) {
+            console.log('handleReadRange: Found file at:', path);
+            break;
+          }
+        }
+      }
       
       if (!result.success) {
         return {
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
-            reasoning: `Failed to read file: ${aiDecision.filePath}`,
+            reasoning: `Failed to read file: ${aiDecision.filePath} (tried cache and multiple path variations)`,
             confidence: 0
           },
           error: result.error
