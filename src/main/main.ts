@@ -957,6 +957,38 @@ ipcMain.handle('browser-window-refresh-all-localhost', async () => {
   }
 });
 
+// Get all localhost browser windows
+ipcMain.handle('browser-window-get-all-localhost', async () => {
+  try {
+    console.log('🔍 Getting all localhost browser windows...');
+    const localhostWindows = [];
+    
+    // Iterate through all browser windows
+    for (const [windowId, browserWindow] of browserWindows.entries()) {
+      try {
+        const currentUrl = browserWindow.webContents.getURL();
+        
+        // Check if the window is showing localhost
+        if (currentUrl && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
+          localhostWindows.push({
+            windowId,
+            url: currentUrl,
+            isVisible: !browserWindow.isDestroyed() && browserWindow.isVisible()
+          });
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to get info for browser window ${windowId}:`, error);
+      }
+    }
+    
+    console.log(`🔍 Found ${localhostWindows.length} localhost browser window(s)`);
+    return { success: true, windows: localhostWindows };
+  } catch (error) {
+    console.error('❌ Failed to get localhost browser windows:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('browser-window-close-external', async (event, pid) => {
   try {
     if (process.platform === 'win32') {
