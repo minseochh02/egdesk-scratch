@@ -49,32 +49,21 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   
   // Toggle between editing and non-editing states
   const toggleEditingMode = () => {
-    console.log('toggleEditingMode: Current state:', isEditing, 'Switching to:', !isEditing);
     setIsEditing(!isEditing);
   };
 
   // Handle diff display from AI Editor
   const handleShowDiff = (filePath: string, diff: { before: string; after: string; lineNumber: number }) => {
-    console.log('🔍 DualScreenEditor: handleShowDiff called', {
-      filePath,
-      diff,
-      isEditing
-    });
-    
     setDiffData({ filePath, diff });
     
     // Switch to editing mode if not already in editing mode
     if (!isEditing) {
-      console.log('🔄 Switching to editing mode to show diff');
       setIsEditing(true);
     }
   };
 
   // Handle server status changes
   const handleServerStatusChange = (status: any) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DualScreenEditor] Server status change:', status);
-    }
     setServerStatus(status);
     if (status?.url && status.url !== currentUrl) {
       setCurrentUrl(status.url);
@@ -97,9 +86,6 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           await (window as any).electron?.wordpressServer?.stopServer?.();
           setServerEnsured(false);
           setServerStatus(null);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[debug] stopped server when component became invisible');
-          }
         } catch (err) {
           console.warn('Failed to stop server when hiding component:', err);
         }
@@ -277,10 +263,6 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
       const validFiles = filesWithContent.filter(file => file !== null);
       setRouteFilesWithContent(validFiles);
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[Route Files Content] Loaded ${validFiles.length} files with content`);
-      }
     } catch (error) {
       console.error('Failed to load route files content:', error);
       setRouteFilesWithContent([]);
@@ -290,17 +272,6 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   useEffect(() => {
     const svc = PageRouteService.getInstance();
     const unsub = svc.subscribe((state) => {
-      if (process.env.NODE_ENV === 'development') {
-        const mappings = svc.getMappingsList(state.projectRoot);
-        // Debug: show the latest route -> files mapping in console
-        console.log('[Route->Files] Project:', state.projectRoot);
-        console.table(mappings);
-        // Also show the most recent change concisely
-        const latest = mappings.find(m => m.route === state.urlPath);
-        if (latest) {
-          console.log(`[Route->Files] ${latest.route} =>`, latest.files);
-        }
-      }
       // Use the service's current filesToOpen to drive the code editor
       if (state.filesToOpen && state.filesToOpen.length > 0) {
         setRouteFiles(state.filesToOpen);
@@ -353,14 +324,11 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       // Cleanup function - stop server when component unmounts
       if (serverEnsured) {
         (async () => {
-          try {
-            await (window as any).electron?.wordpressServer?.stopServer?.();
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] stopped server on component unmount');
-            }
-          } catch (err) {
-            console.warn('Failed to stop server on cleanup:', err);
-          }
+        try {
+          await (window as any).electron?.wordpressServer?.stopServer?.();
+        } catch (err) {
+          console.warn('Failed to stop server on cleanup:', err);
+        }
         })();
       }
     };
@@ -387,9 +355,6 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         if (statusResult && statusResult.success && statusResult.status) {
           // Update server status if it's different
           if (!serverStatus || serverStatus.isRunning !== statusResult.status.isRunning) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] Periodic server status check - updating status:', statusResult.status);
-            }
             setServerStatus(statusResult.status);
             if (statusResult.status.isRunning && !serverEnsured) {
               setServerEnsured(true);
@@ -416,9 +381,6 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       if (!currentProject || !currentProject.path) return;
       if (serverEnsured) return;
       try {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[debug] initial server start');
-        }
         // Check status first and clean up any existing servers
         const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
         const isRunning = !!(statusResult && statusResult.success && statusResult.status && statusResult.status.isRunning);
@@ -432,18 +394,12 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             setServerStatus(statusResult.status);
             if (!homeTriggeredRef.current) {
               homeTriggeredRef.current = true;
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[debug] calling PageRouteService for homepage (server already running for this project)');
-              }
               const defaultUrl = currentUrl || 'http://localhost:8000/';
               await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
             }
             return;
           } else {
             // Different project is running, stop it first
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] stopping existing server for different project:', currentServerPath);
-            }
             try {
               await (window as any).electron?.wordpressServer?.stopServer?.();
               // Wait a moment for the server to fully stop
@@ -456,18 +412,12 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           // No server is running, but let's also check for any orphaned processes
           // and try to clean up any potential port conflicts
           try {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] checking for orphaned servers and cleaning up');
-            }
             // Attempt to stop any potential orphaned server
             await (window as any).electron?.wordpressServer?.stopServer?.();
             // Brief wait to ensure cleanup
             await new Promise(resolve => setTimeout(resolve, 500));
           } catch (cleanupErr) {
             // This is expected if no server was running, so we ignore the error
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] no orphaned servers found (expected)');
-            }
           }
         }
         
@@ -482,27 +432,13 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           
           // Get the actual server status after starting
           const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[debug] Server start result:', startResult);
-            console.log('[debug] Server status after start:', statusResult);
-          }
           if (statusResult && statusResult.success && statusResult.status) {
             setServerEnsured(true);
             setServerStatus(statusResult.status);
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] Server status set:', statusResult.status);
-            }
             if (!homeTriggeredRef.current) {
               homeTriggeredRef.current = true;
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[debug] calling PageRouteService for homepage (after start)');
-              }
               const defaultUrl = currentUrl || `http://localhost:${startResult.port || 8000}/`;
               await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
-            }
-          } else {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[debug] Failed to get server status after start:', statusResult);
             }
           }
         }

@@ -7,18 +7,15 @@ export const openLocalhostIfNeeded = async (url: string = 'http://localhost:8000
     if (window.electron && window.electron.browserWindow) {
       const result = await window.electron.browserWindow.getAllLocalhostWindows();
       if (result.success && result.windows && result.windows.length > 0) {
-        console.log(`🔄 Found ${result.windows.length} existing browser window(s), refreshing instead of opening new one`);
         return; // Don't open a new window if existing ones are found
       }
     }
     
     // Only open new window if no existing browser windows found
     window.open(url, '_blank');
-    console.log(`🌐 Opened ${url} to show applied changes`);
   } catch (error) {
     console.warn('⚠️ Could not check for existing browser windows, opening new one:', error);
     window.open(url, '_blank');
-    console.log(`🌐 Opened ${url} to show applied changes`);
   }
 };
 
@@ -27,19 +24,15 @@ export const openLocalhostIfNeeded = async (url: string = 'http://localhost:8000
  */
 export const refreshBrowserWindows = async (): Promise<void> => {
   try {
-    console.log('🔄 Attempting to refresh browser windows showing localhost...');
-    
     if (window.electron && window.electron.browserWindow) {
       // Try to refresh all browser windows showing localhost
       try {
         const refreshResult = await window.electron.browserWindow.refreshAllLocalhost();
-        if (refreshResult.success) {
-          console.log(`✅ Refreshed ${refreshResult.refreshedCount} localhost browser window(s)`);
-        } else {
+        if (!refreshResult.success) {
           console.warn('⚠️ Failed to refresh browser windows:', refreshResult.error);
         }
       } catch (error) {
-        console.log('ℹ️ Browser window refresh method not available, using alternative approach');
+        // Browser window refresh method not available, using alternative approach
       }
     }
     
@@ -53,7 +46,6 @@ export const refreshBrowserWindows = async (): Promise<void> => {
       if (typeof BroadcastChannel !== 'undefined') {
         const refreshChannel = new BroadcastChannel('localhost-refresh');
         refreshChannel.postMessage(refreshMessage);
-        console.log('📡 Sent refresh message via BroadcastChannel');
         
         // Close the channel after a short delay
         setTimeout(() => {
@@ -69,7 +61,7 @@ export const refreshBrowserWindows = async (): Promise<void> => {
       }, 100);
       
     } catch (error) {
-      console.log('ℹ️ Browser refresh alternatives not available:', error);
+      // Browser refresh alternatives not available
     }
     
   } catch (error) {
@@ -84,14 +76,10 @@ export const restartServer = async (
   projectContext?: { currentProject: any }
 ): Promise<{ success: boolean; url?: string; error?: string }> => {
   try {
-    console.log('🔄 Attempting to restart server after applying changes...');
-    
     if (window.electron && window.electron.wordpressServer) {
       // Stop the server first
       const stopResult = await window.electron.wordpressServer.stopServer();
       if (stopResult.success) {
-        console.log('✅ Server stopped successfully');
-        
         // Wait a moment before restarting
         await new Promise(resolve => setTimeout(resolve, 1000));
         
@@ -102,8 +90,6 @@ export const restartServer = async (
         );
         
         if (startResult.success) {
-          console.log('✅ Server restarted successfully');
-          
           // Refresh any existing browser windows showing localhost
           await refreshBrowserWindows();
           
@@ -123,8 +109,6 @@ export const restartServer = async (
         return { success: false, error: stopResult.error };
       }
     } else {
-      console.log('ℹ️ Not in Electron environment, checking for existing browser windows before opening new one');
-      
       // Still try to refresh existing browser windows
       await refreshBrowserWindows();
       

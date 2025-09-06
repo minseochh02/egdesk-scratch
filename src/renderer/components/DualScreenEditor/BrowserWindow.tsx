@@ -157,9 +157,6 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
           return; // Don't resize for custom positioning
       }
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[BrowserWindow] Resizing main window for split-screen:', mainWindowBounds);
-      }
       
       await (window as any).electron?.mainWindow?.setBounds?.(mainWindowBounds);
     } catch (error) {
@@ -174,11 +171,6 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       
       // Get half-screen dimensions for better positioning
       const halfScreenDims = getHalfScreenDimensions();
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[BrowserWindow] Creating browser window with dimensions:', halfScreenDims);
-        console.log('[BrowserWindow] Screen size:', { width: window.screen.width, height: window.screen.height });
-      }
       
       // Resize main window for split-screen setup (only for half-screen positioning and if enabled)
       if (halfScreenPosition !== 'custom' && resizeMainWindow) {
@@ -267,9 +259,6 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
         height: defaultHeight
       };
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[BrowserWindow] Restoring main window to:', restoreBounds);
-      }
       
       await (window as any).electron?.mainWindow?.setBounds?.(restoreBounds);
     } catch (error) {
