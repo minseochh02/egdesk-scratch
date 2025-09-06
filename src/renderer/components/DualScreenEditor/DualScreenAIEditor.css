@@ -835,6 +835,36 @@
   gap: 4px;
 }
 
+.revert-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border-color, #5c5c5c);
+}
+
+.revert-manager-btn {
+  background: var(--button-bg, #3c3c3c);
+  border: 1px solid var(--border-color, #5c5c5c);
+  color: var(--text-color, #cccccc);
+  padding: 5px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+}
+
+.revert-manager-btn:hover {
+  background: var(--button-hover, #4c4c4c);
+  border-color: var(--accent-color, #007acc);
+}
+
 .editor-toggle-btn {
   padding: 5px 8px;
   background-color: #6f42c1;

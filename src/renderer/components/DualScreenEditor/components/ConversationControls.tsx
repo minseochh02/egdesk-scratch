@@ -1,6 +1,7 @@
 import React from 'react';
 import { Conversation } from '../../AIEditor/types';
 import { conversationStore } from '../../AIEditor/store/conversationStore';
+import { RevertButton } from '../../RevertManager';
 import { faGlobe, faEdit, faBook, faPlus } from '@fortawesome/free-solid-svg-icons';
 
 interface ConversationControlsProps {
@@ -10,6 +11,16 @@ interface ConversationControlsProps {
   onShowHistory: () => void;
   onNewConversation: () => void;
   FontAwesomeIcon: any;
+  // Revert controls props
+  currentFile?: {
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  } | null;
+  projectRoot?: string;
+  onRevertComplete?: (success: boolean, message: string) => void;
+  onShowRevertManager?: () => void;
 }
 
 export const ConversationControls: React.FC<ConversationControlsProps> = ({
@@ -18,7 +29,11 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
   onToggleEditing,
   onShowHistory,
   onNewConversation,
-  FontAwesomeIcon
+  FontAwesomeIcon,
+  currentFile,
+  projectRoot,
+  onRevertComplete,
+  onShowRevertManager
 }) => {
   return (
     <div className="conversation-controls">
@@ -31,6 +46,28 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
       </div>
       
       <div className="conversation-actions">
+        {/* Revert Controls */}
+        {currentFile && (
+          <div className="revert-controls">
+            <RevertButton
+              filePath={currentFile.path}
+              projectRoot={projectRoot}
+              onRevertComplete={onRevertComplete}
+              size="small"
+              showText={false}
+            />
+            {onShowRevertManager && (
+              <button
+                className="revert-manager-btn"
+                onClick={onShowRevertManager}
+                title="Open Revert Manager"
+              >
+                🔄
+              </button>
+            )}
+          </div>
+        )}
+        
         {onToggleEditing && (
           <button
             className={`editor-toggle-btn ${isEditing ? 'editing' : 'server'}`}

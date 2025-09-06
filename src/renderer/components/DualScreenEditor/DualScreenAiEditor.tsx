@@ -44,6 +44,9 @@ interface DualScreenAIEditorProps {
     language: string;
   }>;
   onShowDiff?: (filePath: string, diff: { before: string; after: string; lineNumber: number }) => void;
+  // Revert controls props
+  onRevertComplete?: (success: boolean, message: string) => void;
+  onShowRevertManager?: () => void;
 }
 
 export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
@@ -55,7 +58,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   isEditing = false,
   onToggleEditing,
   routeFiles = [],
-  onShowDiff
+  onShowDiff,
+  onRevertComplete,
+  onShowRevertManager
 }) => {
   const {
     // State
@@ -618,6 +623,10 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             onShowHistory={() => setShowConversationHistory(true)}
             onNewConversation={handleNewConversation}
             FontAwesomeIcon={FontAwesomeIcon}
+            currentFile={currentFile}
+            projectRoot={projectContext?.currentProject?.path}
+            onRevertComplete={onRevertComplete}
+            onShowRevertManager={onShowRevertManager}
           />
         </div>
 
