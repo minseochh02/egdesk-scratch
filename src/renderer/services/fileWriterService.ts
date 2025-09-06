@@ -14,6 +14,8 @@ export class FileWriterService {
   static getInstance(): FileWriterService {
     if (!FileWriterService.instance) {
       FileWriterService.instance = new FileWriterService();
+      // Ensure backup is enabled by default
+      FileWriterService.instance.setBackupEnabled(true);
     }
     return FileWriterService.instance;
   }
@@ -46,11 +48,17 @@ export class FileWriterService {
           // Create backup if enabled
           let backupPath: string | null = null;
           if (this.backupEnabled) {
+            console.log(`💾 Creating backup for file: ${absoluteFilePath}`);
             backupPath = await this.createBackup(absoluteFilePath);
             if (backupPath) {
               backupPaths.push(backupPath);
-              console.log(`💾 Created backup: ${backupPath}`);
+              console.log(`✅ Backup created successfully: ${backupPath}`);
+            } else {
+              console.error(`❌ FAILED TO CREATE BACKUP for: ${absoluteFilePath}`);
+              console.error(`❌ This means your file changes will NOT be backed up!`);
             }
+          } else {
+            console.warn(`⚠️ BACKUP DISABLED - No backup created for: ${absoluteFilePath}`);
           }
 
           // Apply edits to the file
@@ -211,6 +219,8 @@ export class FileWriterService {
    */
   private async createBackup(filePath: string): Promise<string | null> {
     try {
+      console.log(`🔍 DEBUG: Starting backup creation for: ${filePath}`);
+      
       // Check if file exists
       const readResult = await window.electron.fileSystem.readFile(filePath);
       if (!readResult.success) {
@@ -218,23 +228,28 @@ export class FileWriterService {
         return null;
       }
 
+      console.log(`📖 DEBUG: Successfully read file content (${readResult.content?.length || 0} characters)`);
+
       // Generate backup filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = `${filePath}.backup.${timestamp}`;
+      
+      console.log(`📝 DEBUG: Creating backup at: ${backupPath}`);
 
       // Create backup
       const writeResult = await window.electron.fileSystem.writeFile(backupPath, readResult.content || '');
       
       if (writeResult.success) {
+        console.log(`✅ Backup created successfully: ${backupPath}`);
         // Clean up old backups
         await this.cleanupOldBackups(filePath);
         return backupPath;
       } else {
-        console.warn(`⚠️ Failed to create backup for ${filePath}:`, writeResult.error);
+        console.error(`❌ Failed to create backup for ${filePath}:`, writeResult.error);
         return null;
       }
     } catch (error) {
-      console.warn(`⚠️ Error creating backup for ${filePath}:`, error);
+      console.error(`❌ Error creating backup for ${filePath}:`, error);
       return null;
     }
   }
@@ -479,9 +494,58 @@ export class FileWriterService {
    */
   private async cleanupOldBackups(originalFilePath: string): Promise<void> {
     try {
-      // This would require additional file system APIs to list files
-      // For now, we'll skip cleanup and rely on manual cleanup
-      console.log(`ℹ️ Backup cleanup not implemented for: ${originalFilePath}`);
+      console.log(`🧹 DEBUG: Starting backup cleanup for: ${originalFilePath}`);
+      
+      // Get the directory of the original file
+      const pathParts = originalFilePath.split('/');
+      const fileName = pathParts.pop() || '';
+      const directory = pathParts.join('/');
+      
+      if (!directory) {
+        console.log(`ℹ️ No directory found for cleanup: ${originalFilePath}`);
+        return;
+      }
+      
+      // List files in the directory to find backup files
+      const listResult = await window.electron.fileSystem.readDirectory(directory);
+      if (!listResult.success || !Array.isArray(listResult.items)) {
+        console.log(`ℹ️ Could not list directory for cleanup: ${directory}`);
+        return;
+      }
+      
+      // Find backup files for this specific file
+      const backupFiles = listResult.items
+        .filter(item => 
+          item.isFile && 
+          item.name.startsWith(fileName) && 
+          item.name.includes('.backup.')
+        )
+        .map(item => item.path)
+        .sort(); // Sort by name (which includes timestamp)
+      
+      console.log(`🔍 DEBUG: Found ${backupFiles.length} backup files for ${fileName}`);
+      
+      // Keep only the most recent backups (up to maxBackups)
+      if (backupFiles.length > this.maxBackups) {
+        const filesToDelete = backupFiles.slice(0, backupFiles.length - this.maxBackups);
+        
+        console.log(`🗑️ DEBUG: Deleting ${filesToDelete.length} old backup files`);
+        
+        for (const backupFile of filesToDelete) {
+          try {
+            const deleteResult = await window.electron.fileSystem.deleteItem(backupFile);
+            if (deleteResult.success) {
+              console.log(`✅ Deleted old backup: ${backupFile}`);
+            } else {
+              console.warn(`⚠️ Failed to delete old backup ${backupFile}:`, deleteResult.error);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Error deleting backup ${backupFile}:`, error);
+          }
+        }
+      } else {
+        console.log(`ℹ️ No cleanup needed - only ${backupFiles.length} backup files (max: ${this.maxBackups})`);
+      }
     } catch (error) {
       console.warn(`⚠️ Error cleaning up backups:`, error);
     }

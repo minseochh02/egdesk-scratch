@@ -313,7 +313,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
   };
 
   // Test 6: Configuration test
-  const testConfiguration = () => {
+  const testConfiguration = async () => {
     const originalBackupSetting = codeChangeConfig.isBackupEnabled();
 
     // Test setting changes
@@ -324,13 +324,16 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
     const enabledResult = codeChangeConfig.isBackupEnabled();
 
     codeChangeConfig.setMaxBackups(3);
-    codeChangeConfig.setBackupEnabled(originalBackupSetting); // Restore original
+    
+    // CRITICAL: Always restore original setting immediately after testing
+    codeChangeConfig.setBackupEnabled(originalBackupSetting);
 
     return {
       originalSetting: originalBackupSetting,
       disabledResult,
       enabledResult,
       maxBackupsSet: 3,
+      restored: originalBackupSetting,
     };
   };
 

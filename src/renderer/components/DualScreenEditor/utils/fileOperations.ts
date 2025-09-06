@@ -1,5 +1,6 @@
 import { AIEdit } from '../../AIEditor/types';
 import { EnhancedAIEditorService } from '../../AIEditor/services/enhancedAIEditorService';
+import { createFileBackup } from '../../../utils/codeChangeUtils';
 
 /**
  * Parse search/replace operations from AI response
@@ -61,13 +62,7 @@ export const parseSearchReplaceOperations = (content: string, projectRoot: strin
     // Try new format with LINES field first - create new regex instance each time
     const newFormatRegex = /```search-replace\s*\nFILE:\s*(.+?)\s*\nLINES:\s*(.+?)\s*\nSEARCH:\s*([\s\S]*?)\nREPLACE:\s*([\s\S]*?)\n```/;
     let match = newFormatRegex.exec(block);
-    
-    console.log('🔍 DEBUG: Regex matching attempt', {
-      block: block,
-      regex: newFormatRegex.toString(),
-      matchResult: match,
-      matchGroups: match ? match.slice(1) : null
-    });
+
     
     if (match) {
       const rawFilePath = match[1].trim();
@@ -75,16 +70,6 @@ export const parseSearchReplaceOperations = (content: string, projectRoot: strin
       const linesText = match[2].trim();
       const searchText = match[3].trim();
       const replaceText = match[4].trim();
-      
-      console.log('🔍 DEBUG: Found search-replace block (new format)', {
-        rawFilePath,
-        filePath,
-        linesText,
-        searchTextLength: searchText.length,
-        replaceTextLength: replaceText.length,
-        searchTextPreview: searchText.substring(0, 100),
-        replaceTextPreview: replaceText.substring(0, 100)
-      });
 
       if (filePath && searchText && replaceText) {
         // Parse line numbers (e.g., "15-15" or "10-12")
@@ -368,11 +353,20 @@ export const applyEditsToFilesLegacy = async (
   success: boolean;
   modifiedFiles: string[];
   errors: string[];
+  backupPaths?: string[];
 }> => {
   const modifiedFiles: string[] = [];
   const errors: string[] = [];
+  const backupPaths: string[] = [];
   
   console.log('⚠️ Using legacy file writing implementation');
+  
+  // Import FileWriterService to check backup settings
+  const { FileWriterService } = require('../../../services/fileWriterService');
+  const fileWriter = FileWriterService.getInstance();
+  const backupEnabled = fileWriter.isBackupEnabled();
+  
+  console.log(`💾 Legacy mode - Backup ${backupEnabled ? 'enabled' : 'disabled'}`);
   
   try {
     for (const edit of edits) {
@@ -386,7 +380,7 @@ export const applyEditsToFilesLegacy = async (
         }
         
         if (edit.type === 'create' && absoluteFilePath && edit.newText) {
-          // Create new file
+          // Create new file (no backup needed for new files)
           const result = await window.electron.fileSystem.writeFile(absoluteFilePath, edit.newText);
           if (result.success) {
             modifiedFiles.push(absoluteFilePath);
@@ -395,6 +389,15 @@ export const applyEditsToFilesLegacy = async (
             errors.push(`Failed to create ${absoluteFilePath}: ${result.error}`);
           }
         } else if (edit.type === 'delete_file' && absoluteFilePath) {
+          // Create backup before deletion if enabled
+          if (backupEnabled) {
+            const backupResult = await createFileBackup(absoluteFilePath);
+            if (backupResult.success && backupResult.backupPath) {
+              backupPaths.push(backupResult.backupPath);
+              console.log(`💾 Created backup before deletion: ${backupResult.backupPath}`);
+            }
+          }
+          
           // Delete file
           const result = await window.electron.fileSystem.deleteItem(absoluteFilePath);
           if (result.success) {
@@ -404,6 +407,15 @@ export const applyEditsToFilesLegacy = async (
             errors.push(`Failed to delete ${absoluteFilePath}: ${result.error}`);
           }
         } else if (edit.type === 'replace' && edit.oldText && edit.newText && absoluteFilePath) {
+          // Create backup before modification if enabled
+          if (backupEnabled) {
+            const backupResult = await createFileBackup(absoluteFilePath);
+            if (backupResult.success && backupResult.backupPath) {
+              backupPaths.push(backupResult.backupPath);
+              console.log(`💾 Created backup before modification: ${backupResult.backupPath}`);
+            }
+          }
+          
           // Handle search/replace operations
           const fileResult = await window.electron.fileSystem.readFile(absoluteFilePath);
           if (!fileResult.success) {
@@ -435,14 +447,16 @@ export const applyEditsToFilesLegacy = async (
     return {
       success: errors.length === 0,
       modifiedFiles,
-      errors
+      errors,
+      backupPaths: backupEnabled ? backupPaths : undefined
     };
   } catch (error) {
     errors.push(`Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
     return {
       success: false,
       modifiedFiles,
-      errors
+      errors,
+      backupPaths: backupEnabled ? backupPaths : undefined
     };
   }
 };

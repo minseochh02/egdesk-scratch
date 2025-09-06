@@ -286,7 +286,6 @@ CODE BLOCK FORMAT (for suggestions):
       
       if (isReady && !isInitialized) {
         setIsInitialized(true);
-        console.log('🚀 DualScreenAIEditor fully initialized');
       }
     };
 
@@ -351,8 +350,6 @@ CODE BLOCK FORMAT (for suggestions):
    * Cancel current AI request
    */
   const cancelAIRequest = useCallback(() => {
-    console.log('🛑 Canceling AI request...');
-    
     // Cancel the current abort controller if it exists
     if (currentAbortController) {
       currentAbortController.abort();
@@ -368,8 +365,6 @@ CODE BLOCK FORMAT (for suggestions):
     setIsIterativeReading(false);
     setStreamedContent('');
     setStreamedEdits([]);
-    
-    console.log('✅ AI request canceled');
   }, [currentAbortController, iterativeReaderService]);
 
   return {
