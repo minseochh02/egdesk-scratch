@@ -641,76 +641,31 @@ You can work with individual files or dynamically discover and analyze files acr
     }
   };
 
-  // Apply edits directly to files (Cursor-style)
+  // Apply edits directly to files using enhanced service
   const applyEditsToFiles = async (edits: AIEdit[]): Promise<{
     success: boolean;
     modifiedFiles: string[];
     errors: string[];
   }> => {
-    const modifiedFiles: string[] = [];
-    const errors: string[] = [];
-    
     try {
-      for (const edit of edits) {
-        try {
-          if (edit.type === 'create' && edit.filePath && edit.newText) {
-            // Create new file, suggest unique path using codespace vector
-            let targetPath = edit.filePath;
-            try {
-              if (projectContext?.currentProject?.path) {
-                const vector = CodespaceVectorService.getInstance();
-                targetPath = vector.suggestUniquePath(projectContext.currentProject.path, edit.filePath);
-              }
-            } catch {}
-            const result = await window.electron.fileSystem.writeFile(targetPath, edit.newText);
-            if (result.success) {
-              modifiedFiles.push(targetPath);
-              console.log(`Created file: ${targetPath}`);
-            } else {
-              errors.push(`Failed to create ${targetPath}: ${result.error}`);
-            }
-          } else if (edit.type === 'delete_file' && edit.filePath) {
-            // Delete file
-            const result = await window.electron.fileSystem.deleteItem(edit.filePath);
-            if (result.success) {
-              modifiedFiles.push(edit.filePath);
-              console.log(`Deleted file: ${edit.filePath}`);
-            } else {
-              errors.push(`Failed to delete ${edit.filePath}: ${result.error}`);
-            }
-          } else if (edit.range && edit.newText && currentFileData) {
-            // Modify existing file content
-            const newContent = applyEdits(currentFileData.content, [edit]);
-            const result = await window.electron.fileSystem.writeFile(currentFileData.path, newContent);
-            if (result.success) {
-              modifiedFiles.push(currentFileData.path);
-              console.log(`Modified file: ${currentFileData.path}`);
-            } else {
-              errors.push(`Failed to modify ${currentFileData.path}: ${result.error}`);
-            }
-          } else if (edit.type === 'replace' || edit.type === 'insert' || edit.type === 'delete' || edit.type === 'format' || edit.type === 'refactor') {
-            if (!edit.range || !edit.newText) {
-              errors.push(`Edit operation ${edit.type} requires range and newText properties`);
-            }
-          } else {
-            errors.push(`Invalid edit operation: ${edit.type} - missing required properties`);
-          }
-        } catch (error) {
-          errors.push(`Error processing edit: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      }
+      // Get project root from project context
+      const projectRoot = projectContext?.currentProject?.path;
+      console.log(`🔍 Project root for file operations: ${projectRoot}`);
+      
+      // Use the enhanced service
+      const result = await EnhancedAIEditorService.applyEditsToFiles(edits, projectRoot);
       
       return {
-        success: errors.length === 0,
-        modifiedFiles,
-        errors
+        success: result.success,
+        modifiedFiles: result.modifiedFiles,
+        errors: result.errors
       };
     } catch (error) {
-      errors.push(`Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ Error applying edits:', error);
       return {
         success: false,
-        modifiedFiles,
-        errors
+        modifiedFiles: [],
+        errors: [`Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`]
       };
     }
   };

@@ -148,5 +148,4 @@ When adding new tests:
 
 - `../services/fileWriterService.ts`: Core file writing service
 - `../utils/codeChangeUtils.ts`: Utility functions
-- `../examples/fileWriterUsageExamples.ts`: Usage examples
 - `../AIEditor/services/enhancedAIEditorService.ts`: AI editor service

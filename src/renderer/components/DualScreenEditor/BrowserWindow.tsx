@@ -2,18 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faTimes, 
-  faMinus, 
-  faSquare, 
   faRefresh, 
   faExternalLinkAlt,
   faGlobe,
-  faExpand,
-  faCompress,
   faChevronDown,
   faCircle,
   faSquare as faSquareIcon,
   faCode,
-  faEye
 } from '@fortawesome/free-solid-svg-icons';
 import LocalServer from '../LocalServer';
 import { URLFileViewer } from './URLFileViewer';
@@ -344,9 +339,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const launchExternalBrowser = async (browserType: string, url: string) => {
     try {
       setIsLoading(true);
-      
+
       const result = await (window as any).electron?.browserWindow?.launchExternalBrowser?.(browserType, url);
-      
+
       if (result && result.success) {
         setExternalBrowserProcess(result.process);
         setCurrentUrl(url);
@@ -418,7 +413,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       navigateExternalBrowser(url);
     }
   };
-
+  
   // Create browser window when component becomes visible
   useEffect(() => {
     if (isVisible && !browserWindowId) {
@@ -455,20 +450,10 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
 
   // For embedded mode, show controls but the actual browser window will be separate
   if (embedded) {
-    // Debug logging for server status
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[BrowserWindow] Server status check:', {
-        serverStatus,
-        isRunning: serverStatus?.isRunning,
-        isVisible,
-        embedded
-      });
-    }
     
     // Show server status if not ready
     // Check multiple conditions to determine if server is ready
-    const isServerReady = serverStatus?.isRunning === true || 
-                         (serverStatus && serverStatus.port && serverStatus.url);
+    const isServerReady = serverStatus?.isRunning === true || (serverStatus && serverStatus.port && serverStatus.url);
     
     if (!isServerReady) {
       return (
@@ -597,7 +582,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                       </div>
                     )}
                   </div>
-                  
+
                   <button
                     className="browser-toggle-btn"
                     onClick={() => {
@@ -626,45 +611,12 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                   >
                     <FontAwesomeIcon icon={faExternalLinkAlt} /> System
                   </button>
-                  <button
-                    className="file-viewer-btn"
-                    onClick={() => {
-                      if (onToggleView) {
-                        onToggleView();
-                      }
-                    }}
-                    title="Switch to File Viewer"
-                  >
-                    <FontAwesomeIcon icon={faCode} />
-                    View Files
-                  </button>
                 </div>
               </div>
               
               {/* Compact LocalServer component */}
               <div className="compact-server">
                 <LocalServer onStatusChange={handleServerStatusChange} />
-              </div>
-            </div>
-
-            {/* Browser Navigation Section */}
-            <div className="browser-nav-section">
-              <div className="browser-nav-bar">
-                <div className="nav-controls">
-                  <button className="nav-btn" onClick={refreshPage} title="Refresh" disabled={!browserWindowId}>
-                    <FontAwesomeIcon icon={faRefresh} />
-                  </button>
-                </div>
-                <form onSubmit={handleUrlSubmit} className="url-bar-form">
-                  <input
-                    type="text"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    className="url-input"
-                    placeholder="Enter URL..."
-                  />
-                  <button type="submit" className="go-btn">Go</button>
-                </form>
               </div>
             </div>
 

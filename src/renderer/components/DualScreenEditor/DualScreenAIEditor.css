@@ -799,13 +799,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .conversation-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
 }
 
@@ -818,6 +818,10 @@
   font-weight: 600;
   font-size: 13px;
   color: var(--text-color, #cccccc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
 }
 
 .conversation-stats {
@@ -828,11 +832,11 @@
 .conversation-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .editor-toggle-btn {
-  padding: 4px 8px;
+  padding: 5px 8px;
   background-color: #6f42c1;
   color: white;
   border: none;
@@ -861,7 +865,7 @@
   background: var(--button-bg, #3c3c3c);
   border: 1px solid var(--border-color, #5c5c5c);
   color: var(--text-color, #cccccc);
-  padding: 4px 6px;
+  padding: 5px 6px;
   border-radius: 3px;
   cursor: pointer;
   font-size: 11px;
@@ -869,8 +873,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 24px;
+  min-width: 28px;
+  height: 28px;
 }
 
 .history-btn:hover, .new-conversation-btn:hover {
@@ -889,6 +893,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1;
 }
 
 .context-management-btn {
@@ -912,14 +917,16 @@
 
 
 
-.model-select, .api-key-select {
+.dualscreen-model-select, .api-key-select {
   background: var(--input-bg, #3c3c3c);
   border: 1px solid var(--border-color, #5c5c5c);
   color: var(--text-color, #cccccc);
-  padding: 4px 6px;
-  border-radius: 3px;
-  font-size: 11px;
-  min-width: 120px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  min-width: 140px;
+  flex: 1;
+  max-width: 200px;
 }
 
 .model-select:focus, .api-key-select:focus {
@@ -1292,6 +1299,8 @@
   resize: vertical;
   min-height: 60px;
   max-height: 120px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .instruction-input:focus {
@@ -1307,7 +1316,9 @@
 
 .input-buttons {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 
 .send-btn {
@@ -1398,117 +1409,3 @@
   background-color: transparent;
 }
 
-/* File Writer Test Modal Styles */
-.file-writer-test-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
-}
-
-.file-writer-test-modal {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  max-width: 90vw;
-  max-height: 90vh;
-  width: 800px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: modalSlideIn 0.3s ease-out;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.file-writer-test-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.file-writer-test-header h3 {
-  margin: 0;
-  font-size: 1.4rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.close-test-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.close-test-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: scale(1.1);
-}
-
-.file-writer-test-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.file-writer-test-btn:hover {
-  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .file-writer-test-modal {
-    width: 95vw;
-    max-height: 95vh;
-  }
-
-  .file-writer-test-header {
-    padding: 16px 20px;
-  }
-
-  .file-writer-test-header h3 {
-    font-size: 1.2rem;
-  }
-}

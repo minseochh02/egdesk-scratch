@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import React, { useState, useEffect } from 'react';
 import {
   faFileCode,
   faSearch,
@@ -10,7 +9,7 @@ import {
   faTimes,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
-import { AIEdit } from '../../AIEditor/types';
+import { AIEdit } from '../AIEditor/types';
 import {
   applyCodeChanges,
   validateEdits,
@@ -39,6 +38,21 @@ interface FileWriterTestProps {
 export const FileWriterTest: React.FC<FileWriterTestProps> = ({
   projectContext,
 }) => {
+  // Dynamic import for FontAwesomeIcon to handle ES module compatibility
+  const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
+
+  useEffect(() => {
+    const loadFontAwesome = async () => {
+      try {
+        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        setFontAwesomeIcon(() => FAIcon);
+      } catch (error) {
+        console.warn('Failed to load FontAwesome:', error);
+      }
+    };
+    loadFontAwesome();
+  }, []);
+
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [backupEnabled, setBackupEnabled] = useState(true);
@@ -348,7 +362,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
     <div className="file-writer-test">
       <div className="test-header">
         <h3>
-          <FontAwesomeIcon icon={faFileCode} /> File Writer Test Suite
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faFileCode} />} File Writer Test Suite
         </h3>
         <p>
           Test the enhanced file writing functionality with backup and
@@ -359,7 +373,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           <div
             className={`project-status ${hasProjectContext ? 'loaded' : 'missing'}`}
           >
-            <FontAwesomeIcon icon={hasProjectContext ? faCheck : faTimes} />
+            {FontAwesomeIcon && <FontAwesomeIcon icon={hasProjectContext ? faCheck : faTimes} />}
             <span>
               {hasProjectContext ? 'Project Loaded' : 'No Project Context'}
             </span>
@@ -392,7 +406,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           onClick={clearResults}
           disabled={isRunning}
         >
-          <FontAwesomeIcon icon={faTrash} /> Clear Results
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faTrash} />} Clear Results
         </button>
       </div>
 
@@ -407,7 +421,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               : 'Test search and replace functionality'
           }
         >
-          <FontAwesomeIcon icon={faSearch} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faSearch} />}
           Search & Replace
         </button>
 
@@ -421,7 +435,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               : 'Test file creation functionality'
           }
         >
-          <FontAwesomeIcon icon={faPlus} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faPlus} />}
           Create File
         </button>
 
@@ -435,7 +449,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               : 'Test replacing the product selection form'
           }
         >
-          <FontAwesomeIcon icon={faFileCode} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faFileCode} />}
           Replace Product Form
         </button>
 
@@ -445,7 +459,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           disabled={isRunning}
           title="Test edit validation system"
         >
-          <FontAwesomeIcon icon={faCheck} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />}
           Validation
         </button>
 
@@ -459,7 +473,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               : 'Test backup creation functionality'
           }
         >
-          <FontAwesomeIcon icon={faRocket} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />}
           Backup
         </button>
 
@@ -469,7 +483,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           disabled={isRunning}
           title="Test service configuration changes"
         >
-          <FontAwesomeIcon icon={faRocket} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />}
           Configuration
         </button>
 
@@ -483,7 +497,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               : 'Test error handling and recovery'
           }
         >
-          <FontAwesomeIcon icon={faExclamationTriangle} />
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faExclamationTriangle} />}
           Error Handling
         </button>
       </div>
@@ -494,7 +508,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           <div className="no-results">
             {!hasProjectContext ? (
               <div className="project-warning">
-                <FontAwesomeIcon icon={faExclamationTriangle} />
+                {FontAwesomeIcon && <FontAwesomeIcon icon={faExclamationTriangle} />}
                 <strong>Project Context Required</strong>
                 <p>
                   Most tests require a loaded project to function properly.
@@ -520,9 +534,9 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
                 <div className="result-header">
                   <span className="result-icon">
                     {result.success ? (
-                      <FontAwesomeIcon icon={faCheck} />
+                      FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />
                     ) : (
-                      <FontAwesomeIcon icon={faTimes} />
+                      FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />
                     )}
                   </span>
                   <span className="result-time">
