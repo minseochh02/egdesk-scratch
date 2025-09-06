@@ -1,4 +1,28 @@
 /**
+ * Utility function to open localhost URL only if no existing browser windows are open
+ */
+export const openLocalhostIfNeeded = async (url: string = 'http://localhost:8000'): Promise<void> => {
+  try {
+    // Check if there are any existing browser windows
+    if (window.electron && window.electron.browserWindow) {
+      const result = await window.electron.browserWindow.getAllLocalhostWindows();
+      if (result.success && result.windows && result.windows.length > 0) {
+        console.log(`🔄 Found ${result.windows.length} existing browser window(s), refreshing instead of opening new one`);
+        return; // Don't open a new window if existing ones are found
+      }
+    }
+    
+    // Only open new window if no existing browser windows found
+    window.open(url, '_blank');
+    console.log(`🌐 Opened ${url} to show applied changes`);
+  } catch (error) {
+    console.warn('⚠️ Could not check for existing browser windows, opening new one:', error);
+    window.open(url, '_blank');
+    console.log(`🌐 Opened ${url} to show applied changes`);
+  }
+};
+
+/**
  * Function to refresh browser windows showing localhost
  */
 export const refreshBrowserWindows = async (): Promise<void> => {
@@ -83,11 +107,10 @@ export const restartServer = async (
           // Refresh any existing browser windows showing localhost
           await refreshBrowserWindows();
           
-          // Open the URL to show changes (as backup)
+          // Only open a new browser window if no existing browser windows are open
           const url = `http://localhost:${startResult.port || 8000}`;
           setTimeout(() => {
-            window.open(url, '_blank');
-            console.log(`🌐 Opened ${url} to show applied changes`);
+            openLocalhostIfNeeded(url);
           }, 2000); // Wait 2 seconds for server to fully start
           
           return { success: true, url };
@@ -100,13 +123,13 @@ export const restartServer = async (
         return { success: false, error: stopResult.error };
       }
     } else {
-      console.log('ℹ️ Not in Electron environment, opening localhost:8000 directly');
+      console.log('ℹ️ Not in Electron environment, checking for existing browser windows before opening new one');
       
       // Still try to refresh existing browser windows
       await refreshBrowserWindows();
       
       setTimeout(() => {
-        window.open('http://localhost:8000', '_blank');
+        openLocalhostIfNeeded('http://localhost:8000');
       }, 1000);
       return { success: true, url: 'http://localhost:8000' };
     }

@@ -4,7 +4,7 @@ import { conversationStore } from '../AIEditor/store/conversationStore';
 import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
 import { useDualScreenAIEditor } from './hooks/useDualScreenAIEditor';
 import { parseSearchReplaceOperations, loadFileForEdit, applyEditsToFiles } from './utils/fileOperations';
-import { restartServer } from './utils/serverOperations';
+import { restartServer, openLocalhostIfNeeded } from './utils/serverOperations';
 import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
 
 // Import sub-components
@@ -418,7 +418,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
                     // Still try to open localhost:8000 as fallback
                     console.log('🔄 Opening fallback localhost:8000...');
                     setTimeout(() => {
-                      window.open('http://localhost:8000', '_blank');
+                      openLocalhostIfNeeded('http://localhost:8000');
                     }, 1000);
                   }
                 } catch (serverError) {
@@ -426,24 +426,12 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
                   // Fallback to opening localhost directly
                   console.log('🔄 Opening fallback localhost:8000 due to server error...');
                   setTimeout(() => {
-                    window.open('http://localhost:8000', '_blank');
+                    openLocalhostIfNeeded('http://localhost:8000');
                   }, 1000);
                 }
                 
-                // Clear the response AFTER server restart and browser refresh are complete
-                console.log('🔍 DEBUG: Clearing AI response after server restart and browser refresh');
-                
-                // Console log for AI response clearing after successful application
-                console.log('✅ AI RESPONSE CLEARED AFTER SUCCESSFUL APPLICATION:', {
-                  hadResponse: !!responseToApply,
-                  responseSuccess: responseToApply?.success,
-                  editsCount: responseToApply?.edits.length || 0,
-                  modifiedFilesCount: result.modifiedFiles.length,
-                  timestamp: new Date().toISOString()
-                });
-                
-                setAiResponse(null);
-                setShowPreview(false);
+                // Keep AI response visible after successful application
+                console.log('✅ Edits applied successfully, keeping AI response visible for user review');
                 
               } else {
                 console.error('❌ Failed to apply edits:', result.errors);
@@ -560,22 +548,19 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             console.warn('⚠️ Changes applied but server restart failed:', serverResult.error);
             // Still try to open localhost:8000 as fallback
             setTimeout(() => {
-              window.open('http://localhost:8000', '_blank');
+              openLocalhostIfNeeded('http://localhost:8000');
             }, 1000);
           }
         } catch (serverError) {
           console.error('❌ Server restart threw an error:', serverError);
           // Fallback to opening localhost directly
           setTimeout(() => {
-            window.open('http://localhost:8000', '_blank');
+            openLocalhostIfNeeded('http://localhost:8000');
           }, 1000);
         }
         
-        // Clear the response AFTER server restart and browser refresh are complete
-        console.log('🔍 DEBUG: Clearing AI response after manual apply');
-        
-        setAiResponse(null);
-        setShowPreview(false);
+        // Keep AI response visible after successful manual application
+        console.log('✅ Manual edits applied successfully, keeping AI response visible for user review');
         
       } else {
         console.error('❌ Failed to apply edits:', result.errors);

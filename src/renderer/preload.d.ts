@@ -55,6 +55,7 @@ export interface IElectronAPI {
     loadURL(windowId: number, url: string): Promise<{ success: boolean; error?: string }>;
     reload(windowId: number): Promise<{ success: boolean; error?: string }>;
     refreshAllLocalhost(): Promise<{ success: boolean; refreshedCount?: number; error?: string }>;
+    getAllLocalhostWindows(): Promise<{ success: boolean; windows?: Array<{ windowId: number; url: string; isVisible: boolean }>; error?: string }>;
     launchExternalBrowser(browserType: string, url: string): Promise<{ success: boolean; process?: any; error?: string }>;
     closeExternalBrowser(pid: number): Promise<{ success: boolean; error?: string }>;
     navigateExternalBrowser(pid: number, url: string): Promise<{ success: boolean; error?: string }>;

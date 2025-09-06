@@ -233,6 +233,7 @@ const electronHandler = {
     loadURL: (windowId: number, url: string) => ipcRenderer.invoke('browser-window-load-url', windowId, url),
     reload: (windowId: number) => ipcRenderer.invoke('browser-window-reload', windowId),
     refreshAllLocalhost: () => ipcRenderer.invoke('browser-window-refresh-all-localhost'),
+    getAllLocalhostWindows: () => ipcRenderer.invoke('browser-window-get-all-localhost'),
     launchExternalBrowser: (browserType: string, url: string) => ipcRenderer.invoke('browser-window-launch-external', browserType, url),
     closeExternalBrowser: (pid: number) => ipcRenderer.invoke('browser-window-close-external', pid),
     navigateExternalBrowser: (pid: number, url: string) => ipcRenderer.invoke('browser-window-navigate-external', pid, url),
