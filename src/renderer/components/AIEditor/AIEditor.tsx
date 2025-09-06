@@ -92,7 +92,7 @@ export const AIEditor: React.FC<AIEditorProps> = ({
     provider: 'openai',
     model: 'gpt-3.5-turbo',
     temperature: 0.3,
-    maxTokens: 2000,
+    maxTokens: 4096,
     systemPrompt: `You are an expert coding assistant whose job is to help the user develop, run, and make changes to their codebase.
 
 You will be given instructions to follow from the user, and you may also be given context about files and the project structure.

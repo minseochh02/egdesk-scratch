@@ -46,8 +46,8 @@ The Intelligent Context Management System automatically gathers, prioritizes, an
 
 ```typescript
 {
-  maxTotalTokens: 8000,        // Total context window size
-  reservedOutputTokens: 4000,  // 50% reserved for AI response
+  maxTotalTokens: 128000,      // Input context window (what model can process)
+  reservedOutputTokens: 4096,  // Output token limit (what model can generate)
   maxSnippetLines: 7,          // Max lines per code snippet
   maxDepth: 3,                 // Max dependency traversal depth
   maxFileSize: 100000,         // Max characters per file
@@ -57,8 +57,8 @@ The Intelligent Context Management System automatically gathers, prioritizes, an
 
 ### Key Parameters
 
-- **Max Total Tokens**: Controls the overall context window size
-- **Reserved Output Tokens**: Ensures AI has space to respond (Void uses 50%)
+- **Max Total Tokens**: Controls the input context window size (what the model can process)
+- **Reserved Output Tokens**: Maximum tokens the model can generate in response
 - **Max Snippet Lines**: Limits individual snippet size for manageability
 - **Max Depth**: Prevents infinite dependency traversal
 - **Max File Size**: Prevents extremely large files from dominating context

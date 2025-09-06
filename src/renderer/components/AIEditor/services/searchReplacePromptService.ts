@@ -51,7 +51,7 @@ export class SearchReplacePromptService {
       // Send to AI provider
       const response = await this.sendToProvider(aiKey, model, prompt, {
         temperature: 0.1, // Very low temperature for precise text matching
-        maxTokens: 2000
+        maxTokens: 4096
       });
       
       if (!response.success) {

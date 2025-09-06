@@ -19,7 +19,7 @@ export const IterativeReadingStatus: React.FC<IterativeReadingStatusProps> = ({
       <div className="message-content">
         <div className="response-header">
           <span className="response-title">
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faFile} />} Iterative File Reading
+            📄 Iterative File Reading
           </span>
         </div>
         

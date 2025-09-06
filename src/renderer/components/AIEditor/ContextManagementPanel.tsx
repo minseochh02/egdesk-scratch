@@ -14,8 +14,8 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
   onClose
 }) => {
   const [config, setConfig] = useState({
-    maxTotalTokens: 8000,
-    reservedOutputTokens: 4000,
+    maxTotalTokens: 128000, // Input context window
+    reservedOutputTokens: 4096, // Output token limit
     maxSnippetLines: 7,
     maxDepth: 3,
     maxFileSize: 100000,
@@ -79,16 +79,16 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
           
           <div className="config-group">
             <label>
-              Max Total Tokens: {config.maxTotalTokens.toLocaleString()}
+              Max Input Context: {config.maxTotalTokens.toLocaleString()} tokens
               <span className="config-help">
-                Maximum total tokens for the entire AI request
+                Maximum input context window (what the model can process)
               </span>
             </label>
             <input
               type="range"
               min="4000"
-              max="16000"
-              step="1000"
+              max="1000000"
+              step="10000"
               value={config.maxTotalTokens}
               onChange={(e) => handleConfigChange('maxTotalTokens', parseInt(e.target.value))}
             />
@@ -96,16 +96,16 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({
 
           <div className="config-group">
             <label>
-              Reserved Output Tokens: {config.reservedOutputTokens.toLocaleString()} ({getReservedPercentage()}%)
+              Max Output Tokens: {config.reservedOutputTokens.toLocaleString()} tokens
               <span className="config-help">
-                Tokens reserved for AI response (Void uses 50%)
+                Maximum tokens the model can generate in response (varies by model)
               </span>
             </label>
             <input
               type="range"
-              min="2000"
-              max={config.maxTotalTokens - 2000}
-              step="500"
+              min="1000"
+              max="65535"
+              step="1000"
               value={config.reservedOutputTokens}
               onChange={(e) => handleConfigChange('reservedOutputTokens', parseInt(e.target.value))}
             />

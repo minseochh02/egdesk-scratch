@@ -94,7 +94,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gpt-4',
         name: 'GPT-4',
         provider: 'openai',
-        maxTokens: 8192,
+        maxTokens: 4096, // Max output tokens (context: 8K-32K)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.03, output: 0.06 }
@@ -103,7 +103,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gpt-4-turbo',
         name: 'GPT-4 Turbo',
         provider: 'openai',
-        maxTokens: 128000,
+        maxTokens: 4096, // Max output tokens (context: 128K)
         supportsChat: true,
         supportsImages: true,
         pricing: { input: 0.01, output: 0.03 }
@@ -112,7 +112,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gpt-3.5-turbo',
         name: 'GPT-3.5 Turbo',
         provider: 'openai',
-        maxTokens: 16385,
+        maxTokens: 4096, // Max output tokens (context: 16K)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0015, output: 0.002 }
@@ -131,7 +131,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'claude-3-opus',
         name: 'Claude 3 Opus',
         provider: 'anthropic',
-        maxTokens: 200000,
+        maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
         pricing: { input: 0.015, output: 0.075 }
@@ -140,7 +140,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'claude-3-sonnet',
         name: 'Claude 3 Sonnet',
         provider: 'anthropic',
-        maxTokens: 200000,
+        maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
         pricing: { input: 0.003, output: 0.015 }
@@ -149,7 +149,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'claude-3-haiku',
         name: 'Claude 3 Haiku',
         provider: 'anthropic',
-        maxTokens: 200000,
+        maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
         pricing: { input: 0.00025, output: 0.00125 }
@@ -168,7 +168,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gemini-2.5-flash',
         name: 'Gemini 2.5 Flash',
         provider: 'google',
-        maxTokens: 1000000,
+        maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
@@ -177,7 +177,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gemini-2.5-flash-lite',
         name: 'Gemini 2.5 Flash Lite',
         provider: 'google',
-        maxTokens: 1000000,
+        maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
@@ -186,7 +186,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gemini-2.5-pro',
         name: 'Gemini 2.5 Pro',
         provider: 'google',
-        maxTokens: 1000000,
+        maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
@@ -195,7 +195,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gemini-1.5-flash-latest',
         name: 'Gemini 1.5 Flash',
         provider: 'google',
-        maxTokens: 1000000,
+        maxTokens: 8192, // Max output tokens (context: 1M)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
@@ -204,7 +204,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         id: 'gemini-1.5-pro',
         name: 'Gemini 1.5 Pro',
         provider: 'google',
-        maxTokens: 1000000,
+        maxTokens: 8192, // Max output tokens (context: 1M)
         supportsChat: true,
         supportsImages: false,
         pricing: { input: 0.0005, output: 0.0015 }
