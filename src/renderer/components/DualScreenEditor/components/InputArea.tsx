@@ -32,6 +32,15 @@ export const InputArea: React.FC<InputAreaProps> = ({
   canSend,
   FontAwesomeIcon
 }) => {
+  // Debug logging for canSend state
+  console.log('🔍 DEBUG: InputArea canSend state', {
+    canSend,
+    selectedKey: !!selectedKey,
+    selectedModel,
+    userInstruction: userInstruction.trim(),
+    isLoading,
+    isStreaming
+  });
   const instructionInputRef = useRef<HTMLTextAreaElement>(null);
 
   return (
