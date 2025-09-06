@@ -11,7 +11,7 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({ error, onRetry, Font
   return (
     <div className="message error-message">
       <div className="message-content">
-        <p>{FontAwesomeIcon && <FontAwesomeIcon icon={faExclamationTriangle} />} {error}</p>
+        <p>⚠️ {error}</p>
         <button onClick={onRetry} className="retry-btn">Try Again</button>
       </div>
     </div>

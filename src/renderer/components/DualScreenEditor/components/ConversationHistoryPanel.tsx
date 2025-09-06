@@ -26,12 +26,12 @@ export const ConversationHistoryPanel: React.FC<ConversationHistoryPanelProps> =
   return (
     <div className="conversation-history-panel">
       <div className="history-header">
-        <h4>{FontAwesomeIcon && <FontAwesomeIcon icon={faComments} />} Conversation History</h4>
+        <h4>💬 Conversation History</h4>
         <button
           className="close-history-btn"
           onClick={onClose}
         >
-          {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
+          ✕
         </button>
       </div>
       

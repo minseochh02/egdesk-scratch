@@ -20,7 +20,13 @@ export const useDualScreenAIEditor = (
   } | null
 ) => {
   // Dynamic import for FontAwesomeIcon to handle ES module compatibility
-  const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
+  const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(() => {
+    // Return a fallback component that renders nothing but doesn't break React
+    return ({ icon, ...props }: any) => {
+      // Return null for now - this will be replaced with actual FontAwesome when loaded
+      return null;
+    };
+  });
 
   useEffect(() => {
     const loadFontAwesome = async () => {
@@ -29,6 +35,7 @@ export const useDualScreenAIEditor = (
         setFontAwesomeIcon(() => FAIcon);
       } catch (error) {
         console.warn('Failed to load FontAwesome:', error);
+        // Keep the fallback component if loading fails
       }
     };
     loadFontAwesome();

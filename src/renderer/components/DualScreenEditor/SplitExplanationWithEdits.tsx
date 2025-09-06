@@ -2,7 +2,6 @@ import React from 'react';
 import { AIEdit } from '../AIEditor/types';
 import { CodeEditBlock } from '../AIEditor/CodeEditBlock';
 import { MessageContent } from '../ChatInterface/components';
-import { SearchReplacePositioningService } from '../AIEditor/services/searchReplacePositioningService';
 
 // Component to split AI explanation and show edits in the middle
 interface SplitExplanationWithEditsProps {
@@ -29,22 +28,48 @@ export const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps>
   onApply,
   autoApplied = false
 }) => {
-  // Use the new positioning service to properly position search-replace blocks
+  // Use search-replace blocks as positioning markers instead of removing them
   const splitExplanation = (text: string) => {
-    console.log('🔍 DEBUG: Using SearchReplacePositioningService for text splitting');
+    console.log('🔍 DEBUG: Using search-replace blocks as positioning markers');
 
-    const positioningService = SearchReplacePositioningService.getInstance();
-    const result = positioningService.repositionSearchReplaceBlocks(text);
+    // Find all search-replace blocks and their positions
+    const searchReplaceBlockRegex = /```search-replace[\s\S]*?```/g;
+    const blocks = [];
+    let match;
+    
+    while ((match = searchReplaceBlockRegex.exec(text)) !== null) {
+      blocks.push({
+        block: match[0],
+        start: match.index,
+        end: match.index + match[0].length
+      });
+    }
+    
+    console.log(`🔍 Found ${blocks.length} search-replace blocks for positioning`);
 
-    console.log('🔍 DEBUG: SearchReplacePositioningService result', {
-      beforeLength: result.before.length,
-      afterLength: result.after.length,
-      searchReplaceBlocksCount: result.searchReplaceBlocks.length
+    if (blocks.length === 0) {
+      // No search-replace blocks, return original text
+      return {
+        before: text,
+        after: ''
+      };
+    }
+    
+    // Find the first search-replace block to split around
+    const firstBlock = blocks[0];
+    const beforeText = text.substring(0, firstBlock.start).trim();
+    const afterText = text.substring(firstBlock.end).trim();
+    
+    console.log('📍 Positioning information:', {
+      beforeLength: beforeText.length,
+      afterLength: afterText.length,
+      firstBlockPosition: `${firstBlock.start}-${firstBlock.end}`,
+      totalBlocks: blocks.length
     });
 
     return {
-      before: result.before,
-      after: result.after
+      before: beforeText,
+      after: afterText
     };
   };
 

@@ -40,7 +40,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
             }}
             title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
           >
-            {isEditing ? <>{FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />} Server</> : <>{FontAwesomeIcon && <FontAwesomeIcon icon={faEdit} />} Editor</>}
+            {isEditing ? <>Server</> : <>Editor</>}
           </button>
         )}
         <button
@@ -48,7 +48,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
           onClick={onShowHistory}
           title="Show conversation history"
         >
-          {FontAwesomeIcon && <FontAwesomeIcon icon={faBook} />}
+          📚
         </button>
         
         {currentConversation && (
@@ -57,7 +57,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
             onClick={onNewConversation}
             title="Start new conversation"
           >
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faPlus} />}
+            ➕
           </button>
         )}
       </div>

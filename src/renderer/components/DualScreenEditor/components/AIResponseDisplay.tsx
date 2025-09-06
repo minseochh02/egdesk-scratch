@@ -31,7 +31,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
       <div className="message-content">
         <div className="response-header">
           <span className="response-title">
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faRobot} />} AI Response
+            🤖 AI Response
           </span>
           {/* Only show edit actions if there are actual code edits */}
           {aiResponse.edits.length > 0 && (
@@ -40,7 +40,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
                 {showPreview ? 'Hide' : 'Preview'}
               </button>
               <div className="auto-applied-indicator">
-                {FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />} Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
+                ✅ Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
               </div>
             </div>
           )}
@@ -80,7 +80,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
         {/* Show message when there are no edits */}
         {aiResponse.edits.length === 0 && (
           <div className="no-edits-message">
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faComments} />} This is a conversational response with no code changes to apply.
+            💬 This is a conversational response with no code changes to apply.
           </div>
         )}
 
