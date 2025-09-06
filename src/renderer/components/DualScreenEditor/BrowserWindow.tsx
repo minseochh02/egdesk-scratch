@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+// Dynamic import for FontAwesomeIcon to handle ES module compatibility
 import { 
   faTimes, 
   faRefresh, 
@@ -66,6 +66,21 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const [selectedBrowser, setSelectedBrowser] = useState<string>('electron');
   const [externalBrowserProcess, setExternalBrowserProcess] = useState<any>(null);
   const [showBrowserDropdown, setShowBrowserDropdown] = useState(false);
+  
+  // Dynamic import for FontAwesomeIcon to handle ES module compatibility
+  const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
+
+  useEffect(() => {
+    const loadFontAwesome = async () => {
+      try {
+        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        setFontAwesomeIcon(() => FAIcon);
+      } catch (error) {
+        console.warn('Failed to load FontAwesome:', error);
+      }
+    };
+    loadFontAwesome();
+  }, []);
   
   const windowRef = useRef<HTMLDivElement>(null);
 
@@ -481,7 +496,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
             <div className="file-viewer-header">
               <div className="file-viewer-controls">
                 <h3>
-                  <FontAwesomeIcon icon={faCode} />
+                  {FontAwesomeIcon && <FontAwesomeIcon icon={faCode} />}
                   Route Files
                 </h3>
                 <div className="file-viewer-actions">
@@ -494,7 +509,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                     }}
                     title="Switch to Browser View"
                   >
-                    <FontAwesomeIcon icon={faGlobe} />
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />}
                     Browser View
                   </button>
                 </div>
@@ -525,7 +540,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                     >
                       <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
                       <span>{getBrowserName(selectedBrowser)}</span>
-                      <FontAwesomeIcon icon={faChevronDown} />
+                      {FontAwesomeIcon && <FontAwesomeIcon icon={faChevronDown} />}
                     </button>
                     {showBrowserDropdown && (
                       <div className="browser-dropdown">
@@ -536,7 +551,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          <FontAwesomeIcon icon={faGlobe} />
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />}
                           <span>Electron</span>
                         </button>
                         <button
@@ -546,7 +561,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          <FontAwesomeIcon icon={faCircle} />
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faCircle} />}
                           <span>Chrome</span>
                         </button>
                         <button
@@ -556,7 +571,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          <FontAwesomeIcon icon={faSquareIcon} />
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faSquareIcon} />}
                           <span>Firefox</span>
                         </button>
                         <button
@@ -566,7 +581,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          <FontAwesomeIcon icon={faCircle} />
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faCircle} />}
                           <span>Safari</span>
                         </button>
                         <button
@@ -576,7 +591,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          <FontAwesomeIcon icon={faSquareIcon} />
+                          {FontAwesomeIcon && <FontAwesomeIcon icon={faSquareIcon} />}
                           <span>Edge</span>
                         </button>
                       </div>
@@ -602,14 +617,14 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                     title="Refresh browser"
                     disabled={!browserWindowId && !externalBrowserProcess}
                   >
-                    <FontAwesomeIcon icon={faRefresh} /> Refresh
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faRefresh} />} Refresh
                   </button>
                   <button
                     className="external-btn"
                     onClick={openInExternalBrowser}
                     title="Open in system default browser"
                   >
-                    <FontAwesomeIcon icon={faExternalLinkAlt} /> System
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faExternalLinkAlt} />} System
                   </button>
                 </div>
               </div>
@@ -631,7 +646,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
               {browserWindowId && (
                 <div className="browser-status-info">
                   <span className="status-text">
-                    <FontAwesomeIcon icon={faGlobe} />
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />}
                     Electron browser window is open
                   </span>
                   <span className="current-url">{currentUrl}</span>
@@ -666,11 +681,11 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
           <div className="title-bar-left">
             <div className="window-controls">
               <button className="window-control close" onClick={closeBrowserWindow}>
-                <FontAwesomeIcon icon={faTimes} />
+                {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
               </button>
             </div>
             <div className="window-title">
-              <FontAwesomeIcon icon={faGlobe} />
+              {FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />}
               <span>{title}</span>
             </div>
           </div>
