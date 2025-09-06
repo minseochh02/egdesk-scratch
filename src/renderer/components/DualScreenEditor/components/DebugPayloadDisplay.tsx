@@ -21,22 +21,22 @@ export const DebugPayloadDisplay: React.FC<DebugPayloadDisplayProps> = ({
       <div className="message-content">
         <div className="response-header">
           <span className="response-title">
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faBug} />} Debug Payload
+            🐛 Debug Payload
           </span>
           <div className="response-actions">
             <button 
               onClick={onClose}
               className="close-btn"
             >
-              {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
+              ✕
             </button>
           </div>
         </div>
         
         <div className="debug-payload-content">
           <h4>Enhanced Context: {debugPayload.enhancedContext ? 
-            <>{FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />} Yes</> : 
-            <>{FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />} No</>}
+            <>✅ Yes</> : 
+            <>❌ No</>}
           </h4>
           
           <details open>
@@ -68,7 +68,7 @@ export const DebugPayloadDisplay: React.FC<DebugPayloadDisplayProps> = ({
             }}
             className="send-anyway-btn"
           >
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />} Send to AI Anyway
+            🚀 Send to AI Anyway
           </button>
         </div>
       </div>

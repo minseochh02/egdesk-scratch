@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { AIKey } from '../../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../../ChatInterface/types';
-import { faClock, faRocket } from '@fortawesome/free-solid-svg-icons';
+import { faClock, faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
 
 interface InputAreaProps {
   userInstruction: string;
@@ -14,6 +14,7 @@ interface InputAreaProps {
   isLoading: boolean;
   isStreaming: boolean;
   onSend: () => void;
+  onStop: () => void;
   canSend: boolean;
   FontAwesomeIcon: any;
 }
@@ -29,6 +30,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
   isLoading,
   isStreaming,
   onSend,
+  onStop,
   canSend,
   FontAwesomeIcon
 }) => {
@@ -102,16 +104,24 @@ export const InputArea: React.FC<InputAreaProps> = ({
             </select>
           </div>
           
-          <button 
-            className="send-btn"
-            onClick={onSend}
-            disabled={!canSend}
-          >
-            {isLoading || isStreaming ? 
-              (FontAwesomeIcon && <FontAwesomeIcon icon={faClock} />) : 
-              (FontAwesomeIcon && <FontAwesomeIcon icon={faRocket} />)
-            }
-          </button>
+          {isLoading || isStreaming ? (
+            <button 
+              className="stop-btn"
+              onClick={onStop}
+              title="Stop AI request"
+            >
+              <FontAwesomeIcon icon={faStop} />
+            </button>
+          ) : (
+            <button 
+              className="send-btn"
+              onClick={onSend}
+              disabled={!canSend}
+              title="Send request"
+            >
+              <FontAwesomeIcon icon={faRocket} />
+            </button>
+          )}
         </div>
       </div>
     </div>

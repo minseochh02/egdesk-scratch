@@ -307,9 +307,19 @@ export class FileWriterService {
       return { success: false, content, error: 'Replace edit missing oldText or newText' };
     }
 
+    console.log('🔧 Attempting replace edit:', {
+      oldTextLength: edit.oldText.length,
+      newTextLength: edit.newText.length,
+      oldTextPreview: edit.oldText.substring(0, 100),
+      newTextPreview: edit.newText.substring(0, 100),
+      contentLength: content.length,
+      contentIncludes: content.includes(edit.oldText)
+    });
+
     // Try exact string replacement first
     if (content.includes(edit.oldText)) {
       const newContent = content.replace(edit.oldText, edit.newText);
+      console.log('✅ Exact string replacement successful');
       return { success: true, content: newContent };
     }
 
@@ -330,6 +340,12 @@ export class FileWriterService {
       }
     }
 
+    console.warn('❌ Replace edit failed - text not found:', {
+      searchText: edit.oldText?.substring(0, 100),
+      hasRange: !!edit.range,
+      startLine: edit.range?.startLine,
+      endLine: edit.range?.endLine
+    });
     return { success: false, content, error: `Could not find text to replace: "${edit.oldText?.substring(0, 50)}..."` };
   }
 

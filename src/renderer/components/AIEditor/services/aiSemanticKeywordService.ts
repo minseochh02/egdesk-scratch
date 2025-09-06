@@ -62,7 +62,7 @@ export class AISemanticKeywordService {
       // Send to AI provider
       const response = await this.sendToProvider(aiKey, model, prompt, {
         temperature: 0.3, // Lower temperature for more consistent keyword generation
-        maxTokens: 1000
+        maxTokens: 4096
       });
       
       if (!response.success) {

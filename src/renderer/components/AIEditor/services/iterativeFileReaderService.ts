@@ -62,6 +62,7 @@ export class IterativeFileReaderService {
     content: string;
     timestamp: Date;
   }> = [];
+  private currentAbortController: AbortController | null = null;
 
   private constructor() {}
 
@@ -87,13 +88,21 @@ export class IterativeFileReaderService {
       name: string;
       content: string;
       language: string;
-    }> = []
+    }> = [],
+    abortController?: AbortController
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
     error?: string;
   }> {
     try {
+      // Use provided abort controller or create a new one
+      if (abortController) {
+        this.currentAbortController = abortController;
+      } else {
+        this.currentAbortController = new AbortController();
+      }
+
       // Initialize state
       this.currentState = {
         phase: 'discovery',
@@ -164,7 +173,8 @@ export class IterativeFileReaderService {
   async continueIterativeReading(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
+    abortController?: AbortController
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -180,6 +190,19 @@ export class IterativeFileReaderService {
           confidence: 0
         },
         error: 'No active reading session'
+      };
+    }
+
+    // Check if request was cancelled
+    if (this.currentAbortController?.signal.aborted) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Request was cancelled',
+          confidence: 0
+        },
+        error: 'Request was cancelled'
       };
     }
 
@@ -265,7 +288,7 @@ Remember: You will be making actual code changes to these files. Select files th
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {
         temperature: 0.3,
-        maxTokens: 1000
+        maxTokens: 4096
       });
 
       if (!response.success) {
@@ -735,7 +758,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {
         temperature: 0.3,
-        maxTokens: 3000
+        maxTokens: 4096
       });
 
       if (!response.success) {
@@ -863,6 +886,11 @@ Remember: You are responsible for making the code changes. Provide search/replac
     options: { temperature: number; maxTokens: number }
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
+      // Only create a new abort controller if one doesn't exist
+      if (!this.currentAbortController) {
+        this.currentAbortController = new AbortController();
+      }
+      
       const provider = aiKey.providerId;
       
       switch (provider) {
@@ -883,11 +911,18 @@ Remember: You are responsible for making the code changes. Provide search/replac
           };
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Request was cancelled'
+        };
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+    // Don't clear the abort controller here - keep it for the entire iterative process
   }
 
   /**
@@ -912,7 +947,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
           temperature: config.temperature,
           max_tokens: config.maxTokens,
           stream: false
-        })
+        }),
+        signal: this.currentAbortController?.signal
       });
 
       if (!response.ok) {
@@ -957,7 +993,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
           max_tokens: config.maxTokens,
           temperature: config.temperature,
           messages: [{ role: 'user', content: prompt }]
-        })
+        }),
+        signal: this.currentAbortController?.signal
       });
 
       if (!response.ok) {
@@ -1005,7 +1042,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
             temperature: config.temperature,
             maxOutputTokens: config.maxTokens
           }
-        })
+        }),
+        signal: this.currentAbortController?.signal
       });
 
       if (!response.ok) {
@@ -1056,7 +1094,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
           temperature: config.temperature,
           max_tokens: config.maxTokens,
           stream: false
-        })
+        }),
+        signal: this.currentAbortController?.signal
       });
 
       if (!response.ok) {
@@ -1109,7 +1148,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
           temperature: config.temperature,
           max_tokens: config.maxTokens,
           stream: false
-        })
+        }),
+        signal: this.currentAbortController?.signal
       });
 
       if (!response.ok) {
@@ -1140,6 +1180,13 @@ Remember: You are responsible for making the code changes. Provide search/replac
   }
 
   /**
+   * Get current abort controller
+   */
+  getCurrentAbortController(): AbortController | null {
+    return this.currentAbortController;
+  }
+
+  /**
    * Get conversation history
    */
   getConversationHistory(): Array<{
@@ -1151,10 +1198,23 @@ Remember: You are responsible for making the code changes. Provide search/replac
   }
 
   /**
+   * Cancel the current AI request
+   */
+  cancel(): void {
+    if (this.currentAbortController) {
+      console.log('🛑 IterativeFileReaderService: Aborting current request...');
+      this.currentAbortController.abort();
+      this.currentAbortController = null;
+    }
+  }
+
+  /**
    * Reset the service state
    */
   reset(): void {
+    this.cancel(); // Cancel any ongoing requests
     this.currentState = null;
     this.conversationHistory = [];
+    this.currentAbortController = null; // Clear the abort controller on full reset
   }
 }

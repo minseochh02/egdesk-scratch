@@ -1349,6 +1349,32 @@
   cursor: not-allowed;
 }
 
+.stop-btn {
+  background: #dc3545;
+  border: 1px solid #dc3545;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 32px;
+}
+
+.stop-btn:hover {
+  background: #c82333;
+  border-color: #bd2130;
+  transform: scale(1.05);
+}
+
+.stop-btn:active {
+  transform: scale(0.95);
+}
+
 /* Scrollbar Styling */
 .chat-messages::-webkit-scrollbar,
 .conversation-list::-webkit-scrollbar,

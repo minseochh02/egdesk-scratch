@@ -27,15 +27,18 @@ export const useDualScreenAIEditor = (
       return null;
     };
   });
+  const [isFontAwesomeLoaded, setIsFontAwesomeLoaded] = useState(false);
 
   useEffect(() => {
     const loadFontAwesome = async () => {
       try {
         const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
         setFontAwesomeIcon(() => FAIcon);
+        setIsFontAwesomeLoaded(true);
       } catch (error) {
         console.warn('Failed to load FontAwesome:', error);
         // Keep the fallback component if loading fails
+        setIsFontAwesomeLoaded(true); // Still set to true to prevent blocking
       }
     };
     loadFontAwesome();
@@ -44,6 +47,7 @@ export const useDualScreenAIEditor = (
   const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
   const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
+  const [isInitialized, setIsInitialized] = useState(false);
   const [userInstruction, setUserInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState<AIEditResponse | null>(null);
@@ -90,11 +94,14 @@ export const useDualScreenAIEditor = (
   const [isIterativeReading, setIsIterativeReading] = useState(false);
   const [iterativeReadingState, setIterativeReadingState] = useState<any>(null);
   
+  // Abort controller for canceling AI requests
+  const [currentAbortController, setCurrentAbortController] = useState<AbortController | null>(null);
+  
   const [config, setConfig] = useState<AIEditorConfig>({
     provider: 'openai',
     model: 'gpt-4o-mini',
     temperature: 0.3,
-    maxTokens: 2000,
+    maxTokens: 4096,
     systemPrompt: `You are an expert coding assistant whose job is to help the user develop, run, and make changes to their codebase.
 
 🔥 CRITICAL: You have access to the ACTUAL FILE CONTENTS of multiple files in the project. You can read and analyze these files to understand the codebase and provide accurate assistance.
@@ -191,11 +198,29 @@ CODE BLOCK FORMAT (for suggestions):
   // Subscribe to AI keys store
   useEffect(() => {
     const unsubscribe = aiKeysStore.subscribe((keyState) => {
-      setAiKeys(keyState.keys.filter(key => key.isActive));
+      const activeKeys = keyState.keys.filter(key => key.isActive);
+      setAiKeys(activeKeys);
+      
+      // Auto-select first key if none selected and keys are available
+      if (!selectedKey && activeKeys.length > 0) {
+        setSelectedKey(activeKeys[0]);
+      }
     });
 
+    // Get initial state immediately
+    try {
+      const currentState = aiKeysStore.getState();
+      const activeKeys = currentState.keys.filter(key => key.isActive);
+      setAiKeys(activeKeys);
+      if (!selectedKey && activeKeys.length > 0) {
+        setSelectedKey(activeKeys[0]);
+      }
+    } catch (error) {
+      console.warn('Failed to get initial AI keys state:', error);
+    }
+
     return () => unsubscribe();
-  }, []);
+  }, [selectedKey]); // Add selectedKey as dependency to prevent infinite loops
 
   // Check cache status when project context changes
   useEffect(() => {
@@ -251,6 +276,23 @@ CODE BLOCK FORMAT (for suggestions):
     }
   }, [projectContext?.currentProject?.path]); // Remove currentConversation dependency to break circular dependency
 
+  // Track initialization completion
+  useEffect(() => {
+    const checkInitialization = () => {
+      const isReady = isFontAwesomeLoaded && 
+                     aiKeys.length > 0 && 
+                     selectedKey !== null &&
+                     (projectContext?.currentProject?.path ? currentConversation !== null : true);
+      
+      if (isReady && !isInitialized) {
+        setIsInitialized(true);
+        console.log('🚀 DualScreenAIEditor fully initialized');
+      }
+    };
+
+    checkInitialization();
+  }, [isFontAwesomeLoaded, aiKeys.length, selectedKey, currentConversation, projectContext?.currentProject?.path, isInitialized]);
+
   // Update config when selected key changes
   useEffect(() => {
     if (selectedKey) {
@@ -304,6 +346,31 @@ CODE BLOCK FORMAT (for suggestions):
       return null;
     }
   };
+
+  /**
+   * Cancel current AI request
+   */
+  const cancelAIRequest = useCallback(() => {
+    console.log('🛑 Canceling AI request...');
+    
+    // Cancel the current abort controller if it exists
+    if (currentAbortController) {
+      currentAbortController.abort();
+      setCurrentAbortController(null);
+    }
+    
+    // Also cancel in the iterative reader service (it may have its own abort controller)
+    iterativeReaderService.cancel();
+    
+    // Reset states
+    setIsLoading(false);
+    setIsStreaming(false);
+    setIsIterativeReading(false);
+    setStreamedContent('');
+    setStreamedEdits([]);
+    
+    console.log('✅ AI request canceled');
+  }, [currentAbortController, iterativeReaderService]);
 
   return {
     // State
@@ -362,12 +429,19 @@ CODE BLOCK FORMAT (for suggestions):
     setConfig,
     instructionInputRef,
     messagesEndRef,
+    currentAbortController,
+    setCurrentAbortController,
+    
+    // Initialization states
+    isFontAwesomeLoaded,
+    isInitialized,
     
     // Functions
     normalizePath,
     loadProjectFiles,
     getCacheStatus,
     analyzeFile,
-    scrollToBottom
+    scrollToBottom,
+    cancelAIRequest
   };
 };

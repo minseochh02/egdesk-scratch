@@ -21,13 +21,13 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
       <div className="message-content">
         <div className="response-header">
           <span className="response-title">
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faSearch} />} {searchReplacePrompts.length} Search/Replace
+            🔍 {searchReplacePrompts.length} Search/Replace
           </span>
           <button 
             onClick={onClose}
             className="close-btn"
           >
-            {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
+            ✕
           </button>
         </div>
         
@@ -43,10 +43,10 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
               <div className="prompt-details">
                 <div className="search-replace-pair">
                   <div className="search-text">
-                    {FontAwesomeIcon && <FontAwesomeIcon icon={faSearch} />} <code>{prompt.searchText}</code>
+                    🔍 <code>{prompt.searchText}</code>
                   </div>
                   <div className="replace-text">
-                    {FontAwesomeIcon && <FontAwesomeIcon icon={faRefresh} />} <code>{prompt.replaceText}</code>
+                    🔄 <code>{prompt.replaceText}</code>
                   </div>
                 </div>
               </div>
@@ -57,7 +57,7 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
                   className="execute-btn"
                   title="Execute"
                 >
-                        {FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />}
+                        ✅
                 </button>
                 
                 <button 
@@ -68,7 +68,7 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
                   className="copy-btn"
                   title="Copy"
                 >
-                        {FontAwesomeIcon && <FontAwesomeIcon icon={faClipboard} />}
+                        📋
                 </button>
               </div>
             </div>

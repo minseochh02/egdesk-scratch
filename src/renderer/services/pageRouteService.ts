@@ -214,7 +214,7 @@ class PageRouteService {
           { id: 'sys', role: 'system', content: systemPromptText } as any,
           { id: 'usr', role: 'user', content: userPromptText } as any,
         ],
-        { temperature: 0.1, maxTokens: 512 }
+        { temperature: 0.1, maxTokens: 4096 }
       );
 
       if (response?.success && response.message) {

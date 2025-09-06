@@ -41,7 +41,13 @@ export const parseSearchReplaceOperations = (content: string, projectRoot: strin
   // If no search-replace blocks found, return empty array
   if (searchReplaceBlocks.length === 0) {
     console.log('🔍 DEBUG: No search-replace blocks found in content');
-    console.log('🔍 DEBUG: Full content for analysis:', content);
+    console.log('🔍 DEBUG: Full content for analysis:', {
+      contentLength: content.length,
+      hasSearchReplaceKeyword: content.includes('search-replace'),
+      hasCodeBlocks: content.includes('```'),
+      contentPreview: content.substring(0, 500),
+      searchReplaceMatches: content.match(/```.*?search.*?replace.*?```/gi) || []
+    });
     return operations;
   }
   
