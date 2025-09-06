@@ -112,7 +112,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     getCacheStatus,
     analyzeFile,
     scrollToBottom
-  } = useDualScreenAIEditor(projectContext);
+  } = useDualScreenAIEditor(projectContext, currentFile);
 
   // Analyze file when current file changes
   useEffect(() => {
@@ -379,15 +379,28 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
 
   // Handle edit request
   const handleRequestEdit = async () => {
+    console.log('🔍 DEBUG: handleRequestEdit called', {
+      selectedKey: !!selectedKey,
+      selectedModel,
+      userInstruction: userInstruction.trim(),
+      currentFileData: !!currentFileData,
+      routeFiles: routeFiles?.length || 0,
+      isLoading,
+      isStreaming
+    });
+
     if (!selectedKey || !selectedModel || !userInstruction.trim()) {
+      console.log('❌ DEBUG: Missing required fields for sending message');
       return;
     }
     
     // We need either currentFileData or routeFiles to proceed
     if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
+      console.log('❌ DEBUG: No file data available for processing');
       return;
     }
 
+    console.log('✅ DEBUG: All conditions met, proceeding with iterative reading');
     // Always use iterative mode
     return handleIterativeReading();
   };
@@ -650,7 +663,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
           isLoading={isLoading}
           isStreaming={isStreaming}
           onSend={handleRequestEdit}
-          canSend={!selectedKey || !selectedModel || (!currentFileData && (!routeFiles || routeFiles.length === 0)) || !userInstruction.trim() || isLoading || isStreaming}
+          canSend={!!selectedKey && !!selectedModel && (!!currentFileData || (routeFiles && routeFiles.length > 0)) && !!userInstruction.trim() && !isLoading && !isStreaming}
           FontAwesomeIcon={FontAwesomeIcon}
         />
       </div>

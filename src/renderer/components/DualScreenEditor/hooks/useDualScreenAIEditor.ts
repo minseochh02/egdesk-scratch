@@ -7,10 +7,18 @@ import { AIKey } from '../../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../../ChatInterface/types';
 import { conversationStore } from '../../AIEditor/store/conversationStore';
 
-export const useDualScreenAIEditor = (projectContext?: {
-  currentProject: any;
-  availableFiles: any[];
-}) => {
+export const useDualScreenAIEditor = (
+  projectContext?: {
+    currentProject: any;
+    availableFiles: any[];
+  },
+  currentFile?: {
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  } | null
+) => {
   // Dynamic import for FontAwesomeIcon to handle ES module compatibility
   const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
 
@@ -47,7 +55,7 @@ export const useDualScreenAIEditor = (projectContext?: {
     name: string;
     content: string;
     language: string;
-  } | null>(null);
+  } | null>(currentFile || null);
   const [cacheStatus, setCacheStatus] = useState<{
     hasCache: boolean;
     cacheAge?: number;
