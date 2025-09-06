@@ -500,77 +500,6 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     return handleIterativeReading();
   };
 
-  // Handle apply edits - for manual button usage
-  const handleApplyEdits = async () => {
-    console.log('🔍 DEBUG: Manual handleApplyEdits called', {
-      hasAiResponse: !!aiResponse,
-      aiResponseSuccess: aiResponse?.success,
-      editsCount: aiResponse?.edits?.length || 0,
-      projectPath: projectContext?.currentProject?.path
-    });
-
-    if (!aiResponse?.success || !aiResponse.edits.length) {
-      console.warn('⚠️ Cannot apply edits - missing or invalid AI response', {
-        hasAiResponse: !!aiResponse,
-        success: aiResponse?.success,
-        editsLength: aiResponse?.edits?.length
-      });
-      return;
-    }
-
-    try {
-      console.log('🚀 Manually applying edits...', {
-        edits: aiResponse.edits.map(edit => ({
-          type: edit.type,
-          filePath: edit.filePath,
-          oldTextPreview: edit.oldText?.substring(0, 100),
-          newTextPreview: edit.newText?.substring(0, 100)
-        }))
-      });
-      const result = await applyEditsToFiles(aiResponse.edits, projectContext?.currentProject?.path);
-      
-      if (result.success) {
-        console.log('✅ Edits applied successfully to:', result.modifiedFiles);
-        onApplyEdits(aiResponse.edits);
-        
-        // Show success message briefly
-        console.log(`✅ Successfully applied ${aiResponse.edits.length} edit(s) to ${result.modifiedFiles.length} file(s)`);
-        
-        // Automatically restart server and show changes
-        console.log('🔄 Restarting server to show changes...');
-        
-        try {
-          const serverResult = await restartServer(projectContext);
-          
-          if (serverResult.success) {
-            console.log('✅ Server restarted and changes are visible at:', serverResult.url);
-          } else {
-            console.warn('⚠️ Changes applied but server restart failed:', serverResult.error);
-            // Still try to open localhost:8000 as fallback
-            setTimeout(() => {
-              openLocalhostIfNeeded('http://localhost:8000');
-            }, 1000);
-          }
-        } catch (serverError) {
-          console.error('❌ Server restart threw an error:', serverError);
-          // Fallback to opening localhost directly
-          setTimeout(() => {
-            openLocalhostIfNeeded('http://localhost:8000');
-          }, 1000);
-        }
-        
-        // Keep AI response visible after successful manual application
-        console.log('✅ Manual edits applied successfully, keeping AI response visible for user review');
-        
-      } else {
-        console.error('❌ Failed to apply edits:', result.errors);
-        setError(`Failed to apply some edits: ${result.errors.join(', ')}`);
-      }
-    } catch (error) {
-      console.error('Failed to apply edits:', error);
-      setError(`Error applying edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
 
   // Clear error state and reset form
   const handleClearError = () => {
@@ -747,36 +676,6 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             FontAwesomeIcon={FontAwesomeIcon}
           />
 
-          {/* Manual Apply Button (fallback) */}
-          {aiResponse?.success && aiResponse.edits && aiResponse.edits.length > 0 && (
-            <div className="manual-apply-section" style={{ 
-              padding: '10px', 
-              borderTop: '1px solid #333', 
-              backgroundColor: '#1e1e1e',
-              display: 'flex',
-              gap: '10px',
-              alignItems: 'center'
-            }}>
-              <button 
-                onClick={handleApplyEdits}
-                disabled={isLoading}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#007acc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: isLoading ? 'not-allowed' : 'pointer',
-                  opacity: isLoading ? 0.6 : 1
-                }}
-              >
-                {isLoading ? 'Applying...' : `Apply ${aiResponse.edits.length} Edit(s) & Restart Server`}
-              </button>
-              <span style={{ fontSize: '12px', color: '#888' }}>
-                Click if auto-apply didn't work
-              </span>
-            </div>
-          )}
 
           {/* Scroll anchor */}
           <div ref={messagesEndRef} />
