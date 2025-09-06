@@ -3,6 +3,7 @@ import { DualScreenAIEditor } from './DualScreenAIEditor';
 import { BrowserWindow } from './BrowserWindow';
 import CodeEditor from '../CodeEditor';
 import { URLFileViewer } from './URLFileViewer';
+import { RevertManager, RevertButton } from '../RevertManager';
 import './DualScreenEditor.css';
 import ProjectContextService, { ProjectInfo } from '../../services/projectContextService';
 import PageRouteService from '../../services/pageRouteService';
@@ -17,13 +18,15 @@ interface DualScreenEditorProps {
   } | null;
   onApplyEdits: (edits: any[]) => void;
   onClose: () => void;
+  onFileRefresh?: (filePath: string) => void; // Callback to refresh file content
 }
 
 export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   isVisible,
   currentFile,
   onApplyEdits,
-  onClose
+  onClose,
+  onFileRefresh
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>('');
@@ -41,6 +44,14 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     filePath: string;
     diff: { before: string; after: string; lineNumber: number };
   } | null>(null);
+  const [showRevertManager, setShowRevertManager] = useState(false);
+  const [revertMessage, setRevertMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [refreshedFileContent, setRefreshedFileContent] = useState<{
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  } | null>(null);
   const aiRequestInFlightRef = useRef<boolean>(false);
   const lastPathRef = useRef<string>('');
   const debounceTimerRef = useRef<any>(null);
@@ -52,6 +63,113 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     setIsEditing(!isEditing);
   };
 
+  // Refresh file content from disk
+  const refreshFileContent = async (filePath: string) => {
+    try {
+      console.log(`🔄 Refreshing file content from disk: ${filePath}`);
+      
+      const result = await window.electron.fileSystem.readFile(filePath);
+      if (result.success && result.content !== undefined) {
+        const fileName = filePath.split('/').pop() || filePath;
+        const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
+        
+        // Simple language detection based on file extension
+        const getLanguageFromExtension = (ext: string): string => {
+          const languageMap: { [key: string]: string } = {
+            'js': 'javascript',
+            'jsx': 'javascript',
+            'ts': 'typescript',
+            'tsx': 'typescript',
+            'php': 'php',
+            'html': 'html',
+            'css': 'css',
+            'scss': 'scss',
+            'json': 'json',
+            'md': 'markdown',
+            'py': 'python',
+            'java': 'java',
+            'cpp': 'cpp',
+            'c': 'c',
+            'xml': 'xml',
+            'sql': 'sql'
+          };
+          return languageMap[ext] || 'text';
+        };
+
+        const refreshedFile = {
+          path: filePath,
+          name: fileName,
+          content: result.content,
+          language: getLanguageFromExtension(fileExtension)
+        };
+
+        setRefreshedFileContent(refreshedFile);
+        
+        // Also call the parent callback if provided
+        if (onFileRefresh) {
+          onFileRefresh(filePath);
+        }
+        
+        console.log(`✅ File content refreshed successfully: ${filePath} (${result.content.length} characters)`);
+        return refreshedFile;
+      } else {
+        console.error(`❌ Failed to refresh file content: ${result.error}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ Error refreshing file content:`, error);
+      return null;
+    }
+  };
+
+  // Handle revert operations
+  const handleRevertComplete = async (result: any) => {
+    if (result.success) {
+      setRevertMessage({
+        type: 'success',
+        message: result.summary || `Successfully reverted ${result.restoredFiles.length} file(s)`
+      });
+      
+      // Refresh the current file content if it was reverted
+      if (currentFile && result.restoredFiles.includes(currentFile.path)) {
+        console.log(`🔄 Current file was reverted, refreshing content: ${currentFile.path}`);
+        await refreshFileContent(currentFile.path);
+      }
+      
+      // Also refresh any other reverted files that might be in the route files
+      for (const revertedFilePath of result.restoredFiles) {
+        if (revertedFilePath !== currentFile?.path) {
+          console.log(`🔄 Refreshing reverted file: ${revertedFilePath}`);
+          await refreshFileContent(revertedFilePath);
+        }
+      }
+    } else {
+      setRevertMessage({
+        type: 'error',
+        message: result.summary || `Revert failed: ${result.errors.join(', ')}`
+      });
+    }
+
+    // Auto-dismiss the message after 5 seconds
+    setTimeout(() => setRevertMessage(null), 5000);
+  };
+
+  const handleRevertButtonComplete = async (success: boolean, message: string) => {
+    setRevertMessage({
+      type: success ? 'success' : 'error',
+      message
+    });
+
+    // If revert was successful and we have a current file, refresh its content
+    if (success && currentFile) {
+      console.log(`🔄 Single file revert successful, refreshing content: ${currentFile.path}`);
+      await refreshFileContent(currentFile.path);
+    }
+
+    // Auto-dismiss the message after 5 seconds
+    setTimeout(() => setRevertMessage(null), 5000);
+  };
+
   // Handle diff display from AI Editor
   const handleShowDiff = (filePath: string, diff: { before: string; after: string; lineNumber: number }) => {
     setDiffData({ filePath, diff });
@@ -61,6 +179,14 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       setIsEditing(true);
     }
   };
+
+  // Clear refreshed file content when current file changes
+  useEffect(() => {
+    if (currentFile && refreshedFileContent && currentFile.path !== refreshedFileContent.path) {
+      console.log(`📁 Clearing refreshed content due to file change: ${refreshedFileContent.path} -> ${currentFile.path}`);
+      setRefreshedFileContent(null);
+    }
+  }, [currentFile?.path]); // Only depend on currentFile.path, not refreshedFileContent
 
   // Handle server status changes
   const handleServerStatusChange = (status: any) => {
@@ -354,12 +480,15 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
         if (statusResult && statusResult.success && statusResult.status) {
           // Update server status if it's different
-          if (!serverStatus || serverStatus.isRunning !== statusResult.status.isRunning) {
-            setServerStatus(statusResult.status);
-            if (statusResult.status.isRunning && !serverEnsured) {
-              setServerEnsured(true);
+          setServerStatus((prevStatus: any) => {
+            if (!prevStatus || prevStatus.isRunning !== statusResult.status.isRunning) {
+              if (statusResult.status.isRunning && !serverEnsured) {
+                setServerEnsured(true);
+              }
+              return statusResult.status;
             }
-          }
+            return prevStatus;
+          });
         }
       } catch (err) {
         // Ignore errors in periodic check
@@ -372,7 +501,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     // Then check every 2 seconds
     const interval = setInterval(checkServerStatus, 2000);
     return () => clearInterval(interval);
-  }, [isVisible, currentProject?.path, serverStatus, serverEnsured]);
+  }, [isVisible, currentProject?.path, serverEnsured]); // Removed serverStatus from dependencies
 
   // Ensure local server is running when entering this page
   useEffect(() => {
@@ -454,6 +583,22 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   return (
     <div className="dual-screen-editor">
+      {/* Header with controls */}
+
+
+      {/* Revert message notification */}
+      {revertMessage && (
+        <div className={`revert-notification revert-notification--${revertMessage.type}`}>
+          <span>{revertMessage.message}</span>
+          <button
+            className="revert-notification__close"
+            onClick={() => setRevertMessage(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
     {/* Dual Screen Content */}
     <div className="dual-screen-content">
       {/* Left Panel - Chat/AI Editor */}
@@ -461,7 +606,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         <div className="panel-content">
           <DualScreenAIEditor
             isVisible={true}
-            currentFile={currentFile}
+            currentFile={refreshedFileContent || currentFile}
             onApplyEdits={onApplyEdits}
             onClose={() => {}} // Don't close, just hide
             isEditing={isEditing}
@@ -472,6 +617,8 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             currentProject: currentProject,
             availableFiles: routeFilesWithContent
           }}
+          onRevertComplete={handleRevertButtonComplete}
+          onShowRevertManager={() => setShowRevertManager(true)}
         />
         </div>
       </div>
@@ -499,7 +646,16 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       </div>
     </div>
 
-
+    {/* Revert Manager Modal */}
+    {showRevertManager && (
+      <div className="revert-manager-modal">
+        <RevertManager
+          projectRoot={currentProject?.path}
+          onRevertComplete={handleRevertComplete}
+          onClose={() => setShowRevertManager(false)}
+        />
+      </div>
+    )}
     
     </div>
   );
