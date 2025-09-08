@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ProjectSelector from './ProjectSelector';
 import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGlobe, faTimes, faQuestion, faRefresh, faCode, faDownload, faCheckCircle, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+import { faGlobe, faTimes, faQuestion, faRefresh, faCode, faDownload, faCheckCircle, faExclamationTriangle, faEdit } from '@fortawesome/free-solid-svg-icons';
 import './LocalServer.css';
 
 interface ServerStatus {
@@ -47,6 +48,7 @@ interface LocalServerProps {
 }
 
 const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
+  const navigate = useNavigate();
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     isRunning: false,
     port: 8000,
@@ -402,6 +404,14 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 Open in Browser
               </button>
             )}
+            
+            <button
+              onClick={() => navigate('/dual-screen')}
+              className="btn btn-primary"
+              disabled={!serverStatus.isRunning}
+            >
+              <FontAwesomeIcon icon={faEdit} /> Open Dual Screen Editor
+            </button>
           </div>
         </div>
 

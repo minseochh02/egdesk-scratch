@@ -332,12 +332,44 @@ export class PHPManager {
     console.log(`Starting PHP server with: ${phpPath}`);
     console.log(`Port: ${port}, Document root: ${documentRoot}`);
 
-    return spawn(phpPath, [
+    const platform = os.platform();
+    const args = [
       '-S',
       `localhost:${port}`,
       '-t',
       documentRoot
-    ]);
+    ];
+
+    // Windows-specific configuration
+    if (platform === 'win32') {
+      // Use development configuration for better compatibility
+      args.push('-c', path.join(path.dirname(phpPath), 'php.ini-development'));
+    }
+
+    // Set up environment variables for better server environment simulation
+    const env = {
+      ...process.env,
+      SERVER_NAME: 'localhost',
+      SERVER_PORT: port.toString(),
+      SERVER_SOFTWARE: 'PHP Development Server',
+      DOCUMENT_ROOT: documentRoot,
+      REQUEST_URI: '/',
+      HTTP_HOST: `localhost:${port}`,
+      REQUEST_METHOD: 'GET',
+      SERVER_PROTOCOL: 'HTTP/1.1'
+    };
+
+    console.log(`Environment variables set for ${platform}:`, {
+      SERVER_NAME: env.SERVER_NAME,
+      SERVER_PORT: env.SERVER_PORT,
+      DOCUMENT_ROOT: env.DOCUMENT_ROOT,
+      REQUEST_URI: env.REQUEST_URI
+    });
+
+    return spawn(phpPath, args, {
+      env,
+      cwd: documentRoot
+    });
   }
 
   /**

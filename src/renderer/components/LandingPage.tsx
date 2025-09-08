@@ -34,18 +34,18 @@ const LandingPage: React.FC = () => {
 
           {/* Action Cards */}
           <div className="action-cards">
-            <Link to="/wordpress" className="action-card homepage-card">
+            <Link to="/local-server" className="action-card homepage-card">
               <div className="card-icon">
                 <FontAwesomeIcon icon={faHome} />
               </div>
               <h3 className="card-title">Fix Your Homepage</h3>
               <p className="card-description">
-                Connect to your WordPress site and make changes to your homepage content, design, and functionality.
+                Start a local server and edit your WordPress site files with the dual-screen editor for efficient development.
               </p>
               <div className="card-features">
-                <span className="feature-tag">WordPress Editor</span>
+                <span className="feature-tag">Local Server</span>
+                <span className="feature-tag">Dual Screen Editor</span>
                 <span className="feature-tag">Live Preview</span>
-                <span className="feature-tag">Code Editor</span>
               </div>
             </Link>
 

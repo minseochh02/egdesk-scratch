@@ -47,6 +47,7 @@ export interface IElectronAPI {
     startServer(folderPath: string, port?: number): Promise<{ success: boolean; port?: number; error?: string }>;
     stopServer(): Promise<{ success: boolean; error?: string }>;
     getServerStatus(): Promise<{ success: boolean; status?: any; error?: string }>;
+    getPHPInfo(): Promise<{ success: boolean; phpInfo?: any; error?: string }>;
     pickFolder(): Promise<{ success: boolean; folderPath?: string; error?: string }>;
   };
   browserWindow: {
