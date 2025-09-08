@@ -1,3 +1,6 @@
+import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import { faRobot, faBrain, faSearch } from '@fortawesome/free-solid-svg-icons';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -67,9 +70,6 @@ export interface ModelInfo {
   };
 }
 
-import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faRobot, faBrain, faSearch } from '@fortawesome/free-solid-svg-icons';
-
 export interface ChatProvider {
   id: string;
   name: string;
@@ -97,7 +97,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 8K-32K)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.03, output: 0.06 }
+        pricing: { input: 0.03, output: 0.06 },
       },
       {
         id: 'gpt-4-turbo',
@@ -106,7 +106,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 128K)
         supportsChat: true,
         supportsImages: true,
-        pricing: { input: 0.01, output: 0.03 }
+        pricing: { input: 0.01, output: 0.03 },
       },
       {
         id: 'gpt-3.5-turbo',
@@ -115,9 +115,9 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 16K)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0015, output: 0.002 }
-      }
-    ]
+        pricing: { input: 0.0015, output: 0.002 },
+      },
+    ],
   },
   {
     id: 'anthropic',
@@ -134,7 +134,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
-        pricing: { input: 0.015, output: 0.075 }
+        pricing: { input: 0.015, output: 0.075 },
       },
       {
         id: 'claude-3-sonnet',
@@ -143,7 +143,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
-        pricing: { input: 0.003, output: 0.015 }
+        pricing: { input: 0.003, output: 0.015 },
       },
       {
         id: 'claude-3-haiku',
@@ -152,9 +152,9 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 4096, // Max output tokens (context: 200K)
         supportsChat: true,
         supportsImages: true,
-        pricing: { input: 0.00025, output: 0.00125 }
-      }
-    ]
+        pricing: { input: 0.00025, output: 0.00125 },
+      },
+    ],
   },
   {
     id: 'google',
@@ -171,7 +171,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0005, output: 0.0015 }
+        pricing: { input: 0.0005, output: 0.0015 },
       },
       {
         id: 'gemini-2.5-flash-lite',
@@ -180,7 +180,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0005, output: 0.0015 }
+        pricing: { input: 0.0005, output: 0.0015 },
       },
       {
         id: 'gemini-2.5-pro',
@@ -189,7 +189,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 65535, // Max output tokens (context: 1.048M)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0005, output: 0.0015 }
+        pricing: { input: 0.0005, output: 0.0015 },
       },
       {
         id: 'gemini-1.5-flash-latest',
@@ -198,7 +198,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 8192, // Max output tokens (context: 1M)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0005, output: 0.0015 }
+        pricing: { input: 0.0005, output: 0.0015 },
       },
       {
         id: 'gemini-1.5-pro',
@@ -207,10 +207,10 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
         maxTokens: 8192, // Max output tokens (context: 1M)
         supportsChat: true,
         supportsImages: false,
-        pricing: { input: 0.0005, output: 0.0015 }
-      }
-    ]
-  }
+        pricing: { input: 0.0005, output: 0.0015 },
+      },
+    ],
+  },
 ];
 
 export interface ChatFormData {

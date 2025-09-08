@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 // Dynamic import for FontAwesomeIcon to handle ES module compatibility
-import { 
-  faTimes, 
-  faRefresh, 
+import {
+  faTimes,
+  faRefresh,
   faExternalLinkAlt,
   faGlobe,
   faChevronDown,
@@ -56,7 +56,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   showFileViewer = false,
   filesToOpen = [],
   onToggleView,
-  diffData
+  diffData,
 }) => {
   const [url, setUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,16 +64,19 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [serverUrl, setServerUrl] = useState(initialUrl);
   const [selectedBrowser, setSelectedBrowser] = useState<string>('electron');
-  const [externalBrowserProcess, setExternalBrowserProcess] = useState<any>(null);
+  const [externalBrowserProcess, setExternalBrowserProcess] =
+    useState<any>(null);
   const [showBrowserDropdown, setShowBrowserDropdown] = useState(false);
-  
+
   // Dynamic import for FontAwesomeIcon to handle ES module compatibility
   const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(null);
 
   useEffect(() => {
     const loadFontAwesome = async () => {
       try {
-        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        const { FontAwesomeIcon: FAIcon } = await import(
+          '@fortawesome/react-fontawesome'
+        );
         setFontAwesomeIcon(() => FAIcon);
       } catch (error) {
         console.warn('Failed to load FontAwesome:', error);
@@ -81,20 +84,20 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
     };
     loadFontAwesome();
   }, []);
-  
+
   const windowRef = useRef<HTMLDivElement>(null);
 
   // Calculate half-screen dimensions and position
   const getHalfScreenDimensions = () => {
     const screenWidth = window.screen.width;
     const screenHeight = window.screen.height;
-    
+
     // Calculate half-screen dimensions
     const halfWidth = Math.floor(screenWidth / 2);
-    
+
     let x = 0;
     let y = 0;
-    
+
     // Position based on halfScreenPosition prop
     switch (halfScreenPosition) {
       case 'left':
@@ -109,18 +112,18 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       default:
         // Use provided dimensions or defaults
         return {
-          width: width,
-          height: height,
-          x: x,
-          y: y
+          width,
+          height,
+          x,
+          y,
         };
     }
-    
+
     return {
       width: halfWidth,
       height: screenHeight, // Full height for better browsing experience
-      x: x,
-      y: y
+      x,
+      y,
     };
   };
 
@@ -130,9 +133,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       const screenWidth = window.screen.width;
       const screenHeight = window.screen.height;
       const halfWidth = Math.floor(screenWidth / 2);
-      
+
       let mainWindowBounds;
-      
+
       // Position main window on the opposite side
       switch (halfScreenPosition) {
         case 'left':
@@ -141,7 +144,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
             x: halfWidth,
             y: 0,
             width: halfWidth,
-            height: screenHeight
+            height: screenHeight,
           };
           break;
         case 'right':
@@ -150,14 +153,13 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
             x: 0,
             y: 0,
             width: halfWidth,
-            height: screenHeight
+            height: screenHeight,
           };
           break;
         default:
           return; // Don't resize for custom positioning
       }
-      
-      
+
       await (window as any).electron?.mainWindow?.setBounds?.(mainWindowBounds);
     } catch (error) {
       console.error('Failed to resize main window for split-screen:', error);
@@ -168,19 +170,21 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const createBrowserWindow = async () => {
     try {
       setIsLoading(true);
-      
+
       // Get half-screen dimensions for better positioning
       const halfScreenDims = getHalfScreenDimensions();
-      
+
       // Resize main window for split-screen setup (only for half-screen positioning and if enabled)
       if (halfScreenPosition !== 'custom' && resizeMainWindow) {
         await resizeMainWindowForSplitScreen();
       }
-      
+
       // Call main process to create browser window
-      const result = await (window as any).electron?.browserWindow?.createWindow?.({
+      const result = await (
+        window as any
+      ).electron?.browserWindow?.createWindow?.({
         url: initialUrl,
-        title: title,
+        title,
         width: halfScreenDims.width,
         height: halfScreenDims.height,
         x: halfScreenDims.x,
@@ -189,29 +193,35 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: true
-        }
+          webSecurity: true,
+        },
       });
 
       if (result && result.success && result.windowId) {
         setBrowserWindowId(result.windowId);
         setCurrentUrl(initialUrl);
-        
+
         // Listen for URL changes
-        (window as any).electron?.browserWindow?.onUrlChanged?.(result.windowId, (newUrl: string) => {
-          setCurrentUrl(newUrl);
-          setUrl(newUrl);
-          // Notify parent component of URL change
-          if (onUrlChange) {
-            onUrlChange(newUrl);
-          }
-        });
+        (window as any).electron?.browserWindow?.onUrlChanged?.(
+          result.windowId,
+          (newUrl: string) => {
+            setCurrentUrl(newUrl);
+            setUrl(newUrl);
+            // Notify parent component of URL change
+            if (onUrlChange) {
+              onUrlChange(newUrl);
+            }
+          },
+        );
 
         // Listen for window close
-        (window as any).electron?.browserWindow?.onClosed?.(result.windowId, () => {
-          setBrowserWindowId(null);
-          onClose();
-        });
+        (window as any).electron?.browserWindow?.onClosed?.(
+          result.windowId,
+          () => {
+            setBrowserWindowId(null);
+            onClose();
+          },
+        );
       }
     } catch (error) {
       console.error('Failed to create browser window:', error);
@@ -224,14 +234,16 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const closeBrowserWindow = async () => {
     if (browserWindowId) {
       try {
-        await (window as any).electron?.browserWindow?.closeWindow?.(browserWindowId);
+        await (window as any).electron?.browserWindow?.closeWindow?.(
+          browserWindowId,
+        );
         setBrowserWindowId(null);
-        
+
         // Restore main window to original size when browser is closed (if resize was enabled)
         if (resizeMainWindow) {
           await restoreMainWindow();
         }
-        
+
         onClose();
       } catch (error) {
         console.error('Failed to close browser window:', error);
@@ -245,21 +257,20 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       // Get current screen dimensions
       const screenWidth = window.screen.width;
       const screenHeight = window.screen.height;
-      
+
       // Restore to a reasonable default size (e.g., 80% of screen)
       const defaultWidth = Math.floor(screenWidth * 0.8);
       const defaultHeight = Math.floor(screenHeight * 0.8);
       const defaultX = Math.floor((screenWidth - defaultWidth) / 2);
       const defaultY = Math.floor((screenHeight - defaultHeight) / 2);
-      
+
       const restoreBounds = {
         x: defaultX,
         y: defaultY,
         width: defaultWidth,
-        height: defaultHeight
+        height: defaultHeight,
       };
-      
-      
+
       await (window as any).electron?.mainWindow?.setBounds?.(restoreBounds);
     } catch (error) {
       console.error('Failed to restore main window:', error);
@@ -269,12 +280,15 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   // Navigate to a new URL
   const navigateToUrl = async (newUrl: string) => {
     if (!newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
-      newUrl = 'https://' + newUrl;
+      newUrl = `https://${newUrl}`;
     }
-    
+
     if (browserWindowId) {
       try {
-        await (window as any).electron?.browserWindow?.loadURL?.(browserWindowId, newUrl);
+        await (window as any).electron?.browserWindow?.loadURL?.(
+          browserWindowId,
+          newUrl,
+        );
         setUrl(newUrl);
         setCurrentUrl(newUrl);
         // Notify parent component of URL change
@@ -316,7 +330,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
         }
       }
     }
-    
+
     // Forward to parent component
     if (onServerStatusChange) {
       onServerStatusChange(status);
@@ -327,7 +341,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const refreshPage = async () => {
     if (browserWindowId) {
       try {
-        await (window as any).electron?.browserWindow?.reload?.(browserWindowId);
+        await (window as any).electron?.browserWindow?.reload?.(
+          browserWindowId,
+        );
       } catch (error) {
         console.error('Failed to refresh page:', error);
       }
@@ -344,7 +360,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
     try {
       setIsLoading(true);
 
-      const result = await (window as any).electron?.browserWindow?.launchExternalBrowser?.(browserType, url);
+      const result = await (
+        window as any
+      ).electron?.browserWindow?.launchExternalBrowser?.(browserType, url);
 
       if (result && result.success) {
         setExternalBrowserProcess(result.process);
@@ -364,7 +382,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const closeExternalBrowser = async () => {
     if (externalBrowserProcess) {
       try {
-        await (window as any).electron?.browserWindow?.closeExternalBrowser?.(externalBrowserProcess.pid);
+        await (window as any).electron?.browserWindow?.closeExternalBrowser?.(
+          externalBrowserProcess.pid,
+        );
         setExternalBrowserProcess(null);
       } catch (error) {
         console.error('Failed to close external browser:', error);
@@ -376,7 +396,12 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   const navigateExternalBrowser = async (newUrl: string) => {
     if (externalBrowserProcess) {
       try {
-        await (window as any).electron?.browserWindow?.navigateExternalBrowser?.(externalBrowserProcess.pid, newUrl);
+        await (
+          window as any
+        ).electron?.browserWindow?.navigateExternalBrowser?.(
+          externalBrowserProcess.pid,
+          newUrl,
+        );
         setCurrentUrl(newUrl);
         setUrl(newUrl);
       } catch (error) {
@@ -388,23 +413,34 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
   // Get browser icon
   const getBrowserIcon = (browserType: string) => {
     switch (browserType) {
-      case 'chrome': return faCircle; // Using circle as Chrome icon
-      case 'firefox': return faSquareIcon; // Using square as Firefox icon
-      case 'safari': return faCircle; // Using circle as Safari icon
-      case 'edge': return faSquareIcon; // Using square as Edge icon
-      default: return faGlobe;
+      case 'chrome':
+        return faCircle; // Using circle as Chrome icon
+      case 'firefox':
+        return faSquareIcon; // Using square as Firefox icon
+      case 'safari':
+        return faCircle; // Using circle as Safari icon
+      case 'edge':
+        return faSquareIcon; // Using square as Edge icon
+      default:
+        return faGlobe;
     }
   };
 
   // Get browser display name
   const getBrowserName = (browserType: string) => {
     switch (browserType) {
-      case 'chrome': return 'Chrome';
-      case 'firefox': return 'Firefox';
-      case 'safari': return 'Safari';
-      case 'edge': return 'Edge';
-      case 'electron': return 'Electron';
-      default: return 'Browser';
+      case 'chrome':
+        return 'Chrome';
+      case 'firefox':
+        return 'Firefox';
+      case 'safari':
+        return 'Safari';
+      case 'edge':
+        return 'Edge';
+      case 'electron':
+        return 'Electron';
+      default:
+        return 'Browser';
     }
   };
 
@@ -417,7 +453,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
       navigateExternalBrowser(url);
     }
   };
-  
+
   // Create browser window when component becomes visible
   useEffect(() => {
     if (isVisible && !browserWindowId) {
@@ -454,11 +490,12 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
 
   // For embedded mode, show controls but the actual browser window will be separate
   if (embedded) {
-    
     // Show server status if not ready
     // Check multiple conditions to determine if server is ready
-    const isServerReady = serverStatus?.isRunning === true || (serverStatus && serverStatus.port && serverStatus.url);
-    
+    const isServerReady =
+      serverStatus?.isRunning === true ||
+      (serverStatus && serverStatus.port && serverStatus.url);
+
     if (!isServerReady) {
       return (
         <div className="browser-window embedded">
@@ -468,7 +505,10 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                 <FontAwesomeIcon icon={faCircle} className="spinning" />
               </div>
               <h3>🚀 Managing Server...</h3>
-              <p>Checking for existing servers and starting up the development server.</p>
+              <p>
+                Checking for existing servers and starting up the development
+                server.
+              </p>
               <div className="server-status">
                 <span className="status-indicator">⏳ Initializing</span>
               </div>
@@ -505,7 +545,7 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
               </div>
             </div>
             <div className="file-viewer-content">
-              <URLFileViewer 
+              <URLFileViewer
                 filesToOpen={filesToOpen}
                 instanceId="browser-embedded"
                 diffData={diffData}
@@ -524,12 +564,16 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                   <div className="browser-selector">
                     <button
                       className="browser-select-btn"
-                      onClick={() => setShowBrowserDropdown(!showBrowserDropdown)}
+                      onClick={() =>
+                        setShowBrowserDropdown(!showBrowserDropdown)
+                      }
                       title="Select browser type"
                     >
                       <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
                       <span>{getBrowserName(selectedBrowser)}</span>
-                      {FontAwesomeIcon && <FontAwesomeIcon icon={faChevronDown} />}
+                      {FontAwesomeIcon && (
+                        <FontAwesomeIcon icon={faChevronDown} />
+                      )}
                     </button>
                     {showBrowserDropdown && (
                       <div className="browser-dropdown">
@@ -540,7 +584,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          {FontAwesomeIcon && <FontAwesomeIcon icon={faGlobe} />}
+                          {FontAwesomeIcon && (
+                            <FontAwesomeIcon icon={faGlobe} />
+                          )}
                           <span>Electron</span>
                         </button>
                         <button
@@ -550,7 +596,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          {FontAwesomeIcon && <FontAwesomeIcon icon={faCircle} />}
+                          {FontAwesomeIcon && (
+                            <FontAwesomeIcon icon={faCircle} />
+                          )}
                           <span>Chrome</span>
                         </button>
                         <button
@@ -560,7 +608,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          {FontAwesomeIcon && <FontAwesomeIcon icon={faSquareIcon} />}
+                          {FontAwesomeIcon && (
+                            <FontAwesomeIcon icon={faSquareIcon} />
+                          )}
                           <span>Firefox</span>
                         </button>
                         <button
@@ -570,7 +620,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          {FontAwesomeIcon && <FontAwesomeIcon icon={faCircle} />}
+                          {FontAwesomeIcon && (
+                            <FontAwesomeIcon icon={faCircle} />
+                          )}
                           <span>Safari</span>
                         </button>
                         <button
@@ -580,7 +632,9 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                             setShowBrowserDropdown(false);
                           }}
                         >
-                          {FontAwesomeIcon && <FontAwesomeIcon icon={faSquareIcon} />}
+                          {FontAwesomeIcon && (
+                            <FontAwesomeIcon icon={faSquareIcon} />
+                          )}
                           <span>Edge</span>
                         </button>
                       </div>
@@ -591,14 +645,30 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                     className="browser-toggle-btn"
                     onClick={() => {
                       if (selectedBrowser === 'electron') {
-                        browserWindowId ? closeBrowserWindow() : createBrowserWindow();
+                        browserWindowId
+                          ? closeBrowserWindow()
+                          : createBrowserWindow();
                       } else {
-                        externalBrowserProcess ? closeExternalBrowser() : launchExternalBrowser(selectedBrowser, url);
+                        externalBrowserProcess
+                          ? closeExternalBrowser()
+                          : launchExternalBrowser(selectedBrowser, url);
                       }
                     }}
-                    title={browserWindowId || externalBrowserProcess ? 'Close Browser & Restore Main Window' : `Open Browser (${halfScreenPosition} half-screen + resize main window)`}
+                    title={
+                      browserWindowId || externalBrowserProcess
+                        ? 'Close Browser & Restore Main Window'
+                        : `Open Browser (${halfScreenPosition} half-screen + resize main window)`
+                    }
                   >
-                    {browserWindowId || externalBrowserProcess ? <><FontAwesomeIcon icon={faTimes} /> Close Browser</> : <><FontAwesomeIcon icon={faGlobe} /> Open Browser</>}
+                    {browserWindowId || externalBrowserProcess ? (
+                      <>
+                        <FontAwesomeIcon icon={faTimes} /> Close Browser
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faGlobe} /> Open Browser
+                      </>
+                    )}
                   </button>
                   <button
                     className="refresh-btn"
@@ -606,18 +676,22 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                     title="Refresh browser"
                     disabled={!browserWindowId && !externalBrowserProcess}
                   >
-                    {FontAwesomeIcon && <FontAwesomeIcon icon={faRefresh} />} Refresh
+                    {FontAwesomeIcon && <FontAwesomeIcon icon={faRefresh} />}{' '}
+                    Refresh
                   </button>
                   <button
                     className="external-btn"
                     onClick={openInExternalBrowser}
                     title="Open in system default browser"
                   >
-                    {FontAwesomeIcon && <FontAwesomeIcon icon={faExternalLinkAlt} />} System
+                    {FontAwesomeIcon && (
+                      <FontAwesomeIcon icon={faExternalLinkAlt} />
+                    )}{' '}
+                    System
                   </button>
                 </div>
               </div>
-              
+
               {/* Compact LocalServer component */}
               <div className="compact-server">
                 <LocalServer onStatusChange={handleServerStatusChange} />
@@ -645,14 +719,18 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
                 <div className="browser-status-info">
                   <span className="status-text">
                     <FontAwesomeIcon icon={getBrowserIcon(selectedBrowser)} />
-                    {getBrowserName(selectedBrowser)} browser is open (PID: {externalBrowserProcess.pid})
+                    {getBrowserName(selectedBrowser)} browser is open (PID:{' '}
+                    {externalBrowserProcess.pid})
                   </span>
                   <span className="current-url">{currentUrl}</span>
                 </div>
               )}
               {!browserWindowId && !externalBrowserProcess && !isLoading && (
                 <div className="browser-status-info">
-                  <span className="status-text">Click "Open Browser" to launch {getBrowserName(selectedBrowser)} browser</span>
+                  <span className="status-text">
+                    Click "Open Browser" to launch{' '}
+                    {getBrowserName(selectedBrowser)} browser
+                  </span>
                 </div>
               )}
             </div>
@@ -669,7 +747,10 @@ export const BrowserWindow: React.FC<BrowserWindowProps> = ({
         <div className="browser-title-bar">
           <div className="title-bar-left">
             <div className="window-controls">
-              <button className="window-control close" onClick={closeBrowserWindow}>
+              <button
+                className="window-control close"
+                onClick={closeBrowserWindow}
+              >
                 {FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
               </button>
             </div>

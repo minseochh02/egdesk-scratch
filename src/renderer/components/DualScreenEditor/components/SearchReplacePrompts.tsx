@@ -1,5 +1,11 @@
 import React from 'react';
-import { faSearch, faTimes, faRefresh, faCheck, faClipboard } from '@fortawesome/free-solid-svg-icons';
+import {
+  faSearch,
+  faTimes,
+  faRefresh,
+  faCheck,
+  faClipboard,
+} from '@fortawesome/free-solid-svg-icons';
 
 interface SearchReplacePromptsProps {
   searchReplacePrompts: any[];
@@ -12,7 +18,7 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
   searchReplacePrompts,
   onClose,
   onExecute,
-  FontAwesomeIcon
+  FontAwesomeIcon,
 }) => {
   if (searchReplacePrompts.length === 0) return null;
 
@@ -23,23 +29,24 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
           <span className="response-title">
             🔍 {searchReplacePrompts.length} Search/Replace
           </span>
-          <button 
-            onClick={onClose}
-            className="close-btn"
-          >
+          <button onClick={onClose} className="close-btn">
             ✕
           </button>
         </div>
-        
+
         <div className="search-replace-content">
           {searchReplacePrompts.map((prompt, index) => (
             <div key={prompt.id || index} className="prompt-item">
               <div className="prompt-header">
                 <span className="prompt-number">#{index + 1}</span>
                 <span className="prompt-description">{prompt.description}</span>
-                {prompt.filePath && <span className="file-path">{prompt.filePath.split('/').pop()}</span>}
+                {prompt.filePath && (
+                  <span className="file-path">
+                    {prompt.filePath.split('/').pop()}
+                  </span>
+                )}
               </div>
-              
+
               <div className="prompt-details">
                 <div className="search-replace-pair">
                   <div className="search-text">
@@ -50,17 +57,17 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
                   </div>
                 </div>
               </div>
-              
+
               <div className="prompt-actions">
-                <button 
+                <button
                   onClick={() => onExecute(prompt)}
                   className="execute-btn"
                   title="Execute"
                 >
-                        ✅
+                  ✅
                 </button>
-                
-                <button 
+
+                <button
                   onClick={() => {
                     const text = `Search: ${prompt.searchText}\nReplace: ${prompt.replaceText}`;
                     navigator.clipboard.writeText(text);
@@ -68,7 +75,7 @@ export const SearchReplacePrompts: React.FC<SearchReplacePromptsProps> = ({
                   className="copy-btn"
                   title="Copy"
                 >
-                        📋
+                  📋
                 </button>
               </div>
             </div>

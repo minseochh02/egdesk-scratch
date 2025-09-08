@@ -5,7 +5,9 @@ import CodeEditor from '../CodeEditor';
 import { URLFileViewer } from './URLFileViewer';
 import { RevertManager, RevertButton } from '../RevertManager';
 import './DualScreenEditor.css';
-import ProjectContextService, { ProjectInfo } from '../../services/projectContextService';
+import ProjectContextService, {
+  ProjectInfo,
+} from '../../services/projectContextService';
 import PageRouteService from '../../services/pageRouteService';
 import { restartServer, refreshBrowserWindows } from './utils/serverOperations';
 
@@ -34,18 +36,22 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   onApplyEdits,
   onClose,
   onFileRefresh,
-  onFileSelect
+  onFileSelect,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [routeFiles, setRouteFiles] = useState<string[]>([]);
-  const [routeFilesWithContent, setRouteFilesWithContent] = useState<Array<{
-    path: string;
-    name: string;
-    content: string;
-    language: string;
-  }>>([]);
-  const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
+  const [routeFilesWithContent, setRouteFilesWithContent] = useState<
+    Array<{
+      path: string;
+      name: string;
+      content: string;
+      language: string;
+    }>
+  >([]);
+  const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(
+    null,
+  );
   const [serverEnsured, setServerEnsured] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<any>(null);
   const [diffData, setDiffData] = useState<{
@@ -53,7 +59,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     diff: { before: string; after: string; lineNumber: number };
   } | null>(null);
   const [showRevertManager, setShowRevertManager] = useState(false);
-  const [revertMessage, setRevertMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [revertMessage, setRevertMessage] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [refreshedFileContent, setRefreshedFileContent] = useState<{
     path: string;
     name: string;
@@ -66,7 +75,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   const initialHomeRequestedRef = useRef<boolean>(false);
   const homeTriggeredRef = useRef<boolean>(false);
   const isRevertingRef = useRef<boolean>(false);
-  
+
   // Toggle between editing and non-editing states
   const toggleEditingMode = () => {
     setIsEditing(!isEditing);
@@ -75,32 +84,34 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   // Refresh file content from disk
   const refreshFileContent = async (filePath: string) => {
     try {
-      console.log(`🔄 Refreshing file content from disk: ${filePath} (isReverting: ${isRevertingRef.current})`);
-      
+      console.log(
+        `🔄 Refreshing file content from disk: ${filePath} (isReverting: ${isRevertingRef.current})`,
+      );
+
       const result = await window.electron.fileSystem.readFile(filePath);
       if (result.success && result.content !== undefined) {
         const fileName = filePath.split('/').pop() || filePath;
         const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
-        
+
         // Simple language detection based on file extension
         const getLanguageFromExtension = (ext: string): string => {
           const languageMap: { [key: string]: string } = {
-            'js': 'javascript',
-            'jsx': 'javascript',
-            'ts': 'typescript',
-            'tsx': 'typescript',
-            'php': 'php',
-            'html': 'html',
-            'css': 'css',
-            'scss': 'scss',
-            'json': 'json',
-            'md': 'markdown',
-            'py': 'python',
-            'java': 'java',
-            'cpp': 'cpp',
-            'c': 'c',
-            'xml': 'xml',
-            'sql': 'sql'
+            js: 'javascript',
+            jsx: 'javascript',
+            ts: 'typescript',
+            tsx: 'typescript',
+            php: 'php',
+            html: 'html',
+            css: 'css',
+            scss: 'scss',
+            json: 'json',
+            md: 'markdown',
+            py: 'python',
+            java: 'java',
+            cpp: 'cpp',
+            c: 'c',
+            xml: 'xml',
+            sql: 'sql',
           };
           return languageMap[ext] || 'text';
         };
@@ -109,33 +120,39 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           path: filePath,
           name: fileName,
           content: result.content,
-          language: getLanguageFromExtension(fileExtension)
+          language: getLanguageFromExtension(fileExtension),
         };
 
-        console.log(`📁 Setting refreshed file content: ${filePath} (${result.content.length} characters, isReverting: ${isRevertingRef.current})`);
-        
+        console.log(
+          `📁 Setting refreshed file content: ${filePath} (${result.content.length} characters, isReverting: ${isRevertingRef.current})`,
+        );
+
         // Add debugging for revert operations
         if (isRevertingRef.current) {
-          console.log(`🔄 REVERT DEBUG: Setting refreshed content for ${filePath}`, {
-            contentLength: result.content.length,
-            contentPreview: result.content.substring(0, 100) + '...',
-            timestamp: new Date().toISOString()
-          });
+          console.log(
+            `🔄 REVERT DEBUG: Setting refreshed content for ${filePath}`,
+            {
+              contentLength: result.content.length,
+              contentPreview: `${result.content.substring(0, 100)}...`,
+              timestamp: new Date().toISOString(),
+            },
+          );
         }
-        
+
         setRefreshedFileContent(refreshedFile);
-        
+
         // Also call the parent callback if provided
         if (onFileRefresh) {
           onFileRefresh(filePath);
         }
-        
-        console.log(`✅ File content refreshed successfully: ${filePath} (${result.content.length} characters)`);
+
+        console.log(
+          `✅ File content refreshed successfully: ${filePath} (${result.content.length} characters)`,
+        );
         return refreshedFile;
-      } else {
-        console.error(`❌ Failed to refresh file content: ${result.error}`);
-        return null;
       }
+      console.error(`❌ Failed to refresh file content: ${result.error}`);
+      return null;
     } catch (error) {
       console.error(`❌ Error refreshing file content:`, error);
       return null;
@@ -145,36 +162,49 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   // Handle revert operations
   const handleRevertComplete = async (result: any) => {
     console.log(`🔄 handleRevertComplete called with result:`, result);
-    
+
     if (result.success) {
       setRevertMessage({
         type: 'success',
-        message: result.summary || `Successfully reverted ${result.restoredFiles.length} file(s)`
+        message:
+          result.summary ||
+          `Successfully reverted ${result.restoredFiles.length} file(s)`,
       });
-      
+
       // Set reverting flag to prevent useEffect from clearing content
       isRevertingRef.current = true;
       console.log(`🔄 Set isRevertingRef to true`);
-      
+
       // Refresh the current file content if it was reverted
       if (currentFile && result.restoredFiles.includes(currentFile.path)) {
-        console.log(`🔄 Current file was reverted, refreshing content: ${currentFile.path}`);
+        console.log(
+          `🔄 Current file was reverted, refreshing content: ${currentFile.path}`,
+        );
         await refreshFileContent(currentFile.path);
       } else if (!currentFile && result.restoredFiles.length > 0) {
-        // If we don't have a current file but files were reverted, 
+        // If we don't have a current file but files were reverted,
         // set the first reverted file as the current file to show in the UI
-        console.log(`🔄 No current file selected, setting first reverted file as current: ${result.restoredFiles[0]}`);
-        const firstRevertedFile = await refreshFileContent(result.restoredFiles[0]);
+        console.log(
+          `🔄 No current file selected, setting first reverted file as current: ${result.restoredFiles[0]}`,
+        );
+        const firstRevertedFile = await refreshFileContent(
+          result.restoredFiles[0],
+        );
         if (firstRevertedFile) {
           // This will trigger the UI to show the reverted content
-          console.log(`🔄 Set first reverted file as current file for UI display`);
+          console.log(
+            `🔄 Set first reverted file as current file for UI display`,
+          );
         }
       } else {
-        console.log(`🔄 Current file was not reverted or not found in restored files`, {
-          currentFile: currentFile?.path,
-          restoredFiles: result.restoredFiles
-        });
-        
+        console.log(
+          `🔄 Current file was not reverted or not found in restored files`,
+          {
+            currentFile: currentFile?.path,
+            restoredFiles: result.restoredFiles,
+          },
+        );
+
         // Only refresh other reverted files if we have a current file and it wasn't reverted
         if (currentFile) {
           for (const revertedFilePath of result.restoredFiles) {
@@ -185,25 +215,31 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           }
         }
       }
-      
+
       // Ensure the refreshed content persists by adding a small delay
       // This prevents the useEffect from clearing the refreshed content too quickly
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       // Reset flag after a short delay to allow the refresh to complete
       setTimeout(() => {
         isRevertingRef.current = false;
         console.log(`🔄 Set isRevertingRef to false`);
       }, 100);
-      
+
       // Restart server and refresh browser to show reverted changes
       try {
         console.log('🔄 Restarting server to show reverted changes...');
         const serverResult = await restartServer({ currentProject });
         if (serverResult.success) {
-          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+          console.log(
+            '✅ Server restarted successfully, changes should be visible at:',
+            serverResult.url,
+          );
         } else {
-          console.warn('⚠️ Server restart failed, but files were reverted:', serverResult.error);
+          console.warn(
+            '⚠️ Server restart failed, but files were reverted:',
+            serverResult.error,
+          );
           // Still try to refresh browser windows
           await refreshBrowserWindows();
         }
@@ -215,7 +251,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     } else {
       setRevertMessage({
         type: 'error',
-        message: result.summary || `Revert failed: ${result.errors.join(', ')}`
+        message: result.summary || `Revert failed: ${result.errors.join(', ')}`,
       });
     }
 
@@ -223,17 +259,25 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     setTimeout(() => setRevertMessage(null), 5000);
   };
 
-  const handleRevertButtonComplete = async (success: boolean, message: string, filePath?: string) => {
-    console.log(`🔄 handleRevertButtonComplete called with success: ${success}, message: ${message}, filePath: ${filePath}`);
-    
+  const handleRevertButtonComplete = async (
+    success: boolean,
+    message: string,
+    filePath?: string,
+  ) => {
+    console.log(
+      `🔄 handleRevertButtonComplete called with success: ${success}, message: ${message}, filePath: ${filePath}`,
+    );
+
     setRevertMessage({
       type: success ? 'success' : 'error',
-      message
+      message,
     });
 
     // If revert was successful and we have a current file, refresh its content
     if (success && currentFile) {
-      console.log(`🔄 Single file revert successful, refreshing content: ${currentFile.path}`);
+      console.log(
+        `🔄 Single file revert successful, refreshing content: ${currentFile.path}`,
+      );
       isRevertingRef.current = true; // Set flag to prevent useEffect from clearing content
       console.log(`🔄 Set isRevertingRef to true (single file revert)`);
       await refreshFileContent(currentFile.path);
@@ -242,15 +286,21 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         isRevertingRef.current = false;
         console.log(`🔄 Set isRevertingRef to false (single file revert)`);
       }, 100);
-      
+
       // Restart server and refresh browser to show reverted changes
       try {
         console.log('🔄 Restarting server to show reverted changes...');
         const serverResult = await restartServer({ currentProject });
         if (serverResult.success) {
-          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+          console.log(
+            '✅ Server restarted successfully, changes should be visible at:',
+            serverResult.url,
+          );
         } else {
-          console.warn('⚠️ Server restart failed, but file was reverted:', serverResult.error);
+          console.warn(
+            '⚠️ Server restart failed, but file was reverted:',
+            serverResult.error,
+          );
           // Still try to refresh browser windows
           await refreshBrowserWindows();
         }
@@ -262,8 +312,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     } else if (success && !currentFile && filePath) {
       // If revert was successful but we don't have a current file,
       // use the filePath parameter to refresh the reverted file
-      console.log(`🔄 Single file revert successful but no current file, using filePath: ${filePath}`);
-      
+      console.log(
+        `🔄 Single file revert successful but no current file, using filePath: ${filePath}`,
+      );
+
       isRevertingRef.current = true;
       const refreshedFile = await refreshFileContent(filePath);
       if (refreshedFile && onFileSelect) {
@@ -272,17 +324,25 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       }
       setTimeout(() => {
         isRevertingRef.current = false;
-        console.log(`🔄 Set isRevertingRef to false (single file revert - no current file)`);
+        console.log(
+          `🔄 Set isRevertingRef to false (single file revert - no current file)`,
+        );
       }, 100);
-      
+
       // Restart server and refresh browser to show reverted changes
       try {
         console.log('🔄 Restarting server to show reverted changes...');
         const serverResult = await restartServer({ currentProject });
         if (serverResult.success) {
-          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+          console.log(
+            '✅ Server restarted successfully, changes should be visible at:',
+            serverResult.url,
+          );
         } else {
-          console.warn('⚠️ Server restart failed, but file was reverted:', serverResult.error);
+          console.warn(
+            '⚠️ Server restart failed, but file was reverted:',
+            serverResult.error,
+          );
           // Still try to refresh browser windows
           await refreshBrowserWindows();
         }
@@ -294,7 +354,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     } else {
       console.log(`🔄 Single file revert not successful or no current file`, {
         success,
-        currentFile: currentFile?.path
+        currentFile: currentFile?.path,
       });
     }
 
@@ -303,9 +363,12 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   };
 
   // Handle diff display from AI Editor
-  const handleShowDiff = (filePath: string, diff: { before: string; after: string; lineNumber: number }) => {
+  const handleShowDiff = (
+    filePath: string,
+    diff: { before: string; after: string; lineNumber: number },
+  ) => {
     setDiffData({ filePath, diff });
-    
+
     // Switch to editing mode if not already in editing mode
     if (!isEditing) {
       setIsEditing(true);
@@ -314,18 +377,26 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   // Clear refreshed file content when current file changes
   useEffect(() => {
-    console.log(`🔍 useEffect triggered - currentFile: ${currentFile?.path}, refreshedFileContent: ${refreshedFileContent?.path}, isReverting: ${isRevertingRef.current}`);
-    
+    console.log(
+      `🔍 useEffect triggered - currentFile: ${currentFile?.path}, refreshedFileContent: ${refreshedFileContent?.path}, isReverting: ${isRevertingRef.current}`,
+    );
+
     // Don't clear refreshed content if we're in the middle of a revert operation
     if (isRevertingRef.current) {
       console.log(`🔄 Skipping content clear during revert operation`);
       return;
     }
-    
+
     // Only clear refreshed content if the current file path is different from refreshed content path
     // AND we're not in the middle of a revert operation
-    if (currentFile && refreshedFileContent && currentFile.path !== refreshedFileContent.path) {
-      console.log(`📁 Clearing refreshed content due to file change: ${refreshedFileContent.path} -> ${currentFile.path}`);
+    if (
+      currentFile &&
+      refreshedFileContent &&
+      currentFile.path !== refreshedFileContent.path
+    ) {
+      console.log(
+        `📁 Clearing refreshed content due to file change: ${refreshedFileContent.path} -> ${currentFile.path}`,
+      );
       setRefreshedFileContent(null);
     }
   }, [currentFile?.path, refreshedFileContent?.path]); // Include refreshedFileContent to handle revert scenarios
@@ -400,7 +471,13 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   const handleUrlChange = (url: string) => {
     if (!url) return;
-    const path = (() => { try { return new URL(url).pathname || '/'; } catch { return '/'; } })();
+    const path = (() => {
+      try {
+        return new URL(url).pathname || '/';
+      } catch {
+        return '/';
+      }
+    })();
     if (path === lastPathRef.current) return; // ignore duplicates
     lastPathRef.current = path;
     setCurrentUrl(url);
@@ -416,35 +493,95 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   };
 
   // Recursively gather project directory tree (relative paths), aligning with Codespace analysis
-  const gatherProjectTree = async (root: string, maxDepth: number = 6, currentDepth: number = 0): Promise<string[]> => {
+  const gatherProjectTree = async (
+    root: string,
+    maxDepth: number = 6,
+    currentDepth: number = 0,
+  ): Promise<string[]> => {
     if (currentDepth > maxDepth) return [];
     const skipDirs = new Set([
-      'node_modules', '.git', '.vscode', '.idea', 'dist', 'build', 'out',
-      'coverage', '.nyc_output', 'tmp', 'temp', 'logs', 'cache',
-      '.next', '.nuxt', '.output', '.svelte-kit', '.astro'
+      'node_modules',
+      '.git',
+      '.vscode',
+      '.idea',
+      'dist',
+      'build',
+      'out',
+      'coverage',
+      '.nyc_output',
+      'tmp',
+      'temp',
+      'logs',
+      'cache',
+      '.next',
+      '.nuxt',
+      '.output',
+      '.svelte-kit',
+      '.astro',
     ]);
     const codeExtensions = [
-      '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.hpp',
-      '.php', '.html', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
-      '.rs', '.go', '.rb', '.swift', '.kt', '.scala', '.clj', '.hs', '.ml',
-      '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.md', '.txt'
+      '.js',
+      '.jsx',
+      '.ts',
+      '.tsx',
+      '.py',
+      '.java',
+      '.cpp',
+      '.c',
+      '.h',
+      '.hpp',
+      '.php',
+      '.html',
+      '.css',
+      '.scss',
+      '.sass',
+      '.less',
+      '.vue',
+      '.svelte',
+      '.rs',
+      '.go',
+      '.rb',
+      '.swift',
+      '.kt',
+      '.scala',
+      '.clj',
+      '.hs',
+      '.ml',
+      '.json',
+      '.yaml',
+      '.yml',
+      '.toml',
+      '.ini',
+      '.conf',
+      '.md',
+      '.txt',
     ];
     try {
-      const result = await (window as any).electron?.fileSystem?.readDirectory?.(root);
+      const result = await (
+        window as any
+      ).electron?.fileSystem?.readDirectory?.(root);
       if (!result?.success || !Array.isArray(result.items)) return [];
       const paths: string[] = [];
       for (const item of result.items) {
         if (!item?.name || !item?.path) continue;
         if (item.isDirectory) {
           if (skipDirs.has(item.name) || item.isHidden) continue;
-          const relDir = item.path.startsWith(root) ? item.path.substring(root.length).replace(/^\//, '') : item.path;
-          paths.push(relDir + '/');
-          const sub = await gatherProjectTree(item.path, maxDepth, currentDepth + 1);
+          const relDir = item.path.startsWith(root)
+            ? item.path.substring(root.length).replace(/^\//, '')
+            : item.path;
+          paths.push(`${relDir}/`);
+          const sub = await gatherProjectTree(
+            item.path,
+            maxDepth,
+            currentDepth + 1,
+          );
           paths.push(...sub);
         } else if (item.isFile) {
           const lower = item.name.toLowerCase();
-          if (codeExtensions.some(ext => lower.endsWith(ext))) {
-            const rel = item.path.startsWith(root) ? item.path.substring(root.length).replace(/^\//, '') : item.path;
+          if (codeExtensions.some((ext) => lower.endsWith(ext))) {
+            const rel = item.path.startsWith(root)
+              ? item.path.substring(root.length).replace(/^\//, '')
+              : item.path;
             paths.push(rel);
           }
         }
@@ -461,9 +598,17 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     if (!currentProject?.path) return;
     try {
       aiRequestInFlightRef.current = true;
-      await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, fullUrl);
-      const mapping = PageRouteService.getInstance().getFilesForPath(currentProject.path, new URL(fullUrl).pathname || '/');
-      const abs = mapping.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
+      await PageRouteService.getInstance().requestFilesForUrl(
+        currentProject.path,
+        fullUrl,
+      );
+      const mapping = PageRouteService.getInstance().getFilesForPath(
+        currentProject.path,
+        new URL(fullUrl).pathname || '/',
+      );
+      const abs = mapping.map((p) =>
+        p.startsWith('/') ? p : `${currentProject.path}/${p}`,
+      );
       if (abs.length > 0) setRouteFiles(abs);
     } catch {
       // ignore
@@ -487,7 +632,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   // Keep PageRouteService in sync with current project and add debug logging
   useEffect(() => {
     if (currentProject?.path) {
-      PageRouteService.getInstance().setProject(currentProject.path, currentProject.id);
+      PageRouteService.getInstance().setProject(
+        currentProject.path,
+        currentProject.id,
+      );
     }
   }, [currentProject?.path, currentProject?.id]);
 
@@ -507,18 +655,35 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
               const fileName = filePath.split('/').pop() || filePath;
               const extension = fileName.split('.').pop()?.toLowerCase();
               const languageMap: { [key: string]: string } = {
-                'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
-                'php': 'php', 'html': 'html', 'css': 'css', 'scss': 'scss', 'sass': 'sass',
-                'json': 'json', 'md': 'markdown', 'py': 'python', 'java': 'java', 'cpp': 'cpp',
-                'c': 'c', 'cs': 'csharp', 'go': 'go', 'rs': 'rust', 'rb': 'ruby',
-                'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml'
+                js: 'javascript',
+                jsx: 'javascript',
+                ts: 'typescript',
+                tsx: 'typescript',
+                php: 'php',
+                html: 'html',
+                css: 'css',
+                scss: 'scss',
+                sass: 'sass',
+                json: 'json',
+                md: 'markdown',
+                py: 'python',
+                java: 'java',
+                cpp: 'cpp',
+                c: 'c',
+                cs: 'csharp',
+                go: 'go',
+                rs: 'rust',
+                rb: 'ruby',
+                xml: 'xml',
+                yaml: 'yaml',
+                yml: 'yaml',
               };
-              
+
               return {
                 path: filePath,
                 name: fileName,
                 content: result.content,
-                language: languageMap[extension || ''] || 'plaintext'
+                language: languageMap[extension || ''] || 'plaintext',
               };
             }
             return null;
@@ -526,10 +691,10 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             console.error(`Failed to read file ${filePath}:`, error);
             return null;
           }
-        })
+        }),
       );
 
-      const validFiles = filesWithContent.filter(file => file !== null);
+      const validFiles = filesWithContent.filter((file) => file !== null);
       setRouteFilesWithContent(validFiles);
     } catch (error) {
       console.error('Failed to load route files content:', error);
@@ -560,12 +725,23 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     (async () => {
       try {
         const defaultUrl = currentUrl || 'http://localhost:8000/';
-        const path = (() => { try { return new URL(defaultUrl).pathname || '/'; } catch { return '/'; } })();
+        const path = (() => {
+          try {
+            return new URL(defaultUrl).pathname || '/';
+          } catch {
+            return '/';
+          }
+        })();
         // If we already handled this path or have a mapping, skip
         if (lastPathRef.current === path) return;
-        const existing = PageRouteService.getInstance().getFilesForPath(currentProject.path, path);
+        const existing = PageRouteService.getInstance().getFilesForPath(
+          currentProject.path,
+          path,
+        );
         if (existing && existing.length > 0) {
-          const abs = existing.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
+          const abs = existing.map((p) =>
+            p.startsWith('/') ? p : `${currentProject.path}/${p}`,
+          );
           setRouteFiles(abs);
           lastPathRef.current = path;
           initialHomeRequestedRef.current = true;
@@ -573,9 +749,17 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         }
         // Request AI mapping once
         initialHomeRequestedRef.current = true;
-        await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
-        const rels = PageRouteService.getInstance().getFilesForPath(currentProject.path, path);
-        const abs2 = rels.map(p => (p.startsWith('/') ? p : `${currentProject.path}/${p}`));
+        await PageRouteService.getInstance().requestFilesForUrl(
+          currentProject.path,
+          defaultUrl,
+        );
+        const rels = PageRouteService.getInstance().getFilesForPath(
+          currentProject.path,
+          path,
+        );
+        const abs2 = rels.map((p) =>
+          p.startsWith('/') ? p : `${currentProject.path}/${p}`,
+        );
         if (abs2.length > 0) {
           setRouteFiles(abs2);
           lastPathRef.current = path;
@@ -592,11 +776,11 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       // Cleanup function - stop server when component unmounts
       if (serverEnsured) {
         (async () => {
-        try {
-          await (window as any).electron?.wordpressServer?.stopServer?.();
-        } catch (err) {
-          console.warn('Failed to stop server on cleanup:', err);
-        }
+          try {
+            await (window as any).electron?.wordpressServer?.stopServer?.();
+          } catch (err) {
+            console.warn('Failed to stop server on cleanup:', err);
+          }
         })();
       }
     };
@@ -616,14 +800,19 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   // Periodic server status check to ensure we have the latest status
   useEffect(() => {
     if (!isVisible || !currentProject?.path) return;
-    
+
     const checkServerStatus = async () => {
       try {
-        const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
+        const statusResult = await (
+          window as any
+        ).electron?.wordpressServer?.getServerStatus?.();
         if (statusResult && statusResult.success && statusResult.status) {
           // Update server status if it's different
           setServerStatus((prevStatus: any) => {
-            if (!prevStatus || prevStatus.isRunning !== statusResult.status.isRunning) {
+            if (
+              !prevStatus ||
+              prevStatus.isRunning !== statusResult.status.isRunning
+            ) {
               if (statusResult.status.isRunning && !serverEnsured) {
                 setServerEnsured(true);
               }
@@ -639,7 +828,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
     // Check immediately
     checkServerStatus();
-    
+
     // Then check every 2 seconds
     const interval = setInterval(checkServerStatus, 2000);
     return () => clearInterval(interval);
@@ -653,9 +842,16 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
       if (serverEnsured) return;
       try {
         // Check status first and clean up any existing servers
-        const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
-        const isRunning = !!(statusResult && statusResult.success && statusResult.status && statusResult.status.isRunning);
-        
+        const statusResult = await (
+          window as any
+        ).electron?.wordpressServer?.getServerStatus?.();
+        const isRunning = !!(
+          statusResult &&
+          statusResult.success &&
+          statusResult.status &&
+          statusResult.status.isRunning
+        );
+
         if (isRunning) {
           // Check if the running server is for the current project
           const currentServerPath = statusResult.status?.projectPath;
@@ -666,18 +862,20 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             if (!homeTriggeredRef.current) {
               homeTriggeredRef.current = true;
               const defaultUrl = currentUrl || 'http://localhost:8000/';
-              await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
+              await PageRouteService.getInstance().requestFilesForUrl(
+                currentProject.path,
+                defaultUrl,
+              );
             }
             return;
-          } else {
-            // Different project is running, stop it first
-            try {
-              await (window as any).electron?.wordpressServer?.stopServer?.();
-              // Wait a moment for the server to fully stop
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (stopErr) {
-              console.warn('Failed to stop existing server:', stopErr);
-            }
+          }
+          // Different project is running, stop it first
+          try {
+            await (window as any).electron?.wordpressServer?.stopServer?.();
+            // Wait a moment for the server to fully stop
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (stopErr) {
+            console.warn('Failed to stop existing server:', stopErr);
           }
         } else {
           // No server is running, but let's also check for any orphaned processes
@@ -686,30 +884,40 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
             // Attempt to stop any potential orphaned server
             await (window as any).electron?.wordpressServer?.stopServer?.();
             // Brief wait to ensure cleanup
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 500));
           } catch (cleanupErr) {
             // This is expected if no server was running, so we ignore the error
           }
         }
-        
+
         // Analyze folder (optional but helpful)
-        await (window as any).electron?.wordpressServer?.analyzeFolder?.(currentProject.path);
-        
+        await (window as any).electron?.wordpressServer?.analyzeFolder?.(
+          currentProject.path,
+        );
+
         // Start server on default port (8000)
-        const startResult = await (window as any).electron?.wordpressServer?.startServer?.(currentProject.path, 8000);
+        const startResult = await (
+          window as any
+        ).electron?.wordpressServer?.startServer?.(currentProject.path, 8000);
         if (startResult && startResult.success) {
           // Wait a moment for the server to fully start
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
           // Get the actual server status after starting
-          const statusResult = await (window as any).electron?.wordpressServer?.getServerStatus?.();
+          const statusResult = await (
+            window as any
+          ).electron?.wordpressServer?.getServerStatus?.();
           if (statusResult && statusResult.success && statusResult.status) {
             setServerEnsured(true);
             setServerStatus(statusResult.status);
             if (!homeTriggeredRef.current) {
               homeTriggeredRef.current = true;
-              const defaultUrl = currentUrl || `http://localhost:${startResult.port || 8000}/`;
-              await PageRouteService.getInstance().requestFilesForUrl(currentProject.path, defaultUrl);
+              const defaultUrl =
+                currentUrl || `http://localhost:${startResult.port || 8000}/`;
+              await PageRouteService.getInstance().requestFilesForUrl(
+                currentProject.path,
+                defaultUrl,
+              );
             }
           }
         }
@@ -727,10 +935,11 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     <div className="dual-screen-editor">
       {/* Header with controls */}
 
-
       {/* Revert message notification */}
       {revertMessage && (
-        <div className={`revert-notification revert-notification--${revertMessage.type}`}>
+        <div
+          className={`revert-notification revert-notification--${revertMessage.type}`}
+        >
           <span>{revertMessage.message}</span>
           <button
             className="revert-notification__close"
@@ -741,64 +950,63 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
         </div>
       )}
 
-    {/* Dual Screen Content */}
-    <div className="dual-screen-content">
-      {/* Left Panel - Chat/AI Editor */}
-      <div className="panel left-panel">
-        <div className="panel-content">
-          <DualScreenAIEditor
-            isVisible={true}
-            currentFile={refreshedFileContent || currentFile}
-            onApplyEdits={onApplyEdits}
-            onClose={() => {}} // Don't close, just hide
-            isEditing={isEditing}
-            onToggleEditing={toggleEditingMode}
-            routeFiles={routeFilesWithContent}
-            onShowDiff={handleShowDiff}
-            projectContext={{
-            currentProject: currentProject,
-            availableFiles: routeFilesWithContent
-          }}
-          onRevertComplete={handleRevertButtonComplete}
-          onShowRevertManager={() => setShowRevertManager(true)}
-        />
+      {/* Dual Screen Content */}
+      <div className="dual-screen-content">
+        {/* Left Panel - Chat/AI Editor */}
+        <div className="panel left-panel">
+          <div className="panel-content">
+            <DualScreenAIEditor
+              isVisible
+              currentFile={refreshedFileContent || currentFile}
+              onApplyEdits={onApplyEdits}
+              onClose={() => {}} // Don't close, just hide
+              isEditing={isEditing}
+              onToggleEditing={toggleEditingMode}
+              routeFiles={routeFilesWithContent}
+              onShowDiff={handleShowDiff}
+              projectContext={{
+                currentProject,
+                availableFiles: routeFilesWithContent,
+              }}
+              onRevertComplete={handleRevertButtonComplete}
+              onShowRevertManager={() => setShowRevertManager(true)}
+            />
+          </div>
+        </div>
+
+        {/* Right Panel - Code View/Website */}
+        <div className="panel right-panel">
+          <div className="panel-content">
+            <BrowserWindow
+              isVisible={serverEnsured}
+              onClose={() => {}}
+              initialUrl={currentUrl || 'http://localhost:8000'}
+              title="EGDesk Browser"
+              embedded
+              onUrlChange={handleUrlChange}
+              serverStatus={serverStatus}
+              onServerStatusChange={handleServerStatusChange}
+              halfScreenPosition="right"
+              resizeMainWindow
+              showFileViewer={isEditing}
+              filesToOpen={routeFiles}
+              onToggleView={toggleEditingMode}
+              diffData={diffData}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Right Panel - Code View/Website */}
-      <div className="panel right-panel">
-        <div className="panel-content">
-          <BrowserWindow
-            isVisible={serverEnsured}
-            onClose={() => {}}
-            initialUrl={currentUrl || 'http://localhost:8000'}
-            title="EGDesk Browser"
-            embedded={true}
-            onUrlChange={handleUrlChange}
-            serverStatus={serverStatus}
-            onServerStatusChange={handleServerStatusChange}
-            halfScreenPosition="right"
-            resizeMainWindow={true}
-            showFileViewer={isEditing}
-            filesToOpen={routeFiles}
-            onToggleView={toggleEditingMode}
-            diffData={diffData}
+      {/* Revert Manager Modal */}
+      {showRevertManager && (
+        <div className="revert-manager-modal">
+          <RevertManager
+            projectRoot={currentProject?.path}
+            onRevertComplete={handleRevertComplete}
+            onClose={() => setShowRevertManager(false)}
           />
         </div>
-      </div>
-    </div>
-
-    {/* Revert Manager Modal */}
-    {showRevertManager && (
-      <div className="revert-manager-modal">
-        <RevertManager
-          projectRoot={currentProject?.path}
-          onRevertComplete={handleRevertComplete}
-          onClose={() => setShowRevertManager(false)}
-        />
-      </div>
-    )}
-    
+      )}
     </div>
   );
 };

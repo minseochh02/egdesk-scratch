@@ -7,12 +7,18 @@ interface ErrorMessageProps {
   FontAwesomeIcon: any;
 }
 
-export const ErrorMessage: React.FC<ErrorMessageProps> = ({ error, onRetry, FontAwesomeIcon }) => {
+export const ErrorMessage: React.FC<ErrorMessageProps> = ({
+  error,
+  onRetry,
+  FontAwesomeIcon,
+}) => {
   return (
     <div className="message error-message">
       <div className="message-content">
         <p>⚠️ {error}</p>
-        <button onClick={onRetry} className="retry-btn">Try Again</button>
+        <button onClick={onRetry} className="retry-btn">
+          Try Again
+        </button>
       </div>
     </div>
   );

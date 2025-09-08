@@ -1,4 +1,21 @@
-import { MemoryRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import {
+  MemoryRouter as Router,
+  Routes,
+  Route,
+  Link,
+  useLocation,
+} from 'react-router-dom';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faCode,
+  faGlobe,
+  faServer,
+  faRobot,
+  faSearch,
+  faList,
+  faClock,
+  faHome,
+} from '@fortawesome/free-solid-svg-icons';
 import LandingPage from './components/LandingPage';
 import WordPressConnector from './components/WordPressConnector';
 import WordPressSitesList from './components/WordPressSitesList';
@@ -9,81 +26,68 @@ import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
 import SchedulerManager from './components/SchedulerManager/SchedulerManager';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faCode, 
-  faGlobe, 
-  faServer, 
-  faRobot, 
-  faSearch, 
-  faList, 
-  faClock,
-  faHome
-} from '@fortawesome/free-solid-svg-icons';
 import './App.css';
-
 
 function NavigationBar() {
   const location = useLocation();
-  
+
   return (
     <div className="navigation-bar">
       <nav className="nav-links">
-        <Link 
-          to="/" 
+        <Link
+          to="/"
           className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faHome} /> Home
         </Link>
-        <Link 
-          to="/wordpress" 
+        <Link
+          to="/wordpress"
           className={`nav-link ${location.pathname === '/wordpress' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faGlobe} /> WordPress
         </Link>
-        <Link 
-          to="/wordpress-sites" 
+        <Link
+          to="/wordpress-sites"
           className={`nav-link ${location.pathname === '/wordpress-sites' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faList} /> WordPress Sites
         </Link>
-        <Link 
-          to="/local-server" 
+        <Link
+          to="/local-server"
           className={`nav-link ${location.pathname === '/local-server' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faServer} /> Local Server
         </Link>
-        <Link 
-          to="/code-editor" 
+        <Link
+          to="/code-editor"
           className={`nav-link ${location.pathname === '/code-editor' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faCode} /> Code Editor
         </Link>
-        <Link 
-          to="/ai-keys" 
+        <Link
+          to="/ai-keys"
           className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faRobot} /> AI Keys
         </Link>
-        <Link 
-          to="/dual-screen" 
+        <Link
+          to="/dual-screen"
           className={`nav-link ${location.pathname === '/dual-screen' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faServer} /> Dual Screen
         </Link>
-        <Link 
-          to="/codespace-analysis" 
+        <Link
+          to="/codespace-analysis"
           className={`nav-link ${location.pathname === '/codespace-analysis' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faSearch} /> Codespace Analysis
         </Link>
-        <Link 
-          to="/scheduler" 
+        <Link
+          to="/scheduler"
           className={`nav-link ${location.pathname === '/scheduler' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faClock} /> Scheduler
         </Link>
-
       </nav>
     </div>
   );
@@ -103,9 +107,11 @@ export default function App() {
             <Route path="/code-editor" element={<CodeEditor />} />
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/dual-screen" element={<DualScreenDemo />} />
-            <Route path="/codespace-analysis" element={<CodespaceVectorAnalysis />} />
+            <Route
+              path="/codespace-analysis"
+              element={<CodespaceVectorAnalysis />}
+            />
             <Route path="/scheduler" element={<SchedulerManager />} />
-    
           </Routes>
         </main>
       </div>

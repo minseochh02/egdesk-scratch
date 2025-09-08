@@ -5,14 +5,14 @@ const path = require('path');
 function testSystemDetection() {
   console.log('🧪 Testing PHP System Detection');
   console.log('================================');
-  
+
   const platform = os.platform();
   const arch = os.arch();
-  
+
   console.log(`Current System: ${platform}-${arch}`);
   console.log(`Node.js Platform: ${process.platform}`);
   console.log(`Node.js Architecture: ${process.arch}`);
-  
+
   // Test platform detection logic
   let platformKey;
   let archDir;
@@ -51,7 +51,13 @@ function testSystemDetection() {
   console.log(`Launcher: ${launcherName}`);
 
   // Check development directory
-  const devPhpDir = path.join(__dirname, '..', 'php-bundle', platformKey, archDir);
+  const devPhpDir = path.join(
+    __dirname,
+    '..',
+    'php-bundle',
+    platformKey,
+    archDir,
+  );
   const devPhpPath = path.join(devPhpDir, phpBinaryName);
   const devLauncher = path.join(devPhpDir, launcherName);
 
@@ -70,7 +76,7 @@ function testSystemDetection() {
     console.log(`\n📋 Directory Contents:`);
     try {
       const files = fs.readdirSync(devPhpDir);
-      files.forEach(file => {
+      files.forEach((file) => {
         const filePath = path.join(devPhpDir, file);
         const stats = fs.statSync(filePath);
         console.log(`  ${file} (${stats.isDirectory() ? 'dir' : 'file'})`);
@@ -95,22 +101,43 @@ function testSystemDetection() {
     { platform: 'win32', arch: 'x64', name: 'Windows x64' },
     { platform: 'win32', arch: 'x86', name: 'Windows x86' },
     { platform: 'linux', arch: 'x64', name: 'Linux x64' },
-    { platform: 'linux', arch: 'arm64', name: 'Linux ARM64' }
+    { platform: 'linux', arch: 'arm64', name: 'Linux ARM64' },
   ];
 
   for (const p of allPlatforms) {
-    const pPlatformKey = p.platform === 'win32' ? 'windows' : p.platform === 'darwin' ? 'macos' : p.platform;
-    const pArchDir = p.arch === 'x64' ? 'x64' : p.arch === 'arm64' ? 'arm64' : 'x86';
-    const pPhpDir = path.join(__dirname, '..', 'php-bundle', pPlatformKey, pArchDir);
-    const pPhpPath = path.join(pPhpDir, p.platform === 'win32' ? 'php.exe' : 'php');
-    
-    console.log(`  ${p.name}: ${fs.existsSync(pPhpPath) ? '✅' : '❌'} ${pPhpDir}`);
+    const pPlatformKey =
+      p.platform === 'win32'
+        ? 'windows'
+        : p.platform === 'darwin'
+          ? 'macos'
+          : p.platform;
+    const pArchDir =
+      p.arch === 'x64' ? 'x64' : p.arch === 'arm64' ? 'arm64' : 'x86';
+    const pPhpDir = path.join(
+      __dirname,
+      '..',
+      'php-bundle',
+      pPlatformKey,
+      pArchDir,
+    );
+    const pPhpPath = path.join(
+      pPhpDir,
+      p.platform === 'win32' ? 'php.exe' : 'php',
+    );
+
+    console.log(
+      `  ${p.name}: ${fs.existsSync(pPhpPath) ? '✅' : '❌'} ${pPhpDir}`,
+    );
   }
 
   console.log(`\n💡 Summary:`);
-  console.log(`- Current system will look for: ${platformKey}/${archDir}/${phpBinaryName}`);
+  console.log(
+    `- Current system will look for: ${platformKey}/${archDir}/${phpBinaryName}`,
+  );
   console.log(`- Development path: ${devPhpPath}`);
-  console.log(`- Production path: [App Resources]/php-bundle/${platformKey}/${archDir}/${phpBinaryName}`);
+  console.log(
+    `- Production path: [App Resources]/php-bundle/${platformKey}/${archDir}/${phpBinaryName}`,
+  );
   console.log(`- Fallback to launcher: ${devLauncher}`);
 }
 

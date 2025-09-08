@@ -34,9 +34,13 @@ export interface TaskExecution {
 
 export class SchedulerManager {
   private tasks: Map<string, ScheduledTask> = new Map();
+
   private executions: Map<string, TaskExecution> = new Map();
+
   private runningTasks: Map<string, any> = new Map(); // PID to process mapping
+
   private intervalId?: NodeJS.Timeout;
+
   private cronJobs: Map<string, NodeJS.Timeout> = new Map();
 
   constructor() {
@@ -46,17 +50,21 @@ export class SchedulerManager {
 
   private loadTasks() {
     try {
-      const tasksPath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
+      const tasksPath = path.join(
+        os.homedir(),
+        '.egdesk-scheduler',
+        'tasks.json',
+      );
       if (fs.existsSync(tasksPath)) {
         const data = fs.readFileSync(tasksPath, 'utf8');
         const tasks: ScheduledTask[] = JSON.parse(data);
-        tasks.forEach(task => {
+        tasks.forEach((task) => {
           this.tasks.set(task.id, {
             ...task,
             createdAt: new Date(task.createdAt),
             updatedAt: new Date(task.updatedAt),
             lastRun: task.lastRun ? new Date(task.lastRun) : undefined,
-            nextRun: task.nextRun ? new Date(task.nextRun) : undefined
+            nextRun: task.nextRun ? new Date(task.nextRun) : undefined,
           });
         });
       }
@@ -71,7 +79,7 @@ export class SchedulerManager {
       if (!fs.existsSync(tasksDir)) {
         fs.mkdirSync(tasksDir, { recursive: true });
       }
-      
+
       const tasksPath = path.join(tasksDir, 'tasks.json');
       const tasks = Array.from(this.tasks.values());
       fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 2));
@@ -92,10 +100,10 @@ export class SchedulerManager {
 
   private checkScheduledTasks() {
     const now = new Date();
-    
+
     for (const [taskId, task] of this.tasks.entries()) {
       if (!task.enabled) continue;
-      
+
       if (this.shouldRunTask(task, now)) {
         this.executeTask(task);
       }
@@ -107,15 +115,16 @@ export class SchedulerManager {
       // Handle interval-based tasks (e.g., "interval:300000" for 5 minutes)
       const interval = parseInt(task.schedule.replace('interval:', ''));
       if (!task.lastRun) return true;
-      
+
       const timeSinceLastRun = now.getTime() - task.lastRun.getTime();
       return timeSinceLastRun >= interval;
-    } else if (task.schedule.startsWith('cron:')) {
+    }
+    if (task.schedule.startsWith('cron:')) {
       // Handle cron expressions (simplified implementation)
       const cronExpression = task.schedule.replace('cron:', '');
       return this.evaluateCronExpression(cronExpression, now);
     }
-    
+
     return false;
   }
 
@@ -125,7 +134,7 @@ export class SchedulerManager {
     if (parts.length !== 5) return false;
 
     const [minute, hour, day, month, weekday] = parts;
-    
+
     // Check if current time matches cron expression
     const currentMinute = now.getMinutes();
     const currentHour = now.getHours();
@@ -133,11 +142,13 @@ export class SchedulerManager {
     const currentMonth = now.getMonth() + 1;
     const currentWeekday = now.getDay();
 
-    return this.matchesCronField(minute, currentMinute) &&
-           this.matchesCronField(hour, currentHour) &&
-           this.matchesCronField(day, currentDay) &&
-           this.matchesCronField(month, currentMonth) &&
-           this.matchesCronField(weekday, currentWeekday);
+    return (
+      this.matchesCronField(minute, currentMinute) &&
+      this.matchesCronField(hour, currentHour) &&
+      this.matchesCronField(day, currentDay) &&
+      this.matchesCronField(month, currentMonth) &&
+      this.matchesCronField(weekday, currentWeekday)
+    );
   }
 
   private matchesCronField(field: string, value: number): boolean {
@@ -162,7 +173,7 @@ export class SchedulerManager {
       id: executionId,
       taskId: task.id,
       startTime: new Date(),
-      status: 'running'
+      status: 'running',
     };
 
     this.executions.set(executionId, execution);
@@ -175,7 +186,7 @@ export class SchedulerManager {
       this.saveTasks();
 
       // Prepare command and environment
-      const command = task.command;
+      const { command } = task;
       const workingDir = task.workingDirectory || os.homedir();
       const env = { ...process.env, ...task.environment };
 
@@ -184,7 +195,7 @@ export class SchedulerManager {
         cwd: workingDir,
         env,
         shell: true,
-        detached: false
+        detached: false,
       });
 
       execution.pid = childProcess.pid;
@@ -232,11 +243,11 @@ export class SchedulerManager {
         this.executions.set(executionId, execution);
         this.runningTasks.delete(task.id);
       });
-
     } catch (error) {
       execution.endTime = new Date();
       execution.status = 'failed';
-      execution.error = error instanceof Error ? error.message : 'Unknown error';
+      execution.error =
+        error instanceof Error ? error.message : 'Unknown error';
       this.executions.set(executionId, execution);
     }
   }
@@ -249,19 +260,21 @@ export class SchedulerManager {
       // For cron jobs, calculate next run time (simplified)
       task.nextRun = new Date(Date.now() + 60000); // Next minute
     }
-    
+
     task.updatedAt = new Date();
     this.tasks.set(task.id, task);
     this.saveTasks();
   }
 
   // Public API methods
-  public createTask(taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>): ScheduledTask {
+  public createTask(
+    taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>,
+  ): ScheduledTask {
     const task: ScheduledTask = {
       ...taskData,
       id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     this.tasks.set(task.id, task);
@@ -269,7 +282,10 @@ export class SchedulerManager {
     return task;
   }
 
-  public updateTask(taskId: string, updates: Partial<ScheduledTask>): ScheduledTask | null {
+  public updateTask(
+    taskId: string,
+    updates: Partial<ScheduledTask>,
+  ): ScheduledTask | null {
     const task = this.tasks.get(taskId);
     if (!task) return null;
 
@@ -277,7 +293,7 @@ export class SchedulerManager {
       ...task,
       ...updates,
       id: taskId, // Ensure ID doesn't change
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     this.tasks.set(taskId, updatedTask);
@@ -314,7 +330,7 @@ export class SchedulerManager {
   public getTaskExecutions(taskId?: string): TaskExecution[] {
     const executions = Array.from(this.executions.values());
     if (taskId) {
-      return executions.filter(exec => exec.taskId === taskId);
+      return executions.filter((exec) => exec.taskId === taskId);
     }
     return executions;
   }
@@ -345,7 +361,7 @@ export class SchedulerManager {
       memoryUsage: process.memoryUsage(),
       totalTasks: this.tasks.size,
       runningTasks: this.runningTasks.size,
-      totalExecutions: this.executions.size
+      totalExecutions: this.executions.size,
     };
   }
 

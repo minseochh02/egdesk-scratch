@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faRefresh, faCheck, faCopy, faClock, faRocket, faClipboard, faTimes, faLightbulb } from '@fortawesome/free-solid-svg-icons';
-import { SearchReplacePromptService, SearchReplacePromptRequest, SearchReplacePrompt } from '../services/searchReplacePromptService';
+import {
+  faSearch,
+  faRefresh,
+  faCheck,
+  faCopy,
+  faClock,
+  faRocket,
+  faClipboard,
+  faTimes,
+  faLightbulb,
+} from '@fortawesome/free-solid-svg-icons';
+import {
+  SearchReplacePromptService,
+  SearchReplacePromptRequest,
+  SearchReplacePrompt,
+} from '../services/searchReplacePromptService';
 import { AIKey } from '../../AIKeysManager/types';
 import './SearchReplacePromptGenerator.css';
 
@@ -11,18 +25,18 @@ interface SearchReplacePromptGeneratorProps {
   onGeneratePrompts?: (prompts: SearchReplacePrompt[]) => void;
 }
 
-export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGeneratorProps> = ({
-  aiKey,
-  model,
-  onGeneratePrompts
-}) => {
+export const SearchReplacePromptGenerator: React.FC<
+  SearchReplacePromptGeneratorProps
+> = ({ aiKey, model, onGeneratePrompts }) => {
   const [userRequest, setUserRequest] = useState('');
   const [targetFile, setTargetFile] = useState('');
   const [context, setContext] = useState('');
   const [exampleBefore, setExampleBefore] = useState('');
   const [exampleAfter, setExampleAfter] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedPrompts, setGeneratedPrompts] = useState<SearchReplacePrompt[]>([]);
+  const [generatedPrompts, setGeneratedPrompts] = useState<
+    SearchReplacePrompt[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const handleGeneratePrompts = async () => {
@@ -41,10 +55,14 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
         targetFile: targetFile.trim() || undefined,
         context: context.trim() || undefined,
         exampleBefore: exampleBefore.trim() || undefined,
-        exampleAfter: exampleAfter.trim() || undefined
+        exampleAfter: exampleAfter.trim() || undefined,
       };
 
-      const response = await service.generateSearchReplacePrompts(aiKey, model, request);
+      const response = await service.generateSearchReplacePrompts(
+        aiKey,
+        model,
+        request,
+      );
 
       if (response.success && response.searchReplacePrompts.length > 0) {
         setGeneratedPrompts(response.searchReplacePrompts);
@@ -54,7 +72,9 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
         setGeneratedPrompts([]);
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+      setError(
+        error instanceof Error ? error.message : 'Unknown error occurred',
+      );
       setGeneratedPrompts([]);
     } finally {
       setIsGenerating(false);
@@ -74,7 +94,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
   const handleCopyPrompt = (prompt: SearchReplacePrompt) => {
     const service = SearchReplacePromptService.getInstance();
     const formattedPrompt = service.formatPromptForDisplay(prompt);
-    
+
     navigator.clipboard.writeText(formattedPrompt).then(() => {
       // Could add a toast notification here
       console.log('Prompt copied to clipboard');
@@ -83,7 +103,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
 
   const handleCopySearchReplace = (prompt: SearchReplacePrompt) => {
     const searchReplaceText = `Search: ${prompt.searchText}\nReplace: ${prompt.replaceText}`;
-    
+
     navigator.clipboard.writeText(searchReplaceText).then(() => {
       console.log('Search/Replace text copied to clipboard');
     });
@@ -92,7 +112,9 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
   return (
     <div className="search-replace-prompt-generator">
       <div className="generator-header">
-        <h3><FontAwesomeIcon icon={faSearch} /> Search & Replace Prompt Generator</h3>
+        <h3>
+          <FontAwesomeIcon icon={faSearch} /> Search & Replace Prompt Generator
+        </h3>
         <p>Generate precise search and replace operations for code files</p>
       </div>
 
@@ -161,9 +183,17 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
             disabled={!aiKey || !model || !userRequest.trim() || isGenerating}
             className="generate-btn"
           >
-            {isGenerating ? <><FontAwesomeIcon icon={faClock} /> Generating...</> : <><FontAwesomeIcon icon={faRocket} /> Generate Prompts</>}
+            {isGenerating ? (
+              <>
+                <FontAwesomeIcon icon={faClock} /> Generating...
+              </>
+            ) : (
+              <>
+                <FontAwesomeIcon icon={faRocket} /> Generate Prompts
+              </>
+            )}
           </button>
-          
+
           <button
             onClick={handleClearForm}
             className="clear-btn"
@@ -176,30 +206,41 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
 
       {error && (
         <div className="error-message">
-          <p><FontAwesomeIcon icon={faTimes} /> {error}</p>
+          <p>
+            <FontAwesomeIcon icon={faTimes} /> {error}
+          </p>
         </div>
       )}
 
       {generatedPrompts.length > 0 && (
         <div className="generated-prompts">
-          <h4><FontAwesomeIcon icon={faCheck} /> Generated Search & Replace Prompts</h4>
-          
+          <h4>
+            <FontAwesomeIcon icon={faCheck} /> Generated Search & Replace
+            Prompts
+          </h4>
+
           {generatedPrompts.map((prompt, index) => (
             <div key={prompt.id} className="prompt-card">
               <div className="prompt-header">
                 <span className="prompt-number">#{index + 1}</span>
                 <span className="prompt-description">{prompt.description}</span>
-                <span className="prompt-confidence">{Math.round(prompt.confidence * 100)}%</span>
+                <span className="prompt-confidence">
+                  {Math.round(prompt.confidence * 100)}%
+                </span>
               </div>
 
               <div className="prompt-content">
                 <div className="search-section">
-                  <h5><FontAwesomeIcon icon={faSearch} /> Search for:</h5>
+                  <h5>
+                    <FontAwesomeIcon icon={faSearch} /> Search for:
+                  </h5>
                   <pre className="search-text">{prompt.searchText}</pre>
                 </div>
 
                 <div className="replace-section">
-                  <h5><FontAwesomeIcon icon={faRefresh} /> Replace with:</h5>
+                  <h5>
+                    <FontAwesomeIcon icon={faRefresh} /> Replace with:
+                  </h5>
                   <pre className="replace-text">{prompt.replaceText}</pre>
                 </div>
 
@@ -224,7 +265,7 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
                 >
                   <FontAwesomeIcon icon={faClipboard} /> Copy Prompt
                 </button>
-                
+
                 <button
                   onClick={() => handleCopySearchReplace(prompt)}
                   className="copy-search-replace-btn"
@@ -239,13 +280,30 @@ export const SearchReplacePromptGenerator: React.FC<SearchReplacePromptGenerator
       )}
 
       <div className="usage-tips">
-        <h4><FontAwesomeIcon icon={faLightbulb} /> Usage Tips</h4>
+        <h4>
+          <FontAwesomeIcon icon={faLightbulb} /> Usage Tips
+        </h4>
         <ul>
-          <li><strong>Exact Matching:</strong> The search text must be an EXACT match of existing code</li>
-          <li><strong>Unique Context:</strong> Include enough surrounding context to make the search unique</li>
-          <li><strong>Proper Escaping:</strong> Use \n for line breaks, \t for tabs, etc.</li>
-          <li><strong>File Path:</strong> Specify the target file for better context</li>
-          <li><strong>Examples:</strong> Provide before/after examples for complex changes</li>
+          <li>
+            <strong>Exact Matching:</strong> The search text must be an EXACT
+            match of existing code
+          </li>
+          <li>
+            <strong>Unique Context:</strong> Include enough surrounding context
+            to make the search unique
+          </li>
+          <li>
+            <strong>Proper Escaping:</strong> Use \n for line breaks, \t for
+            tabs, etc.
+          </li>
+          <li>
+            <strong>File Path:</strong> Specify the target file for better
+            context
+          </li>
+          <li>
+            <strong>Examples:</strong> Provide before/after examples for complex
+            changes
+          </li>
         </ul>
       </div>
     </div>

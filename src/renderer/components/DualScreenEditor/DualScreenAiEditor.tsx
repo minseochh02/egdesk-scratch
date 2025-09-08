@@ -3,7 +3,11 @@ import { AIEdit, AIEditResponse } from '../AIEditor/types';
 import { conversationStore } from '../AIEditor/store/conversationStore';
 import { ContextManagementPanel } from '../AIEditor/ContextManagementPanel';
 import { useDualScreenAIEditor } from './hooks/useDualScreenAIEditor';
-import { parseSearchReplaceOperations, loadFileForEdit, applyEditsToFiles } from './utils/fileOperations';
+import {
+  parseSearchReplaceOperations,
+  loadFileForEdit,
+  applyEditsToFiles,
+} from './utils/fileOperations';
 import { restartServer, openLocalhostIfNeeded } from './utils/serverOperations';
 import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
 
@@ -43,7 +47,10 @@ interface DualScreenAIEditorProps {
     content: string;
     language: string;
   }>;
-  onShowDiff?: (filePath: string, diff: { before: string; after: string; lineNumber: number }) => void;
+  onShowDiff?: (
+    filePath: string,
+    diff: { before: string; after: string; lineNumber: number },
+  ) => void;
   // Revert controls props
   onRevertComplete?: (success: boolean, message: string) => void;
   onShowRevertManager?: () => void;
@@ -60,7 +67,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   routeFiles = [],
   onShowDiff,
   onRevertComplete,
-  onShowRevertManager
+  onShowRevertManager,
 }) => {
   const {
     // State
@@ -112,18 +119,18 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     messagesEndRef,
     currentAbortController,
     setCurrentAbortController,
-    
+
     // Initialization states
     isFontAwesomeLoaded,
     isInitialized,
-    
+
     // Functions
     normalizePath,
     loadProjectFiles,
     getCacheStatus,
     analyzeFile,
     scrollToBottom,
-    cancelAIRequest
+    cancelAIRequest,
   } = useDualScreenAIEditor(projectContext, currentFile);
 
   // Analyze file when current file changes
@@ -134,31 +141,34 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         name: currentFile?.name,
         contentLength: currentFile?.content?.length,
         language: currentFile?.language,
-        hasContent: !!currentFile?.content
+        hasContent: !!currentFile?.content,
       },
       currentFileData: {
         path: currentFileData?.path,
         name: currentFileData?.name,
         contentLength: currentFileData?.content?.length,
-        language: currentFileData?.language
+        language: currentFileData?.language,
       },
-      shouldUpdate: currentFile && currentFile.path !== currentFileData?.path
+      shouldUpdate: currentFile && currentFile.path !== currentFileData?.path,
     });
-    
+
     if (currentFile && currentFile.path !== currentFileData?.path) {
-      console.log('🔍 DEBUG: Current file changed, updating file editor state', {
-        newFilePath: currentFile.path,
-        oldFilePath: currentFileData?.path,
-        newFileContent: {
-          name: currentFile.name,
-          contentLength: currentFile.content?.length,
-          language: currentFile.language
-        }
-      });
-      
+      console.log(
+        '🔍 DEBUG: Current file changed, updating file editor state',
+        {
+          newFilePath: currentFile.path,
+          oldFilePath: currentFileData?.path,
+          newFileContent: {
+            name: currentFile.name,
+            contentLength: currentFile.content?.length,
+            language: currentFile.language,
+          },
+        },
+      );
+
       setCurrentFileData(currentFile);
       analyzeFile(currentFile.path, currentFile.content);
-      
+
       // Clear AI response when file changes (this is the expected behavior)
       console.log('📁 AI RESPONSE CLEARED DUE TO FILE CHANGE:', {
         hadResponse: !!aiResponse,
@@ -166,9 +176,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         editsCount: aiResponse?.edits?.length || 0,
         newFilePath: currentFile.path,
         oldFilePath: currentFileData?.path,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
-      
+
       setAiResponse(null);
       setError(null);
       setShowPreview(false);
@@ -192,7 +202,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     if (!selectedKey || !selectedModel || !userInstruction.trim()) {
       return;
     }
-    
+
     // We need either currentFileData or routeFiles to proceed
     if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
       return;
@@ -206,9 +216,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     setIsIterativeReading(true);
     setError(null);
     console.log('🔍 DEBUG: Clearing AI response and file editor state', {
-      currentShowPreview: showPreview
+      currentShowPreview: showPreview,
     });
-    
+
     setAiResponse(null);
     setShowPreview(false);
     setStreamedContent('');
@@ -218,23 +228,29 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       // Get available files from project
       const projectRoot = projectContext?.currentProject?.path || '';
       console.log('🔍 DEBUG: Project root:', projectRoot);
-      
+
       const availableFiles = [
-        ...(routeFiles?.map(f => normalizePath(f.path, projectRoot)) || []),
-        ...(currentFileData?.path ? [normalizePath(currentFileData.path, projectRoot)] : [])
+        ...(routeFiles?.map((f) => normalizePath(f.path, projectRoot)) || []),
+        ...(currentFileData?.path
+          ? [normalizePath(currentFileData.path, projectRoot)]
+          : []),
       ].filter(Boolean);
 
       console.log('🔍 DEBUG: Available files:', availableFiles);
-      
+
       // Prepare cached files from current file and route files
       const cachedFiles = [
         ...(currentFileData ? [currentFileData] : []),
-        ...(routeFiles || [])
+        ...(routeFiles || []),
       ].filter(Boolean);
 
       console.log('🔍 DEBUG: Starting iterative reading with cached files', {
         cachedFilesCount: cachedFiles.length,
-        cachedFiles: cachedFiles.map(f => ({ path: f.path, name: f.name, contentLength: f.content.length }))
+        cachedFiles: cachedFiles.map((f) => ({
+          path: f.path,
+          name: f.name,
+          contentLength: f.content.length,
+        })),
       });
 
       // Start iterative reading process
@@ -246,7 +262,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         selectedModel,
         50000, // max content limit
         cachedFiles,
-        abortController || undefined // Pass the abort controller
+        abortController || undefined, // Pass the abort controller
       );
 
       console.log('🔍 DEBUG: Iterative reading result:', result);
@@ -256,13 +272,18 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         return;
       }
 
-      console.log('🔍 DEBUG: Iterative reading next action:', result.nextAction);
+      console.log(
+        '🔍 DEBUG: Iterative reading next action:',
+        result.nextAction,
+      );
 
       // Process the first AI decision
       await processIterativeDecision(result.nextAction);
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start iterative reading';
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to start iterative reading';
       setError(errorMessage);
       console.error('Iterative reading failed:', error);
     } finally {
@@ -276,16 +297,16 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   const processIterativeDecision = async (decision: any) => {
     try {
       console.log('🔍 DEBUG: Processing iterative decision', {
-        decision: decision,
-        selectedKey: selectedKey,
-        selectedModel: selectedModel
+        decision,
+        selectedKey,
+        selectedModel,
       });
 
       const result = await iterativeReaderService.continueIterativeReading(
         decision,
         selectedKey!,
         selectedModel!,
-        currentAbortController || undefined // Pass the current abort controller
+        currentAbortController || undefined, // Pass the current abort controller
       );
 
       if (!result.success) {
@@ -305,66 +326,69 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       if (decision.action === 'analyze_and_respond' && result.content) {
         // Parse search/replace operations from the response
         const searchReplaceOps = parseSearchReplaceOperations(
-          result.content, 
-          projectContext?.currentProject?.path || '', 
-          normalizePath
+          result.content,
+          projectContext?.currentProject?.path || '',
+          normalizePath,
         );
-        
+
         console.log('🔍 DEBUG: Setting AI response with parsed operations', {
           searchReplaceOpsCount: searchReplaceOps.length,
-          searchReplaceOps: searchReplaceOps.map(op => ({
+          searchReplaceOps: searchReplaceOps.map((op) => ({
             filePath: op.filePath,
             type: op.type,
             hasOldText: !!op.oldText,
             hasNewText: !!op.newText,
             range: op.range,
             oldTextPreview: op.oldText?.substring(0, 100),
-            newTextPreview: op.newText?.substring(0, 100)
+            newTextPreview: op.newText?.substring(0, 100),
           })),
           hasExplanation: !!result.content,
-          rawContent: result.content?.substring(0, 500)
+          rawContent: result.content?.substring(0, 500),
         });
 
         const newAiResponse = {
           success: true,
           edits: searchReplaceOps, // Include parsed search/replace operations
           explanation: result.content,
-          usage: { 
+          usage: {
             promptTokens: 0,
             completionTokens: 0,
-            totalTokens: 0 
-          }
+            totalTokens: 0,
+          },
         };
-        
+
         console.log('🔍 DEBUG: Setting AI response', {
-          newAiResponse
+          newAiResponse,
         });
-        
+
         // Add console log for AI response
         console.log('🤖 AI RESPONSE RECEIVED:', {
           success: newAiResponse.success,
           explanationLength: newAiResponse.explanation?.length || 0,
           editsCount: newAiResponse.edits.length,
-          edits: newAiResponse.edits.map(edit => ({
+          edits: newAiResponse.edits.map((edit) => ({
             filePath: edit.filePath,
             type: edit.type,
             oldTextLength: edit.oldText?.length || 0,
             newTextLength: edit.newText?.length || 0,
-            range: edit.range
+            range: edit.range,
           })),
           usage: newAiResponse.usage,
-          fullExplanation: newAiResponse.explanation
+          fullExplanation: newAiResponse.explanation,
         });
-        
+
         setAiResponse(newAiResponse);
-        
+
         // Auto-toggle to editor mode when search/replace operations are found
         if (searchReplaceOps.length > 0 && onToggleEditing && !isEditing) {
-          console.log('🔍 DEBUG: Auto-toggling to editor mode due to search/replace operations found', {
-            searchReplaceOpsCount: searchReplaceOps.length,
-            currentIsEditing: isEditing,
-            hasOnToggleEditing: !!onToggleEditing
-          });
+          console.log(
+            '🔍 DEBUG: Auto-toggling to editor mode due to search/replace operations found',
+            {
+              searchReplaceOpsCount: searchReplaceOps.length,
+              currentIsEditing: isEditing,
+              hasOnToggleEditing: !!onToggleEditing,
+            },
+          );
           onToggleEditing();
         }
 
@@ -373,53 +397,72 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
           console.log('🚀 Auto-applying edits (always enabled)', {
             editsCount: searchReplaceOps.length,
             requireConfirmation: config.requireConfirmation,
-            searchReplaceOps: searchReplaceOps.map(op => ({
+            searchReplaceOps: searchReplaceOps.map((op) => ({
               filePath: op.filePath,
               type: op.type,
-              oldTextPreview: op.oldText?.substring(0, 50) + '...',
-              newTextPreview: op.newText?.substring(0, 50) + '...'
-            }))
+              oldTextPreview: `${op.oldText?.substring(0, 50)}...`,
+              newTextPreview: `${op.newText?.substring(0, 50)}...`,
+            })),
           });
-          
+
           // Create a function to apply edits with the current response
-          const applyEditsWithResponse = async (responseToApply: AIEditResponse) => {
+          const applyEditsWithResponse = async (
+            responseToApply: AIEditResponse,
+          ) => {
             try {
               console.log('🔄 Starting auto-apply process with response...', {
                 hasResponse: !!responseToApply,
-                editsCount: responseToApply.edits?.length || 0
+                editsCount: responseToApply.edits?.length || 0,
               });
-              
+
               if (!responseToApply?.success || !responseToApply.edits.length) {
-                console.warn('⚠️ Cannot apply edits - missing or invalid response in auto-apply', {
-                  hasResponse: !!responseToApply,
-                  success: responseToApply?.success,
-                  editsLength: responseToApply?.edits?.length
-                });
+                console.warn(
+                  '⚠️ Cannot apply edits - missing or invalid response in auto-apply',
+                  {
+                    hasResponse: !!responseToApply,
+                    success: responseToApply?.success,
+                    editsLength: responseToApply?.edits?.length,
+                  },
+                );
                 return;
               }
 
-              const result = await applyEditsToFiles(responseToApply.edits, projectContext?.currentProject?.path);
-              
+              const result = await applyEditsToFiles(
+                responseToApply.edits,
+                projectContext?.currentProject?.path,
+              );
+
               if (result.success) {
-                console.log('✅ Edits applied successfully to:', result.modifiedFiles);
+                console.log(
+                  '✅ Edits applied successfully to:',
+                  result.modifiedFiles,
+                );
                 onApplyEdits(responseToApply.edits);
-                
+
                 // Show success message briefly
-                console.log(`✅ Successfully applied ${responseToApply.edits.length} edit(s) to ${result.modifiedFiles.length} file(s)`);
-                
+                console.log(
+                  `✅ Successfully applied ${responseToApply.edits.length} edit(s) to ${result.modifiedFiles.length} file(s)`,
+                );
+
                 // Automatically restart server and show changes
                 console.log('🔄 Auto-restarting server to show changes...', {
                   hasProjectContext: !!projectContext,
-                  projectPath: projectContext?.currentProject?.path
+                  projectPath: projectContext?.currentProject?.path,
                 });
-                
+
                 try {
                   const serverResult = await restartServer(projectContext);
-                  
+
                   if (serverResult.success) {
-                    console.log('✅ Server restarted and changes are visible at:', serverResult.url);
+                    console.log(
+                      '✅ Server restarted and changes are visible at:',
+                      serverResult.url,
+                    );
                   } else {
-                    console.warn('⚠️ Changes applied but server restart failed:', serverResult.error);
+                    console.warn(
+                      '⚠️ Changes applied but server restart failed:',
+                      serverResult.error,
+                    );
                     // Still try to open localhost:8000 as fallback
                     console.log('🔄 Opening fallback localhost:8000...');
                     setTimeout(() => {
@@ -427,41 +470,50 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
                     }, 1000);
                   }
                 } catch (serverError) {
-                  console.error('❌ Server restart threw an error:', serverError);
+                  console.error(
+                    '❌ Server restart threw an error:',
+                    serverError,
+                  );
                   // Fallback to opening localhost directly
-                  console.log('🔄 Opening fallback localhost:8000 due to server error...');
+                  console.log(
+                    '🔄 Opening fallback localhost:8000 due to server error...',
+                  );
                   setTimeout(() => {
                     openLocalhostIfNeeded('http://localhost:8000');
                   }, 1000);
                 }
-                
+
                 // Keep AI response visible after successful application
-                console.log('✅ Edits applied successfully, keeping AI response visible for user review');
-                
+                console.log(
+                  '✅ Edits applied successfully, keeping AI response visible for user review',
+                );
               } else {
                 console.error('❌ Failed to apply edits:', result.errors);
-                setError(`Failed to apply some edits: ${result.errors.join(', ')}`);
+                setError(
+                  `Failed to apply some edits: ${result.errors.join(', ')}`,
+                );
               }
             } catch (error) {
               console.error('❌ Auto-apply failed:', error);
-              setError(`Auto-apply failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              setError(
+                `Auto-apply failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              );
             }
           };
-          
+
           // Set a brief timeout to allow UI to update before applying, but pass the response directly
           setTimeout(() => applyEditsWithResponse(newAiResponse), 500);
         } else {
           console.warn('⚠️ No search/replace operations found in AI response', {
             hasContent: !!result.content,
             contentLength: result.content?.length || 0,
-            contentPreview: result.content?.substring(0, 200) + '...'
+            contentPreview: `${result.content?.substring(0, 200)}...`,
           });
         }
       } else if (result.nextAction) {
         // Continue with next decision
         setTimeout(() => processIterativeDecision(result.nextAction), 1000);
       }
-
     } catch (error) {
       console.error('Failed to process iterative decision:', error);
       setError('Failed to process AI decision');
@@ -479,7 +531,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       isLoading,
       isStreaming,
       isInitialized,
-      isFontAwesomeLoaded
+      isFontAwesomeLoaded,
     });
 
     // Guard against first-run initialization issues
@@ -493,33 +545,34 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       console.log('❌ DEBUG: Missing required fields for sending message');
       return;
     }
-    
+
     // We need either currentFileData or routeFiles to proceed
     if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
       console.log('❌ DEBUG: No file data available for processing');
       return;
     }
 
-    console.log('✅ DEBUG: All conditions met, proceeding with iterative reading');
+    console.log(
+      '✅ DEBUG: All conditions met, proceeding with iterative reading',
+    );
     // Always use iterative mode
     return handleIterativeReading();
   };
 
-
   // Clear error state and reset form
   const handleClearError = () => {
     console.log('🔍 DEBUG: Clearing error state and resetting form', {
-      currentShowPreview: showPreview
+      currentShowPreview: showPreview,
     });
-    
+
     // Console log for AI response clearing
     console.log('🧹 AI RESPONSE CLEARED:', {
       hadResponse: !!aiResponse,
       responseSuccess: aiResponse?.success,
       editsCount: aiResponse?.edits?.length || 0,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-    
+
     setAiResponse(null);
     setError(null);
     setShowPreview(false);
@@ -529,51 +582,66 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
 
   // Handle preview toggle
   const handlePreviewToggle = async () => {
-    console.log('🔍 DEBUG: Preview toggle clicked', { 
-      currentShowPreview: showPreview, 
+    console.log('🔍 DEBUG: Preview toggle clicked', {
+      currentShowPreview: showPreview,
       newShowPreview: !showPreview,
       hasEdits: aiResponse?.edits?.length || 0,
       currentFileData: {
         path: currentFileData?.path,
         name: currentFileData?.name,
         contentLength: currentFileData?.content?.length,
-        language: currentFileData?.language
+        language: currentFileData?.language,
       },
-      aiResponseEdits: aiResponse?.edits?.map(edit => ({
-        filePath: edit.filePath,
-        type: edit.type,
-        hasOldText: !!edit.oldText,
-        hasNewText: !!edit.newText
-      })) || []
+      aiResponseEdits:
+        aiResponse?.edits?.map((edit) => ({
+          filePath: edit.filePath,
+          type: edit.type,
+          hasOldText: !!edit.oldText,
+          hasNewText: !!edit.newText,
+        })) || [],
     });
-    
+
     const newShowPreview = !showPreview;
-    
+
     // If enabling preview and we have edits, automatically load the first file with edits
-    if (newShowPreview && aiResponse && aiResponse.edits && aiResponse.edits.length > 0) {
-      console.log('🔍 DEBUG: Enabling preview - Auto-loading first file with edits');
-      
+    if (
+      newShowPreview &&
+      aiResponse &&
+      aiResponse.edits &&
+      aiResponse.edits.length > 0
+    ) {
+      console.log(
+        '🔍 DEBUG: Enabling preview - Auto-loading first file with edits',
+      );
+
       // Find the first edit that targets a file
-      const firstEdit = aiResponse.edits.find(edit => edit.filePath && edit.oldText && edit.newText);
-      
+      const firstEdit = aiResponse.edits.find(
+        (edit) => edit.filePath && edit.oldText && edit.newText,
+      );
+
       if (firstEdit) {
-        console.log('🔍 DEBUG: Auto-loading file for preview:', firstEdit.filePath);
+        console.log(
+          '🔍 DEBUG: Auto-loading file for preview:',
+          firstEdit.filePath,
+        );
         console.log('🎯 FOCUSING TO FILE PATH:', firstEdit.filePath);
         console.log('📊 SHOWING DIFF FOR FILE:', firstEdit.filePath);
         await loadFileForEdit(firstEdit, projectContext, onShowDiff);
       }
     }
-    
+
     setShowPreview(newShowPreview);
   };
 
   // Handle model change
   const handleModelChange = (providerId: string, modelId: string) => {
-    setConfig(prev => ({ ...prev, provider: providerId }));
+    setConfig((prev) => ({ ...prev, provider: providerId }));
     setSelectedModel(modelId);
-    
+
     // Auto-select a compatible API key for the new provider
-    const compatibleKeys = aiKeys.filter(key => key.providerId === providerId);
+    const compatibleKeys = aiKeys.filter(
+      (key) => key.providerId === providerId,
+    );
     if (compatibleKeys.length > 0) {
       setSelectedKey(compatibleKeys[0]);
     } else {
@@ -584,10 +652,10 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   // Handle key change
   const handleKeyChange = (key: any) => {
     setSelectedKey(key);
-    
+
     // Update provider to match selected key
     if (key) {
-      setConfig(prev => ({ ...prev, provider: key.providerId }));
+      setConfig((prev) => ({ ...prev, provider: key.providerId }));
     }
   };
 
@@ -596,7 +664,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     if (projectContext?.currentProject?.path) {
       conversationStore.createConversation(
         projectContext.currentProject.path,
-        projectContext.currentProject.name
+        projectContext.currentProject.name,
       );
     }
   };
@@ -612,7 +680,10 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   if (!isVisible) return null;
 
   // Get the current file for revert button - prioritize currentFileData, then first routeFile, then currentFile prop
-  const currentFileForRevert = currentFileData || (routeFiles && routeFiles.length > 0 ? routeFiles[0] : null) || currentFile;
+  const currentFileForRevert =
+    currentFileData ||
+    (routeFiles && routeFiles.length > 0 ? routeFiles[0] : null) ||
+    currentFile;
 
   return (
     <div className="dual-screen-ai-editor">
@@ -688,7 +759,6 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             FontAwesomeIcon={FontAwesomeIcon}
           />
 
-
           {/* Scroll anchor */}
           <div ref={messagesEndRef} />
         </div>
@@ -717,11 +787,19 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
           isStreaming={isStreaming}
           onSend={handleRequestEdit}
           onStop={cancelAIRequest}
-          canSend={isInitialized && !!selectedKey && !!selectedModel && (!!currentFileData || (routeFiles && routeFiles.length > 0)) && !!userInstruction.trim() && !isLoading && !isStreaming}
+          canSend={
+            isInitialized &&
+            !!selectedKey &&
+            !!selectedModel &&
+            (!!currentFileData || (routeFiles && routeFiles.length > 0)) &&
+            !!userInstruction.trim() &&
+            !isLoading &&
+            !isStreaming
+          }
           FontAwesomeIcon={FontAwesomeIcon}
         />
       </div>
-      
+
       {/* Context Management Panel */}
       <ContextManagementPanel
         isVisible={showContextManagement}
@@ -730,4 +808,3 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     </div>
   );
 };
-

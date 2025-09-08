@@ -19,14 +19,16 @@ interface SplitExplanationWithEditsProps {
   autoApplied?: boolean;
 }
 
-export const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps> = ({
+export const SplitExplanationWithEdits: React.FC<
+  SplitExplanationWithEditsProps
+> = ({
   explanation,
   edits,
   currentFile,
   onPreviewToggle,
   showPreview,
   onApply,
-  autoApplied = false
+  autoApplied = false,
 }) => {
   // Use search-replace blocks as positioning markers instead of removing them
   const splitExplanation = (text: string) => {
@@ -36,40 +38,42 @@ export const SplitExplanationWithEdits: React.FC<SplitExplanationWithEditsProps>
     const searchReplaceBlockRegex = /```search-replace[\s\S]*?```/g;
     const blocks = [];
     let match;
-    
+
     while ((match = searchReplaceBlockRegex.exec(text)) !== null) {
       blocks.push({
         block: match[0],
         start: match.index,
-        end: match.index + match[0].length
+        end: match.index + match[0].length,
       });
     }
-    
-    console.log(`🔍 Found ${blocks.length} search-replace blocks for positioning`);
+
+    console.log(
+      `🔍 Found ${blocks.length} search-replace blocks for positioning`,
+    );
 
     if (blocks.length === 0) {
       // No search-replace blocks, return original text
       return {
         before: text,
-        after: ''
+        after: '',
       };
     }
-    
+
     // Find the first search-replace block to split around
     const firstBlock = blocks[0];
     const beforeText = text.substring(0, firstBlock.start).trim();
     const afterText = text.substring(firstBlock.end).trim();
-    
+
     console.log('📍 Positioning information:', {
       beforeLength: beforeText.length,
       afterLength: afterText.length,
       firstBlockPosition: `${firstBlock.start}-${firstBlock.end}`,
-      totalBlocks: blocks.length
+      totalBlocks: blocks.length,
     });
 
     return {
       before: beforeText,
-      after: afterText
+      after: afterText,
     };
   };
 

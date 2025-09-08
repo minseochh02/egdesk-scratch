@@ -1,7 +1,16 @@
-import { ChatSession, ChatMessage, ChatConfig, ChatState, CHAT_PROVIDERS } from '../types';
+import {
+  ChatSession,
+  ChatMessage,
+  ChatConfig,
+  ChatState,
+  CHAT_PROVIDERS,
+} from '../types';
 import { ChatService } from '../services/chatService';
 import { AIKey } from '../../AIKeysManager/types';
-import { CodespaceChatService, EnhancedChatMessage } from '../services/codespaceChatService';
+import {
+  CodespaceChatService,
+  EnhancedChatMessage,
+} from '../services/codespaceChatService';
 
 class ChatStore {
   private state: ChatState = {
@@ -14,11 +23,12 @@ class ChatStore {
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 4096,
-      systemPrompt: 'You are a helpful AI assistant.'
-    }
+      systemPrompt: 'You are a helpful AI assistant.',
+    },
   };
 
   private listeners: Set<(state: ChatState) => void> = new Set();
+
   private codespaceService: CodespaceChatService;
 
   constructor() {
@@ -42,7 +52,7 @@ class ChatStore {
    * Notify all listeners of state change
    */
   private notify() {
-    this.listeners.forEach(listener => listener(this.state));
+    this.listeners.forEach((listener) => listener(this.state));
   }
 
   /**
@@ -61,14 +71,14 @@ class ChatStore {
       const savedSessions = await window.electron.store.get('chat-sessions');
       if (savedSessions && Array.isArray(savedSessions)) {
         // Convert date strings back to Date objects
-        const sessions = savedSessions.map(session => ({
+        const sessions = savedSessions.map((session) => ({
           ...session,
           createdAt: new Date(session.createdAt),
           updatedAt: new Date(session.updatedAt),
           messages: session.messages.map((msg: any) => ({
             ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
+            timestamp: new Date(msg.timestamp),
+          })),
         }));
         this.setState({ sessions });
       }
@@ -92,7 +102,11 @@ class ChatStore {
   /**
    * Create a new chat session
    */
-  async createSession(name: string, provider: string, model: string): Promise<ChatSession> {
+  async createSession(
+    name: string,
+    provider: string,
+    model: string,
+  ): Promise<ChatSession> {
     const newSession: ChatSession = {
       id: this.generateUUID(),
       name,
@@ -101,15 +115,15 @@ class ChatStore {
       messages: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      isActive: true
+      isActive: true,
     };
 
     const updatedSessions = [...this.state.sessions, newSession];
     await this.saveSessions(updatedSessions);
-    
-    this.setState({ 
+
+    this.setState({
       sessions: updatedSessions,
-      currentSessionId: newSession.id
+      currentSessionId: newSession.id,
     });
 
     return newSession;
@@ -119,12 +133,17 @@ class ChatStore {
    * Delete a chat session
    */
   async deleteSession(sessionId: string): Promise<void> {
-    const updatedSessions = this.state.sessions.filter(s => s.id !== sessionId);
+    const updatedSessions = this.state.sessions.filter(
+      (s) => s.id !== sessionId,
+    );
     await this.saveSessions(updatedSessions);
-    
-    this.setState({ 
+
+    this.setState({
       sessions: updatedSessions,
-      currentSessionId: this.state.currentSessionId === sessionId ? null : this.state.currentSessionId
+      currentSessionId:
+        this.state.currentSessionId === sessionId
+          ? null
+          : this.state.currentSessionId,
     });
   }
 
@@ -140,7 +159,10 @@ class ChatStore {
    */
   getCurrentSession(): ChatSession | null {
     if (!this.state.currentSessionId) return null;
-    return this.state.sessions.find(s => s.id === this.state.currentSessionId) || null;
+    return (
+      this.state.sessions.find((s) => s.id === this.state.currentSessionId) ||
+      null
+    );
   }
 
   /**
@@ -157,7 +179,7 @@ class ChatStore {
     return {
       isAvailable: this.codespaceService.isCodespaceAvailable(),
       workspacePath: this.codespaceService.getCurrentWorkspacePath(),
-      cacheStatus: this.codespaceService.getCacheStatus()
+      cacheStatus: this.codespaceService.getCacheStatus(),
     };
   }
 
@@ -171,7 +193,10 @@ class ChatStore {
   /**
    * Add message to current session
    */
-  async addMessage(content: string, role: 'user' | 'assistant' | 'system' = 'user'): Promise<void> {
+  async addMessage(
+    content: string,
+    role: 'user' | 'assistant' | 'system' = 'user',
+  ): Promise<void> {
     const currentSession = this.getCurrentSession();
     if (!currentSession) return;
 
@@ -181,18 +206,18 @@ class ChatStore {
       content,
       timestamp: new Date(),
       provider: currentSession.provider,
-      model: currentSession.model
+      model: currentSession.model,
     };
 
     const updatedMessages = [...currentSession.messages, newMessage];
     const updatedSession = {
       ...currentSession,
       messages: updatedMessages,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
-    const updatedSessions = this.state.sessions.map(s => 
-      s.id === currentSession.id ? updatedSession : s
+    const updatedSessions = this.state.sessions.map((s) =>
+      s.id === currentSession.id ? updatedSession : s,
     );
 
     await this.saveSessions(updatedSessions);
@@ -205,7 +230,7 @@ class ChatStore {
   async sendMessage(
     content: string,
     aiKey: AIKey,
-    model: string
+    model: string,
   ): Promise<void> {
     const currentSession = this.getCurrentSession();
     if (!currentSession) return;
@@ -214,12 +239,13 @@ class ChatStore {
       this.setState({ isLoading: true, error: null });
 
       // Enhance message with codespace context, using keyword-driven pre-search when possible
-      const enhancedMessage = await this.codespaceService.enhanceMessageWithContext(
-        content,
-        aiKey,
-        model
-      );
-      
+      const enhancedMessage =
+        await this.codespaceService.enhanceMessageWithContext(
+          content,
+          aiKey,
+          model,
+        );
+
       // Add enhanced user message
       await this.addMessage(enhancedMessage.content, 'user');
 
@@ -228,10 +254,11 @@ class ChatStore {
       if (!updatedSession) return;
 
       // Create contextual system prompt
-      const contextualSystemPrompt = this.codespaceService.createContextualSystemPrompt(
-        this.state.config.systemPrompt,
-        enhancedMessage.codespaceContext
-      );
+      const contextualSystemPrompt =
+        this.codespaceService.createContextualSystemPrompt(
+          this.state.config.systemPrompt,
+          enhancedMessage.codespaceContext,
+        );
 
       // Send to AI service
       const response = await ChatService.sendMessage(
@@ -241,8 +268,8 @@ class ChatStore {
         {
           temperature: this.state.config.temperature,
           maxTokens: this.state.config.maxTokens,
-          systemPrompt: contextualSystemPrompt
-        }
+          systemPrompt: contextualSystemPrompt,
+        },
       );
 
       if (response.success) {
@@ -255,18 +282,18 @@ class ChatStore {
           provider: currentSession.provider,
           model: currentSession.model,
           tokens: response.usage?.totalTokens,
-          cost: response.cost
+          cost: response.cost,
         };
 
         const finalMessages = [...updatedSession.messages, aiMessage];
         const finalSession = {
           ...updatedSession,
           messages: finalMessages,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         };
 
-        const finalSessions = this.state.sessions.map(s => 
-          s.id === currentSession.id ? finalSession : s
+        const finalSessions = this.state.sessions.map((s) =>
+          s.id === currentSession.id ? finalSession : s,
         );
 
         // Save last context reads for UI hint (Read [path] [lines])
@@ -277,7 +304,8 @@ class ChatStore {
         throw new Error(response.error || 'Failed to get AI response');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to send message';
       this.setState({ error: errorMessage });
     } finally {
       this.setState({ isLoading: false });
@@ -290,7 +318,7 @@ class ChatStore {
   async updateConfig(config: Partial<ChatConfig>): Promise<void> {
     const updatedConfig = { ...this.state.config, ...config };
     this.setState({ config: updatedConfig });
-    
+
     // Save config to storage
     try {
       await window.electron.store.set('chat-config', updatedConfig);
@@ -303,7 +331,7 @@ class ChatStore {
    * Get available models for a provider
    */
   getModelsForProvider(providerId: string) {
-    const provider = CHAT_PROVIDERS.find(p => p.id === providerId);
+    const provider = CHAT_PROVIDERS.find((p) => p.id === providerId);
     return provider?.models || [];
   }
 
@@ -311,7 +339,7 @@ class ChatStore {
    * Get provider info
    */
   getProviderInfo(providerId: string) {
-    return CHAT_PROVIDERS.find(p => p.id === providerId);
+    return CHAT_PROVIDERS.find((p) => p.id === providerId);
   }
 
   /**
@@ -335,12 +363,15 @@ class ChatStore {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+      /[xy]/g,
+      function (c) {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      },
+    );
   }
 }
 

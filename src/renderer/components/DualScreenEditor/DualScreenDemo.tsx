@@ -27,7 +27,7 @@ export const DualScreenDemo: React.FC = () => {
 
   return (
     <DualScreenEditor
-      isVisible={true}
+      isVisible
       currentFile={currentFile}
       onApplyEdits={handleApplyEdits}
       onClose={() => {}} // No longer needed

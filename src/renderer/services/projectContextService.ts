@@ -27,12 +27,14 @@ export interface ProjectContext {
 
 class ProjectContextService {
   private static instance: ProjectContextService;
+
   private context: ProjectContext = {
     currentProject: null,
     recentProjects: [],
     availableProjects: [],
-    lastUpdated: new Date()
+    lastUpdated: new Date(),
   };
+
   private listeners: Set<(context: ProjectContext) => void> = new Set();
 
   private constructor() {
@@ -52,7 +54,7 @@ class ProjectContextService {
   subscribe(listener: (context: ProjectContext) => void): () => void {
     this.listeners.add(listener);
     listener(this.context); // Initial call
-    
+
     return () => {
       this.listeners.delete(listener);
     };
@@ -63,7 +65,7 @@ class ProjectContextService {
    */
   private notifyListeners(): void {
     this.context.lastUpdated = new Date();
-    this.listeners.forEach(listener => listener(this.context));
+    this.listeners.forEach((listener) => listener(this.context));
     this.saveContext();
   }
 
@@ -87,8 +89,10 @@ class ProjectContextService {
   async setCurrentProject(projectPath: string): Promise<ProjectInfo | null> {
     try {
       // Check if project already exists
-      let project = this.context.availableProjects.find(p => p.path === projectPath);
-      
+      let project = this.context.availableProjects.find(
+        (p) => p.path === projectPath,
+      );
+
       if (!project) {
         // Analyze and create new project
         project = await this.analyzeAndCreateProject(projectPath);
@@ -101,41 +105,45 @@ class ProjectContextService {
         // Update project access time
         project.lastAccessed = new Date();
         project.isActive = true;
-        
+
         // Deactivate other projects
-        this.context.availableProjects.forEach(p => p.isActive = false);
-        
+        this.context.availableProjects.forEach((p) => (p.isActive = false));
+
         // Set as current project
         this.context.currentProject = project;
-        
+
         // Add to recent projects (remove if exists, add to front)
-        this.context.recentProjects = this.context.recentProjects.filter(p => p.id !== project.id);
+        this.context.recentProjects = this.context.recentProjects.filter(
+          (p) => p.id !== project.id,
+        );
         this.context.recentProjects.unshift(project);
-        
+
         // Keep only last 10 recent projects
         this.context.recentProjects = this.context.recentProjects.slice(0, 10);
-        
+
         this.notifyListeners();
         return project;
       }
     } catch (error) {
       console.error('Failed to set current project:', error);
     }
-    
+
     return null;
   }
 
   /**
    * Analyze a folder and create project info
    */
-  private async analyzeAndCreateProject(projectPath: string): Promise<ProjectInfo | null> {
+  private async analyzeAndCreateProject(
+    projectPath: string,
+  ): Promise<ProjectInfo | null> {
     try {
       const projectId = this.generateProjectId(projectPath);
       const projectName = this.extractProjectName(projectPath);
-      
+
       // Analyze project structure
       const metadata = await this.analyzeProjectStructure(projectPath);
-      
+
       const project: ProjectInfo = {
         id: projectId,
         name: projectName,
@@ -144,9 +152,9 @@ class ProjectContextService {
         description: this.generateProjectDescription(metadata),
         lastAccessed: new Date(),
         isActive: false,
-        metadata
+        metadata,
       };
-      
+
       return project;
     } catch (error) {
       console.error('Failed to analyze project:', error);
@@ -157,49 +165,59 @@ class ProjectContextService {
   /**
    * Analyze project structure to determine type and metadata
    */
-  private async analyzeProjectStructure(projectPath: string): Promise<ProjectInfo['metadata']> {
+  private async analyzeProjectStructure(
+    projectPath: string,
+  ): Promise<ProjectInfo['metadata']> {
     const metadata: ProjectInfo['metadata'] = {};
-    
+
     try {
       // Check for WordPress
-      const hasWordPress = await this.checkFileExists(`${projectPath}/wp-config.php`) ||
-                          await this.checkFileExists(`${projectPath}/wp-content`) ||
-                          await this.checkFileExists(`${projectPath}/wp-admin`);
+      const hasWordPress =
+        (await this.checkFileExists(`${projectPath}/wp-config.php`)) ||
+        (await this.checkFileExists(`${projectPath}/wp-content`)) ||
+        (await this.checkFileExists(`${projectPath}/wp-admin`));
       metadata.hasWordPress = hasWordPress;
-      
+
       // Check for Node.js
-      const hasPackageJson = await this.checkFileExists(`${projectPath}/package.json`);
+      const hasPackageJson = await this.checkFileExists(
+        `${projectPath}/package.json`,
+      );
       metadata.hasPackageJson = hasPackageJson;
-      
+
       // Check for Python
-      const hasRequirementsTxt = await this.checkFileExists(`${projectPath}/requirements.txt`) ||
-                                await this.checkFileExists(`${projectPath}/pyproject.toml`) ||
-                                await this.checkFileExists(`${projectPath}/setup.py`);
+      const hasRequirementsTxt =
+        (await this.checkFileExists(`${projectPath}/requirements.txt`)) ||
+        (await this.checkFileExists(`${projectPath}/pyproject.toml`)) ||
+        (await this.checkFileExists(`${projectPath}/setup.py`));
       metadata.hasRequirementsTxt = hasRequirementsTxt;
-      
+
       // Check for Java
-      const hasPomXml = await this.checkFileExists(`${projectPath}/pom.xml`) ||
-                       await this.checkFileExists(`${projectPath}/build.gradle`);
+      const hasPomXml =
+        (await this.checkFileExists(`${projectPath}/pom.xml`)) ||
+        (await this.checkFileExists(`${projectPath}/build.gradle`));
       metadata.hasPomXml = hasPomXml;
-      
+
       // Check for C/C++
-      const hasMakefile = await this.checkFileExists(`${projectPath}/Makefile`) ||
-                         await this.checkFileExists(`${projectPath}/CMakeLists.txt`);
+      const hasMakefile =
+        (await this.checkFileExists(`${projectPath}/Makefile`)) ||
+        (await this.checkFileExists(`${projectPath}/CMakeLists.txt`));
       metadata.hasMakefile = hasMakefile;
-      
+
       // Determine primary language
       metadata.language = this.determinePrimaryLanguage(metadata);
-      
+
       // Determine framework
       metadata.framework = this.determineFramework(metadata);
-      
+
       // Get version if available
-      metadata.version = await this.extractProjectVersion(projectPath, metadata);
-      
+      metadata.version = await this.extractProjectVersion(
+        projectPath,
+        metadata,
+      );
     } catch (error) {
       console.error('Error analyzing project structure:', error);
     }
-    
+
     return metadata;
   }
 
@@ -218,7 +236,9 @@ class ProjectContextService {
   /**
    * Determine project type based on metadata
    */
-  private determineProjectType(metadata: ProjectInfo['metadata']): ProjectInfo['type'] {
+  private determineProjectType(
+    metadata: ProjectInfo['metadata'],
+  ): ProjectInfo['type'] {
     if (metadata.hasWordPress) return 'wordpress';
     if (metadata.hasPackageJson) return 'node';
     if (metadata.hasRequirementsTxt) return 'python';
@@ -254,27 +274,36 @@ class ProjectContextService {
   /**
    * Extract project version
    */
-  private async extractProjectVersion(projectPath: string, metadata: ProjectInfo['metadata']): Promise<string | undefined> {
+  private async extractProjectVersion(
+    projectPath: string,
+    metadata: ProjectInfo['metadata'],
+  ): Promise<string | undefined> {
     try {
       if (metadata.hasPackageJson) {
-        const result = await window.electron.fileSystem.readFile(`${projectPath}/package.json`);
+        const result = await window.electron.fileSystem.readFile(
+          `${projectPath}/package.json`,
+        );
         if (result.success && result.content) {
           const packageJson = JSON.parse(result.content);
           return packageJson.version;
         }
       }
-      
+
       if (metadata.hasRequirementsTxt) {
         // Try to find version in requirements.txt or pyproject.toml
-        const result = await window.electron.fileSystem.readFile(`${projectPath}/pyproject.toml`);
+        const result = await window.electron.fileSystem.readFile(
+          `${projectPath}/pyproject.toml`,
+        );
         if (result.success && result.content) {
           const match = result.content.match(/version\s*=\s*["']([^"']+)["']/);
           if (match) return match[1];
         }
       }
-      
+
       if (metadata.hasPomXml) {
-        const result = await window.electron.fileSystem.readFile(`${projectPath}/pom.xml`);
+        const result = await window.electron.fileSystem.readFile(
+          `${projectPath}/pom.xml`,
+        );
         if (result.success && result.content) {
           const match = result.content.match(/<version>([^<]+)<\/version>/);
           if (match) return match[1];
@@ -283,24 +312,26 @@ class ProjectContextService {
     } catch (error) {
       console.error('Error extracting project version:', error);
     }
-    
+
     return undefined;
   }
 
   /**
    * Generate project description
    */
-  private generateProjectDescription(metadata: ProjectInfo['metadata']): string {
+  private generateProjectDescription(
+    metadata: ProjectInfo['metadata'],
+  ): string {
     const parts: string[] = [];
-    
+
     if (metadata.hasWordPress) parts.push('WordPress site');
     if (metadata.hasPackageJson) parts.push('Node.js application');
     if (metadata.hasRequirementsTxt) parts.push('Python project');
     if (metadata.hasPomXml) parts.push('Java application');
     if (metadata.hasMakefile) parts.push('C/C++ project');
-    
+
     if (parts.length === 0) parts.push('General project');
-    
+
     return parts.join(', ');
   }
 
@@ -312,8 +343,8 @@ class ProjectContextService {
     let hash = 0;
     for (let i = 0; i < projectPath.length; i++) {
       const char = projectPath.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = (hash << 5) - hash + char;
+      hash &= hash; // Convert to 32-bit integer
     }
     return `project_${Math.abs(hash).toString(36)}`;
   }
@@ -330,27 +361,35 @@ class ProjectContextService {
    * Get project by ID
    */
   getProjectById(projectId: string): ProjectInfo | null {
-    return this.context.availableProjects.find(p => p.id === projectId) || null;
+    return (
+      this.context.availableProjects.find((p) => p.id === projectId) || null
+    );
   }
 
   /**
    * Get project by path
    */
   getProjectByPath(projectPath: string): ProjectInfo | null {
-    return this.context.availableProjects.find(p => p.path === projectPath) || null;
+    return (
+      this.context.availableProjects.find((p) => p.path === projectPath) || null
+    );
   }
 
   /**
    * Remove project from context
    */
   removeProject(projectId: string): void {
-    this.context.availableProjects = this.context.availableProjects.filter(p => p.id !== projectId);
-    this.context.recentProjects = this.context.recentProjects.filter(p => p.id !== projectId);
-    
+    this.context.availableProjects = this.context.availableProjects.filter(
+      (p) => p.id !== projectId,
+    );
+    this.context.recentProjects = this.context.recentProjects.filter(
+      (p) => p.id !== projectId,
+    );
+
     if (this.context.currentProject?.id === projectId) {
       this.context.currentProject = null;
     }
-    
+
     this.notifyListeners();
   }
 
@@ -364,7 +403,7 @@ class ProjectContextService {
       project.metadata = { ...project.metadata, ...updatedMetadata };
       project.type = this.determineProjectType(project.metadata);
       project.description = this.generateProjectDescription(project.metadata);
-      
+
       this.notifyListeners();
     }
   }
@@ -388,14 +427,16 @@ class ProjectContextService {
         const parsed = JSON.parse(stored);
         // Convert date strings back to Date objects
         if (parsed.currentProject) {
-          parsed.currentProject.lastAccessed = new Date(parsed.currentProject.lastAccessed);
+          parsed.currentProject.lastAccessed = new Date(
+            parsed.currentProject.lastAccessed,
+          );
         }
         parsed.recentProjects = parsed.recentProjects.map((p: any) => ({
           ...p,
-          lastAccessed: new Date(p.lastAccessed)
+          lastAccessed: new Date(p.lastAccessed),
         }));
         parsed.lastUpdated = new Date(parsed.lastUpdated);
-        
+
         this.context = parsed;
       }
     } catch (error) {
@@ -422,7 +463,7 @@ class ProjectContextService {
       currentProject: null,
       recentProjects: [],
       availableProjects: [],
-      lastUpdated: new Date()
+      lastUpdated: new Date(),
     };
     this.notifyListeners();
   }

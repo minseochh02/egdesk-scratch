@@ -44,7 +44,9 @@ export const FileWriterTest: React.FC<FileWriterTestProps> = ({
   useEffect(() => {
     const loadFontAwesome = async () => {
       try {
-        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        const { FontAwesomeIcon: FAIcon } = await import(
+          '@fortawesome/react-fontawesome'
+        );
         setFontAwesomeIcon(() => FAIcon);
       } catch (error) {
         console.warn('Failed to load FontAwesome:', error);
@@ -113,8 +115,9 @@ export const FileWriterTest: React.FC<FileWriterTestProps> = ({
       {
         type: 'replace',
         filePath: wwwIndexPath,
-        oldText: 'echo \'<h2>Welcome to WordPress Development Server</h2>\';',
-        newText: 'echo \'<h2>Welcome to Enhanced WordPress Development Server</h2>\';',
+        oldText: "echo '<h2>Welcome to WordPress Development Server</h2>';",
+        newText:
+          "echo '<h2>Welcome to Enhanced WordPress Development Server</h2>';",
         description: 'Update the welcome message in www/index.php',
       },
     ];
@@ -191,8 +194,7 @@ register_activation_hook(__FILE__, 'test_plugin_activation');
 register_deactivation_hook(__FILE__, 'test_plugin_deactivation');
 add_action('admin_menu', 'test_plugin_menu');
 `,
-        description:
-          'Create a new WordPress plugin file in the www directory',
+        description: 'Create a new WordPress plugin file in the www directory',
       },
     ];
 
@@ -220,7 +222,7 @@ add_action('admin_menu', 'test_plugin_menu');
       {
         type: 'replace',
         filePath: wordpressIndexPath,
-        oldText: 'echo \'<h2>Welcome to WordPress Development Server</h2>\';',
+        oldText: "echo '<h2>Welcome to WordPress Development Server</h2>';",
         newText: `echo '<h2>Welcome to Enhanced WordPress Development Server</h2>';
 echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;">
     <h3>Product Selection Form</h3>
@@ -260,7 +262,8 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
         </fieldset>
     </form>
 </div>';`,
-        description: 'Replace the product selection form with enhanced version including new EGDesk products',
+        description:
+          'Replace the product selection form with enhanced version including new EGDesk products',
       },
     ];
 
@@ -324,7 +327,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
     const enabledResult = codeChangeConfig.isBackupEnabled();
 
     codeChangeConfig.setMaxBackups(3);
-    
+
     // CRITICAL: Always restore original setting immediately after testing
     codeChangeConfig.setBackupEnabled(originalBackupSetting);
 
@@ -365,7 +368,8 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
     <div className="file-writer-test">
       <div className="test-header">
         <h3>
-          {FontAwesomeIcon && <FontAwesomeIcon icon={faFileCode} />} File Writer Test Suite
+          {FontAwesomeIcon && <FontAwesomeIcon icon={faFileCode} />} File Writer
+          Test Suite
         </h3>
         <p>
           Test the enhanced file writing functionality with backup and
@@ -376,7 +380,9 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           <div
             className={`project-status ${hasProjectContext ? 'loaded' : 'missing'}`}
           >
-            {FontAwesomeIcon && <FontAwesomeIcon icon={hasProjectContext ? faCheck : faTimes} />}
+            {FontAwesomeIcon && (
+              <FontAwesomeIcon icon={hasProjectContext ? faCheck : faTimes} />
+            )}
             <span>
               {hasProjectContext ? 'Project Loaded' : 'No Project Context'}
             </span>
@@ -444,7 +450,9 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
 
         <button
           className="test-btn"
-          onClick={() => runTest('Replace Product Form', testReplaceProductForm)}
+          onClick={() =>
+            runTest('Replace Product Form', testReplaceProductForm)
+          }
           disabled={isRunning || !hasProjectContext}
           title={
             !hasProjectContext
@@ -511,7 +519,9 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
           <div className="no-results">
             {!hasProjectContext ? (
               <div className="project-warning">
-                {FontAwesomeIcon && <FontAwesomeIcon icon={faExclamationTriangle} />}
+                {FontAwesomeIcon && (
+                  <FontAwesomeIcon icon={faExclamationTriangle} />
+                )}
                 <strong>Project Context Required</strong>
                 <p>
                   Most tests require a loaded project to function properly.
@@ -519,8 +529,8 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
                   running these tests.
                 </p>
                 <p>
-                  The tests will work with the <code>www/index.php</code>{' '}
-                  file and create test files in the project directory.
+                  The tests will work with the <code>www/index.php</code> file
+                  and create test files in the project directory.
                 </p>
               </div>
             ) : (
@@ -536,11 +546,9 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
               >
                 <div className="result-header">
                   <span className="result-icon">
-                    {result.success ? (
-                      FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />
-                    ) : (
-                      FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />
-                    )}
+                    {result.success
+                      ? FontAwesomeIcon && <FontAwesomeIcon icon={faCheck} />
+                      : FontAwesomeIcon && <FontAwesomeIcon icon={faTimes} />}
                   </span>
                   <span className="result-time">
                     {result.timestamp.toLocaleTimeString()}
@@ -561,7 +569,7 @@ echo '<div class="product-form" style="margin: 20px 0; padding: 20px; background
 
       {isRunning && (
         <div className="running-indicator">
-          <div className="spinner"></div>
+          <div className="spinner" />
           <span>Running test...</span>
         </div>
       )}

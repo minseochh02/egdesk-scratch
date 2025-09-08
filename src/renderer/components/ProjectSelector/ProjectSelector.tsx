@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import ProjectContextService, { ProjectInfo } from '../../services/projectContextService';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFolder, faFolderOpen, faCode, faJava, faPython, faGlobe, faCog, faPlus, faTimes, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import {
+  faFolder,
+  faFolderOpen,
+  faCode,
+  faJava,
+  faPython,
+  faGlobe,
+  faCog,
+  faPlus,
+  faTimes,
+  faChevronDown,
+} from '@fortawesome/free-solid-svg-icons';
+import ProjectContextService, {
+  ProjectInfo,
+} from '../../services/projectContextService';
 import './ProjectSelector.css';
 
 interface ProjectSelectorProps {
@@ -17,22 +30,28 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   showCurrentProject = true,
   showRecentProjects = true,
   showAvailableProjects = false,
-  className = ''
+  className = '',
 }) => {
-  const [projectContext, setProjectContext] = useState(ProjectContextService.getInstance().getContext());
+  const [projectContext, setProjectContext] = useState(
+    ProjectContextService.getInstance().getContext(),
+  );
   const [isOpen, setIsOpen] = useState(false);
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = ProjectContextService.getInstance().subscribe(setProjectContext);
+    const unsubscribe =
+      ProjectContextService.getInstance().subscribe(setProjectContext);
     return unsubscribe;
   }, []);
 
   const handleProjectSelect = async (project: ProjectInfo) => {
     setIsLoading(true);
     try {
-      const selectedProject = await ProjectContextService.getInstance().setCurrentProject(project.path);
+      const selectedProject =
+        await ProjectContextService.getInstance().setCurrentProject(
+          project.path,
+        );
       if (selectedProject && onProjectSelect) {
         onProjectSelect(selectedProject);
       }
@@ -49,7 +68,10 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       const result = await window.electron.fileSystem.pickFolder();
       if (result.success && result.folderPath) {
         setSelectedProjectPath(result.folderPath);
-        const newProject = await ProjectContextService.getInstance().setCurrentProject(result.folderPath);
+        const newProject =
+          await ProjectContextService.getInstance().setCurrentProject(
+            result.folderPath,
+          );
         if (newProject && onProjectSelect) {
           onProjectSelect(newProject);
         }
@@ -62,13 +84,20 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 
   const getProjectIcon = (project: ProjectInfo) => {
     switch (project.type) {
-      case 'wordpress': return faCode;
-      case 'node': return faCode;
-      case 'python': return faPython;
-      case 'java': return faJava;
-      case 'cpp': return faCog;
-      case 'web': return faGlobe;
-      default: return faFolder;
+      case 'wordpress':
+        return faCode;
+      case 'node':
+        return faCode;
+      case 'python':
+        return faPython;
+      case 'java':
+        return faJava;
+      case 'cpp':
+        return faCog;
+      case 'web':
+        return faGlobe;
+      default:
+        return faFolder;
     }
   };
 
@@ -76,7 +105,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
+
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     if (days < 7) return `${days}d ago`;
@@ -84,16 +113,18 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     return date.toLocaleDateString();
   };
 
-  const currentProject = projectContext.currentProject;
+  const { currentProject } = projectContext;
 
   return (
     <div className={`project-selector ${className}`}>
       {/* Compact Current Project Display */}
       {showCurrentProject && currentProject && (
         <div className="current-project compact">
-          <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(currentProject)} /></span>
+          <span className="project-icon">
+            <FontAwesomeIcon icon={getProjectIcon(currentProject)} />
+          </span>
           <span className="project-name">{currentProject.name}</span>
-          <button 
+          <button
             className="project-menu-btn"
             onClick={() => setIsOpen(!isOpen)}
             title="Change project"
@@ -108,22 +139,25 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         <div className="project-dropdown compact">
           <div className="dropdown-header">
             <h3>Projects</h3>
-            <button 
-              className="close-btn"
-              onClick={() => setIsOpen(false)}
-            >
+            <button className="close-btn" onClick={() => setIsOpen(false)}>
               <FontAwesomeIcon icon={faTimes} />
             </button>
           </div>
 
           {/* New Project Button */}
           <div className="new-project-section">
-            <button 
+            <button
               className="new-project-btn"
               onClick={handleNewProject}
               disabled={isLoading}
             >
-              {isLoading ? '...' : <><FontAwesomeIcon icon={faPlus} /> New Project</>}
+              {isLoading ? (
+                '...'
+              ) : (
+                <>
+                  <FontAwesomeIcon icon={faPlus} /> New Project
+                </>
+              )}
             </button>
           </div>
 
@@ -132,21 +166,27 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
             <div className="project-section">
               <h4>Recent</h4>
               <div className="project-list">
-                {projectContext.recentProjects.map(project => (
+                {projectContext.recentProjects.map((project) => (
                   <div
                     key={project.id}
                     className={`project-item ${project.isActive ? 'active' : ''}`}
                     onClick={() => handleProjectSelect(project)}
                   >
-                    <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(project)} /></span>
+                    <span className="project-icon">
+                      <FontAwesomeIcon icon={getProjectIcon(project)} />
+                    </span>
                     <div className="project-details">
                       <div className="project-name">{project.name}</div>
                       <div className="project-meta">
                         <span className="project-type">{project.type}</span>
-                        <span className="project-date">{formatDate(project.lastAccessed)}</span>
+                        <span className="project-date">
+                          {formatDate(project.lastAccessed)}
+                        </span>
                       </div>
                     </div>
-                    {project.isActive && <span className="active-indicator">●</span>}
+                    {project.isActive && (
+                      <span className="active-indicator">●</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -154,32 +194,39 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           )}
 
           {/* Available Projects */}
-          {showAvailableProjects && projectContext.availableProjects.length > 0 && (
-            <div className="project-section">
-              <h4>Available</h4>
-              <div className="project-list">
-                {projectContext.availableProjects.map(project => (
-                  <div
-                    key={project.id}
-                    className={`project-item ${project.isActive ? 'active' : ''}`}
-                    onClick={() => handleProjectSelect(project)}
-                  >
-                    <span className="project-icon"><FontAwesomeIcon icon={getProjectIcon(project)} /></span>
-                    <div className="project-details">
-                      <div className="project-name">{project.name}</div>
-                      <div className="project-meta">
-                        <span className="project-type">{project.type}</span>
-                        {project.metadata.version && (
-                          <span className="project-version">v{project.metadata.version}</span>
-                        )}
+          {showAvailableProjects &&
+            projectContext.availableProjects.length > 0 && (
+              <div className="project-section">
+                <h4>Available</h4>
+                <div className="project-list">
+                  {projectContext.availableProjects.map((project) => (
+                    <div
+                      key={project.id}
+                      className={`project-item ${project.isActive ? 'active' : ''}`}
+                      onClick={() => handleProjectSelect(project)}
+                    >
+                      <span className="project-icon">
+                        <FontAwesomeIcon icon={getProjectIcon(project)} />
+                      </span>
+                      <div className="project-details">
+                        <div className="project-name">{project.name}</div>
+                        <div className="project-meta">
+                          <span className="project-type">{project.type}</span>
+                          {project.metadata.version && (
+                            <span className="project-version">
+                              v{project.metadata.version}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      {project.isActive && (
+                        <span className="active-indicator">●</span>
+                      )}
                     </div>
-                    {project.isActive && <span className="active-indicator">●</span>}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* No Projects Message */}
           {projectContext.availableProjects.length === 0 && (

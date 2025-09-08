@@ -13,11 +13,11 @@ export class ChatService {
       temperature: number;
       maxTokens: number;
       systemPrompt?: string;
-    }
+    },
   ): Promise<ChatResponse> {
     try {
       const provider = key.providerId;
-      
+
       switch (provider) {
         case 'openai':
           return await this.sendOpenAIMessage(key, model, messages, config);
@@ -36,7 +36,8 @@ export class ChatService {
       return {
         success: false,
         message: '',
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
+        error:
+          error instanceof Error ? error.message : 'Unknown error occurred',
       };
     }
   }
@@ -48,14 +49,14 @@ export class ChatService {
     key: AIKey,
     model: string,
     messages: ChatMessage[],
-    config: { temperature: number; maxTokens: number; systemPrompt?: string }
+    config: { temperature: number; maxTokens: number; systemPrompt?: string },
   ): Promise<ChatResponse> {
-    const apiKey = key.fields.apiKey;
-    const organization = key.fields.organization;
+    const { apiKey } = key.fields;
+    const { organization } = key.fields;
 
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
     };
 
     if (organization) {
@@ -63,16 +64,16 @@ export class ChatService {
     }
 
     // Convert chat messages to OpenAI format
-    const openAIMessages = messages.map(msg => ({
+    const openAIMessages = messages.map((msg) => ({
       role: msg.role,
-      content: msg.content
+      content: msg.content,
     }));
 
     // Add system prompt if provided
     if (config.systemPrompt) {
       openAIMessages.unshift({
         role: 'system',
-        content: config.systemPrompt
+        content: config.systemPrompt,
       });
     }
 
@@ -84,8 +85,8 @@ export class ChatService {
         messages: openAIMessages,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
-        stream: false
-      })
+        stream: false,
+      }),
     });
 
     if (!response.ok) {
@@ -94,14 +95,14 @@ export class ChatService {
     }
 
     const data = await response.json();
-    const usage = data.usage;
+    const { usage } = data;
     const cost = this.calculateOpenAICost(usage, model);
 
     return {
       success: true,
       message: data.choices[0]?.message?.content || '',
       usage,
-      cost
+      cost,
     };
   }
 
@@ -112,23 +113,23 @@ export class ChatService {
     key: AIKey,
     model: string,
     messages: ChatMessage[],
-    config: { temperature: number; maxTokens: number; systemPrompt?: string }
+    config: { temperature: number; maxTokens: number; systemPrompt?: string },
   ): Promise<ChatResponse> {
-    const apiKey = key.fields.apiKey;
+    const { apiKey } = key.fields;
 
     // Convert messages to Anthropic format
     const anthropicMessages = messages
-      .filter(msg => msg.role !== 'system')
-      .map(msg => ({
+      .filter((msg) => msg.role !== 'system')
+      .map((msg) => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content
+        content: msg.content,
       }));
 
     const body: any = {
       model,
       messages: anthropicMessages,
       temperature: config.temperature,
-      max_tokens: config.maxTokens
+      max_tokens: config.maxTokens,
     };
 
     if (config.systemPrompt) {
@@ -138,11 +139,11 @@ export class ChatService {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -151,14 +152,14 @@ export class ChatService {
     }
 
     const data = await response.json();
-    const usage = data.usage;
+    const { usage } = data;
     const cost = this.calculateAnthropicCost(usage, model);
 
     return {
       success: true,
       message: data.content[0]?.text || '',
       usage,
-      cost
+      cost,
     };
   }
 
@@ -169,37 +170,40 @@ export class ChatService {
     key: AIKey,
     model: string,
     messages: ChatMessage[],
-    config: { temperature: number; maxTokens: number; systemPrompt?: string }
+    config: { temperature: number; maxTokens: number; systemPrompt?: string },
   ): Promise<ChatResponse> {
-    const apiKey = key.fields.apiKey;
+    const { apiKey } = key.fields;
 
     // Convert messages to Google AI format
     const googleMessages = messages
-      .filter(msg => msg.role !== 'system')
-      .map(msg => ({
+      .filter((msg) => msg.role !== 'system')
+      .map((msg) => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
+        parts: [{ text: msg.content }],
       }));
 
     const body: any = {
       contents: googleMessages,
       generationConfig: {
         temperature: config.temperature,
-        maxOutputTokens: config.maxTokens
-      }
+        maxOutputTokens: config.maxTokens,
+      },
     };
 
     if (config.systemPrompt) {
       body.systemInstruction = { parts: [{ text: config.systemPrompt }] };
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body)
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -214,7 +218,7 @@ export class ChatService {
       success: true,
       message: data.candidates[0]?.content?.parts[0]?.text || '',
       usage,
-      cost
+      cost,
     };
   }
 
@@ -225,11 +229,11 @@ export class ChatService {
     key: AIKey,
     model: string,
     messages: ChatMessage[],
-    config: { temperature: number; maxTokens: number; systemPrompt?: string }
+    config: { temperature: number; maxTokens: number; systemPrompt?: string },
   ): Promise<ChatResponse> {
-    const apiKey = key.fields.apiKey;
-    const endpoint = key.fields.endpoint;
-    const deploymentName = key.fields.deploymentName;
+    const { apiKey } = key.fields;
+    const { endpoint } = key.fields;
+    const { deploymentName } = key.fields;
 
     if (!endpoint || !deploymentName) {
       throw new Error('Azure OpenAI configuration incomplete');
@@ -239,15 +243,15 @@ export class ChatService {
     const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-15-preview`;
 
     // Convert messages to OpenAI format (Azure uses OpenAI format)
-    const openAIMessages = messages.map(msg => ({
+    const openAIMessages = messages.map((msg) => ({
       role: msg.role,
-      content: msg.content
+      content: msg.content,
     }));
 
     if (config.systemPrompt) {
       openAIMessages.unshift({
         role: 'system',
-        content: config.systemPrompt
+        content: config.systemPrompt,
       });
     }
 
@@ -255,14 +259,14 @@ export class ChatService {
       method: 'POST',
       headers: {
         'api-key': apiKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         messages: openAIMessages,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
-        stream: false
-      })
+        stream: false,
+      }),
     });
 
     if (!response.ok) {
@@ -271,14 +275,14 @@ export class ChatService {
     }
 
     const data = await response.json();
-    const usage = data.usage;
+    const { usage } = data;
     const cost = this.calculateOpenAICost(usage, model);
 
     return {
       success: true,
       message: data.choices[0]?.message?.content || '',
       usage,
-      cost
+      cost,
     };
   }
 
@@ -289,41 +293,41 @@ export class ChatService {
     key: AIKey,
     model: string,
     messages: ChatMessage[],
-    config: { temperature: number; maxTokens: number; systemPrompt?: string }
+    config: { temperature: number; maxTokens: number; systemPrompt?: string },
   ): Promise<ChatResponse> {
-    const apiKey = key.fields.apiKey;
-    const endpoint = key.fields.endpoint;
+    const { apiKey } = key.fields;
+    const { endpoint } = key.fields;
 
     if (!endpoint) {
       throw new Error('Custom provider configuration incomplete');
     }
 
     // Try to send in OpenAI-compatible format first
-    const openAIMessages = messages.map(msg => ({
+    const openAIMessages = messages.map((msg) => ({
       role: msg.role,
-      content: msg.content
+      content: msg.content,
     }));
 
     if (config.systemPrompt) {
       openAIMessages.unshift({
         role: 'system',
-        content: config.systemPrompt
+        content: config.systemPrompt,
       });
     }
 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
         messages: openAIMessages,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
-        stream: false
-      })
+        stream: false,
+      }),
     });
 
     if (!response.ok) {
@@ -332,12 +336,16 @@ export class ChatService {
     }
 
     const data = await response.json();
-    
+
     return {
       success: true,
-      message: data.choices?.[0]?.message?.content || data.content || data.message || '',
+      message:
+        data.choices?.[0]?.message?.content ||
+        data.content ||
+        data.message ||
+        '',
       usage: data.usage,
-      cost: data.cost
+      cost: data.cost,
     };
   }
 
@@ -346,17 +354,17 @@ export class ChatService {
    */
   private static calculateOpenAICost(usage: any, model: string): number {
     if (!usage) return 0;
-    
+
     const pricing: Record<string, { input: number; output: number }> = {
       'gpt-4': { input: 0.03, output: 0.06 },
       'gpt-4-turbo': { input: 0.01, output: 0.03 },
-      'gpt-3.5-turbo': { input: 0.0015, output: 0.002 }
+      'gpt-3.5-turbo': { input: 0.0015, output: 0.002 },
     };
 
     const modelPricing = pricing[model] || pricing['gpt-3.5-turbo'];
     const inputCost = (usage.prompt_tokens / 1000) * modelPricing.input;
     const outputCost = (usage.completion_tokens / 1000) * modelPricing.output;
-    
+
     return inputCost + outputCost;
   }
 
@@ -365,17 +373,17 @@ export class ChatService {
    */
   private static calculateAnthropicCost(usage: any, model: string): number {
     if (!usage) return 0;
-    
+
     const pricing: Record<string, { input: number; output: number }> = {
       'claude-3-opus': { input: 0.015, output: 0.075 },
       'claude-3-sonnet': { input: 0.003, output: 0.015 },
-      'claude-3-haiku': { input: 0.00025, output: 0.00125 }
+      'claude-3-haiku': { input: 0.00025, output: 0.00125 },
     };
 
     const modelPricing = pricing[model] || pricing['claude-3-haiku'];
     const inputCost = (usage.input_tokens / 1000) * modelPricing.input;
     const outputCost = (usage.output_tokens / 1000) * modelPricing.output;
-    
+
     return inputCost + outputCost;
   }
 
@@ -384,19 +392,20 @@ export class ChatService {
    */
   private static calculateGoogleCost(usage: any, model: string): number {
     if (!usage) return 0;
-    
+
     const pricing: Record<string, { input: number; output: number }> = {
-        'gemini-2.5-flash': { input: 0.0005, output: 0.0015 },
-  'gemini-2.5-flash-lite': { input: 0.0005, output: 0.0015 },
-  'gemini-2.5-pro': { input: 0.0005, output: 0.0015 },
-  'gemini-1.5-flash-latest': { input: 0.0005, output: 0.0015 },
-  'gemini-1.5-pro': { input: 0.0005, output: 0.0015 }
+      'gemini-2.5-flash': { input: 0.0005, output: 0.0015 },
+      'gemini-2.5-flash-lite': { input: 0.0005, output: 0.0015 },
+      'gemini-2.5-pro': { input: 0.0005, output: 0.0015 },
+      'gemini-1.5-flash-latest': { input: 0.0005, output: 0.0015 },
+      'gemini-1.5-pro': { input: 0.0005, output: 0.0015 },
     };
 
     const modelPricing = pricing[model] || pricing['gemini-2.5-flash'];
     const inputCost = (usage.promptTokenCount / 1000) * modelPricing.input;
-    const outputCost = (usage.candidatesTokenCount / 1000) * modelPricing.output;
-    
+    const outputCost =
+      (usage.candidatesTokenCount / 1000) * modelPricing.output;
+
     return inputCost + outputCost;
   }
 }

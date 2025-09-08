@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AIEditRequest, AIEditResponse, AIEdit, FileContext, AIEditorConfig, Conversation } from '../../AIEditor/types';
+import {
+  AIEditRequest,
+  AIEditResponse,
+  AIEdit,
+  FileContext,
+  AIEditorConfig,
+  Conversation,
+} from '../../AIEditor/types';
 import { EnhancedAIEditorService } from '../../AIEditor/services/enhancedAIEditorService';
 import { IterativeFileReaderService } from '../../AIEditor/services/iterativeFileReaderService';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
@@ -17,7 +24,7 @@ export const useDualScreenAIEditor = (
     name: string;
     content: string;
     language: string;
-  } | null
+  } | null,
 ) => {
   // Dynamic import for FontAwesomeIcon to handle ES module compatibility
   const [FontAwesomeIcon, setFontAwesomeIcon] = useState<any>(() => {
@@ -32,7 +39,9 @@ export const useDualScreenAIEditor = (
   useEffect(() => {
     const loadFontAwesome = async () => {
       try {
-        const { FontAwesomeIcon: FAIcon } = await import('@fortawesome/react-fontawesome');
+        const { FontAwesomeIcon: FAIcon } = await import(
+          '@fortawesome/react-fontawesome'
+        );
         setFontAwesomeIcon(() => FAIcon);
         setIsFontAwesomeLoaded(true);
       } catch (error) {
@@ -53,7 +62,7 @@ export const useDualScreenAIEditor = (
   const [aiResponse, setAiResponse] = useState<AIEditResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
-  
+
   // Streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedContent, setStreamedContent] = useState('');
@@ -73,30 +82,35 @@ export const useDualScreenAIEditor = (
     workspacePath?: string;
     totalFiles?: number;
   }>({ hasCache: false });
-  
+
   // Conversation state
-  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
+  const [currentConversation, setCurrentConversation] =
+    useState<Conversation | null>(null);
   const [showConversationHistory, setShowConversationHistory] = useState(false);
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
-  
+
   // Context management state
   const [showContextManagement, setShowContextManagement] = useState(false);
 
   // Debug state - always on
   const [debugPayload, setDebugPayload] = useState<any>(null);
-  
+
   // Search & Replace state
   const [searchReplacePrompts, setSearchReplacePrompts] = useState<any[]>([]);
-  const [isGeneratingSearchReplace, setIsGeneratingSearchReplace] = useState(false);
-  
+  const [isGeneratingSearchReplace, setIsGeneratingSearchReplace] =
+    useState(false);
+
   // Iterative File Reader state
-  const [iterativeReaderService] = useState(() => IterativeFileReaderService.getInstance());
+  const [iterativeReaderService] = useState(() =>
+    IterativeFileReaderService.getInstance(),
+  );
   const [isIterativeReading, setIsIterativeReading] = useState(false);
   const [iterativeReadingState, setIterativeReadingState] = useState<any>(null);
-  
+
   // Abort controller for canceling AI requests
-  const [currentAbortController, setCurrentAbortController] = useState<AbortController | null>(null);
-  
+  const [currentAbortController, setCurrentAbortController] =
+    useState<AbortController | null>(null);
+
   const [config, setConfig] = useState<AIEditorConfig>({
     provider: 'openai',
     model: 'gpt-4o-mini',
@@ -161,7 +175,7 @@ CODE BLOCK FORMAT (for suggestions):
     includeContext: true,
     maxContextFiles: 5,
     autoApply: true,
-    requireConfirmation: false
+    requireConfirmation: false,
   });
 
   const instructionInputRef = useRef<HTMLTextAreaElement>(null);
@@ -170,27 +184,28 @@ CODE BLOCK FORMAT (for suggestions):
   // Utility function to normalize paths (convert absolute to relative)
   const normalizePath = (absolutePath: string, projectRoot: string): string => {
     if (!absolutePath || !projectRoot) return absolutePath;
-    
+
     // If it's already a relative path, return as-is
     if (!absolutePath.startsWith('/') && !absolutePath.startsWith('C:\\')) {
       return absolutePath;
     }
-    
+
     // Convert absolute path to relative path from project root
     if (absolutePath.startsWith(projectRoot)) {
       return absolutePath.substring(projectRoot.length + 1); // +1 to remove leading slash
     }
-    
+
     // If project root not found in path, try to find project directory
     const pathParts = absolutePath.split('/');
-    const projectIndex = pathParts.findIndex(part => 
-      part.includes('EGDesk-scratch') || part.includes('egdesk-scratch')
+    const projectIndex = pathParts.findIndex(
+      (part) =>
+        part.includes('EGDesk-scratch') || part.includes('egdesk-scratch'),
     );
-    
+
     if (projectIndex !== -1) {
       return pathParts.slice(projectIndex + 1).join('/');
     }
-    
+
     // Fallback to just filename
     return pathParts[pathParts.length - 1];
   };
@@ -198,9 +213,9 @@ CODE BLOCK FORMAT (for suggestions):
   // Subscribe to AI keys store
   useEffect(() => {
     const unsubscribe = aiKeysStore.subscribe((keyState) => {
-      const activeKeys = keyState.keys.filter(key => key.isActive);
+      const activeKeys = keyState.keys.filter((key) => key.isActive);
       setAiKeys(activeKeys);
-      
+
       // Auto-select first key if none selected and keys are available
       if (!selectedKey && activeKeys.length > 0) {
         setSelectedKey(activeKeys[0]);
@@ -210,7 +225,7 @@ CODE BLOCK FORMAT (for suggestions):
     // Get initial state immediately
     try {
       const currentState = aiKeysStore.getState();
-      const activeKeys = currentState.keys.filter(key => key.isActive);
+      const activeKeys = currentState.keys.filter((key) => key.isActive);
       setAiKeys(activeKeys);
       if (!selectedKey && activeKeys.length > 0) {
         setSelectedKey(activeKeys[0]);
@@ -246,9 +261,11 @@ CODE BLOCK FORMAT (for suggestions):
       } else {
         setError(null);
       }
-      
+
       if (state.currentConversationId) {
-        const conversation = state.conversations.find(c => c.id === state.currentConversationId);
+        const conversation = state.conversations.find(
+          (c) => c.id === state.currentConversationId,
+        );
         setCurrentConversation(conversation || null);
       } else {
         setCurrentConversation(null);
@@ -263,9 +280,10 @@ CODE BLOCK FORMAT (for suggestions):
     if (projectContext?.currentProject?.path && !currentConversation) {
       const projectPath = projectContext.currentProject.path;
       const projectName = projectContext.currentProject.name;
-      
+
       // Check if there's an existing conversation for this project
-      const existingConversations = conversationStore.getConversationsForProject(projectPath);
+      const existingConversations =
+        conversationStore.getConversationsForProject(projectPath);
       if (existingConversations.length > 0) {
         // Use the most recent conversation
         conversationStore.setCurrentConversation(existingConversations[0].id);
@@ -279,29 +297,45 @@ CODE BLOCK FORMAT (for suggestions):
   // Track initialization completion
   useEffect(() => {
     const checkInitialization = () => {
-      const isReady = isFontAwesomeLoaded && 
-                     aiKeys.length > 0 && 
-                     selectedKey !== null &&
-                     (projectContext?.currentProject?.path ? currentConversation !== null : true);
-      
+      const isReady =
+        isFontAwesomeLoaded &&
+        aiKeys.length > 0 &&
+        selectedKey !== null &&
+        (projectContext?.currentProject?.path
+          ? currentConversation !== null
+          : true);
+
       if (isReady && !isInitialized) {
         setIsInitialized(true);
       }
     };
 
     checkInitialization();
-  }, [isFontAwesomeLoaded, aiKeys.length, selectedKey, currentConversation, projectContext?.currentProject?.path, isInitialized]);
+  }, [
+    isFontAwesomeLoaded,
+    aiKeys.length,
+    selectedKey,
+    currentConversation,
+    projectContext?.currentProject?.path,
+    isInitialized,
+  ]);
 
   // Update config when selected key changes
   useEffect(() => {
     if (selectedKey) {
-      setConfig(prev => ({ ...prev, provider: selectedKey.providerId }));
+      setConfig((prev) => ({ ...prev, provider: selectedKey.providerId }));
       // Only set default model if no model is currently selected or if the current model doesn't belong to the selected key's provider
-      const provider = CHAT_PROVIDERS.find(p => p.id === selectedKey.providerId);
+      const provider = CHAT_PROVIDERS.find(
+        (p) => p.id === selectedKey.providerId,
+      );
       if (provider && provider.models.length > 0) {
-        const currentProvider = CHAT_PROVIDERS.find(p => p.id === config.provider);
-        const currentModelBelongsToProvider = currentProvider?.models.some(m => m.id === selectedModel);
-        
+        const currentProvider = CHAT_PROVIDERS.find(
+          (p) => p.id === config.provider,
+        );
+        const currentModelBelongsToProvider = currentProvider?.models.some(
+          (m) => m.id === selectedModel,
+        );
+
         if (!selectedModel || !currentModelBelongsToProvider) {
           setSelectedModel(provider.models[0].id);
         }
@@ -339,7 +373,10 @@ CODE BLOCK FORMAT (for suggestions):
    */
   const analyzeFile = async (filePath: string, content: string) => {
     try {
-      const context = await EnhancedAIEditorService.analyzeFile(filePath, content);
+      const context = await EnhancedAIEditorService.analyzeFile(
+        filePath,
+        content,
+      );
       return context;
     } catch (error) {
       return null;
@@ -355,10 +392,10 @@ CODE BLOCK FORMAT (for suggestions):
       currentAbortController.abort();
       setCurrentAbortController(null);
     }
-    
+
     // Also cancel in the iterative reader service (it may have its own abort controller)
     iterativeReaderService.cancel();
-    
+
     // Reset states
     setIsLoading(false);
     setIsStreaming(false);
@@ -426,17 +463,17 @@ CODE BLOCK FORMAT (for suggestions):
     messagesEndRef,
     currentAbortController,
     setCurrentAbortController,
-    
+
     // Initialization states
     isFontAwesomeLoaded,
     isInitialized,
-    
+
     // Functions
     normalizePath,
     loadProjectFiles,
     getCacheStatus,
     analyzeFile,
     scrollToBottom,
-    cancelAIRequest
+    cancelAIRequest,
   };
 };

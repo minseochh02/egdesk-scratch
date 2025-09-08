@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faPlus, 
-  faPlay, 
-  faStop, 
-  faEdit, 
-  faTrash, 
-  faClock, 
-  faCheckCircle, 
-  faTimesCircle, 
+import {
+  faPlus,
+  faPlay,
+  faStop,
+  faEdit,
+  faTrash,
+  faClock,
+  faCheckCircle,
+  faTimesCircle,
   faSpinner,
   faCog,
   faHistory,
-  faInfoCircle
+  faInfoCircle,
 } from '@fortawesome/free-solid-svg-icons';
-import SchedulerService, { CreateTaskData, UpdateTaskData } from '../../services/schedulerService';
+import SchedulerService, {
+  CreateTaskData,
+  UpdateTaskData,
+} from '../../services/schedulerService';
 import { ScheduledTask, TaskExecution } from '../../../main/preload';
 import TaskForm from './TaskForm';
 import './SchedulerManager.css';
@@ -33,9 +36,15 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExecutionsModal, setShowExecutionsModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<ScheduledTask | null>(null);
-  const [selectedTaskExecutions, setSelectedTaskExecutions] = useState<TaskExecution[]>([]);
-  const [activeTab, setActiveTab] = useState<'tasks' | 'executions' | 'system'>('tasks');
-  const [editingTaskData, setEditingTaskData] = useState<CreateTaskData | null>(null);
+  const [selectedTaskExecutions, setSelectedTaskExecutions] = useState<
+    TaskExecution[]
+  >([]);
+  const [activeTab, setActiveTab] = useState<'tasks' | 'executions' | 'system'>(
+    'tasks',
+  );
+  const [editingTaskData, setEditingTaskData] = useState<CreateTaskData | null>(
+    null,
+  );
 
   const schedulerService = SchedulerService.getInstance();
 
@@ -47,12 +56,13 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const [tasksResponse, executionsResponse, systemInfoResponse] = await Promise.all([
-        schedulerService.getAllTasks(),
-        schedulerService.getExecutions(),
-        schedulerService.getSystemInfo()
-      ]);
+
+      const [tasksResponse, executionsResponse, systemInfoResponse] =
+        await Promise.all([
+          schedulerService.getAllTasks(),
+          schedulerService.getExecutions(),
+          schedulerService.getSystemInfo(),
+        ]);
 
       if (tasksResponse.success) {
         setTasks(tasksResponse.data || []);
@@ -76,7 +86,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
     try {
       const response = await schedulerService.createTask(taskData);
       if (response.success) {
-        setTasks(prev => [...prev, response.data!]);
+        setTasks((prev) => [...prev, response.data!]);
         setShowCreateModal(false);
         setError(null);
       } else {
@@ -89,13 +99,18 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
 
   const handleUpdateTask = async (taskData: CreateTaskData) => {
     if (!selectedTask) return;
-    
+
     try {
-      const response = await schedulerService.updateTask(selectedTask.id, taskData);
+      const response = await schedulerService.updateTask(
+        selectedTask.id,
+        taskData,
+      );
       if (response.success) {
-        setTasks(prev => prev.map(task => 
-          task.id === selectedTask.id ? response.data! : task
-        ));
+        setTasks((prev) =>
+          prev.map((task) =>
+            task.id === selectedTask.id ? response.data! : task,
+          ),
+        );
         setShowEditModal(false);
         setSelectedTask(null);
         setEditingTaskData(null);
@@ -116,8 +131,8 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
     try {
       const response = await schedulerService.deleteTask(taskId);
       if (response.success) {
-        setTasks(prev => prev.filter(task => task.id !== taskId));
-        setExecutions(prev => prev.filter(exec => exec.taskId !== taskId));
+        setTasks((prev) => prev.filter((task) => task.id !== taskId));
+        setExecutions((prev) => prev.filter((exec) => exec.taskId !== taskId));
       } else {
         setError(response.error || 'Failed to delete task');
       }
@@ -163,7 +178,9 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setError(response.error || 'Failed to load executions');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load executions');
+      setError(
+        err instanceof Error ? err.message : 'Failed to load executions',
+      );
     }
   };
 
@@ -178,21 +195,27 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       workingDirectory: '',
       environment: {},
       outputFile: '',
-      errorFile: ''
+      errorFile: '',
     };
 
     try {
       const response = await schedulerService.createTask(taskData);
       if (response.success) {
-        setTasks(prev => [...prev, response.data!]);
+        setTasks((prev) => [...prev, response.data!]);
         setError(null);
         // Show success message
-        alert('HTTP Request task created successfully! It will run every 5 minutes.');
+        alert(
+          'HTTP Request task created successfully! It will run every 5 minutes.',
+        );
       } else {
         setError(response.error || 'Failed to create HTTP request task');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create HTTP request task');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to create HTTP request task',
+      );
     }
   };
 
@@ -205,11 +228,15 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       case 'running':
         return <FontAwesomeIcon icon={faSpinner} className="spinning" />;
       case 'completed':
-        return <FontAwesomeIcon icon={faCheckCircle} className="text-success" />;
+        return (
+          <FontAwesomeIcon icon={faCheckCircle} className="text-success" />
+        );
       case 'failed':
         return <FontAwesomeIcon icon={faTimesCircle} className="text-error" />;
       case 'cancelled':
-        return <FontAwesomeIcon icon={faTimesCircle} className="text-warning" />;
+        return (
+          <FontAwesomeIcon icon={faTimesCircle} className="text-warning" />
+        );
       default:
         return <FontAwesomeIcon icon={faClock} />;
     }
@@ -249,24 +276,18 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
           Task Scheduler
         </h2>
         <div className="header-actions">
-          <button 
-            className="btn btn-success"
-            onClick={createHttpRequestTask}
-          >
+          <button className="btn btn-success" onClick={createHttpRequestTask}>
             <FontAwesomeIcon icon={faPlus} />
             HTTP Request (5min)
           </button>
-          <button 
+          <button
             className="btn btn-primary"
             onClick={() => setShowCreateModal(true)}
           >
             <FontAwesomeIcon icon={faPlus} />
             New Task
           </button>
-          <button 
-            className="btn btn-secondary"
-            onClick={loadData}
-          >
+          <button className="btn btn-secondary" onClick={loadData}>
             <FontAwesomeIcon icon={faCog} />
             Refresh
           </button>
@@ -282,21 +303,21 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       )}
 
       <div className="scheduler-tabs">
-        <button 
+        <button
           className={`tab ${activeTab === 'tasks' ? 'active' : ''}`}
           onClick={() => setActiveTab('tasks')}
         >
           <FontAwesomeIcon icon={faClock} />
           Tasks ({tasks.length})
         </button>
-        <button 
+        <button
           className={`tab ${activeTab === 'executions' ? 'active' : ''}`}
           onClick={() => setActiveTab('executions')}
         >
           <FontAwesomeIcon icon={faHistory} />
           Executions ({executions.length})
         </button>
-        <button 
+        <button
           className={`tab ${activeTab === 'system' ? 'active' : ''}`}
           onClick={() => setActiveTab('system')}
         >
@@ -313,7 +334,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                 <FontAwesomeIcon icon={faClock} />
                 <h3>No tasks found</h3>
                 <p>Create your first scheduled task to get started.</p>
-                <button 
+                <button
                   className="btn btn-primary"
                   onClick={() => setShowCreateModal(true)}
                 >
@@ -323,7 +344,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
               </div>
             ) : (
               <div className="tasks-list">
-                {tasks.map(task => (
+                {tasks.map((task) => (
                   <div key={task.id} className="task-card">
                     <div className="task-header">
                       <div className="task-info">
@@ -336,14 +357,16 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                             <FontAwesomeIcon icon={faClock} />
                             {schedulerService.formatSchedule(task.schedule)}
                           </span>
-                          <span className={`task-status ${task.enabled ? 'enabled' : 'disabled'}`}>
+                          <span
+                            className={`task-status ${task.enabled ? 'enabled' : 'disabled'}`}
+                          >
                             {task.enabled ? 'Enabled' : 'Disabled'}
                           </span>
                         </div>
                       </div>
                       <div className="task-actions">
                         {schedulerService.isTaskRunning(task.id) ? (
-                          <button 
+                          <button
                             className="btn btn-warning btn-sm"
                             onClick={() => handleStopTask(task.id)}
                             title="Stop Task"
@@ -351,7 +374,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                             <FontAwesomeIcon icon={faStop} />
                           </button>
                         ) : (
-                          <button 
+                          <button
                             className="btn btn-success btn-sm"
                             onClick={() => handleRunTask(task.id)}
                             title="Run Now"
@@ -359,14 +382,14 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                             <FontAwesomeIcon icon={faPlay} />
                           </button>
                         )}
-                        <button 
+                        <button
                           className="btn btn-info btn-sm"
                           onClick={() => handleViewExecutions(task)}
                           title="View Executions"
                         >
                           <FontAwesomeIcon icon={faHistory} />
                         </button>
-                        <button 
+                        <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => {
                             setSelectedTask(task);
@@ -379,7 +402,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                               workingDirectory: task.workingDirectory,
                               environment: task.environment,
                               outputFile: task.outputFile,
-                              errorFile: task.errorFile
+                              errorFile: task.errorFile,
                             });
                             setShowEditModal(true);
                           }}
@@ -387,7 +410,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                         >
                           <FontAwesomeIcon icon={faEdit} />
                         </button>
-                        <button 
+                        <button
                           className="btn btn-danger btn-sm"
                           onClick={() => handleDeleteTask(task.id)}
                           title="Delete Task"
@@ -402,7 +425,8 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                       </div>
                       {task.workingDirectory && (
                         <div className="task-working-dir">
-                          <strong>Working Directory:</strong> {task.workingDirectory}
+                          <strong>Working Directory:</strong>{' '}
+                          {task.workingDirectory}
                         </div>
                       )}
                       <div className="task-timestamps">
@@ -433,20 +457,27 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             ) : (
               <div className="executions-list">
                 {executions
-                  .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-                  .map(execution => (
+                  .sort(
+                    (a, b) =>
+                      new Date(b.startTime).getTime() -
+                      new Date(a.startTime).getTime(),
+                  )
+                  .map((execution) => (
                     <div key={execution.id} className="execution-card">
                       <div className="execution-header">
                         <div className="execution-info">
                           <h4>Execution {execution.id}</h4>
                           <div className="execution-meta">
-                            <span className={`execution-status ${getStatusClass(execution.status)}`}>
+                            <span
+                              className={`execution-status ${getStatusClass(execution.status)}`}
+                            >
                               {getStatusIcon(execution.status)}
                               {execution.status}
                             </span>
                             <span className="execution-time">
                               {formatDate(execution.startTime)}
-                              {execution.endTime && ` - ${formatDate(execution.endTime)}`}
+                              {execution.endTime &&
+                                ` - ${formatDate(execution.endTime)}`}
                             </span>
                           </div>
                         </div>
@@ -492,7 +523,8 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                       <strong>Node Version:</strong> {systemInfo.nodeVersion}
                     </div>
                     <div className="info-item">
-                      <strong>Uptime:</strong> {Math.floor(systemInfo.uptime / 60)} minutes
+                      <strong>Uptime:</strong>{' '}
+                      {Math.floor(systemInfo.uptime / 60)} minutes
                     </div>
                   </div>
                 </div>
@@ -506,7 +538,8 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                       <strong>Running Tasks:</strong> {systemInfo.runningTasks}
                     </div>
                     <div className="info-item">
-                      <strong>Total Executions:</strong> {systemInfo.totalExecutions}
+                      <strong>Total Executions:</strong>{' '}
+                      {systemInfo.totalExecutions}
                     </div>
                   </div>
                 </div>
@@ -514,13 +547,22 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                   <h3>Memory Usage</h3>
                   <div className="info-grid">
                     <div className="info-item">
-                      <strong>RSS:</strong> {Math.round(systemInfo.memoryUsage.rss / 1024 / 1024)} MB
+                      <strong>RSS:</strong>{' '}
+                      {Math.round(systemInfo.memoryUsage.rss / 1024 / 1024)} MB
                     </div>
                     <div className="info-item">
-                      <strong>Heap Used:</strong> {Math.round(systemInfo.memoryUsage.heapUsed / 1024 / 1024)} MB
+                      <strong>Heap Used:</strong>{' '}
+                      {Math.round(
+                        systemInfo.memoryUsage.heapUsed / 1024 / 1024,
+                      )}{' '}
+                      MB
                     </div>
                     <div className="info-item">
-                      <strong>Heap Total:</strong> {Math.round(systemInfo.memoryUsage.heapTotal / 1024 / 1024)} MB
+                      <strong>Heap Total:</strong>{' '}
+                      {Math.round(
+                        systemInfo.memoryUsage.heapTotal / 1024 / 1024,
+                      )}{' '}
+                      MB
                     </div>
                   </div>
                 </div>
@@ -561,10 +603,12 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
           <div className="modal large">
             <h3>Executions for: {selectedTask.name}</h3>
             <div className="executions-list">
-              {selectedTaskExecutions.map(execution => (
+              {selectedTaskExecutions.map((execution) => (
                 <div key={execution.id} className="execution-card">
                   <div className="execution-header">
-                    <span className={`execution-status ${getStatusClass(execution.status)}`}>
+                    <span
+                      className={`execution-status ${getStatusClass(execution.status)}`}
+                    >
                       {getStatusIcon(execution.status)}
                       {execution.status}
                     </span>
@@ -581,7 +625,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
               ))}
             </div>
             <div className="modal-actions">
-              <button 
+              <button
                 className="btn btn-secondary"
                 onClick={() => {
                   setShowExecutionsModal(false);

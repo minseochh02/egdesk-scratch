@@ -62,7 +62,7 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'password',
         placeholder: 'sk-...',
         required: true,
-        helpText: 'Get your API key from https://platform.openai.com/api-keys'
+        helpText: 'Get your API key from https://platform.openai.com/api-keys',
       },
       {
         key: 'organization',
@@ -70,9 +70,9 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'text',
         placeholder: 'org-...',
         required: false,
-        helpText: 'Your OpenAI organization ID if you have one'
-      }
-    ]
+        helpText: 'Your OpenAI organization ID if you have one',
+      },
+    ],
   },
   {
     id: 'anthropic',
@@ -87,9 +87,9 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'password',
         placeholder: 'sk-ant-...',
         required: true,
-        helpText: 'Get your API key from https://console.anthropic.com/'
-      }
-    ]
+        helpText: 'Get your API key from https://console.anthropic.com/',
+      },
+    ],
   },
   {
     id: 'google',
@@ -104,9 +104,10 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'password',
         placeholder: 'AIza...',
         required: true,
-        helpText: 'Get your API key from https://makersuite.google.com/app/apikey'
-      }
-    ]
+        helpText:
+          'Get your API key from https://makersuite.google.com/app/apikey',
+      },
+    ],
   },
   {
     id: 'azure',
@@ -121,7 +122,7 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'password',
         placeholder: '...',
         required: true,
-        helpText: 'Your Azure OpenAI API key'
+        helpText: 'Your Azure OpenAI API key',
       },
       {
         key: 'endpoint',
@@ -129,7 +130,7 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'url',
         placeholder: 'https://your-resource.openai.azure.com/',
         required: true,
-        helpText: 'Your Azure OpenAI endpoint URL'
+        helpText: 'Your Azure OpenAI endpoint URL',
       },
       {
         key: 'deploymentName',
@@ -137,9 +138,9 @@ export const AI_PROVIDERS: AIProvider[] = [
         type: 'text',
         placeholder: 'gpt-4',
         required: true,
-        helpText: 'Your model deployment name'
-      }
-    ]
+        helpText: 'Your model deployment name',
+      },
+    ],
   },
   {
     id: 'custom',
@@ -153,22 +154,22 @@ export const AI_PROVIDERS: AIProvider[] = [
         label: 'API Key',
         type: 'password',
         placeholder: 'Your API key',
-        required: true
+        required: true,
       },
       {
         key: 'endpoint',
         label: 'API Endpoint',
         type: 'url',
         placeholder: 'https://api.example.com/v1',
-        required: true
+        required: true,
       },
       {
         key: 'model',
         label: 'Model Name',
         type: 'text',
         placeholder: 'gpt-4',
-        required: false
-      }
-    ]
-  }
+        required: false,
+      },
+    ],
+  },
 ];

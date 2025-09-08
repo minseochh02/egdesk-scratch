@@ -43,7 +43,14 @@ export interface AIEditStreamResponse {
 }
 
 export interface AIEdit {
-  type: 'replace' | 'insert' | 'delete' | 'format' | 'refactor' | 'create' | 'delete_file';
+  type:
+    | 'replace'
+    | 'insert'
+    | 'delete'
+    | 'format'
+    | 'refactor'
+    | 'create'
+    | 'delete_file';
   range?: {
     start: number;
     end: number;

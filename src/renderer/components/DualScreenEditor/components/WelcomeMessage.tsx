@@ -4,7 +4,9 @@ interface WelcomeMessageProps {
   FontAwesomeIcon: any;
 }
 
-export const WelcomeMessage: React.FC<WelcomeMessageProps> = ({ FontAwesomeIcon }) => {
+export const WelcomeMessage: React.FC<WelcomeMessageProps> = ({
+  FontAwesomeIcon,
+}) => {
   return (
     <div className="message ai-message">
       <div className="message-content">

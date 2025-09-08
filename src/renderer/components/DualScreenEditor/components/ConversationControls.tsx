@@ -1,8 +1,13 @@
 import React from 'react';
+import {
+  faGlobe,
+  faEdit,
+  faBook,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
 import { Conversation } from '../../AIEditor/types';
 import { conversationStore } from '../../AIEditor/store/conversationStore';
 import { RevertButton } from '../../RevertManager';
-import { faGlobe, faEdit, faBook, faPlus } from '@fortawesome/free-solid-svg-icons';
 
 interface ConversationControlsProps {
   currentConversation: Conversation | null;
@@ -33,7 +38,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
   currentFile,
   projectRoot,
   onRevertComplete,
-  onShowRevertManager
+  onShowRevertManager,
 }) => {
   return (
     <div className="conversation-controls">
@@ -44,7 +49,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
           </span>
         )}
       </div>
-      
+
       <div className="conversation-actions">
         {/* Revert Controls */}
         {currentFile && (
@@ -67,22 +72,29 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
             )}
           </div>
         )}
-        
+
         {/* Debug info - remove this after fixing */}
         {!currentFile && (
-          <div style={{ color: '#ff6b6b', fontSize: '10px', marginRight: '8px' }}>
+          <div
+            style={{ color: '#ff6b6b', fontSize: '10px', marginRight: '8px' }}
+          >
             No currentFile
           </div>
         )}
-        
+
         {onToggleEditing && (
           <button
             className={`editor-toggle-btn ${isEditing ? 'editing' : 'server'}`}
             onClick={() => {
-              console.log('AI Editor: Toggle button clicked, current isEditing:', isEditing);
+              console.log(
+                'AI Editor: Toggle button clicked, current isEditing:',
+                isEditing,
+              );
               onToggleEditing();
             }}
-            title={isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'}
+            title={
+              isEditing ? 'Switch to Server Mode' : 'Switch to Editing Mode'
+            }
           >
             {isEditing ? <>Server</> : <>Editor</>}
           </button>
@@ -94,7 +106,7 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
         >
           📚
         </button>
-        
+
         {currentConversation && (
           <button
             className="new-conversation-btn"

@@ -5,7 +5,11 @@ import './RevertButton.css';
 interface RevertButtonProps {
   filePath?: string;
   projectRoot?: string;
-  onRevertComplete?: (success: boolean, message: string, filePath?: string) => void;
+  onRevertComplete?: (
+    success: boolean,
+    message: string,
+    filePath?: string,
+  ) => void;
   className?: string;
   size?: 'small' | 'medium' | 'large';
   showText?: boolean;
@@ -17,7 +21,7 @@ const RevertButton: React.FC<RevertButtonProps> = ({
   onRevertComplete,
   className = '',
   size = 'medium',
-  showText = true
+  showText = true,
 }) => {
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,17 +72,17 @@ const RevertButton: React.FC<RevertButtonProps> = ({
         backup.backupFilePath,
         {
           createBackupOfCurrent: true,
-          validateContent: true
-        }
+          validateContent: true,
+        },
       );
 
       if (onRevertComplete) {
         onRevertComplete(
           result.success,
-          result.success 
+          result.success
             ? `✅ Successfully reverted ${getFileName(filePath)}`
             : `❌ Failed to revert: ${result.errors.join(', ')}`,
-          filePath
+          filePath,
         );
       }
 
@@ -86,7 +90,6 @@ const RevertButton: React.FC<RevertButtonProps> = ({
       if (result.success) {
         await loadBackupsForFile();
       }
-
     } catch (error) {
       const errorMessage = `Failed to revert: ${error instanceof Error ? error.message : 'Unknown error'}`;
       if (onRevertComplete) {
@@ -105,12 +108,12 @@ const RevertButton: React.FC<RevertButtonProps> = ({
 
     if (diffDays > 0) {
       return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-    } else if (diffHours > 0) {
-      return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-    } else {
-      const diffMinutes = Math.floor(diffMs / (1000 * 60));
-      return `${Math.max(1, diffMinutes)} minute${diffMinutes !== 1 ? 's' : ''} ago`;
     }
+    if (diffHours > 0) {
+      return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    }
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    return `${Math.max(1, diffMinutes)} minute${diffMinutes !== 1 ? 's' : ''} ago`;
   };
 
   const getFileName = (path: string): string => {
@@ -119,11 +122,10 @@ const RevertButton: React.FC<RevertButtonProps> = ({
 
   const getRelativePath = (fullPath: string): string => {
     if (!projectRoot) return fullPath;
-    return fullPath.startsWith(projectRoot) 
-      ? fullPath.substring(projectRoot.length + 1) 
+    return fullPath.startsWith(projectRoot)
+      ? fullPath.substring(projectRoot.length + 1)
       : fullPath;
   };
-
 
   if (!filePath) {
     console.log('❌ RevertButton: No filePath provided, returning null');
@@ -141,16 +143,19 @@ const RevertButton: React.FC<RevertButtonProps> = ({
         onClick={hasBackups ? handleRevertToLatest : undefined}
         disabled={loading || reverting || !hasBackups}
         title={
-          loading ? 'Checking for backups...' :
-          reverting ? 'Reverting...' :
-          !hasBackups ? 'No backups available - backups are created when AI modifies files' :
-          `Revert ${getFileName(filePath)} to latest backup`
+          loading
+            ? 'Checking for backups...'
+            : reverting
+              ? 'Reverting...'
+              : !hasBackups
+                ? 'No backups available - backups are created when AI modifies files'
+                : `Revert ${getFileName(filePath)} to latest backup`
         }
         style={{
           // Make button more visible even when disabled
           opacity: hasBackups ? 1 : 0.7,
           border: hasBackups ? '1px solid #4a5568' : '1px solid #666',
-          background: hasBackups ? '#4a5568' : '#666'
+          background: hasBackups ? '#4a5568' : '#666',
         }}
       >
         {loading ? (
@@ -162,10 +167,13 @@ const RevertButton: React.FC<RevertButtonProps> = ({
         )}
         {showText && (
           <span className="revert-button__text">
-            {loading ? 'Checking...' : 
-             reverting ? 'Reverting...' : 
-             !hasBackups ? 'No Backups' :
-             'Revert'}
+            {loading
+              ? 'Checking...'
+              : reverting
+                ? 'Reverting...'
+                : !hasBackups
+                  ? 'No Backups'
+                  : 'Revert'}
           </span>
         )}
       </button>
@@ -203,7 +211,9 @@ const RevertButton: React.FC<RevertButtonProps> = ({
                 <div className="revert-dropdown__item-info">
                   <div className="revert-dropdown__item-time">
                     🕐 {formatTimestamp(backup.timestamp)}
-                    {index === 0 && <span className="revert-dropdown__latest">Latest</span>}
+                    {index === 0 && (
+                      <span className="revert-dropdown__latest">Latest</span>
+                    )}
                   </div>
                   <div className="revert-dropdown__item-details">
                     <span>{backup.timestamp.toLocaleString()}</span>

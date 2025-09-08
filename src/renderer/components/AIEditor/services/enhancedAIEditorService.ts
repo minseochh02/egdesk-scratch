@@ -1,5 +1,12 @@
 import { AIKey } from '../../AIKeysManager/types';
-import { AIEditRequest, AIEditResponse, AIEditStreamResponse, AIEdit, FileContext, AIEditorConfig } from '../types';
+import {
+  AIEditRequest,
+  AIEditResponse,
+  AIEditStreamResponse,
+  AIEdit,
+  FileContext,
+  AIEditorConfig,
+} from '../types';
 import { CodespaceVectorService } from './codespaceVectorService';
 
 export class EnhancedAIEditorService {
@@ -16,22 +23,21 @@ export class EnhancedAIEditorService {
       temperature: number;
       maxTokens: number;
       systemPrompt?: string;
-    }
+    },
   ): Promise<AIEditResponse> {
     try {
       console.log('🚀 Simple AI request to model:', model);
-      
+
       // Build a simple prompt with just the file content and instruction
       const prompt = this.buildSimplePrompt(request, config.systemPrompt);
-      
+
       // Send to AI provider
       return await this.sendToProvider(aiKey, model, prompt, config);
-      
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'Request failed'
+        error: error instanceof Error ? error.message : 'Request failed',
       };
     }
   }
@@ -48,7 +54,7 @@ export class EnhancedAIEditorService {
       maxTokens: number;
       systemPrompt?: string;
     },
-    onChunk: (chunk: AIEditStreamResponse) => void
+    onChunk: (chunk: AIEditStreamResponse) => void,
   ): Promise<void> {
     try {
       const prompt = this.buildSimplePrompt(request, config.systemPrompt);
@@ -57,7 +63,7 @@ export class EnhancedAIEditorService {
       onChunk({
         type: 'error',
         error: error instanceof Error ? error.message : 'Streaming failed',
-        isComplete: true
+        isComplete: true,
       });
     }
   }
@@ -65,9 +71,14 @@ export class EnhancedAIEditorService {
   /**
    * Build a simple prompt with file content
    */
-  private static buildSimplePrompt(request: AIEditRequest, systemPrompt?: string): string {
-    const basePrompt = systemPrompt || `You are an expert coding assistant. Help the user with their code.`;
-    
+  private static buildSimplePrompt(
+    request: AIEditRequest,
+    systemPrompt?: string,
+  ): string {
+    const basePrompt =
+      systemPrompt ||
+      `You are an expert coding assistant. Help the user with their code.`;
+
     let prompt = `${basePrompt}\n\n`;
     prompt += `## FILE: ${request.filePath}\n`;
     prompt += `## LANGUAGE: ${request.language || 'text'}\n`;
@@ -75,7 +86,7 @@ export class EnhancedAIEditorService {
     prompt += `## FILE CONTENT:\n`;
     prompt += `\`\`\`${request.language || 'text'}\n${request.fileContent}\n\`\`\`\n\n`;
     prompt += `Please help with the above instruction.`;
-    
+
     return prompt;
   }
 
@@ -86,10 +97,10 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     const provider = aiKey.providerId;
-    
+
     switch (provider) {
       case 'openai':
         return await this.sendOpenAIRequest(aiKey, model, prompt, config);
@@ -114,22 +125,28 @@ export class EnhancedAIEditorService {
     model: string,
     prompt: string,
     config: { temperature: number; maxTokens: number },
-    onChunk: (chunk: AIEditStreamResponse) => void
+    onChunk: (chunk: AIEditStreamResponse) => void,
   ): Promise<void> {
     const provider = aiKey.providerId;
-    
+
     switch (provider) {
       case 'openai':
         await this.streamOpenAIRequest(aiKey, model, prompt, config, onChunk);
         break;
       case 'anthropic':
-        await this.streamAnthropicRequest(aiKey, model, prompt, config, onChunk);
+        await this.streamAnthropicRequest(
+          aiKey,
+          model,
+          prompt,
+          config,
+          onChunk,
+        );
         break;
       default:
         onChunk({
           type: 'error',
           error: `Streaming not supported for ${provider}`,
-          isComplete: true
+          isComplete: true,
         });
     }
   }
@@ -139,23 +156,26 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${aiKey.fields.apiKey}`
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${aiKey.fields.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            stream: false,
+          }),
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          stream: false
-        })
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`OpenAI API error: ${response.status}`);
@@ -163,7 +183,7 @@ export class EnhancedAIEditorService {
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content || 'No response';
-      
+
       return {
         success: true,
         edits: [],
@@ -171,15 +191,15 @@ export class EnhancedAIEditorService {
         usage: {
           promptTokens: data.usage?.prompt_tokens || 0,
           completionTokens: data.usage?.completion_tokens || 0,
-          totalTokens: data.usage?.total_tokens || 0
+          totalTokens: data.usage?.total_tokens || 0,
         },
-        cost: 0.001
+        cost: 0.001,
       };
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'OpenAI request failed'
+        error: error instanceof Error ? error.message : 'OpenAI request failed',
       };
     }
   }
@@ -189,7 +209,7 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -197,14 +217,14 @@ export class EnhancedAIEditorService {
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': aiKey.fields.apiKey,
-          'anthropic-version': '2023-06-01'
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: model,
+          model,
           max_tokens: config.maxTokens,
           temperature: config.temperature,
-          messages: [{ role: 'user', content: prompt }]
-        })
+          messages: [{ role: 'user', content: prompt }],
+        }),
       });
 
       if (!response.ok) {
@@ -213,7 +233,7 @@ export class EnhancedAIEditorService {
 
       const data = await response.json();
       const content = data.content[0]?.text || 'No response';
-      
+
       return {
         success: true,
         edits: [],
@@ -221,15 +241,17 @@ export class EnhancedAIEditorService {
         usage: {
           promptTokens: data.usage?.input_tokens || 0,
           completionTokens: data.usage?.output_tokens || 0,
-          totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
+          totalTokens:
+            (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
         },
-        cost: 0.001
+        cost: 0.001,
       };
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'Anthropic request failed'
+        error:
+          error instanceof Error ? error.message : 'Anthropic request failed',
       };
     }
   }
@@ -239,40 +261,44 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey.fields.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: config.temperature,
-            maxOutputTokens: config.maxTokens
-          }
-        })
-      });
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey.fields.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: config.temperature,
+              maxOutputTokens: config.maxTokens,
+            },
+          }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`Google API error: ${response.status}`);
       }
 
       const data = await response.json();
-      const content = data.candidates[0]?.content?.parts[0]?.text || 'No response';
-      
+      const content =
+        data.candidates[0]?.content?.parts[0]?.text || 'No response';
+
       return {
         success: true,
         edits: [],
         explanation: content,
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        cost: 0
+        cost: 0,
       };
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'Google request failed'
+        error: error instanceof Error ? error.message : 'Google request failed',
       };
     }
   }
@@ -282,26 +308,30 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     try {
-      const endpoint = aiKey.fields.endpoint || 'https://your-resource.openai.azure.com';
+      const endpoint =
+        aiKey.fields.endpoint || 'https://your-resource.openai.azure.com';
       const deployment = aiKey.fields.deployment || model;
-      
-      const response = await fetch(`${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-02-15-preview`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': aiKey.fields.apiKey
+
+      const response = await fetch(
+        `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-02-15-preview`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': aiKey.fields.apiKey,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            stream: false,
+          }),
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          stream: false
-        })
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`Azure API error: ${response.status}`);
@@ -309,7 +339,7 @@ export class EnhancedAIEditorService {
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content || 'No response';
-      
+
       return {
         success: true,
         edits: [],
@@ -317,15 +347,15 @@ export class EnhancedAIEditorService {
         usage: {
           promptTokens: data.usage?.prompt_tokens || 0,
           completionTokens: data.usage?.completion_tokens || 0,
-          totalTokens: data.usage?.total_tokens || 0
+          totalTokens: data.usage?.total_tokens || 0,
         },
-        cost: 0.001
+        cost: 0.001,
       };
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'Azure request failed'
+        error: error instanceof Error ? error.message : 'Azure request failed',
       };
     }
   }
@@ -335,24 +365,25 @@ export class EnhancedAIEditorService {
     aiKey: AIKey,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<AIEditResponse> {
     try {
-      const endpoint = aiKey.fields.endpoint || 'https://api.custom.com/v1/chat/completions';
-      
+      const endpoint =
+        aiKey.fields.endpoint || 'https://api.custom.com/v1/chat/completions';
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${aiKey.fields.apiKey}`
+          Authorization: `Bearer ${aiKey.fields.apiKey}`,
         },
         body: JSON.stringify({
-          model: model,
+          model,
           messages: [{ role: 'user', content: prompt }],
           temperature: config.temperature,
           max_tokens: config.maxTokens,
-          stream: false
-        })
+          stream: false,
+        }),
       });
 
       if (!response.ok) {
@@ -360,20 +391,21 @@ export class EnhancedAIEditorService {
       }
 
       const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || data.content || 'No response';
-      
+      const content =
+        data.choices?.[0]?.message?.content || data.content || 'No response';
+
       return {
         success: true,
         edits: [],
         explanation: content,
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        cost: 0
+        cost: 0,
       };
     } catch (error) {
       return {
         success: false,
         edits: [],
-        error: error instanceof Error ? error.message : 'Custom request failed'
+        error: error instanceof Error ? error.message : 'Custom request failed',
       };
     }
   }
@@ -384,23 +416,26 @@ export class EnhancedAIEditorService {
     model: string,
     prompt: string,
     config: { temperature: number; maxTokens: number },
-    onChunk: (chunk: AIEditStreamResponse) => void
+    onChunk: (chunk: AIEditStreamResponse) => void,
   ): Promise<void> {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${aiKey.fields.apiKey}`
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${aiKey.fields.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            stream: true,
+          }),
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          stream: true
-        })
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`OpenAI streaming error: ${response.status}`);
@@ -415,7 +450,7 @@ export class EnhancedAIEditorService {
 
         const chunk = new TextDecoder().decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6);
@@ -423,7 +458,7 @@ export class EnhancedAIEditorService {
               onChunk({ type: 'done', isComplete: true });
               return;
             }
-            
+
             try {
               const parsed = JSON.parse(data);
               const content = parsed.choices?.[0]?.delta?.content || '';
@@ -436,14 +471,14 @@ export class EnhancedAIEditorService {
           }
         }
       }
-      
+
       onChunk({ type: 'content', content: '', isComplete: true });
-      
     } catch (error) {
       onChunk({
         type: 'error',
-        error: error instanceof Error ? error.message : 'OpenAI streaming failed',
-        isComplete: true
+        error:
+          error instanceof Error ? error.message : 'OpenAI streaming failed',
+        isComplete: true,
       });
     }
   }
@@ -453,7 +488,7 @@ export class EnhancedAIEditorService {
     model: string,
     prompt: string,
     config: { temperature: number; maxTokens: number },
-    onChunk: (chunk: AIEditStreamResponse) => void
+    onChunk: (chunk: AIEditStreamResponse) => void,
   ): Promise<void> {
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -461,15 +496,15 @@ export class EnhancedAIEditorService {
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': aiKey.fields.apiKey,
-          'anthropic-version': '2023-06-01'
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: model,
+          model,
           max_tokens: config.maxTokens,
           temperature: config.temperature,
           messages: [{ role: 'user', content: prompt }],
-          stream: true
-        })
+          stream: true,
+        }),
       });
 
       if (!response.ok) {
@@ -485,7 +520,7 @@ export class EnhancedAIEditorService {
 
         const chunk = new TextDecoder().decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6);
@@ -493,7 +528,7 @@ export class EnhancedAIEditorService {
               onChunk({ type: 'done', isComplete: true });
               return;
             }
-            
+
             try {
               const parsed = JSON.parse(data);
               const content = parsed.delta?.text || '';
@@ -506,14 +541,14 @@ export class EnhancedAIEditorService {
           }
         }
       }
-      
+
       onChunk({ type: 'content', content: '', isComplete: true });
-      
     } catch (error) {
       onChunk({
         type: 'error',
-        error: error instanceof Error ? error.message : 'Anthropic streaming failed',
-        isComplete: true
+        error:
+          error instanceof Error ? error.message : 'Anthropic streaming failed',
+        isComplete: true,
       });
     }
   }
@@ -541,7 +576,10 @@ export class EnhancedAIEditorService {
     }
   }
 
-  static async searchCodespace(query: string, limit: number = 8): Promise<any[]> {
+  static async searchCodespace(
+    query: string,
+    limit: number = 8,
+  ): Promise<any[]> {
     try {
       const results = await this.codespaceService.searchCodespace(query, limit);
       return results;
@@ -553,37 +591,71 @@ export class EnhancedAIEditorService {
   static getLanguageFromExtension(filePath: string): string {
     const ext = filePath.split('.').pop()?.toLowerCase() || '';
     switch (ext) {
-      case 'js': case 'jsx': return 'javascript';
-      case 'ts': case 'tsx': return 'typescript';
-      case 'html': return 'html';
-      case 'css': return 'css';
-      case 'php': return 'php';
-      case 'py': return 'python';
-      case 'java': return 'java';
-      case 'cpp': case 'cc': case 'cxx': return 'cpp';
-      case 'c': return 'c';
-      case 'json': return 'json';
-      case 'yaml': case 'yml': return 'yaml';
-      case 'md': case 'markdown': return 'markdown';
-      case 'sql': return 'sql';
-      case 'sh': case 'bash': case 'zsh': case 'fish': return 'shell';
-      case 'dockerfile': case 'docker': return 'dockerfile';
-      case 'xml': return 'xml';
-      case 'csv': case 'tsv': return 'csv';
-      case 'log': return 'log';
-      case 'txt': return 'text';
-      default: return 'plaintext';
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      case 'ts':
+      case 'tsx':
+        return 'typescript';
+      case 'html':
+        return 'html';
+      case 'css':
+        return 'css';
+      case 'php':
+        return 'php';
+      case 'py':
+        return 'python';
+      case 'java':
+        return 'java';
+      case 'cpp':
+      case 'cc':
+      case 'cxx':
+        return 'cpp';
+      case 'c':
+        return 'c';
+      case 'json':
+        return 'json';
+      case 'yaml':
+      case 'yml':
+        return 'yaml';
+      case 'md':
+      case 'markdown':
+        return 'markdown';
+      case 'sql':
+        return 'sql';
+      case 'sh':
+      case 'bash':
+      case 'zsh':
+      case 'fish':
+        return 'shell';
+      case 'dockerfile':
+      case 'docker':
+        return 'dockerfile';
+      case 'xml':
+        return 'xml';
+      case 'csv':
+      case 'tsv':
+        return 'csv';
+      case 'log':
+        return 'log';
+      case 'txt':
+        return 'text';
+      default:
+        return 'plaintext';
     }
   }
 
-  static async analyzeFile(filePath: string, content: string): Promise<Partial<FileContext>> {
+  static async analyzeFile(
+    filePath: string,
+    content: string,
+  ): Promise<Partial<FileContext>> {
     const language = this.getLanguageFromExtension(filePath);
     return {
       imports: [],
       classes: [],
       functions: [],
       variables: [],
-      language
+      language,
     };
   }
 
@@ -593,35 +665,36 @@ export class EnhancedAIEditorService {
   static applyEdits(originalContent: string, edits: AIEdit[]): string {
     try {
       // Import and use the FileWriterService for proper edit application
-      const { FileWriterService } = require('../../../services/fileWriterService');
+      const {
+        FileWriterService,
+      } = require('../../../services/fileWriterService');
       const fileWriter = FileWriterService.getInstance();
 
       console.log('🔍 DEBUG: Applying edits to content', {
         originalContentLength: originalContent.length,
         editsLength: edits.length,
-        edits: edits.map(e => ({
+        edits: edits.map((e) => ({
           type: e.type,
           filePath: e.filePath,
           oldText: e.oldText,
-          newText: e.newText
-        }))
+          newText: e.newText,
+        })),
       });
-      
+
       const result = fileWriter.applyEditsToContent(originalContent, edits);
 
       console.log('🔍 DEBUG: Result of applying edits to content', {
         success: result.success,
         contentLength: result.content.length,
-        errors: result.errors
+        errors: result.errors,
       });
-      
+
       if (result.success) {
         console.log(`✅ Successfully applied ${edits.length} edits to content`);
         return result.content;
-      } else {
-        console.error(`❌ Failed to apply edits:`, result.errors);
-        return originalContent; // Return original content on failure
       }
+      console.error(`❌ Failed to apply edits:`, result.errors);
+      return originalContent; // Return original content on failure
     } catch (error) {
       console.error('❌ Error in applyEdits:', error);
       return originalContent; // Return original content on error
@@ -631,16 +704,21 @@ export class EnhancedAIEditorService {
   /**
    * Apply edits directly to files (enhanced version)
    */
-  static async applyEditsToFiles(edits: AIEdit[], projectRoot?: string): Promise<{
+  static async applyEditsToFiles(
+    edits: AIEdit[],
+    projectRoot?: string,
+  ): Promise<{
     success: boolean;
     modifiedFiles: string[];
     errors: string[];
     backupPaths?: string[];
   }> {
     try {
-      const { FileWriterService } = require('../../../services/fileWriterService');
+      const {
+        FileWriterService,
+      } = require('../../../services/fileWriterService');
       const fileWriter = FileWriterService.getInstance();
-      
+
       console.log(`🔍 DEBUG: Applying edits with project root: ${projectRoot}`);
       return await fileWriter.applyChangesToFiles(edits, projectRoot);
     } catch (error) {
@@ -648,7 +726,9 @@ export class EnhancedAIEditorService {
       return {
         success: false,
         modifiedFiles: [],
-        errors: [`Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`]
+        errors: [
+          `Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        ],
       };
     }
   }

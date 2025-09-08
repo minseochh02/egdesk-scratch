@@ -8,22 +8,21 @@ class WordPressSetup {
 
   setup() {
     console.log('Setting up WordPress directory structure...');
-    
+
     try {
       // Create WordPress directory structure
       this.createDirectories();
-      
+
       // Create sample WordPress files
       this.createIndexPhp();
       this.createHtaccess();
       this.createWpConfigSample();
       this.createSampleTheme();
       this.createSamplePlugin();
-      
+
       console.log('WordPress setup completed successfully!');
       console.log(`WordPress files are located in: ${this.wordpressDir}`);
       console.log('You can now run: npm run wordpress:server');
-      
     } catch (error) {
       console.error('Error setting up WordPress:', error);
     }
@@ -37,10 +36,10 @@ class WordPressSetup {
       'wp-content/themes',
       'wp-content/plugins',
       'wp-content/uploads',
-      'wp-content/languages'
+      'wp-content/languages',
     ];
 
-    dirs.forEach(dir => {
+    dirs.forEach((dir) => {
       const fullPath = path.join(this.wordpressDir, dir);
       if (!fs.existsSync(fullPath)) {
         fs.mkdirSync(fullPath, { recursive: true });
@@ -357,12 +356,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** Sets up WordPress vars and included files. */
 require_once ABSPATH . 'wp-settings.php';`;
 
-    fs.writeFileSync(path.join(this.wordpressDir, 'wp-config-sample.php'), wpConfigSample);
+    fs.writeFileSync(
+      path.join(this.wordpressDir, 'wp-config-sample.php'),
+      wpConfigSample,
+    );
     console.log('Created: wp-config-sample.php');
   }
 
   createSampleTheme() {
-    const themeDir = path.join(this.wordpressDir, 'wp-content/themes/sample-theme');
+    const themeDir = path.join(
+      this.wordpressDir,
+      'wp-content/themes/sample-theme',
+    );
     if (!fs.existsSync(themeDir)) {
       fs.mkdirSync(themeDir, { recursive: true });
     }
@@ -462,7 +467,10 @@ add_action('wp_enqueue_scripts', 'sample_theme_scripts');`;
   }
 
   createSamplePlugin() {
-    const pluginDir = path.join(this.wordpressDir, 'wp-content/plugins/sample-plugin');
+    const pluginDir = path.join(
+      this.wordpressDir,
+      'wp-content/plugins/sample-plugin',
+    );
     if (!fs.existsSync(pluginDir)) {
       fs.mkdirSync(pluginDir, { recursive: true });
     }

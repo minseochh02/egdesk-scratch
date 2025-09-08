@@ -33,12 +33,19 @@ export interface DatabaseConnection {
 
 export class DatabaseManager {
   private static instance: DatabaseManager;
+
   private appDataPath: string;
+
   private databasePath: string;
+
   private mysqlDataPath: string;
+
   private mysqlBinaryPath: string;
+
   private mysqlProcess: ChildProcess | null = null;
+
   private connection: DatabaseConnection = {};
+
   private isInitialized = false;
 
   private constructor() {
@@ -65,10 +72,10 @@ export class DatabaseManager {
 
     try {
       log.info('Initializing database manager...');
-      
+
       // Create necessary directories
       await this.createDirectories();
-      
+
       // Initialize MySQL only
       await this.initializeMySQL();
 
@@ -85,13 +92,13 @@ export class DatabaseManager {
    */
   private async createDirectories(): Promise<void> {
     const dirs = [
-      this.databasePath, 
-      this.mysqlDataPath, 
+      this.databasePath,
+      this.mysqlDataPath,
       this.mysqlBinaryPath,
       path.join(this.mysqlDataPath, 'data'),
-      path.join(this.mysqlDataPath, 'logs')
+      path.join(this.mysqlDataPath, 'logs'),
     ];
-    
+
     for (const dir of dirs) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -100,40 +107,37 @@ export class DatabaseManager {
     }
   }
 
-
-
   /**
    * Get MySQL download URL based on platform
    */
   private getMySQLDownloadInfo(): { url: string; filename: string } {
     const platform = os.platform();
     const arch = os.arch();
-    
+
     // MySQL 8.0.33 Community Server downloads
     if (platform === 'darwin') {
       if (arch === 'arm64') {
         return {
           url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-macos13-arm64.tar.gz',
-          filename: 'mysql-8.0.33-macos13-arm64.tar.gz'
-        };
-      } else {
-        return {
-          url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-macos13-x86_64.tar.gz',
-          filename: 'mysql-8.0.33-macos13-x86_64.tar.gz'
+          filename: 'mysql-8.0.33-macos13-arm64.tar.gz',
         };
       }
-    } else if (platform === 'win32') {
       return {
-        url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-winx64.zip',
-        filename: 'mysql-8.0.33-winx64.zip'
-      };
-    } else {
-      // Linux
-      return {
-        url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-linux-glibc2.28-x86_64.tar.xz',
-        filename: 'mysql-8.0.33-linux-glibc2.28-x86_64.tar.xz'
+        url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-macos13-x86_64.tar.gz',
+        filename: 'mysql-8.0.33-macos13-x86_64.tar.gz',
       };
     }
+    if (platform === 'win32') {
+      return {
+        url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-winx64.zip',
+        filename: 'mysql-8.0.33-winx64.zip',
+      };
+    }
+    // Linux
+    return {
+      url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.33-linux-glibc2.28-x86_64.tar.xz',
+      filename: 'mysql-8.0.33-linux-glibc2.28-x86_64.tar.xz',
+    };
   }
 
   /**
@@ -142,24 +146,24 @@ export class DatabaseManager {
   private async downloadMySQL(): Promise<void> {
     const downloadInfo = this.getMySQLDownloadInfo();
     const downloadPath = path.join(this.databasePath, downloadInfo.filename);
-    
+
     // Check if already downloaded
     if (fs.existsSync(downloadPath)) {
       log.info('MySQL binary already downloaded');
       return;
     }
-    
+
     log.info(`Downloading MySQL from: ${downloadInfo.url}`);
-    
+
     try {
       const response = await fetch(downloadInfo.url);
       if (!response.ok) {
         throw new Error(`Failed to download MySQL: ${response.statusText}`);
       }
-      
+
       const buffer = await response.buffer();
       fs.writeFileSync(downloadPath, buffer);
-      
+
       log.info(`MySQL downloaded successfully: ${downloadPath}`);
     } catch (error) {
       log.error('Failed to download MySQL:', error);
@@ -174,16 +178,19 @@ export class DatabaseManager {
     const downloadInfo = this.getMySQLDownloadInfo();
     const downloadPath = path.join(this.databasePath, downloadInfo.filename);
     const extractPath = this.mysqlDataPath;
-    
+
     // Check if already extracted
-    const mysqldPath = path.join(this.mysqlBinaryPath, os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld');
+    const mysqldPath = path.join(
+      this.mysqlBinaryPath,
+      os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld',
+    );
     if (fs.existsSync(mysqldPath)) {
       log.info('MySQL binary already extracted');
       return;
     }
-    
+
     log.info(`Extracting MySQL to: ${extractPath}`);
-    
+
     try {
       if (downloadInfo.filename.endsWith('.zip')) {
         await extract(downloadPath, { dir: extractPath });
@@ -192,7 +199,13 @@ export class DatabaseManager {
         // In production, you might want to use a proper tar extraction library
         const { spawn } = require('child_process');
         await new Promise((resolve, reject) => {
-          const tar = spawn('tar', ['-xf', downloadPath, '-C', extractPath, '--strip-components=1']);
+          const tar = spawn('tar', [
+            '-xf',
+            downloadPath,
+            '-C',
+            extractPath,
+            '--strip-components=1',
+          ]);
           tar.on('close', (code) => {
             if (code === 0) {
               resolve(code);
@@ -202,7 +215,7 @@ export class DatabaseManager {
           });
         });
       }
-      
+
       log.info('MySQL extracted successfully');
     } catch (error) {
       log.error('Failed to extract MySQL:', error);
@@ -221,13 +234,13 @@ export class DatabaseManager {
       } else {
         // Download MySQL binary if needed
         await this.downloadMySQL();
-        
+
         // Extract MySQL binary if needed
         await this.extractMySQL();
-        
+
         // Initialize MySQL data directory if needed
         await this.initializeMySQLData();
-        
+
         // Start portable MySQL server
         await this.startPortableMySQL();
       }
@@ -241,18 +254,20 @@ export class DatabaseManager {
         port: 3307, // Use different port to avoid conflicts
         user: 'root',
         password: '',
-        database: 'egdesk'
+        database: 'egdesk',
       };
 
       this.connection.mysql = await mysql.createConnection(config);
-      
+
       // Create database if it doesn't exist
-      await this.connection.mysql.execute('CREATE DATABASE IF NOT EXISTS egdesk');
+      await this.connection.mysql.execute(
+        'CREATE DATABASE IF NOT EXISTS egdesk',
+      );
       await this.connection.mysql.execute('USE egdesk');
-      
+
       // Create tables
       await this.createMySQLTables();
-      
+
       log.info('Portable MySQL database initialized successfully');
     } catch (error) {
       log.error('Failed to initialize portable MySQL:', error);
@@ -265,33 +280,36 @@ export class DatabaseManager {
    */
   private async initializeMySQLData(): Promise<void> {
     const dataDir = path.join(this.mysqlDataPath, 'data');
-    const mysqldPath = path.join(this.mysqlBinaryPath, os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld');
-    
+    const mysqldPath = path.join(
+      this.mysqlBinaryPath,
+      os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld',
+    );
+
     // Check if data directory is already initialized
     if (fs.existsSync(path.join(dataDir, 'mysql'))) {
       log.info('MySQL data directory already initialized');
       return;
     }
-    
+
     log.info('Initializing MySQL data directory...');
-    
+
     try {
       await new Promise((resolve, reject) => {
         const mysqld = spawn(mysqldPath, [
           '--initialize-insecure',
           `--datadir=${dataDir}`,
           `--basedir=${this.mysqlDataPath}`,
-          '--default-authentication-plugin=mysql_native_password'
+          '--default-authentication-plugin=mysql_native_password',
         ]);
-        
+
         mysqld.stdout?.on('data', (data) => {
           log.info(`MySQL init stdout: ${data}`);
         });
-        
+
         mysqld.stderr?.on('data', (data) => {
           log.info(`MySQL init stderr: ${data}`);
         });
-        
+
         mysqld.on('close', (code) => {
           if (code === 0) {
             log.info('MySQL data directory initialized successfully');
@@ -317,7 +335,7 @@ export class DatabaseManager {
         port: 3307,
         user: 'root',
         password: '',
-        connectTimeout: 1000
+        connectTimeout: 1000,
       });
       await testConnection.end();
       return true;
@@ -331,15 +349,18 @@ export class DatabaseManager {
    */
   private async startPortableMySQL(): Promise<void> {
     try {
-      const mysqldPath = path.join(this.mysqlBinaryPath, os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld');
+      const mysqldPath = path.join(
+        this.mysqlBinaryPath,
+        os.platform() === 'win32' ? 'mysqld.exe' : 'mysqld',
+      );
       const dataDir = path.join(this.mysqlDataPath, 'data');
       const logDir = path.join(this.mysqlDataPath, 'logs');
       const errorLogPath = path.join(logDir, 'error.log');
       const pidFilePath = path.join(logDir, 'mysql.pid');
       const socketPath = path.join(logDir, 'mysql.sock');
-      
+
       log.info('Starting portable MySQL server...');
-      
+
       const args = [
         `--datadir=${dataDir}`,
         `--basedir=${this.mysqlDataPath}`,
@@ -350,37 +371,36 @@ export class DatabaseManager {
         '--skip-networking=false',
         '--bind-address=127.0.0.1',
         '--default-authentication-plugin=mysql_native_password',
-        '--skip-grant-tables'  // Allow connections without password initially
+        '--skip-grant-tables', // Allow connections without password initially
       ];
-      
+
       this.mysqlProcess = spawn(mysqldPath, args, {
         detached: false,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       this.mysqlProcess.stdout?.on('data', (data) => {
         log.info(`MySQL stdout: ${data}`);
       });
-      
+
       this.mysqlProcess.stderr?.on('data', (data) => {
         log.info(`MySQL stderr: ${data}`);
       });
-      
+
       this.mysqlProcess.on('close', (code) => {
         log.info(`MySQL process exited with code ${code}`);
         this.mysqlProcess = null;
       });
-      
+
       this.mysqlProcess.on('error', (error) => {
         log.error('MySQL process error:', error);
         this.mysqlProcess = null;
       });
-      
+
       log.info('Portable MySQL server started on port 3307');
-      
+
       // Give MySQL a moment to start
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       log.error('Failed to start portable MySQL:', error);
       throw error;
@@ -393,7 +413,7 @@ export class DatabaseManager {
   private async waitForMySQL(): Promise<void> {
     const maxAttempts = 30;
     const delay = 1000; // 1 second
-    
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const testConnection = await mysql.createConnection({
@@ -401,7 +421,7 @@ export class DatabaseManager {
           port: 3307,
           user: 'root',
           password: '',
-          connectTimeout: 1000
+          connectTimeout: 1000,
         });
         await testConnection.end();
         log.info(`MySQL ready after ${attempt} attempts`);
@@ -410,12 +430,10 @@ export class DatabaseManager {
         if (attempt === maxAttempts) {
           throw new Error('MySQL failed to start within timeout');
         }
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
-
-
 
   /**
    * Create MySQL tables
@@ -448,7 +466,7 @@ export class DatabaseManager {
         \`key\` VARCHAR(255) PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )`
+      )`,
     ];
 
     for (const table of tables) {
@@ -471,9 +489,8 @@ export class DatabaseManager {
       if (this.connection.mysql) {
         const [rows] = await this.connection.mysql.execute(query, params);
         return rows;
-      } else {
-        throw new Error('MySQL connection not available');
       }
+      throw new Error('MySQL connection not available');
     } catch (error) {
       log.error('Query execution failed:', error);
       throw error;
@@ -494,7 +511,7 @@ export class DatabaseManager {
       connection.url,
       connection.username,
       connection.password,
-      connection.api_key
+      connection.api_key,
     ];
 
     return this.executeQuery(query, params);
@@ -504,7 +521,8 @@ export class DatabaseManager {
    * Get WordPress connections
    */
   public async getWordPressConnections(): Promise<any[]> {
-    const query = 'SELECT * FROM wordpress_connections ORDER BY created_at DESC';
+    const query =
+      'SELECT * FROM wordpress_connections ORDER BY created_at DESC';
     return this.executeQuery(query);
   }
 
@@ -521,7 +539,7 @@ export class DatabaseManager {
       syncData.status,
       syncData.completed_at,
       syncData.files_processed || 0,
-      syncData.error_message || null
+      syncData.error_message || null,
     ];
 
     return this.executeQuery(query, params);
@@ -532,7 +550,7 @@ export class DatabaseManager {
    */
   public async getSyncHistory(connectionId?: string): Promise<any[]> {
     let query = 'SELECT * FROM sync_history';
-    let params: any[] = [];
+    const params: any[] = [];
 
     if (connectionId) {
       query += ' WHERE connection_id = ?';
@@ -559,7 +577,7 @@ export class DatabaseManager {
   public async getAppSetting(key: string): Promise<string | null> {
     const query = 'SELECT value FROM app_settings WHERE key = ?';
     const result = await this.executeQuery(query, [key]);
-    
+
     if (result && result.length > 0) {
       return result[0].value;
     }
@@ -575,12 +593,12 @@ export class DatabaseManager {
         await this.connection.mysql.end();
         log.info('MySQL connection closed');
       }
-      
+
       // Stop MySQL process if it's running
       if (this.mysqlProcess) {
         log.info('Stopping MySQL server...');
         this.mysqlProcess.kill('SIGTERM');
-        
+
         // Wait for process to exit
         await new Promise((resolve) => {
           if (this.mysqlProcess) {
@@ -596,11 +614,11 @@ export class DatabaseManager {
             resolve(null);
           }
         });
-        
+
         this.mysqlProcess = null;
         log.info('MySQL server stopped');
       }
-      
+
       this.isInitialized = false;
     } catch (error) {
       log.error('Error closing database connections:', error);
@@ -613,7 +631,7 @@ export class DatabaseManager {
   public getStatus(): { mysql: boolean; initialized: boolean } {
     return {
       mysql: !!this.connection.mysql,
-      initialized: this.isInitialized
+      initialized: this.isInitialized,
     };
   }
 
@@ -624,16 +642,13 @@ export class DatabaseManager {
     try {
       if (this.connection.mysql) {
         return await this.getMySQLSchemaInfo();
-      } else {
-        return [];
       }
+      return [];
     } catch (error) {
       log.error('Error getting schema info:', error);
       return [];
     }
   }
-
-
 
   /**
    * Get MySQL schema information
@@ -644,14 +659,14 @@ export class DatabaseManager {
     try {
       // Get table names
       const [tablesResult] = await this.connection.mysql.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'egdesk'"
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'egdesk'",
       );
-      
+
       const tables: DatabaseTable[] = [];
-      
+
       for (const tableRow of tablesResult as any[]) {
         const tableName = tableRow.table_name;
-        
+
         // Get column information
         const [columnsResult] = await this.connection.mysql.execute(
           `SELECT 
@@ -662,31 +677,29 @@ export class DatabaseManager {
             column_default
           FROM information_schema.columns 
           WHERE table_schema = 'egdesk' AND table_name = ?`,
-          [tableName]
+          [tableName],
         );
-        
-        const columns = (columnsResult as any[]).map(col => ({
+
+        const columns = (columnsResult as any[]).map((col) => ({
           name: col.column_name,
           type: col.data_type,
           nullable: col.is_nullable === 'YES',
           key: col.column_key || '',
-          default: col.column_default
+          default: col.column_default,
         }));
-        
+
         tables.push({
           name: tableName,
-          columns
+          columns,
         });
       }
-      
+
       return tables;
     } catch (error) {
       log.error('Error getting MySQL schema info:', error);
       return [];
     }
   }
-
-
 
   /**
    * Get connection information
@@ -700,21 +713,23 @@ export class DatabaseManager {
     };
   }> {
     const info: any = {};
-    
+
     try {
       if (this.connection.mysql) {
-        const [versionResult] = await this.connection.mysql.execute('SELECT VERSION() as version');
+        const [versionResult] = await this.connection.mysql.execute(
+          'SELECT VERSION() as version',
+        );
         info.mysql = {
           host: 'localhost',
           port: 3307,
           database: 'egdesk',
-          version: (versionResult as any[])[0]?.version
+          version: (versionResult as any[])[0]?.version,
         };
       }
     } catch (error) {
       log.error('Error getting connection info:', error);
     }
-    
+
     return info;
   }
 }

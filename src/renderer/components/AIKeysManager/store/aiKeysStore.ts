@@ -1,4 +1,10 @@
-import { AIKey, AIKeysState, AI_PROVIDERS, AIKeyFormData, TestResult } from '../types';
+import {
+  AIKey,
+  AIKeysState,
+  AI_PROVIDERS,
+  AIKeyFormData,
+  TestResult,
+} from '../types';
 import { APITester } from '../services/apiTester';
 
 class AIKeysStore {
@@ -32,7 +38,7 @@ class AIKeysStore {
    * Notify all listeners of state change
    */
   private notify() {
-    this.listeners.forEach(listener => listener(this.state));
+    this.listeners.forEach((listener) => listener(this.state));
   }
 
   /**
@@ -49,12 +55,12 @@ class AIKeysStore {
   private async loadSavedKeys() {
     try {
       this.setState({ isLoading: true });
-      
+
       // Use electron-store to load saved keys
       const savedKeys = await window.electron.store.get('ai-keys');
       if (savedKeys && Array.isArray(savedKeys)) {
         // Convert date strings back to Date objects
-        const keys = savedKeys.map(key => ({
+        const keys = savedKeys.map((key) => ({
           ...key,
           createdAt: new Date(key.createdAt),
           lastUsed: key.lastUsed ? new Date(key.lastUsed) : undefined,
@@ -65,9 +71,9 @@ class AIKeysStore {
       }
     } catch (error) {
       console.error('Failed to load saved AI keys:', error);
-      this.setState({ 
-        error: 'Failed to load saved AI keys', 
-        isLoading: false 
+      this.setState({
+        error: 'Failed to load saved AI keys',
+        isLoading: false,
       });
     }
   }
@@ -102,19 +108,20 @@ class AIKeysStore {
 
       const updatedKeys = [...this.state.keys, newKey];
       await this.saveKeys(updatedKeys);
-      
-      this.setState({ 
-        keys: updatedKeys, 
+
+      this.setState({
+        keys: updatedKeys,
         isLoading: false,
-        selectedKeyId: newKey.id 
+        selectedKeyId: newKey.id,
       });
 
       return newKey;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to add AI key';
-      this.setState({ 
-        error: errorMessage, 
-        isLoading: false 
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to add AI key';
+      this.setState({
+        error: errorMessage,
+        isLoading: false,
       });
       throw error;
     }
@@ -127,28 +134,29 @@ class AIKeysStore {
     try {
       this.setState({ isLoading: true, error: null });
 
-      const updatedKeys = this.state.keys.map(key => 
-        key.id === id ? { ...key, ...updates } : key
+      const updatedKeys = this.state.keys.map((key) =>
+        key.id === id ? { ...key, ...updates } : key,
       );
 
       await this.saveKeys(updatedKeys);
-      
-      this.setState({ 
-        keys: updatedKeys, 
-        isLoading: false 
+
+      this.setState({
+        keys: updatedKeys,
+        isLoading: false,
       });
 
-      const updatedKey = updatedKeys.find(key => key.id === id);
+      const updatedKey = updatedKeys.find((key) => key.id === id);
       if (!updatedKey) {
         throw new Error('Key not found');
       }
 
       return updatedKey;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to update AI key';
-      this.setState({ 
-        error: errorMessage, 
-        isLoading: false 
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to update AI key';
+      this.setState({
+        error: errorMessage,
+        isLoading: false,
       });
       throw error;
     }
@@ -161,19 +169,21 @@ class AIKeysStore {
     try {
       this.setState({ isLoading: true, error: null });
 
-      const updatedKeys = this.state.keys.filter(key => key.id !== id);
+      const updatedKeys = this.state.keys.filter((key) => key.id !== id);
       await this.saveKeys(updatedKeys);
-      
-      this.setState({ 
-        keys: updatedKeys, 
+
+      this.setState({
+        keys: updatedKeys,
         isLoading: false,
-        selectedKeyId: this.state.selectedKeyId === id ? null : this.state.selectedKeyId
+        selectedKeyId:
+          this.state.selectedKeyId === id ? null : this.state.selectedKeyId,
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to delete AI key';
-      this.setState({ 
-        error: errorMessage, 
-        isLoading: false 
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to delete AI key';
+      this.setState({
+        error: errorMessage,
+        isLoading: false,
       });
       throw error;
     }
@@ -183,7 +193,7 @@ class AIKeysStore {
    * Toggle key active status
    */
   async toggleKeyActive(id: string): Promise<void> {
-    const key = this.state.keys.find(k => k.id === id);
+    const key = this.state.keys.find((k) => k.id === id);
     if (key) {
       await this.updateKey(id, { isActive: !key.isActive });
     }
@@ -200,28 +210,28 @@ class AIKeysStore {
    * Get key by ID
    */
   getKey(id: string): AIKey | undefined {
-    return this.state.keys.find(key => key.id === id);
+    return this.state.keys.find((key) => key.id === id);
   }
 
   /**
    * Get active keys
    */
   getActiveKeys(): AIKey[] {
-    return this.state.keys.filter(key => key.isActive);
+    return this.state.keys.filter((key) => key.isActive);
   }
 
   /**
    * Get keys by provider
    */
   getKeysByProvider(providerId: string): AIKey[] {
-    return this.state.keys.filter(key => key.providerId === providerId);
+    return this.state.keys.filter((key) => key.providerId === providerId);
   }
 
   /**
    * Get provider by ID
    */
   getProvider(id: string) {
-    return this.state.providers.find(provider => provider.id === id);
+    return this.state.providers.find((provider) => provider.id === id);
   }
 
   /**
@@ -246,13 +256,16 @@ class AIKeysStore {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    
+
     // Fallback UUID generation
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+      /[xy]/g,
+      function (c) {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      },
+    );
   }
 
   /**
@@ -280,12 +293,13 @@ class AIKeysStore {
 
       return testResult;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to test API key';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to test API key';
       this.setState({ error: errorMessage });
       return {
         success: false,
         message: errorMessage,
-        details: error
+        details: error,
       };
     }
   }

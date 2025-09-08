@@ -46,7 +46,12 @@ export interface IterativeReadingState {
 }
 
 export interface AIReadingDecision {
-  action: 'read_file' | 'read_range' | 'continue_reading' | 'analyze_and_respond' | 'need_more_context';
+  action:
+    | 'read_file'
+    | 'read_range'
+    | 'continue_reading'
+    | 'analyze_and_respond'
+    | 'need_more_context';
   filePath?: string;
   startLine?: number;
   endLine?: number;
@@ -56,12 +61,15 @@ export interface AIReadingDecision {
 
 export class IterativeFileReaderService {
   private static instance: IterativeFileReaderService;
+
   private currentState: IterativeReadingState | null = null;
+
   private conversationHistory: Array<{
     role: 'user' | 'assistant';
     content: string;
     timestamp: Date;
   }> = [];
+
   private currentAbortController: AbortController | null = null;
 
   private constructor() {}
@@ -89,7 +97,7 @@ export class IterativeFileReaderService {
       content: string;
       language: string;
     }> = [],
-    abortController?: AbortController
+    abortController?: AbortController,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -110,7 +118,7 @@ export class IterativeFileReaderService {
         cachedFiles,
         readRanges: [],
         totalContentRead: 0,
-        maxContentLimit
+        maxContentLimit,
       };
 
       // Add user prompt to conversation history
@@ -122,7 +130,7 @@ export class IterativeFileReaderService {
         projectRoot,
         availableFiles,
         aiKey,
-        model
+        model,
       );
 
       if (!discoveryResponse.success) {
@@ -131,9 +139,9 @@ export class IterativeFileReaderService {
           nextAction: {
             action: 'analyze_and_respond',
             reasoning: 'Failed to discover relevant files',
-            confidence: 0
+            confidence: 0,
           },
-          error: discoveryResponse.error
+          error: discoveryResponse.error,
         };
       }
 
@@ -142,17 +150,19 @@ export class IterativeFileReaderService {
 
       // Determine next action based on discovery
       const nextAction: AIReadingDecision = {
-        action: discoveryResponse.filesToExamine.length > 0 ? 'read_file' : 'analyze_and_respond',
+        action:
+          discoveryResponse.filesToExamine.length > 0
+            ? 'read_file'
+            : 'analyze_and_respond',
         filePath: discoveryResponse.filesToExamine[0],
         reasoning: `Discovered ${discoveryResponse.filesToExamine.length} relevant files. Starting with: ${discoveryResponse.filesToExamine[0] || 'none'}`,
-        confidence: 0.9
+        confidence: 0.9,
       };
 
       return {
         success: true,
-        nextAction
+        nextAction,
       };
-
     } catch (error) {
       console.error('Failed to start iterative reading:', error);
       return {
@@ -160,9 +170,9 @@ export class IterativeFileReaderService {
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Error during initialization',
-          confidence: 0
+          confidence: 0,
         },
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -174,7 +184,7 @@ export class IterativeFileReaderService {
     aiDecision: AIReadingDecision,
     aiKey: any,
     model: string,
-    abortController?: AbortController
+    abortController?: AbortController,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -187,9 +197,9 @@ export class IterativeFileReaderService {
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'No active reading session',
-          confidence: 0
+          confidence: 0,
         },
-        error: 'No active reading session'
+        error: 'No active reading session',
       };
     }
 
@@ -200,9 +210,9 @@ export class IterativeFileReaderService {
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Request was cancelled',
-          confidence: 0
+          confidence: 0,
         },
-        error: 'Request was cancelled'
+        error: 'Request was cancelled',
       };
     }
 
@@ -210,28 +220,28 @@ export class IterativeFileReaderService {
       switch (aiDecision.action) {
         case 'read_file':
           return await this.handleReadFile(aiDecision, aiKey, model);
-        
+
         case 'read_range':
           return await this.handleReadRange(aiDecision, aiKey, model);
-        
+
         case 'continue_reading':
           return await this.handleContinueReading(aiDecision, aiKey, model);
-        
+
         case 'analyze_and_respond':
           return await this.handleAnalyzeAndRespond(aiDecision, aiKey, model);
-        
+
         case 'need_more_context':
           return await this.handleNeedMoreContext(aiDecision, aiKey, model);
-        
+
         default:
           return {
             success: false,
             nextAction: {
               action: 'analyze_and_respond',
               reasoning: 'Unknown action type',
-              confidence: 0
+              confidence: 0,
             },
-            error: 'Unknown action type'
+            error: 'Unknown action type',
           };
       }
     } catch (error) {
@@ -241,9 +251,9 @@ export class IterativeFileReaderService {
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Error during processing',
-          confidence: 0
+          confidence: 0,
         },
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -256,7 +266,7 @@ export class IterativeFileReaderService {
     projectRoot: string,
     availableFiles: string[],
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<FileDiscoveryResponse> {
     const prompt = `## File Discovery Phase
 
@@ -288,7 +298,7 @@ Remember: You will be making actual code changes to these files. Select files th
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {
         temperature: 0.3,
-        maxTokens: 4096
+        maxTokens: 4096,
       });
 
       if (!response.success) {
@@ -296,35 +306,36 @@ Remember: You will be making actual code changes to these files. Select files th
           success: false,
           filesToExamine: [],
           reasoning: '',
-          error: response.error
+          error: response.error,
         };
       }
 
       // Parse AI response
-      const jsonMatch = response.content?.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      const jsonMatch = response.content?.match(
+        /```json\s*(\{[\s\S]*?\})\s*```/,
+      );
       if (!jsonMatch) {
         return {
           success: false,
           filesToExamine: [],
           reasoning: 'Failed to parse AI response',
-          error: 'Invalid response format'
+          error: 'Invalid response format',
         };
       }
 
       const decision = JSON.parse(jsonMatch[1]);
-      
+
       return {
         success: true,
         filesToExamine: decision.filesToExamine || [],
-        reasoning: decision.reasoning || 'No reasoning provided'
+        reasoning: decision.reasoning || 'No reasoning provided',
       };
-
     } catch (error) {
       return {
         success: false,
         filesToExamine: [],
         reasoning: '',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -334,37 +345,44 @@ Remember: You will be making actual code changes to these files. Select files th
    */
   private getCachedFileContent(filePath: string): string | null {
     if (!this.currentState?.cachedFiles) return null;
-    
+
     // Try exact match first
-    let cachedFile = this.currentState.cachedFiles.find(f => f.path === filePath);
-    
+    let cachedFile = this.currentState.cachedFiles.find(
+      (f) => f.path === filePath,
+    );
+
     // Try relative path matching
     if (!cachedFile) {
-      const relativePath = filePath.replace(this.currentState.projectRoot + '/', '');
-      cachedFile = this.currentState.cachedFiles.find(f => 
-        f.path === relativePath || 
-        f.path.endsWith(relativePath) ||
-        relativePath.endsWith(f.path)
+      const relativePath = filePath.replace(
+        `${this.currentState.projectRoot}/`,
+        '',
+      );
+      cachedFile = this.currentState.cachedFiles.find(
+        (f) =>
+          f.path === relativePath ||
+          f.path.endsWith(relativePath) ||
+          relativePath.endsWith(f.path),
       );
     }
-    
+
     // Try www/ to wordpress/ path conversion
     if (!cachedFile && filePath.includes('www/')) {
       const wordpressPath = filePath.replace('www/', 'wordpress/');
-      cachedFile = this.currentState.cachedFiles.find(f => 
-        f.path === wordpressPath || 
-        f.path.endsWith(wordpressPath) ||
-        wordpressPath.endsWith(f.path)
+      cachedFile = this.currentState.cachedFiles.find(
+        (f) =>
+          f.path === wordpressPath ||
+          f.path.endsWith(wordpressPath) ||
+          wordpressPath.endsWith(f.path),
       );
     }
-    
+
     console.log('🔍 DEBUG: getCachedFileContent', {
       requestedPath: filePath,
       foundCached: !!cachedFile,
       cachedPath: cachedFile?.path,
-      contentLength: cachedFile?.content?.length
+      contentLength: cachedFile?.content?.length,
     });
-    
+
     return cachedFile?.content || null;
   }
 
@@ -374,7 +392,7 @@ Remember: You will be making actual code changes to these files. Select files th
   private async handleReadFile(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -387,22 +405,22 @@ Remember: You will be making actual code changes to these files. Select files th
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'No file path specified',
-          confidence: 0
+          confidence: 0,
         },
-        error: 'No file path specified'
+        error: 'No file path specified',
       };
     }
 
     try {
       // First, try to get content from cache
       const cachedContent = this.getCachedFileContent(aiDecision.filePath);
-      
+
       if (cachedContent) {
         console.log('🔍 DEBUG: handleReadFile - Using cached content', {
           originalPath: aiDecision.filePath,
-          contentLength: cachedContent.length
+          contentLength: cachedContent.length,
         });
-        
+
         const content = cachedContent;
         const lineCount = content.split('\n').length;
 
@@ -411,38 +429,50 @@ Remember: You will be making actual code changes to these files. Select files th
           filePath: aiDecision.filePath,
           startLine: 1,
           endLine: lineCount,
-          content
+          content,
         });
 
         this.currentState!.totalContentRead += content.length;
 
         // Add content to conversation history
-        this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} from cache (${lineCount} lines, ${content.length} chars)`);
+        this.addToConversationHistory(
+          'assistant',
+          `Read file ${aiDecision.filePath} from cache (${lineCount} lines, ${content.length} chars)`,
+        );
 
         // Determine next action
-        const nextAction = await this.determineNextAction(aiKey, model, content);
+        const nextAction = await this.determineNextAction(
+          aiKey,
+          model,
+          content,
+        );
 
         return {
           success: true,
           nextAction,
-          content
+          content,
         };
       }
 
       // If not in cache, try file system with path resolution
-      const fullFilePath = aiDecision.filePath.startsWith('/') || aiDecision.filePath.startsWith('C:\\') 
-        ? aiDecision.filePath 
-        : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
+      const fullFilePath =
+        aiDecision.filePath.startsWith('/') ||
+        aiDecision.filePath.startsWith('C:\\')
+          ? aiDecision.filePath
+          : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
 
-      console.log('🔍 DEBUG: handleReadFile - Not in cache, attempting to read from file system', {
-        originalPath: aiDecision.filePath,
-        fullPath: fullFilePath,
-        projectRoot: this.currentState!.projectRoot
-      });
+      console.log(
+        '🔍 DEBUG: handleReadFile - Not in cache, attempting to read from file system',
+        {
+          originalPath: aiDecision.filePath,
+          fullPath: fullFilePath,
+          projectRoot: this.currentState!.projectRoot,
+        },
+      );
 
       // Read the entire file
       let result = await window.electron.fileSystem.readFile(fullFilePath);
-      
+
       // If the file path doesn't work, try some common variations
       if (!result.success) {
         console.log('handleReadFile: Original path failed, trying variations');
@@ -451,9 +481,9 @@ Remember: You will be making actual code changes to these files. Select files th
           `${this.currentState!.projectRoot}/egdesk-scratch/wordpress/${aiDecision.filePath}`,
           `${this.currentState!.projectRoot}/wordpress/${aiDecision.filePath}`,
           `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'egdesk-scratch/wordpress/')}`,
-          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`,
         ];
-        
+
         for (const path of pathVariations) {
           console.log('handleReadFile: Trying path:', path);
           result = await window.electron.fileSystem.readFile(path);
@@ -463,16 +493,16 @@ Remember: You will be making actual code changes to these files. Select files th
           }
         }
       }
-      
+
       if (!result.success) {
         return {
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
             reasoning: `Failed to read file: ${aiDecision.filePath} (tried cache and multiple path variations)`,
-            confidence: 0
+            confidence: 0,
           },
-          error: result.error
+          error: result.error,
         };
       }
 
@@ -484,13 +514,16 @@ Remember: You will be making actual code changes to these files. Select files th
         filePath: aiDecision.filePath,
         startLine: 1,
         endLine: lineCount,
-        content
+        content,
       });
 
       this.currentState!.totalContentRead += content.length;
 
       // Add content to conversation history
-      this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} (${lineCount} lines, ${content.length} chars)`);
+      this.addToConversationHistory(
+        'assistant',
+        `Read file ${aiDecision.filePath} (${lineCount} lines, ${content.length} chars)`,
+      );
 
       // Determine next action
       const nextAction = await this.determineNextAction(aiKey, model, content);
@@ -498,18 +531,17 @@ Remember: You will be making actual code changes to these files. Select files th
       return {
         success: true,
         nextAction,
-        content
+        content,
       };
-
     } catch (error) {
       return {
         success: false,
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: `Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          confidence: 0
+          confidence: 0,
         },
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -520,7 +552,7 @@ Remember: You will be making actual code changes to these files. Select files th
   private async handleReadRange(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -533,24 +565,24 @@ Remember: You will be making actual code changes to these files. Select files th
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Missing file path or line range',
-          confidence: 0
+          confidence: 0,
         },
-        error: 'Missing file path or line range'
+        error: 'Missing file path or line range',
       };
     }
 
     try {
       // First, try to get content from cache
       const cachedContent = this.getCachedFileContent(aiDecision.filePath);
-      
+
       if (cachedContent) {
         console.log('🔍 DEBUG: handleReadRange - Using cached content', {
           originalPath: aiDecision.filePath,
           contentLength: cachedContent.length,
           startLine: aiDecision.startLine,
-          endLine: aiDecision.endLine
+          endLine: aiDecision.endLine,
         });
-        
+
         const lines = cachedContent.split('\n');
         const startLine = Math.max(1, aiDecision.startLine);
         const endLine = Math.min(lines.length, aiDecision.endLine);
@@ -561,40 +593,52 @@ Remember: You will be making actual code changes to these files. Select files th
           filePath: aiDecision.filePath,
           startLine,
           endLine,
-          content
+          content,
         });
 
         this.currentState!.totalContentRead += content.length;
 
         // Add content to conversation history
-        this.addToConversationHistory('assistant', `Read file ${aiDecision.filePath} lines ${startLine}-${endLine} from cache (${content.length} chars)`);
+        this.addToConversationHistory(
+          'assistant',
+          `Read file ${aiDecision.filePath} lines ${startLine}-${endLine} from cache (${content.length} chars)`,
+        );
 
         // Determine next action
-        const nextAction = await this.determineNextAction(aiKey, model, content);
+        const nextAction = await this.determineNextAction(
+          aiKey,
+          model,
+          content,
+        );
 
         return {
           success: true,
           nextAction,
-          content
+          content,
         };
       }
 
       // If not in cache, try file system with path resolution
-      const fullFilePath = aiDecision.filePath.startsWith('/') || aiDecision.filePath.startsWith('C:\\') 
-        ? aiDecision.filePath 
-        : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
+      const fullFilePath =
+        aiDecision.filePath.startsWith('/') ||
+        aiDecision.filePath.startsWith('C:\\')
+          ? aiDecision.filePath
+          : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
 
-      console.log('🔍 DEBUG: handleReadRange - Not in cache, attempting to read from file system', {
-        originalPath: aiDecision.filePath,
-        fullPath: fullFilePath,
-        projectRoot: this.currentState!.projectRoot,
-        startLine: aiDecision.startLine,
-        endLine: aiDecision.endLine
-      });
+      console.log(
+        '🔍 DEBUG: handleReadRange - Not in cache, attempting to read from file system',
+        {
+          originalPath: aiDecision.filePath,
+          fullPath: fullFilePath,
+          projectRoot: this.currentState!.projectRoot,
+          startLine: aiDecision.startLine,
+          endLine: aiDecision.endLine,
+        },
+      );
 
       // Read the entire file first
       let result = await window.electron.fileSystem.readFile(fullFilePath);
-      
+
       // If the file path doesn't work, try some common variations
       if (!result.success) {
         console.log('handleReadRange: Original path failed, trying variations');
@@ -603,9 +647,9 @@ Remember: You will be making actual code changes to these files. Select files th
           `${this.currentState!.projectRoot}/egdesk-scratch/wordpress/${aiDecision.filePath}`,
           `${this.currentState!.projectRoot}/wordpress/${aiDecision.filePath}`,
           `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'egdesk-scratch/wordpress/')}`,
-          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`
+          `${this.currentState!.projectRoot}/${aiDecision.filePath.replace('www/', 'wordpress/')}`,
         ];
-        
+
         for (const path of pathVariations) {
           console.log('handleReadRange: Trying path:', path);
           result = await window.electron.fileSystem.readFile(path);
@@ -615,23 +659,23 @@ Remember: You will be making actual code changes to these files. Select files th
           }
         }
       }
-      
+
       if (!result.success) {
         return {
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
             reasoning: `Failed to read file: ${aiDecision.filePath} (tried cache and multiple path variations)`,
-            confidence: 0
+            confidence: 0,
           },
-          error: result.error
+          error: result.error,
         };
       }
 
       const lines = result.content?.split('\n') || [];
       const startLine = Math.max(1, aiDecision.startLine);
       const endLine = Math.min(lines.length, aiDecision.endLine);
-      
+
       const rangeContent = lines.slice(startLine - 1, endLine).join('\n');
       const lineCount = endLine - startLine + 1;
 
@@ -640,32 +684,38 @@ Remember: You will be making actual code changes to these files. Select files th
         filePath: aiDecision.filePath,
         startLine,
         endLine,
-        content: rangeContent
+        content: rangeContent,
       });
 
       this.currentState!.totalContentRead += rangeContent.length;
 
       // Add content to conversation history
-      this.addToConversationHistory('assistant', `Read lines ${startLine}-${endLine} from ${aiDecision.filePath} (${lineCount} lines)`);
+      this.addToConversationHistory(
+        'assistant',
+        `Read lines ${startLine}-${endLine} from ${aiDecision.filePath} (${lineCount} lines)`,
+      );
 
       // Determine next action
-      const nextAction = await this.determineNextAction(aiKey, model, rangeContent);
+      const nextAction = await this.determineNextAction(
+        aiKey,
+        model,
+        rangeContent,
+      );
 
       return {
         success: true,
         nextAction,
-        content: rangeContent
+        content: rangeContent,
       };
-
     } catch (error) {
       return {
         success: false,
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: `Error reading line range: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          confidence: 0
+          confidence: 0,
         },
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -676,7 +726,7 @@ Remember: You will be making actual code changes to these files. Select files th
   private async handleContinueReading(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -690,8 +740,8 @@ Remember: You will be making actual code changes to these files. Select files th
       nextAction: {
         action: 'analyze_and_respond',
         reasoning: 'Continuing to analysis phase',
-        confidence: 0.8
-      }
+        confidence: 0.8,
+      },
     };
   }
 
@@ -701,7 +751,7 @@ Remember: You will be making actual code changes to these files. Select files th
   private async handleAnalyzeAndRespond(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -712,13 +762,13 @@ Remember: You will be making actual code changes to these files. Select files th
 
     // Build context from all read content
     const context = this.buildContextFromReadContent();
-    
+
     const prompt = `## Analysis and Response Phase
 
 Based on the files and content I've read, provide your analysis and response to the user's original request.
 
 ## Original User Request:
-${this.conversationHistory.find(msg => msg.role === 'user')?.content || ''}
+${this.conversationHistory.find((msg) => msg.role === 'user')?.content || ''}
 
 ## Content Read:
 ${context}
@@ -758,7 +808,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {
         temperature: 0.3,
-        maxTokens: 4096
+        maxTokens: 4096,
       });
 
       if (!response.success) {
@@ -767,9 +817,9 @@ Remember: You are responsible for making the code changes. Provide search/replac
           nextAction: {
             action: 'analyze_and_respond',
             reasoning: 'Failed to generate analysis',
-            confidence: 0
+            confidence: 0,
           },
-          error: response.error
+          error: response.error,
         };
       }
 
@@ -781,20 +831,19 @@ Remember: You are responsible for making the code changes. Provide search/replac
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Analysis complete',
-          confidence: 1.0
+          confidence: 1.0,
         },
-        content: response.content
+        content: response.content,
       };
-
     } catch (error) {
       return {
         success: false,
         nextAction: {
           action: 'analyze_and_respond',
           reasoning: 'Error during analysis',
-          confidence: 0
+          confidence: 0,
         },
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -805,7 +854,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
   private async handleNeedMoreContext(
     aiDecision: AIReadingDecision,
     aiKey: any,
-    model: string
+    model: string,
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
@@ -819,8 +868,8 @@ Remember: You are responsible for making the code changes. Provide search/replac
       nextAction: {
         action: 'analyze_and_respond',
         reasoning: 'Moving to analysis with available context',
-        confidence: 0.7
-      }
+        confidence: 0.7,
+      },
     };
   }
 
@@ -830,14 +879,16 @@ Remember: You are responsible for making the code changes. Provide search/replac
   private async determineNextAction(
     aiKey: any,
     model: string,
-    content: string
+    content: string,
   ): Promise<AIReadingDecision> {
     // Check if we've hit content limits
-    if (this.currentState!.totalContentRead >= this.currentState!.maxContentLimit) {
+    if (
+      this.currentState!.totalContentRead >= this.currentState!.maxContentLimit
+    ) {
       return {
         action: 'analyze_and_respond',
         reasoning: 'Reached content limit, proceeding to analysis',
-        confidence: 0.9
+        confidence: 0.9,
       };
     }
 
@@ -846,7 +897,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
     return {
       action: 'analyze_and_respond',
       reasoning: 'Sufficient content read, proceeding to analysis',
-      confidence: 0.8
+      confidence: 0.8,
     };
   }
 
@@ -857,7 +908,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
     if (!this.currentState) return '';
 
     return this.currentState.readRanges
-      .map(range => {
+      .map((range) => {
         // Use the full relative path instead of just the filename
         const relativePath = range.filePath;
         return `\n--- ${relativePath} (lines ${range.startLine}-${range.endLine}) ---\n${range.content}`;
@@ -868,11 +919,14 @@ Remember: You are responsible for making the code changes. Provide search/replac
   /**
    * Add message to conversation history
    */
-  private addToConversationHistory(role: 'user' | 'assistant', content: string): void {
+  private addToConversationHistory(
+    role: 'user' | 'assistant',
+    content: string,
+  ): void {
     this.conversationHistory.push({
       role,
       content,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
   }
 
@@ -883,16 +937,16 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    options: { temperature: number; maxTokens: number }
+    options: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
       // Only create a new abort controller if one doesn't exist
       if (!this.currentAbortController) {
         this.currentAbortController = new AbortController();
       }
-      
+
       const provider = aiKey.providerId;
-      
+
       switch (provider) {
         case 'openai':
           return await this.sendOpenAIRequest(aiKey, model, prompt, options);
@@ -907,19 +961,19 @@ Remember: You are responsible for making the code changes. Provide search/replac
         default:
           return {
             success: false,
-            error: `Unsupported provider: ${provider}`
+            error: `Unsupported provider: ${provider}`,
           };
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         return {
           success: false,
-          error: 'Request was cancelled'
+          error: 'Request was cancelled',
         };
       }
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
     // Don't clear the abort controller here - keep it for the entire iterative process
@@ -932,24 +986,27 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${aiKey.fields.apiKey}`
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${aiKey.fields.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            stream: false,
+          }),
+          signal: this.currentAbortController?.signal,
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          stream: false
-        }),
-        signal: this.currentAbortController?.signal
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -958,15 +1015,15 @@ Remember: You are responsible for making the code changes. Provide search/replac
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content || '';
-      
+
       return {
         success: true,
-        content
+        content,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'OpenAI request failed'
+        error: error instanceof Error ? error.message : 'OpenAI request failed',
       };
     }
   }
@@ -978,7 +1035,7 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -986,15 +1043,15 @@ Remember: You are responsible for making the code changes. Provide search/replac
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': aiKey.fields.apiKey,
-          'anthropic-version': '2023-06-01'
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: model,
+          model,
           max_tokens: config.maxTokens,
           temperature: config.temperature,
-          messages: [{ role: 'user', content: prompt }]
+          messages: [{ role: 'user', content: prompt }],
         }),
-        signal: this.currentAbortController?.signal
+        signal: this.currentAbortController?.signal,
       });
 
       if (!response.ok) {
@@ -1004,15 +1061,16 @@ Remember: You are responsible for making the code changes. Provide search/replac
 
       const data = await response.json();
       const content = data.content[0]?.text || '';
-      
+
       return {
         success: true,
-        content
+        content,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Anthropic request failed'
+        error:
+          error instanceof Error ? error.message : 'Anthropic request failed',
       };
     }
   }
@@ -1024,27 +1082,34 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey.fields.apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey.fields.apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: config.temperature,
+              maxOutputTokens: config.maxTokens,
+            },
+          }),
+          signal: this.currentAbortController?.signal,
         },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: config.temperature,
-            maxOutputTokens: config.maxTokens
-          }
-        }),
-        signal: this.currentAbortController?.signal
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1053,15 +1118,15 @@ Remember: You are responsible for making the code changes. Provide search/replac
 
       const data = await response.json();
       const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
+
       return {
         success: true,
-        content
+        content,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Google request failed'
+        error: error instanceof Error ? error.message : 'Google request failed',
       };
     }
   }
@@ -1073,30 +1138,33 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
-      const endpoint = aiKey.fields.endpoint;
-      const apiKey = aiKey.fields.apiKey;
-      
+      const { endpoint } = aiKey.fields;
+      const { apiKey } = aiKey.fields;
+
       if (!endpoint || !apiKey) {
         throw new Error('Azure OpenAI configuration incomplete');
       }
 
-      const response = await fetch(`${endpoint}/openai/deployments/${model}/chat/completions?api-version=2023-12-01-preview`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': apiKey
+      const response = await fetch(
+        `${endpoint}/openai/deployments/${model}/chat/completions?api-version=2023-12-01-preview`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': apiKey,
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            stream: false,
+          }),
+          signal: this.currentAbortController?.signal,
         },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          stream: false
-        }),
-        signal: this.currentAbortController?.signal
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1105,15 +1173,15 @@ Remember: You are responsible for making the code changes. Provide search/replac
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content || '';
-      
+
       return {
         success: true,
-        content
+        content,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Azure request failed'
+        error: error instanceof Error ? error.message : 'Azure request failed',
       };
     }
   }
@@ -1125,11 +1193,11 @@ Remember: You are responsible for making the code changes. Provide search/replac
     aiKey: any,
     model: string,
     prompt: string,
-    config: { temperature: number; maxTokens: number }
+    config: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
-      const apiKey = aiKey.fields.apiKey;
-      const endpoint = aiKey.fields.endpoint;
+      const { apiKey } = aiKey.fields;
+      const { endpoint } = aiKey.fields;
 
       if (!endpoint) {
         throw new Error('Custom provider configuration incomplete');
@@ -1139,17 +1207,17 @@ Remember: You are responsible for making the code changes. Provide search/replac
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
           temperature: config.temperature,
           max_tokens: config.maxTokens,
-          stream: false
+          stream: false,
         }),
-        signal: this.currentAbortController?.signal
+        signal: this.currentAbortController?.signal,
       });
 
       if (!response.ok) {
@@ -1158,16 +1226,23 @@ Remember: You are responsible for making the code changes. Provide search/replac
       }
 
       const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || data.content || data.message || '';
-      
+      const content =
+        data.choices?.[0]?.message?.content ||
+        data.content ||
+        data.message ||
+        '';
+
       return {
         success: true,
-        content
+        content,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Custom provider request failed'
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Custom provider request failed',
       };
     }
   }

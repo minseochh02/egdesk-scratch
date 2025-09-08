@@ -40,50 +40,54 @@ export class SearchReplacePromptService {
   async generateSearchReplacePrompts(
     aiKey: any,
     model: string,
-    request: SearchReplacePromptRequest
+    request: SearchReplacePromptRequest,
   ): Promise<SearchReplacePromptResponse> {
     try {
-      console.log('🔍 Generating search and replace prompts for:', request.userRequest);
-      
+      console.log(
+        '🔍 Generating search and replace prompts for:',
+        request.userRequest,
+      );
+
       // Build the prompt for search/replace generation
       const prompt = this.buildSearchReplacePrompt(request);
-      
+
       // Send to AI provider
       const response = await this.sendToProvider(aiKey, model, prompt, {
         temperature: 0.1, // Very low temperature for precise text matching
-        maxTokens: 4096
+        maxTokens: 4096,
       });
-      
+
       if (!response.success) {
         return {
           success: false,
           searchReplacePrompts: [],
-          error: response.error || 'Failed to generate search/replace prompts'
+          error: response.error || 'Failed to generate search/replace prompts',
         };
       }
-      
+
       // Debug: Log raw AI response
       console.log('🔍 Raw AI Response for Search/Replace:', {
         provider: aiKey.providerId,
-        model: model,
+        model,
         rawContent: response.content,
-        prompt: prompt
+        prompt,
       });
-      
+
       // Parse the AI response to extract search/replace prompts
-      const searchReplacePrompts = this.parseSearchReplaceResponse(response.content || '');
-      
+      const searchReplacePrompts = this.parseSearchReplaceResponse(
+        response.content || '',
+      );
+
       return {
         success: true,
-        searchReplacePrompts
+        searchReplacePrompts,
       };
-      
     } catch (error) {
       console.error('Failed to generate search/replace prompts:', error);
       return {
         success: false,
         searchReplacePrompts: [],
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -96,14 +100,14 @@ export class SearchReplacePromptService {
     model: string,
     userRequest: string,
     targetFile?: string,
-    context?: string
+    context?: string,
   ): Promise<SearchReplacePromptResponse> {
     const request: SearchReplacePromptRequest = {
       userRequest,
       targetFile,
-      context
+      context,
     };
-    
+
     return this.generateSearchReplacePrompts(aiKey, model, request);
   }
 
@@ -115,32 +119,35 @@ export class SearchReplacePromptService {
     model: string,
     userRequest: string,
     filePath: string,
-    fileContent?: string
+    fileContent?: string,
   ): Promise<SearchReplacePromptResponse> {
     let context = `Target file: ${filePath}`;
-    
+
     if (fileContent) {
       // Add file content context for better AI understanding
-      const contentPreview = fileContent.length > 1000 
-        ? fileContent.substring(0, 1000) + '... (truncated)'
-        : fileContent;
-      
+      const contentPreview =
+        fileContent.length > 1000
+          ? `${fileContent.substring(0, 1000)}... (truncated)`
+          : fileContent;
+
       context += `\n\nFile content preview:\n\`\`\`\n${contentPreview}\n\`\`\``;
     }
-    
+
     const request: SearchReplacePromptRequest = {
       userRequest,
       targetFile: filePath,
-      context
+      context,
     };
-    
+
     return this.generateSearchReplacePrompts(aiKey, model, request);
   }
 
   /**
    * Build the prompt for search/replace generation
    */
-  private buildSearchReplacePrompt(request: SearchReplacePromptRequest): string {
+  private buildSearchReplacePrompt(
+    request: SearchReplacePromptRequest,
+  ): string {
     let prompt = `## Search and Replace Prompt Generation
 
 You are an expert at creating precise search and replace operations for code files. Your job is to generate EXACT text patterns that can be used to find and replace specific code sections.
@@ -246,17 +253,15 @@ ${request.exampleAfter}
 
       // Validate and clean up the prompts
       return prompts
-        .filter(prompt => 
-          prompt.searchText && 
-          prompt.replaceText && 
-          prompt.description
+        .filter(
+          (prompt) =>
+            prompt.searchText && prompt.replaceText && prompt.description,
         )
-        .map(prompt => ({
+        .map((prompt) => ({
           ...prompt,
           id: prompt.id || this.generateId(),
-          confidence: Math.max(0, Math.min(1, prompt.confidence || 0.8))
+          confidence: Math.max(0, Math.min(1, prompt.confidence || 0.8)),
         }));
-
     } catch (error) {
       console.error('Failed to parse search/replace response:', error);
       return [];
@@ -270,7 +275,7 @@ ${request.exampleAfter}
     aiKey: any,
     model: string,
     prompt: string,
-    options: { temperature: number; maxTokens: number }
+    options: { temperature: number; maxTokens: number },
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     try {
       // This would integrate with your existing AI provider system
@@ -279,19 +284,18 @@ ${request.exampleAfter}
         provider: aiKey.providerId,
         model,
         promptLength: prompt.length,
-        options
+        options,
       });
 
       // TODO: Integrate with actual AI provider
       return {
         success: false,
-        error: 'AI provider integration not implemented yet'
+        error: 'AI provider integration not implemented yet',
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -306,7 +310,10 @@ ${request.exampleAfter}
   /**
    * Validate a search/replace prompt
    */
-  validatePrompt(prompt: SearchReplacePrompt): { isValid: boolean; errors: string[] } {
+  validatePrompt(prompt: SearchReplacePrompt): {
+    isValid: boolean;
+    errors: string[];
+  } {
     const errors: string[] = [];
 
     if (!prompt.searchText || prompt.searchText.trim().length === 0) {
@@ -327,7 +334,7 @@ ${request.exampleAfter}
 
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 

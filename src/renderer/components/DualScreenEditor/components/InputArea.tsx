@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
+import { faClock, faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
 import { AIKey } from '../../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../../ChatInterface/types';
-import { faClock, faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
 
 interface InputAreaProps {
   userInstruction: string;
@@ -32,7 +32,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
   onSend,
   onStop,
   canSend,
-  FontAwesomeIcon
+  FontAwesomeIcon,
 }) => {
   const instructionInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -52,9 +52,13 @@ export const InputArea: React.FC<InputAreaProps> = ({
           <div className="config-controls">
             <select
               className="dualscreen-model-select"
-              value={selectedModel ? `${selectedKey?.providerId || 'openai'}::${selectedModel}` : ''}
+              value={
+                selectedModel
+                  ? `${selectedKey?.providerId || 'openai'}::${selectedModel}`
+                  : ''
+              }
               onChange={(e) => {
-                const value = e.target.value;
+                const { value } = e.target;
                 if (!value) {
                   onModelChange('', '');
                   return;
@@ -64,10 +68,13 @@ export const InputArea: React.FC<InputAreaProps> = ({
               }}
             >
               <option value="">Model...</option>
-              {CHAT_PROVIDERS.map(provider => (
+              {CHAT_PROVIDERS.map((provider) => (
                 <optgroup key={provider.id} label={provider.name}>
-                  {provider.models.map(model => (
-                    <option key={`${provider.id}::${model.id}`} value={`${provider.id}::${model.id}`}>
+                  {provider.models.map((model) => (
+                    <option
+                      key={`${provider.id}::${model.id}`}
+                      value={`${provider.id}::${model.id}`}
+                    >
                       {model.name}
                     </option>
                   ))}
@@ -79,24 +86,26 @@ export const InputArea: React.FC<InputAreaProps> = ({
               className="api-key-select"
               value={selectedKey?.id || ''}
               onChange={(e) => {
-                const key = availableKeys.find(k => k.id === e.target.value);
+                const key = availableKeys.find((k) => k.id === e.target.value);
                 onKeyChange(key || null);
               }}
               disabled={availableKeys.length === 0}
             >
               <option value="">
-                {availableKeys.length === 0 ? 'No keys available' : 'Select API key'}
+                {availableKeys.length === 0
+                  ? 'No keys available'
+                  : 'Select API key'}
               </option>
-              {availableKeys.map(key => (
+              {availableKeys.map((key) => (
                 <option key={key.id} value={key.id}>
                   {key.name} ({key.providerId})
                 </option>
               ))}
             </select>
           </div>
-          
+
           {isLoading || isStreaming ? (
-            <button 
+            <button
               className="stop-btn"
               onClick={onStop}
               title="Stop AI request"
@@ -104,7 +113,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
               <FontAwesomeIcon icon={faStop} />
             </button>
           ) : (
-            <button 
+            <button
               className="send-btn"
               onClick={onSend}
               disabled={!canSend}

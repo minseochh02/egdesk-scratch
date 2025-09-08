@@ -8,11 +8,18 @@ import { fileWriterService } from '../services/fileWriterService';
 /**
  * Apply code changes to files with comprehensive error handling and backup
  */
-export async function applyCodeChanges(edits: AIEdit[], options: {
-  createBackups?: boolean;
-  validateBeforeWrite?: boolean;
-  onProgress?: (progress: { current: number; total: number; file: string }) => void;
-} = {}): Promise<{
+export async function applyCodeChanges(
+  edits: AIEdit[],
+  options: {
+    createBackups?: boolean;
+    validateBeforeWrite?: boolean;
+    onProgress?: (progress: {
+      current: number;
+      total: number;
+      file: string;
+    }) => void;
+  } = {},
+): Promise<{
   success: boolean;
   modifiedFiles: string[];
   errors: string[];
@@ -22,11 +29,15 @@ export async function applyCodeChanges(edits: AIEdit[], options: {
   const {
     createBackups = true,
     validateBeforeWrite = true,
-    onProgress
+    onProgress,
   } = options;
 
   console.log(`🚀 Starting to apply ${edits.length} code changes...`);
-  console.log(`📋 Options:`, { createBackups, validateBeforeWrite, hasProgressCallback: !!onProgress });
+  console.log(`📋 Options:`, {
+    createBackups,
+    validateBeforeWrite,
+    hasProgressCallback: !!onProgress,
+  });
 
   // Configure the file writer service
   fileWriterService.setBackupEnabled(createBackups);
@@ -40,7 +51,7 @@ export async function applyCodeChanges(edits: AIEdit[], options: {
           success: false,
           modifiedFiles: [],
           errors: validationResult.errors,
-          summary: `Validation failed: ${validationResult.errors.length} errors found`
+          summary: `Validation failed: ${validationResult.errors.length} errors found`,
         };
       }
     }
@@ -59,7 +70,7 @@ export async function applyCodeChanges(edits: AIEdit[], options: {
         onProgress({
           current: currentFileIndex,
           total: fileGroups.size,
-          file: filePath
+          file: filePath,
         });
       }
     }
@@ -69,17 +80,17 @@ export async function applyCodeChanges(edits: AIEdit[], options: {
 
     return {
       ...result,
-      summary
+      summary,
     };
   } catch (error) {
     const errorMessage = `Failed to apply code changes: ${error instanceof Error ? error.message : 'Unknown error'}`;
     console.error('❌', errorMessage);
-    
+
     return {
       success: false,
       modifiedFiles: [],
       errors: [errorMessage],
-      summary: `Operation failed: ${errorMessage}`
+      summary: `Operation failed: ${errorMessage}`,
     };
   }
 }
@@ -87,7 +98,10 @@ export async function applyCodeChanges(edits: AIEdit[], options: {
 /**
  * Apply a single edit to a string content (for in-memory operations)
  */
-export function applySingleEdit(content: string, edit: AIEdit): {
+export function applySingleEdit(
+  content: string,
+  edit: AIEdit,
+): {
   success: boolean;
   content: string;
   error?: string;
@@ -98,7 +112,10 @@ export function applySingleEdit(content: string, edit: AIEdit): {
 /**
  * Apply multiple edits to string content (for in-memory operations)
  */
-export function applyEditsToContent(content: string, edits: AIEdit[]): {
+export function applyEditsToContent(
+  content: string,
+  edits: AIEdit[],
+): {
   success: boolean;
   content: string;
   errors: string[];
@@ -120,7 +137,7 @@ export async function createFileBackup(filePath: string): Promise<{
     if (!readResult.success) {
       return {
         success: false,
-        error: `Cannot read file for backup: ${readResult.error}`
+        error: `Cannot read file for backup: ${readResult.error}`,
       };
     }
 
@@ -129,24 +146,26 @@ export async function createFileBackup(filePath: string): Promise<{
     const backupPath = `${filePath}.backup.${timestamp}`;
 
     // Write backup
-    const writeResult = await window.electron.fileSystem.writeFile(backupPath, readResult.content || '');
-    
+    const writeResult = await window.electron.fileSystem.writeFile(
+      backupPath,
+      readResult.content || '',
+    );
+
     if (writeResult.success) {
       console.log(`💾 Created backup: ${backupPath}`);
       return {
         success: true,
-        backupPath
-      };
-    } else {
-      return {
-        success: false,
-        error: `Failed to write backup: ${writeResult.error}`
+        backupPath,
       };
     }
+    return {
+      success: false,
+      error: `Failed to write backup: ${writeResult.error}`,
+    };
   } catch (error) {
     return {
       success: false,
-      error: `Backup creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      error: `Backup creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
@@ -228,22 +247,30 @@ export function validateEdits(edits: AIEdit[]): {
 
     // Check for potential conflicts (same file, overlapping ranges)
     if (edit.filePath) {
-      const conflictingEdits = edits.slice(i + 1).filter(otherEdit => 
-        otherEdit.filePath === edit.filePath && 
-        edit.range && otherEdit.range &&
-        rangesOverlap(edit.range, otherEdit.range)
-      );
-      
+      const conflictingEdits = edits
+        .slice(i + 1)
+        .filter(
+          (otherEdit) =>
+            otherEdit.filePath === edit.filePath &&
+            edit.range &&
+            otherEdit.range &&
+            rangesOverlap(edit.range, otherEdit.range),
+        );
+
       if (conflictingEdits.length > 0) {
-        warnings.push(`${editId}: Potential conflict with ${conflictingEdits.length} other edit(s) on same file`);
+        warnings.push(
+          `${editId}: Potential conflict with ${conflictingEdits.length} other edit(s) on same file`,
+        );
       }
     }
   }
 
   const valid = errors.length === 0;
-  
+
   console.log(`✅ Validation complete: ${valid ? 'PASSED' : 'FAILED'}`);
-  console.log(`📊 Results: ${errors.length} errors, ${warnings.length} warnings`);
+  console.log(
+    `📊 Results: ${errors.length} errors, ${warnings.length} warnings`,
+  );
 
   return { valid, errors, warnings };
 }
@@ -251,35 +278,37 @@ export function validateEdits(edits: AIEdit[]): {
 /**
  * Generate a human-readable summary of the operation results
  */
-function generateSummary(result: {
-  success: boolean;
-  modifiedFiles: string[];
-  errors: string[];
-  backupPaths?: string[];
-}, totalEdits: number): string {
+function generateSummary(
+  result: {
+    success: boolean;
+    modifiedFiles: string[];
+    errors: string[];
+    backupPaths?: string[];
+  },
+  totalEdits: number,
+): string {
   if (result.success) {
     const fileCount = result.modifiedFiles.length;
     const backupCount = result.backupPaths?.length || 0;
-    
+
     let summary = `✅ Successfully applied ${totalEdits} code change${totalEdits !== 1 ? 's' : ''} to ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
-    
+
     if (backupCount > 0) {
       summary += ` (${backupCount} backup${backupCount !== 1 ? 's' : ''} created)`;
     }
-    
-    return summary;
-  } else {
-    const errorCount = result.errors.length;
-    const successCount = result.modifiedFiles.length;
-    
-    let summary = `❌ Failed to apply code changes: ${errorCount} error${errorCount !== 1 ? 's' : ''}`;
-    
-    if (successCount > 0) {
-      summary += ` (${successCount} file${successCount !== 1 ? 's' : ''} modified successfully)`;
-    }
-    
+
     return summary;
   }
+  const errorCount = result.errors.length;
+  const successCount = result.modifiedFiles.length;
+
+  let summary = `❌ Failed to apply code changes: ${errorCount} error${errorCount !== 1 ? 's' : ''}`;
+
+  if (successCount > 0) {
+    summary += ` (${successCount} file${successCount !== 1 ? 's' : ''} modified successfully)`;
+  }
+
+  return summary;
 }
 
 /**
@@ -287,7 +316,7 @@ function generateSummary(result: {
  */
 function groupEditsByFile(edits: AIEdit[]): Map<string, AIEdit[]> {
   const grouped = new Map<string, AIEdit[]>();
-  
+
   for (const edit of edits) {
     const filePath = edit.filePath || 'unknown';
     if (!grouped.has(filePath)) {
@@ -295,7 +324,7 @@ function groupEditsByFile(edits: AIEdit[]): Map<string, AIEdit[]> {
     }
     grouped.get(filePath)!.push(edit);
   }
-  
+
   return grouped;
 }
 
@@ -304,18 +333,29 @@ function groupEditsByFile(edits: AIEdit[]): Map<string, AIEdit[]> {
  */
 function rangesOverlap(range1: any, range2: any): boolean {
   if (!range1 || !range2) return false;
-  
+
   // Check line-based overlap
-  if (range1.startLine && range1.endLine && range2.startLine && range2.endLine) {
-    return !(range1.endLine < range2.startLine || range2.endLine < range1.startLine);
+  if (
+    range1.startLine &&
+    range1.endLine &&
+    range2.startLine &&
+    range2.endLine
+  ) {
+    return !(
+      range1.endLine < range2.startLine || range2.endLine < range1.startLine
+    );
   }
-  
+
   // Check character-based overlap
-  if (typeof range1.start === 'number' && typeof range1.end === 'number' &&
-      typeof range2.start === 'number' && typeof range2.end === 'number') {
+  if (
+    typeof range1.start === 'number' &&
+    typeof range1.end === 'number' &&
+    typeof range2.start === 'number' &&
+    typeof range2.end === 'number'
+  ) {
     return !(range1.end < range2.start || range2.end < range1.start);
   }
-  
+
   return false;
 }
 
@@ -342,7 +382,7 @@ export const codeChangeConfig = {
    */
   isBackupEnabled(): boolean {
     return fileWriterService.isBackupEnabled();
-  }
+  },
 };
 
 // Export the file writer service instance for direct access if needed

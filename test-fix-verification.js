@@ -96,40 +96,42 @@ function splitExplanation(text) {
   const searchReplaceBlockRegex = /```search-replace[\s\S]*?```/g;
   const blocks = [];
   let match;
-  
+
   while ((match = searchReplaceBlockRegex.exec(text)) !== null) {
     blocks.push({
       block: match[0],
       start: match.index,
-      end: match.index + match[0].length
+      end: match.index + match[0].length,
     });
   }
-  
-  console.log(`🔍 Found ${blocks.length} search-replace blocks for positioning`);
+
+  console.log(
+    `🔍 Found ${blocks.length} search-replace blocks for positioning`,
+  );
 
   if (blocks.length === 0) {
     // No search-replace blocks, return original text
     return {
       before: text,
-      after: ''
+      after: '',
     };
   }
-  
+
   // Find the first search-replace block to split around
   const firstBlock = blocks[0];
   const beforeText = text.substring(0, firstBlock.start).trim();
   const afterText = text.substring(firstBlock.end).trim();
-  
+
   console.log('📍 Positioning information:', {
     beforeLength: beforeText.length,
     afterLength: afterText.length,
     firstBlockPosition: `${firstBlock.start}-${firstBlock.end}`,
-    totalBlocks: blocks.length
+    totalBlocks: blocks.length,
   });
 
   return {
     before: beforeText,
-    after: afterText
+    after: afterText,
   };
 }
 
@@ -152,7 +154,9 @@ console.log('\n🎯 KEY IMPROVEMENTS:');
 console.log('   ✅ Preserves "Search/Replace Operations:" header');
 console.log('   ✅ Preserves conclusion text');
 console.log('   ✅ Uses search-replace blocks as positioning markers');
-console.log('   ✅ Splits text at exact location of first search-replace block');
+console.log(
+  '   ✅ Splits text at exact location of first search-replace block',
+);
 console.log('   ✅ No more wrong text removal');
 
 console.log('\n=== FIX VERIFICATION COMPLETE ===');

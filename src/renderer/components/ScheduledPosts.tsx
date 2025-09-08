@@ -45,7 +45,7 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ site, onClose }) => {
     title: '',
     content: '',
     scheduledDate: '',
-    scheduledTime: ''
+    scheduledTime: '',
   });
 
   // Predefined topics for quick selection
@@ -59,7 +59,7 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ site, onClose }) => {
     'API 설계 모범 사례',
     '보안 코딩 가이드',
     '코드 리뷰 문화 만들기',
-    '개발자 생산성 향상 팁'
+    '개발자 생산성 향상 팁',
   ];
 
   useEffect(() => {
@@ -74,15 +74,18 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ site, onClose }) => {
 
     setIsLoading(true);
     setError('');
-    
+
     try {
       // Fetch scheduled posts from WordPress API
-      const response = await fetch(`${site.url}/wp-json/wp/v2/posts?status=future&per_page=50`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password}`)}`,
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${site.url}/wp-json/wp/v2/posts?status=future&per_page=50`,
+        {
+          headers: {
+            Authorization: `Basic ${btoa(`${site.username}:${site.password}`)}`,
+            'Content-Type': 'application/json',
+          },
         },
-      });
+      );
 
       if (response.ok) {
         const postsData = await response.json();
@@ -95,7 +98,7 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ site, onClose }) => {
           author: post._embedded?.author?.[0]?.name || 'Unknown',
           scheduledDate: post.date,
           status: post.status,
-          type: post.type
+          type: post.type,
         }));
         setScheduledPosts(formattedPosts);
       } else {
@@ -110,15 +113,15 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ site, onClose }) => {
   };
 
   const handleFormChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     setCreateError('');
   };
 
   const selectTopic = (topic: string) => {
-    setFormData(prev => ({ 
-      ...prev, 
+    setFormData((prev) => ({
+      ...prev,
       title: topic,
-      content: generateContentForTopic(topic)
+      content: generateContentForTopic(topic),
     }));
   };
 
@@ -183,10 +186,12 @@ JavaScript에 정적 타입을 추가한 프로그래밍 언어입니다.
 3. 타입 정의: 라이브러리별 타입 정의 활용
 
 ## 결론
-TypeScript는 대규모 프로젝트에서 코드 품질과 개발 생산성을 크게 향상시킵니다.`
+TypeScript는 대규모 프로젝트에서 코드 품질과 개발 생산성을 크게 향상시킵니다.`,
     };
 
-    return contentTemplates[topic] || `# ${topic}
+    return (
+      contentTemplates[topic] ||
+      `# ${topic}
 
 ## 소개
 ${topic}에 대해 자세히 알아보겠습니다.
@@ -197,7 +202,8 @@ ${topic}에 대해 자세히 알아보겠습니다.
 - 모범 사례
 
 ## 결론
-이 주제에 대해 더 깊이 있게 학습하고 실전에 적용해보세요.`;
+이 주제에 대해 더 깊이 있게 학습하고 실전에 적용해보세요.`
+    );
   };
 
   const createScheduledPost = async () => {
@@ -218,43 +224,48 @@ ${topic}에 대해 자세히 알아보겠습니다.
     setCreateError('');
 
     try {
-      const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}`);
-      
+      const scheduledDateTime = new Date(
+        `${formData.scheduledDate}T${formData.scheduledTime}`,
+      );
+
       const postData = {
         title: formData.title,
         content: formData.content,
         status: 'future',
-        date: scheduledDateTime.toISOString()
+        date: scheduledDateTime.toISOString(),
       };
 
       const response = await fetch(`${site.url}/wp-json/wp/v2/posts`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
+          Authorization: `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(postData)
+        body: JSON.stringify(postData),
       });
 
       if (response.ok) {
         const newPost = await response.json();
-        setScheduledPosts(prev => [...prev, {
-          id: newPost.id,
-          title: newPost.title.rendered,
-          excerpt: newPost.excerpt.rendered.replace(/<[^>]*>/g, ''),
-          content: newPost.content.rendered,
-          slug: newPost.slug,
-          author: site.username,
-          scheduledDate: newPost.date,
-          status: newPost.status,
-          type: newPost.type
-        }]);
-        
+        setScheduledPosts((prev) => [
+          ...prev,
+          {
+            id: newPost.id,
+            title: newPost.title.rendered,
+            excerpt: newPost.excerpt.rendered.replace(/<[^>]*>/g, ''),
+            content: newPost.content.rendered,
+            slug: newPost.slug,
+            author: site.username,
+            scheduledDate: newPost.date,
+            status: newPost.status,
+            type: newPost.type,
+          },
+        ]);
+
         setFormData({
           title: '',
           content: '',
           scheduledDate: '',
-          scheduledTime: ''
+          scheduledTime: '',
         });
         setShowCreateForm(false);
         alert('예약된 포스트가 성공적으로 생성되었습니다!');
@@ -275,16 +286,19 @@ ${topic}에 대해 자세히 알아보겠습니다.
     }
 
     try {
-      const response = await fetch(`${site.url}/wp-json/wp/v2/posts/${postId}?force=true`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
-          'Content-Type': 'application/json',
-        }
-      });
+      const response = await fetch(
+        `${site.url}/wp-json/wp/v2/posts/${postId}?force=true`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
 
       if (response.ok) {
-        setScheduledPosts(prev => prev.filter(post => post.id !== postId));
+        setScheduledPosts((prev) => prev.filter((post) => post.id !== postId));
         alert('예약된 포스트가 삭제되었습니다.');
       } else {
         throw new Error('포스트 삭제에 실패했습니다.');
@@ -297,25 +311,33 @@ ${topic}에 대해 자세히 알아보겠습니다.
 
   const getStatusText = (status: string): string => {
     switch (status) {
-      case 'future': return '예약됨';
-      case 'draft': return '임시저장';
-      case 'pending': return '검토 대기';
-      default: return status;
+      case 'future':
+        return '예약됨';
+      case 'draft':
+        return '임시저장';
+      case 'pending':
+        return '검토 대기';
+      default:
+        return status;
     }
   };
 
   const getStatusIcon = (status: string): string => {
     switch (status) {
-      case 'future': return '📅';
-      case 'draft': return '📝';
-      case 'pending': return '⏳';
-      default: return '❓';
+      case 'future':
+        return '📅';
+      case 'draft':
+        return '📝';
+      case 'pending':
+        return '⏳';
+      default:
+        return '❓';
     }
   };
 
   return (
     <div className="scheduled-posts-modal">
-      <div className="modal-overlay" onClick={onClose}></div>
+      <div className="modal-overlay" onClick={onClose} />
       <div className="modal-content">
         <div className="modal-header">
           <h3>📅 예약된 블로그 포스트 관리</h3>
@@ -331,11 +353,11 @@ ${topic}에 대해 자세히 알아보겠습니다.
             </button>
           </div>
         </div>
-        
+
         <div className="modal-body">
           {isLoading ? (
             <div className="loading-container">
-              <div className="loading-spinner"></div>
+              <div className="loading-spinner" />
               <p>예약된 포스트를 불러오는 중...</p>
             </div>
           ) : error ? (
@@ -349,7 +371,10 @@ ${topic}에 대해 자세히 알아보겠습니다.
           ) : scheduledPosts.length === 0 ? (
             <div className="empty-state">
               <h4>📝 예약된 포스트가 없습니다</h4>
-              <p>현재 예약된 블로그 포스트가 없습니다. 새로운 포스트를 예약해보세요!</p>
+              <p>
+                현재 예약된 블로그 포스트가 없습니다. 새로운 포스트를
+                예약해보세요!
+              </p>
               <button
                 className="create-first-post-btn"
                 onClick={() => setShowCreateForm(true)}
@@ -361,28 +386,26 @@ ${topic}에 대해 자세히 알아보겠습니다.
             <div className="scheduled-posts-list">
               <div className="posts-header">
                 <h4>총 {scheduledPosts.length}개의 예약된 포스트</h4>
-                <button
-                  className="refresh-btn"
-                  onClick={loadScheduledPosts}
-                >
+                <button className="refresh-btn" onClick={loadScheduledPosts}>
                   🔄 새로고침
                 </button>
               </div>
-              
+
               <div className="posts-grid">
                 {scheduledPosts.map((post) => (
                   <div key={post.id} className="scheduled-post-card">
                     <div className="post-header">
                       <h5>{post.title}</h5>
                       <span className="post-status">
-                        {getStatusIcon(post.status)} {getStatusText(post.status)}
+                        {getStatusIcon(post.status)}{' '}
+                        {getStatusText(post.status)}
                       </span>
                     </div>
-                    
+
                     <div className="post-excerpt">
                       {post.excerpt || '요약 없음'}
                     </div>
-                    
+
                     <div className="post-meta">
                       <div className="meta-item">
                         <span className="meta-label">👤 작성자:</span>
@@ -399,12 +422,15 @@ ${topic}에 대해 자세히 알아보겠습니다.
                         <span className="meta-value">{post.type}</span>
                       </div>
                     </div>
-                    
+
                     <div className="post-actions">
                       <button
                         className="action-btn small primary"
                         onClick={() => {
-                          window.open(`${site.url}/wp-admin/post.php?post=${post.id}&action=edit`, '_blank');
+                          window.open(
+                            `${site.url}/wp-admin/post.php?post=${post.id}&action=edit`,
+                            '_blank',
+                          );
                         }}
                       >
                         ✏️ 편집
@@ -412,7 +438,10 @@ ${topic}에 대해 자세히 알아보겠습니다.
                       <button
                         className="action-btn small secondary"
                         onClick={() => {
-                          window.open(`${site.url}/?p=${post.id}&preview=true`, '_blank');
+                          window.open(
+                            `${site.url}/?p=${post.id}&preview=true`,
+                            '_blank',
+                          );
                         }}
                       >
                         👁️ 미리보기
@@ -430,7 +459,7 @@ ${topic}에 대해 자세히 알아보겠습니다.
             </div>
           )}
         </div>
-        
+
         <div className="modal-footer">
           <button className="action-btn secondary" onClick={onClose}>
             닫기
@@ -438,7 +467,10 @@ ${topic}에 대해 자세히 알아보겠습니다.
           <button
             className="action-btn primary"
             onClick={() => {
-              window.open(`${site.url}/wp-admin/edit.php?post_status=future`, '_blank');
+              window.open(
+                `${site.url}/wp-admin/edit.php?post_status=future`,
+                '_blank',
+              );
             }}
           >
             WordPress에서 관리
@@ -449,7 +481,10 @@ ${topic}에 대해 자세히 알아보겠습니다.
       {/* Create Post Modal */}
       {showCreateForm && (
         <div className="create-post-modal">
-          <div className="modal-overlay" onClick={() => setShowCreateForm(false)}></div>
+          <div
+            className="modal-overlay"
+            onClick={() => setShowCreateForm(false)}
+          />
           <div className="modal-content create-modal">
             <div className="modal-header">
               <h3>📝 새 포스트 예약하기</h3>
@@ -460,7 +495,7 @@ ${topic}에 대해 자세히 알아보겠습니다.
                 ✕
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="create-form">
                 <div className="form-section">
@@ -486,24 +521,28 @@ ${topic}에 대해 자세히 알아보겠습니다.
                       type="text"
                       id="title"
                       value={formData.title}
-                      onChange={(e) => handleFormChange('title', e.target.value)}
+                      onChange={(e) =>
+                        handleFormChange('title', e.target.value)
+                      }
                       placeholder="포스트 제목을 입력하세요"
                       required
                     />
                   </div>
-                  
+
                   <div className="form-group">
                     <label htmlFor="content">내용 *</label>
                     <textarea
                       id="content"
                       value={formData.content}
-                      onChange={(e) => handleFormChange('content', e.target.value)}
+                      onChange={(e) =>
+                        handleFormChange('content', e.target.value)
+                      }
                       placeholder="포스트 내용을 입력하세요"
                       rows={10}
                       required
                     />
                   </div>
-                  
+
                   <div className="form-row">
                     <div className="form-group">
                       <label htmlFor="scheduledDate">예약 날짜 *</label>
@@ -511,19 +550,23 @@ ${topic}에 대해 자세히 알아보겠습니다.
                         type="date"
                         id="scheduledDate"
                         value={formData.scheduledDate}
-                        onChange={(e) => handleFormChange('scheduledDate', e.target.value)}
+                        onChange={(e) =>
+                          handleFormChange('scheduledDate', e.target.value)
+                        }
                         min={new Date().toISOString().split('T')[0]}
                         required
                       />
                     </div>
-                    
+
                     <div className="form-group">
                       <label htmlFor="scheduledTime">예약 시간 *</label>
                       <input
                         type="time"
                         id="scheduledTime"
                         value={formData.scheduledTime}
-                        onChange={(e) => handleFormChange('scheduledTime', e.target.value)}
+                        onChange={(e) =>
+                          handleFormChange('scheduledTime', e.target.value)
+                        }
                         required
                       />
                     </div>
@@ -531,13 +574,11 @@ ${topic}에 대해 자세히 알아보겠습니다.
                 </div>
 
                 {createError && (
-                  <div className="error-message">
-                    ❌ {createError}
-                  </div>
+                  <div className="error-message">❌ {createError}</div>
                 )}
               </div>
             </div>
-            
+
             <div className="modal-footer">
               <button
                 className="action-btn secondary"
@@ -561,5 +602,3 @@ ${topic}에 대해 자세히 알아보겠습니다.
 };
 
 export default ScheduledPosts;
-
-

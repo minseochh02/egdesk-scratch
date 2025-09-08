@@ -14,13 +14,13 @@ class WordPressServer {
   detectWordPressRoot() {
     // Look for common WordPress folder structures
     const possibleRoots = [
-      '/Users/minseocha/Desktop/projects/태화트랜스',  // Your actual PHP server files
-      path.join(__dirname, 'www'),           // Your FTP structure
-      path.join(__dirname, 'wordpress'),    // Standard WordPress folder
-      path.join(__dirname, 'public_html'),  // Common hosting structure
-      path.join(__dirname, 'public'),       // Alternative hosting structure
-      path.join(__dirname, 'htdocs'),       // XAMPP structure
-      __dirname                             // Current directory
+      '/Users/minseocha/Desktop/projects/태화트랜스', // Your actual PHP server files
+      path.join(__dirname, 'www'), // Your FTP structure
+      path.join(__dirname, 'wordpress'), // Standard WordPress folder
+      path.join(__dirname, 'public_html'), // Common hosting structure
+      path.join(__dirname, 'public'), // Alternative hosting structure
+      path.join(__dirname, 'htdocs'), // XAMPP structure
+      __dirname, // Current directory
     ];
 
     for (const root of possibleRoots) {
@@ -46,20 +46,16 @@ class WordPressServer {
       'wp-config-sample.php',
       'wp-load.php',
       'wp-blog-header.php',
-      'index.php'
+      'index.php',
     ];
 
     // Check for WordPress directories
-    const wordpressDirs = [
-      'wp-admin',
-      'wp-content',
-      'wp-includes'
-    ];
+    const wordpressDirs = ['wp-admin', 'wp-content', 'wp-includes'];
 
     // Check for HTML files in www folder (your structure)
-    const wwwFiles = fs.readdirSync(dirPath).filter(file => 
-      file.endsWith('.html') || file.endsWith('.htm')
-    );
+    const wwwFiles = fs
+      .readdirSync(dirPath)
+      .filter((file) => file.endsWith('.html') || file.endsWith('.htm'));
 
     // If it's a www folder with HTML files, it's likely your structure
     if (dirPath.includes('www') && wwwFiles.length > 0) {
@@ -68,38 +64,44 @@ class WordPressServer {
     }
 
     // Check for WordPress core files
-    const hasWordPressFiles = wordpressFiles.some(file => 
-      fs.existsSync(path.join(dirPath, file))
+    const hasWordPressFiles = wordpressFiles.some((file) =>
+      fs.existsSync(path.join(dirPath, file)),
     );
 
     // Check for WordPress directories
-    const hasWordPressDirs = wordpressDirs.some(dir => 
-      fs.existsSync(path.join(dirPath, dir))
+    const hasWordPressDirs = wordpressDirs.some((dir) =>
+      fs.existsSync(path.join(dirPath, dir)),
     );
 
     return hasWordPressFiles || hasWordPressDirs;
   }
 
   start() {
-    console.log(`Starting WordPress server on http://${this.host}:${this.port}`);
+    console.log(
+      `Starting WordPress server on http://${this.host}:${this.port}`,
+    );
     console.log(`Serving from: ${this.root}`);
-    
+
     // Check what we're serving
     if (fs.existsSync(this.root)) {
       const files = fs.readdirSync(this.root);
-      const htmlFiles = files.filter(f => f.endsWith('.html') || f.endsWith('.htm'));
-      const phpFiles = files.filter(f => f.endsWith('.php'));
-      const folders = files.filter(f => fs.statSync(path.join(this.root, f)).isDirectory());
-      
+      const htmlFiles = files.filter(
+        (f) => f.endsWith('.html') || f.endsWith('.htm'),
+      );
+      const phpFiles = files.filter((f) => f.endsWith('.php'));
+      const folders = files.filter((f) =>
+        fs.statSync(path.join(this.root, f)).isDirectory(),
+      );
+
       console.log(`Found ${files.length} total files/directories`);
       if (htmlFiles.length > 0) console.log(`HTML files: ${htmlFiles.length}`);
       if (phpFiles.length > 0) console.log(`PHP files: ${phpFiles.length}`);
       if (folders.length > 0) console.log(`Folders: ${folders.join(', ')}`);
-      
+
       // If it's a www folder with HTML files, show the main entry points
       if (this.root.includes('www') && htmlFiles.length > 0) {
         console.log(`\n🌐 Main HTML files available:`);
-        htmlFiles.forEach(file => {
+        htmlFiles.forEach((file) => {
           console.log(`   http://${this.host}:${this.port}/${file}`);
         });
       }
@@ -110,10 +112,10 @@ class WordPressServer {
 
     // Start PHP server
     this.server = spawn(this.phpPath, [
-      '-S', 
+      '-S',
       `${this.host}:${this.port}`,
-      '-t', 
-      this.root
+      '-t',
+      this.root,
     ]);
 
     this.server.stdout.on('data', (data) => {
@@ -141,14 +143,9 @@ class WordPressServer {
 
   createSampleWordPress() {
     // Create a basic structure that matches your www folder approach
-    const dirs = [
-      'www',
-      'www/css',
-      'www/js',
-      'www/images'
-    ];
+    const dirs = ['www', 'www/css', 'www/js', 'www/images'];
 
-    dirs.forEach(dir => {
+    dirs.forEach((dir) => {
       const fullPath = path.join(__dirname, dir);
       if (!fs.existsSync(fullPath)) {
         fs.mkdirSync(fullPath, { recursive: true });
@@ -245,7 +242,7 @@ module.exports = WordPressServer;
 if (require.main === module) {
   const server = new WordPressServer();
   server.start();
-  
+
   process.on('SIGINT', () => {
     console.log('\nShutting down WordPress server...');
     server.stop();

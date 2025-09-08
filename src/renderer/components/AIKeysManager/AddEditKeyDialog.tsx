@@ -23,34 +23,36 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedProvider = providers.find(p => p.id === formData.providerId);
+  const selectedProvider = providers.find((p) => p.id === formData.providerId);
 
   useEffect(() => {
     if (selectedProvider && !formData.fields[selectedProvider.fields[0]?.key]) {
       // Initialize fields for the selected provider
       const initialFields: Record<string, string> = {};
-      selectedProvider.fields.forEach(field => {
+      selectedProvider.fields.forEach((field) => {
         initialFields[field.key] = formData.fields[field.key] || '';
       });
-      setFormData(prev => ({ ...prev, fields: initialFields }));
+      setFormData((prev) => ({ ...prev, fields: initialFields }));
     }
   }, [formData.providerId, selectedProvider]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
     const { name, value } = e.target;
     if (name === 'providerId') {
-      setFormData(prev => ({ 
-        ...prev, 
+      setFormData((prev) => ({
+        ...prev,
         providerId: value,
-        fields: {} // Reset fields when provider changes
+        fields: {}, // Reset fields when provider changes
       }));
     } else if (name === 'name') {
-      setFormData(prev => ({ ...prev, name: value }));
+      setFormData((prev) => ({ ...prev, name: value }));
     } else {
       // Handle field changes
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        fields: { ...prev.fields, [name]: value }
+        fields: { ...prev.fields, [name]: value },
       }));
     }
     setError(null); // Clear error on input change
@@ -115,7 +117,9 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
       <div className="dialog-content">
         <div className="dialog-header">
           <h2>{initialKey ? 'Edit AI Key' : 'Add New AI Key'}</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="dialog-body">
@@ -130,7 +134,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
               disabled={isSaving || !!initialKey}
             >
               <option value="">Select a provider...</option>
-              {providers.map(provider => (
+              {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.icon} {provider.name}
                 </option>
@@ -164,7 +168,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
           {selectedProvider && (
             <div className="provider-fields">
               <h3>Configuration</h3>
-              {selectedProvider.fields.map(field => (
+              {selectedProvider.fields.map((field) => (
                 <div key={field.key} className="form-group">
                   <label htmlFor={field.key}>{field.label}</label>
                   <input
@@ -178,9 +182,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
                     required={field.required}
                   />
                   {field.helpText && (
-                    <small className="help-text">
-                      {field.helpText}
-                    </small>
+                    <small className="help-text">{field.helpText}</small>
                   )}
                 </div>
               ))}
@@ -194,17 +196,23 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
               <div className="info-grid">
                 <div className="info-item">
                   <span className="info-label">Created:</span>
-                  <span className="info-value">{formatDate(initialKey.createdAt)}</span>
+                  <span className="info-value">
+                    {formatDate(initialKey.createdAt)}
+                  </span>
                 </div>
                 {initialKey.lastUsed && (
                   <div className="info-item">
                     <span className="info-label">Last Used:</span>
-                    <span className="info-value">{formatDate(initialKey.lastUsed)}</span>
+                    <span className="info-value">
+                      {formatDate(initialKey.lastUsed)}
+                    </span>
                   </div>
                 )}
                 <div className="info-item">
                   <span className="info-label">Status:</span>
-                  <span className={`status-badge ${initialKey.isActive ? 'active' : 'inactive'}`}>
+                  <span
+                    className={`status-badge ${initialKey.isActive ? 'active' : 'inactive'}`}
+                  >
                     {initialKey.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
@@ -212,11 +220,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
             </div>
           )}
 
-          {error && (
-            <div className="error-message">
-              ⚠️ {error}
-            </div>
-          )}
+          {error && <div className="error-message">⚠️ {error}</div>}
         </div>
 
         <div className="dialog-footer">
@@ -232,7 +236,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
             onClick={handleSave}
             disabled={isSaving || !selectedProvider}
           >
-            {isSaving ? 'Saving...' : (initialKey ? 'Update Key' : 'Add Key')}
+            {isSaving ? 'Saving...' : initialKey ? 'Update Key' : 'Add Key'}
           </button>
         </div>
       </div>

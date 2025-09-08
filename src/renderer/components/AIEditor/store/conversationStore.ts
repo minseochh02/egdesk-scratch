@@ -5,10 +5,11 @@ class ConversationStoreClass {
     conversations: [],
     currentConversationId: null,
     isLoading: false,
-    error: null
+    error: null,
   };
 
   private listeners: Set<(state: ConversationStore) => void> = new Set();
+
   private storageKey = 'ai_editor_conversations';
 
   constructor() {
@@ -24,7 +25,7 @@ class ConversationStoreClass {
   subscribe(listener: (state: ConversationStore) => void): () => void {
     this.listeners.add(listener);
     listener(this.state); // Initial call
-    
+
     return () => {
       this.listeners.delete(listener);
     };
@@ -34,7 +35,7 @@ class ConversationStoreClass {
    * Notify all listeners of state changes
    */
   private notifyListeners(): void {
-    this.listeners.forEach(listener => listener(this.state));
+    this.listeners.forEach((listener) => listener(this.state));
   }
 
   /**
@@ -48,12 +49,12 @@ class ConversationStoreClass {
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
         const parsed = JSON.parse(stored);
-        
+
         // Validate parsed data
         if (!parsed.conversations || !Array.isArray(parsed.conversations)) {
           throw new Error('Invalid conversation data format');
         }
-        
+
         // Convert date strings back to Date objects
         this.state.conversations = parsed.conversations.map((conv: any) => ({
           ...conv,
@@ -61,15 +62,14 @@ class ConversationStoreClass {
           updatedAt: new Date(conv.updatedAt),
           messages: conv.messages.map((msg: any) => ({
             ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
+            timestamp: new Date(msg.timestamp),
+          })),
         }));
-        
-
       }
     } catch (error) {
-      this.state.error = error instanceof Error ? error.message : 'Failed to load conversations';
-      
+      this.state.error =
+        error instanceof Error ? error.message : 'Failed to load conversations';
+
       // Reset to safe state
       this.state.conversations = [];
       this.state.currentConversationId = null;
@@ -94,7 +94,11 @@ class ConversationStoreClass {
   /**
    * Create a new conversation
    */
-  createConversation(projectPath: string, projectName: string, title?: string): string {
+  createConversation(
+    projectPath: string,
+    projectName: string,
+    title?: string,
+  ): string {
     const conversation: Conversation = {
       id: this.generateId(),
       projectPath,
@@ -103,15 +107,14 @@ class ConversationStoreClass {
       messages: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      tags: []
+      tags: [],
     };
 
     this.state.conversations.unshift(conversation); // Add to beginning
     this.state.currentConversationId = conversation.id;
-    
+
     this.saveConversations();
     this.notifyListeners();
-    
 
     return conversation.id;
   }
@@ -119,12 +122,18 @@ class ConversationStoreClass {
   /**
    * Add a message to the current conversation
    */
-  addMessage(content: string, type: 'user' | 'ai', metadata?: ConversationMessage['metadata']): void {
+  addMessage(
+    content: string,
+    type: 'user' | 'ai',
+    metadata?: ConversationMessage['metadata'],
+  ): void {
     if (!this.state.currentConversationId) {
       return;
     }
 
-    const conversation = this.state.conversations.find(c => c.id === this.state.currentConversationId);
+    const conversation = this.state.conversations.find(
+      (c) => c.id === this.state.currentConversationId,
+    );
     if (!conversation) {
       return;
     }
@@ -134,12 +143,12 @@ class ConversationStoreClass {
       type,
       content,
       timestamp: new Date(),
-      metadata
+      metadata,
     };
 
     conversation.messages.push(message);
     conversation.updatedAt = new Date();
-    
+
     // Auto-generate title from first user message if it's the first message
     if (conversation.messages.length === 1 && type === 'user') {
       conversation.title = this.generateTitle(content);
@@ -147,8 +156,6 @@ class ConversationStoreClass {
 
     this.saveConversations();
     this.notifyListeners();
-    
-
   }
 
   /**
@@ -164,14 +171,20 @@ class ConversationStoreClass {
    */
   getCurrentConversation(): Conversation | null {
     if (!this.state.currentConversationId) return null;
-    return this.state.conversations.find(c => c.id === this.state.currentConversationId) || null;
+    return (
+      this.state.conversations.find(
+        (c) => c.id === this.state.currentConversationId,
+      ) || null
+    );
   }
 
   /**
    * Get conversations for a specific project
    */
   getConversationsForProject(projectPath: string): Conversation[] {
-    return this.state.conversations.filter(c => c.projectPath === projectPath);
+    return this.state.conversations.filter(
+      (c) => c.projectPath === projectPath,
+    );
   }
 
   /**
@@ -179,13 +192,13 @@ class ConversationStoreClass {
    */
   searchConversations(query: string): Conversation[] {
     const lowerQuery = query.toLowerCase();
-    return this.state.conversations.filter(conversation => {
+    return this.state.conversations.filter((conversation) => {
       // Search in title
       if (conversation.title.toLowerCase().includes(lowerQuery)) return true;
-      
+
       // Search in messages
-      return conversation.messages.some(message => 
-        message.content.toLowerCase().includes(lowerQuery)
+      return conversation.messages.some((message) =>
+        message.content.toLowerCase().includes(lowerQuery),
       );
     });
   }
@@ -194,19 +207,19 @@ class ConversationStoreClass {
    * Delete a conversation
    */
   deleteConversation(conversationId: string): void {
-    const index = this.state.conversations.findIndex(c => c.id === conversationId);
+    const index = this.state.conversations.findIndex(
+      (c) => c.id === conversationId,
+    );
     if (index !== -1) {
       this.state.conversations.splice(index, 1);
-      
+
       // If we deleted the current conversation, clear it
       if (this.state.currentConversationId === conversationId) {
         this.state.currentConversationId = null;
       }
-      
+
       this.saveConversations();
       this.notifyListeners();
-      
-
     }
   }
 
@@ -214,11 +227,13 @@ class ConversationStoreClass {
    * Update conversation title
    */
   updateConversationTitle(conversationId: string, title: string): void {
-    const conversation = this.state.conversations.find(c => c.id === conversationId);
+    const conversation = this.state.conversations.find(
+      (c) => c.id === conversationId,
+    );
     if (conversation) {
       conversation.title = title;
       conversation.updatedAt = new Date();
-      
+
       this.saveConversations();
       this.notifyListeners();
     }
@@ -228,12 +243,14 @@ class ConversationStoreClass {
    * Add tags to conversation
    */
   addTags(conversationId: string, tags: string[]): void {
-    const conversation = this.state.conversations.find(c => c.id === conversationId);
+    const conversation = this.state.conversations.find(
+      (c) => c.id === conversationId,
+    );
     if (conversation) {
-      const newTags = tags.filter(tag => !conversation.tags.includes(tag));
+      const newTags = tags.filter((tag) => !conversation.tags.includes(tag));
       conversation.tags.push(...newTags);
       conversation.updatedAt = new Date();
-      
+
       this.saveConversations();
       this.notifyListeners();
     }
@@ -243,11 +260,15 @@ class ConversationStoreClass {
    * Remove tags from conversation
    */
   removeTags(conversationId: string, tags: string[]): void {
-    const conversation = this.state.conversations.find(c => c.id === conversationId);
+    const conversation = this.state.conversations.find(
+      (c) => c.id === conversationId,
+    );
     if (conversation) {
-      conversation.tags = conversation.tags.filter(tag => !tags.includes(tag));
+      conversation.tags = conversation.tags.filter(
+        (tag) => !tags.includes(tag),
+      );
       conversation.updatedAt = new Date();
-      
+
       this.saveConversations();
       this.notifyListeners();
     }
@@ -257,9 +278,11 @@ class ConversationStoreClass {
    * Export conversation to JSON
    */
   exportConversation(conversationId: string): string | null {
-    const conversation = this.state.conversations.find(c => c.id === conversationId);
+    const conversation = this.state.conversations.find(
+      (c) => c.id === conversationId,
+    );
     if (!conversation) return null;
-    
+
     return JSON.stringify(conversation, null, 2);
   }
 
@@ -269,14 +292,20 @@ class ConversationStoreClass {
   importConversation(jsonData: string): boolean {
     try {
       const conversation = JSON.parse(jsonData);
-      
+
       // Validate conversation structure
-      if (!conversation.id || !conversation.messages || !conversation.projectPath) {
+      if (
+        !conversation.id ||
+        !conversation.messages ||
+        !conversation.projectPath
+      ) {
         throw new Error('Invalid conversation format');
       }
-      
+
       // Check if conversation already exists
-      const existingIndex = this.state.conversations.findIndex(c => c.id === conversation.id);
+      const existingIndex = this.state.conversations.findIndex(
+        (c) => c.id === conversation.id,
+      );
       if (existingIndex !== -1) {
         // Update existing conversation
         this.state.conversations[existingIndex] = {
@@ -285,8 +314,8 @@ class ConversationStoreClass {
           updatedAt: new Date(conversation.updatedAt),
           messages: conversation.messages.map((msg: any) => ({
             ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
+            timestamp: new Date(msg.timestamp),
+          })),
         };
       } else {
         // Add new conversation
@@ -296,18 +325,16 @@ class ConversationStoreClass {
           updatedAt: new Date(conversation.updatedAt),
           messages: conversation.messages.map((msg: any) => ({
             ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
+            timestamp: new Date(msg.timestamp),
+          })),
         });
       }
-      
+
       this.saveConversations();
       this.notifyListeners();
-      
 
       return true;
     } catch (error) {
-
       return false;
     }
   }
@@ -318,11 +345,9 @@ class ConversationStoreClass {
   clearAllConversations(): void {
     this.state.conversations = [];
     this.state.currentConversationId = null;
-    
+
     this.saveConversations();
     this.notifyListeners();
-    
-
   }
 
   /**
@@ -335,25 +360,38 @@ class ConversationStoreClass {
     totalCost: number;
     projects: string[];
   } {
-    const totalMessages = this.state.conversations.reduce((sum, conv) => sum + conv.messages.length, 0);
-    const totalTokens = this.state.conversations.reduce((sum, conv) => 
-      sum + conv.messages.reduce((msgSum, msg) => 
-        msgSum + (msg.metadata?.usage?.totalTokens || 0), 0
-      ), 0
+    const totalMessages = this.state.conversations.reduce(
+      (sum, conv) => sum + conv.messages.length,
+      0,
     );
-    const totalCost = this.state.conversations.reduce((sum, conv) => 
-      sum + conv.messages.reduce((msgSum, msg) => 
-        msgSum + (msg.metadata?.cost || 0), 0
-      ), 0
+    const totalTokens = this.state.conversations.reduce(
+      (sum, conv) =>
+        sum +
+        conv.messages.reduce(
+          (msgSum, msg) => msgSum + (msg.metadata?.usage?.totalTokens || 0),
+          0,
+        ),
+      0,
     );
-    const projects = [...new Set(this.state.conversations.map(c => c.projectPath))];
+    const totalCost = this.state.conversations.reduce(
+      (sum, conv) =>
+        sum +
+        conv.messages.reduce(
+          (msgSum, msg) => msgSum + (msg.metadata?.cost || 0),
+          0,
+        ),
+      0,
+    );
+    const projects = [
+      ...new Set(this.state.conversations.map((c) => c.projectPath)),
+    ];
 
     return {
       totalConversations: this.state.conversations.length,
       totalMessages,
       totalTokens,
       totalCost,
-      projects
+      projects,
     };
   }
 
@@ -371,7 +409,7 @@ class ConversationStoreClass {
     // Take first 50 characters and clean up
     const title = content.substring(0, 50).trim();
     if (title.length < content.length) {
-      return title + '...';
+      return `${title}...`;
     }
     return title;
   }

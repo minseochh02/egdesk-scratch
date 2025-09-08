@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ProjectSelector from './ProjectSelector';
-import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGlobe, faTimes, faQuestion, faRefresh, faCode, faDownload, faCheckCircle, faExclamationTriangle, faEdit } from '@fortawesome/free-solid-svg-icons';
+import {
+  faGlobe,
+  faTimes,
+  faQuestion,
+  faRefresh,
+  faCode,
+  faDownload,
+  faCheckCircle,
+  faExclamationTriangle,
+  faEdit,
+} from '@fortawesome/free-solid-svg-icons';
+import ProjectSelector from './ProjectSelector';
+import ProjectContextService, {
+  ProjectInfo,
+} from '../services/projectContextService';
 import './LocalServer.css';
 
 interface ServerStatus {
@@ -52,27 +64,34 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     isRunning: false,
     port: 8000,
-    url: 'http://localhost:8000'
+    url: 'http://localhost:8000',
   });
-  
+
   const [currentFolder, setCurrentFolder] = useState<string>('');
   const [folderInfo, setFolderInfo] = useState<FolderInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
-  const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
+  const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(
+    null,
+  );
   const [phpInfo, setPhpInfo] = useState<PHPInfo | null>(null);
 
   // Subscribe to project context changes
   useEffect(() => {
-    const unsubscribe = ProjectContextService.getInstance().subscribe((context) => {
-      setCurrentProject(context.currentProject);
-      
-      // If current project changes and we have folder info, update the folder
-      if (context.currentProject && context.currentProject.path !== currentFolder) {
-        setCurrentFolder(context.currentProject.path);
-        analyzeFolder(context.currentProject.path);
-      }
-    });
+    const unsubscribe = ProjectContextService.getInstance().subscribe(
+      (context) => {
+        setCurrentProject(context.currentProject);
+
+        // If current project changes and we have folder info, update the folder
+        if (
+          context.currentProject &&
+          context.currentProject.path !== currentFolder
+        ) {
+          setCurrentFolder(context.currentProject.path);
+          analyzeFolder(context.currentProject.path);
+        }
+      },
+    );
 
     return unsubscribe;
   }, [currentFolder]);
@@ -109,7 +128,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       const result = await window.electron.wordpressServer.getPHPInfo();
       if (result.success && result.phpInfo) {
         setPhpInfo(result.phpInfo);
-        addLog(`🐘 PHP ${result.phpInfo.isBundled ? '(bundled)' : '(system)'}: ${result.phpInfo.version}`);
+        addLog(
+          `🐘 PHP ${result.phpInfo.isBundled ? '(bundled)' : '(system)'}: ${result.phpInfo.version}`,
+        );
       }
     } catch (error) {
       console.error('Error loading PHP info:', error);
@@ -119,15 +140,19 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
   const analyzeFolder = async (folderPath: string) => {
     try {
-      const result = await window.electron.wordpressServer.analyzeFolder(folderPath);
+      const result =
+        await window.electron.wordpressServer.analyzeFolder(folderPath);
       if (result.success && result.info) {
         setFolderInfo(result.info);
         setCurrentFolder(folderPath);
-        
+
         if (result.info.hasWordPress) {
           addLog(`✅ Server-compatible folder detected: ${folderPath}`);
           addLog(`📁 Folder type: ${result.info.folderType}`);
-          if (result.info.detectedRoot && result.info.detectedRoot !== folderPath) {
+          if (
+            result.info.detectedRoot &&
+            result.info.detectedRoot !== folderPath
+          ) {
             addLog(`🎯 Will serve from: ${result.info.detectedRoot}`);
           }
           if (result.info.htmlFileCount > 0) {
@@ -137,7 +162,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
             addLog(`🐘 PHP files: ${result.info.phpFileCount}`);
           }
         } else {
-          addLog(`⚠️  Folder structure not recognized, but server can still try to serve it: ${folderPath}`);
+          addLog(
+            `⚠️  Folder structure not recognized, but server can still try to serve it: ${folderPath}`,
+          );
         }
       } else {
         addLog(`Error analyzing folder: ${result.error}`);
@@ -152,7 +179,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       const result = await window.electron.wordpressServer.pickFolder();
       if (result.success && result.folderPath) {
         // Set as current project
-        await ProjectContextService.getInstance().setCurrentProject(result.folderPath);
+        await ProjectContextService.getInstance().setCurrentProject(
+          result.folderPath,
+        );
         await analyzeFolder(result.folderPath);
       } else {
         addLog(`No folder selected: ${result.error}`);
@@ -167,7 +196,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       addLog('Please select a folder first');
       return;
     }
-    
+
     // Allow any folder that exists - the server can handle various structures
     if (!folderInfo.exists) {
       addLog('Selected folder does not exist');
@@ -178,34 +207,40 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
     addLog('🚀 Starting WordPress server...');
 
     try {
-      const result: StartServerResult = await window.electron.wordpressServer.startServer(currentFolder, serverStatus.port);
+      const result: StartServerResult =
+        await window.electron.wordpressServer.startServer(
+          currentFolder,
+          serverStatus.port,
+        );
       if (result.success) {
         addLog(`✅ Server started successfully on port ${result.port}`);
         addLog(`📁 Serving from: ${currentFolder}`);
-        
+
         // Update PHP info if provided
         if (result.phpInfo) {
           setPhpInfo(result.phpInfo);
-          addLog(`🐘 Using PHP: ${result.phpInfo.version} (${result.phpInfo.isBundled ? 'bundled' : 'system'})`);
+          addLog(
+            `🐘 Using PHP: ${result.phpInfo.version} (${result.phpInfo.isBundled ? 'bundled' : 'system'})`,
+          );
         }
-        
+
         // Update server status
-        setServerStatus(prev => ({
+        setServerStatus((prev) => ({
           ...prev,
           isRunning: true,
           port: result.port || prev.port,
           url: `http://localhost:${result.port || prev.port}`,
-          error: undefined
+          error: undefined,
         }));
       } else {
         const errorMsg = `Failed to start server: ${result.error}`;
         addLog(errorMsg);
-        setServerStatus(prev => ({ ...prev, error: errorMsg }));
+        setServerStatus((prev) => ({ ...prev, error: errorMsg }));
       }
     } catch (error) {
       const errorMsg = `Failed to start server: ${error}`;
       addLog(errorMsg);
-      setServerStatus(prev => ({ ...prev, error: errorMsg }));
+      setServerStatus((prev) => ({ ...prev, error: errorMsg }));
     } finally {
       setIsLoading(false);
     }
@@ -219,9 +254,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       const result = await window.electron.wordpressServer.stopServer();
       if (result.success) {
         addLog('✅ Server stopped successfully');
-        setServerStatus(prev => ({
+        setServerStatus((prev) => ({
           ...prev,
-          isRunning: false
+          isRunning: false,
         }));
       } else {
         addLog(`Error stopping server: ${result.error}`);
@@ -241,7 +276,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev.slice(-49), `[${timestamp}] ${message}`]);
+    setLogs((prev) => [...prev.slice(-49), `[${timestamp}] ${message}`]);
   };
 
   const clearLogs = () => {
@@ -267,12 +302,12 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
         <div className="project-context-content">
           <ProjectSelector
             onProjectSelect={handleProjectSelect}
-            showCurrentProject={true}
-            showRecentProjects={true}
+            showCurrentProject
+            showRecentProjects
             showAvailableProjects={false}
             className="server-project-selector"
           />
-          
+
           {currentProject && (
             <div className="project-details">
               <div className="project-metadata">
@@ -283,7 +318,8 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   <strong>Language:</strong> {currentProject.metadata.language}
                 </div>
                 <div className="metadata-item">
-                  <strong>Framework:</strong> {currentProject.metadata.framework}
+                  <strong>Framework:</strong>{' '}
+                  {currentProject.metadata.framework}
                 </div>
                 {currentProject.metadata.version && (
                   <div className="metadata-item">
@@ -291,20 +327,27 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   </div>
                 )}
                 <div className="metadata-item">
-                  <strong>Last Accessed:</strong> {currentProject.lastAccessed.toLocaleDateString()}
+                  <strong>Last Accessed:</strong>{' '}
+                  {currentProject.lastAccessed.toLocaleDateString()}
                 </div>
               </div>
-              
+
               <div className="project-actions">
-                <button 
+                <button
                   className="btn btn-secondary"
-                  onClick={() => ProjectContextService.getInstance().updateProjectMetadata(currentProject.id)}
+                  onClick={() =>
+                    ProjectContextService.getInstance().updateProjectMetadata(
+                      currentProject.id,
+                    )
+                  }
                 >
                   <FontAwesomeIcon icon={faRefresh} /> Refresh Metadata
                 </button>
-                <button 
+                <button
                   className="btn btn-secondary"
-                  onClick={() => ProjectContextService.getInstance().refreshAllProjects()}
+                  onClick={() =>
+                    ProjectContextService.getInstance().refreshAllProjects()
+                  }
                 >
                   <FontAwesomeIcon icon={faRefresh} /> Refresh All Projects
                 </button>
@@ -325,7 +368,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               placeholder="Enter folder path or click Select Folder"
               disabled={isLoading}
             />
-            <button 
+            <button
               onClick={selectFolder}
               disabled={isLoading}
               className="btn btn-secondary"
@@ -333,31 +376,51 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               Select Folder
             </button>
           </div>
-          
+
           {folderInfo && (
             <div className="folder-info">
-              <div className={`status-indicator ${folderInfo.hasWordPress ? 'success' : 'warning'}`}>
+              <div
+                className={`status-indicator ${folderInfo.hasWordPress ? 'success' : 'warning'}`}
+              >
                 {folderInfo.hasWordPress ? '✅' : '⚠️'} Server Compatible
               </div>
-              <div className={`status-indicator ${folderInfo.folderType === 'www' ? 'success' : folderInfo.folderType === 'wordpress' ? 'success' : folderInfo.folderType === 'mixed' ? 'success' : 'warning'}`}>
-                {folderInfo.folderType === 'www' ? <FontAwesomeIcon icon={faGlobe} /> : folderInfo.folderType === 'wordpress' ? <FontAwesomeIcon icon={faCode} /> : folderInfo.folderType === 'mixed' ? <FontAwesomeIcon icon={faRefresh} /> : <FontAwesomeIcon icon={faQuestion} />} {folderInfo.folderType}
+              <div
+                className={`status-indicator ${folderInfo.folderType === 'www' ? 'success' : folderInfo.folderType === 'wordpress' ? 'success' : folderInfo.folderType === 'mixed' ? 'success' : 'warning'}`}
+              >
+                {folderInfo.folderType === 'www' ? (
+                  <FontAwesomeIcon icon={faGlobe} />
+                ) : folderInfo.folderType === 'wordpress' ? (
+                  <FontAwesomeIcon icon={faCode} />
+                ) : folderInfo.folderType === 'mixed' ? (
+                  <FontAwesomeIcon icon={faRefresh} />
+                ) : (
+                  <FontAwesomeIcon icon={faQuestion} />
+                )}{' '}
+                {folderInfo.folderType}
               </div>
               {folderInfo.htmlFileCount > 0 && (
                 <div className="status-indicator success">
-                  <FontAwesomeIcon icon={faGlobe} /> {folderInfo.htmlFileCount} HTML files
+                  <FontAwesomeIcon icon={faGlobe} /> {folderInfo.htmlFileCount}{' '}
+                  HTML files
                 </div>
               )}
               {folderInfo.phpFileCount > 0 && (
                 <div className="status-indicator success">
-                  <FontAwesomeIcon icon={faCode} /> {folderInfo.phpFileCount} PHP files
+                  <FontAwesomeIcon icon={faCode} /> {folderInfo.phpFileCount}{' '}
+                  PHP files
                 </div>
               )}
-              {folderInfo.folderType === 'wordpress' || folderInfo.folderType === 'mixed' ? (
+              {folderInfo.folderType === 'wordpress' ||
+              folderInfo.folderType === 'mixed' ? (
                 <>
-                  <div className={`status-indicator ${folderInfo.hasIndexPhp ? 'success' : 'error'}`}>
+                  <div
+                    className={`status-indicator ${folderInfo.hasIndexPhp ? 'success' : 'error'}`}
+                  >
                     {folderInfo.hasIndexPhp ? '✅' : '❌'} index.php
                   </div>
-                  <div className={`status-indicator ${folderInfo.hasWpContent ? 'success' : 'error'}`}>
+                  <div
+                    className={`status-indicator ${folderInfo.hasWpContent ? 'success' : 'error'}`}
+                  >
                     {folderInfo.hasWpContent ? '✅' : '❌'} wp-content
                   </div>
                 </>
@@ -366,11 +429,12 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   ✅ Ready to serve files
                 </div>
               )}
-              {folderInfo.detectedRoot && folderInfo.detectedRoot !== currentFolder && (
-                <div className="status-indicator success">
-                  🎯 Will serve: {folderInfo.detectedRoot}
-                </div>
-              )}
+              {folderInfo.detectedRoot &&
+                folderInfo.detectedRoot !== currentFolder && (
+                  <div className="status-indicator success">
+                    🎯 Will serve: {folderInfo.detectedRoot}
+                  </div>
+                )}
             </div>
           )}
         </div>
@@ -395,16 +459,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 {isLoading ? 'Stopping...' : 'Stop Server'}
               </button>
             )}
-            
+
             {serverStatus.isRunning && (
-              <button
-                onClick={openInBrowser}
-                className="btn btn-success"
-              >
+              <button onClick={openInBrowser} className="btn btn-success">
                 Open in Browser
               </button>
             )}
-            
+
             <button
               onClick={() => navigate('/dual-screen')}
               className="btn btn-primary"
@@ -417,22 +478,40 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
         <div className="server-status">
           <h3>📊 Server Status</h3>
-          <div className={`status ${serverStatus.isRunning ? 'running' : 'stopped'}`}>
-            <span className="status-dot"></span>
+          <div
+            className={`status ${serverStatus.isRunning ? 'running' : 'stopped'}`}
+          >
+            <span className="status-dot" />
             {serverStatus.isRunning ? 'Running' : 'Stopped'}
           </div>
-          
+
           {serverStatus.isRunning && (
             <div className="status-details">
-              <p><strong>Port:</strong> {serverStatus.port}</p>
-              <p><strong>URL:</strong> <a href={serverStatus.url} target="_blank" rel="noopener noreferrer">{serverStatus.url}</a></p>
-              <p><strong>Folder:</strong> {currentFolder}</p>
+              <p>
+                <strong>Port:</strong> {serverStatus.port}
+              </p>
+              <p>
+                <strong>URL:</strong>{' '}
+                <a
+                  href={serverStatus.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {serverStatus.url}
+                </a>
+              </p>
+              <p>
+                <strong>Folder:</strong> {currentFolder}
+              </p>
               {currentProject && (
-                <p><strong>Project:</strong> {currentProject.name} ({currentProject.type})</p>
+                <p>
+                  <strong>Project:</strong> {currentProject.name} (
+                  {currentProject.type})
+                </p>
               )}
             </div>
           )}
-          
+
           {serverStatus.error && (
             <div className="error-message">
               <strong>Error:</strong> {serverStatus.error}
@@ -450,7 +529,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
         </div>
         <div className="logs-container">
           {logs.length === 0 ? (
-            <p className="no-logs">No logs yet. Start the server to see activity.</p>
+            <p className="no-logs">
+              No logs yet. Start the server to see activity.
+            </p>
           ) : (
             logs.map((log, index) => (
               <div key={index} className="log-entry">
@@ -468,7 +549,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
             <strong>PHP Version:</strong> {phpInfo?.version || 'Loading...'}
           </div>
           <div className="info-item">
-            <strong>PHP Source:</strong> 
+            <strong>PHP Source:</strong>
             {phpInfo?.isBundled ? (
               <span className="php-bundled">
                 <FontAwesomeIcon icon={faDownload} /> Bundled
@@ -526,11 +607,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 <strong>Project Type:</strong> {currentProject.type}
               </div>
               <div className="info-item">
-                <strong>Project Language:</strong> {currentProject.metadata.language}
+                <strong>Project Language:</strong>{' '}
+                {currentProject.metadata.language}
               </div>
               {currentProject.metadata.version && (
                 <div className="info-item">
-                  <strong>Project Version:</strong> {currentProject.metadata.version}
+                  <strong>Project Version:</strong>{' '}
+                  {currentProject.metadata.version}
                 </div>
               )}
             </>

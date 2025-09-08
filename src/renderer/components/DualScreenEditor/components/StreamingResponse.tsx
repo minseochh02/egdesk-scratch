@@ -9,7 +9,7 @@ interface StreamingResponseProps {
 export const StreamingResponse: React.FC<StreamingResponseProps> = ({
   isStreaming,
   streamedContent,
-  FontAwesomeIcon
+  FontAwesomeIcon,
 }) => {
   if (!isStreaming) return null;
 
@@ -22,9 +22,7 @@ export const StreamingResponse: React.FC<StreamingResponseProps> = ({
           <span className="typing-dots">●</span>
           <span className="typing-dots">●</span>
         </div>
-        <div className="streaming-content">
-          {streamedContent}
-        </div>
+        <div className="streaming-content">{streamedContent}</div>
       </div>
     </div>
   );

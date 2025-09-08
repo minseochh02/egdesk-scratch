@@ -1,8 +1,12 @@
 import React from 'react';
+import {
+  faRobot,
+  faCheck,
+  faComments,
+} from '@fortawesome/free-solid-svg-icons';
 import { AIEditResponse, AIEdit } from '../../AIEditor/types';
 import { MessageContent } from '../../ChatInterface/components';
 import { SplitExplanationWithEdits } from '../SplitExplanationWithEdits';
-import { faRobot, faCheck, faComments } from '@fortawesome/free-solid-svg-icons';
 
 interface AIResponseDisplayProps {
   aiResponse: AIEditResponse | null;
@@ -22,7 +26,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
   showPreview,
   onPreviewToggle,
   currentFileData,
-  FontAwesomeIcon
+  FontAwesomeIcon,
 }) => {
   if (!aiResponse || !aiResponse.success) return null;
 
@@ -30,9 +34,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
     <div className="message ai-message">
       <div className="message-content">
         <div className="response-header">
-          <span className="response-title">
-            🤖 AI Response
-          </span>
+          <span className="response-title">🤖 AI Response</span>
           {/* Only show edit actions if there are actual code edits */}
           {aiResponse.edits.length > 0 && (
             <div className="response-actions">
@@ -40,20 +42,21 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
                 {showPreview ? 'Hide' : 'Preview'}
               </button>
               <div className="auto-applied-indicator">
-                ✅ Auto-Applied {aiResponse.edits.length} Change{aiResponse.edits.length !== 1 ? 's' : ''}
+                ✅ Auto-Applied {aiResponse.edits.length} Change
+                {aiResponse.edits.length !== 1 ? 's' : ''}
               </div>
             </div>
           )}
         </div>
-        
+
         {/* Console log for AI response display */}
         {(() => {
           console.log('🎨 AI RESPONSE DISPLAYED:', {
             success: aiResponse.success,
             explanationLength: aiResponse.explanation?.length || 0,
             editsCount: aiResponse.edits.length,
-            showPreview: showPreview,
-            timestamp: new Date().toISOString()
+            showPreview,
+            timestamp: new Date().toISOString(),
           });
           return null;
         })()}
@@ -62,21 +65,24 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
         {aiResponse.explanation && (
           <div className="explanation">
             {aiResponse.edits.length > 0 ? (
-              <SplitExplanationWithEdits 
+              <SplitExplanationWithEdits
                 explanation={aiResponse.explanation}
                 edits={aiResponse.edits}
                 currentFile={currentFileData}
                 onPreviewToggle={onPreviewToggle}
                 showPreview={showPreview}
                 onApply={() => {}}
-                autoApplied={true}
+                autoApplied
               />
             ) : (
-              <MessageContent content={aiResponse.explanation} role="assistant" />
+              <MessageContent
+                content={aiResponse.explanation}
+                role="assistant"
+              />
             )}
           </div>
         )}
-        
+
         {/* Show message when there are no edits */}
         {aiResponse.edits.length === 0 && (
           <div className="no-edits-message">
@@ -87,7 +93,9 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
         {aiResponse.usage && (
           <div className="usage-info">
             <span>Tokens: {aiResponse.usage.totalTokens}</span>
-            {aiResponse.cost && <span>Cost: ${aiResponse.cost.toFixed(4)}</span>}
+            {aiResponse.cost && (
+              <span>Cost: ${aiResponse.cost.toFixed(4)}</span>
+            )}
           </div>
         )}
       </div>

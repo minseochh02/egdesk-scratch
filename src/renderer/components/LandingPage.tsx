@@ -1,12 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faHome, 
-  faCalendarAlt, 
+import {
+  faHome,
+  faCalendarAlt,
   faRocket,
   faCode,
-  faClock
+  faClock,
 } from '@fortawesome/free-solid-svg-icons';
 import './LandingPage.css';
 
@@ -28,7 +28,8 @@ const LandingPage: React.FC = () => {
           <div className="welcome-section">
             <h2 className="welcome-title">Welcome to EGDesk!</h2>
             <p className="welcome-description">
-              Choose what you'd like to work on today. We'll help you manage your WordPress sites efficiently.
+              Choose what you'd like to work on today. We'll help you manage
+              your WordPress sites efficiently.
             </p>
           </div>
 
@@ -40,7 +41,8 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="card-title">Fix Your Homepage</h3>
               <p className="card-description">
-                Start a local server and edit your WordPress site files with the dual-screen editor for efficient development.
+                Start a local server and edit your WordPress site files with the
+                dual-screen editor for efficient development.
               </p>
               <div className="card-features">
                 <span className="feature-tag">Local Server</span>
@@ -49,13 +51,14 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/scheduler" className="action-card scheduler-card">
+            <Link to="/wordpress-sites" className="action-card scheduler-card">
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCalendarAlt} />
               </div>
               <h3 className="card-title">Schedule Blog Posts</h3>
               <p className="card-description">
-                Plan and schedule your blog content with AI assistance. Set up automated posting and content management.
+                Plan and schedule your blog content with AI assistance. Set up
+                automated posting and content management.
               </p>
               <div className="card-features">
                 <span className="feature-tag">AI Writing</span>
@@ -88,7 +91,8 @@ const LandingPage: React.FC = () => {
         {/* Footer */}
         <div className="landing-footer">
           <p className="footer-text">
-            Ready to get started? Choose an option above to begin managing your WordPress sites.
+            Ready to get started? Choose an option above to begin managing your
+            WordPress sites.
           </p>
         </div>
       </div>

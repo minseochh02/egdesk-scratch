@@ -97,12 +97,14 @@ const WordPressConnector: React.FC = () => {
   const [selectedSite, setSelectedSite] = useState<WordPressSite | null>(null);
   const [posts, setPosts] = useState<WordPressPost[]>([]);
   const [media, setMedia] = useState<WordPressMedia[]>([]);
-  const [activeTab, setActiveTab] = useState<'connections' | 'posts' | 'media' | 'sync' | 'settings'>('connections');
+  const [activeTab, setActiveTab] = useState<
+    'connections' | 'posts' | 'media' | 'sync' | 'settings'
+  >('connections');
   const [formData, setFormData] = useState<ConnectionForm>({
     url: '',
     username: '',
     password: '',
-    name: ''
+    name: '',
   });
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
@@ -112,12 +114,19 @@ const WordPressConnector: React.FC = () => {
     currentFile: '',
     totalFiles: 0,
     syncedFiles: 0,
-    errors: []
+    errors: [],
   });
   const [localSyncPath, setLocalSyncPath] = useState<string>('');
   const [syncHistory, setSyncHistory] = useState<SyncRecord[]>([]);
   const [currentSyncId, setCurrentSyncId] = useState<string>('');
-  const [exportFormat, setExportFormat] = useState<'markdown' | 'html' | 'txt' | 'json' | 'wordpress'>('wordpress');
+  const [exportFormat, setExportFormat] = useState<
+    'markdown' | 'html' | 'txt' | 'json' | 'wordpress'
+  >('wordpress');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<string>('');
+  const [showPostDeleteConfirm, setShowPostDeleteConfirm] = useState<number | null>(null);
+  const [isDeletingPost, setIsDeletingPost] = useState(false);
 
   // Load saved connections on component mount
   useEffect(() => {
@@ -159,7 +168,7 @@ const WordPressConnector: React.FC = () => {
   };
 
   const handleFormChange = (field: keyof ConnectionForm, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     setConnectionError('');
   };
 
@@ -183,48 +192,64 @@ const WordPressConnector: React.FC = () => {
     return true;
   };
 
-  const testWordPressConnection = async (url: string, username: string, password: string): Promise<WordPressAPIResponse> => {
+  const testWordPressConnection = async (
+    url: string,
+    username: string,
+    password: string,
+  ): Promise<WordPressAPIResponse> => {
     try {
       // Test user authentication
       const userResponse = await fetch(`${url}/wp-json/wp/v2/users/me`, {
         method: 'GET',
         headers: {
-          'Authorization': `Basic ${btoa(`${username}:${password}`)}`,
+          Authorization: `Basic ${btoa(`${username}:${password}`)}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (!userResponse.ok) {
-        return { success: false, error: '인증 실패: 사용자명 또는 비밀번호가 올바르지 않습니다.' };
+        return {
+          success: false,
+          error: '인증 실패: 사용자명 또는 비밀번호가 올바르지 않습니다.',
+        };
       }
 
       const userData = await userResponse.json();
 
       // Get posts count
-      const postsResponse = await fetch(`${url}/wp-json/wp/v2/posts?per_page=1`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${username}:${password}`)}`,
-          'Content-Type': 'application/json',
+      const postsResponse = await fetch(
+        `${url}/wp-json/wp/v2/posts?per_page=1`,
+        {
+          headers: {
+            Authorization: `Basic ${btoa(`${username}:${password}`)}`,
+            'Content-Type': 'application/json',
+          },
         },
-      });
+      );
       const postsCount = postsResponse.headers.get('X-WP-Total') || '0';
 
       // Get pages count
-      const pagesResponse = await fetch(`${url}/wp-json/wp/v2/pages?per_page=1`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${username}:${password}`)}`,
-          'Content-Type': 'application/json',
+      const pagesResponse = await fetch(
+        `${url}/wp-json/wp/v2/pages?per_page=1`,
+        {
+          headers: {
+            Authorization: `Basic ${btoa(`${username}:${password}`)}`,
+            'Content-Type': 'application/json',
+          },
         },
-      });
+      );
       const pagesCount = pagesResponse.headers.get('X-WP-Total') || '0';
 
       // Get media count
-      const mediaResponse = await fetch(`${url}/wp-json/wp/v2/media?per_page=1`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${username}:${password}`)}`,
-          'Content-Type': 'application/json',
+      const mediaResponse = await fetch(
+        `${url}/wp-json/wp/v2/media?per_page=1`,
+        {
+          headers: {
+            Authorization: `Basic ${btoa(`${username}:${password}`)}`,
+            'Content-Type': 'application/json',
+          },
         },
-      });
+      );
       const mediaCount = mediaResponse.headers.get('X-WP-Total') || '0';
 
       return {
@@ -233,8 +258,8 @@ const WordPressConnector: React.FC = () => {
           user: userData,
           posts_count: parseInt(postsCount),
           pages_count: parseInt(pagesCount),
-          media_count: parseInt(mediaCount)
-        }
+          media_count: parseInt(mediaCount),
+        },
       };
     } catch (error) {
       console.error('WordPress API test failed:', error);
@@ -249,8 +274,12 @@ const WordPressConnector: React.FC = () => {
     setConnectionError('');
 
     try {
-      const testResult = await testWordPressConnection(formData.url, formData.username, formData.password);
-      
+      const testResult = await testWordPressConnection(
+        formData.url,
+        formData.username,
+        formData.password,
+      );
+
       if (testResult.success && testResult.data) {
         const newSite: WordPressSite = {
           url: formData.url,
@@ -259,24 +288,25 @@ const WordPressConnector: React.FC = () => {
           name: formData.name,
           posts_count: testResult.data.posts_count,
           pages_count: testResult.data.pages_count,
-          media_count: testResult.data.media_count
+          media_count: testResult.data.media_count,
         };
 
         // Save connection to persistent storage
-        const saveResult = await window.electron.wordpress.saveConnection(newSite);
-        
+        const saveResult =
+          await window.electron.wordpress.saveConnection(newSite);
+
         if (saveResult.success && saveResult.connections) {
           setConnections(saveResult.connections);
           setSelectedSite(newSite);
           await loadSiteContent(newSite);
           setActiveTab('posts');
-          
+
           // Clear form
           setFormData({
             url: '',
             username: '',
             password: '',
-            name: ''
+            name: '',
           });
         } else {
           setConnectionError('연결을 저장할 수 없습니다.');
@@ -292,62 +322,143 @@ const WordPressConnector: React.FC = () => {
     }
   };
 
-  const loadSiteContent = async (site: WordPressSite) => {
+  const loadSiteContent = async (site: WordPressSite): Promise<{postsCount: number, mediaCount: number}> => {
     try {
-      // Try to load actual content from WordPress API
-      const postsResponse = await fetch(`${site.url}/wp-json/wp/v2/posts?per_page=20`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      // Fetch all posts with pagination
+      const allPosts: WordPressPost[] = [];
+      let page = 1;
+      let hasMorePosts = true;
+      const perPage = 100; // WordPress max per page
 
-      const mediaResponse = await fetch(`${site.url}/wp-json/wp/v2/media?per_page=20`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      while (hasMorePosts) {
+        const postsResponse = await fetch(
+          `${site.url}/wp-json/wp/v2/posts?per_page=${perPage}&page=${page}&_embed=author`,
+          {
+            headers: {
+              Authorization: `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
 
-      if (postsResponse.ok) {
-        const postsData = await postsResponse.json();
-        const formattedPosts: WordPressPost[] = postsData.map((post: any) => ({
-          id: post.id,
-          title: post.title.rendered,
-          excerpt: post.excerpt.rendered.replace(/<[^>]*>/g, ''),
-          content: post.content.rendered,
-          slug: post.slug,
-          author: post._embedded?.author?.[0]?.name || 'Unknown',
-          date: new Date(post.date).toLocaleDateString('ko-KR'),
-          status: post.status,
-          type: post.type
-        }));
-        setPosts(formattedPosts);
+        if (postsResponse.ok) {
+          const postsData = await postsResponse.json();
+          const totalPages = parseInt(postsResponse.headers.get('X-WP-TotalPages') || '1');
+          
+          const formattedPosts: WordPressPost[] = postsData.map((post: any) => ({
+            id: post.id,
+            title: post.title.rendered,
+            excerpt: post.excerpt.rendered.replace(/<[^>]*>/g, ''),
+            content: post.content.rendered,
+            slug: post.slug,
+            author: post._embedded?.author?.[0]?.name || 'Unknown',
+            date: new Date(post.date).toLocaleDateString('ko-KR'),
+            status: post.status,
+            type: post.type,
+          }));
+          
+          allPosts.push(...formattedPosts);
+          
+          hasMorePosts = page < totalPages;
+          page++;
+        } else {
+          hasMorePosts = false;
+        }
       }
 
-      if (mediaResponse.ok) {
-        const mediaData = await mediaResponse.json();
-        const formattedMedia: WordPressMedia[] = mediaData.map((item: any) => ({
-          id: item.id,
-          title: item.title.rendered,
-          url: item.source_url,
-          type: item.media_type,
-          filename: item.source_url.split('/').pop(),
-          date: new Date(item.date).toLocaleDateString('ko-KR')
-        }));
-        setMedia(formattedMedia);
+      setPosts(allPosts);
+
+      // Fetch all media with pagination
+      const allMedia: WordPressMedia[] = [];
+      page = 1;
+      let hasMoreMedia = true;
+
+      while (hasMoreMedia) {
+        const mediaResponse = await fetch(
+          `${site.url}/wp-json/wp/v2/media?per_page=${perPage}&page=${page}`,
+          {
+            headers: {
+              Authorization: `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
+
+        if (mediaResponse.ok) {
+          const mediaData = await mediaResponse.json();
+          const totalPages = parseInt(mediaResponse.headers.get('X-WP-TotalPages') || '1');
+          
+          const formattedMedia: WordPressMedia[] = mediaData.map((item: any) => ({
+            id: item.id,
+            title: item.title.rendered,
+            url: item.source_url,
+            type: item.media_type,
+            filename: item.source_url.split('/').pop(),
+            date: new Date(item.date).toLocaleDateString('ko-KR'),
+          }));
+          
+          allMedia.push(...formattedMedia);
+          
+          hasMoreMedia = page < totalPages;
+          page++;
+        } else {
+          hasMoreMedia = false;
+        }
       }
+
+      setMedia(allMedia);
+      
+      return {
+        postsCount: allPosts.length,
+        mediaCount: allMedia.length
+      };
     } catch (error) {
       console.error('Failed to load site content:', error);
       // Fallback to mock data if API fails
-      setPosts([
-        { id: 1, title: '샘플 포스트', excerpt: '이것은 샘플 포스트입니다.', author: '관리자', date: '2024-01-15', status: 'published', type: 'post' },
-        { id: 2, title: '테스트 포스트', excerpt: '테스트를 위한 포스트입니다.', author: '관리자', date: '2024-01-14', status: 'draft', type: 'post' }
-      ]);
-      setMedia([
-        { id: 1, title: '샘플 이미지', url: 'https://via.placeholder.com/300x200', type: 'image', date: '2024-01-15' },
-        { id: 2, title: '테스트 문서', url: 'https://via.placeholder.com/400x300', type: 'document', date: '2024-01-14' }
-      ]);
+      const mockPosts = [
+        {
+          id: 1,
+          title: '샘플 포스트',
+          excerpt: '이것은 샘플 포스트입니다.',
+          author: '관리자',
+          date: '2024-01-15',
+          status: 'published',
+          type: 'post',
+        },
+        {
+          id: 2,
+          title: '테스트 포스트',
+          excerpt: '테스트를 위한 포스트입니다.',
+          author: '관리자',
+          date: '2024-01-14',
+          status: 'draft',
+          type: 'post',
+        },
+      ];
+      const mockMedia = [
+        {
+          id: 1,
+          title: '샘플 이미지',
+          url: 'https://via.placeholder.com/300x200',
+          type: 'image',
+          date: '2024-01-15',
+        },
+        {
+          id: 2,
+          title: '테스트 문서',
+          url: 'https://via.placeholder.com/400x300',
+          type: 'document',
+          date: '2024-01-14',
+        },
+      ];
+      
+      setPosts(mockPosts);
+      setMedia(mockMedia);
+      
+      return {
+        postsCount: mockPosts.length,
+        mediaCount: mockMedia.length
+      };
     }
   };
 
@@ -361,20 +472,137 @@ const WordPressConnector: React.FC = () => {
           setPosts([]);
           setMedia([]);
         }
+        setShowDeleteConfirm(null);
       }
     } catch (error) {
       console.error('Failed to disconnect site:', error);
     }
   };
 
-  const fetchFullPostContent = async (site: WordPressSite, postId: number): Promise<WordPressPost | null> => {
+  const refreshSiteContent = async () => {
+    if (!selectedSite) return;
+    
+    setIsRefreshing(true);
+    setRefreshProgress('포스트를 가져오는 중...');
     try {
-      const response = await fetch(`${site.url}/wp-json/wp/v2/posts/${postId}?_embed`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
-          'Content-Type': 'application/json',
-        },
+      const { postsCount, mediaCount } = await loadSiteContent(selectedSite);
+      
+      setRefreshProgress('연결 정보를 업데이트하는 중...');
+      
+      // Update the connection with new counts
+      const updatedSite = {
+        ...selectedSite,
+        posts_count: postsCount,
+        media_count: mediaCount,
+      };
+      
+      // Update the connection in storage
+      await window.electron.wordpress.updateConnection(selectedSite.id!, {
+        posts_count: postsCount,
+        media_count: mediaCount,
       });
+      
+      // Update the connections list
+      setConnections(prev => 
+        prev.map(conn => 
+          conn.id === selectedSite.id 
+            ? { ...conn, posts_count: postsCount, media_count: mediaCount }
+            : conn
+        )
+      );
+      
+      setSelectedSite(updatedSite);
+      setRefreshProgress(`완료! ${postsCount}개 포스트, ${mediaCount}개 미디어 로드됨`);
+      
+      // Clear progress message after 3 seconds
+      setTimeout(() => setRefreshProgress(''), 3000);
+    } catch (error) {
+      console.error('Failed to refresh site content:', error);
+      setRefreshProgress('새로고침 중 오류가 발생했습니다.');
+      setTimeout(() => setRefreshProgress(''), 3000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const refreshConnections = async () => {
+    setIsRefreshing(true);
+    try {
+      await loadSavedConnections();
+    } catch (error) {
+      console.error('Failed to refresh connections:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const deletePost = async (postId: number) => {
+    if (!selectedSite) return;
+    
+    setIsDeletingPost(true);
+    try {
+      const response = await fetch(
+        `${selectedSite.url}/wp-json/wp/v2/posts/${postId}?force=true`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Basic ${btoa(`${selectedSite.username}:${selectedSite.password || ''}`)}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (response.ok) {
+        // Remove the post from local state
+        setPosts(prev => prev.filter(post => post.id !== postId));
+        
+        // Update the connection count
+        const updatedSite = {
+          ...selectedSite,
+          posts_count: (selectedSite.posts_count || 1) - 1,
+        };
+        
+        // Update the connection in storage
+        await window.electron.wordpress.updateConnection(selectedSite.id!, {
+          posts_count: updatedSite.posts_count,
+        });
+        
+        // Update the connections list
+        setConnections(prev => 
+          prev.map(conn => 
+            conn.id === selectedSite.id 
+              ? { ...conn, posts_count: updatedSite.posts_count }
+              : conn
+          )
+        );
+        
+        setSelectedSite(updatedSite);
+        setShowPostDeleteConfirm(null);
+      } else {
+        throw new Error('Failed to delete post');
+      }
+    } catch (error) {
+      console.error('Failed to delete post:', error);
+      alert('포스트 삭제에 실패했습니다.');
+    } finally {
+      setIsDeletingPost(false);
+    }
+  };
+
+  const fetchFullPostContent = async (
+    site: WordPressSite,
+    postId: number,
+  ): Promise<WordPressPost | null> => {
+    try {
+      const response = await fetch(
+        `${site.url}/wp-json/wp/v2/posts/${postId}?_embed`,
+        {
+          headers: {
+            Authorization: `Basic ${btoa(`${site.username}:${site.password || ''}`)}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
 
       if (response.ok) {
         const postData = await response.json();
@@ -387,7 +615,7 @@ const WordPressConnector: React.FC = () => {
           author: postData._embedded?.author?.[0]?.name || 'Unknown',
           date: new Date(postData.date).toLocaleDateString('ko-KR'),
           status: postData.status,
-          type: postData.type
+          type: postData.type,
         };
       }
       return null;
@@ -397,11 +625,14 @@ const WordPressConnector: React.FC = () => {
     }
   };
 
-  const syncWordPressToLocal = async (site: WordPressSite, localPath: string) => {
+  const syncWordPressToLocal = async (
+    site: WordPressSite,
+    localPath: string,
+  ) => {
     if (!site.password) {
-      setSyncStatus(prev => ({
+      setSyncStatus((prev) => ({
         ...prev,
-        errors: ['동기화를 위해 비밀번호가 필요합니다.']
+        errors: ['동기화를 위해 비밀번호가 필요합니다.'],
       }));
       return;
     }
@@ -411,11 +642,11 @@ const WordPressConnector: React.FC = () => {
       connectionId: site.id!,
       connectionName: site.name || site.url,
       syncPath: localPath,
-      totalFiles: posts.length + media.length + 5 // +5 for core WordPress files
+      totalFiles: posts.length + media.length + 5, // +5 for core WordPress files
     };
 
     const fileDetails: SyncFileDetail[] = [];
-    
+
     try {
       const syncRecordResult = await window.electron.sync.saveHistory(syncData);
       if (!syncRecordResult.success) {
@@ -425,19 +656,24 @@ const WordPressConnector: React.FC = () => {
       const syncRecord = syncRecordResult.syncRecord!;
       setCurrentSyncId(syncRecord.id);
 
-      setSyncStatus(prev => ({
+      setSyncStatus((prev) => ({
         ...prev,
         isSyncing: true,
         progress: 0,
         currentFile: '동기화 시작...',
         totalFiles: posts.length + media.length + 5, // +5 for WordPress core files
         syncedFiles: 0,
-        errors: []
+        errors: [],
       }));
 
       // Create local folders
-      setSyncStatus(prev => ({ ...prev, currentFile: '로컬 폴더 생성 중...' }));
-      const folderResult = await (window.electron.wordpress as any).syncCreateFolders(localPath);
+      setSyncStatus((prev) => ({
+        ...prev,
+        currentFile: '로컬 폴더 생성 중...',
+      }));
+      const folderResult = await (
+        window.electron.wordpress as any
+      ).syncCreateFolders(localPath);
       if (!folderResult.success) {
         throw new Error(`폴더 생성 실패: ${folderResult.error}`);
       }
@@ -445,15 +681,18 @@ const WordPressConnector: React.FC = () => {
       // Sync posts
       if (exportFormat === 'wordpress') {
         // For WordPress format, create a single XML file with all posts
-        setSyncStatus(prev => ({ ...prev, currentFile: '모든 포스트 내용 가져오는 중...' }));
-        
+        setSyncStatus((prev) => ({
+          ...prev,
+          currentFile: '모든 포스트 내용 가져오는 중...',
+        }));
+
         const allPosts: WordPressPost[] = [];
         for (let i = 0; i < posts.length; i++) {
           const post = posts[i];
-          setSyncStatus(prev => ({
+          setSyncStatus((prev) => ({
             ...prev,
             currentFile: `포스트 내용 가져오는 중: ${post.title}`,
-            progress: ((i) / posts.length) * 40
+            progress: (i / posts.length) * 40,
           }));
 
           const fullPost = await fetchFullPostContent(site, post.id);
@@ -465,10 +704,15 @@ const WordPressConnector: React.FC = () => {
         // Generate combined WordPress XML
         const wordpressXML = generateWordPressXML(allPosts, site);
         const xmlFilePath = `${localPath}/wordpress-export.xml`;
-        
-        setSyncStatus(prev => ({ ...prev, currentFile: 'WordPress XML 파일 생성 중...' }));
-        const saveResult = await (window.electron.wordpress as any).syncSavePost(xmlFilePath, wordpressXML);
-        
+
+        setSyncStatus((prev) => ({
+          ...prev,
+          currentFile: 'WordPress XML 파일 생성 중...',
+        }));
+        const saveResult = await (
+          window.electron.wordpress as any
+        ).syncSavePost(xmlFilePath, wordpressXML);
+
         if (!saveResult.success) {
           throw new Error(`WordPress XML 저장 실패: ${saveResult.error}`);
         }
@@ -505,7 +749,10 @@ const WordPressConnector: React.FC = () => {
 `;
 
         const instructionsPath = `${localPath}/README-로컬테스트.md`;
-        await (window.electron.wordpress as any).syncSavePost(instructionsPath, instructionsContent);
+        await (window.electron.wordpress as any).syncSavePost(
+          instructionsPath,
+          instructionsContent,
+        );
 
         const fileDetail: SyncFileDetail = {
           path: 'wordpress-export',
@@ -514,31 +761,30 @@ const WordPressConnector: React.FC = () => {
           status: 'synced',
           localPath: xmlFilePath,
           size: saveResult.size,
-          syncedAt: new Date().toISOString()
+          syncedAt: new Date().toISOString(),
         };
         fileDetails.push(fileDetail);
 
-        setSyncStatus(prev => ({
+        setSyncStatus((prev) => ({
           ...prev,
           progress: 50,
           currentFile: `WordPress XML 생성 완료 (${allPosts.length}개 포스트)`,
-          syncedFiles: 1
+          syncedFiles: 1,
         }));
 
         await window.electron.sync.updateProgress(syncRecord.id, {
           syncedFiles: 1,
-          fileDetails: fileDetails
+          fileDetails,
         });
-
       } else {
         // For other formats, create individual files
         for (let i = 0; i < posts.length; i++) {
           const post = posts[i];
-          
-          setSyncStatus(prev => ({
+
+          setSyncStatus((prev) => ({
             ...prev,
             currentFile: `포스트 내용 가져오는 중: ${post.title}`,
-            progress: ((i) / posts.length) * 50
+            progress: (i / posts.length) * 50,
           }));
 
           // Fetch full post content from WordPress
@@ -547,21 +793,26 @@ const WordPressConnector: React.FC = () => {
             throw new Error(`포스트 내용을 가져올 수 없습니다: ${post.title}`);
           }
 
-          const { content: postContent, extension } = convertPostToFormat(fullPost, exportFormat);
+          const { content: postContent, extension } = convertPostToFormat(
+            fullPost,
+            exportFormat,
+          );
           const fileName = `${fullPost.slug || fullPost.id}.${extension}`;
           const localFilePath = `${localPath}/posts/${fileName}`;
-          
-          setSyncStatus(prev => ({
+
+          setSyncStatus((prev) => ({
             ...prev,
             currentFile: `포스트 저장 중: ${fileName}`,
           }));
 
           // Save post to local file
-          const saveResult = await (window.electron.wordpress as any).syncSavePost(localFilePath, postContent);
+          const saveResult = await (
+            window.electron.wordpress as any
+          ).syncSavePost(localFilePath, postContent);
           if (!saveResult.success) {
             throw new Error(`포스트 저장 실패: ${saveResult.error}`);
           }
-          
+
           // Record file sync detail
           const fileDetail: SyncFileDetail = {
             path: fullPost.slug || fullPost.id.toString(),
@@ -570,21 +821,21 @@ const WordPressConnector: React.FC = () => {
             status: 'synced',
             localPath: localFilePath,
             size: saveResult.size,
-            syncedAt: new Date().toISOString()
+            syncedAt: new Date().toISOString(),
           };
           fileDetails.push(fileDetail);
-          
-          setSyncStatus(prev => ({
+
+          setSyncStatus((prev) => ({
             ...prev,
             progress: ((i + 1) / posts.length) * 50,
             currentFile: `포스트 동기화 완료: ${fullPost.title}`,
-            syncedFiles: i + 1
+            syncedFiles: i + 1,
           }));
 
           // Update sync progress in storage
           await window.electron.sync.updateProgress(syncRecord.id, {
             syncedFiles: i + 1,
-            fileDetails: fileDetails
+            fileDetails,
           });
         }
       }
@@ -592,18 +843,21 @@ const WordPressConnector: React.FC = () => {
       // Sync media
       for (let i = 0; i < media.length; i++) {
         const item = media[i];
-        const fileName = item.filename || `${item.title.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
+        const fileName =
+          item.filename || `${item.title.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
         const localFilePath = `${localPath}/media/${fileName}`;
-        
-        setSyncStatus(prev => ({
+
+        setSyncStatus((prev) => ({
           ...prev,
           currentFile: `미디어 다운로드 중: ${item.title}`,
-          progress: 50 + ((i) / media.length) * 50
+          progress: 50 + (i / media.length) * 50,
         }));
-        
+
         // Download media file
-        const downloadResult = await (window.electron.wordpress as any).syncDownloadMedia(item.url, localFilePath);
-        
+        const downloadResult = await (
+          window.electron.wordpress as any
+        ).syncDownloadMedia(item.url, localFilePath);
+
         let fileDetail: SyncFileDetail;
         if (downloadResult.success) {
           fileDetail = {
@@ -613,7 +867,7 @@ const WordPressConnector: React.FC = () => {
             status: 'synced',
             localPath: localFilePath,
             size: downloadResult.size,
-            syncedAt: new Date().toISOString()
+            syncedAt: new Date().toISOString(),
           };
         } else {
           fileDetail = {
@@ -623,48 +877,54 @@ const WordPressConnector: React.FC = () => {
             status: 'failed',
             localPath: localFilePath,
             syncedAt: new Date().toISOString(),
-            error: downloadResult.error
+            error: downloadResult.error,
           };
         }
         fileDetails.push(fileDetail);
-        
-        setSyncStatus(prev => ({
+
+        setSyncStatus((prev) => ({
           ...prev,
           progress: 50 + ((i + 1) / media.length) * 50,
           currentFile: `미디어 동기화: ${item.title}`,
-          syncedFiles: posts.length + i + 1
+          syncedFiles: posts.length + i + 1,
         }));
 
         // Update sync progress in storage
         await window.electron.sync.updateProgress(syncRecord.id, {
           syncedFiles: posts.length + i + 1,
-          fileDetails: fileDetails
+          fileDetails,
         });
       }
 
       // Sync WordPress core files (index.php, wp-config.php, etc.)
-      setSyncStatus(prev => ({ 
-        ...prev, 
+      setSyncStatus((prev) => ({
+        ...prev,
         currentFile: 'WordPress 핵심 파일 동기화 중...',
-        progress: 80
+        progress: 80,
       }));
 
       const coreFiles = [
         { name: 'index.php', content: generateIndexPhp(site, posts) },
         { name: 'wp-config-sample.php', content: generateWpConfigSample(site) },
         { name: '.htaccess', content: generateHtaccess() },
-        { name: 'wp-content/themes/sample-theme/style.css', content: generateSampleThemeCSS() },
-        { name: 'wp-content/themes/sample-theme/index.php', content: generateSampleThemeIndex() }
+        {
+          name: 'wp-content/themes/sample-theme/style.css',
+          content: generateSampleThemeCSS(),
+        },
+        {
+          name: 'wp-content/themes/sample-theme/index.php',
+          content: generateSampleThemeIndex(),
+        },
       ];
 
       for (let i = 0; i < coreFiles.length; i++) {
         const file = coreFiles[i];
         const filePath = `${localPath}/${file.name}`;
-        
-        setSyncStatus(prev => ({
+
+        setSyncStatus((prev) => ({
           ...prev,
           currentFile: `WordPress 파일 생성 중: ${file.name}`,
-          progress: 80 + ((i + 1) / coreFiles.length) * 20
+          progress: 80 + ((i + 1) / coreFiles.length) * 20,
         }));
 
         try {
@@ -675,8 +935,10 @@ const WordPressConnector: React.FC = () => {
           }
 
           // Save the core file
-          const saveResult = await (window.electron.wordpress as any).syncSavePost(filePath, file.content);
-          
+          const saveResult = await (
+            window.electron.wordpress as any
+          ).syncSavePost(filePath, file.content);
+
           if (saveResult.success) {
             const fileDetail: SyncFileDetail = {
               path: file.name,
@@ -685,13 +947,15 @@ const WordPressConnector: React.FC = () => {
               status: 'synced',
               localPath: filePath,
               size: saveResult.size,
-              syncedAt: new Date().toISOString()
+              syncedAt: new Date().toISOString(),
             };
             fileDetails.push(fileDetail);
-            
+
             addLog(`✅ WordPress 파일 생성 완료: ${file.name}`);
           } else {
-            throw new Error(`WordPress 파일 저장 실패: ${file.name} - ${saveResult.error}`);
+            throw new Error(
+              `WordPress 파일 저장 실패: ${file.name} - ${saveResult.error}`,
+            );
           }
         } catch (error) {
           console.error(`Failed to create WordPress file ${file.name}:`, error);
@@ -702,7 +966,7 @@ const WordPressConnector: React.FC = () => {
             status: 'failed',
             localPath: filePath,
             syncedAt: new Date().toISOString(),
-            error: error instanceof Error ? error.message : 'Unknown error'
+            error: error instanceof Error ? error.message : 'Unknown error',
           };
           fileDetails.push(fileDetail);
         }
@@ -711,16 +975,18 @@ const WordPressConnector: React.FC = () => {
       // Update site with sync path
       if (selectedSite) {
         const updatedSite = { ...selectedSite, local_sync_path: localPath };
-        await window.electron.wordpress.updateConnection(selectedSite.id!, { local_sync_path: localPath });
+        await window.electron.wordpress.updateConnection(selectedSite.id!, {
+          local_sync_path: localPath,
+        });
         setSelectedSite(updatedSite);
       }
 
       // Complete sync record
       await window.electron.sync.complete(syncRecord.id, {
-        syncedFiles: fileDetails.filter(f => f.status === 'synced').length,
-        failedFiles: fileDetails.filter(f => f.status === 'failed').length,
-        fileDetails: fileDetails,
-        status: 'completed'
+        syncedFiles: fileDetails.filter((f) => f.status === 'synced').length,
+        failedFiles: fileDetails.filter((f) => f.status === 'failed').length,
+        fileDetails,
+        status: 'completed',
       });
 
       // Notify Finder UI about sync completion
@@ -728,44 +994,49 @@ const WordPressConnector: React.FC = () => {
         syncPath: localPath,
         connectionName: site.name || site.url,
         totalFiles: fileDetails.length,
-        syncedFiles: fileDetails.filter(f => f.status === 'synced').length
+        syncedFiles: fileDetails.filter((f) => f.status === 'synced').length,
       });
 
       // Reload sync history
       await loadSyncHistory(site.id!);
 
-      setSyncStatus(prev => ({
+      setSyncStatus((prev) => ({
         ...prev,
         isSyncing: false,
         progress: 100,
         currentFile: '동기화 완료!',
-        syncedFiles: fileDetails.filter(f => f.status === 'synced').length
+        syncedFiles: fileDetails.filter((f) => f.status === 'synced').length,
       }));
     } catch (error) {
       console.error('Sync failed:', error);
-      
+
       // Mark sync as failed
       if (currentSyncId) {
         await window.electron.sync.complete(currentSyncId, {
           syncedFiles: syncStatus.syncedFiles,
           failedFiles: fileDetails.length - syncStatus.syncedFiles,
-          fileDetails: fileDetails,
+          fileDetails,
           status: 'failed',
-          errors: [error instanceof Error ? error.message : 'Unknown error']
+          errors: [error instanceof Error ? error.message : 'Unknown error'],
         });
       }
 
-      setSyncStatus(prev => ({
+      setSyncStatus((prev) => ({
         ...prev,
         isSyncing: false,
-        errors: [`동기화 실패: ${error}`]
+        errors: [`동기화 실패: ${error}`],
       }));
     }
   };
 
-  const convertPostToFormat = (post: WordPressPost, format: string): { content: string; extension: string } => {
-    const cleanExcerpt = post.excerpt ? post.excerpt.replace(/<[^>]*>/g, '').trim() : '';
-    
+  const convertPostToFormat = (
+    post: WordPressPost,
+    format: string,
+  ): { content: string; extension: string } => {
+    const cleanExcerpt = post.excerpt
+      ? post.excerpt.replace(/<[^>]*>/g, '').trim()
+      : '';
+
     switch (format) {
       case 'wordpress':
         // WordPress XML export format for local development
@@ -814,10 +1085,10 @@ const WordPressConnector: React.FC = () => {
 
 </channel>
 </rss>`,
-          extension: 'xml'
+          extension: 'xml',
         };
       case 'markdown':
-        const cleanContent = post.content 
+        const cleanContent = post.content
           ? post.content
               .replace(/<p>/g, '\n\n')
               .replace(/<\/p>/g, '')
@@ -854,7 +1125,7 @@ ${cleanContent}
 
 ---
 *WordPress에서 동기화됨 - ${new Date().toLocaleString('ko-KR')}*`,
-          extension: 'md'
+          extension: 'md',
         };
 
       case 'html':
@@ -889,11 +1160,16 @@ ${cleanContent}
     <p><em>WordPress에서 동기화됨 - ${new Date().toLocaleString('ko-KR')}</em></p>
 </body>
 </html>`,
-          extension: 'html'
+          extension: 'html',
         };
 
       case 'txt':
-        const textContent = post.content ? post.content.replace(/<[^>]*>/g, '').replace(/\n\s*\n/g, '\n\n').trim() : '내용 없음';
+        const textContent = post.content
+          ? post.content
+              .replace(/<[^>]*>/g, '')
+              .replace(/\n\s*\n/g, '\n\n')
+              .trim()
+          : '내용 없음';
         return {
           content: `${post.title}
 ${'='.repeat(post.title.length)}
@@ -912,25 +1188,29 @@ ${textContent}
 
 ---
 WordPress에서 동기화됨 - ${new Date().toLocaleString('ko-KR')}`,
-          extension: 'txt'
+          extension: 'txt',
         };
 
       case 'json':
         return {
-          content: JSON.stringify({
-            id: post.id,
-            title: post.title,
-            slug: post.slug,
-            author: post.author,
-            date: post.date,
-            status: post.status,
-            type: post.type,
-            excerpt: cleanExcerpt,
-            content: post.content,
-            exported_at: new Date().toISOString(),
-            exported_from: 'EGDesk WordPress Connector'
-          }, null, 2),
-          extension: 'json'
+          content: JSON.stringify(
+            {
+              id: post.id,
+              title: post.title,
+              slug: post.slug,
+              author: post.author,
+              date: post.date,
+              status: post.status,
+              type: post.type,
+              excerpt: cleanExcerpt,
+              content: post.content,
+              exported_at: new Date().toISOString(),
+              exported_from: 'EGDesk WordPress Connector',
+            },
+            null,
+            2,
+          ),
+          extension: 'json',
         };
 
       default:
@@ -943,11 +1223,16 @@ WordPress에서 동기화됨 - ${new Date().toLocaleString('ko-KR')}`,
     return convertPostToFormat(post, 'markdown').content;
   };
 
-  const generateWordPressXML = (posts: WordPressPost[], site: WordPressSite): string => {
+  const generateWordPressXML = (
+    posts: WordPressPost[],
+    site: WordPressSite,
+  ): string => {
     const siteUrl = site.url || 'http://localhost';
     const siteName = site.name || 'EGDesk Export';
-    
-    const postsXML = posts.map(post => `
+
+    const postsXML = posts
+      .map(
+        (post) => `
   <item>
     <title><![CDATA[${post.title}]]></title>
     <link><![CDATA[${siteUrl}/${post.slug || post.id}]]></link>
@@ -969,7 +1254,9 @@ WordPress에서 동기화됨 - ${new Date().toLocaleString('ko-KR')}`,
     <wp:post_type><![CDATA[${post.type}]]></wp:post_type>
     <wp:post_password><![CDATA[]]></wp:post_password>
     <wp:is_sticky>0</wp:is_sticky>
-  </item>`).join('\n');
+  </item>`,
+      )
+      .join('\n');
 
     return `<?xml version="1.0" encoding="UTF-8" ?>
 <!-- This is a WordPress eXtended RSS file generated by EGDesk as an export of your WordPress site. -->
@@ -1004,18 +1291,25 @@ ${postsXML}
 
   const getStatusText = (status: string): string => {
     switch (status) {
-      case 'published': return '발행됨';
-      case 'draft': return '임시저장';
-      case 'pending': return '검토 대기';
-      default: return status;
+      case 'published':
+        return '발행됨';
+      case 'draft':
+        return '임시저장';
+      case 'pending':
+        return '검토 대기';
+      default:
+        return status;
     }
   };
 
   const getTypeText = (type: string): string => {
     switch (type) {
-      case 'post': return '포스트';
-      case 'page': return '페이지';
-      default: return type;
+      case 'post':
+        return '포스트';
+      case 'page':
+        return '페이지';
+      default:
+        return type;
     }
   };
 
@@ -1025,17 +1319,20 @@ ${postsXML}
   };
 
   // Generate WordPress index.php file
-  const generateIndexPhp = (site: WordPressSite, posts: WordPressPost[]): string => {
+  const generateIndexPhp = (
+    site: WordPressSite,
+    posts: WordPressPost[],
+  ): string => {
     const siteName = site.name || 'WordPress Site';
-    
+
     // Create PHP array of posts data
-    const postsData = posts.map(post => ({
+    const postsData = posts.map((post) => ({
       id: post.id,
       title: post.title,
       author: post.author,
       date: post.date,
       status: getStatusText(post.status),
-      excerpt: post.excerpt
+      excerpt: post.excerpt,
     }));
 
     return `<?php
@@ -1458,9 +1755,7 @@ get_header(); ?>
           </div>
 
           {connectionError && (
-            <div className="connection-error">
-              ❌ {connectionError}
-            </div>
+            <div className="connection-error">❌ {connectionError}</div>
           )}
 
           <div className="connection-tips">
@@ -1476,7 +1771,17 @@ get_header(); ?>
         {/* Saved Connections */}
         {connections.length > 0 && (
           <div className="saved-connections">
-            <h2>저장된 연결</h2>
+            <div className="saved-connections-header">
+              <h2>저장된 연결</h2>
+              <button
+                className="refresh-btn"
+                onClick={refreshConnections}
+                disabled={isRefreshing}
+                title="연결 목록 새로고침"
+              >
+                {isRefreshing ? '🔄' : '🔄'} 새로고침
+              </button>
+            </div>
             <div className="connections-grid">
               {connections.map((connection) => (
                 <div
@@ -1486,15 +1791,31 @@ get_header(); ?>
                 >
                   <div className="connection-header">
                     <h3>{connection.name}</h3>
-                    <button
-                      className="disconnect-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        disconnectSite(connection.id!);
-                      }}
-                    >
-                      ❌
-                    </button>
+                    <div className="connection-actions">
+                      <button
+                        className="refresh-site-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (selectedSite?.id === connection.id) {
+                            refreshSiteContent();
+                          }
+                        }}
+                        disabled={isRefreshing}
+                        title="사이트 콘텐츠 새로고침"
+                      >
+                        {isRefreshing ? '🔄' : '🔄'}
+                      </button>
+                      <button
+                        className="disconnect-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteConfirm(connection.id!);
+                        }}
+                        title="연결 삭제"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                   <p className="connection-url">{connection.url}</p>
                   <div className="connection-stats">
@@ -1541,7 +1862,21 @@ get_header(); ?>
               >
                 ⚙️ 설정
               </button>
+              <button
+                className="refresh-content-btn"
+                onClick={refreshSiteContent}
+                disabled={isRefreshing}
+                title="사이트 콘텐츠 새로고침"
+              >
+                {isRefreshing ? '🔄 새로고침 중...' : '🔄 새로고침'}
+              </button>
             </div>
+            
+            {refreshProgress && (
+              <div className="refresh-progress">
+                <span className="progress-text">{refreshProgress}</span>
+              </div>
+            )}
 
             {/* Posts Tab */}
             {activeTab === 'posts' && (
@@ -1550,7 +1885,17 @@ get_header(); ?>
                 <div className="posts-list">
                   {posts.map((post) => (
                     <div key={post.id} className="post-item">
-                      <h4>{post.title}</h4>
+                      <div className="post-header">
+                        <h4>{post.title}</h4>
+                        <button
+                          className="delete-post-btn"
+                          onClick={() => setShowPostDeleteConfirm(post.id)}
+                          disabled={isDeletingPost}
+                          title="포스트 삭제"
+                        >
+                          {isDeletingPost ? '🔄' : '🗑️'}
+                        </button>
+                      </div>
                       <p className="post-excerpt">{post.excerpt}</p>
                       <div className="post-meta">
                         <span>👤 {post.author}</span>
@@ -1593,7 +1938,7 @@ get_header(); ?>
             {activeTab === 'sync' && (
               <div className="sync-tab">
                 <h3>로컬 동기화</h3>
-                
+
                 {/* Quick Navigation Button */}
                 {selectedSite?.local_sync_path && (
                   <div className="quick-navigation">
@@ -1604,20 +1949,30 @@ get_header(); ?>
                         try {
                           // First navigate to the Finder UI
                           navigate('/');
-                          
+
                           // Wait a bit for the component to mount
-                          await new Promise(resolve => setTimeout(resolve, 100));
-                          
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, 100),
+                          );
+
                           // Then trigger the folder navigation
-                          await (window.electron.wordpress as any).navigateToSyncedFolder({
+                          await (
+                            window.electron.wordpress as any
+                          ).navigateToSyncedFolder({
                             syncPath: selectedSite.local_sync_path!,
-                            connectionName: selectedSite.name || selectedSite.url
+                            connectionName:
+                              selectedSite.name || selectedSite.url,
                           });
-                          
+
                           // Show success message
-                          alert(`동기화된 폴더로 이동합니다: ${selectedSite.local_sync_path}`);
+                          alert(
+                            `동기화된 폴더로 이동합니다: ${selectedSite.local_sync_path}`,
+                          );
                         } catch (error) {
-                          console.error('Failed to navigate to synced folder:', error);
+                          console.error(
+                            'Failed to navigate to synced folder:',
+                            error,
+                          );
                           alert('폴더로 이동할 수 없습니다.');
                         }
                       }}
@@ -1626,7 +1981,8 @@ get_header(); ?>
                       📁 동기화된 폴더로 이동
                     </button>
                     <p className="quick-nav-help">
-                      💡 이 버튼을 클릭하면 Finder UI에서 동기화된 폴더로 바로 이동할 수 있습니다.
+                      💡 이 버튼을 클릭하면 Finder UI에서 동기화된 폴더로 바로
+                      이동할 수 있습니다.
                     </p>
                   </div>
                 )}
@@ -1637,21 +1993,45 @@ get_header(); ?>
                     <select
                       id="exportFormat"
                       value={exportFormat}
-                      onChange={(e) => setExportFormat(e.target.value as 'markdown' | 'html' | 'txt' | 'json' | 'wordpress')}
+                      onChange={(e) =>
+                        setExportFormat(
+                          e.target.value as
+                            | 'markdown'
+                            | 'html'
+                            | 'txt'
+                            | 'json'
+                            | 'wordpress',
+                        )
+                      }
                       className="format-select"
                     >
-                      <option value="wordpress">🚀 WordPress XML (.xml) - 로컬 개발/테스트용 (권장)</option>
-                      <option value="html">🌐 HTML (.html) - 원본 포맷 유지</option>
-                      <option value="markdown">📝 Markdown (.md) - 읽기 쉬운 형식</option>
-                      <option value="txt">📄 Plain Text (.txt) - 순수 텍스트</option>
-                      <option value="json">🔧 JSON (.json) - 데이터 형식</option>
+                      <option value="wordpress">
+                        🚀 WordPress XML (.xml) - 로컬 개발/테스트용 (권장)
+                      </option>
+                      <option value="html">
+                        🌐 HTML (.html) - 원본 포맷 유지
+                      </option>
+                      <option value="markdown">
+                        📝 Markdown (.md) - 읽기 쉬운 형식
+                      </option>
+                      <option value="txt">
+                        📄 Plain Text (.txt) - 순수 텍스트
+                      </option>
+                      <option value="json">
+                        🔧 JSON (.json) - 데이터 형식
+                      </option>
                     </select>
                     <small className="form-help">
-                      {exportFormat === 'wordpress' && '🚀 WordPress 표준 XML 형식 - 로컬 WordPress에서 가져오기 가능 (권장)'}
-                      {exportFormat === 'html' && '💡 WordPress의 원본 HTML 형식을 그대로 유지'}
-                      {exportFormat === 'markdown' && '💡 읽기 쉽고 편집하기 좋은 마크다운 형식'}
-                      {exportFormat === 'txt' && '💡 모든 형식을 제거한 순수 텍스트'}
-                      {exportFormat === 'json' && '💡 개발자용 구조화된 데이터 형식'}
+                      {exportFormat === 'wordpress' &&
+                        '🚀 WordPress 표준 XML 형식 - 로컬 WordPress에서 가져오기 가능 (권장)'}
+                      {exportFormat === 'html' &&
+                        '💡 WordPress의 원본 HTML 형식을 그대로 유지'}
+                      {exportFormat === 'markdown' &&
+                        '💡 읽기 쉽고 편집하기 좋은 마크다운 형식'}
+                      {exportFormat === 'txt' &&
+                        '💡 모든 형식을 제거한 순수 텍스트'}
+                      {exportFormat === 'json' &&
+                        '💡 개발자용 구조화된 데이터 형식'}
                     </small>
                   </div>
                   <div className="form-group">
@@ -1669,7 +2049,8 @@ get_header(); ?>
                         className="folder-picker-btn"
                         onClick={async () => {
                           try {
-                            const result = await window.electron.fileSystem.pickFolder();
+                            const result =
+                              await window.electron.fileSystem.pickFolder();
                             if (result.success && result.folderPath) {
                               setLocalSyncPath(result.folderPath);
                             }
@@ -1687,25 +2068,39 @@ get_header(); ?>
                         onClick={async () => {
                           try {
                             // First pick the parent directory
-                            const result = await window.electron.fileSystem.pickFolder();
+                            const result =
+                              await window.electron.fileSystem.pickFolder();
                             if (result.success && result.folderPath) {
                               // Prompt user for new folder name
-                              const folderName = prompt('새 폴더 이름을 입력하세요:', 'WordPress-Sync');
+                              const folderName = prompt(
+                                '새 폴더 이름을 입력하세요:',
+                                'WordPress-Sync',
+                              );
                               if (folderName && folderName.trim()) {
                                 const newFolderPath = `${result.folderPath}/${folderName.trim()}`;
-                                
+
                                 // Create the new folder
-                                const createResult = await window.electron.fileSystem.createFolder(newFolderPath);
+                                const createResult =
+                                  await window.electron.fileSystem.createFolder(
+                                    newFolderPath,
+                                  );
                                 if (createResult.success) {
                                   setLocalSyncPath(newFolderPath);
-                                  alert(`새 폴더가 생성되었습니다: ${newFolderPath}`);
+                                  alert(
+                                    `새 폴더가 생성되었습니다: ${newFolderPath}`,
+                                  );
                                 } else {
-                                  alert(`폴더 생성 실패: ${createResult.error}`);
+                                  alert(
+                                    `폴더 생성 실패: ${createResult.error}`,
+                                  );
                                 }
                               }
                             }
                           } catch (error) {
-                            console.error('Failed to create new folder:', error);
+                            console.error(
+                              'Failed to create new folder:',
+                              error,
+                            );
                             alert('새 폴더 생성 중 오류가 발생했습니다.');
                           }
                         }}
@@ -1715,12 +2110,15 @@ get_header(); ?>
                       </button>
                     </div>
                     <small className="form-help">
-                      📁 버튼: 기존 폴더 선택 (새 폴더 생성 가능) | ➕ 버튼: 새 폴더 생성
+                      📁 버튼: 기존 폴더 선택 (새 폴더 생성 가능) | ➕ 버튼: 새
+                      폴더 생성
                     </small>
                   </div>
                   <button
                     className="sync-btn"
-                    onClick={() => syncWordPressToLocal(selectedSite, localSyncPath)}
+                    onClick={() =>
+                      syncWordPressToLocal(selectedSite, localSyncPath)
+                    }
                     disabled={syncStatus.isSyncing || !localSyncPath.trim()}
                   >
                     {syncStatus.isSyncing ? '동기화 중...' : '동기화 시작'}
@@ -1730,14 +2128,17 @@ get_header(); ?>
                 {syncStatus.isSyncing && (
                   <div className="sync-progress">
                     <div className="progress-bar">
-                      <div 
-                        className="progress-fill" 
+                      <div
+                        className="progress-fill"
                         style={{ width: `${syncStatus.progress}%` }}
-                      ></div>
+                      />
                     </div>
                     <p>진행률: {syncStatus.progress.toFixed(1)}%</p>
                     <p>현재 파일: {syncStatus.currentFile}</p>
-                    <p>동기화된 파일: {syncStatus.syncedFiles} / {syncStatus.totalFiles}</p>
+                    <p>
+                      동기화된 파일: {syncStatus.syncedFiles} /{' '}
+                      {syncStatus.totalFiles}
+                    </p>
                   </div>
                 )}
 
@@ -1755,7 +2156,10 @@ get_header(); ?>
                 {syncStatus.progress === 100 && !syncStatus.isSyncing && (
                   <div className="sync-success">
                     <h4>✅ 동기화 완료!</h4>
-                    <p>{syncStatus.syncedFiles}개 파일이 성공적으로 동기화되었습니다.</p>
+                    <p>
+                      {syncStatus.syncedFiles}개 파일이 성공적으로
+                      동기화되었습니다.
+                    </p>
                   </div>
                 )}
 
@@ -1765,28 +2169,50 @@ get_header(); ?>
                     <h3>동기화 기록</h3>
                     <div className="history-list">
                       {syncHistory.map((record) => (
-                        <div key={record.id} className={`history-item ${record.status}`}>
+                        <div
+                          key={record.id}
+                          className={`history-item ${record.status}`}
+                        >
                           <div className="history-header">
                             <h4>
-                              {record.status === 'completed' ? '✅' : 
-                               record.status === 'failed' ? '❌' : '⏳'} 
+                              {record.status === 'completed'
+                                ? '✅'
+                                : record.status === 'failed'
+                                  ? '❌'
+                                  : '⏳'}
                               {record.connectionName} 동기화
                             </h4>
                             <span className="history-date">
-                              {new Date(record.startedAt).toLocaleString('ko-KR')}
+                              {new Date(record.startedAt).toLocaleString(
+                                'ko-KR',
+                              )}
                             </span>
                           </div>
-                          
+
                           <div className="history-details">
-                            <p><strong>동기화 경로:</strong> {record.syncPath}</p>
-                            <p><strong>상태:</strong> 
-                              {record.status === 'completed' ? '완료' : 
-                               record.status === 'failed' ? '실패' : '진행 중'}
+                            <p>
+                              <strong>동기화 경로:</strong> {record.syncPath}
                             </p>
-                            <p><strong>파일:</strong> {record.syncedFiles}/{record.totalFiles}개</p>
-                            
+                            <p>
+                              <strong>상태:</strong>
+                              {record.status === 'completed'
+                                ? '완료'
+                                : record.status === 'failed'
+                                  ? '실패'
+                                  : '진행 중'}
+                            </p>
+                            <p>
+                              <strong>파일:</strong> {record.syncedFiles}/
+                              {record.totalFiles}개
+                            </p>
+
                             {record.completedAt && (
-                              <p><strong>완료 시간:</strong> {new Date(record.completedAt).toLocaleString('ko-KR')}</p>
+                              <p>
+                                <strong>완료 시간:</strong>{' '}
+                                {new Date(record.completedAt).toLocaleString(
+                                  'ko-KR',
+                                )}
+                              </p>
                             )}
                           </div>
 
@@ -1795,18 +2221,30 @@ get_header(); ?>
                               <h5>동기화된 파일 목록:</h5>
                               <div className="files-list">
                                 {record.fileDetails.map((file, index) => (
-                                  <div key={index} className={`file-item ${file.status}`}>
+                                  <div
+                                    key={index}
+                                    className={`file-item ${file.status}`}
+                                  >
                                     <span className="file-icon">
                                       {file.type === 'post' ? '📝' : '🖼️'}
                                     </span>
-                                    <span className="file-name">{file.name}</span>
-                                    <span className="file-status">
-                                      {file.status === 'synced' ? '✅' : 
-                                       file.status === 'failed' ? '❌' : '⏭️'}
+                                    <span className="file-name">
+                                      {file.name}
                                     </span>
-                                    <span className="file-path">{file.localPath}</span>
+                                    <span className="file-status">
+                                      {file.status === 'synced'
+                                        ? '✅'
+                                        : file.status === 'failed'
+                                          ? '❌'
+                                          : '⏭️'}
+                                    </span>
+                                    <span className="file-path">
+                                      {file.localPath}
+                                    </span>
                                     <span className="file-time">
-                                      {new Date(file.syncedAt).toLocaleTimeString('ko-KR')}
+                                      {new Date(
+                                        file.syncedAt,
+                                      ).toLocaleTimeString('ko-KR')}
                                     </span>
                                   </div>
                                 ))}
@@ -1844,8 +2282,14 @@ get_header(); ?>
                       id="siteName"
                       value={selectedSite.name || ''}
                       onChange={async (e) => {
-                        const updatedSite = { ...selectedSite, name: e.target.value };
-                        await window.electron.wordpress.updateConnection(selectedSite.id!, { name: e.target.value });
+                        const updatedSite = {
+                          ...selectedSite,
+                          name: e.target.value,
+                        };
+                        await window.electron.wordpress.updateConnection(
+                          selectedSite.id!,
+                          { name: e.target.value },
+                        );
                         setSelectedSite(updatedSite);
                       }}
                     />
@@ -1873,6 +2317,68 @@ get_header(); ?>
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="delete-confirmation-modal">
+            <div className="modal-overlay" onClick={() => setShowDeleteConfirm(null)} />
+            <div className="modal-content">
+              <h3>연결 삭제 확인</h3>
+              <p>
+                정말로 이 WordPress 연결을 삭제하시겠습니까?
+                <br />
+                <strong>이 작업은 되돌릴 수 없습니다.</strong>
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="cancel-btn"
+                  onClick={() => setShowDeleteConfirm(null)}
+                >
+                  취소
+                </button>
+                <button
+                  className="delete-btn"
+                  onClick={() => disconnectSite(showDeleteConfirm)}
+                >
+                  삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Post Delete Confirmation Modal */}
+        {showPostDeleteConfirm && (
+          <div className="delete-confirmation-modal">
+            <div className="modal-overlay" onClick={() => setShowPostDeleteConfirm(null)} />
+            <div className="modal-content">
+              <h3>포스트 삭제 확인</h3>
+              <p>
+                정말로 이 포스트를 삭제하시겠습니까?
+                <br />
+                <strong>이 작업은 되돌릴 수 없습니다.</strong>
+                <br />
+                <em>포스트가 WordPress 사이트에서 영구적으로 삭제됩니다.</em>
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="cancel-btn"
+                  onClick={() => setShowPostDeleteConfirm(null)}
+                  disabled={isDeletingPost}
+                >
+                  취소
+                </button>
+                <button
+                  className="delete-btn"
+                  onClick={() => deletePost(showPostDeleteConfirm)}
+                  disabled={isDeletingPost}
+                >
+                  {isDeletingPost ? '삭제 중...' : '삭제'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

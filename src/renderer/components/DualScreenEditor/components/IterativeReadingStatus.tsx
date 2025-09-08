@@ -10,7 +10,7 @@ interface IterativeReadingStatusProps {
 export const IterativeReadingStatus: React.FC<IterativeReadingStatusProps> = ({
   isIterativeReading,
   iterativeReadingState,
-  FontAwesomeIcon
+  FontAwesomeIcon,
 }) => {
   if (!isIterativeReading || !iterativeReadingState) return null;
 
@@ -18,31 +18,35 @@ export const IterativeReadingStatus: React.FC<IterativeReadingStatusProps> = ({
     <div className="message iterative-reading-message">
       <div className="message-content">
         <div className="response-header">
-          <span className="response-title">
-            📄 Iterative File Reading
-          </span>
+          <span className="response-title">📄 Iterative File Reading</span>
         </div>
-        
+
         <div className="iterative-status">
           <div className="status-phase">
             <strong>Phase:</strong> {iterativeReadingState.phase}
           </div>
           <div className="status-content">
-            <strong>Content Read:</strong> {iterativeReadingState.totalContentRead.toLocaleString()} / {iterativeReadingState.maxContentLimit.toLocaleString()} chars
+            <strong>Content Read:</strong>{' '}
+            {iterativeReadingState.totalContentRead.toLocaleString()} /{' '}
+            {iterativeReadingState.maxContentLimit.toLocaleString()} chars
           </div>
           <div className="status-files">
-            <strong>Files Read:</strong> {iterativeReadingState.readRanges.length}
+            <strong>Files Read:</strong>{' '}
+            {iterativeReadingState.readRanges.length}
           </div>
-          
+
           {iterativeReadingState.readRanges.length > 0 && (
             <div className="read-ranges">
               <strong>Read Ranges:</strong>
               <ul>
-                {iterativeReadingState.readRanges.map((range: any, index: number) => (
-                  <li key={index}>
-                    {range.filePath.split('/').pop()} (lines {range.startLine}-{range.endLine})
-                  </li>
-                ))}
+                {iterativeReadingState.readRanges.map(
+                  (range: any, index: number) => (
+                    <li key={index}>
+                      {range.filePath.split('/').pop()} (lines {range.startLine}
+                      -{range.endLine})
+                    </li>
+                  ),
+                )}
               </ul>
             </div>
           )}
