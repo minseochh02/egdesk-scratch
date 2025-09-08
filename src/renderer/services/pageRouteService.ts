@@ -63,8 +63,24 @@ class PageRouteService {
   }
 
   setCurrentUrl(url: string): void {
-    if (!url || url === this.state.currentUrl) return;
+    if (!url || url === this.state.currentUrl) {
+      return;
+    }
+    
     const urlPath = this.safeGetPath(url);
+    const pathChanged = this.state.urlPath !== urlPath;
+    
+    // Only log when path actually changes or it's a significant URL change
+    if (pathChanged || this.state.currentUrl === '') {
+      console.log('🔍 PageRouteService.setCurrentUrl - URL changed:', {
+        oldUrl: this.state.currentUrl,
+        newUrl: url,
+        oldPath: this.state.urlPath,
+        newPath: urlPath,
+        pathChanged
+      });
+    }
+    
     this.state = {
       ...this.state,
       currentUrl: url,
@@ -81,7 +97,20 @@ class PageRouteService {
       projectId === this.state.projectId;
     const sameUrl =
       url === this.state.currentUrl && urlPath === this.state.urlPath;
-    if (sameProject && sameUrl) return;
+    
+    if (sameProject && sameUrl) {
+      return;
+    }
+    
+    // Only log when there's an actual change
+    console.log('🔍 PageRouteService.setRoute - Route changed:', {
+      projectRoot,
+      url,
+      urlPath,
+      projectChanged: !sameProject,
+      urlChanged: !sameUrl
+    });
+    
     this.state = {
       ...this.state,
       projectRoot,
@@ -360,7 +389,7 @@ class PageRouteService {
       const indent = '  '.repeat(currentDepth); // 2 spaces per depth level
 
       // Sort items: directories first, then files
-      const sortedItems = result.items.sort((a, b) => {
+      const sortedItems = result.items.sort((a: any, b: any) => {
         if (a.isDirectory && !b.isDirectory) return -1;
         if (!a.isDirectory && b.isDirectory) return 1;
         return a.name.localeCompare(b.name);
@@ -432,13 +461,29 @@ class PageRouteService {
   }
 
   private notify(): void {
+    // Only log and notify if there are listeners
+    if (this.listeners.size === 0) {
+      return;
+    }
+    
+    // Only log significant state changes, not every notification
+    if (this.state.urlPath !== '/' || this.state.filesToOpen.length > 0) {
+      console.log('🔍 PageRouteService.notify - State updated:', {
+        urlPath: this.state.urlPath,
+        filesCount: this.state.filesToOpen.length,
+        projectRoot: this.state.projectRoot ? 'set' : 'unset'
+      });
+    }
+    
     for (const l of this.listeners) l(this.getState());
   }
 
   private safeGetPath(url: string): string {
     try {
-      return new URL(url).pathname || '/';
-    } catch {
+      const pathname = new URL(url).pathname || '/';
+      return pathname;
+    } catch (error) {
+      console.warn('🔍 PageRouteService.safeGetPath - Invalid URL, using "/":', url);
       return '/';
     }
   }

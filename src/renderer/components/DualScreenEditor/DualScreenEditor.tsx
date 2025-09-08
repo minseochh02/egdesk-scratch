@@ -401,13 +401,43 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   // Handle server status changes
   const handleServerStatusChange = (status: any) => {
+    // Check if status actually changed to prevent unnecessary updates
+    const statusChanged = !serverStatus || 
+      serverStatus.isRunning !== status?.isRunning ||
+      serverStatus.port !== status?.port ||
+      serverStatus.url !== status?.url;
+    
+    if (!statusChanged) {
+      return; // No change, skip processing
+    }
+    
     setServerStatus(status);
+    
     if (status?.url && status.url !== currentUrl) {
+      console.log('🔍 DualScreenEditor.handleServerStatusChange - URL from status:', {
+        statusUrl: status.url,
+        currentUrl
+      });
       setCurrentUrl(status.url);
       handleUrlChange(status.url);
     } else if (status?.port) {
-      const newServerUrl = `http://localhost:${status.port}`;
+      // Preserve the current path when constructing new URL from port
+      const currentPath = (() => {
+        try {
+          return new URL(currentUrl).pathname || '/';
+        } catch {
+          return '/';
+        }
+      })();
+      const newServerUrl = `http://localhost:${status.port}${currentPath}`;
+      
       if (newServerUrl !== currentUrl) {
+        console.log('🔍 DualScreenEditor.handleServerStatusChange - URL from port:', {
+          port: status.port,
+          currentPath,
+          newServerUrl,
+          currentUrl
+        });
         setCurrentUrl(newServerUrl);
         handleUrlChange(newServerUrl);
       }
@@ -468,21 +498,45 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   };
 
   const handleUrlChange = (url: string) => {
-    if (!url) return;
+    if (!url) {
+      return;
+    }
+    
     const path = (() => {
       try {
-        return new URL(url).pathname || '/';
-      } catch {
+        const pathname = new URL(url).pathname || '/';
+        return pathname;
+      } catch (error) {
+        console.warn('🔍 DualScreenEditor.handleUrlChange - Invalid URL:', url);
         return '/';
       }
     })();
-    if (path === lastPathRef.current) return; // ignore duplicates
+    
+    if (path === lastPathRef.current) {
+      return; // ignore duplicates
+    }
+    
+    console.log('🔍 DualScreenEditor.handleUrlChange - Path changed:', {
+      oldPath: lastPathRef.current,
+      newPath: path,
+      url
+    });
+    
     lastPathRef.current = path;
     setCurrentUrl(url);
+    
     PageRouteService.getInstance().setCurrentUrl(url);
+    
     // immediate heuristic
-    setRouteFiles(resolveFilesForUrl(url));
-    PageRouteService.getInstance().setFilesToOpen(resolveFilesForUrl(url));
+    const resolvedFiles = resolveFilesForUrl(url);
+    console.log('🔍 DualScreenEditor.handleUrlChange - Files resolved:', {
+      path,
+      filesCount: resolvedFiles.length
+    });
+    
+    setRouteFiles(resolvedFiles);
+    PageRouteService.getInstance().setFilesToOpen(resolvedFiles);
+    
     // debounce AI requests per path
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
@@ -701,14 +755,29 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   };
 
   useEffect(() => {
+    console.log('🔍 DualScreenEditor subscribing to PageRouteService changes');
     const svc = PageRouteService.getInstance();
     const unsub = svc.subscribe((state) => {
+      console.log('🔍 DualScreenEditor PageRouteService state change received:', {
+        currentUrl: state.currentUrl,
+        urlPath: state.urlPath,
+        isRootPath: state.urlPath === '/',
+        filesToOpenCount: state.filesToOpen?.length || 0,
+        projectRoot: state.projectRoot,
+        timestamp: new Date().toISOString()
+      });
+      
       // Use the service's current filesToOpen to drive the code editor
       if (state.filesToOpen && state.filesToOpen.length > 0) {
+        console.log('🔍 DualScreenEditor setting route files from PageRouteService:', {
+          filesCount: state.filesToOpen.length,
+          files: state.filesToOpen.slice(0, 3) // Show first 3 files
+        });
         setRouteFiles(state.filesToOpen);
         // Load content for AI context
         loadRouteFilesContent(state.filesToOpen);
       } else {
+        console.log('🔍 DualScreenEditor clearing route files - no files from PageRouteService');
         setRouteFilesWithContent([]);
       }
     });
@@ -717,53 +786,129 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   // Kick off initial homepage route resolution once when project/server ready
   useEffect(() => {
-    if (!currentProject?.path) return;
-    if (!serverEnsured) return;
-    if (initialHomeRequestedRef.current) return;
+    console.log('🔍 DualScreenEditor initial homepage useEffect triggered:', {
+      hasCurrentProject: !!currentProject?.path,
+      projectPath: currentProject?.path,
+      serverEnsured,
+      initialHomeRequested: initialHomeRequestedRef.current,
+      currentUrl,
+      currentUrlPath: PageRouteService.getInstance().getState().urlPath,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!currentProject?.path) {
+      console.log('🔍 DualScreenEditor initial homepage skipped - no project');
+      return;
+    }
+    if (!serverEnsured) {
+      console.log('🔍 DualScreenEditor initial homepage skipped - server not ensured');
+      return;
+    }
+    if (initialHomeRequestedRef.current) {
+      console.log('🔍 DualScreenEditor initial homepage skipped - already requested');
+      return;
+    }
+    
     (async () => {
       try {
         const defaultUrl = currentUrl || 'http://localhost:8000/';
+        console.log('🔍 DualScreenEditor initial homepage using defaultUrl:', {
+          defaultUrl,
+          currentUrl,
+          fallbackUsed: !currentUrl
+        });
+        
         const path = (() => {
           try {
-            return new URL(defaultUrl).pathname || '/';
-          } catch {
+            const pathname = new URL(defaultUrl).pathname || '/';
+            console.log('🔍 DualScreenEditor initial homepage path extraction:', {
+              defaultUrl,
+              pathname,
+              isRoot: pathname === '/'
+            });
+            return pathname;
+          } catch (error) {
+            console.log('🔍 DualScreenEditor initial homepage path extraction error:', {
+              defaultUrl,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              fallbackPath: '/'
+            });
             return '/';
           }
         })();
+        
         // If we already handled this path or have a mapping, skip
-        if (lastPathRef.current === path) return;
+        if (lastPathRef.current === path) {
+          console.log('🔍 DualScreenEditor initial homepage skipped - path already handled:', {
+            path,
+            lastPath: lastPathRef.current
+          });
+          return;
+        }
+        
         const existing = PageRouteService.getInstance().getFilesForPath(
           currentProject.path,
           path,
         );
+        console.log('🔍 DualScreenEditor initial homepage checking existing mapping:', {
+          projectPath: currentProject.path,
+          path,
+          existingFilesCount: existing?.length || 0,
+          existingFiles: existing?.slice(0, 3) // Show first 3 files
+        });
+        
         if (existing && existing.length > 0) {
           const abs = existing.map((p) =>
             p.startsWith('/') ? p : `${currentProject.path}/${p}`,
           );
+          console.log('🔍 DualScreenEditor initial homepage using existing mapping:', {
+            path,
+            filesCount: abs.length,
+            files: abs.slice(0, 3) // Show first 3 files
+          });
           setRouteFiles(abs);
           lastPathRef.current = path;
           initialHomeRequestedRef.current = true;
           return;
         }
+        
         // Request AI mapping once
+        console.log('🔍 DualScreenEditor initial homepage requesting AI mapping:', {
+          projectPath: currentProject.path,
+          defaultUrl,
+          path
+        });
         initialHomeRequestedRef.current = true;
         await PageRouteService.getInstance().requestFilesForUrl(
           currentProject.path,
           defaultUrl,
         );
+        
         const rels = PageRouteService.getInstance().getFilesForPath(
           currentProject.path,
           path,
         );
+        console.log('🔍 DualScreenEditor initial homepage AI mapping result:', {
+          projectPath: currentProject.path,
+          path,
+          filesCount: rels?.length || 0,
+          files: rels?.slice(0, 3) // Show first 3 files
+        });
+        
         const abs2 = rels.map((p) =>
           p.startsWith('/') ? p : `${currentProject.path}/${p}`,
         );
         if (abs2.length > 0) {
+          console.log('🔍 DualScreenEditor initial homepage setting route files:', {
+            path,
+            filesCount: abs2.length,
+            files: abs2.slice(0, 3) // Show first 3 files
+          });
           setRouteFiles(abs2);
           lastPathRef.current = path;
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        console.error('🔍 DualScreenEditor initial homepage error:', error);
       }
     })();
   }, [currentProject?.path, serverEnsured]);
@@ -809,7 +954,9 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           setServerStatus((prevStatus: any) => {
             if (
               !prevStatus ||
-              prevStatus.isRunning !== statusResult.status.isRunning
+              prevStatus.isRunning !== statusResult.status.isRunning ||
+              prevStatus.port !== statusResult.status.port ||
+              prevStatus.url !== statusResult.status.url
             ) {
               if (statusResult.status.isRunning && !serverEnsured) {
                 setServerEnsured(true);
