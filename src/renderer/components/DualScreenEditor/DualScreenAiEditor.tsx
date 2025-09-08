@@ -10,6 +10,7 @@ import {
 } from './utils/fileOperations';
 import { restartServer, openLocalhostIfNeeded } from './utils/serverOperations';
 import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
+import PageRouteService from '../../services/pageRouteService';
 
 // Import sub-components
 import { ConversationControls } from './components/ConversationControls';
@@ -253,6 +254,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         })),
       });
 
+      // Get current URL path from PageRouteService
+      const currentUrlPath = PageRouteService.getInstance().getState().urlPath || '/';
+
       // Start iterative reading process
       const result = await iterativeReaderService.startIterativeReading(
         userInstruction,
@@ -262,6 +266,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         selectedModel,
         50000, // max content limit
         cachedFiles,
+        currentUrlPath, // Pass the current URL path
         abortController || undefined, // Pass the abort controller
       );
 

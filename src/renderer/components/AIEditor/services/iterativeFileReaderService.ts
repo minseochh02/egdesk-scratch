@@ -29,6 +29,7 @@ export interface IterativeReadingState {
   phase: 'discovery' | 'reading' | 'analysis' | 'complete';
   currentFile?: string;
   projectRoot: string;
+  currentUrlPath: string; // Track the current URL path the user is viewing
   cachedFiles: Array<{
     path: string;
     name: string;
@@ -97,6 +98,7 @@ export class IterativeFileReaderService {
       content: string;
       language: string;
     }> = [],
+    currentUrlPath: string = '/',
     abortController?: AbortController,
   ): Promise<{
     success: boolean;
@@ -115,6 +117,7 @@ export class IterativeFileReaderService {
       this.currentState = {
         phase: 'discovery',
         projectRoot,
+        currentUrlPath,
         cachedFiles,
         readRanges: [],
         totalContentRead: 0,
@@ -272,6 +275,9 @@ export class IterativeFileReaderService {
 
 You are a coding assistant that will be making direct changes to code files. The user cannot edit code themselves - YOU are responsible for all code modifications.
 
+## Current Location Context:
+The user is currently viewing: ${this.currentState?.currentUrlPath || 'Not specified'}
+
 ## User Request:
 ${userPrompt}
 
@@ -280,9 +286,11 @@ ${availableFiles.map((file, index) => `${index + 1}. ${file}`).join('\n')}
 
 ## Your Task:
 1. Analyze the user request to understand what code changes are needed
-2. Select the files that will need to be modified to fulfill the request (max 5 files)
-3. Focus on files that contain code that needs to be changed, not just referenced
-4. Consider file types, naming patterns, and the specific changes required
+2. Consider the current URL path the user is viewing to understand the context
+3. Select the files that will need to be modified to fulfill the request (max 5 files)
+4. Focus on files that contain code that needs to be changed, not just referenced
+5. Consider file types, naming patterns, and the specific changes required
+6. Prioritize files that are most relevant to the current URL path the user is viewing
 
 ## Response Format:
 Return a JSON object with this exact structure:
@@ -766,6 +774,9 @@ Remember: You will be making actual code changes to these files. Select files th
     const prompt = `## Analysis and Response Phase
 
 Based on the files and content I've read, provide your analysis and response to the user's original request.
+
+## Current Location Context:
+The user is currently viewing: ${this.currentState?.currentUrlPath || 'Not specified'}
 
 ## Original User Request:
 ${this.conversationHistory.find((msg) => msg.role === 'user')?.content || ''}

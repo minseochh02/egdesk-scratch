@@ -22,7 +22,6 @@ import WordPressSitesList from './components/WordPressSitesList';
 import LocalServer from './components/LocalServer';
 import CodeEditor from './components/CodeEditor';
 import { AIKeysManager } from './components/AIKeysManager';
-import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
 import SchedulerManager from './components/SchedulerManager/SchedulerManager';

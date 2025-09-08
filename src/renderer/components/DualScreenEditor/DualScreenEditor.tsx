@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { DualScreenAIEditor } from './DualScreenAIEditor';
 import { BrowserWindow } from './BrowserWindow';
-import CodeEditor from '../CodeEditor';
-import { URLFileViewer } from './URLFileViewer';
 import { RevertManager, RevertButton } from '../RevertManager';
 import './DualScreenEditor.css';
 import ProjectContextService, {
