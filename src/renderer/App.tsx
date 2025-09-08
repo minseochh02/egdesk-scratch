@@ -7,8 +7,17 @@ import { AIKeysManager } from './components/AIKeysManager';
 import { AIEditor } from './components/AIEditor';
 import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
 import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
+import SchedulerManager from './components/SchedulerManager/SchedulerManager';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCode, faGlobe, faServer, faRobot, faSearch, faList } from '@fortawesome/free-solid-svg-icons';
+import { 
+  faCode, 
+  faGlobe, 
+  faServer, 
+  faRobot, 
+  faSearch, 
+  faList, 
+  faClock 
+} from '@fortawesome/free-solid-svg-icons';
 import './App.css';
 
 
@@ -60,6 +69,12 @@ function NavigationBar() {
         >
           <FontAwesomeIcon icon={faSearch} /> Codespace Analysis
         </Link>
+        <Link 
+          to="/scheduler" 
+          className={`nav-link ${location.pathname === '/scheduler' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faClock} /> Scheduler
+        </Link>
 
       </nav>
     </div>
@@ -81,6 +96,7 @@ export default function App() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/dual-screen" element={<DualScreenDemo />} />
             <Route path="/codespace-analysis" element={<CodespaceVectorAnalysis />} />
+            <Route path="/scheduler" element={<SchedulerManager />} />
     
           </Routes>
         </main>

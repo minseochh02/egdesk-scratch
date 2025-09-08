@@ -160,6 +160,47 @@ export interface ServerStatus {
   error?: string;
 }
 
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  description?: string;
+  command: string;
+  schedule: string; // cron expression or interval
+  enabled: boolean;
+  lastRun?: Date;
+  nextRun?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  workingDirectory?: string;
+  environment?: Record<string, string>;
+  outputFile?: string;
+  errorFile?: string;
+}
+
+export interface TaskExecution {
+  id: string;
+  taskId: string;
+  startTime: Date;
+  endTime?: Date;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  exitCode?: number;
+  output?: string;
+  error?: string;
+  pid?: number;
+}
+
+export interface SchedulerAPI {
+  createTask: (taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
+  updateTask: (taskId: string, updates: Partial<ScheduledTask>) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
+  deleteTask: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  getTask: (taskId: string) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
+  getAllTasks: () => Promise<{ success: boolean; tasks?: ScheduledTask[]; error?: string }>;
+  getExecutions: (taskId?: string) => Promise<{ success: boolean; executions?: TaskExecution[]; error?: string }>;
+  runTaskNow: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  stopTask: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  getSystemInfo: () => Promise<{ success: boolean; systemInfo?: any; error?: string }>;
+}
+
 const electronHandler = {
   ipcRenderer: {
     sendMessage(channel: Channels, ...args: unknown[]) {
@@ -262,6 +303,17 @@ const electronHandler = {
     setSize: (width: number, height: number) => ipcRenderer.invoke('main-window-set-size', width, height),
     setPosition: (x: number, y: number) => ipcRenderer.invoke('main-window-set-position', x, y),
   },
+  scheduler: {
+    createTask: (taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('scheduler-create-task', taskData),
+    updateTask: (taskId: string, updates: Partial<ScheduledTask>) => ipcRenderer.invoke('scheduler-update-task', taskId, updates),
+    deleteTask: (taskId: string) => ipcRenderer.invoke('scheduler-delete-task', taskId),
+    getTask: (taskId: string) => ipcRenderer.invoke('scheduler-get-task', taskId),
+    getAllTasks: () => ipcRenderer.invoke('scheduler-get-all-tasks'),
+    getExecutions: (taskId?: string) => ipcRenderer.invoke('scheduler-get-executions', taskId),
+    runTaskNow: (taskId: string) => ipcRenderer.invoke('scheduler-run-task-now', taskId),
+    stopTask: (taskId: string) => ipcRenderer.invoke('scheduler-stop-task', taskId),
+    getSystemInfo: () => ipcRenderer.invoke('scheduler-get-system-info'),
+  } as SchedulerAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

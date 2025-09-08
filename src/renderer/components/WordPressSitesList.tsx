@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ScheduledPosts from './ScheduledPosts';
+import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
 import './WordPressSitesList.css';
 
 interface WordPressSite {
@@ -309,6 +310,15 @@ const WordPressSitesList: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {/* WordPress Post Scheduler */}
+        <WordPressPostScheduler 
+          sites={connections}
+          onTaskCreated={() => {
+            // Refresh any data if needed
+            console.log('WordPress post task created');
+          }}
+        />
 
         {/* Selected Site Details */}
         {selectedSite && (
