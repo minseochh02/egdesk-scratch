@@ -7,6 +7,7 @@ import { RevertManager, RevertButton } from '../RevertManager';
 import './DualScreenEditor.css';
 import ProjectContextService, { ProjectInfo } from '../../services/projectContextService';
 import PageRouteService from '../../services/pageRouteService';
+import { restartServer, refreshBrowserWindows } from './utils/serverOperations';
 
 interface DualScreenEditorProps {
   isVisible: boolean;
@@ -19,6 +20,12 @@ interface DualScreenEditorProps {
   onApplyEdits: (edits: any[]) => void;
   onClose: () => void;
   onFileRefresh?: (filePath: string) => void; // Callback to refresh file content
+  onFileSelect?: (file: {
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  }) => void; // Callback to select a file
 }
 
 export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
@@ -26,7 +33,8 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   currentFile,
   onApplyEdits,
   onClose,
-  onFileRefresh
+  onFileRefresh,
+  onFileSelect
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>('');
@@ -57,6 +65,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   const debounceTimerRef = useRef<any>(null);
   const initialHomeRequestedRef = useRef<boolean>(false);
   const homeTriggeredRef = useRef<boolean>(false);
+  const isRevertingRef = useRef<boolean>(false);
   
   // Toggle between editing and non-editing states
   const toggleEditingMode = () => {
@@ -66,7 +75,7 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
   // Refresh file content from disk
   const refreshFileContent = async (filePath: string) => {
     try {
-      console.log(`🔄 Refreshing file content from disk: ${filePath}`);
+      console.log(`🔄 Refreshing file content from disk: ${filePath} (isReverting: ${isRevertingRef.current})`);
       
       const result = await window.electron.fileSystem.readFile(filePath);
       if (result.success && result.content !== undefined) {
@@ -103,6 +112,17 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
           language: getLanguageFromExtension(fileExtension)
         };
 
+        console.log(`📁 Setting refreshed file content: ${filePath} (${result.content.length} characters, isReverting: ${isRevertingRef.current})`);
+        
+        // Add debugging for revert operations
+        if (isRevertingRef.current) {
+          console.log(`🔄 REVERT DEBUG: Setting refreshed content for ${filePath}`, {
+            contentLength: result.content.length,
+            contentPreview: result.content.substring(0, 100) + '...',
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         setRefreshedFileContent(refreshedFile);
         
         // Also call the parent callback if provided
@@ -124,24 +144,73 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   // Handle revert operations
   const handleRevertComplete = async (result: any) => {
+    console.log(`🔄 handleRevertComplete called with result:`, result);
+    
     if (result.success) {
       setRevertMessage({
         type: 'success',
         message: result.summary || `Successfully reverted ${result.restoredFiles.length} file(s)`
       });
       
+      // Set reverting flag to prevent useEffect from clearing content
+      isRevertingRef.current = true;
+      console.log(`🔄 Set isRevertingRef to true`);
+      
       // Refresh the current file content if it was reverted
       if (currentFile && result.restoredFiles.includes(currentFile.path)) {
         console.log(`🔄 Current file was reverted, refreshing content: ${currentFile.path}`);
         await refreshFileContent(currentFile.path);
+      } else if (!currentFile && result.restoredFiles.length > 0) {
+        // If we don't have a current file but files were reverted, 
+        // set the first reverted file as the current file to show in the UI
+        console.log(`🔄 No current file selected, setting first reverted file as current: ${result.restoredFiles[0]}`);
+        const firstRevertedFile = await refreshFileContent(result.restoredFiles[0]);
+        if (firstRevertedFile) {
+          // This will trigger the UI to show the reverted content
+          console.log(`🔄 Set first reverted file as current file for UI display`);
+        }
+      } else {
+        console.log(`🔄 Current file was not reverted or not found in restored files`, {
+          currentFile: currentFile?.path,
+          restoredFiles: result.restoredFiles
+        });
+        
+        // Only refresh other reverted files if we have a current file and it wasn't reverted
+        if (currentFile) {
+          for (const revertedFilePath of result.restoredFiles) {
+            if (revertedFilePath !== currentFile.path) {
+              console.log(`🔄 Refreshing reverted file: ${revertedFilePath}`);
+              await refreshFileContent(revertedFilePath);
+            }
+          }
+        }
       }
       
-      // Also refresh any other reverted files that might be in the route files
-      for (const revertedFilePath of result.restoredFiles) {
-        if (revertedFilePath !== currentFile?.path) {
-          console.log(`🔄 Refreshing reverted file: ${revertedFilePath}`);
-          await refreshFileContent(revertedFilePath);
+      // Ensure the refreshed content persists by adding a small delay
+      // This prevents the useEffect from clearing the refreshed content too quickly
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Reset flag after a short delay to allow the refresh to complete
+      setTimeout(() => {
+        isRevertingRef.current = false;
+        console.log(`🔄 Set isRevertingRef to false`);
+      }, 100);
+      
+      // Restart server and refresh browser to show reverted changes
+      try {
+        console.log('🔄 Restarting server to show reverted changes...');
+        const serverResult = await restartServer({ currentProject });
+        if (serverResult.success) {
+          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+        } else {
+          console.warn('⚠️ Server restart failed, but files were reverted:', serverResult.error);
+          // Still try to refresh browser windows
+          await refreshBrowserWindows();
         }
+      } catch (error) {
+        console.error('❌ Error restarting server after bulk revert:', error);
+        // Still try to refresh browser windows
+        await refreshBrowserWindows();
       }
     } else {
       setRevertMessage({
@@ -154,7 +223,9 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     setTimeout(() => setRevertMessage(null), 5000);
   };
 
-  const handleRevertButtonComplete = async (success: boolean, message: string) => {
+  const handleRevertButtonComplete = async (success: boolean, message: string, filePath?: string) => {
+    console.log(`🔄 handleRevertButtonComplete called with success: ${success}, message: ${message}, filePath: ${filePath}`);
+    
     setRevertMessage({
       type: success ? 'success' : 'error',
       message
@@ -163,7 +234,68 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
     // If revert was successful and we have a current file, refresh its content
     if (success && currentFile) {
       console.log(`🔄 Single file revert successful, refreshing content: ${currentFile.path}`);
+      isRevertingRef.current = true; // Set flag to prevent useEffect from clearing content
+      console.log(`🔄 Set isRevertingRef to true (single file revert)`);
       await refreshFileContent(currentFile.path);
+      // Reset flag after a short delay to allow the refresh to complete
+      setTimeout(() => {
+        isRevertingRef.current = false;
+        console.log(`🔄 Set isRevertingRef to false (single file revert)`);
+      }, 100);
+      
+      // Restart server and refresh browser to show reverted changes
+      try {
+        console.log('🔄 Restarting server to show reverted changes...');
+        const serverResult = await restartServer({ currentProject });
+        if (serverResult.success) {
+          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+        } else {
+          console.warn('⚠️ Server restart failed, but file was reverted:', serverResult.error);
+          // Still try to refresh browser windows
+          await refreshBrowserWindows();
+        }
+      } catch (error) {
+        console.error('❌ Error restarting server after revert:', error);
+        // Still try to refresh browser windows
+        await refreshBrowserWindows();
+      }
+    } else if (success && !currentFile && filePath) {
+      // If revert was successful but we don't have a current file,
+      // use the filePath parameter to refresh the reverted file
+      console.log(`🔄 Single file revert successful but no current file, using filePath: ${filePath}`);
+      
+      isRevertingRef.current = true;
+      const refreshedFile = await refreshFileContent(filePath);
+      if (refreshedFile && onFileSelect) {
+        console.log(`🔄 Selecting reverted file: ${filePath}`);
+        onFileSelect(refreshedFile);
+      }
+      setTimeout(() => {
+        isRevertingRef.current = false;
+        console.log(`🔄 Set isRevertingRef to false (single file revert - no current file)`);
+      }, 100);
+      
+      // Restart server and refresh browser to show reverted changes
+      try {
+        console.log('🔄 Restarting server to show reverted changes...');
+        const serverResult = await restartServer({ currentProject });
+        if (serverResult.success) {
+          console.log('✅ Server restarted successfully, changes should be visible at:', serverResult.url);
+        } else {
+          console.warn('⚠️ Server restart failed, but file was reverted:', serverResult.error);
+          // Still try to refresh browser windows
+          await refreshBrowserWindows();
+        }
+      } catch (error) {
+        console.error('❌ Error restarting server after revert:', error);
+        // Still try to refresh browser windows
+        await refreshBrowserWindows();
+      }
+    } else {
+      console.log(`🔄 Single file revert not successful or no current file`, {
+        success,
+        currentFile: currentFile?.path
+      });
     }
 
     // Auto-dismiss the message after 5 seconds
@@ -182,11 +314,21 @@ export const DualScreenEditor: React.FC<DualScreenEditorProps> = ({
 
   // Clear refreshed file content when current file changes
   useEffect(() => {
+    console.log(`🔍 useEffect triggered - currentFile: ${currentFile?.path}, refreshedFileContent: ${refreshedFileContent?.path}, isReverting: ${isRevertingRef.current}`);
+    
+    // Don't clear refreshed content if we're in the middle of a revert operation
+    if (isRevertingRef.current) {
+      console.log(`🔄 Skipping content clear during revert operation`);
+      return;
+    }
+    
+    // Only clear refreshed content if the current file path is different from refreshed content path
+    // AND we're not in the middle of a revert operation
     if (currentFile && refreshedFileContent && currentFile.path !== refreshedFileContent.path) {
       console.log(`📁 Clearing refreshed content due to file change: ${refreshedFileContent.path} -> ${currentFile.path}`);
       setRefreshedFileContent(null);
     }
-  }, [currentFile?.path]); // Only depend on currentFile.path, not refreshedFileContent
+  }, [currentFile?.path, refreshedFileContent?.path]); // Include refreshedFileContent to handle revert scenarios
 
   // Handle server status changes
   const handleServerStatusChange = (status: any) => {

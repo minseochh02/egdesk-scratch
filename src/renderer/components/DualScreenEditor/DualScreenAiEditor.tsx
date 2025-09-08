@@ -146,7 +146,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     });
     
     if (currentFile && currentFile.path !== currentFileData?.path) {
-      console.log('🔍 DEBUG: Current file changed, clearing file editor state', {
+      console.log('🔍 DEBUG: Current file changed, updating file editor state', {
         newFilePath: currentFile.path,
         oldFilePath: currentFileData?.path,
         newFileContent: {
@@ -159,7 +159,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       setCurrentFileData(currentFile);
       analyzeFile(currentFile.path, currentFile.content);
       
-      // Console log for AI response clearing when file changes
+      // Clear AI response when file changes (this is the expected behavior)
       console.log('📁 AI RESPONSE CLEARED DUE TO FILE CHANGE:', {
         hadResponse: !!aiResponse,
         responseSuccess: aiResponse?.success,
@@ -611,6 +611,9 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
 
   if (!isVisible) return null;
 
+  // Get the current file for revert button - prioritize currentFileData, then first routeFile, then currentFile prop
+  const currentFileForRevert = currentFileData || (routeFiles && routeFiles.length > 0 ? routeFiles[0] : null) || currentFile;
+
   return (
     <div className="dual-screen-ai-editor">
       <div className="sidebar-content">
@@ -623,7 +626,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             onShowHistory={() => setShowConversationHistory(true)}
             onNewConversation={handleNewConversation}
             FontAwesomeIcon={FontAwesomeIcon}
-            currentFile={currentFile}
+            currentFile={currentFileForRevert}
             projectRoot={projectContext?.currentProject?.path}
             onRevertComplete={onRevertComplete}
             onShowRevertManager={onShowRevertManager}

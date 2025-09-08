@@ -15,6 +15,15 @@ export const DualScreenDemo: React.FC = () => {
     // In a real implementation, this would apply the edits to the files
   };
 
+  const handleFileSelect = (file: {
+    path: string;
+    name: string;
+    content: string;
+    language: string;
+  }) => {
+    console.log('File selected:', file);
+    setCurrentFile(file);
+  };
 
   return (
     <DualScreenEditor
@@ -22,6 +31,7 @@ export const DualScreenDemo: React.FC = () => {
       currentFile={currentFile}
       onApplyEdits={handleApplyEdits}
       onClose={() => {}} // No longer needed
+      onFileSelect={handleFileSelect}
     />
   );
 };
