@@ -68,6 +68,13 @@ export const ConversationControls: React.FC<ConversationControlsProps> = ({
           </div>
         )}
         
+        {/* Debug info - remove this after fixing */}
+        {!currentFile && (
+          <div style={{ color: '#ff6b6b', fontSize: '10px', marginRight: '8px' }}>
+            No currentFile
+          </div>
+        )}
+        
         {onToggleEditing && (
           <button
             className={`editor-toggle-btn ${isEditing ? 'editing' : 'server'}`}

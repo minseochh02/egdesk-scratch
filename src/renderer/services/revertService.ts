@@ -195,8 +195,10 @@ export class RevertService {
       }
 
       // Read backup content
+      console.log(`📖 Reading backup file: ${backupFilePath}`);
       const backupResult = await window.electron.fileSystem.readFile(backupFilePath);
       if (!backupResult.success) {
+        console.error(`❌ Failed to read backup file: ${backupResult.error}`);
         return {
           success: false,
           restoredFiles: [],
@@ -204,8 +206,10 @@ export class RevertService {
           summary: 'Revert failed: Could not read backup'
         };
       }
+      console.log(`✅ Successfully read backup file: ${backupFilePath} (${backupResult.content?.length || 0} characters)`);
 
       // Restore the original file content
+      console.log(`✍️ Writing restored content to: ${originalFilePath} (${backupResult.content?.length || 0} characters)`);
       const restoreResult = await window.electron.fileSystem.writeFile(
         originalFilePath, 
         backupResult.content || ''
@@ -236,6 +240,7 @@ export class RevertService {
           summary: `Successfully reverted ${originalFilePath}${currentStateBackupPath ? ` (current state backed up to ${currentStateBackupPath})` : ''}`
         };
       } else {
+        console.error(`❌ Failed to restore file: ${restoreResult.error}`);
         errors.push(`Failed to restore file: ${restoreResult.error}`);
         
         return {
@@ -577,4 +582,6 @@ export class RevertService {
 
 // Export singleton instance
 export const revertService = RevertService.getInstance();
+
+
 

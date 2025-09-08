@@ -5,7 +5,7 @@ import './RevertButton.css';
 interface RevertButtonProps {
   filePath?: string;
   projectRoot?: string;
-  onRevertComplete?: (success: boolean, message: string) => void;
+  onRevertComplete?: (success: boolean, message: string, filePath?: string) => void;
   className?: string;
   size?: 'small' | 'medium' | 'large';
   showText?: boolean;
@@ -27,6 +27,10 @@ const RevertButton: React.FC<RevertButtonProps> = ({
   useEffect(() => {
     if (filePath) {
       loadBackupsForFile();
+    } else {
+      // Reset state when no file is selected
+      setLoading(false);
+      setBackups([]);
     }
   }, [filePath]);
 
@@ -73,7 +77,8 @@ const RevertButton: React.FC<RevertButtonProps> = ({
           result.success,
           result.success 
             ? `✅ Successfully reverted ${getFileName(filePath)}`
-            : `❌ Failed to revert: ${result.errors.join(', ')}`
+            : `❌ Failed to revert: ${result.errors.join(', ')}`,
+          filePath
         );
       }
 
@@ -85,7 +90,7 @@ const RevertButton: React.FC<RevertButtonProps> = ({
     } catch (error) {
       const errorMessage = `Failed to revert: ${error instanceof Error ? error.message : 'Unknown error'}`;
       if (onRevertComplete) {
-        onRevertComplete(false, errorMessage);
+        onRevertComplete(false, errorMessage, filePath);
       }
     } finally {
       setReverting(false);
@@ -119,7 +124,9 @@ const RevertButton: React.FC<RevertButtonProps> = ({
       : fullPath;
   };
 
-  if (!filePath || (!loading && backups.length === 0)) {
+
+  if (!filePath) {
+    console.log('❌ RevertButton: No filePath provided, returning null');
     return null;
   }
 
@@ -134,11 +141,17 @@ const RevertButton: React.FC<RevertButtonProps> = ({
         onClick={hasBackups ? handleRevertToLatest : undefined}
         disabled={loading || reverting || !hasBackups}
         title={
-          loading ? 'Loading backups...' :
+          loading ? 'Checking for backups...' :
           reverting ? 'Reverting...' :
-          !hasBackups ? 'No backups available' :
+          !hasBackups ? 'No backups available - backups are created when AI modifies files' :
           `Revert ${getFileName(filePath)} to latest backup`
         }
+        style={{
+          // Make button more visible even when disabled
+          opacity: hasBackups ? 1 : 0.7,
+          border: hasBackups ? '1px solid #4a5568' : '1px solid #666',
+          background: hasBackups ? '#4a5568' : '#666'
+        }}
       >
         {loading ? (
           <span className="revert-button__spinner">⏳</span>
@@ -149,8 +162,9 @@ const RevertButton: React.FC<RevertButtonProps> = ({
         )}
         {showText && (
           <span className="revert-button__text">
-            {loading ? 'Loading...' : 
+            {loading ? 'Checking...' : 
              reverting ? 'Reverting...' : 
+             !hasBackups ? 'No Backups' :
              'Revert'}
           </span>
         )}
