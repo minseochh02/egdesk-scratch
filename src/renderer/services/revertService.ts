@@ -33,6 +33,36 @@ export interface RevertOptions {
 }
 
 /**
+ * Time-based revert options
+ */
+export interface TimeBasedRevertOptions {
+  targetTimestamp: Date;
+  includeFiles?: string[]; // Optional: specific files to include
+  excludeFiles?: string[]; // Optional: specific files to exclude
+  createBackupOfCurrent?: boolean;
+  dryRun?: boolean; // Preview what would be reverted
+}
+
+/**
+ * Time-based revert result
+ */
+export interface TimeBasedRevertResult {
+  success: boolean;
+  revertedFiles: Array<{
+    originalFilePath: string;
+    backupFilePath: string;
+    backupTimestamp: Date;
+    wasReverted: boolean;
+  }>;
+  skippedFiles: Array<{
+    originalFilePath: string;
+    reason: string;
+  }>;
+  errors: string[];
+  summary: string;
+}
+
+/**
  * Comprehensive Revert Service
  * Handles reverting AI-made changes using backup files
  */
@@ -329,6 +359,160 @@ export class RevertService {
       errors,
       summary,
     };
+  }
+
+  /**
+   * Revert all files to a specific timestamp
+   */
+  async revertToTimestamp(
+    projectRoot: string,
+    targetTimestamp: Date,
+    options: Partial<TimeBasedRevertOptions> = {}
+  ): Promise<TimeBasedRevertResult> {
+    const {
+      includeFiles = [],
+      excludeFiles = [],
+      createBackupOfCurrent = true,
+      dryRun = false,
+    } = options;
+
+    console.log(`🕐 Starting time-based revert to: ${targetTimestamp.toISOString()}`);
+
+    try {
+      // Find all backups in project
+      const allBackups = await this.findAllBackups(projectRoot);
+      
+      const revertedFiles: Array<{
+        originalFilePath: string;
+        backupFilePath: string;
+        backupTimestamp: Date;
+        wasReverted: boolean;
+      }> = [];
+      
+      const skippedFiles: Array<{
+        originalFilePath: string;
+        reason: string;
+      }> = [];
+      
+      const errors: string[] = [];
+
+      // Process each file
+      for (const [originalFilePath, backups] of allBackups.entries()) {
+        // Apply include/exclude filters
+        if (includeFiles.length > 0 && !includeFiles.includes(originalFilePath)) {
+          continue;
+        }
+        if (excludeFiles.includes(originalFilePath)) {
+          continue;
+        }
+
+        // Find the latest backup <= targetTimestamp
+        const validBackups = backups
+          .filter(backup => backup.timestamp <= targetTimestamp && backup.isValid)
+          .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+        if (validBackups.length === 0) {
+          skippedFiles.push({
+            originalFilePath,
+            reason: `No valid backup found before ${targetTimestamp.toISOString()}`,
+          });
+          continue;
+        }
+
+        const selectedBackup = validBackups[0]; // Latest backup <= targetTimestamp
+        
+        if (dryRun) {
+          revertedFiles.push({
+            originalFilePath,
+            backupFilePath: selectedBackup.backupFilePath,
+            backupTimestamp: selectedBackup.timestamp,
+            wasReverted: false,
+          });
+        } else {
+          // Perform actual revert
+          const result = await this.revertFile(
+            originalFilePath,
+            selectedBackup.backupFilePath,
+            { createBackupOfCurrent }
+          );
+
+          revertedFiles.push({
+            originalFilePath,
+            backupFilePath: selectedBackup.backupFilePath,
+            backupTimestamp: selectedBackup.timestamp,
+            wasReverted: result.success,
+          });
+
+          if (!result.success) {
+            errors.push(...result.errors);
+          }
+        }
+      }
+
+      const success = errors.length === 0;
+      const summary = dryRun
+        ? `Would revert ${revertedFiles.length} files to ${targetTimestamp.toISOString()}`
+        : `Reverted ${revertedFiles.filter(f => f.wasReverted).length} files to ${targetTimestamp.toISOString()}`;
+
+      return {
+        success,
+        revertedFiles,
+        skippedFiles,
+        errors,
+        summary,
+      };
+    } catch (error) {
+      const errorMessage = `Time-based revert failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error('❌', errorMessage);
+      return {
+        success: false,
+        revertedFiles: [],
+        skippedFiles: [],
+        errors: [errorMessage],
+        summary: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Get available timestamps for time-based revert
+   */
+  async getAvailableTimestamps(projectRoot: string): Promise<Date[]> {
+    try {
+      console.log(`🕐 Getting available timestamps for: ${projectRoot}`);
+      
+      const allBackups = await this.findAllBackups(projectRoot);
+      const timestamps = new Set<number>();
+
+      for (const backups of allBackups.values()) {
+        for (const backup of backups) {
+          if (backup.isValid) {
+            timestamps.add(backup.timestamp.getTime());
+          }
+        }
+      }
+
+      const sortedTimestamps = Array.from(timestamps)
+        .map(time => new Date(time))
+        .sort((a, b) => b.getTime() - a.getTime());
+
+      console.log(`✅ Found ${sortedTimestamps.length} available timestamps`);
+      return sortedTimestamps;
+    } catch (error) {
+      console.error(`❌ Error getting available timestamps:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Find the closest timestamp <= targetTimestamp
+   */
+  findClosestTimestamp(availableTimestamps: Date[], targetTimestamp: Date): Date | null {
+    const validTimestamps = availableTimestamps
+      .filter(ts => ts <= targetTimestamp)
+      .sort((a, b) => b.getTime() - a.getTime());
+
+    return validTimestamps.length > 0 ? validTimestamps[0] : null;
   }
 
   /**

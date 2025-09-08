@@ -26,6 +26,12 @@
 .revert-manager__actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.revert-manager__actions .btn {
+  white-space: nowrap;
 }
 
 .revert-manager__loading {

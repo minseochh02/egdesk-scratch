@@ -3,12 +3,14 @@ import {
   revertService,
   BackupFile,
   RevertResult,
+  TimeBasedRevertResult,
 } from '../../services/revertService';
+import TimeBasedRevertManager from './TimeBasedRevertManager';
 import './RevertManager.css';
 
 interface RevertManagerProps {
   projectRoot?: string;
-  onRevertComplete?: (result: RevertResult) => void;
+  onRevertComplete?: (result: RevertResult | TimeBasedRevertResult) => void;
   onClose?: () => void;
 }
 
@@ -40,6 +42,7 @@ const RevertManager: React.FC<RevertManagerProps> = ({
   const [reverting, setReverting] = useState(false);
   const [loadingAbortController, setLoadingAbortController] =
     useState<AbortController | null>(null);
+  const [showTimeBasedRevert, setShowTimeBasedRevert] = useState(false);
 
   // Load all backups on component mount
   useEffect(() => {
@@ -90,7 +93,7 @@ const RevertManager: React.FC<RevertManagerProps> = ({
           groups.push({
             originalFilePath,
             backups: backups.sort(
-              (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
+              (a: BackupFile, b: BackupFile) => b.timestamp.getTime() - a.timestamp.getTime(),
             ),
             selected: backups[0], // Default to newest backup
           });
@@ -294,20 +297,29 @@ const RevertManager: React.FC<RevertManagerProps> = ({
         <div className="revert-manager__actions">
           <button
             className="btn btn--secondary"
+            onClick={() => setShowTimeBasedRevert(!showTimeBasedRevert)}
+            disabled={loading}
+          >
+            {showTimeBasedRevert ? '📁 File-Based Revert' : '🕐 Time-Based Revert'}
+          </button>
+          <button
+            className="btn btn--secondary"
             onClick={loadBackups}
             disabled={loading}
           >
             🔄 Refresh
           </button>
-          <button
-            className="btn btn--primary"
-            onClick={handleRevertSelected}
-            disabled={getRevertableFileCount() === 0 || reverting}
-          >
-            {reverting
-              ? '⏳ Reverting...'
-              : `🔄 Revert Selected (${getRevertableFileCount()})`}
-          </button>
+          {!showTimeBasedRevert && (
+            <button
+              className="btn btn--primary"
+              onClick={handleRevertSelected}
+              disabled={getRevertableFileCount() === 0 || reverting}
+            >
+              {reverting
+                ? '⏳ Reverting...'
+                : `🔄 Revert Selected (${getRevertableFileCount()})`}
+            </button>
+          )}
           {onClose && (
             <button className="btn btn--ghost" onClick={onClose}>
               ✕ Close
@@ -325,7 +337,13 @@ const RevertManager: React.FC<RevertManagerProps> = ({
         </div>
       )}
 
-      {backupGroups.length === 0 && !loading ? (
+      {showTimeBasedRevert ? (
+        <TimeBasedRevertManager
+          projectRoot={projectRoot}
+          onRevertComplete={onRevertComplete}
+          onClose={onClose}
+        />
+      ) : backupGroups.length === 0 && !loading ? (
         <div className="revert-manager__empty">
           <p>No backup files found in the current project.</p>
           <p>
