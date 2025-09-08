@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Linux x64 PHP bundling
+  php-linux-x64:
+    image: php:8.3-cli
+    container_name: php-bundle-linux-x64
+    volumes:
+      - ../php-bundle:/output
+    command: >
+      sh -c "
+        echo '🐘 Bundling PHP for Linux x64...' &&
+        mkdir -p /output/linux/x64 &&
+        cp /usr/local/bin/php /output/linux/x64/php &&
+        chmod +x /output/linux/x64/php &&
+        echo '#!/bin/bash' > /output/linux/x64/php-launcher &&
+        echo 'SCRIPT_DIR=\"\$$(cd \"\$$(dirname \"\$${BASH_SOURCE[0]}\")\" && pwd)\"' >> /output/linux/x64/php-launcher &&
+        echo 'exec \"\$${SCRIPT_DIR}/php\" \"\$$@\"' >> /output/linux/x64/php-launcher &&
+        chmod +x /output/linux/x64/php-launcher &&
+        /output/linux/x64/php --version &&
+        echo '✅ Linux x64 PHP bundled successfully!'
+      "
+
+  # Linux ARM64 PHP bundling
+  php-linux-arm64:
+    image: php:8.3-cli
+    platform: linux/arm64
+    container_name: php-bundle-linux-arm64
+    volumes:
+      - ../php-bundle:/output
+    command: >
+      sh -c "
+        echo '🐘 Bundling PHP for Linux ARM64...' &&
+        mkdir -p /output/linux/arm64 &&
+        cp /usr/local/bin/php /output/linux/arm64/php &&
+        chmod +x /output/linux/arm64/php &&
+        echo '#!/bin/bash' > /output/linux/arm64/php-launcher &&
+        echo 'SCRIPT_DIR=\"\$$(cd \"\$$(dirname \"\$${BASH_SOURCE[0]}\")\" && pwd)\"' >> /output/linux/arm64/php-launcher &&
+        echo 'exec \"\$${SCRIPT_DIR}/php\" \"\$$@\"' >> /output/linux/arm64/php-launcher &&
+        chmod +x /output/linux/arm64/php-launcher &&
+        /output/linux/arm64/php --version &&
+        echo '✅ Linux ARM64 PHP bundled successfully!'
+      "
+
+  # macOS Intel simulation (using Linux with macOS-like structure)
+  php-macos-x64:
+    image: php:8.3-cli
+    container_name: php-bundle-macos-x64
+    volumes:
+      - ../php-bundle:/output
+    command: >
+      sh -c "
+        echo '🐘 Creating macOS Intel PHP bundle structure...' &&
+        mkdir -p /output/macos/x64 &&
+        cp /usr/local/bin/php /output/macos/x64/php &&
+        chmod +x /output/macos/x64/php &&
+        echo '#!/bin/bash' > /output/macos/x64/php-launcher &&
+        echo 'SCRIPT_DIR=\"\$$(cd \"\$$(dirname \"\$${BASH_SOURCE[0]}\")\" && pwd)\"' >> /output/macos/x64/php-launcher &&
+        echo 'exec \"\$${SCRIPT_DIR}/php\" \"\$$@\"' >> /output/macos/x64/php-launcher &&
+        chmod +x /output/macos/x64/php-launcher &&
+        /output/macos/x64/php --version &&
+        echo '⚠️  Note: This is a Linux binary in macOS structure - for development only' &&
+        echo '✅ macOS Intel PHP bundle structure created!'
+      "

@@ -126,12 +126,21 @@ export interface StoreAPI {
   clear: () => Promise<void>;
 }
 
-export interface WordPressServerAPI {
+export interface PHPInfo {
+  version: string;
+  path: string;
+  isBundled: boolean;
+  isAvailable: boolean;
+  error?: string;
+}
+
+interface WordPressServerAPI {
   analyzeFolder: (folderPath: string) => Promise<{ success: boolean; info?: FolderInfo; error?: string }>;
-  startServer: (folderPath: string, port?: number) => Promise<{ success: boolean; port?: number; error?: string }>;
+  startServer: (folderPath: string, port?: number) => Promise<{ success: boolean; port?: number; phpInfo?: PHPInfo; error?: string }>;
   stopServer: () => Promise<{ success: boolean; error?: string }>;
   getServerStatus: () => Promise<{ success: boolean; status?: ServerStatus; error?: string }>;
   pickFolder: () => Promise<{ success: boolean; folderPath?: string; error?: string }>;
+  getPHPInfo: () => Promise<{ success: boolean; phpInfo?: PHPInfo; error?: string }>;
 }
 
 export interface FolderInfo {
@@ -267,6 +276,7 @@ const electronHandler = {
     stopServer: () => ipcRenderer.invoke('wp-server-stop'),
     getServerStatus: () => ipcRenderer.invoke('wp-server-status'),
     pickFolder: () => ipcRenderer.invoke('wp-server-pick-folder'),
+    getPHPInfo: () => ipcRenderer.invoke('wp-server-php-info'),
   } as WordPressServerAPI,
   browserWindow: {
     createWindow: (options: any) => ipcRenderer.invoke('browser-window-create', options),

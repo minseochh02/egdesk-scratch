@@ -53,7 +53,11 @@
     "wordpress:setup": "node setup-wordpress.js",
     "wordpress:server": "node wordpress-server.js",
     "wordpress:start": "concurrently \"npm run wordpress:server\" \"npm run start\"",
-    "wordpress:dev": "concurrently \"npm run wordpress:server\" \"npm run start:renderer\""
+    "wordpress:dev": "concurrently \"npm run wordpress:server\" \"npm run start:renderer\"",
+    "php:bundle": "node scripts/bundle-php-cross-platform.js",
+    "php:docker": "node scripts/bundle-php-docker.js",
+    "php:setup": "npm run php:bundle && npm run build",
+    "php:setup-docker": "npm run php:docker && npm run build"
   },
   "browserslist": [
     "extends browserslist-config-erb"
@@ -194,7 +198,8 @@
     "files": [
       "dist",
       "node_modules",
-      "package.json"
+      "package.json",
+      "php-bundle/**"
     ],
     "mac": {
       "notarize": false,
@@ -227,8 +232,16 @@
     },
     "win": {
       "target": [
-        "nsis"
-      ]
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32"]
+        }
+      ],
+      "icon": "assets/icon.ico"
     },
     "linux": {
       "target": [
@@ -242,7 +255,8 @@
       "output": "release/build"
     },
     "extraResources": [
-      "./assets/**"
+      "./assets/**",
+      "./php-bundle/**"
     ],
     "publish": {
       "provider": "github",

@@ -1,0 +1,352 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { spawn, execSync } from 'child_process';
+
+export interface PHPInfo {
+  version: string;
+  path: string;
+  isBundled: boolean;
+  isAvailable: boolean;
+  error?: string;
+}
+
+export class PHPManager {
+  private static instance: PHPManager;
+  private bundledPHPPath: string | null = null;
+  private systemPHPPath: string | null = null;
+  private phpInfo: PHPInfo | null = null;
+
+  private constructor() {}
+
+  public static getInstance(): PHPManager {
+    if (!PHPManager.instance) {
+      PHPManager.instance = new PHPManager();
+    }
+    return PHPManager.instance;
+  }
+
+  /**
+   * Initialize PHP manager and detect available PHP installations
+   */
+  public async initialize(): Promise<PHPInfo> {
+    try {
+      console.log('🔍 Initializing PHP Manager...');
+      
+      // First, try to find bundled PHP
+      console.log('Looking for bundled PHP...');
+      const bundledPHP = await this.findBundledPHP();
+      if (bundledPHP) {
+        console.log(`✅ Found bundled PHP: ${bundledPHP}`);
+        this.bundledPHPPath = bundledPHP;
+        this.phpInfo = await this.getPHPVersionInfo(bundledPHP, true);
+        return this.phpInfo;
+      } else {
+        console.log('❌ No bundled PHP found');
+      }
+
+      // Fallback to system PHP
+      console.log('Looking for system PHP...');
+      const systemPHP = await this.findSystemPHP();
+      if (systemPHP) {
+        console.log(`✅ Found system PHP: ${systemPHP}`);
+        this.systemPHPPath = systemPHP;
+        this.phpInfo = await this.getPHPVersionInfo(systemPHP, false);
+        return this.phpInfo;
+      } else {
+        console.log('❌ No system PHP found');
+      }
+
+      // No PHP found
+      console.log('❌ No PHP installation found anywhere');
+      this.phpInfo = {
+        version: 'Not found',
+        path: '',
+        isBundled: false,
+        isAvailable: false,
+        error: 'No PHP installation found. Please install PHP or run "npm run php:download" to download bundled PHP.'
+      };
+      return this.phpInfo;
+    } catch (error) {
+      console.error('Error initializing PHP manager:', error);
+      this.phpInfo = {
+        version: 'Error',
+        path: '',
+        isBundled: false,
+        isAvailable: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      return this.phpInfo;
+    }
+  }
+
+  /**
+   * Get the best available PHP path
+   */
+  public getPHPPath(): string | null {
+    return this.bundledPHPPath || this.systemPHPPath;
+  }
+
+  /**
+   * Get current PHP info
+   */
+  public getPHPInfo(): PHPInfo | null {
+    return this.phpInfo;
+  }
+
+  /**
+   * Check if PHP is available
+   */
+  public isPHPAvailable(): boolean {
+    return this.phpInfo?.isAvailable || false;
+  }
+
+  /**
+   * Check if using bundled PHP
+   */
+  public isUsingBundledPHP(): boolean {
+    return this.bundledPHPPath !== null;
+  }
+
+  /**
+   * Find bundled PHP executable (cross-platform)
+   */
+  private async findBundledPHP(): Promise<string | null> {
+    const platform = os.platform();
+    const arch = os.arch();
+    
+    console.log(`🔍 Detecting system: ${platform}-${arch}`);
+    
+    // Determine the correct PHP binary name and directory structure
+    let phpBinaryName: string;
+    let platformKey: string;
+    let launcherName: string;
+
+    if (platform === 'win32') {
+      phpBinaryName = 'php.exe';
+      platformKey = 'windows';
+      launcherName = 'php.bat';
+    } else if (platform === 'darwin') {
+      phpBinaryName = 'php';
+      platformKey = 'macos';
+      launcherName = 'php-launcher';
+    } else {
+      phpBinaryName = 'php';
+      platformKey = 'linux';
+      launcherName = 'php-launcher';
+    }
+
+    // Determine architecture directory
+    let archDir: string;
+    if (arch === 'x64' || arch === 'amd64') {
+      archDir = 'x64';
+    } else if (arch === 'arm64' || arch === 'aarch64') {
+      archDir = 'arm64';
+    } else if (arch === 'x86' || arch === 'ia32') {
+      archDir = 'x86';
+    } else {
+      archDir = 'x64'; // Default fallback
+    }
+
+    console.log(`📁 Looking for PHP in: ${platformKey}/${archDir}`);
+
+    // Check production build path first
+    const prodPhpDir = path.join(process.resourcesPath, 'php-bundle', platformKey, archDir);
+    const prodPhpPath = path.join(prodPhpDir, phpBinaryName);
+    const prodLauncher = path.join(prodPhpDir, launcherName);
+    
+    try {
+      if (fs.existsSync(prodPhpPath)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(prodPhpPath, 0o755);
+        }
+        console.log(`✅ Found production bundled PHP: ${prodPhpPath}`);
+        return prodPhpPath;
+      }
+      
+      if (fs.existsSync(prodLauncher)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(prodLauncher, 0o755);
+        }
+        console.log(`✅ Found production bundled PHP launcher: ${prodLauncher}`);
+        return prodLauncher;
+      }
+    } catch (error) {
+      console.warn('Error checking production PHP:', error);
+    }
+
+    // Check development directory
+    const devPhpDir = path.join(__dirname, '..', '..', 'php-bundle', platformKey, archDir);
+    const devPhpPath = path.join(devPhpDir, phpBinaryName);
+    const devLauncher = path.join(devPhpDir, launcherName);
+    
+    try {
+      if (fs.existsSync(devPhpPath)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(devPhpPath, 0o755);
+        }
+        console.log(`✅ Found development bundled PHP: ${devPhpPath}`);
+        return devPhpPath;
+      }
+      
+      if (fs.existsSync(devLauncher)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(devLauncher, 0o755);
+        }
+        console.log(`✅ Found development bundled PHP launcher: ${devLauncher}`);
+        return devLauncher;
+      }
+    } catch (error) {
+      console.warn('Error checking development PHP:', error);
+    }
+
+    // Fallback to old structure (for backward compatibility)
+    const oldDevPhpDir = path.join(__dirname, '..', '..', 'php-bundle');
+    const oldDevPhpPath = path.join(oldDevPhpDir, 'php');
+    const oldDevLauncher = path.join(oldDevPhpDir, 'php-launcher');
+    
+    try {
+      if (fs.existsSync(oldDevPhpPath)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(oldDevPhpPath, 0o755);
+        }
+        console.log(`✅ Found legacy bundled PHP: ${oldDevPhpPath}`);
+        return oldDevPhpPath;
+      }
+      
+      if (fs.existsSync(oldDevLauncher)) {
+        if (platform !== 'win32') {
+          fs.chmodSync(oldDevLauncher, 0o755);
+        }
+        console.log(`✅ Found legacy bundled PHP launcher: ${oldDevLauncher}`);
+        return oldDevLauncher;
+      }
+    } catch (error) {
+      console.warn('Error checking legacy PHP:', error);
+    }
+
+    console.log(`❌ No bundled PHP found for ${platformKey}/${archDir}`);
+    return null;
+  }
+
+  /**
+   * Find system PHP installation
+   */
+  private async findSystemPHP(): Promise<string | null> {
+    const platform = os.platform();
+    const possiblePaths = [];
+
+    if (platform === 'win32') {
+      possiblePaths.push(
+        'C:\\php\\php.exe',
+        'C:\\xampp\\php\\php.exe',
+        'C:\\wamp64\\bin\\php\\php8.3.0\\php.exe',
+        'C:\\Program Files\\PHP\\php.exe',
+        'C:\\Program Files (x86)\\PHP\\php.exe',
+        'C:\\tools\\php\\php.exe'
+      );
+    } else if (platform === 'darwin') {
+      possiblePaths.push(
+        '/opt/homebrew/bin/php',
+        '/usr/local/bin/php',
+        '/usr/bin/php',
+        '/Applications/XAMPP/xamppfiles/bin/php',
+        '/Applications/MAMP/bin/php/php8.3.0/bin/php',
+        '/opt/local/bin/php' // MacPorts
+      );
+    } else {
+      possiblePaths.push(
+        '/usr/bin/php',
+        '/usr/local/bin/php',
+        '/opt/php/bin/php',
+        '/snap/bin/php',
+        '/usr/bin/php8.3',
+        '/usr/bin/php8.2',
+        '/usr/bin/php8.1'
+      );
+    }
+
+    // Try to find PHP in PATH first (most reliable)
+    try {
+      const phpPath = execSync('which php', { encoding: 'utf8' }).trim();
+      if (phpPath && fs.existsSync(phpPath)) {
+        console.log(`✅ Found PHP in PATH: ${phpPath}`);
+        return phpPath;
+      }
+    } catch (error) {
+      // PHP not in PATH
+    }
+
+    // Check common installation paths
+    for (const phpPath of possiblePaths) {
+      try {
+        if (fs.existsSync(phpPath)) {
+          // Test if it's executable
+          execSync(`"${phpPath}" -v`, { stdio: 'pipe' });
+          console.log(`✅ Found PHP at: ${phpPath}`);
+          return phpPath;
+        }
+      } catch (error) {
+        // Continue to next path
+      }
+    }
+
+    console.log('❌ No system PHP found in common locations');
+    return null;
+  }
+
+  /**
+   * Get PHP version and info
+   */
+  private async getPHPVersionInfo(phpPath: string, isBundled: boolean): Promise<PHPInfo> {
+    try {
+      const versionOutput = execSync(`"${phpPath}" -v`, { encoding: 'utf8' });
+      const version = versionOutput.split('\n')[0] || 'Unknown version';
+      
+      return {
+        version,
+        path: phpPath,
+        isBundled,
+        isAvailable: true
+      };
+    } catch (error) {
+      return {
+        version: 'Error',
+        path: phpPath,
+        isBundled,
+        isAvailable: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Spawn PHP server process
+   */
+  public spawnPHPServer(port: number, documentRoot: string): any {
+    const phpPath = this.getPHPPath();
+    if (!phpPath) {
+      throw new Error('No PHP installation available');
+    }
+
+    console.log(`Starting PHP server with: ${phpPath}`);
+    console.log(`Port: ${port}, Document root: ${documentRoot}`);
+
+    return spawn(phpPath, [
+      '-S',
+      `localhost:${port}`,
+      '-t',
+      documentRoot
+    ]);
+  }
+
+  /**
+   * Download PHP binaries (for development/setup)
+   */
+  public async downloadPHPBinaries(): Promise<void> {
+    // This would be used during the build process
+    // Implementation depends on your build system
+    console.log('PHP binaries should be downloaded during build process');
+  }
+}
+

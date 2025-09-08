@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ProjectSelector from './ProjectSelector';
 import ProjectContextService, { ProjectInfo } from '../services/projectContextService';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGlobe, faTimes, faQuestion, faRefresh, faCode } from '@fortawesome/free-solid-svg-icons';
+import { faGlobe, faTimes, faQuestion, faRefresh, faCode, faDownload, faCheckCircle, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
 import './LocalServer.css';
 
 interface ServerStatus {
@@ -10,6 +10,21 @@ interface ServerStatus {
   port: number;
   url: string;
   pid?: number;
+  error?: string;
+}
+
+interface StartServerResult {
+  success: boolean;
+  port?: number;
+  phpInfo?: PHPInfo;
+  error?: string;
+}
+
+interface PHPInfo {
+  version: string;
+  path: string;
+  isBundled: boolean;
+  isAvailable: boolean;
   error?: string;
 }
 
@@ -43,6 +58,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null);
+  const [phpInfo, setPhpInfo] = useState<PHPInfo | null>(null);
 
   // Subscribe to project context changes
   useEffect(() => {
@@ -62,6 +78,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   // Check if server is running on component mount
   useEffect(() => {
     checkServerStatus();
+    loadPHPInfo();
     // Check every 5 seconds
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
@@ -82,6 +99,19 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       }
     } catch (error) {
       console.error('Error checking server status:', error);
+    }
+  };
+
+  const loadPHPInfo = async () => {
+    try {
+      const result = await window.electron.wordpressServer.getPHPInfo();
+      if (result.success && result.phpInfo) {
+        setPhpInfo(result.phpInfo);
+        addLog(`🐘 PHP ${result.phpInfo.isBundled ? '(bundled)' : '(system)'}: ${result.phpInfo.version}`);
+      }
+    } catch (error) {
+      console.error('Error loading PHP info:', error);
+      addLog(`❌ Error loading PHP info: ${error}`);
     }
   };
 
@@ -146,10 +176,16 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
     addLog('🚀 Starting WordPress server...');
 
     try {
-      const result = await window.electron.wordpressServer.startServer(currentFolder, serverStatus.port);
+      const result: StartServerResult = await window.electron.wordpressServer.startServer(currentFolder, serverStatus.port);
       if (result.success) {
         addLog(`✅ Server started successfully on port ${result.port}`);
         addLog(`📁 Serving from: ${currentFolder}`);
+        
+        // Update PHP info if provided
+        if (result.phpInfo) {
+          setPhpInfo(result.phpInfo);
+          addLog(`🐘 Using PHP: ${result.phpInfo.version} (${result.phpInfo.isBundled ? 'bundled' : 'system'})`);
+        }
         
         // Update server status
         setServerStatus(prev => ({
@@ -219,8 +255,8 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   return (
     <div className="local-server">
       <div className="server-header">
-        <h2>🖥️ Local WordPress Server</h2>
-        <p>Manage your local PHP server for WordPress development</p>
+        <h2>🖥️ Local Server</h2>
+        <p>Manage your local PHP server for development</p>
       </div>
 
       {/* Project Context Section */}
@@ -278,13 +314,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
       <div className="server-controls">
         <div className="folder-section">
-          <h3>📁 WordPress Folder</h3>
+          <h3>📁 Folder</h3>
           <div className="folder-input">
             <input
               type="text"
               value={currentFolder}
               onChange={(e) => setCurrentFolder(e.target.value)}
-              placeholder="Enter WordPress folder path or click Select Folder"
+              placeholder="Enter folder path or click Select Folder"
               disabled={isLoading}
             />
             <button 
@@ -419,7 +455,26 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
         <h3>ℹ️ Server Information</h3>
         <div className="info-grid">
           <div className="info-item">
-            <strong>PHP Version:</strong> 8.4.11
+            <strong>PHP Version:</strong> {phpInfo?.version || 'Loading...'}
+          </div>
+          <div className="info-item">
+            <strong>PHP Source:</strong> 
+            {phpInfo?.isBundled ? (
+              <span className="php-bundled">
+                <FontAwesomeIcon icon={faDownload} /> Bundled
+              </span>
+            ) : phpInfo?.isAvailable ? (
+              <span className="php-system">
+                <FontAwesomeIcon icon={faCheckCircle} /> System
+              </span>
+            ) : (
+              <span className="php-error">
+                <FontAwesomeIcon icon={faExclamationTriangle} /> Not Available
+              </span>
+            )}
+          </div>
+          <div className="info-item">
+            <strong>PHP Path:</strong> {phpInfo?.path || 'Not found'}
           </div>
           <div className="info-item">
             <strong>Default Port:</strong> 8000
