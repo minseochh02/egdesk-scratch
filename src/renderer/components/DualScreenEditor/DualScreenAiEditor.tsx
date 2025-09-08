@@ -23,6 +23,7 @@ import { InputArea } from './components/InputArea';
 import { DebugPayloadDisplay } from './components/DebugPayloadDisplay';
 import { IterativeReadingStatus } from './components/IterativeReadingStatus';
 import { SearchReplacePrompts } from './components/SearchReplacePrompts';
+import { ImageSuggestionPanel } from './components/ImageSuggestionPanel';
 
 import './DualScreenAIEditor.css';
 
@@ -120,6 +121,14 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     messagesEndRef,
     currentAbortController,
     setCurrentAbortController,
+    selectedFiles,
+    setSelectedFiles,
+    showImageSuggestions,
+    setShowImageSuggestions,
+    currentImageSuggestions,
+    setCurrentImageSuggestions,
+    isAnalyzingImages,
+    setIsAnalyzingImages,
 
     // Initialization states
     isFontAwesomeLoaded,
@@ -132,7 +141,17 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     analyzeFile,
     scrollToBottom,
     cancelAIRequest,
+    handleFilesSelected,
+    handleImageSuggestionSelect,
+    handleDismissImageSuggestions,
+    handleFileRemove,
+    analyzeSelectedImages,
+    isImageFile,
+    getImageFiles,
+    getNonImageFiles,
+    imageAI,
   } = useDualScreenAIEditor(projectContext, currentFile);
+
 
   // Analyze file when current file changes
   useEffect(() => {
@@ -533,6 +552,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       userInstruction: userInstruction.trim(),
       currentFileData: !!currentFileData,
       routeFiles: routeFiles?.length || 0,
+      selectedFiles: selectedFiles.length,
       isLoading,
       isStreaming,
       isInitialized,
@@ -555,6 +575,24 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     if (!currentFileData && (!routeFiles || routeFiles.length === 0)) {
       console.log('❌ DEBUG: No file data available for processing');
       return;
+    }
+
+    // Check if there are images to analyze
+    const hasImages = selectedFiles.some(isImageFile);
+
+    if (hasImages) {
+      console.log('🖼️ DEBUG: Images detected, analyzing before proceeding');
+      try {
+        const imageSuggestions = await analyzeSelectedImages(userInstruction);
+        if (imageSuggestions && imageSuggestions.length > 0) {
+          console.log('✅ DEBUG: Image analysis complete, showing suggestions');
+          // Don't proceed with the main request yet - let user choose image placement first
+          return;
+        }
+      } catch (error) {
+        console.error('❌ DEBUG: Image analysis failed:', error);
+        // Continue with main request even if image analysis fails
+      }
     }
 
     console.log(
@@ -679,6 +717,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     console.log('Executing search/replace:', prompt);
   };
 
+
   // Show all available keys, not filtered by provider
   const availableKeys = aiKeys;
 
@@ -802,6 +841,8 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
             !isStreaming
           }
           FontAwesomeIcon={FontAwesomeIcon}
+          onFilesSelected={handleFilesSelected}
+          selectedFiles={selectedFiles}
         />
       </div>
 
@@ -810,6 +851,18 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         isVisible={showContextManagement}
         onClose={() => setShowContextManagement(false)}
       />
+
+      {/* Image Suggestion Panel */}
+      {showImageSuggestions && (
+        <ImageSuggestionPanel
+          suggestions={currentImageSuggestions}
+          isAnalyzing={isAnalyzingImages}
+          error={imageAI.error}
+          onSelectSuggestion={(suggestion) => handleImageSuggestionSelect(suggestion, () => handleIterativeReading())}
+          onDismiss={handleDismissImageSuggestions}
+          FontAwesomeIcon={FontAwesomeIcon}
+        />
+      )}
     </div>
   );
 };
