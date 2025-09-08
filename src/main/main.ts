@@ -18,6 +18,7 @@ import * as os from 'os';
 let Store: any;
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
+import { schedulerManager, ScheduledTask, TaskExecution } from './scheduler-manager';
 
 // Store will be initialized in createWindow function
 let store: any;
@@ -1143,6 +1144,105 @@ ipcMain.handle('fs-rename-item', async (event, oldPath: string, newPath: string)
   }
 });
 
+// Scheduler IPC handlers
+ipcMain.handle('scheduler-create-task', async (event, taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>) => {
+  try {
+    const task = schedulerManager.createTask(taskData);
+    return { success: true, task };
+  } catch (error) {
+    console.error('Error creating scheduled task:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-update-task', async (event, taskId: string, updates: Partial<ScheduledTask>) => {
+  try {
+    const task = schedulerManager.updateTask(taskId, updates);
+    if (task) {
+      return { success: true, task };
+    } else {
+      return { success: false, error: 'Task not found' };
+    }
+  } catch (error) {
+    console.error('Error updating scheduled task:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-delete-task', async (event, taskId: string) => {
+  try {
+    const deleted = schedulerManager.deleteTask(taskId);
+    return { success: deleted };
+  } catch (error) {
+    console.error('Error deleting scheduled task:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-get-task', async (event, taskId: string) => {
+  try {
+    const task = schedulerManager.getTask(taskId);
+    if (task) {
+      return { success: true, task };
+    } else {
+      return { success: false, error: 'Task not found' };
+    }
+  } catch (error) {
+    console.error('Error getting scheduled task:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-get-all-tasks', async () => {
+  try {
+    const tasks = schedulerManager.getAllTasks();
+    return { success: true, tasks };
+  } catch (error) {
+    console.error('Error getting all scheduled tasks:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-get-executions', async (event, taskId?: string) => {
+  try {
+    const executions = schedulerManager.getTaskExecutions(taskId);
+    return { success: true, executions };
+  } catch (error) {
+    console.error('Error getting task executions:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-run-task-now', async (event, taskId: string) => {
+  try {
+    const success = schedulerManager.runTaskNow(taskId);
+    return { success };
+  } catch (error) {
+    console.error('Error running task now:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-stop-task', async (event, taskId: string) => {
+  try {
+    const success = schedulerManager.stopTask(taskId);
+    return { success };
+  } catch (error) {
+    console.error('Error stopping task:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('scheduler-get-system-info', async () => {
+  try {
+    const systemInfo = schedulerManager.getSystemInfo();
+    return { success: true, systemInfo };
+  } catch (error) {
+    console.error('Error getting scheduler system info:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 // WordPress sync file operations
 ipcMain.handle('wp-sync-create-folders', async (event, basePath: string) => {
   try {
@@ -1325,6 +1425,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  // Cleanup scheduler resources
+  schedulerManager.cleanup();
 });
 
 app
