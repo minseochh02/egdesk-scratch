@@ -1,0 +1,112 @@
+# Multi-stage Dockerfile for PHP bundling
+FROM ubuntu:22.04 as linux-x64
+
+# Install PHP and dependencies
+RUN apt-get update && apt-get install -y \
+    php8.1-cli \
+    php8.1-common \
+    php8.1-mysql \
+    php8.1-zip \
+    php8.1-gd \
+    php8.1-mbstring \
+    php8.1-curl \
+    php8.1-xml \
+    php8.1-bcmath \
+    php8.1-json \
+    php8.1-intl \
+    php8.1-sqlite3 \
+    php8.1-pgsql \
+    php8.1-ldap \
+    php8.1-snmp \
+    php8.1-soap \
+    php8.1-xsl \
+    php8.1-zip \
+    php8.1-opcache \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create bundle directory
+RUN mkdir -p /php-bundle/linux/x64
+
+# Copy PHP binary and create launcher
+RUN cp /usr/bin/php /php-bundle/linux/x64/php && \
+    chmod +x /php-bundle/linux/x64/php
+
+# Create launcher script
+RUN echo '#!/bin/bash\n\
+# PHP Bundle Launcher Script\n\
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n\
+exec "${SCRIPT_DIR}/php" "$@"' > /php-bundle/linux/x64/php-launcher && \
+    chmod +x /php-bundle/linux/x64/php-launcher
+
+# Test PHP
+RUN /php-bundle/linux/x64/php --version
+
+# ===========================================
+# macOS Intel (x64) - using cross-compilation
+FROM ubuntu:22.04 as macos-x64
+
+# Install cross-compilation tools
+RUN apt-get update && apt-get install -y \
+    wget \
+    build-essential \
+    autoconf \
+    libtool \
+    pkg-config \
+    libxml2-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libsqlite3-dev \
+    libzip-dev \
+    libonig-dev \
+    libgd-dev \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libicu-dev \
+    libldap2-dev \
+    libsasl2-dev \
+    libsnmp-dev \
+    libxslt1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and build PHP for macOS
+WORKDIR /tmp
+RUN wget https://github.com/php/php-src/archive/refs/tags/php-8.3.14.tar.gz && \
+    tar -xzf php-8.3.14.tar.gz && \
+    cd php-src-php-8.3.14
+
+# Configure PHP for macOS (simplified)
+WORKDIR /tmp/php-src-php-8.3.14
+RUN ./buildconf --force
+
+# Note: This is a simplified version. In practice, you'd need:
+# - macOS SDK
+# - Proper cross-compilation toolchain
+# - All the dependencies compiled for macOS
+# For now, we'll create a placeholder
+
+RUN mkdir -p /php-bundle/macos/x64
+RUN echo '#!/bin/bash\necho "macOS Intel PHP - requires actual macOS build"' > /php-bundle/macos/x64/php && \
+    chmod +x /php-bundle/macos/x64/php
+
+# ===========================================
+# Final stage - copy all bundles
+FROM ubuntu:22.04 as final
+
+RUN mkdir -p /output/php-bundle
+
+# Copy Linux x64 bundle
+COPY --from=linux-x64 /php-bundle/linux /output/php-bundle/linux
+
+# Copy macOS x64 bundle (placeholder)
+COPY --from=macos-x64 /php-bundle/macos /output/php-bundle/macos
+
+# Create a script to extract bundles
+RUN echo '#!/bin/bash\n\
+echo "Extracting PHP bundles..."\n\
+cp -r /output/php-bundle/* /host-php-bundle/\n\
+echo "PHP bundles extracted to /host-php-bundle/"\n\
+ls -la /host-php-bundle/' > /extract-bundles.sh && \
+    chmod +x /extract-bundles.sh
+
+CMD ["/extract-bundles.sh"]

@@ -529,3 +529,28 @@
     font-size: 13px;
   }
 }
+
+/* PHP Status Indicators */
+.php-bundled {
+  color: #28a745 !important;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.php-system {
+  color: #17a2b8 !important;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.php-error {
+  color: #dc3545 !important;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}

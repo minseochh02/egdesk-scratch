@@ -1,4 +1,5 @@
 import { MemoryRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import LandingPage from './components/LandingPage';
 import WordPressConnector from './components/WordPressConnector';
 import WordPressSitesList from './components/WordPressSitesList';
 import LocalServer from './components/LocalServer';
@@ -16,7 +17,8 @@ import {
   faRobot, 
   faSearch, 
   faList, 
-  faClock 
+  faClock,
+  faHome
 } from '@fortawesome/free-solid-svg-icons';
 import './App.css';
 
@@ -27,6 +29,12 @@ function NavigationBar() {
   return (
     <div className="navigation-bar">
       <nav className="nav-links">
+        <Link 
+          to="/" 
+          className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faHome} /> Home
+        </Link>
         <Link 
           to="/wordpress" 
           className={`nav-link ${location.pathname === '/wordpress' ? 'active' : ''}`}
@@ -88,7 +96,7 @@ export default function App() {
         <NavigationBar />
         <main className="main-content">
           <Routes>
-            <Route path="/" element={<WordPressConnector />} />
+            <Route path="/" element={<LandingPage />} />
             <Route path="/wordpress" element={<WordPressConnector />} />
             <Route path="/wordpress-sites" element={<WordPressSitesList />} />
             <Route path="/local-server" element={<LocalServer />} />

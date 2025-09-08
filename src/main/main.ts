@@ -19,6 +19,7 @@ let Store: any;
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { schedulerManager, ScheduledTask, TaskExecution } from './scheduler-manager';
+import { PHPManager } from './php-manager';
 
 // Store will be initialized in createWindow function
 let store: any;
@@ -105,6 +106,7 @@ ipcMain.handle('wp-navigate-to-synced-folder', async (event, navigationData) => 
 let wordpressServerProcess: any = null;
 let wordpressServerPort = 8000;
 let wordpressServerFolder = '';
+let phpManager: PHPManager;
 
 // Helper function to detect the best serving root (similar to wordpress-server.js)
 function detectBestServingRoot(selectedPath: string): string {
@@ -289,14 +291,30 @@ ipcMain.handle('wp-server-start', async (event, folderPath, port = 8000) => {
       return { success: false, error: 'Folder does not exist' };
     }
 
-    const { spawn } = require('child_process');
-    
+    // Initialize PHP manager if not already done
+    if (!phpManager) {
+      phpManager = PHPManager.getInstance();
+      await phpManager.initialize();
+    }
+
+    // Check if PHP is available
+    if (!phpManager.isPHPAvailable()) {
+      const phpInfo = phpManager.getPHPInfo();
+      return { 
+        success: false, 
+        error: `PHP not available: ${phpInfo?.error || 'Unknown error'}` 
+      };
+    }
+
     // Detect the best serving root (like wordpress-server.js does)
     const actualServingRoot = detectBestServingRoot(folderPath);
     
     console.log(`Starting WordPress server on http://localhost:${port}`);
     console.log(`Selected folder: ${folderPath}`);
     console.log(`Serving from: ${actualServingRoot}`);
+    
+    const phpInfo = phpManager.getPHPInfo();
+    console.log(`Using PHP: ${phpInfo?.version} (${phpInfo?.isBundled ? 'bundled' : 'system'})`);
     
     // Check what we're serving (similar to wordpress-server.js logic)
     const files = fs.readdirSync(actualServingRoot);
@@ -317,12 +335,8 @@ ipcMain.handle('wp-server-start', async (event, folderPath, port = 8000) => {
       });
     }
     
-    wordpressServerProcess = spawn('/opt/homebrew/bin/php', [
-      '-S',
-      `localhost:${port}`,
-      '-t',
-      actualServingRoot
-    ]);
+    // Use PHP manager to spawn the server
+    wordpressServerProcess = phpManager.spawnPHPServer(port, actualServingRoot);
 
     wordpressServerPort = port;
     wordpressServerFolder = actualServingRoot;
@@ -348,7 +362,15 @@ ipcMain.handle('wp-server-start', async (event, folderPath, port = 8000) => {
     // Wait a bit for server to start
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    return { success: true, port };
+    return { 
+      success: true, 
+      port,
+      phpInfo: {
+        version: phpInfo?.version,
+        isBundled: phpInfo?.isBundled,
+        path: phpInfo?.path
+      }
+    };
   } catch (error) {
     console.error('Error starting WordPress server:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -385,6 +407,32 @@ ipcMain.handle('wp-server-status', async (event) => {
     };
   } catch (error) {
     console.error('Error getting WordPress server status:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Get PHP information
+ipcMain.handle('wp-server-php-info', async (event) => {
+  try {
+    // Initialize PHP manager if not already done
+    if (!phpManager) {
+      phpManager = PHPManager.getInstance();
+      await phpManager.initialize();
+    }
+
+    const phpInfo = phpManager.getPHPInfo();
+    return {
+      success: true,
+      phpInfo: phpInfo || {
+        version: 'Not initialized',
+        path: '',
+        isBundled: false,
+        isAvailable: false,
+        error: 'PHP manager not initialized'
+      }
+    };
+  } catch (error) {
+    console.error('Error getting PHP info:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

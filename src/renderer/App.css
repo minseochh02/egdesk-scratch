@@ -432,6 +432,12 @@ html {
   position: relative;
 }
 
+/* Landing page specific styles */
+.main-content:has(.landing-page) {
+  overflow: hidden;
+  background: transparent;
+}
+
 /* Fix for components that need scrolling */
 .component-container {
   height: 100%;
