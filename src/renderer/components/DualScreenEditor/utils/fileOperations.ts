@@ -76,7 +76,7 @@ export const parseSearchReplaceOperations = (
       const searchText = match[3].trim();
       const replaceText = match[4].trim();
 
-      if (filePath && searchText && replaceText) {
+      if (filePath && searchText && replaceText !== undefined) {
         // Parse line numbers (e.g., "15-15" or "10-12")
         let startLine = 1;
         let endLine = 1;
@@ -145,7 +145,7 @@ export const parseSearchReplaceOperations = (
           replaceTextPreview: replaceText.substring(0, 100),
         });
 
-        if (filePath && searchText && replaceText) {
+        if (filePath && searchText && replaceText !== undefined) {
           operations.push({
             type: 'replace' as const,
             filePath,
@@ -464,7 +464,7 @@ export const applyEditsToFilesLegacy = async (
         } else if (
           edit.type === 'replace' &&
           edit.oldText &&
-          edit.newText &&
+          edit.newText !== undefined &&
           absoluteFilePath
         ) {
           // Create backup before modification if enabled

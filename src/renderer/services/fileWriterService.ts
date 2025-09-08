@@ -386,7 +386,7 @@ export class FileWriterService {
     content: string,
     edit: AIEdit,
   ): { success: boolean; content: string; error?: string } {
-    if (!edit.oldText || !edit.newText) {
+    if (!edit.oldText || edit.newText === undefined) {
       return {
         success: false,
         content,

@@ -184,6 +184,34 @@ SEARCH: exact code to find
 REPLACE: exact code to replace it with
 \`\`\`
 
+🚨 CRITICAL SEARCH/REPLACE RULES:
+1. ALWAYS provide COMPLETE, WELL-FORMED code blocks in both SEARCH and REPLACE
+2. If searching for HTML elements, include ALL opening AND closing tags
+3. If replacing HTML elements, ensure the replacement maintains proper structure
+4. NEVER provide partial code that would break syntax (missing closing tags, brackets, etc.)
+5. When deleting content, use empty string in REPLACE, but ensure surrounding structure remains valid
+6. For multi-line operations, include complete logical units (entire functions, complete HTML elements, etc.)
+
+CORRECT HTML Example:
+\`\`\`search-replace
+FILE: www/page.php
+LINES: 10-12
+SEARCH: <tr>
+    <td>Old Data 1</td>
+    <td>Old Data 2</td>
+</tr>
+REPLACE: <tr>
+    <td></td>
+    <td></td>
+</tr>
+\`\`\`
+
+WRONG - NEVER DO THIS (incomplete closing):
+SEARCH: <tr>
+    <td>Old Data 1</td>
+    <td>Old Data 2</td>
+REPLACE: 
+
 🚨 CRITICAL FILE PATH REQUIREMENTS:
 - ALWAYS use the COMPLETE relative path from project root
 - NEVER use just the filename (e.g., "index.php" ❌)

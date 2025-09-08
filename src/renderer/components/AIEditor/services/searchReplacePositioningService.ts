@@ -96,7 +96,7 @@ export class SearchReplacePositioningService {
         processedText.substring(block.end);
 
       // Then, find and replace the search text with replace text
-      if (block.searchText && block.replaceText) {
+      if (block.searchText && block.replaceText !== undefined) {
         const searchTextTrimmed = block.searchText.trim();
         const replaceTextTrimmed = block.replaceText.trim();
 

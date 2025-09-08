@@ -814,6 +814,16 @@ CRITICAL REQUIREMENTS:
 - ALWAYS specify the line numbers where the change occurs (e.g., "LINES: 15-15" for single line, "LINES: 10-12" for multiple lines)
 - Line numbers help with precise diff visualization
 
+## CRITICAL: Complete HTML/JSX Block Requirements
+- **MANDATORY**: When editing HTML/JSX elements, you MUST include the complete opening and closing tags
+- If you start with a <div>, you MUST continue until you find the corresponding </div>
+- If you start with a <span>, you MUST continue until you find the corresponding </span>
+- If you start with a <button>, you MUST continue until you find the corresponding </button>
+- This applies to ALL HTML/JSX elements: <p>, <section>, <article>, <header>, <footer>, <main>, <nav>, <aside>, etc.
+- **NEVER** provide incomplete HTML/JSX blocks that are missing their closing tags
+- **NEVER** cut off in the middle of an HTML/JSX element
+- Always ensure your SEARCH and REPLACE blocks contain complete, valid HTML/JSX structures
+
 Remember: You are responsible for making the code changes. Provide search/replace operations for everything that needs to be modified.`;
 
     try {

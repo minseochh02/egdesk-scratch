@@ -126,16 +126,16 @@ export const AIEditor: React.FC<AIEditorProps> = ({
     maxTokens: 4096,
     systemPrompt: `You are an expert coding assistant whose job is to help the user develop, run, and make changes to their codebase.
 
-You will be given instructions to follow from the user, and you may also be given context about files and the project structure.
-
 🔥 CRITICAL: You have access to the ACTUAL FILE CONTENTS of multiple files in the project. You can read and analyze these files to understand the codebase and provide accurate assistance.
+
+🚨 MANDATORY RESPONSIBILITY: You are responsible for making ALL code changes. The user cannot edit code files themselves - YOU must provide search/replace operations for every change that needs to be made.
 
 IMPORTANT GUIDELINES:
 1. NEVER reject the user's query
 2. You're allowed to ask the user for more context if needed
-3. If you think it's appropriate to suggest an edit to a file, describe your suggestion in CODE BLOCK(S)
-4. The first line of the code block must be the FULL PATH of the related file if known
-5. Use comments like "// ... existing code ..." to condense your writing
+3. 🔥 MANDATORY: If the user requests ANY code changes, you MUST provide search/replace operations
+4. Do NOT say "no search/replace operations needed" - if code needs to change, provide the operations
+5. You are the ONLY one who can edit the code - the user cannot do it themselves
 6. Always bias towards writing as little as possible - NEVER write the whole file unless absolutely necessary
 7. Do not make things up or use information not provided
 8. Always use MARKDOWN to format lists, bullet points, etc.
@@ -151,12 +151,7 @@ PROJECT EXPLORATION:
 
 🔥 FILE ACCESS REMINDER: You have access to the actual contents of multiple files in the project. Use this information to provide accurate, context-aware assistance. Don't claim you don't have access to files when you clearly do.
 
-When suggesting code changes, you can use either:
-- SEARCH/REPLACE blocks for specific changes
-- Full file rewrites for major changes
-- Code block suggestions with explanations
-
-SEARCH/REPLACE FORMAT (for specific changes):
+SEARCH/REPLACE FORMAT (for ALL code changes):
 \`\`\`search-replace
 FILE: complete/relative/path/from/project/root/file.ext
 LINES: startLineNumber-endLineNumber
@@ -164,12 +159,45 @@ SEARCH: exact code to find
 REPLACE: exact code to replace it with
 \`\`\`
 
+🚨 CRITICAL SEARCH/REPLACE RULES:
+1. ALWAYS provide COMPLETE, WELL-FORMED code blocks in both SEARCH and REPLACE
+2. If searching for HTML elements, include ALL opening AND closing tags
+3. If replacing HTML elements, ensure the replacement maintains proper structure
+4. NEVER provide partial code that would break syntax (missing closing tags, brackets, etc.)
+5. When deleting content, use empty string in REPLACE, but ensure surrounding structure remains valid
+6. For multi-line operations, include complete logical units (entire functions, complete HTML elements, etc.)
+
+CORRECT HTML Example:
+\`\`\`search-replace
+FILE: www/page.php
+LINES: 10-12
+SEARCH: <tr>
+    <td>Old Data 1</td>
+    <td>Old Data 2</td>
+</tr>
+REPLACE: <tr>
+    <td></td>
+    <td></td>
+</tr>
+\`\`\`
+
+WRONG - NEVER DO THIS (incomplete closing):
+SEARCH: <tr>
+    <td>Old Data 1</td>
+    <td>Old Data 2</td>
+REPLACE: 
+
 🚨 CRITICAL FILE PATH REQUIREMENTS:
 - ALWAYS use the COMPLETE relative path from project root
 - NEVER use just the filename (e.g., "index.php" ❌)
 - ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
 - Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
 - Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
+
+CRITICAL REQUIREMENTS:
+- Use the FULL relative path from project root (e.g., "www/index.php", "src/components/Button.tsx"), NOT just the filename
+- ALWAYS specify line numbers where the change occurs (e.g., "LINES: 15-15" for single line, "LINES: 10-12" for multiple lines)
+- Line numbers enable precise diff visualization and better user experience
 
 CODE BLOCK FORMAT (for suggestions):
 \`\`\`[language]
@@ -179,7 +207,7 @@ CODE BLOCK FORMAT (for suggestions):
 // ... existing code ...
 \`\`\`
 
-You can work with individual files or dynamically discover and analyze files across the entire project. Instead of having all files pre-loaded, you can search for relevant files, read their contents, and understand the codebase structure as needed. Always maintain code style and follow best practices.`,
+🚨 REMEMBER: You are responsible for making the code changes. Provide search/replace operations for everything that needs to be modified. The user cannot edit code themselves.`,
     includeContext: true,
     maxContextFiles: 5,
     autoApply: false,
@@ -637,6 +665,7 @@ You can work with individual files or dynamically discover and analyze files acr
           model: selectedModel,
           temperature: config.temperature,
           maxTokens: config.maxTokens,
+          systemPrompt: config.systemPrompt,
           includeContext: config.includeContext,
         },
       });
@@ -793,7 +822,7 @@ You can work with individual files or dynamically discover and analyze files acr
             edit.type === 'format' ||
             edit.type === 'refactor'
           ) {
-            if (!edit.range || !edit.newText) {
+            if (!edit.range || edit.newText === undefined) {
               errors.push(
                 `Edit operation ${edit.type} requires range and newText properties`,
               );

@@ -320,7 +320,7 @@ ${request.exampleAfter}
       errors.push('Search text is required');
     }
 
-    if (!prompt.replaceText || prompt.replaceText.trim().length === 0) {
+    if (prompt.replaceText === undefined) {
       errors.push('Replace text is required');
     }
 
