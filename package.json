@@ -109,15 +109,18 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.61.0",
     "@electron/notarize": "^3.0.0",
     "@fortawesome/fontawesome-svg-core": "^7.0.0",
     "@fortawesome/free-solid-svg-icons": "^7.0.0",
     "@fortawesome/react-fontawesome": "^3.0.2",
+    "@google/generative-ai": "^0.24.1",
     "electron-debug": "^4.1.0",
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",
     "electron-updater": "^6.3.9",
     "lucide-react": "^0.542.0",
+    "openai": "^5.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.3.0"
@@ -234,11 +237,17 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64", "ia32"]
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         }
       ],
       "icon": "assets/icon.ico"

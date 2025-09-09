@@ -8,10 +8,10 @@ const https = require('https');
 
 // Test with a real API key (replace with actual key for testing)
 const API_KEY = process.env.GOOGLE_API_KEY || 'test-key';
-const MODEL = 'gemini-2.0-flash';
+const MODEL = 'gemini-2.5-flash';
 
 function testGoogleAPI() {
-  const baseUrl = 'https://generativelanguage.googleapis.com/v1';
+  const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
   const endpoint = `/models/${MODEL}:generateContent?key=${API_KEY}`;
   
   const requestData = {
