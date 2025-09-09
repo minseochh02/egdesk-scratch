@@ -13,8 +13,8 @@ import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../../AIKeysManager/types';
 import { CHAT_PROVIDERS } from '../../ChatInterface/types';
 import { conversationStore } from '../../AIEditor/store/conversationStore';
-import { useImageAI } from './useImageAI';
-import { ImagePlacementSuggestion } from '../../../services/imageAIService';
+import { ImageFolderService } from '../../../services/imageFolderService';
+import { IMAGE_EXTENSIONS, isImageExtension } from '../../../constants/imageExtensions';
 
 export const useDualScreenAIEditor = (
   projectContext?: {
@@ -115,23 +115,19 @@ export const useDualScreenAIEditor = (
 
   // Image AI state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [showImageSuggestions, setShowImageSuggestions] = useState(false);
-  const [currentImageSuggestions, setCurrentImageSuggestions] = useState<ImagePlacementSuggestion[]>([]);
   const [isAnalyzingImages, setIsAnalyzingImages] = useState(false);
+  const [imageSaveNotification, setImageSaveNotification] = useState<{
+    message: string;
+    type: 'success' | 'error';
+  } | null>(null);
 
-  // Initialize image AI hook
-  const imageAI = useImageAI(projectContext);
 
-  // Image file extensions for filtering
-  const IMAGE_EXTENSIONS = [
-    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff', '.tif',
-    '.ico', '.jfif', '.pjpeg', '.pjp', '.avif', '.heic', '.heif'
-  ];
+  // Image file extensions are now imported from constants
 
   // Utility function to check if a file is an image
   const isImageFile = useCallback((file: File): boolean => {
     const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-    return IMAGE_EXTENSIONS.includes(extension);
+    return isImageExtension(extension);
   }, []);
 
   // Get all image files from selected files
@@ -482,7 +478,7 @@ CODE BLOCK FORMAT (for suggestions):
     // Log image files for debugging
     const imageFiles = files.filter(file => {
       const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-      return IMAGE_EXTENSIONS.includes(extension);
+      return isImageExtension(extension);
     });
     
     if (imageFiles.length > 0) {
@@ -497,31 +493,6 @@ CODE BLOCK FORMAT (for suggestions):
     // Note: Image analysis will happen when user hits send, not immediately
   }, [IMAGE_EXTENSIONS]);
 
-  /**
-   * Handle image suggestion selection
-   */
-  const handleImageSuggestionSelect = useCallback((suggestion: ImagePlacementSuggestion, onProceed?: () => void) => {
-    // Here you would implement the logic to actually place the image
-    // For now, we'll just log the suggestion
-    console.log('Selected image suggestion:', suggestion);
-    
-    // Close the suggestions panel
-    setShowImageSuggestions(false);
-    setCurrentImageSuggestions([]);
-    
-    // Proceed with the main request if callback provided
-    if (onProceed) {
-      onProceed();
-    }
-  }, []);
-
-  /**
-   * Dismiss image suggestions
-   */
-  const handleDismissImageSuggestions = useCallback(() => {
-    setShowImageSuggestions(false);
-    setCurrentImageSuggestions([]);
-  }, []);
 
   /**
    * Remove a file from selection
@@ -530,54 +501,6 @@ CODE BLOCK FORMAT (for suggestions):
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  /**
-   * Analyze selected images when user hits send
-   */
-  const analyzeSelectedImages = useCallback(async (userRequest: string) => {
-    if (!selectedKey || !selectedModel) {
-      return null;
-    }
-
-    // Check if any of the selected files are images
-    const imageFiles = selectedFiles.filter(isImageFile);
-
-    console.log('🖼️ DEBUG: Analyzing images:', {
-      totalSelectedFiles: selectedFiles.length,
-      imageFilesCount: imageFiles.length,
-      imageFiles: imageFiles.map(f => ({
-        name: f.name,
-        size: f.size,
-        type: f.type,
-        extension: '.' + f.name.split('.').pop()?.toLowerCase()
-      }))
-    });
-
-    if (imageFiles.length === 0) {
-      return null;
-    }
-
-    setIsAnalyzingImages(true);
-    try {
-      const suggestions = await imageAI.analyzeImages(
-        imageFiles,
-        userRequest || 'Add these images to the website',
-        selectedKey,
-        selectedModel
-      );
-      
-      if (suggestions.length > 0) {
-        setCurrentImageSuggestions(suggestions);
-        setShowImageSuggestions(true);
-        return suggestions;
-      }
-    } catch (error) {
-      console.error('Failed to analyze images:', error);
-    } finally {
-      setIsAnalyzingImages(false);
-    }
-
-    return null;
-  }, [selectedFiles, selectedKey, selectedModel, imageAI]);
 
   return {
     // State
@@ -640,12 +563,10 @@ CODE BLOCK FORMAT (for suggestions):
     setCurrentAbortController,
     selectedFiles,
     setSelectedFiles,
-    showImageSuggestions,
-    setShowImageSuggestions,
-    currentImageSuggestions,
-    setCurrentImageSuggestions,
     isAnalyzingImages,
     setIsAnalyzingImages,
+    imageSaveNotification,
+    setImageSaveNotification,
 
     // Initialization states
     isFontAwesomeLoaded,
@@ -659,13 +580,9 @@ CODE BLOCK FORMAT (for suggestions):
     scrollToBottom,
     cancelAIRequest,
     handleFilesSelected,
-    handleImageSuggestionSelect,
-    handleDismissImageSuggestions,
     handleFileRemove,
-    analyzeSelectedImages,
     isImageFile,
     getImageFiles,
     getNonImageFiles,
-    imageAI,
   };
 };

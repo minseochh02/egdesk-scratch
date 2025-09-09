@@ -11,6 +11,7 @@ import {
 import { restartServer, openLocalhostIfNeeded } from './utils/serverOperations';
 import { IterativeFileReaderService } from '../AIEditor/services/iterativeFileReaderService';
 import PageRouteService from '../../services/pageRouteService';
+import { ImageFolderService } from '../../services/imageFolderService';
 
 // Import sub-components
 import { ConversationControls } from './components/ConversationControls';
@@ -23,7 +24,6 @@ import { InputArea } from './components/InputArea';
 import { DebugPayloadDisplay } from './components/DebugPayloadDisplay';
 import { IterativeReadingStatus } from './components/IterativeReadingStatus';
 import { SearchReplacePrompts } from './components/SearchReplacePrompts';
-import { ImageSuggestionPanel } from './components/ImageSuggestionPanel';
 
 import './DualScreenAIEditor.css';
 
@@ -123,12 +123,10 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     setCurrentAbortController,
     selectedFiles,
     setSelectedFiles,
-    showImageSuggestions,
-    setShowImageSuggestions,
-    currentImageSuggestions,
-    setCurrentImageSuggestions,
     isAnalyzingImages,
     setIsAnalyzingImages,
+    imageSaveNotification,
+    setImageSaveNotification,
 
     // Initialization states
     isFontAwesomeLoaded,
@@ -142,14 +140,10 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
     scrollToBottom,
     cancelAIRequest,
     handleFilesSelected,
-    handleImageSuggestionSelect,
-    handleDismissImageSuggestions,
     handleFileRemove,
-    analyzeSelectedImages,
     isImageFile,
     getImageFiles,
     getNonImageFiles,
-    imageAI,
   } = useDualScreenAIEditor(projectContext, currentFile);
 
 
@@ -218,7 +212,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   }, [aiResponse, isStreaming, streamedContent]);
 
   // Handle iterative file reading
-  const handleIterativeReading = async () => {
+  const handleIterativeReading = async (savedImagePaths: string[] = []) => {
     if (!selectedKey || !selectedModel || !userInstruction.trim()) {
       return;
     }
@@ -264,6 +258,18 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         ...(routeFiles || []),
       ].filter(Boolean);
 
+      // Enhance user instruction with image information if images were saved
+      let enhancedInstruction = userInstruction;
+      if (savedImagePaths.length > 0) {
+        const imageInfo = savedImagePaths.map(path => `- ${path}`).join('\n');
+        enhancedInstruction = `${userInstruction}\n\nImages uploaded and saved to project:\n${imageInfo}`;
+        console.log('🖼️ DEBUG: Enhanced instruction with image paths:', {
+          originalInstruction: userInstruction,
+          imagePaths: savedImagePaths,
+          enhancedInstruction
+        });
+      }
+
       console.log('🔍 DEBUG: Starting iterative reading with cached files', {
         cachedFilesCount: cachedFiles.length,
         cachedFiles: cachedFiles.map((f) => ({
@@ -271,6 +277,8 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
           name: f.name,
           contentLength: f.content.length,
         })),
+        hasImages: savedImagePaths.length > 0,
+        imageCount: savedImagePaths.length
       });
 
       // Get current URL path from PageRouteService
@@ -278,7 +286,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
 
       // Start iterative reading process
       const result = await iterativeReaderService.startIterativeReading(
-        userInstruction,
+        enhancedInstruction,
         projectRoot,
         availableFiles,
         selectedKey,
@@ -584,29 +592,57 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       return;
     }
 
-    // Check if there are images to analyze
+    // Check if there are images to process
     const hasImages = selectedFiles.some(isImageFile);
+    let savedImagePaths: string[] = [];
 
     if (hasImages) {
-      console.log('🖼️ DEBUG: Images detected, analyzing before proceeding');
+      console.log('🖼️ DEBUG: Images detected, saving to best folder before proceeding');
       try {
-        const imageSuggestions = await analyzeSelectedImages(userInstruction);
-        if (imageSuggestions && imageSuggestions.length > 0) {
-          console.log('✅ DEBUG: Image analysis complete, showing suggestions');
-          // Don't proceed with the main request yet - let user choose image placement first
+        const imageFiles = selectedFiles.filter(file => isImageFile(file));
+        const imageFolderService = ImageFolderService.getInstance();
+        
+        const result = await imageFolderService.saveMultipleImagesToBestFolder(
+          imageFiles,
+          projectContext?.currentProject?.path || '',
+          projectContext?.availableFiles || []
+        );
+        
+        if (result.success && result.imagePaths && result.imagePaths.length > 0) {
+          savedImagePaths = result.imagePaths;
+          console.log('✅ DEBUG: Images saved successfully with paths:', savedImagePaths);
+          
+          // Show success notification
+          setImageSaveNotification({
+            message: `✅ ${result.imagePaths.length} image(s) saved with EGDesk prefix to project folder`,
+            type: 'success'
+          });
+          
+          // Auto-hide notification after 3 seconds
+          setTimeout(() => {
+            setImageSaveNotification(null);
+          }, 3000);
+          
+          // Clear selected files after successful upload
+          setSelectedFiles([]);
+        } else {
+          console.error('❌ DEBUG: Image saving failed:', result.errors);
+          setError('Failed to save images. Please try again.');
           return;
         }
       } catch (error) {
-        console.error('❌ DEBUG: Image analysis failed:', error);
-        // Continue with main request even if image analysis fails
+        console.error('❌ DEBUG: Image saving failed:', error);
+        setError(`Failed to save images: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return;
       }
     }
 
     console.log(
       '✅ DEBUG: All conditions met, proceeding with iterative reading',
+      savedImagePaths.length > 0 ? `with ${savedImagePaths.length} saved images` : 'without images'
     );
     // Always use iterative mode
-    return handleIterativeReading();
+    return handleIterativeReading(savedImagePaths);
   };
 
   // Clear error state and reset form
@@ -859,16 +895,20 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         onClose={() => setShowContextManagement(false)}
       />
 
-      {/* Image Suggestion Panel */}
-      {showImageSuggestions && (
-        <ImageSuggestionPanel
-          suggestions={currentImageSuggestions}
-          isAnalyzing={isAnalyzingImages}
-          error={imageAI.error}
-          onSelectSuggestion={(suggestion) => handleImageSuggestionSelect(suggestion, () => handleIterativeReading())}
-          onDismiss={handleDismissImageSuggestions}
-          FontAwesomeIcon={FontAwesomeIcon}
-        />
+
+      {/* Image Save Notification */}
+      {imageSaveNotification && (
+        <div
+          className={`revert-notification revert-notification--${imageSaveNotification.type}`}
+        >
+          <span>{imageSaveNotification.message}</span>
+          <button
+            className="revert-notification__close"
+            onClick={() => setImageSaveNotification(null)}
+          >
+            ✕
+          </button>
+        </div>
       )}
     </div>
   );
