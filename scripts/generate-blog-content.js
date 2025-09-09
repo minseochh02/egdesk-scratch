@@ -21,9 +21,20 @@ const TEMPLATE_TITLE = process.env.TEMPLATE_TITLE;
 const TEMPLATE_CONTENT = process.env.TEMPLATE_CONTENT;
 const TEMPLATE_CATEGORIES = process.env.TEMPLATE_CATEGORIES;
 const TEMPLATE_TAGS = process.env.TEMPLATE_TAGS;
+const TEMPLATE_AUDIENCE = process.env.TEMPLATE_AUDIENCE;
+const TEMPLATE_WORD_LENGTH = process.env.TEMPLATE_WORD_LENGTH;
+const TEMPLATE_TONE = process.env.TEMPLATE_TONE;
 const WORDPRESS_URL = process.env.WORDPRESS_URL;
 const WORDPRESS_USERNAME = process.env.WORDPRESS_USERNAME;
 const WORDPRESS_PASSWORD = process.env.WORDPRESS_PASSWORD;
+// Image generation settings
+const IMAGE_GENERATION_ENABLED = process.env.IMAGE_GENERATION_ENABLED === 'true';
+const IMAGE_PROVIDER = process.env.IMAGE_PROVIDER || 'placeholder';
+const IMAGE_QUALITY = process.env.IMAGE_QUALITY || 'standard';
+const IMAGE_SIZE = process.env.IMAGE_SIZE || '400x300';
+const IMAGE_STYLE = process.env.IMAGE_STYLE || 'realistic';
+const IMAGE_ASPECT_RATIO = process.env.IMAGE_ASPECT_RATIO || 'landscape';
+const OPENAI_KEY = process.env.OPENAI_KEY;
 
 /**
  * Initialize AI clients based on provider
@@ -195,13 +206,17 @@ async function generateGoogleContent(client, systemPrompt, userPrompt) {
  * Build system prompt for blog content generation
  */
 function buildSystemPrompt() {
+  const targetAudience = TEMPLATE_AUDIENCE || '일반 독자';
+  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 단어';
+  const tone = TEMPLATE_TONE || '친근하고 실용적인';
+  
   return `You are an expert blog writer and content creator. Your task is to create high-quality, engaging blog posts that are optimized for SEO and user engagement.
 
 ## Writing Guidelines:
 - Write in Korean (한국어)
-- Use a 친근하고 실용적인 tone
-- Target audience: 일반 독자
-- Target length: 1200-1600 단어
+- Use a ${tone} tone
+- Target audience: ${targetAudience}
+- Target length: ${targetLength}
 - Include practical examples and actionable advice
 - Use proper headings and structure
 - Make content engaging and easy to read
@@ -263,6 +278,9 @@ Use [IMAGE:description:placement] markers in your content where images should be
 function buildUserPrompt() {
   const categories = TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반'];
   const tags = TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : [];
+  const targetAudience = TEMPLATE_AUDIENCE || '일반 독자';
+  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 단어';
+  const tone = TEMPLATE_TONE || '친근하고 실용적인';
 
   let templatePrompt = '';
   if (TEMPLATE_TYPE) {
@@ -282,9 +300,9 @@ function buildUserPrompt() {
 **Category:** ${categories[0] || '일반'}
 **Topic:** ${TEMPLATE_TITLE || '일반적인 주제'}
 **Keywords:** ${tags.join(', ')}
-**Audience:** 일반 독자
-**Tone:** 친근하고 실용적인
-**Target Length:** 1200-1600 단어
+**Audience:** ${targetAudience}
+**Tone:** ${tone}
+**Target Length:** ${targetLength}
 ${templatePrompt ? `**Template Type:** ${templatePrompt}` : ''}
 
 **Requirements:**
@@ -310,10 +328,20 @@ Please generate the content following the JSON format specified in the system pr
  */
 function parseGeneratedContent(content) {
   try {
-    // Try to extract JSON from the response
+    // Try to extract JSON from the response - look for JSON block
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
+      
+      // Clean up common JSON issues
+      jsonStr = jsonStr
+        .replace(/\\n/g, '\\n')  // Fix newlines
+        .replace(/\\t/g, '\\t')  // Fix tabs
+        .replace(/\\"/g, '\\"')  // Fix quotes
+        .replace(/\\'/g, "\\'")  // Fix single quotes
+        .replace(/\\\\/g, '\\\\'); // Fix backslashes
+      
+      const parsed = JSON.parse(jsonStr);
       console.log(`✅ Successfully parsed JSON response`);
       
       // Process image markers in content
@@ -333,6 +361,7 @@ function parseGeneratedContent(content) {
     }
   } catch (error) {
     console.warn('⚠️  Failed to parse JSON response, using fallback parsing:', error.message);
+    console.log('📄 Raw content preview:', content.substring(0, 500));
   }
 
   // Fallback parsing if JSON extraction fails
@@ -575,7 +604,7 @@ function getMimeType(filename) {
 }
 
 /**
- * Generate a placeholder image for testing
+ * Generate a placeholder image for testing (SVG format for WordPress compatibility)
  */
 function generatePlaceholderImage(width = 800, height = 600, text = 'Blog Image') {
   // Create a simple SVG placeholder image
@@ -602,8 +631,23 @@ async function downloadImages(images) {
     console.log(`🚀 Starting image download via Node.js script...`);
     console.log(`Images to download: ${images.length}`);
 
+    // Create a temporary file with image data to avoid command line argument issues
+    const tempInputFile = path.join(os.tmpdir(), `image-download-input-${Date.now()}.json`);
+    const imageData = images.map(img => ({
+      id: img.id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+      url: img.url
+    }));
+
+    try {
+      fs.writeFileSync(tempInputFile, JSON.stringify(imageData, null, 2));
+      console.log(`📝 Created input file: ${tempInputFile}`);
+    } catch (error) {
+      reject(new Error(`Failed to create input file: ${error.message}`));
+      return;
+    }
+
     const scriptPath = path.join(__dirname, 'download-images.js');
-    const child = spawn('node', [scriptPath, ...images.map(img => img.url)], {
+    const child = spawn('node', [scriptPath, '--input', tempInputFile], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -635,6 +679,16 @@ async function downloadImages(images) {
     });
 
     child.on('close', (code) => {
+      // Clean up input file
+      try {
+        if (fs.existsSync(tempInputFile)) {
+          fs.unlinkSync(tempInputFile);
+          console.log(`Cleaned up input file: ${tempInputFile}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to clean up input file: ${error.message}`);
+      }
+
       if (code === 0) {
         if (!tempFilePath) {
           reject(new Error('No temp file path received from download script'));
@@ -678,9 +732,7 @@ async function generateImagesWithDALLE(images, aiKey) {
       const imageRequest = {
         prompt: image.description,
         n: 1,
-        size: '1024x1024',
-        quality: 'standard',
-        style: 'vivid'
+        size: '1024x1024'
       };
 
       const postData = JSON.stringify(imageRequest);
@@ -756,23 +808,29 @@ async function generateImagesWithDALLE(images, aiKey) {
 async function uploadBlogImages(images, postTitle) {
   const uploadedImages = [];
   
-  // First, generate images with DALL-E if we have an AI key
+  // Handle image generation based on settings
   let generatedImages = images;
-  if (AI_KEY && AI_PROVIDER === 'openai') {
+  
+  if (!IMAGE_GENERATION_ENABLED) {
+    console.log('📷 Image generation disabled, skipping images');
+    generatedImages = [];
+  } else if (IMAGE_PROVIDER === 'dalle' && OPENAI_KEY) {
     console.log('🎨 Generating images with DALL-E...');
-    generatedImages = await generateImagesWithDALLE(images, AI_KEY);
+    generatedImages = await generateImagesWithDALLE(images, OPENAI_KEY);
   } else {
-    console.log('⚠️  No OpenAI key available, using placeholder images');
-    // Generate placeholder images for testing
+    console.log(`📷 Using ${IMAGE_PROVIDER} images (${IMAGE_SIZE})`);
+    // Generate placeholder images for testing (optimized for memory)
+    const [width, height] = IMAGE_SIZE.split('x').map(Number);
     for (let i = 0; i < images.length; i++) {
       const image = images[i];
-      const placeholderImage = generatePlaceholderImage(800, 600, image.description);
-      const filename = `blog-image-${Date.now()}-${i + 1}.svg`;
-      const mimeType = 'image/svg+xml';
+      // Generate smaller placeholder images to save memory
+      const placeholderImage = generatePlaceholderImage(width || 400, height || 300, `Image ${i + 1}`);
+      const filename = `blog-image-${Date.now()}-${i + 1}.png`;
+      const mimeType = 'image/png';
       
       generatedImages.push({
         ...image,
-        url: `data:image/svg+xml;base64,${placeholderImage.toString('base64')}`,
+        url: `data:image/png;base64,${placeholderImage.toString('base64')}`,
         isDalle: false,
         isPlaceholder: true
       });
@@ -821,8 +879,8 @@ async function uploadBlogImages(images, postTitle) {
       } else {
         // Use placeholder image
         fileBuffer = generatePlaceholderImage(800, 600, image.description);
-        filename = `blog-image-${Date.now()}-${i + 1}.svg`;
-        mimeType = 'image/svg+xml';
+        filename = `blog-image-${Date.now()}-${i + 1}.png`;
+        mimeType = 'image/png';
         console.log(`📤 Uploading placeholder image: ${filename}`);
       }
       
@@ -1014,9 +1072,18 @@ async function main() {
     console.log('AI_PROVIDER:', AI_PROVIDER);
     console.log('TEMPLATE_TYPE:', TEMPLATE_TYPE);
     console.log('TEMPLATE_TITLE:', TEMPLATE_TITLE);
+    console.log('TEMPLATE_CATEGORIES:', TEMPLATE_CATEGORIES);
+    console.log('TEMPLATE_TAGS:', TEMPLATE_TAGS);
+    console.log('TEMPLATE_AUDIENCE:', TEMPLATE_AUDIENCE);
+    console.log('TEMPLATE_WORD_LENGTH:', TEMPLATE_WORD_LENGTH);
+    console.log('TEMPLATE_TONE:', TEMPLATE_TONE);
     console.log('WORDPRESS_URL:', WORDPRESS_URL);
     console.log('WORDPRESS_USERNAME:', WORDPRESS_USERNAME);
     console.log('WORDPRESS_PASSWORD present:', !!WORDPRESS_PASSWORD);
+    console.log('IMAGE_GENERATION_ENABLED:', IMAGE_GENERATION_ENABLED);
+    console.log('IMAGE_PROVIDER:', IMAGE_PROVIDER);
+    console.log('IMAGE_SIZE:', IMAGE_SIZE);
+    console.log('OPENAI_KEY present:', !!OPENAI_KEY);
     
     // Validate required environment variables
     const requiredVars = [

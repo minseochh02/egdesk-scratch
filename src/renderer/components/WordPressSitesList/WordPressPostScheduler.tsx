@@ -56,6 +56,7 @@ interface PostTemplate {
     size: string;
     style: 'realistic' | 'illustration' | 'minimalist' | 'artistic' | 'photographic';
     aspectRatio: 'square' | 'landscape' | 'portrait' | 'wide';
+    openaiKeyId?: string; // Separate key for DALL-E image generation
   };
 }
 
@@ -187,6 +188,14 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         aiSettings: {
           model: availableModels[0]?.id || 'gpt-3.5-turbo',
           keyId: activeKeys[0]?.id || ''
+        },
+        imageSettings: {
+          enabled: false, // Disable image generation by default to avoid memory issues
+          provider: 'placeholder',
+          quality: 'standard',
+          size: '400x300',
+          style: 'realistic',
+          aspectRatio: 'landscape'
         }
       }
     : null;
@@ -221,6 +230,15 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       aiSettings: (t as any).aiSettings || {
         model: availableModels[0]?.id || 'gpt-3.5-turbo',
         keyId: activeKeys[0]?.id || ''
+      },
+      // Add default image settings
+      imageSettings: (t as any).imageSettings || {
+        enabled: false, // Disable image generation by default to avoid memory issues
+        provider: 'placeholder',
+        quality: 'standard',
+        size: '400x300',
+        style: 'realistic',
+        aspectRatio: 'landscape'
       }
     }));
 
@@ -415,6 +433,11 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         return;
       }
 
+      // Find OpenAI key for image generation if needed
+      const openaiKey = template.imageSettings?.enabled && template.imageSettings?.openaiKeyId 
+        ? activeKeys.find(key => key.id === template.imageSettings!.openaiKeyId)
+        : null;
+
       // Prepare environment variables for the dynamic script
       const environment = {
         AI_KEY: selectedKey.fields.apiKey,
@@ -425,9 +448,20 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         TEMPLATE_CONTENT: template.content,
         TEMPLATE_CATEGORIES: template.categories.join(','),
         TEMPLATE_TAGS: template.tags.join(','),
+        TEMPLATE_AUDIENCE: (selectedSite as any)?.blog_audience || '일반 독자',
+        TEMPLATE_WORD_LENGTH: (selectedSite as any)?.blog_word_length || '1200-1600 단어',
+        TEMPLATE_TONE: (selectedSite as any)?.blog_tone || '친근하고 실용적인',
         WORDPRESS_URL: selectedSite.url,
         WORDPRESS_USERNAME: selectedSite.username,
         WORDPRESS_PASSWORD: selectedSite.password,
+        // Image generation settings
+        IMAGE_GENERATION_ENABLED: template.imageSettings?.enabled ? 'true' : 'false',
+        IMAGE_PROVIDER: template.imageSettings?.provider || 'placeholder',
+        IMAGE_QUALITY: template.imageSettings?.quality || 'standard',
+        IMAGE_SIZE: template.imageSettings?.size || '400x300',
+        IMAGE_STYLE: template.imageSettings?.style || 'realistic',
+        IMAGE_ASPECT_RATIO: template.imageSettings?.aspectRatio || 'landscape',
+        OPENAI_KEY: openaiKey?.fields.apiKey || '',
       };
 
       // Debug: Log environment variables (without sensitive data)
@@ -436,14 +470,19 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         AI_PROVIDER: environment.AI_PROVIDER,
         TEMPLATE_TYPE: environment.TEMPLATE_TYPE,
         TEMPLATE_TITLE: environment.TEMPLATE_TITLE,
+        TEMPLATE_CATEGORIES: environment.TEMPLATE_CATEGORIES,
+        TEMPLATE_TAGS: environment.TEMPLATE_TAGS,
+        TEMPLATE_AUDIENCE: environment.TEMPLATE_AUDIENCE,
+        TEMPLATE_WORD_LENGTH: environment.TEMPLATE_WORD_LENGTH,
+        TEMPLATE_TONE: environment.TEMPLATE_TONE,
         WORDPRESS_URL: environment.WORDPRESS_URL,
         WORDPRESS_USERNAME: environment.WORDPRESS_USERNAME,
         AI_KEY_PRESENT: !!environment.AI_KEY,
         WORDPRESS_PASSWORD_PRESENT: !!environment.WORDPRESS_PASSWORD
       });
 
-      // Create the command to run the dynamic script
-      const command = `node "${scriptPath}"`;
+      // Create the command to run the dynamic script with increased memory limit
+      const command = `node --max-old-space-size=4096 "${scriptPath}"`;
 
       const taskData: CreateTaskData = {
         name: `WordPress Post: ${template.name} - ${selectedSite.name || selectedSite.url} (AI 생성)`,
@@ -1064,11 +1103,11 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       const blogAIService = BlogAIService.getInstance();
       const contentRequest: BlogContentRequest = {
         topic: 'AI와 블로그 자동화의 미래',
-        audience: '개발자',
-        tone: '전문적이고 친근한',
-        length: '1200-1600 단어',
+        audience: (selectedSite as any)?.blog_audience || '개발자',
+        tone: (selectedSite as any)?.blog_tone || '전문적이고 친근한',
+        length: (selectedSite as any)?.blog_word_length || '1200-1600 단어',
         keywords: ['AI', '블로그', '자동화', 'WordPress', '이미지 생성'],
-        category: 'IT/기술',
+        category: (selectedSite as any)?.blog_category || 'IT/기술',
         aiKey: activeKeys[0]!,
         model: availableModels[0]?.id || 'gpt-3.5-turbo'
       };
@@ -1406,6 +1445,90 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     } catch (error) {
       console.error('Failed to update AI settings:', error);
       setError('AI 설정 저장에 실패했습니다.');
+    } finally {
+      setSavingAISettings(null);
+    }
+  };
+
+  /**
+   * Update image settings for a template
+   */
+  const updateTemplateImageSettings = async (templateId: string, imageSettings: {
+    enabled: boolean;
+    provider: 'dalle' | 'placeholder' | 'stability' | 'midjourney';
+    quality: 'standard' | 'hd';
+    size: string;
+    style: 'realistic' | 'illustration' | 'minimalist' | 'artistic' | 'photographic';
+    aspectRatio: 'square' | 'landscape' | 'portrait' | 'wide';
+    openaiKeyId?: string;
+  }) => {
+    if (!selectedSite?.id) {
+      console.error('No selected site to update');
+      return;
+    }
+
+    setSavingAISettings(templateId);
+    try {
+      // Get current templates from the site
+      const currentTemplates = (selectedSite as any)?.blog_templates || [];
+      
+      // Check if this is a built-in template that needs to be saved
+      const isBuiltinTemplate = builtinTemplates.some(t => t.id === templateId);
+      let updatedTemplates = [...currentTemplates];
+      
+      if (isBuiltinTemplate) {
+        // For built-in templates, create a saved version with image settings
+        const builtinTemplate = builtinTemplates.find(t => t.id === templateId);
+        if (builtinTemplate) {
+          // Check if a saved version already exists
+          const existingSavedTemplate = currentTemplates.find((t: any) => t.id === templateId);
+          
+          if (existingSavedTemplate) {
+            // Update existing saved template
+            updatedTemplates = currentTemplates.map((template: any) => {
+              if (template.id === templateId) {
+                return { ...template, imageSettings };
+              }
+              return template;
+            });
+          } else {
+            // Create new saved template with image settings
+            const newSavedTemplate = {
+              ...builtinTemplate,
+              imageSettings
+            };
+            updatedTemplates.push(newSavedTemplate);
+          }
+        }
+      } else {
+        // For saved templates, update the image settings
+        updatedTemplates = currentTemplates.map((template: any) => {
+          if (template.id === templateId) {
+            return { ...template, imageSettings };
+          }
+          return template;
+        });
+      }
+      
+      // Save the updated templates back to the site
+      await window.electron.wordpress.updateConnection(
+        selectedSite.id,
+        { blog_templates: updatedTemplates },
+      );
+      
+      // Update the local selectedSite state to reflect the changes
+      setSelectedSite((prev: WordPressConnection | null) => prev ? {
+        ...prev,
+        blog_templates: updatedTemplates
+      } : null);
+      
+      // Force re-render by updating refreshKey
+      setRefreshKey(prev => prev + 1);
+      
+      console.log('Image settings updated for template:', templateId, imageSettings);
+    } catch (error) {
+      console.error('Failed to update image settings:', error);
+      setError('이미지 설정 저장에 실패했습니다.');
     } finally {
       setSavingAISettings(null);
     }
@@ -1750,6 +1873,102 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                       })}
                     </select>
                   </div>
+                </div>
+              </div>
+
+              {/* Image Settings for this template */}
+              <div className="template-image-settings">
+                <div className="image-settings-header">
+                  <label>
+                    <FontAwesomeIcon icon={faImage} />
+                    이미지 설정
+                  </label>
+                </div>
+                
+                <div className="image-settings-controls">
+                  <div className="image-setting-item">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={template.imageSettings?.enabled || false}
+                        onChange={async (e) => {
+                          const newImageSettings = {
+                            ...template.imageSettings,
+                            enabled: e.target.checked,
+                            provider: template.imageSettings?.provider || 'placeholder',
+                            quality: template.imageSettings?.quality || 'standard',
+                            size: template.imageSettings?.size || '400x300',
+                            style: template.imageSettings?.style || 'realistic',
+                            aspectRatio: template.imageSettings?.aspectRatio || 'landscape'
+                          };
+                          await updateTemplateImageSettings(template.id, newImageSettings);
+                        }}
+                      />
+                      이미지 생성 활성화
+                    </label>
+                  </div>
+                  
+                  {template.imageSettings?.enabled && (
+                    <>
+                      <div className="image-setting-item">
+                        <label>이미지 제공자</label>
+                        <select
+                          value={template.imageSettings?.provider || 'placeholder'}
+                          onChange={async (e) => {
+                            const newImageSettings = {
+                              ...template.imageSettings,
+                              provider: e.target.value as any
+                            };
+                            await updateTemplateImageSettings(template.id, newImageSettings);
+                          }}
+                        >
+                          <option value="placeholder">플레이스홀더</option>
+                          <option value="dalle">DALL-E (OpenAI)</option>
+                        </select>
+                      </div>
+                      
+                      {template.imageSettings?.provider === 'dalle' && (
+                        <div className="image-setting-item">
+                          <label>OpenAI 키 (이미지용)</label>
+                          <select
+                            value={template.imageSettings?.openaiKeyId || ''}
+                            onChange={async (e) => {
+                              const newImageSettings = {
+                                ...template.imageSettings,
+                                openaiKeyId: e.target.value
+                              };
+                              await updateTemplateImageSettings(template.id, newImageSettings);
+                            }}
+                          >
+                            <option value="">OpenAI 키 선택...</option>
+                            {activeKeys.filter(key => key.providerId === 'openai').map((key) => (
+                              <option key={key.id} value={key.id}>
+                                {key.name} (OpenAI)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      
+                      <div className="image-setting-item">
+                        <label>이미지 크기</label>
+                        <select
+                          value={template.imageSettings?.size || '400x300'}
+                          onChange={async (e) => {
+                            const newImageSettings = {
+                              ...template.imageSettings,
+                              size: e.target.value
+                            };
+                            await updateTemplateImageSettings(template.id, newImageSettings);
+                          }}
+                        >
+                          <option value="400x300">400x300 (작은)</option>
+                          <option value="800x600">800x600 (중간)</option>
+                          <option value="1024x1024">1024x1024 (큰)</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="template-actions">

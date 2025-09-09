@@ -173,20 +173,38 @@ async function downloadImages(images) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   
-  if (args.length === 0) {
-    console.log('Usage: node download-images.js <images-json>');
+  if (args.length === 0 || (args[0] !== '--input' && args.length < 2)) {
+    console.log('Usage: node download-images.js --input <input-file>');
+    console.log('   or: node download-images.js <images-json>');
     console.log('');
-    console.log('Where <images-json> is a JSON string containing an array of image objects:');
+    console.log('Where <input-file> is a JSON file containing an array of image objects:');
     console.log('[{"id": "img_123", "url": "https://example.com/image.jpg"}]');
     console.log('');
     console.log('Example:');
+    console.log('node download-images.js --input images.json');
     console.log('node download-images.js \'[{"id":"test","url":"https://picsum.photos/200/300"}]\'');
     process.exit(1);
   }
 
   try {
-    const imagesJson = args[0];
-    const images = JSON.parse(imagesJson);
+    let images;
+    
+    if (args[0] === '--input' && args[1]) {
+      // Read from input file
+      const inputFile = args[1];
+      console.log(`📁 Reading images from file: ${inputFile}`);
+      
+      if (!fs.existsSync(inputFile)) {
+        throw new Error(`Input file not found: ${inputFile}`);
+      }
+      
+      const fileContent = fs.readFileSync(inputFile, 'utf8');
+      images = JSON.parse(fileContent);
+    } else {
+      // Parse from command line argument
+      const imagesJson = args[0];
+      images = JSON.parse(imagesJson);
+    }
     
     if (!Array.isArray(images)) {
       throw new Error('Images must be an array');
@@ -220,7 +238,7 @@ if (require.main === module) {
       });
   } catch (error) {
     console.error('💥 Error parsing arguments:', error.message);
-    console.log('Make sure to pass a valid JSON array of image objects.');
+    console.log('Make sure to pass a valid JSON array of image objects or a valid input file.');
     process.exit(1);
   }
 }
