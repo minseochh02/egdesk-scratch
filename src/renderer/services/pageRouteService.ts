@@ -220,7 +220,7 @@ class PageRouteService {
   }
 
   /**
-   * Call OpenAI with URL path and project tree to get files to open.
+   * Call Google AI with URL path and project tree to get files to open.
    * Saves both mapping and current filesToOpen.
    */
   async requestFilesForUrl(
@@ -238,10 +238,10 @@ class PageRouteService {
         console.log('[debug] creating project directory tree');
       }
       const tree = await this.gatherProjectTree(projectRoot, 5);
-      // Resolve OpenAI key and model
-      const openaiKeys = aiKeysStore.getKeysByProvider('openai');
-      const key = openaiKeys[0];
-      const model = 'gpt-4o-mini';
+      // Resolve Google AI key and model
+      const googleKeys = aiKeysStore.getKeysByProvider('google');
+      const key = googleKeys[0];
+      const model = 'gemini-1.5-flash';
       if (!key) return;
 
       const systemPromptText =
@@ -263,7 +263,7 @@ class PageRouteService {
       ].join('\n');
 
       if (process.env.NODE_ENV === 'development') {
-        console.log('[debug] sending request to OpenAI with prompt:');
+        console.log('[debug] sending request to Google AI with prompt:');
         console.log('--- system ---');
         console.log(systemPromptText);
         console.log('--- user ---');

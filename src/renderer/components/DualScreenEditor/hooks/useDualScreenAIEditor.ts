@@ -167,6 +167,14 @@ IMPORTANT GUIDELINES:
 9. Today's date is ${new Date().toDateString()}
 10. 🔥 IMPORTANT: You have access to file contents - USE THEM! Don't say you don't have access to files when you do.
 
+🎨 CSS COMPLIANCE REQUIREMENTS:
+- If you see CSS files in the project, analyze the existing design system
+- Use existing CSS classes, variables, and patterns from the design system
+- Maintain visual consistency with the established design
+- Follow the color schemes, spacing, and typography rules exactly
+- If you must add new CSS, follow the existing naming conventions and structure
+- NEVER create components that don't match the existing visual style
+
 PROJECT EXPLORATION:
 - You can ask the user to show you other files in the project
 - You can request to see specific file contents to better understand the codebase

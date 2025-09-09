@@ -302,7 +302,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
       );
 
       // Process the first AI decision
-      await processIterativeDecision(result.nextAction);
+      await processIterativeDecision(result.nextAction, result.conversationId);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -318,18 +318,25 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
   };
 
   // Process AI decision in iterative reading
-  const processIterativeDecision = async (decision: any) => {
+  const processIterativeDecision = async (decision: any, conversationId?: string) => {
     try {
       console.log('🔍 DEBUG: Processing iterative decision', {
         decision,
         selectedKey,
         selectedModel,
+        conversationId,
       });
+
+      if (!conversationId) {
+        setError('No conversation ID provided');
+        return;
+      }
 
       const result = await iterativeReaderService.continueIterativeReading(
         decision,
         selectedKey!,
         selectedModel!,
+        conversationId,
         currentAbortController || undefined, // Pass the current abort controller
       );
 
@@ -536,7 +543,7 @@ export const DualScreenAIEditor: React.FC<DualScreenAIEditorProps> = ({
         }
       } else if (result.nextAction) {
         // Continue with next decision
-        setTimeout(() => processIterativeDecision(result.nextAction), 1000);
+        setTimeout(() => processIterativeDecision(result.nextAction, conversationId), 1000);
       }
     } catch (error) {
       console.error('Failed to process iterative decision:', error);

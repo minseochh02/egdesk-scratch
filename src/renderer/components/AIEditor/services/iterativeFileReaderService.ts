@@ -7,7 +7,7 @@ export interface FileDiscoveryRequest {
 export interface FileDiscoveryResponse {
   success: boolean;
   filesToExamine: string[];
-  reasoning: string;
+  conversationId: string;
   error?: string;
 }
 
@@ -30,6 +30,9 @@ export interface IterativeReadingState {
   currentFile?: string;
   projectRoot: string;
   currentUrlPath: string; // Track the current URL path the user is viewing
+  filesToExamine: string[]; // List of files discovered to examine
+  currentFileIndex: number; // Index of current file being read
+  conversationId: string; // Unique ID for this discovery session
   cachedFiles: Array<{
     path: string;
     name: string;
@@ -56,6 +59,7 @@ export interface AIReadingDecision {
   filePath?: string;
   startLine?: number;
   endLine?: number;
+  lineCount?: number;  // Number of lines to read at once
   reasoning: string;
   confidence: number;
 }
@@ -103,6 +107,7 @@ export class IterativeFileReaderService {
   ): Promise<{
     success: boolean;
     nextAction: AIReadingDecision;
+    conversationId?: string;
     error?: string;
   }> {
     try {
@@ -118,6 +123,9 @@ export class IterativeFileReaderService {
         phase: 'discovery',
         projectRoot,
         currentUrlPath,
+        filesToExamine: [],
+        currentFileIndex: 0,
+        conversationId: '',
         cachedFiles,
         readRanges: [],
         totalContentRead: 0,
@@ -127,8 +135,12 @@ export class IterativeFileReaderService {
       // Add user prompt to conversation history
       this.addToConversationHistory('user', userPrompt);
 
-      // Phase 1: File Discovery
-      const discoveryResponse = await this.performFileDiscovery(
+      // Generate conversation ID
+      const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      this.currentState.conversationId = conversationId;
+
+      // Phase 1: AI determines which lines to read
+      const aiDecisionResponse = await this.performAILineDecision(
         userPrompt,
         projectRoot,
         availableFiles,
@@ -136,35 +148,47 @@ export class IterativeFileReaderService {
         model,
       );
 
-      if (!discoveryResponse.success) {
+      if (!aiDecisionResponse.success) {
         return {
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
-            reasoning: 'Failed to discover relevant files',
+            reasoning: 'Failed to get AI decision on what to read',
             confidence: 0,
           },
-          error: discoveryResponse.error,
+          error: aiDecisionResponse.error,
         };
       }
 
-      // Add AI reasoning to conversation history
-      this.addToConversationHistory('assistant', discoveryResponse.reasoning);
+      // Store the AI's decision as the next action
+      const nextAction = aiDecisionResponse.nextAction;
 
-      // Determine next action based on discovery
-      const nextAction: AIReadingDecision = {
-        action:
-          discoveryResponse.filesToExamine.length > 0
-            ? 'read_file'
-            : 'analyze_and_respond',
-        filePath: discoveryResponse.filesToExamine[0],
-        reasoning: `Discovered ${discoveryResponse.filesToExamine.length} relevant files. Starting with: ${discoveryResponse.filesToExamine[0] || 'none'}`,
-        confidence: 0.9,
-      };
+      // DEBUG: Log the initial AI decision
+      console.log('🔍 DEBUG: Initial AI Line Decision:', {
+        userPrompt,
+        currentUrlPath,
+        availableFilesCount: availableFiles.length,
+        aiDecision: {
+          action: nextAction.action,
+          filePath: nextAction.filePath,
+          startLine: nextAction.startLine,
+          endLine: nextAction.endLine,
+          lineCount: nextAction.lineCount,
+          reasoning: nextAction.reasoning,
+          confidence: nextAction.confidence
+        },
+        conversationId: this.currentState.conversationId,
+        state: {
+          phase: this.currentState.phase,
+          filesToExamine: this.currentState.filesToExamine,
+          currentFileIndex: this.currentState.currentFileIndex
+        }
+      });
 
       return {
         success: true,
         nextAction,
+        conversationId: this.currentState.conversationId,
       };
     } catch (error) {
       console.error('Failed to start iterative reading:', error);
@@ -187,6 +211,7 @@ export class IterativeFileReaderService {
     aiDecision: AIReadingDecision,
     aiKey: any,
     model: string,
+    conversationId: string,
     abortController?: AbortController,
   ): Promise<{
     success: boolean;
@@ -206,6 +231,19 @@ export class IterativeFileReaderService {
       };
     }
 
+    // Validate conversation ID matches current session
+    if (this.currentState.conversationId !== conversationId) {
+      return {
+        success: false,
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Conversation ID mismatch',
+          confidence: 0,
+        },
+        error: 'Conversation ID does not match current session',
+      };
+    }
+
     // Check if request was cancelled
     if (this.currentAbortController?.signal.aborted) {
       return {
@@ -220,24 +258,36 @@ export class IterativeFileReaderService {
     }
 
     try {
+      let result: {
+        success: boolean;
+        nextAction: AIReadingDecision;
+        content?: string;
+        error?: string;
+      };
+
       switch (aiDecision.action) {
         case 'read_file':
-          return await this.handleReadFile(aiDecision, aiKey, model);
+          result = await this.handleReadFile(aiDecision, aiKey, model);
+          break;
 
         case 'read_range':
-          return await this.handleReadRange(aiDecision, aiKey, model);
+          result = await this.handleReadRange(aiDecision, aiKey, model);
+          break;
 
         case 'continue_reading':
-          return await this.handleContinueReading(aiDecision, aiKey, model);
+          result = await this.handleContinueReading(aiDecision, aiKey, model);
+          break;
 
         case 'analyze_and_respond':
-          return await this.handleAnalyzeAndRespond(aiDecision, aiKey, model);
+          result = await this.handleAnalyzeAndRespond(aiDecision, aiKey, model);
+          break;
 
         case 'need_more_context':
-          return await this.handleNeedMoreContext(aiDecision, aiKey, model);
+          result = await this.handleNeedMoreContext(aiDecision, aiKey, model);
+          break;
 
         default:
-          return {
+          result = {
             success: false,
             nextAction: {
               action: 'analyze_and_respond',
@@ -247,6 +297,38 @@ export class IterativeFileReaderService {
             error: 'Unknown action type',
           };
       }
+
+      // DEBUG: Log the result for debugging purposes
+      console.log('🔍 DEBUG: Iterative Reading Result:', {
+        action: aiDecision.action,
+        filePath: aiDecision.filePath,
+        startLine: aiDecision.startLine,
+        endLine: aiDecision.endLine,
+        lineCount: aiDecision.lineCount,
+        reasoning: aiDecision.reasoning,
+        confidence: aiDecision.confidence,
+        result: {
+          success: result.success,
+          nextAction: result.nextAction,
+          contentLength: result.content?.length || 0,
+          contentPreview: result.content?.substring(0, 200) + (result.content && result.content.length > 200 ? '...' : ''),
+          error: result.error
+        },
+        state: {
+          phase: this.currentState?.phase,
+          filesToExamine: this.currentState?.filesToExamine,
+          currentFileIndex: this.currentState?.currentFileIndex,
+          totalContentRead: this.currentState?.totalContentRead,
+          readRanges: this.currentState?.readRanges.map(range => ({
+            filePath: range.filePath,
+            startLine: range.startLine,
+            endLine: range.endLine,
+            contentLength: range.content.length
+          }))
+        }
+      });
+
+      return result;
     } catch (error) {
       console.error('Failed to continue iterative reading:', error);
       return {
@@ -296,12 +378,11 @@ ${availableFiles.map((file, index) => `${index + 1}. ${file}`).join('\n')}
 Return a JSON object with this exact structure:
 \`\`\`json
 {
-  "filesToExamine": ["path/to/file1.ext", "path/to/file2.ext"],
-  "reasoning": "Brief explanation of why these files need to be modified for the user's request"
+  "filesToExamine": ["path/to/file1.ext", "path/to/file2.ext", "path/to/component.css"]
 }
 \`\`\`
 
-Remember: You will be making actual code changes to these files. Select files that need modification, not just files that are related to the topic.`;
+Remember: You will be making actual code changes to these files. Select files that need modification, not just files that are related to the topic. ALWAYS include CSS files when working with UI components.`;
 
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {
@@ -313,7 +394,7 @@ Remember: You will be making actual code changes to these files. Select files th
         return {
           success: false,
           filesToExamine: [],
-          reasoning: '',
+          conversationId: '',
           error: response.error,
         };
       }
@@ -326,23 +407,173 @@ Remember: You will be making actual code changes to these files. Select files th
         return {
           success: false,
           filesToExamine: [],
-          reasoning: 'Failed to parse AI response',
+          conversationId: '',
+          error: 'Invalid response format',
+        };
+      }
+
+      const decision = JSON.parse(jsonMatch[1]);
+      
+      // Generate a unique conversation ID
+      const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      return {
+        success: true,
+        filesToExamine: decision.filesToExamine || [],
+        conversationId,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        filesToExamine: [],
+        conversationId: '',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * AI determines which lines to read based on user request
+   */
+  private async performAILineDecision(
+    userPrompt: string,
+    projectRoot: string,
+    availableFiles: string[],
+    aiKey: any,
+    model: string,
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    error?: string;
+  }> {
+    const prompt = `## AI Line Reading Decision Phase
+
+You are a coding assistant that will be making direct changes to code files. The user cannot edit code themselves - YOU are responsible for all code modifications.
+
+## Current Location Context:
+The user is currently viewing: ${this.currentState?.currentUrlPath || 'Not specified'}
+
+## User Request:
+${userPrompt}
+
+## Available Files in Project:
+${availableFiles.map((file, index) => `${index + 1}. ${file}`).join('\n')}
+
+## Your Task:
+Based on the user's request, determine what specific lines from which files you need to read to understand the code and make the necessary changes.
+
+## Response Format:
+Return a JSON object with this exact structure:
+\`\`\`json
+{
+  "action": "read_file" | "read_range" | "analyze_and_respond",
+  "filePath": "path/to/file.ext",
+  "startLine": 1,
+  "endLine": 50,
+  "lineCount": 50,
+  "reasoning": "Explanation of why you need to read these specific lines",
+  "confidence": 0.9
+}
+\`\`\`
+
+## Action Types:
+- **read_file**: Read a specific file (will read from startLine to endLine, or first lineCount lines if startLine/endLine not specified)
+- **read_range**: Read a specific range of lines from a file
+- **analyze_and_respond**: You have enough information to proceed with analysis
+
+## Guidelines:
+1. Start with the most relevant file for the user's request
+2. Consider the current URL path context
+3. Be specific about which lines you need to read
+4. Focus on files that contain code that needs to be modified
+5. If you need to read multiple files, start with the most important one first
+6. Set confidence based on how certain you are about this decision
+
+Remember: You will be making actual code changes to these files. Select the most relevant file and lines to start with.`;
+
+    try {
+      const response = await this.sendToAI(aiKey, model, prompt, {
+        temperature: 0.3,
+        maxTokens: 4096,
+      });
+
+      if (!response.success) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: 'Failed to get AI response',
+            confidence: 0,
+          },
+          error: response.error,
+        };
+      }
+
+      // Parse AI response
+      const jsonMatch = response.content?.match(
+        /```json\s*(\{[\s\S]*?\})\s*```/,
+      );
+      if (!jsonMatch) {
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: 'Failed to parse AI response',
+            confidence: 0,
+          },
           error: 'Invalid response format',
         };
       }
 
       const decision = JSON.parse(jsonMatch[1]);
 
+      // DEBUG: Log the raw AI response
+      console.log('🔍 DEBUG: Raw AI Response:', {
+        rawResponse: response.content,
+        parsedDecision: decision
+      });
+
+      // Validate the decision structure
+      if (!decision.action || !decision.filePath) {
+        console.log('🔍 DEBUG: Invalid AI decision structure:', decision);
+        return {
+          success: false,
+          nextAction: {
+            action: 'analyze_and_respond',
+            reasoning: 'Invalid decision structure',
+            confidence: 0,
+          },
+          error: 'AI decision missing required fields',
+        };
+      }
+
+      // Add the file to filesToExamine if it's a read action
+      if (decision.action === 'read_file' || decision.action === 'read_range') {
+        if (!this.currentState!.filesToExamine.includes(decision.filePath)) {
+          this.currentState!.filesToExamine.push(decision.filePath);
+        }
+      }
+
       return {
         success: true,
-        filesToExamine: decision.filesToExamine || [],
-        reasoning: decision.reasoning || 'No reasoning provided',
+        nextAction: {
+          action: decision.action,
+          filePath: decision.filePath,
+          startLine: decision.startLine || 1,
+          endLine: decision.endLine,
+          lineCount: decision.lineCount || 50,
+          reasoning: decision.reasoning || 'No reasoning provided',
+          confidence: decision.confidence || 0.8,
+        },
       };
     } catch (error) {
       return {
         success: false,
-        filesToExamine: [],
-        reasoning: '',
+        nextAction: {
+          action: 'analyze_and_respond',
+          reasoning: 'Error during AI decision',
+          confidence: 0,
+        },
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
@@ -395,7 +626,124 @@ Remember: You will be making actual code changes to these files. Select files th
   }
 
   /**
-   * Handle reading an entire file
+   * Get the next file to read from the filesToExamine list
+   */
+  private getNextFileToRead(): string | null {
+    if (!this.currentState) return null;
+    
+    const nextIndex = this.currentState.currentFileIndex + 1;
+    if (nextIndex < this.currentState.filesToExamine.length) {
+      return this.currentState.filesToExamine[nextIndex];
+    }
+    
+    return null;
+  }
+
+  /**
+   * Read file by lines from cached content
+   */
+  private async readFileByLinesFromCache(
+    aiDecision: AIReadingDecision,
+    aiKey: any,
+    model: string,
+    fullContent: string,
+  ): Promise<{
+    success: boolean;
+    nextAction: AIReadingDecision;
+    content?: string;
+    error?: string;
+  }> {
+    const lines = fullContent.split('\n');
+    const totalLines = lines.length;
+    
+    let startLine: number;
+    let endLine: number;
+    const linesToRead = aiDecision.lineCount || 50; // Default lines to read
+    
+    // If AI provided specific line ranges, use them
+    if (aiDecision.startLine && aiDecision.endLine) {
+      startLine = Math.max(1, aiDecision.startLine);
+      endLine = Math.min(totalLines, aiDecision.endLine);
+    } else {
+      // Determine starting line (continue from where we left off)
+      const lastReadRange = this.currentState!.readRanges
+        .filter(range => range.filePath === aiDecision.filePath)
+        .sort((a, b) => b.endLine - a.endLine)[0];
+      
+      startLine = lastReadRange ? lastReadRange.endLine + 1 : 1;
+      endLine = Math.min(startLine + linesToRead - 1, totalLines);
+    }
+    
+    // Extract the lines
+    const content = lines.slice(startLine - 1, endLine).join('\n');
+    
+    // Add to read ranges
+    this.currentState!.readRanges.push({
+      filePath: aiDecision.filePath!,
+      startLine,
+      endLine,
+      content,
+    });
+
+    this.currentState!.totalContentRead += content.length;
+
+    // Add content to conversation history
+    this.addToConversationHistory(
+      'assistant',
+      `Read file ${aiDecision.filePath} lines ${startLine}-${endLine} (${content.length} chars)`,
+    );
+
+    // Determine next action based on whether we've read the entire file
+    let nextAction: AIReadingDecision;
+    
+    if (endLine >= totalLines) {
+      // We've read the entire file, move to next file
+      const nextFile = this.getNextFileToRead();
+      
+      if (nextFile) {
+        // Move to next file
+        this.currentState!.currentFileIndex += 1;
+        
+        nextAction = {
+          action: 'read_file',
+          filePath: nextFile,
+          lineCount: linesToRead,
+          reasoning: `Finished reading ${aiDecision.filePath}. Moving to next file: ${nextFile}`,
+          confidence: 0.9,
+        };
+      } else {
+        // No more files to read
+        nextAction = {
+          action: 'analyze_and_respond',
+          reasoning: `Finished reading all ${this.currentState!.filesToExamine.length} files. Proceeding to analysis.`,
+          confidence: 0.9,
+        };
+      }
+    } else {
+      // Continue reading more lines from current file
+      nextAction = {
+        action: 'read_file',
+        filePath: aiDecision.filePath,
+        startLine: endLine + 1,
+        endLine: Math.min(endLine + linesToRead, totalLines),
+        lineCount: linesToRead,
+        reasoning: `Continuing to read ${aiDecision.filePath} from line ${endLine + 1}`,
+        confidence: 0.8,
+      };
+    }
+
+    // Format content with line numbers for display
+    const numberedContent = this.formatContentWithLineNumbers(content, startLine);
+
+    return {
+      success: true,
+      nextAction,
+      content: numberedContent,
+    };
+  }
+
+  /**
+   * Handle reading a file by lines (chunked reading)
    */
   private async handleReadFile(
     aiDecision: AIReadingDecision,
@@ -419,71 +767,36 @@ Remember: You will be making actual code changes to these files. Select files th
       };
     }
 
+    // If this is a read_range action, delegate to handleReadRange
+    if (aiDecision.action === 'read_range') {
+      return await this.handleReadRange(aiDecision, aiKey, model);
+    }
+
     try {
       // First, try to get content from cache
       const cachedContent = this.getCachedFileContent(aiDecision.filePath);
 
       if (cachedContent) {
-        console.log('🔍 DEBUG: handleReadFile - Using cached content', {
-          originalPath: aiDecision.filePath,
-          contentLength: cachedContent.length,
-        });
-
-        const content = cachedContent;
-        const lineCount = content.split('\n').length;
-
-        // Add to read ranges
-        this.currentState!.readRanges.push({
-          filePath: aiDecision.filePath,
-          startLine: 1,
-          endLine: lineCount,
-          content,
-        });
-
-        this.currentState!.totalContentRead += content.length;
-
-        // Add content to conversation history
-        this.addToConversationHistory(
-          'assistant',
-          `Read file ${aiDecision.filePath} from cache (${lineCount} lines, ${content.length} chars)`,
-        );
-
-        // Determine next action
-        const nextAction = await this.determineNextAction(
-          aiKey,
-          model,
-          content,
-        );
-
-        return {
-          success: true,
-          nextAction,
-          content,
-        };
+        return await this.readFileByLinesFromCache(aiDecision, aiKey, model, cachedContent);
       }
 
-      // If not in cache, try file system with path resolution
+      // If not in cache, read from file system
       const fullFilePath =
         aiDecision.filePath.startsWith('/') ||
         aiDecision.filePath.startsWith('C:\\')
           ? aiDecision.filePath
           : `${this.currentState!.projectRoot}/${aiDecision.filePath}`;
 
-      console.log(
-        '🔍 DEBUG: handleReadFile - Not in cache, attempting to read from file system',
-        {
-          originalPath: aiDecision.filePath,
-          fullPath: fullFilePath,
-          projectRoot: this.currentState!.projectRoot,
-        },
-      );
+      console.log('🔍 DEBUG: Reading file by lines from file system', {
+        originalPath: aiDecision.filePath,
+        fullPath: fullFilePath,
+      });
 
-      // Read the entire file
+      // Read the entire file first to get line count
       let result = await window.electron.fileSystem.readFile(fullFilePath);
 
-      // If the file path doesn't work, try some common variations
       if (!result.success) {
-        console.log('handleReadFile: Original path failed, trying variations');
+        // Try path variations
         const pathVariations = [
           `${this.currentState!.projectRoot}/egdesk-scratch/${aiDecision.filePath}`,
           `${this.currentState!.projectRoot}/egdesk-scratch/wordpress/${aiDecision.filePath}`,
@@ -493,10 +806,8 @@ Remember: You will be making actual code changes to these files. Select files th
         ];
 
         for (const path of pathVariations) {
-          console.log('handleReadFile: Trying path:', path);
           result = await window.electron.fileSystem.readFile(path);
           if (result.success) {
-            console.log('handleReadFile: Found file at:', path);
             break;
           }
         }
@@ -507,40 +818,15 @@ Remember: You will be making actual code changes to these files. Select files th
           success: false,
           nextAction: {
             action: 'analyze_and_respond',
-            reasoning: `Failed to read file: ${aiDecision.filePath} (tried cache and multiple path variations)`,
+            reasoning: `Failed to read file: ${aiDecision.filePath}`,
             confidence: 0,
           },
           error: result.error,
         };
       }
 
-      const content = result.content || '';
-      const lineCount = content.split('\n').length;
+      return await this.readFileByLinesFromCache(aiDecision, aiKey, model, result.content || '');
 
-      // Add to read ranges
-      this.currentState!.readRanges.push({
-        filePath: aiDecision.filePath,
-        startLine: 1,
-        endLine: lineCount,
-        content,
-      });
-
-      this.currentState!.totalContentRead += content.length;
-
-      // Add content to conversation history
-      this.addToConversationHistory(
-        'assistant',
-        `Read file ${aiDecision.filePath} (${lineCount} lines, ${content.length} chars)`,
-      );
-
-      // Determine next action
-      const nextAction = await this.determineNextAction(aiKey, model, content);
-
-      return {
-        success: true,
-        nextAction,
-        content,
-      };
     } catch (error) {
       return {
         success: false,
@@ -619,10 +905,13 @@ Remember: You will be making actual code changes to these files. Select files th
           content,
         );
 
+        // Format content with line numbers for display
+        const numberedContent = this.formatContentWithLineNumbers(content, startLine);
+
         return {
           success: true,
           nextAction,
-          content,
+          content: numberedContent,
         };
       }
 
@@ -710,10 +999,13 @@ Remember: You will be making actual code changes to these files. Select files th
         rangeContent,
       );
 
+      // Format content with line numbers for display
+      const numberedContent = this.formatContentWithLineNumbers(rangeContent, startLine);
+
       return {
         success: true,
         nextAction,
-        content: rangeContent,
+        content: numberedContent,
       };
     } catch (error) {
       return {
@@ -786,6 +1078,14 @@ ${context}
 
 ## Your Task:
 You are a coding assistant with the ability to directly edit code files. The user cannot access or edit the code themselves - YOU are responsible for making all necessary code changes.
+
+🎨 CSS COMPLIANCE MANDATORY:
+- If you see CSS files in the content above, analyze the existing design system
+- Use existing CSS classes, variables, and patterns from the design system
+- Maintain visual consistency with the established design
+- Follow the color schemes, spacing, and typography rules exactly
+- If you must add new CSS, follow the existing naming conventions and structure
+- NEVER create components that don't match the existing visual style
 
 Provide a comprehensive response that includes:
 1. Analysis of the current code
@@ -913,13 +1213,90 @@ Remember: You are responsible for making the code changes. Provide search/replac
       };
     }
 
-    // For now, move to analysis after reading content
-    // In a more sophisticated implementation, this would ask AI what to do next
+    // Ask AI what to do next based on the content read so far
+    const availableFiles = this.currentState!.filesToExamine;
+    const currentFileIndex = this.currentState!.currentFileIndex;
+    const currentFile = availableFiles[currentFileIndex];
+    const remainingFiles = availableFiles.slice(currentFileIndex + 1);
+    
+    const prompt = `Based on the content I've read so far, what should I do next?
+
+Current content:
+${content}
+
+Files to examine (${availableFiles.length} total):
+${availableFiles.map((file, index) => 
+  `${index + 1}. ${file}${index === currentFileIndex ? ' (CURRENT - reading by lines)' : ''}`
+).join('\n')}
+
+Remaining files to read:
+${remainingFiles.length > 0 ? remainingFiles.map((file, index) => `${index + 1}. ${file}`).join('\n') : 'None - all files have been read'}
+
+Available actions:
+1. read_file - Continue reading the current file by lines OR move to next file
+2. read_range - Read a specific range of lines from a file
+3. analyze_and_respond - I have enough information to analyze and respond
+
+Respond with JSON:
+{
+  "action": "read_file|read_range|analyze_and_respond",
+  "filePath": "path/to/file" (if reading),
+  "startLine": 1 (if reading range),
+  "endLine": 50 (if reading range),
+  "lineCount": 50 (if reading file by lines),
+  "reasoning": "Why this action",
+  "confidence": 0.8
+}`;
+
+    try {
+      const response = await this.sendToAI(aiKey, model, prompt, {
+        temperature: 0.1,
+        maxTokens: 500,
+      });
+
+      if (response.success && response.content) {
+        try {
+          const decision = JSON.parse(response.content);
+          return decision as AIReadingDecision;
+        } catch (parseError) {
+          console.error('Failed to parse AI decision:', parseError);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get AI decision:', error);
+    }
+
+    // Fallback: continue reading if we haven't read much yet
+    const totalRead = this.currentState!.totalContentRead;
+    if (totalRead < 1000) {
+      return {
+        action: 'read_file',
+        reasoning: 'Need to read more content before analysis',
+        confidence: 0.6,
+      };
+    }
+
     return {
       action: 'analyze_and_respond',
       reasoning: 'Sufficient content read, proceeding to analysis',
       confidence: 0.8,
     };
+  }
+
+  /**
+   * Format content with line numbers
+   */
+  private formatContentWithLineNumbers(
+    content: string,
+    startLine: number,
+  ): string {
+    const lines = content.split('\n');
+    return lines
+      .map((line, index) => {
+        const lineNumber = startLine + index;
+        return `${lineNumber}|${line}`;
+      })
+      .join('\n');
   }
 
   /**
@@ -933,14 +1310,11 @@ Remember: You are responsible for making the code changes. Provide search/replac
         // Use the full relative path instead of just the filename
         const relativePath = range.filePath;
         
-        // Add line numbers to the content
-        const lines = range.content.split('\n');
-        const numberedContent = lines
-          .map((line, index) => {
-            const lineNumber = range.startLine + index;
-            return `${lineNumber.toString().padStart(4, ' ')}|${line}`;
-          })
-          .join('\n');
+        // Add line numbers to the content using the helper function
+        const numberedContent = this.formatContentWithLineNumbers(
+          range.content,
+          range.startLine,
+        );
         
         return `\n--- ${relativePath} (lines ${range.startLine}-${range.endLine}) ---\n${numberedContent}`;
       })
