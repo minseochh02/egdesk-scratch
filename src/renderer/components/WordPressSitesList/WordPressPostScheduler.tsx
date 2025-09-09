@@ -482,7 +482,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       });
 
       // Create the command to run the dynamic script with increased memory limit
-      const command = `node --max-old-space-size=4096 "${scriptPath}"`;
+      // Use relative path without quotes to avoid Windows cmd.exe issues
+      const command = `node --max-old-space-size=4096 ${scriptPath}`;
 
       const taskData: CreateTaskData = {
         name: `WordPress Post: ${template.name} - ${selectedSite.name || selectedSite.url} (AI 생성)`,
@@ -1969,6 +1970,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                       </div>
                     </>
                   )}
+
                 </div>
               </div>
               <div className="template-actions">
