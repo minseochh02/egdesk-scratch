@@ -932,7 +932,17 @@ Remember: You are responsible for making the code changes. Provide search/replac
       .map((range) => {
         // Use the full relative path instead of just the filename
         const relativePath = range.filePath;
-        return `\n--- ${relativePath} (lines ${range.startLine}-${range.endLine}) ---\n${range.content}`;
+        
+        // Add line numbers to the content
+        const lines = range.content.split('\n');
+        const numberedContent = lines
+          .map((line, index) => {
+            const lineNumber = range.startLine + index;
+            return `${lineNumber.toString().padStart(4, ' ')}|${line}`;
+          })
+          .join('\n');
+        
+        return `\n--- ${relativePath} (lines ${range.startLine}-${range.endLine}) ---\n${numberedContent}`;
       })
       .join('\n');
   }

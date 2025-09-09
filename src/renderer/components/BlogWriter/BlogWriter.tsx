@@ -149,6 +149,11 @@ export const BlogWriter: React.FC<BlogWriterProps> = ({
             .filter(Boolean)
             .join('\n'),
           status: 'draft',
+          // Include AI settings in the template
+          aiSettings: selectedKey ? {
+            model: selectedModel,
+            keyId: selectedKey.id
+          } : undefined,
         };
         
         console.log('BlogWriter - Saving template:', template);

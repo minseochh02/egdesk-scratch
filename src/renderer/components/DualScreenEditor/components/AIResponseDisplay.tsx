@@ -34,7 +34,7 @@ export const AIResponseDisplay: React.FC<AIResponseDisplayProps> = ({
     <div className="message ai-message">
       <div className="message-content">
         <div className="response-header">
-          <span className="response-title">🤖 AI Response</span>
+          <span className="response-title">🤖 AI Response [v1 added file line numbering]</span>
           {/* Only show edit actions if there are actual code edits */}
           {aiResponse.edits.length > 0 && (
             <div className="response-actions">

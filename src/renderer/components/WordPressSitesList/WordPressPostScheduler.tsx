@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus,
@@ -11,16 +11,23 @@ import {
   faCheck,
   faTimes,
   faExclamationTriangle,
+  faRobot,
+  faCog,
 } from '@fortawesome/free-solid-svg-icons';
+import * as path from 'path';
 import SchedulerService, {
   CreateTaskData,
 } from '../../services/schedulerService';
-import { WordPressSite } from '../../../main/preload';
+import { WordPressConnection } from '../../../main/preload';
+import BlogAIService, { BlogContentRequest, GeneratedBlogContent } from '../../services/blogAIService';
+import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import { AIKey } from '../AIKeysManager/types';
+import { CHAT_PROVIDERS, ModelInfo } from '../ChatInterface/types';
 import './WordPressPostScheduler.css';
 
 interface WordPressPostSchedulerProps {
-  sites: WordPressSite[];
-  selectedSite?: WordPressSite | null;
+  sites: WordPressConnection[];
+  selectedSite?: WordPressConnection | null;
   onTaskCreated?: () => void;
 }
 
@@ -32,6 +39,10 @@ interface PostTemplate {
   status: 'draft' | 'publish' | 'private';
   categories: string[];
   tags: string[];
+  aiSettings: {
+    model: string;
+    keyId: string;
+  };
 }
 
 const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
@@ -39,7 +50,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   selectedSite: propSelectedSite,
   onTaskCreated,
 }) => {
-  const [selectedSite, setSelectedSite] = useState<WordPressSite | null>(propSelectedSite || null);
+  const [selectedSite, setSelectedSite] = useState<WordPressConnection | null>(propSelectedSite || null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +69,13 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   const [clearingTemplates, setClearingTemplates] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // AI Configuration state
+  const [activeKeys, setActiveKeys] = useState<AIKey[]>([]);
+  const [isGeneratingContent, setIsGeneratingContent] = useState<boolean>(false);
+  const [savingAISettings, setSavingAISettings] = useState<string | null>(null);
+
   const schedulerService = SchedulerService.getInstance();
+  const blogAIService = BlogAIService.getInstance();
 
   // Function to save selected frequencies to localStorage
   const saveSelectedFrequencies = (frequencies: Record<string, string>) => {
@@ -106,6 +123,19 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     setSelectedSite(propSelectedSite || null);
   }, [propSelectedSite]);
 
+  // Load AI keys and configuration
+  useEffect(() => {
+    const unsub = aiKeysStore.subscribe((state) => {
+      setActiveKeys(state.keys.filter((k) => k.isActive));
+    });
+    return () => unsub();
+  }, []);
+
+  // Available AI models
+  const availableModels: ModelInfo[] = React.useMemo(() => {
+    return CHAT_PROVIDERS.flatMap((provider) => provider.models);
+  }, []);
+
 
   // Derive a default template from the site's saved blog settings (category/topic/keywords/audience)
   const defaultCategory = (selectedSite as any)?.blog_category as string | undefined;
@@ -128,6 +158,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         status: 'publish',
         categories: defaultCategory ? [defaultCategory] : [],
         tags: defaultKeywords,
+        aiSettings: {
+          model: availableModels[0]?.id || 'gpt-3.5-turbo',
+          keyId: activeKeys[0]?.id || ''
+        }
       }
     : null;
   // Pull any saved templates from the site (created via BlogWriter)
@@ -137,6 +171,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     title: string;
     content: string;
     status?: 'draft' | 'publish' | 'private';
+    aiSettings?: {
+      model: string;
+      keyId: string;
+    };
   }>;
 
   // Debug logging
@@ -153,12 +191,19 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       status: (t.status as any) || 'publish',
       categories: defaultCategory ? [defaultCategory] : [],
       tags: defaultKeywords,
+      // Preserve existing aiSettings if they exist, otherwise use defaults
+      aiSettings: (t as any).aiSettings || {
+        model: availableModels[0]?.id || 'gpt-3.5-turbo',
+        keyId: activeKeys[0]?.id || ''
+      }
     }));
 
   console.log('WordPressPostScheduler - savedTemplates:', savedTemplates);
+  console.log('WordPressPostScheduler - availableModels:', availableModels);
+  console.log('WordPressPostScheduler - activeKeys:', activeKeys);
 
   // Built-in default templates to show even when no site templates exist
-  const builtinTemplates: PostTemplate[] = [
+  const builtinTemplates: PostTemplate[] = useMemo(() => [
     {
       id: 'bw_weekly_update',
       name: '주간 업데이트',
@@ -168,6 +213,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       status: 'publish',
       categories: defaultCategory ? [defaultCategory] : ['업데이트'],
       tags: defaultKeywords.length > 0 ? defaultKeywords : ['주간업데이트', '진행상황', '하이라이트', '지표'],
+      aiSettings: {
+        model: 'gpt-3.5-turbo',
+        keyId: ''
+      }
     },
     {
       id: 'bw_how_to',
@@ -178,6 +227,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       status: 'publish',
       categories: defaultCategory ? [defaultCategory] : ['가이드'],
       tags: defaultKeywords.length > 0 ? defaultKeywords : ['가이드', '튜토리얼', '방법', '단계별'],
+      aiSettings: {
+        model: 'gpt-3.5-turbo',
+        keyId: ''
+      }
     },
     {
       id: 'bw_listicle',
@@ -188,6 +241,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       status: 'publish',
       categories: defaultCategory ? [defaultCategory] : ['리스트'],
       tags: defaultKeywords.length > 0 ? defaultKeywords : ['TOP10', '리스트', '추천', '도구'],
+      aiSettings: {
+        model: 'gpt-3.5-turbo',
+        keyId: ''
+      }
     },
     {
       id: 'bw_announcement',
@@ -198,18 +255,35 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       status: 'publish',
       categories: defaultCategory ? [defaultCategory] : ['공지'],
       tags: defaultKeywords.length > 0 ? defaultKeywords : ['공지', '출시', '신기능', '업데이트'],
+      aiSettings: {
+        model: 'gpt-3.5-turbo',
+        keyId: ''
+      }
     },
     {
       id: 'bw_case_study',
       name: '사례 연구',
       title: '이커머스 스타트업 사례: 6개월 만에 매출 300% 성장 달성',
-      content:
-        '배경: 낮은 전환율과 높은 장바구니 이탈률로 어려움을 겪던 소규모 이커머스 스타트업\n\n도전과제: 전환율 1.2%, 장바구니 이탈률 70%, 제한된 마케팅 예산\n\n해결방안: 개인화 상품 추천 시스템 도입, 체크아웃 프로세스 개선, 이메일 리마케팅 캠페인 실행\n\n결과: 매출 300% 증가, 전환율 2.8% 달성, 장바구니 이탈률 45% 감소\n\n교훈: 개인화와 사용자 경험 최적화가 성장의 핵심 동력\n\n행동 유도: 무료 전환율 최적화 체크리스트 다운로드',
+      content: `배경: 낮은 전환율과 높은 장바구니 이탈률로 어려움을 겪던 소규모 이커머스 스타트업
+
+도전과제: 전환율 1.2%, 장바구니 이탈률 70%, 제한된 마케팅 예산
+
+해결방안: 개인화 상품 추천 시스템 도입, 체크아웃 프로세스 개선, 이메일 리마케팅 캠페인 실행
+
+결과: 매출 300% 증가, 전환율 2.8% 달성, 장바구니 이탈률 45% 감소
+
+교훈: 개인화와 사용자 경험 최적화가 성장의 핵심 동력
+
+행동 유도: 무료 전환율 최적화 체크리스트 다운로드`,
       status: 'publish',
       categories: defaultCategory ? [defaultCategory] : ['사례연구'],
       tags: defaultKeywords.length > 0 ? defaultKeywords : ['사례연구', '이커머스', '성장', '전환율', '마케팅'],
+      aiSettings: {
+        model: 'gpt-3.5-turbo',
+        keyId: ''
+      }
     },
-  ];
+  ], [defaultCategory, defaultKeywords]);
 
   // Ensure all template IDs are unique by adding a suffix if needed
   const ensureUniqueIds = (templates: PostTemplate[]): PostTemplate[] => {
@@ -226,11 +300,50 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     });
   };
 
+  // Merge saved templates with built-in templates, prioritizing saved versions
+  const mergedTemplates = [...builtinTemplates];
+  
+  // Replace built-in templates with saved versions if they exist
+  savedTemplates.forEach(savedTemplate => {
+    const builtinIndex = mergedTemplates.findIndex(t => t.id === savedTemplate.id);
+    if (builtinIndex >= 0) {
+      // Replace built-in with saved version, preserving ALL saved data including AI settings
+      mergedTemplates[builtinIndex] = savedTemplate;
+    } else {
+      // Add new saved template
+      mergedTemplates.push(savedTemplate);
+    }
+  });
+
+  // Only add default AI settings to templates that don't have them or have empty values
+  mergedTemplates.forEach(template => {
+    if (!template.aiSettings || !template.aiSettings.model || !template.aiSettings.keyId) {
+      template.aiSettings = {
+        model: template.aiSettings?.model || availableModels[0]?.id || 'gpt-3.5-turbo',
+        keyId: template.aiSettings?.keyId || activeKeys[0]?.id || ''
+      };
+    }
+  });
+
   const postTemplates: PostTemplate[] = ensureUniqueIds([
     ...(defaultTemplate ? [defaultTemplate] : []),
-    ...savedTemplates,
-    ...builtinTemplates,
+    ...mergedTemplates,
   ]);
+
+  // Debug: Log template AI settings
+  console.log('Template AI settings after initialization:', 
+    postTemplates.map(t => ({ 
+      id: t.id, 
+      name: t.name, 
+      aiSettings: t.aiSettings,
+      hasModel: !!t.aiSettings?.model,
+      hasKeyId: !!t.aiSettings?.keyId
+    }))
+  );
+
+  console.log('WordPressPostScheduler - mergedTemplates:', mergedTemplates);
+  console.log('WordPressPostScheduler - postTemplates:', postTemplates);
+  console.log('WordPressPostScheduler - postTemplates with aiSettings:', postTemplates.map(t => ({ id: t.id, name: t.name, aiSettings: t.aiSettings })));
 
   // Load existing task schedules when component mounts or selectedSite changes
   useEffect(() => {
@@ -278,6 +391,18 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     loadExistingSchedules();
   }, [selectedSite?.id, postTemplates]);
 
+  /**
+   * Generate AI content for a template (now handled by dynamic script)
+   * This function is kept for backward compatibility but content generation
+   * is now handled by the dynamic script that runs for each task execution
+   */
+  const generateAIContent = async (template: PostTemplate): Promise<GeneratedBlogContent | null> => {
+    // Content generation is now handled by the dynamic script
+    // This function is kept for compatibility but returns null
+    // The actual AI generation happens in the script during task execution
+    return null;
+  };
+
   const createWordPressPostTask = async (
     template: PostTemplate,
     schedule: string,
@@ -295,6 +420,37 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       return;
     }
 
+    // Validate AI settings
+    if (!template.aiSettings?.keyId || !template.aiSettings?.model) {
+      console.error('AI settings validation failed:', {
+        templateId: template.id,
+        templateName: template.name,
+        aiSettings: template.aiSettings,
+        availableKeys: activeKeys.length,
+        availableModels: availableModels.length
+      });
+      setError('AI 설정이 필요합니다. 모델과 API 키를 선택해주세요.');
+      return;
+    }
+
+    const selectedKey = activeKeys.find(key => key.id === template.aiSettings!.keyId);
+    if (!selectedKey) {
+      console.error('AI key not found:', {
+        keyId: template.aiSettings!.keyId,
+        availableKeys: activeKeys.map(k => ({ id: k.id, name: k.name, providerId: k.providerId }))
+      });
+      setError('선택된 AI 키를 찾을 수 없습니다.');
+      return;
+    }
+
+    // Debug: Log the selected key details
+    console.log('Selected AI key:', {
+      id: selectedKey.id,
+      name: selectedKey.name,
+      providerId: selectedKey.providerId,
+      fields: selectedKey.fields
+    });
+
     setIsCreating(true);
     setError(null);
     setSuccess(null);
@@ -303,59 +459,54 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       // Check if there's an existing task for this template and site
       const existingTask = await findExistingTask(template.id, selectedSite.id!);
       
-      // Create the WordPress REST API endpoint URL
-      const baseUrl = selectedSite.url.replace(/\/$/, ''); // Remove trailing slash
-      const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;
+      // Get the script path - use relative path from the project root
+      const scriptPath = './scripts/generate-blog-content.js';
+      
+      // Validate API key exists
+      if (!selectedKey.fields.apiKey) {
+        console.error('API key not found in selected key fields:', selectedKey.fields);
+        setError('AI 키에 API 키가 설정되지 않았습니다.');
+        return;
+      }
 
-      // Create the JSON payload for the POST request
-      // Note: categories and tags require integer IDs, not string names
-      // For now, we'll create posts without categories/tags to avoid API errors
-
-      // Add timestamp and unique identifier to ensure each post is unique
-      const now = new Date();
-      const timestamp = now.toISOString();
-      const uniqueId = `${now.getTime()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      // Create content with raw category and keywords data
-      const rawDataContent = [
-        `# ${template.title}`,
-        '',
-        '## 카테고리',
-        template.categories.length > 0 ? template.categories.join(', ') : '카테고리 없음',
-        '',
-        '## 키워드',
-        template.tags.length > 0 ? template.tags.join(', ') : '키워드 없음',
-        '',
-        '## 추가 정보',
-        template.content || '추가 정보 없음',
-        '',
-        '---',
-        `*자동 게시됨: ${timestamp} (고유 ID: ${uniqueId})*`
-      ].join('\n');
-
-      const payload = {
-        title: template.title,
-        content: rawDataContent,
-        status: template.status,
-        // categories: template.categories, // Requires category IDs from WordPress API
-        // tags: template.tags // Requires tag IDs from WordPress API
+      // Prepare environment variables for the dynamic script
+      const environment = {
+        AI_KEY: selectedKey.fields.apiKey,
+        AI_MODEL: template.aiSettings.model,
+        AI_PROVIDER: selectedKey.providerId,
+        TEMPLATE_TYPE: template.id.startsWith('bw_') ? template.id : 'custom',
+        TEMPLATE_TITLE: template.title,
+        TEMPLATE_CONTENT: template.content,
+        TEMPLATE_CATEGORIES: template.categories.join(','),
+        TEMPLATE_TAGS: template.tags.join(','),
+        WORDPRESS_URL: selectedSite.url,
+        WORDPRESS_USERNAME: selectedSite.username,
+        WORDPRESS_PASSWORD: selectedSite.password
       };
 
-      // Create the curl command for the POST request with proper authentication
-      const auth = btoa(`${selectedSite.username}:${selectedSite.password}`);
-      const command = `curl -X POST "${endpoint}" \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Basic ${auth}" \\
-  -d '${JSON.stringify(payload, null, 2)}'`;
+      // Debug: Log environment variables (without sensitive data)
+      console.log('Environment variables for script:', {
+        AI_MODEL: environment.AI_MODEL,
+        AI_PROVIDER: environment.AI_PROVIDER,
+        TEMPLATE_TYPE: environment.TEMPLATE_TYPE,
+        TEMPLATE_TITLE: environment.TEMPLATE_TITLE,
+        WORDPRESS_URL: environment.WORDPRESS_URL,
+        WORDPRESS_USERNAME: environment.WORDPRESS_USERNAME,
+        AI_KEY_PRESENT: !!environment.AI_KEY,
+        WORDPRESS_PASSWORD_PRESENT: !!environment.WORDPRESS_PASSWORD
+      });
+
+      // Create the command to run the dynamic script
+      const command = `node "${scriptPath}"`;
 
       const taskData: CreateTaskData = {
-        name: `WordPress Post: ${template.name} - ${selectedSite.name || selectedSite.url}`,
-        description: `자동으로 "${template.name}" 게시물을 ${selectedSite.url}에 게시합니다. 카테고리와 키워드 데이터를 포함한 원시 데이터를 게시합니다. (사용자명: ${selectedSite.username})`,
+        name: `WordPress Post: ${template.name} - ${selectedSite.name || selectedSite.url} (AI 생성)`,
+        description: `자동으로 "${template.name}" 게시물을 ${selectedSite.url}에 AI가 매번 새로 생성한 콘텐츠로 게시합니다. (사용자명: ${selectedSite.username})`,
         command,
         schedule,
         enabled: true,
-        workingDirectory: '',
-        environment: {},
+        workingDirectory: '/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch',
+        environment,
         outputFile: '',
         errorFile: '',
       };
@@ -367,6 +518,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           schedule: taskData.schedule,
           command: taskData.command,
           description: taskData.description,
+          environment: taskData.environment,
           enabled: true
         });
       } else {
@@ -377,7 +529,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       if (response.success) {
         const action = existingTask ? '업데이트' : '생성';
         setSuccess(
-          `작업이 성공적으로 ${action}되었습니다! "${template.name}" 게시물이 ${selectedSite.name || selectedSite.url}에 카테고리와 키워드 데이터와 함께 게시됩니다. (사용자명: ${selectedSite.username})`,
+          `작업이 성공적으로 ${action}되었습니다! "${template.name}" 게시물이 AI가 매번 새로 생성한 콘텐츠와 함께 ${selectedSite.name || selectedSite.url}에 게시됩니다. (사용자명: ${selectedSite.username})`,
         );
         setShowCreateModal(false);
         onTaskCreated?.();
@@ -543,7 +695,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       );
       
       // Update local state immediately
-      setSelectedSite((prev: WordPressSite | null) => prev ? {
+      setSelectedSite((prev: WordPressConnection | null) => prev ? {
         ...prev,
         blog_templates: updatedTemplates
       } : null);
@@ -602,10 +754,12 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
       for (const site of sites) {
         try {
-          await window.electron.wordpress.updateConnection(
-            site.id,
-            { blog_templates: [] },
-          );
+          if (site.id) {
+            await window.electron.wordpress.updateConnection(
+              site.id,
+              { blog_templates: [] },
+            );
+          }
           clearedCount++;
         } catch (err) {
           errors.push(`${site.name || site.url}: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -619,7 +773,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       if (clearedCount > 0) {
         // Update local state for the currently selected site
         if (selectedSite) {
-          setSelectedSite((prev: WordPressSite | null) => prev ? {
+          setSelectedSite((prev: WordPressConnection | null) => prev ? {
             ...prev,
             blog_templates: []
           } : null);
@@ -660,6 +814,85 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     { value: 'cron:0 9 * * 1-5', label: '평일 오전 9시' },
     { value: 'cron:0 0 * * 0', label: '일요일 자정' },
   ];
+
+  /**
+   * Update AI settings for a template
+   */
+  const updateTemplateAISettings = async (templateId: string, aiSettings: {
+    model: string;
+    keyId: string;
+  }) => {
+    if (!selectedSite?.id) {
+      console.error('No selected site to update');
+      return;
+    }
+
+    setSavingAISettings(templateId);
+    try {
+      // Get current templates from the site
+      const currentTemplates = (selectedSite as any)?.blog_templates || [];
+      
+      // Check if this is a built-in template that needs to be saved
+      const isBuiltinTemplate = builtinTemplates.some(t => t.id === templateId);
+      let updatedTemplates = [...currentTemplates];
+      
+      if (isBuiltinTemplate) {
+        // For built-in templates, create a saved version with AI settings
+        const builtinTemplate = builtinTemplates.find(t => t.id === templateId);
+        if (builtinTemplate) {
+          // Check if a saved version already exists
+          const existingSavedTemplate = currentTemplates.find((t: any) => t.id === templateId);
+          
+          if (existingSavedTemplate) {
+            // Update existing saved template
+            updatedTemplates = currentTemplates.map((template: any) => {
+              if (template.id === templateId) {
+                return { ...template, aiSettings };
+              }
+              return template;
+            });
+          } else {
+            // Create new saved template with AI settings
+            const newSavedTemplate = {
+              ...builtinTemplate,
+              aiSettings
+            };
+            updatedTemplates.push(newSavedTemplate);
+          }
+        }
+      } else {
+        // For saved templates, update the AI settings
+        updatedTemplates = currentTemplates.map((template: any) => {
+          if (template.id === templateId) {
+            return { ...template, aiSettings };
+          }
+          return template;
+        });
+      }
+      
+      // Save the updated templates back to the site
+      await window.electron.wordpress.updateConnection(
+        selectedSite.id,
+        { blog_templates: updatedTemplates },
+      );
+      
+      // Update the local selectedSite state to reflect the changes
+      setSelectedSite((prev: WordPressConnection | null) => prev ? {
+        ...prev,
+        blog_templates: updatedTemplates
+      } : null);
+      
+      // Force re-render by updating refreshKey
+      setRefreshKey(prev => prev + 1);
+      
+      console.log('AI settings updated for template:', templateId, aiSettings);
+    } catch (error) {
+      console.error('Failed to update AI settings:', error);
+      setError('AI 설정 저장에 실패했습니다.');
+    } finally {
+      setSavingAISettings(null);
+    }
+  };
 
   if (sites.length === 0) {
     return (
@@ -772,6 +1005,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         </div>
       )}
 
+
       <div className="templates-section">
         <h4>빠른 템플릿 (미리 만들어진 템플릿 사용)</h4>
         <p className="section-description">
@@ -788,9 +1022,86 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                 <span className={`status status-${template.status}`}>
                   {template.status === 'draft' ? '초안' : template.status === 'publish' ? '게시' : '비공개'}
                 </span>
-                <span className="note">
-                  참고: 카테고리와 태그가 포함되어 있습니다 (WordPress API 통합 필요)
+                <span className="ai-status">
+                  <FontAwesomeIcon icon={faRobot} />
+                  AI 생성
                 </span>
+                <span className="note">
+                  AI가 고품질 콘텐츠를 자동 생성합니다
+                </span>
+                {(!template.aiSettings?.keyId || !template.aiSettings?.model) && (
+                  <span className="ai-warning">
+                    <FontAwesomeIcon icon={faExclamationTriangle} />
+                    AI 설정 필요
+                  </span>
+                )}
+              </div>
+
+              {/* AI Settings for this template */}
+              <div className="template-ai-settings">
+                <div className="ai-settings-header">
+                  <label>
+                    <FontAwesomeIcon icon={faRobot} />
+                    AI 설정
+                    {savingAISettings === template.id && (
+                      <span className="saving-indicator">저장 중...</span>
+                    )}
+                  </label>
+                </div>
+                
+                <div className="ai-settings-controls">
+                  <div className="ai-setting-item">
+                    <label>모델</label>
+                    <select
+                      value={template.aiSettings?.model || ''}
+                      onChange={async (e) => {
+                        console.log('Model dropdown changed for template:', template.id, 'to:', e.target.value);
+                        const newSettings = {
+                          model: e.target.value,
+                          keyId: template.aiSettings?.keyId || activeKeys[0]?.id || ''
+                        };
+                        console.log('Updating AI settings with:', newSettings);
+                        await updateTemplateAISettings(template.id, newSettings);
+                      }}
+                      disabled={isGeneratingContent || savingAISettings === template.id}
+                    >
+                      {availableModels.map((model) => {
+                        const provider = CHAT_PROVIDERS.find((p) => p.id === model.provider);
+                        return (
+                          <option key={model.id} value={model.id}>
+                            {model.name} ({provider?.name || model.provider})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  
+                  <div className="ai-setting-item">
+                    <label>API 키</label>
+                    <select
+                      value={template.aiSettings?.keyId || ''}
+                      onChange={async (e) => {
+                        console.log('API key dropdown changed for template:', template.id, 'to:', e.target.value);
+                        const newSettings = {
+                          model: template.aiSettings?.model || availableModels[0]?.id || 'gpt-3.5-turbo',
+                          keyId: e.target.value
+                        };
+                        console.log('Updating AI settings with:', newSettings);
+                        await updateTemplateAISettings(template.id, newSettings);
+                      }}
+                      disabled={isGeneratingContent || savingAISettings === template.id}
+                    >
+                      {activeKeys.map((key) => {
+                        const provider = CHAT_PROVIDERS.find((p) => p.id === key.providerId);
+                        return (
+                          <option key={key.id} value={key.id}>
+                            {key.name} ({provider?.name || key.providerId})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="template-actions">
                 <select
@@ -842,12 +1153,14 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                     }
                   }}
                   disabled={
-                    isCreating || !selectedSite
+                    isCreating || !selectedSite || !template.aiSettings?.keyId || !template.aiSettings?.model
                   }
                   title={
                     !selectedSite
                       ? '먼저 WordPress 사이트를 선택해주세요'
-                      : '이 템플릿의 스케줄을 선택하세요 (스케줄 없음 선택 가능)'
+                      : !template.aiSettings?.keyId || !template.aiSettings?.model
+                        ? 'AI 설정을 먼저 완료해주세요 (모델과 API 키 선택)'
+                        : '이 템플릿의 스케줄을 선택하세요 (스케줄 없음 선택 가능)'
                   }
                 >
                   {getScheduleOptions().map((option) => (
