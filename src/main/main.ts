@@ -1159,6 +1159,277 @@ ipcMain.handle(
   },
 );
 
+// Image download handler - uses Node.js script to avoid CORS issues
+ipcMain.handle('download-images', async (event, images) => {
+  try {
+    console.log('🚀 Starting image download via Node.js script...');
+    console.log('Images to download:', images.length);
+
+    const { spawn } = require('child_process');
+    const path = require('path');
+
+    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'download-images.js');
+    const imagesJson = JSON.stringify(images);
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', [scriptPath, imagesJson], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: path.join(__dirname, '..', '..')
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let tempFilePath = '';
+
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        console.log('[Download Script]', output.trim());
+
+        // Look for temp file path in the output
+        const lines = output.split('\n');
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('/') && trimmedLine.includes('download-results-') && trimmedLine.endsWith('.json')) {
+            tempFilePath = trimmedLine;
+            console.log(`[Download Script] Captured temp file path: ${tempFilePath}`);
+            break;
+          }
+        }
+      });
+
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        console.error('[Download Script Error]', output.trim());
+      });
+
+      child.on('close', (code) => {
+        console.log(`Download script exited with code: ${code}`);
+        
+        if (code === 0) {
+          try {
+            if (!tempFilePath) {
+              reject(new Error('No temp file path received from download script'));
+              return;
+            }
+
+            console.log(`Reading results from temp file: ${tempFilePath}`);
+            const fs = require('fs');
+            const resultsContent = fs.readFileSync(tempFilePath, 'utf8');
+            const results = JSON.parse(resultsContent);
+            
+            // Clean up temp file
+            fs.unlinkSync(tempFilePath);
+            console.log(`Cleaned up temp file: ${tempFilePath}`);
+            
+            resolve({
+              success: true,
+              results: results.results,
+              summary: results.summary,
+              stdout: stdout,
+              stderr: stderr
+            });
+          } catch (error) {
+            reject(new Error(`Failed to read download results from temp file: ${error.message}`));
+          }
+        } else {
+          reject(new Error(`Download script failed with exit code ${code}. stderr: ${stderr}`));
+        }
+      });
+
+      child.on('error', (error) => {
+        reject(new Error(`Failed to spawn download script: ${error.message}`));
+      });
+    });
+  } catch (error) {
+    console.error('Image download failed:', error);
+    throw error;
+  }
+});
+
+// Debug workflow execution handler - now handles pre-downloaded images
+ipcMain.handle('debug-workflow-execute', async (event, config) => {
+  try {
+    console.log('🚀 Starting debug workflow execution (upload and post creation)...');
+    
+    // Import required services using require (since they're CommonJS modules)
+    const WordPressMediaService = require('../renderer/services/wordpressMediaService').default;
+    
+    const output: string[] = [];
+    const errors: string[] = [];
+    
+    const log = (message: string) => {
+      console.log(message);
+      output.push(message);
+    };
+    
+    const logError = (message: string) => {
+      console.error(message);
+      errors.push(message);
+    };
+
+    // Enhanced debugging for received config
+    log('🔍 DEBUG: Received config from renderer:');
+    log(`  - WordPress URL: ${config.wordpressUrl}`);
+    log(`  - WordPress Username: ${config.wordpressUsername}`);
+    log(`  - Has Password: ${!!config.wordpressPassword}`);
+    log(`  - Content Title: ${config.generatedContent?.title || 'N/A'}`);
+    log(`  - Content Length: ${config.generatedContent?.content?.length || 0}`);
+    log(`  - Downloaded Images Count: ${config.downloadedImages?.length || 0}`);
+    
+    if (config.downloadedImages && config.downloadedImages.length > 0) {
+      config.downloadedImages.forEach((img: any, index: number) => {
+        log(`  - Image ${index + 1}: ${img.id} (${img.fileName}) - ${img.mimeType} - Data: ${img.imageData ? 'Present' : 'Missing'}`);
+      });
+    } else {
+      log('  - No images to process');
+    }
+    
+    try {
+      // Get data from renderer process
+      const { generatedContent, downloadedImages } = config;
+      
+      log(`=== Received from renderer process ===`);
+      log(`Content: ${generatedContent.title}`);
+      log(`Downloaded images: ${downloadedImages.length}`);
+
+      // Step 1: Upload Images to WordPress (using pre-downloaded data)
+      log('=== Step 1: WordPress에 이미지 업로드 중... (사전 다운로드된 데이터 사용) ===');
+      
+      const mediaService = new WordPressMediaService(config.wordpressUrl, config.wordpressUsername, config.wordpressPassword);
+      const uploadedMedia: any[] = [];
+      
+      for (const image of downloadedImages) {
+        try {
+          log(`Uploading image: ${image.id} - ${image.description}`);
+          
+          // Convert base64 back to buffer
+          const imageBuffer = Buffer.from(image.imageData, 'base64');
+          
+          const uploaded = await mediaService.uploadMedia(
+            imageBuffer,
+            image.fileName,
+            image.mimeType,
+            {
+              altText: image.altText,
+              caption: image.caption,
+              description: image.description,
+              title: image.description
+            }
+          );
+          
+          log(`Successfully uploaded image: ${image.id} -> WordPress ID: ${uploaded.id}`);
+          
+          uploadedMedia.push({
+            ...image,
+            wordpressId: uploaded.id,
+            wordpressUrl: uploaded.source_url
+          });
+        } catch (error) {
+          logError(`Failed to upload image ${image.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+      
+      log(`Upload Summary: ${uploadedMedia.length}/${downloadedImages.length} images uploaded successfully`);
+
+      // Step 2: Edit Blog Content (replace image markers with media IDs)
+      log('=== Step 2: 블로그 콘텐츠 편집 중... (이미지 마커를 미디어 ID로 교체) ===');
+      
+      let processedContent = generatedContent.content;
+      
+      const placeholderRegex = /<div class="image-placeholder"[^>]*data-image-id="([^"]*)"[^>]*data-image-index="([^"]*)"[^>]*data-description="([^"]*)"[^>]*data-placement="([^"]*)"[^>]*>[\s\S]*?<\/div>/g;
+      
+      processedContent = processedContent.replace(placeholderRegex, (match: string, imageId: string, imageIndex: string, description: string, placement: string) => {
+        log(`🔍 Looking for image at index ${imageIndex}: "${description}"`);
+        
+        const index = parseInt(imageIndex) - 1; // Convert to 0-based index
+        const uploadedImage = uploadedMedia[index];
+        
+        if (uploadedImage && uploadedImage.wordpressUrl) {
+          log(`✅ Found image at index ${imageIndex}: ${uploadedImage.id} -> ${uploadedImage.wordpressUrl}`);
+          return `<img src="${uploadedImage.wordpressUrl}" alt="${uploadedImage.altText}" class="blog-image blog-image-${placement}" style="max-width: 100%; height: auto; margin: 20px 0;" />`;
+        }
+        
+        log(`❌ No image found at index ${imageIndex} (array index ${index}), total images: ${uploadedMedia.length}`);
+        return `<div class="image-placeholder-missing" style="border: 2px dashed #ccc; padding: 20px; text-align: center; margin: 20px 0; background: #f9f9f9;">
+          <div style="font-size: 24px; margin-bottom: 10px;">🖼️</div>
+          <div><strong>이미지 순서:</strong> ${imageIndex}</div>
+          <div><strong>이미지 위치:</strong> ${placement}</div>
+          <div><strong>설명:</strong> ${description}</div>
+          <div style="color: #666; font-size: 12px; margin-top: 10px;">이미지 업로드 실패</div>
+        </div>`;
+      });
+      
+      log(`Processed content length: ${processedContent.length} characters`);
+
+      // Step 3: Create Blog Post
+      log('=== Step 3: 블로그 포스트 생성 중... (이미지 참조 포함) ===');
+      
+      const postData: any = {
+        title: generatedContent.title,
+        content: processedContent,
+        excerpt: generatedContent.excerpt,
+        status: 'draft',
+        meta: {
+          _yoast_wpseo_title: generatedContent.seoTitle,
+          _yoast_wpseo_metadesc: generatedContent.metaDescription
+        }
+      };
+
+      const response = await fetch(`${config.wordpressUrl}/wp-json/wp/v2/posts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${config.wordpressUsername}:${config.wordpressPassword}`).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(postData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`WordPress API error: ${response.status} - ${await response.text()}`);
+      }
+
+      const createdPost = await response.json();
+      log(`✅ Created Post: ${createdPost.id} (${createdPost.status})`);
+      log(`Post link: ${createdPost.link}`);
+
+      log('🎉 Debug workflow completed successfully!');
+      log(`📊 Summary:`);
+      log(`- Content: ${generatedContent.title}`);
+      log(`- Downloaded images: ${downloadedImages.length}`);
+      log(`- Uploaded images: ${uploadedMedia.length}`);
+      log(`- Created post: ${createdPost.id} (${createdPost.status})`);
+      log(`- Post link: ${createdPost.link}`);
+
+      return {
+        success: true,
+        output: output.join('\n'),
+        error: errors.join('\n'),
+        exitCode: 0
+      };
+
+    } catch (error) {
+      logError(`Debug workflow failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return {
+        success: false,
+        output: output.join('\n'),
+        error: errors.join('\n'),
+        exitCode: -1
+      };
+    }
+    
+  } catch (error) {
+    console.error('Failed to execute debug workflow:', error);
+    return {
+      success: false,
+      output: '',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      exitCode: -1
+    };
+  }
+});
+
 // Global refresh for all localhost browser windows
 ipcMain.handle('browser-window-refresh-all-localhost', async () => {
   try {

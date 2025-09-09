@@ -166,6 +166,39 @@ export interface IElectronAPI {
     onUrlChanged(windowId: number, callback: (url: string) => void): void;
     removeUrlChangedListener(windowId: number): void;
   };
+  debug: {
+    executeWorkflow(config: {
+      wordpressUrl: string;
+      wordpressUsername: string;
+      wordpressPassword: string;
+      generatedContent: any;
+      downloadedImages: any[];
+    }): Promise<{
+      success: boolean;
+      output: string;
+      error: string;
+      exitCode: number;
+    }>;
+    downloadImages(images: Array<{id: string; url: string}>): Promise<{
+      success: boolean;
+      results: Array<{
+        success: boolean;
+        imageId: string;
+        data?: string;
+        mimeType?: string;
+        size?: number;
+        error?: string;
+      }>;
+      summary: {
+        total: number;
+        successful: number;
+        failed: number;
+        errors: string[];
+      };
+      stdout: string;
+      stderr: string;
+    }>;
+  };
 }
 
 declare global {

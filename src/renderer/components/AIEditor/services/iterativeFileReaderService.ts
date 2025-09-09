@@ -378,9 +378,16 @@ ${availableFiles.map((file, index) => `${index + 1}. ${file}`).join('\n')}
 Return a JSON object with this exact structure:
 \`\`\`json
 {
-  "filesToExamine": ["path/to/file1.ext", "path/to/file2.ext", "path/to/component.css"]
+  "filesToExamine": ["complete/relative/path/from/project/root/file1.ext", "complete/relative/path/from/project/root/file2.ext", "complete/relative/path/from/project/root/component.css"]
 }
 \`\`\`
+
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
 
 Remember: You will be making actual code changes to these files. Select files that need modification, not just files that are related to the topic. ALWAYS include CSS files when working with UI components.`;
 
@@ -467,7 +474,7 @@ Return a JSON object with this exact structure:
 \`\`\`json
 {
   "action": "read_file" | "read_range" | "analyze_and_respond",
-  "filePath": "path/to/file.ext",
+  "filePath": "complete/relative/path/from/project/root/file.ext",
   "startLine": 1,
   "endLine": 50,
   "lineCount": 50,
@@ -475,6 +482,13 @@ Return a JSON object with this exact structure:
   "confidence": 0.9
 }
 \`\`\`
+
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"
 
 ## Action Types:
 - **read_file**: Read a specific file (will read from startLine to endLine, or first lineCount lines if startLine/endLine not specified)
@@ -1240,13 +1254,20 @@ Available actions:
 Respond with JSON:
 {
   "action": "read_file|read_range|analyze_and_respond",
-  "filePath": "path/to/file" (if reading),
+  "filePath": "complete/relative/path/from/project/root/file.ext" (if reading),
   "startLine": 1 (if reading range),
   "endLine": 50 (if reading range),
   "lineCount": 50 (if reading file by lines),
   "reasoning": "Why this action",
   "confidence": 0.8
-}`;
+}
+
+🚨 CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS use the COMPLETE relative path from project root
+- NEVER use just the filename (e.g., "index.php" ❌)
+- ALWAYS include the full directory structure (e.g., "www/index.php" ✅, "egdesk-scratch/wordpress/index.php" ✅)
+- Examples of CORRECT paths: "www/index.php", "src/components/Button.tsx", "egdesk-scratch/wordpress/wp-config.php"
+- Examples of INCORRECT paths: "index.php", "Button.tsx", "wp-config.php"`;
 
     try {
       const response = await this.sendToAI(aiKey, model, prompt, {

@@ -24,6 +24,7 @@ import {
 import ScheduledPosts from './ScheduledPosts';
 import { BlogWriter } from './BlogWriter/BlogWriter';
 import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
+import BlogImageGeneratorComponent from './WordPressSitesList/BlogImageGenerator';
 import './WordPressSitesList.css';
 
 interface WordPressSite {

@@ -13,13 +13,19 @@ import {
   faExclamationTriangle,
   faRobot,
   faCog,
+  faBug,
+  faImage,
+  faUpload,
+  faFileEdit,
+  faFileAlt,
 } from '@fortawesome/free-solid-svg-icons';
-import * as path from 'path';
 import SchedulerService, {
   CreateTaskData,
 } from '../../services/schedulerService';
 import { WordPressConnection } from '../../../main/preload';
 import BlogAIService, { BlogContentRequest, GeneratedBlogContent } from '../../services/blogAIService';
+import { BlogImageGenerator, BlogImageRequest, GeneratedImage } from '../../services/blogImageGenerator';
+import WordPressMediaService from '../../services/wordpressMediaService';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
 import { CHAT_PROVIDERS, ModelInfo } from '../ChatInterface/types';
@@ -42,6 +48,14 @@ interface PostTemplate {
   aiSettings: {
     model: string;
     keyId: string;
+  };
+  imageSettings?: {
+    enabled: boolean;
+    provider: 'dalle' | 'placeholder' | 'stability' | 'midjourney';
+    quality: 'standard' | 'hd';
+    size: string;
+    style: 'realistic' | 'illustration' | 'minimalist' | 'artistic' | 'photographic';
+    aspectRatio: 'square' | 'landscape' | 'portrait' | 'wide';
   };
 }
 
@@ -68,6 +82,18 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
   const [clearingTemplates, setClearingTemplates] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Debug workflow state
+  const [debugStep, setDebugStep] = useState<number>(0);
+  const [debugStatus, setDebugStatus] = useState<string>('');
+  const [debugResults, setDebugResults] = useState<{
+    generatedContent?: GeneratedBlogContent;
+    generatedImages?: GeneratedImage[];
+    uploadedMedia?: any[];
+    processedContent?: string;
+    createdPost?: any;
+  }>({});
+  const [isDebugRunning, setIsDebugRunning] = useState(false);
 
   // AI Configuration state
   const [activeKeys, setActiveKeys] = useState<AIKey[]>([]);
@@ -202,88 +228,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   console.log('WordPressPostScheduler - availableModels:', availableModels);
   console.log('WordPressPostScheduler - activeKeys:', activeKeys);
 
-  // Built-in default templates to show even when no site templates exist
-  const builtinTemplates: PostTemplate[] = useMemo(() => [
-    {
-      id: 'bw_weekly_update',
-      name: '주간 업데이트',
-      title: '주간 업데이트: 주요 하이라이트와 인사이트',
-      content:
-        '이번 주 진행 상황, 주요 지표, 향후 우선순위에 대한 요약.\n\n섹션:\n- 하이라이트\n- 도전과제\n- 지표\n- 다음 주 포커스',
-      status: 'publish',
-      categories: defaultCategory ? [defaultCategory] : ['업데이트'],
-      tags: defaultKeywords.length > 0 ? defaultKeywords : ['주간업데이트', '진행상황', '하이라이트', '지표'],
-      aiSettings: {
-        model: 'gpt-3.5-turbo',
-        keyId: ''
-      }
-    },
-    {
-      id: 'bw_how_to',
-      name: '가이드',
-      title: '[무엇을] [몇 단계]로 하는 방법',
-      content:
-        '소개: 독자가 달성할 수 있는 것.\n\n단계:\n1) 사전 준비사항\n2) 단계별 지침\n3) 자주 발생하는 문제점\n4) 요약 및 다음 단계',
-      status: 'publish',
-      categories: defaultCategory ? [defaultCategory] : ['가이드'],
-      tags: defaultKeywords.length > 0 ? defaultKeywords : ['가이드', '튜토리얼', '방법', '단계별'],
-      aiSettings: {
-        model: 'gpt-3.5-turbo',
-        keyId: ''
-      }
-    },
-    {
-      id: 'bw_listicle',
-      name: 'TOP 10 리스트',
-      title: '[대상/목표]를 위한 TOP 10 [도구/전략/팁]',
-      content:
-        '선택 기준을 설명하는 간단한 소개.\n\n리스트:\n1) 항목\n2) 항목\n3) 항목\n...\n10) 항목\n\n행동 유도와 함께하는 결론.',
-      status: 'publish',
-      categories: defaultCategory ? [defaultCategory] : ['리스트'],
-      tags: defaultKeywords.length > 0 ? defaultKeywords : ['TOP10', '리스트', '추천', '도구'],
-      aiSettings: {
-        model: 'gpt-3.5-turbo',
-        keyId: ''
-      }
-    },
-    {
-      id: 'bw_announcement',
-      name: '제품 공지',
-      title: '공지: [기능/제품] – 새로운 점과 중요한 이유',
-      content:
-        '출시 개요, 주요 혜택, 시작하는 방법, 문서/지원 링크.',
-      status: 'publish',
-      categories: defaultCategory ? [defaultCategory] : ['공지'],
-      tags: defaultKeywords.length > 0 ? defaultKeywords : ['공지', '출시', '신기능', '업데이트'],
-      aiSettings: {
-        model: 'gpt-3.5-turbo',
-        keyId: ''
-      }
-    },
-    {
-      id: 'bw_case_study',
-      name: '사례 연구',
-      title: '이커머스 스타트업 사례: 6개월 만에 매출 300% 성장 달성',
-      content: `배경: 낮은 전환율과 높은 장바구니 이탈률로 어려움을 겪던 소규모 이커머스 스타트업
-
-도전과제: 전환율 1.2%, 장바구니 이탈률 70%, 제한된 마케팅 예산
-
-해결방안: 개인화 상품 추천 시스템 도입, 체크아웃 프로세스 개선, 이메일 리마케팅 캠페인 실행
-
-결과: 매출 300% 증가, 전환율 2.8% 달성, 장바구니 이탈률 45% 감소
-
-교훈: 개인화와 사용자 경험 최적화가 성장의 핵심 동력
-
-행동 유도: 무료 전환율 최적화 체크리스트 다운로드`,
-      status: 'publish',
-      categories: defaultCategory ? [defaultCategory] : ['사례연구'],
-      tags: defaultKeywords.length > 0 ? defaultKeywords : ['사례연구', '이커머스', '성장', '전환율', '마케팅'],
-      aiSettings: {
-        model: 'gpt-3.5-turbo',
-        keyId: ''
-      }
-    },
-  ], [defaultCategory, defaultKeywords]);
+  // No built-in default templates - only user-created templates
+  const builtinTemplates: PostTemplate[] = useMemo(() => [], []);
 
   // Ensure all template IDs are unique by adding a suffix if needed
   const ensureUniqueIds = (templates: PostTemplate[]): PostTemplate[] => {
@@ -459,7 +405,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       // Check if there's an existing task for this template and site
       const existingTask = await findExistingTask(template.id, selectedSite.id!);
       
-      // Get the script path - use relative path from the project root
+      // Get the script path - use relative path from working directory
       const scriptPath = './scripts/generate-blog-content.js';
       
       // Validate API key exists
@@ -481,7 +427,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         TEMPLATE_TAGS: template.tags.join(','),
         WORDPRESS_URL: selectedSite.url,
         WORDPRESS_USERNAME: selectedSite.username,
-        WORDPRESS_PASSWORD: selectedSite.password
+        WORDPRESS_PASSWORD: selectedSite.password,
       };
 
       // Debug: Log environment variables (without sensitive data)
@@ -505,7 +451,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         command,
         schedule,
         enabled: true,
-        workingDirectory: '/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch',
+        workingDirectory: '', // Let the scheduler use the default working directory
         environment,
         outputFile: '',
         errorFile: '',
@@ -804,6 +750,577 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     }
   };
 
+  // Helper function to get or create categories
+  const getOrCreateCategories = async (categoryNames: string[], site: WordPressConnection): Promise<number[]> => {
+    const categoryIds: number[] = [];
+    
+    for (const categoryName of categoryNames) {
+      try {
+        // First, try to find existing category
+        const searchResponse = await fetch(
+          `${site.url}/wp-json/wp/v2/categories?search=${encodeURIComponent(categoryName)}`,
+          {
+            headers: {
+              'Authorization': `Basic ${btoa(`${site.username}:${site.password}`)}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (searchResponse.ok) {
+          const categories = await searchResponse.json();
+          const existingCategory = categories.find((cat: any) => 
+            cat.name.toLowerCase() === categoryName.toLowerCase()
+          );
+          
+          if (existingCategory) {
+            categoryIds.push(existingCategory.id);
+            continue;
+          }
+        }
+        
+        // Create new category if not found
+        const createResponse = await fetch(`${site.url}/wp-json/wp/v2/categories`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${btoa(`${site.username}:${site.password}`)}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: categoryName,
+            slug: categoryName.toLowerCase().replace(/\s+/g, '-')
+          })
+        });
+        
+        if (createResponse.ok) {
+          const newCategory = await createResponse.json();
+          categoryIds.push(newCategory.id);
+        }
+      } catch (error) {
+        console.error(`Failed to get/create category "${categoryName}":`, error);
+      }
+    }
+    
+    return categoryIds;
+  };
+
+  // Helper function to get or create tags
+  const getOrCreateTags = async (tagNames: string[], site: WordPressConnection): Promise<number[]> => {
+    const tagIds: number[] = [];
+    
+    for (const tagName of tagNames) {
+      try {
+        // First, try to find existing tag
+        const searchResponse = await fetch(
+          `${site.url}/wp-json/wp/v2/tags?search=${encodeURIComponent(tagName)}`,
+          {
+            headers: {
+              'Authorization': `Basic ${btoa(`${site.username}:${site.password}`)}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (searchResponse.ok) {
+          const tags = await searchResponse.json();
+          const existingTag = tags.find((tag: any) => 
+            tag.name.toLowerCase() === tagName.toLowerCase()
+          );
+          
+          if (existingTag) {
+            tagIds.push(existingTag.id);
+            continue;
+          }
+        }
+        
+        // Create new tag if not found
+        const createResponse = await fetch(`${site.url}/wp-json/wp/v2/tags`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${btoa(`${site.username}:${site.password}`)}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: tagName,
+            slug: tagName.toLowerCase().replace(/\s+/g, '-')
+          })
+        });
+        
+        if (createResponse.ok) {
+          const newTag = await createResponse.json();
+          tagIds.push(newTag.id);
+        }
+      } catch (error) {
+        console.error(`Failed to get/create tag "${tagName}":`, error);
+      }
+    }
+    
+    return tagIds;
+  };
+
+  // Debug workflow function - hybrid approach (renderer downloads images, main process handles the rest)
+  const runSingleImageDebug = async () => {
+    if (!selectedSite) {
+      setError('WordPress 사이트를 선택해주세요.');
+      return;
+    }
+
+    if (!selectedSite.password) {
+      setError('WordPress 비밀번호가 필요합니다.');
+      return;
+    }
+
+    setIsDebugRunning(true);
+    setDebugStep(0);
+    setDebugStatus('');
+    setDebugResults({});
+    setError(null);
+
+    try {
+      console.log('🔍 DEBUG: Starting Single Image Debug Workflow');
+      
+      // Step 1: Generate single image
+      setDebugStep(1);
+      setDebugStatus('1. 단일 이미지 생성 중...');
+      
+      const mediaService = new WordPressMediaService(selectedSite.url, selectedSite.username, selectedSite.password);
+      const imageGenerator = new BlogImageGenerator(mediaService, {
+        provider: 'dalle',
+        quality: 'standard',
+        size: '1024x1024'
+        // Note: API key is handled internally by the service via aiKeysStore
+      });
+
+      const imageRequest: BlogImageRequest = {
+        title: 'Single Image Debug Test',
+        content: '[IMAGE:A futuristic AI robot writing code on a computer screen, digital art style:featured]',
+        excerpt: 'A test image for debugging purposes',
+        keywords: ['debug', 'test', 'image'],
+        category: 'Debug',
+        style: 'realistic',
+        aspectRatio: 'landscape'
+      };
+
+      console.log('🔍 DEBUG: Single Image Request:', imageRequest);
+      console.log('🔍 DEBUG: Image Generator Options:', {
+        provider: 'dalle',
+        quality: 'standard',
+        size: '1024x1024'
+      });
+      
+      console.log('🔍 DEBUG: AI Key Information:', {
+        selectedKeyId: activeKeys[0]!.id,
+        providerId: activeKeys[0]!.providerId,
+        isOpenAI: activeKeys[0]!.providerId === 'openai',
+        hasApiKey: !!activeKeys[0]!.fields.apiKey,
+        apiKeyLength: activeKeys[0]!.fields.apiKey?.length || 0,
+        apiKeyPreview: activeKeys[0]!.fields.apiKey?.substring(0, 10) + '...' || 'NONE',
+        allFields: Object.keys(activeKeys[0]!.fields)
+      });
+      
+      if (activeKeys[0]!.providerId !== 'openai') {
+        throw new Error(`Selected AI key is not an OpenAI key (provider: ${activeKeys[0]!.providerId}). Please select an OpenAI API key for image generation.`);
+      }
+      
+      console.log('🔍 DEBUG: Calling imageGenerator.generateBlogImagesWithoutUpload...');
+      
+      let generatedImages;
+      try {
+        // Generate images without uploading to WordPress (to avoid CORS issues)
+        generatedImages = await imageGenerator.generateBlogImagesWithoutUpload(imageRequest);
+      } catch (imageError) {
+        console.error('🔍 DEBUG: Image generation failed with error:', imageError);
+        throw new Error(`Image generation failed: ${imageError instanceof Error ? imageError.message : 'Unknown error'}. Please check your OpenAI API key and configuration.`);
+      }
+
+      console.log('🔍 DEBUG: Generated Images Count:', generatedImages.length);
+      console.log('🔍 DEBUG: Generated Images Details:', generatedImages.map(img => ({
+        id: img.id,
+        url: img.url,
+        description: img.description,
+        isPlaceholder: img.url.includes('via.placeholder.com'),
+        isDalle: img.url.includes('oaidalleapiprodscus.blob.core.windows.net')
+      })));
+      
+      if (generatedImages.length === 0) {
+        throw new Error('No images were generated! Check your API key and configuration.');
+      }
+
+      const image = generatedImages[0];
+      console.log('🔍 DEBUG: Using first image:', image);
+
+      // Step 2: Download image via Node.js script (to avoid CORS)
+      setDebugStep(2);
+      setDebugStatus('2. 이미지 다운로드 중... (Node.js 스크립트 사용)');
+      
+      console.log('🔍 DEBUG: Downloading image via Node.js script:', image.url);
+      const downloadResult = await window.electron.debug.downloadImages([{
+        id: image.id,
+        url: image.url
+      }]);
+      
+      console.log('🔍 DEBUG: Download script result:', downloadResult);
+      
+      if (!downloadResult.success || downloadResult.results.length === 0) {
+        throw new Error(`Failed to download image via Node.js script: ${downloadResult.stderr || 'Unknown error'}`);
+      }
+      
+      const downloadedImage = downloadResult.results[0];
+      if (!downloadedImage.success) {
+        throw new Error(`Failed to download image: ${downloadedImage.error}`);
+      }
+      
+      console.log('✅ Image downloaded via Node.js script:', {
+        size: downloadedImage.size,
+        mimeType: downloadedImage.mimeType,
+        base64Length: downloadedImage.data?.length || 0
+      });
+
+      // Step 3: Upload to WordPress
+      setDebugStep(3);
+      setDebugStatus('3. WordPress에 이미지 업로드 중...');
+      
+      const fileName = `${image.id}.${downloadedImage.mimeType!.split('/')[1]}`;
+      
+      // Convert base64 to Uint8Array (since Buffer is not available in renderer)
+      const binaryString = atob(downloadedImage.data!);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const imageBuffer = bytes;
+      
+      console.log('🔍 DEBUG: Uploading to WordPress:', {
+        fileName: fileName,
+        mimeType: downloadedImage.mimeType,
+        bufferSize: imageBuffer.length
+      });
+
+      const uploadResult = await mediaService.uploadMedia(
+        imageBuffer,
+        fileName,
+        downloadedImage.mimeType!,
+        {
+          title: image.description,
+          altText: image.altText,
+          caption: image.caption
+        }
+      );
+
+      console.log('✅ Image uploaded to WordPress:', uploadResult);
+
+      // Step 4: Summary
+      setDebugStep(4);
+      setDebugStatus('✅ 단일 이미지 디버그 완료!');
+      setSuccess(`단일 이미지 디버그가 성공적으로 완료되었습니다! WordPress Media ID: ${uploadResult.id}`);
+
+      console.log('🎉 Single Image Debug Summary:', {
+        generatedImage: image,
+        downloadSize: downloadedImage.size,
+        downloadMethod: 'Node.js script',
+        uploadResult: uploadResult
+      });
+
+    } catch (error) {
+      console.error('Single image debug failed:', error);
+      setError(`단일 이미지 디버그 실패: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsDebugRunning(false);
+    }
+  };
+
+  const runDebugWorkflow = async () => {
+    if (!selectedSite || !selectedSite.password) {
+      setError('WordPress 사이트와 비밀번호가 필요합니다');
+      return;
+    }
+
+    if (activeKeys.length === 0) {
+      setError('AI 키가 필요합니다. AI Keys Manager에서 키를 추가해주세요.');
+      return;
+    }
+
+    setIsDebugRunning(true);
+    setDebugStep(0);
+    setDebugStatus('');
+    setDebugResults({});
+    setError(null);
+
+    try {
+      // Step 1: Generate content and images in renderer (to avoid CORS issues)
+      setDebugStep(1);
+      setDebugStatus('1. 블로그 콘텐츠 생성 중... (이미지 마커 포함)');
+      
+      console.log('🔍 DEBUG: Starting Step 1 - Content Generation');
+      console.log('🔍 DEBUG: Available AI Keys:', activeKeys.length);
+      console.log('🔍 DEBUG: Selected AI Key:', activeKeys[0] ? {
+        id: activeKeys[0].id,
+        provider: activeKeys[0].providerId,
+        hasApiKey: !!activeKeys[0].fields.apiKey
+      } : 'NONE');
+      console.log('🔍 DEBUG: Available Models:', availableModels.length);
+      console.log('🔍 DEBUG: Selected Model:', availableModels[0]?.id || 'gpt-3.5-turbo');
+      
+      const blogAIService = BlogAIService.getInstance();
+      const contentRequest: BlogContentRequest = {
+        topic: 'AI와 블로그 자동화의 미래',
+        audience: '개발자',
+        tone: '전문적이고 친근한',
+        length: '1200-1600 단어',
+        keywords: ['AI', '블로그', '자동화', 'WordPress', '이미지 생성'],
+        category: 'IT/기술',
+        aiKey: activeKeys[0]!,
+        model: availableModels[0]?.id || 'gpt-3.5-turbo'
+      };
+
+      console.log('🔍 DEBUG: Content Request:', {
+        topic: contentRequest.topic,
+        audience: contentRequest.audience,
+        tone: contentRequest.tone,
+        length: contentRequest.length,
+        keywords: contentRequest.keywords,
+        category: contentRequest.category,
+        model: contentRequest.model,
+        aiKeyProvider: contentRequest.aiKey.providerId
+      });
+
+      console.log('🔍 DEBUG: Calling blogAIService.generateBlogContent...');
+      const generatedContent = await blogAIService.generateBlogContent(contentRequest);
+      setDebugResults(prev => ({ ...prev, generatedContent }));
+      
+      console.log('🔍 DEBUG: Content Generation Result:');
+      console.log('  - Title:', generatedContent.title);
+      console.log('  - Content length:', generatedContent.content.length);
+      console.log('  - Excerpt length:', generatedContent.excerpt?.length || 0);
+      console.log('  - Tags:', generatedContent.tags);
+      console.log('  - Categories:', generatedContent.categories);
+      console.log('  - Has image markers [IMAGE:]:', generatedContent.content.includes('[IMAGE:'));
+      console.log('  - Has image placeholders:', generatedContent.content.includes('image-placeholder'));
+      console.log('  - Content preview (first 500 chars):', generatedContent.content.substring(0, 500));
+      console.log('  - Content preview (last 500 chars):', generatedContent.content.substring(Math.max(0, generatedContent.content.length - 500)));
+
+      // Step 2: Generate Images
+      setDebugStep(2);
+      setDebugStatus('2. 이미지 생성 중... (마커 기반)');
+      
+      console.log('🔍 DEBUG: Starting Step 2 - Image Generation');
+      console.log('🔍 DEBUG: WordPress Site:', {
+        url: selectedSite.url,
+        username: selectedSite.username,
+        hasPassword: !!selectedSite.password
+      });
+      
+      const mediaService = new WordPressMediaService(selectedSite.url, selectedSite.username, selectedSite.password);
+      const imageGenerator = new BlogImageGenerator(mediaService, {
+        provider: 'dalle',
+        quality: 'standard',
+        size: '1024x1024',
+        apiKey: activeKeys[0]!.fields.apiKey
+      });
+
+      console.log('🔍 DEBUG: Image Generator Config:', {
+        provider: 'dalle',
+        quality: 'standard',
+        size: '1024x1024',
+        hasApiKey: !!activeKeys[0]!.fields.apiKey,
+        apiKeyLength: activeKeys[0]!.fields.apiKey?.length || 0
+      });
+
+      const imageRequest: BlogImageRequest = {
+        title: generatedContent.title,
+        content: generatedContent.content,
+        excerpt: generatedContent.excerpt,
+        keywords: generatedContent.tags,
+        category: generatedContent.categories[0],
+        style: 'realistic',
+        aspectRatio: 'landscape'
+      };
+
+      console.log('🔍 DEBUG: Image Request:', {
+        title: imageRequest.title,
+        contentLength: imageRequest.content.length,
+        excerpt: imageRequest.excerpt,
+        keywords: imageRequest.keywords,
+        category: imageRequest.category,
+        style: imageRequest.style,
+        aspectRatio: imageRequest.aspectRatio,
+        hasImageMarkers: imageRequest.content.includes('[IMAGE:')
+      });
+
+      console.log('🔍 DEBUG: Calling imageGenerator.generateBlogImages...');
+      const generatedImages = await imageGenerator.generateBlogImages(imageRequest, {
+          url: selectedSite.url,
+          username: selectedSite.username,
+          password: selectedSite.password
+      });
+      setDebugResults(prev => ({ ...prev, generatedImages }));
+      
+      console.log('🔍 DEBUG: Image Generation Result:');
+      console.log('  - Generated Images Count:', generatedImages.length);
+      console.log('  - Generated Images Details:', generatedImages.map((img, index) => ({
+        index: index + 1,
+          id: img.id,
+          description: img.description,
+        url: img.url,
+          placement: img.placement,
+        style: img.style,
+        aspectRatio: img.aspectRatio,
+        prompt: img.prompt,
+        altText: img.altText,
+        caption: img.caption
+      })));
+      
+      if (generatedImages.length === 0) {
+        console.log('⚠️ WARNING: No images were generated! This could be due to:');
+        console.log('  - API key issues');
+        console.log('  - Provider configuration problems');
+        console.log('  - Content analysis not finding image requirements');
+        console.log('  - Image generation service errors');
+      }
+
+      // Step 3: Download images via Node.js script (to avoid CORS)
+      setDebugStep(3);
+      setDebugStatus('3. 이미지 다운로드 중... (Node.js 스크립트 사용)');
+      
+      console.log('🔍 DEBUG: Starting Step 3 - Image Download via Node.js Script');
+      console.log('🔍 DEBUG: Images to download:', generatedImages.length);
+      
+      const downloadedImages = [];
+      
+      if (generatedImages.length > 0) {
+        try {
+          console.log('🔍 DEBUG: Downloading images via Node.js script...');
+          const downloadResult = await window.electron.debug.downloadImages(generatedImages.map(img => ({
+            id: img.id,
+            url: img.url
+          })));
+          
+          console.log('🔍 DEBUG: Download script result:', downloadResult);
+          
+          if (!downloadResult.success || downloadResult.results.length === 0) {
+            throw new Error(`Failed to download images via Node.js script: ${downloadResult.stderr || 'Unknown error'}`);
+          }
+          
+          // Process download results
+          for (const result of downloadResult.results) {
+            if (result.success) {
+              const image = generatedImages.find(img => img.id === result.imageId);
+              if (image) {
+                const downloadedImage = {
+                  ...image,
+                  imageData: result.data,
+                  mimeType: result.mimeType,
+                  fileName: `${image.id}.${result.mimeType!.split('/')[1]}`,
+                  size: result.size
+                };
+                
+                downloadedImages.push(downloadedImage);
+                
+                console.log(`✅ DEBUG: Successfully downloaded image ${image.id}:`, {
+                  fileName: downloadedImage.fileName,
+                  mimeType: downloadedImage.mimeType,
+                  size: downloadedImage.size,
+                  base64Length: result.data?.length || 0
+                });
+              }
+            } else {
+              console.error(`❌ DEBUG: Failed to download image ${result.imageId}:`, result.error);
+            }
+          }
+          
+          console.log(`🔍 DEBUG: Download Summary: ${downloadedImages.length}/${generatedImages.length} images downloaded successfully`);
+          
+        } catch (error) {
+          console.error('❌ DEBUG: Image download failed:', error);
+          console.log('⚠️ WARNING: Image download failed! This could be due to:');
+          console.log('  - Node.js script execution issues');
+          console.log('  - Network connectivity issues');
+          console.log('  - Image service returning errors');
+        }
+      }
+      
+      if (downloadedImages.length === 0 && generatedImages.length > 0) {
+        console.log('⚠️ WARNING: No images were downloaded! This could be due to:');
+        console.log('  - CORS issues (though we\'re using Node.js script)');
+        console.log('  - Invalid image URLs');
+        console.log('  - Network connectivity issues');
+        console.log('  - Image service returning errors');
+      }
+
+      // Step 4: Send to main process for upload and post creation
+      setDebugStep(4);
+      setDebugStatus('4. WordPress 업로드 및 포스트 생성 중...');
+      
+      console.log('🔍 DEBUG: Starting Step 4 - Main Process Communication');
+      
+      const config = {
+        wordpressUrl: selectedSite.url,
+        wordpressUsername: selectedSite.username,
+        wordpressPassword: selectedSite.password,
+        generatedContent: generatedContent,
+        downloadedImages: downloadedImages
+      };
+      
+      console.log('🔍 DEBUG: Config for main process:', {
+        wordpressUrl: config.wordpressUrl,
+        wordpressUsername: config.wordpressUsername,
+        hasPassword: !!config.wordpressPassword,
+        contentTitle: config.generatedContent.title,
+        contentLength: config.generatedContent.content.length,
+        downloadedImagesCount: config.downloadedImages.length,
+        downloadedImagesDetails: config.downloadedImages.map((img, index) => ({
+          index: index + 1,
+          id: img.id,
+          fileName: img.fileName,
+          mimeType: img.mimeType,
+          hasImageData: !!img.imageData,
+          imageDataLength: img.imageData?.length || 0
+        }))
+      });
+
+      console.log('🔍 DEBUG: Calling window.electron.debug.executeWorkflow...');
+
+      // Execute the upload and post creation via IPC
+      const result = await (window.electron.debug.executeWorkflow as any)(config);
+      
+      console.log('🔍 DEBUG: Main process result:', {
+        success: result.success,
+        exitCode: result.exitCode,
+        outputLength: result.output?.length || 0,
+        errorLength: result.error?.length || 0,
+        hasOutput: !!result.output,
+        hasError: !!result.error
+      });
+      
+      if (result.output) {
+        console.log('🔍 DEBUG: Main process output:', result.output);
+      }
+      
+      if (result.error) {
+        console.log('🔍 DEBUG: Main process errors:', result.error);
+      }
+      
+      if (result.success) {
+      setDebugStatus('✅ 디버그 워크플로우 완료!');
+      setSuccess('디버그 워크플로우가 성공적으로 완료되었습니다. 콘솔에서 상세 결과를 확인하세요.');
+        
+        // Log the script output
+        console.log('Debug workflow script output:', result.output);
+        if (result.error) {
+          console.warn('Debug workflow script errors:', result.error);
+        }
+      } else {
+        throw new Error(result.error || 'Debug workflow script failed');
+      }
+
+    } catch (error) {
+      console.error('Debug workflow failed:', error);
+      setError(`디버그 워크플로우 실패: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsDebugRunning(false);
+    }
+  };
+
   const getScheduleOptions = () => [
     { value: '', label: 'Never (스케줄 없음)' },
     { value: 'interval:300000', label: '5분마다' },
@@ -915,6 +1432,44 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         </h3>
         <div className="header-actions">
           <button
+            className="btn btn-info"
+            onClick={runDebugWorkflow}
+            disabled={isDebugRunning || !selectedSite || !selectedSite.password}
+            title={
+              !selectedSite
+                ? '먼저 WordPress 사이트를 선택해주세요'
+                : !selectedSite.password
+                  ? 'WordPress 비밀번호가 필요합니다'
+                  : '디버그 워크플로우 실행 (콘텐츠 생성 → 이미지 생성 → 업로드 → 포스트 생성)'
+            }
+          >
+            {isDebugRunning ? (
+              <FontAwesomeIcon icon={faClock} className="spinning" />
+            ) : (
+              <FontAwesomeIcon icon={faBug} />
+            )}
+            {isDebugRunning ? '디버그 실행 중...' : '디버그 워크플로우'}
+          </button>
+          <button
+            className="btn btn-warning"
+            onClick={runSingleImageDebug}
+            disabled={isDebugRunning || !selectedSite || !selectedSite.password}
+            title={
+              !selectedSite
+                ? '먼저 WordPress 사이트를 선택해주세요'
+                : !selectedSite.password
+                  ? 'WordPress 비밀번호가 필요합니다'
+                  : '단일 이미지 디버그 실행 (이미지 생성 → 다운로드 → 업로드)'
+            }
+          >
+            {isDebugRunning ? (
+              <FontAwesomeIcon icon={faClock} className="spinning" />
+            ) : (
+              <FontAwesomeIcon icon={faImage} />
+            )}
+            {isDebugRunning ? '단일 이미지 테스트 중...' : '단일 이미지 테스트'}
+          </button>
+          <button
             className="btn btn-warning"
             onClick={clearAllTemplates}
             disabled={clearingTemplates || sites.length === 0}
@@ -966,6 +1521,100 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           <FontAwesomeIcon icon={faCheck} />
           {success}
           <button onClick={() => setSuccess(null)}>×</button>
+        </div>
+      )}
+
+      {/* Debug Status Display */}
+      {isDebugRunning && (
+        <div className="debug-status">
+          <div className="debug-header">
+            <FontAwesomeIcon icon={faBug} />
+            <h4>디버그 워크플로우 실행 중</h4>
+          </div>
+          <div className="debug-progress">
+            <div className="debug-steps">
+              {[1, 2, 3, 4, 5].map((step) => (
+                <div
+                  key={step}
+                  className={`debug-step ${debugStep >= step ? 'active' : ''} ${debugStep > step ? 'completed' : ''}`}
+                >
+                  <div className="step-number">
+                    {debugStep > step ? (
+                      <FontAwesomeIcon icon={faCheck} />
+                    ) : (
+                      step
+                    )}
+                  </div>
+                  <div className="step-label">
+                    {step === 1 && '콘텐츠 생성'}
+                    {step === 2 && '이미지 생성'}
+                    {step === 3 && '이미지 업로드'}
+                    {step === 4 && '콘텐츠 편집'}
+                    {step === 5 && '포스트 생성'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="debug-status-text">
+              <FontAwesomeIcon icon={faClock} className="spinning" />
+              {debugStatus}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Results Display */}
+      {debugResults.generatedContent && (
+        <div className="debug-results">
+          <h4>디버그 결과</h4>
+          <div className="debug-result-section">
+            <h5><FontAwesomeIcon icon={faFileAlt} /> 생성된 콘텐츠</h5>
+            <div className="debug-content-preview">
+              <strong>제목:</strong> {debugResults.generatedContent.title}<br/>
+              <strong>카테고리:</strong> {debugResults.generatedContent.categories.join(', ')}<br/>
+              <strong>태그:</strong> {debugResults.generatedContent.tags.join(', ')}<br/>
+              <strong>콘텐츠 길이:</strong> {debugResults.generatedContent.content.length} 문자
+            </div>
+          </div>
+          
+          {debugResults.generatedImages && debugResults.generatedImages.length > 0 && (
+            <div className="debug-result-section">
+              <h5><FontAwesomeIcon icon={faImage} /> 생성된 이미지</h5>
+              <div className="debug-images-preview">
+                {debugResults.generatedImages.map((img, index) => (
+                  <div key={index} className="debug-image-item">
+                    <strong>위치:</strong> {img.placement} | 
+                    <strong> 설명:</strong> {img.description}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {debugResults.uploadedMedia && debugResults.uploadedMedia.length > 0 && (
+            <div className="debug-result-section">
+              <h5><FontAwesomeIcon icon={faUpload} /> 업로드된 미디어</h5>
+              <div className="debug-media-preview">
+                {debugResults.uploadedMedia.map((media, index) => (
+                  <div key={index} className="debug-media-item">
+                    <strong>WordPress ID:</strong> {media.wordpressId} | 
+                    <strong> URL:</strong> {media.wordpressUrl}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {debugResults.createdPost && (
+            <div className="debug-result-section">
+              <h5><FontAwesomeIcon icon={faFileEdit} /> 생성된 포스트</h5>
+              <div className="debug-post-preview">
+                <strong>포스트 ID:</strong> {debugResults.createdPost.id}<br/>
+                <strong>상태:</strong> {debugResults.createdPost.status}<br/>
+                <strong>링크:</strong> <a href={debugResults.createdPost.link} target="_blank" rel="noopener noreferrer">{debugResults.createdPost.link}</a>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

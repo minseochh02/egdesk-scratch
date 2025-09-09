@@ -57,7 +57,11 @@
     "php:bundle": "node scripts/bundle-php-cross-platform.js",
     "php:docker": "node scripts/bundle-php-docker.js",
     "php:setup": "npm run php:bundle && npm run build",
-    "php:setup-docker": "npm run php:docker && npm run build"
+    "php:setup-docker": "npm run php:docker && npm run build",
+    "debug:workflow": "node scripts/debug-workflow.js",
+    "debug:single-image": "node scripts/debug-single-image.js",
+    "debug:single-image-real": "node scripts/debug-single-image-real.js",
+    "download:images": "node scripts/download-images.js"
   },
   "browserslist": [
     "extends browserslist-config-erb"

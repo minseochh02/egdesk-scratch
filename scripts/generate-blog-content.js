@@ -9,6 +9,8 @@
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
+const fs = require('fs');
+const path = require('path');
 
 // Configuration from environment variables
 const AI_KEY = process.env.AI_KEY;
@@ -213,6 +215,14 @@ function buildSystemPrompt() {
 5. Natural keyword integration
 6. Engaging conclusion with call-to-action
 
+## Image Requirements:
+- Suggest appropriate images for the blog post
+- Provide detailed image descriptions for AI image generation
+- Include image placement suggestions within the content
+- Ensure images are relevant to the content and enhance readability
+- Use specific image insertion markers in the content: [IMAGE:description:placement]
+- Place images strategically throughout the content to break up text and enhance readability
+
 ## SEO Requirements:
 - Include primary keywords in title and headings
 - Use secondary keywords naturally throughout content
@@ -223,13 +233,28 @@ function buildSystemPrompt() {
 Return your response in the following JSON format:
 {
   "title": "Blog post title",
-  "content": "Full blog post content in HTML format",
+  "content": "Full blog post content in HTML format with [IMAGE:description:placement] markers",
   "excerpt": "Brief summary of the post",
   "tags": ["tag1", "tag2", "tag3"],
   "categories": ["category1", "category2"],
   "seoTitle": "SEO optimized title",
-  "metaDescription": "Meta description for search engines"
-}`;
+  "metaDescription": "Meta description for search engines",
+  "images": [
+    {
+      "description": "Detailed description of the image for AI generation",
+      "altText": "Alt text for accessibility",
+      "caption": "Image caption",
+      "placement": "featured|header|content|footer"
+    }
+  ]
+}
+
+## Image Marker Format:
+Use [IMAGE:description:placement] markers in your content where images should be inserted:
+- [IMAGE:A professional headshot of a business person:header] - for header images
+- [IMAGE:A detailed infographic showing the process:content] - for content images
+- [IMAGE:A call-to-action banner:footer] - for footer images
+- [IMAGE:A featured image representing the main topic:featured] - for featured images`;
 }
 
 /**
@@ -290,14 +315,20 @@ function parseGeneratedContent(content) {
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       console.log(`✅ Successfully parsed JSON response`);
+      
+      // Process image markers in content
+      const processedContent = processImageMarkers(parsed.content || content);
+      const extractedImages = extractImagesFromContent(parsed.content || content);
+      
       return {
         title: parsed.title || TEMPLATE_TITLE || 'AI Generated Post',
-        content: parsed.content || content,
-        excerpt: parsed.excerpt || generateExcerpt(content),
+        content: processedContent,
+        excerpt: parsed.excerpt || generateExcerpt(processedContent),
         tags: parsed.tags || (TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : []),
         categories: parsed.categories || (TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반']),
         seoTitle: parsed.seoTitle || parsed.title || TEMPLATE_TITLE || 'AI Generated Post',
-        metaDescription: parsed.metaDescription || generateMetaDescription(content)
+        metaDescription: parsed.metaDescription || generateMetaDescription(processedContent),
+        images: [...(parsed.images || []), ...extractedImages]
       };
     }
   } catch (error) {
@@ -306,15 +337,70 @@ function parseGeneratedContent(content) {
 
   // Fallback parsing if JSON extraction fails
   console.log(`🔄 Using fallback content parsing`);
+  const processedContent = processImageMarkers(content);
+  const extractedImages = extractImagesFromContent(content);
+  
   return {
-    title: extractTitle(content) || TEMPLATE_TITLE || 'AI Generated Post',
-    content: content,
-    excerpt: generateExcerpt(content),
+    title: extractTitle(processedContent) || TEMPLATE_TITLE || 'AI Generated Post',
+    content: processedContent,
+    excerpt: generateExcerpt(processedContent),
     tags: TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : [],
     categories: TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반'],
-    seoTitle: extractTitle(content) || TEMPLATE_TITLE || 'AI Generated Post',
-    metaDescription: generateMetaDescription(content)
+    seoTitle: extractTitle(processedContent) || TEMPLATE_TITLE || 'AI Generated Post',
+    metaDescription: generateMetaDescription(processedContent),
+    images: extractedImages
   };
+}
+
+/**
+ * Process image markers in content and convert them to HTML placeholders
+ */
+function processImageMarkers(content) {
+  if (!content) return content;
+  
+  // Replace [IMAGE:description:placement] markers with HTML placeholders
+  const imageMarkerRegex = /\[IMAGE:([^:]+):([^\]]+)\]/g;
+  let imageIndex = 0;
+  
+  return content.replace(imageMarkerRegex, (match, description, placement) => {
+    imageIndex++;
+    const imageId = `image_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `<div class="image-placeholder" data-image-id="${imageId}" data-image-index="${imageIndex}" data-description="${description.trim()}" data-placement="${placement.trim()}">
+      <div class="image-placeholder-content">
+        <div class="image-placeholder-icon">🖼️</div>
+        <div class="image-placeholder-text">
+          <strong>이미지 순서:</strong> ${imageIndex}<br>
+          <strong>이미지 위치:</strong> ${placement.trim()}<br>
+          <strong>설명:</strong> ${description.trim()}
+        </div>
+      </div>
+    </div>`;
+  });
+}
+
+/**
+ * Extract image information from content markers
+ */
+function extractImagesFromContent(content) {
+  if (!content) return [];
+  
+  const images = [];
+  const imageMarkerRegex = /\[IMAGE:([^:]+):([^\]]+)\]/g;
+  let match;
+  
+  while ((match = imageMarkerRegex.exec(content)) !== null) {
+    const description = match[1].trim();
+    const placement = match[2].trim();
+    
+    images.push({
+      description: description,
+      altText: description,
+      caption: description,
+      placement: placement
+    });
+  }
+  
+  return images;
 }
 
 /**
@@ -344,9 +430,440 @@ function generateMetaDescription(content) {
 }
 
 /**
+ * Upload media to WordPress using multipart/form-data
+ */
+async function uploadMediaToWordPress(fileBuffer, filename, mimeType, options = {}) {
+  if (!WORDPRESS_URL || !WORDPRESS_USERNAME || !WORDPRESS_PASSWORD) {
+    throw new Error('Missing WordPress configuration for media upload');
+  }
+
+  console.log(`📤 Uploading media to WordPress: ${filename}`);
+
+  const baseUrl = WORDPRESS_URL.replace(/\/$/, '');
+  const endpoint = `${baseUrl}/wp-json/wp/v2/media`;
+
+  // Create multipart form data
+  const boundary = `----formdata-${Date.now()}`;
+  const formData = createMultipartFormData(fileBuffer, filename, mimeType, boundary, options);
+
+  const auth = Buffer.from(`${WORDPRESS_USERNAME}:${WORDPRESS_PASSWORD}`).toString('base64');
+
+  const requestOptions = {
+    hostname: new URL(endpoint).hostname,
+    port: new URL(endpoint).port || 443,
+    path: new URL(endpoint).pathname,
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': formData.length
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(requestOptions, (res) => {
+      let responseData = '';
+
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        console.log(`📊 WordPress Media API Response: ${res.statusCode}`);
+        
+        try {
+          const parsed = JSON.parse(responseData);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log(`✅ Successfully uploaded media: ${filename}`);
+            console.log(`🆔 Media ID: ${parsed.id}`);
+            console.log(`🔗 Media URL: ${parsed.source_url}`);
+            resolve(parsed);
+          } else {
+            console.error(`❌ WordPress Media API Error: ${res.statusCode}`);
+            console.error(`📄 Response:`, parsed);
+            reject(new Error(`WordPress Media API request failed: ${res.statusCode} - ${parsed.message || responseData}`));
+          }
+        } catch (error) {
+          console.error(`❌ Failed to parse WordPress response:`, error.message);
+          console.error(`📄 Raw response:`, responseData);
+          reject(new Error(`Failed to parse WordPress response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.error(`❌ WordPress Media API request error:`, error.message);
+      reject(new Error(`WordPress Media API request error: ${error.message}`));
+    });
+
+    req.write(formData);
+    req.end();
+  });
+}
+
+/**
+ * Create multipart form data
+ */
+function createMultipartFormData(fileBuffer, filename, mimeType, boundary, options) {
+  const parts = [];
+
+  // Add file part
+  parts.push(`--${boundary}`);
+  parts.push(`Content-Disposition: form-data; name="file"; filename="${filename}"`);
+  parts.push(`Content-Type: ${mimeType}`);
+  parts.push('');
+  parts.push(fileBuffer);
+  parts.push('');
+
+  // Add optional metadata
+  if (options.altText) {
+    parts.push(`--${boundary}`);
+    parts.push(`Content-Disposition: form-data; name="alt_text"`);
+    parts.push('');
+    parts.push(options.altText);
+    parts.push('');
+  }
+
+  if (options.caption) {
+    parts.push(`--${boundary}`);
+    parts.push(`Content-Disposition: form-data; name="caption"`);
+    parts.push('');
+    parts.push(options.caption);
+    parts.push('');
+  }
+
+  if (options.description) {
+    parts.push(`--${boundary}`);
+    parts.push(`Content-Disposition: form-data; name="description"`);
+    parts.push('');
+    parts.push(options.description);
+    parts.push('');
+  }
+
+  if (options.title) {
+    parts.push(`--${boundary}`);
+    parts.push(`Content-Disposition: form-data; name="title"`);
+    parts.push('');
+    parts.push(options.title);
+    parts.push('');
+  }
+
+  // Close boundary
+  parts.push(`--${boundary}--`);
+
+  return Buffer.concat(parts.map(part => 
+    typeof part === 'string' ? Buffer.from(part + '\r\n', 'utf8') : part
+  ));
+}
+
+/**
+ * Get MIME type based on file extension
+ */
+function getMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const mimeTypes = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp',
+    '.tiff': 'image/tiff',
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+/**
+ * Generate a placeholder image for testing
+ */
+function generatePlaceholderImage(width = 800, height = 600, text = 'Blog Image') {
+  // Create a simple SVG placeholder image
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100%" height="100%" fill="#f0f0f0"/>
+    <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial, sans-serif" font-size="24" fill="#666">
+      ${text}
+    </text>
+  </svg>`;
+  
+  return Buffer.from(svg, 'utf8');
+}
+
+/**
+ * Download images using the same logic as the debug workflow
+ */
+async function downloadImages(images) {
+  const { spawn } = require('child_process');
+  const path = require('path');
+  const fs = require('fs');
+  const os = require('os');
+
+  return new Promise((resolve, reject) => {
+    console.log(`🚀 Starting image download via Node.js script...`);
+    console.log(`Images to download: ${images.length}`);
+
+    const scriptPath = path.join(__dirname, 'download-images.js');
+    const child = spawn('node', [scriptPath, ...images.map(img => img.url)], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let tempFilePath = '';
+
+    child.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      console.log('[Download Script]', output.trim());
+      
+      // Parse temp file path from stdout
+      const lines = output.split('\n');
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith('/') && trimmedLine.includes('download-results-') && trimmedLine.endsWith('.json')) {
+          tempFilePath = trimmedLine;
+          console.log(`[Download Script] Captured temp file path: ${tempFilePath}`);
+          break;
+        }
+      }
+    });
+
+    child.stderr.on('data', (data) => {
+      const output = data.toString();
+      stderr += output;
+      console.error('[Download Script Error]', output.trim());
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        if (!tempFilePath) {
+          reject(new Error('No temp file path received from download script'));
+          return;
+        }
+
+        try {
+          console.log(`Reading results from temp file: ${tempFilePath}`);
+          const resultsContent = fs.readFileSync(tempFilePath, 'utf8');
+          const results = JSON.parse(resultsContent);
+          fs.unlinkSync(tempFilePath); // Clean up
+          console.log(`Cleaned up temp file: ${tempFilePath}`);
+          
+          resolve({ success: true, results: results.results, summary: results.summary });
+        } catch (error) {
+          reject(new Error(`Failed to read download results: ${error.message}`));
+        }
+      } else {
+        reject(new Error(`Download script exited with code ${code}: ${stderr}`));
+      }
+    });
+
+    child.on('error', (error) => {
+      reject(new Error(`Failed to start download script: ${error.message}`));
+    });
+  });
+}
+
+/**
+ * Generate images using DALL-E (same logic as debug workflow)
+ */
+async function generateImagesWithDALLE(images, aiKey) {
+  const https = require('https');
+  const uploadedImages = [];
+
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    try {
+      console.log(`🎨 Generating DALL-E image ${i + 1}/${images.length}: ${image.description}`);
+      
+      const imageRequest = {
+        prompt: image.description,
+        n: 1,
+        size: '1024x1024',
+        quality: 'standard',
+        style: 'vivid'
+      };
+
+      const postData = JSON.stringify(imageRequest);
+      const options = {
+        hostname: 'api.openai.com',
+        port: 443,
+        path: '/v1/images/generations',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${aiKey}`,
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const dalleResponse = await new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+          let responseData = '';
+          res.on('data', (chunk) => {
+            responseData += chunk;
+          });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(responseData);
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                resolve(parsed);
+              } else {
+                reject(new Error(`DALL-E API error: ${res.statusCode} - ${parsed.error?.message || responseData}`));
+              }
+            } catch (error) {
+              reject(new Error(`Failed to parse DALL-E response: ${error.message}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          reject(new Error(`DALL-E API request error: ${error.message}`));
+        });
+
+        req.write(postData);
+        req.end();
+      });
+
+      if (dalleResponse.data && dalleResponse.data.length > 0) {
+        const generatedImage = dalleResponse.data[0];
+        uploadedImages.push({
+          ...image,
+          url: generatedImage.url,
+          isDalle: true,
+          isPlaceholder: false
+        });
+        console.log(`✅ Generated DALL-E image: ${generatedImage.url}`);
+      } else {
+        throw new Error('No image generated by DALL-E');
+      }
+
+    } catch (error) {
+      console.error(`❌ Failed to generate DALL-E image ${i + 1}:`, error.message);
+      uploadedImages.push({
+        ...image,
+        uploaded: false,
+        error: error.message
+      });
+    }
+  }
+
+  return uploadedImages;
+}
+
+/**
+ * Upload images for the blog post using the same logic as debug workflow
+ */
+async function uploadBlogImages(images, postTitle) {
+  const uploadedImages = [];
+  
+  // First, generate images with DALL-E if we have an AI key
+  let generatedImages = images;
+  if (AI_KEY && AI_PROVIDER === 'openai') {
+    console.log('🎨 Generating images with DALL-E...');
+    generatedImages = await generateImagesWithDALLE(images, AI_KEY);
+  } else {
+    console.log('⚠️  No OpenAI key available, using placeholder images');
+    // Generate placeholder images for testing
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      const placeholderImage = generatePlaceholderImage(800, 600, image.description);
+      const filename = `blog-image-${Date.now()}-${i + 1}.svg`;
+      const mimeType = 'image/svg+xml';
+      
+      generatedImages.push({
+        ...image,
+        url: `data:image/svg+xml;base64,${placeholderImage.toString('base64')}`,
+        isDalle: false,
+        isPlaceholder: true
+      });
+    }
+  }
+
+  // Download images using the same Node.js script as debug workflow
+  if (generatedImages.some(img => img.url && !img.isPlaceholder)) {
+    console.log('📥 Downloading generated images...');
+    const realImages = generatedImages.filter(img => img.url && !img.isPlaceholder);
+    try {
+      const downloadResult = await downloadImages(realImages);
+      console.log(`✅ Downloaded ${downloadResult.summary.successful}/${downloadResult.summary.total} images`);
+      
+      // Update generated images with download results
+      for (const result of downloadResult.results) {
+        const image = generatedImages.find(img => img.url && img.url.includes(result.imageId));
+        if (image && result.success) {
+          image.downloadedData = result.data;
+          image.downloadedMimeType = result.mimeType;
+          image.downloadedSize = result.size;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Image download failed:', error.message);
+    }
+  }
+  
+  // Upload images to WordPress
+  for (let i = 0; i < generatedImages.length; i++) {
+    const image = generatedImages[i];
+    try {
+      console.log(`🖼️  Processing image ${i + 1}/${generatedImages.length}: ${image.description}`);
+      
+      let fileBuffer;
+      let filename;
+      let mimeType;
+
+      if (image.downloadedData) {
+        // Use downloaded real image data
+        const binaryString = Buffer.from(image.downloadedData, 'base64');
+        fileBuffer = binaryString;
+        filename = `blog-image-${Date.now()}-${i + 1}.${image.downloadedMimeType.split('/')[1]}`;
+        mimeType = image.downloadedMimeType;
+        console.log(`📤 Uploading real image: ${filename} (${image.downloadedSize} bytes)`);
+      } else {
+        // Use placeholder image
+        fileBuffer = generatePlaceholderImage(800, 600, image.description);
+        filename = `blog-image-${Date.now()}-${i + 1}.svg`;
+        mimeType = 'image/svg+xml';
+        console.log(`📤 Uploading placeholder image: ${filename}`);
+      }
+      
+      const uploadOptions = {
+        altText: image.altText || image.description,
+        caption: image.caption || '',
+        description: image.description,
+        title: image.title || `${postTitle} - Image ${i + 1}`
+      };
+      
+      const uploadedMedia = await uploadMediaToWordPress(
+        fileBuffer,
+        filename,
+        mimeType,
+        uploadOptions
+      );
+      
+      uploadedImages.push({
+        ...image,
+        mediaId: uploadedMedia.id,
+        url: uploadedMedia.source_url,
+        uploaded: true
+      });
+      
+    } catch (error) {
+      console.error(`❌ Failed to upload image ${i + 1}:`, error.message);
+      uploadedImages.push({
+        ...image,
+        uploaded: false,
+        error: error.message
+      });
+    }
+  }
+  
+  return uploadedImages;
+}
+
+/**
  * Post content to WordPress
  */
-async function postToWordPress(content) {
+async function postToWordPress(content, uploadedImages = []) {
   if (!WORDPRESS_URL || !WORDPRESS_USERNAME || !WORDPRESS_PASSWORD) {
     throw new Error('Missing WordPress configuration');
   }
@@ -361,11 +878,63 @@ async function postToWordPress(content) {
   const timestamp = now.toISOString();
   const uniqueId = `${now.getTime()}-${Math.random().toString(36).substr(2, 9)}`;
 
+  // Find featured image (first image with placement 'featured' or first image)
+  const featuredImage = uploadedImages.find(img => img.placement === 'featured') || uploadedImages[0];
+  const featuredMediaId = featuredImage?.mediaId;
+
+  // Update content with actual image URLs
+  let updatedContent = content.content;
+  
+  console.log(`🔄 Processing ${uploadedImages.length} uploaded images for content replacement`);
+  console.log(`📄 Content length before replacement: ${updatedContent.length} characters`);
+  
+  if (uploadedImages.length > 0) {
+    uploadedImages.forEach((image, index) => {
+      if (image.uploaded && image.url) {
+        const imageIndex = index + 1; // 1-based indexing to match placeholder
+        console.log(`🖼️  Processing image ${imageIndex}/${uploadedImages.length}: ${image.description}`);
+        console.log(`🔗 Image URL: ${image.url}`);
+        
+        // Replace image placeholder divs with actual image tags using index-based matching
+        const imageTag = `<img src="${image.url}" alt="${image.altText || image.description}" title="${image.caption || ''}" style="max-width: 100%; height: auto;" />`;
+        
+        // Find and replace the placeholder div for this image by matching the index
+        const placeholderRegex = new RegExp(
+          `<div class="image-placeholder"[^>]*data-image-index="${imageIndex}"[^>]*>.*?</div>`,
+          'gs'
+        );
+        
+        const beforeReplace = updatedContent;
+        updatedContent = updatedContent.replace(placeholderRegex, imageTag);
+        
+        // Log if replacement was made
+        if (beforeReplace !== updatedContent) {
+          console.log(`✅ Replaced image placeholder ${imageIndex} for: ${image.description}`);
+        } else {
+          console.log(`⚠️  Could not find placeholder ${imageIndex} for image: ${image.description}`);
+          // Debug: Show what placeholders exist in the content
+          const existingPlaceholders = updatedContent.match(/<div class="image-placeholder"[^>]*data-image-index="([^"]*)"[^>]*>/g);
+          if (existingPlaceholders) {
+            console.log(`🔍 Found ${existingPlaceholders.length} existing placeholders in content`);
+            existingPlaceholders.forEach((placeholder, i) => {
+              const indexMatch = placeholder.match(/data-image-index="([^"]*)"/);
+              const placeholderIndex = indexMatch ? indexMatch[1] : 'unknown';
+              console.log(`   Placeholder ${i + 1}: index=${placeholderIndex}`);
+            });
+          }
+        }
+      }
+    });
+  }
+  
+  console.log(`📄 Content length after replacement: ${updatedContent.length} characters`);
+
   const payload = {
     title: `${content.title} - ${now.toLocaleString()}`,
-    content: content.content,
+    content: updatedContent,
     status: 'publish',
     excerpt: content.excerpt,
+    ...(featuredMediaId && { featured_media: featuredMediaId }),
     // Note: categories and tags require integer IDs from WordPress API
     // categories: content.categories,
     // tags: content.tags
@@ -404,6 +973,9 @@ async function postToWordPress(content) {
             console.log(`✅ Successfully posted to WordPress`);
             console.log(`🔗 Post ID: ${parsed.id}`);
             console.log(`🔗 Post URL: ${parsed.link}`);
+            if (featuredMediaId) {
+              console.log(`🖼️  Featured image ID: ${featuredMediaId}`);
+            }
             resolve(parsed);
           } else {
             console.error(`❌ WordPress API Error: ${res.statusCode}`);
@@ -470,9 +1042,18 @@ async function main() {
     console.log(`📄 Content length: ${content.content.length} characters`);
     console.log(`🏷️  Tags: ${content.tags.join(', ')}`);
     console.log(`📁 Categories: ${content.categories.join(', ')}`);
+    console.log(`🖼️  Images requested: ${content.images.length}`);
+    
+    // Upload images if any
+    let uploadedImages = [];
+    if (content.images && content.images.length > 0) {
+      console.log('📤 Uploading images to WordPress...');
+      uploadedImages = await uploadBlogImages(content.images, content.title);
+      console.log(`✅ Uploaded ${uploadedImages.filter(img => img.uploaded).length}/${content.images.length} images`);
+    }
     
     // Post to WordPress
-    const result = await postToWordPress(content);
+    const result = await postToWordPress(content, uploadedImages);
     console.log('🎉 Blog post creation completed successfully!');
     
   } catch (error) {

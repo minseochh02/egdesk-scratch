@@ -49,6 +49,15 @@ export const BlogWriter: React.FC<BlogWriterProps> = ({
   const [isEditingTopic, setIsEditingTopic] = useState<boolean>(false);
   const [draftTopic, setDraftTopic] = useState<string>('');
   const [templateName, setTemplateName] = useState<string>('');
+  
+  // Image generation settings
+  const [imageGenerationEnabled, setImageGenerationEnabled] = useState<boolean>(false);
+  const [imageProvider, setImageProvider] = useState<'dalle' | 'placeholder' | 'stability' | 'midjourney'>('dalle');
+  const [imageQuality, setImageQuality] = useState<'standard' | 'hd'>('standard');
+  const [imageSize, setImageSize] = useState<string>('1024x1024');
+  const [imageStyle, setImageStyle] = useState<'realistic' | 'illustration' | 'minimalist' | 'artistic' | 'photographic'>('realistic');
+  const [imageAspectRatio, setImageAspectRatio] = useState<'square' | 'landscape' | 'portrait' | 'wide'>('landscape');
+  
   const categories = useMemo(
     () => [
       '💰 재정/투자 (부동산, 주식, 연금, 세금, 대출 등)',
@@ -118,6 +127,7 @@ export const BlogWriter: React.FC<BlogWriterProps> = ({
     return '#999';
   }, [selectedModel, availableModels]);
 
+
   const handleSaveTemplate = () => {
     setError(null);
     setSaveMessage(null);
@@ -145,14 +155,26 @@ export const BlogWriter: React.FC<BlogWriterProps> = ({
             length ? `목표 길이: ${length}` : undefined,
             keywordList.length ? `키워드: ${keywordList.join(', ')}` : undefined,
             selectedKey ? `AI 모델: ${selectedModel} (${selectedKey.name})` : undefined,
+            imageGenerationEnabled ? `이미지 생성: ${imageProvider} (${imageStyle})` : undefined,
           ]
             .filter(Boolean)
             .join('\n'),
           status: 'draft',
+          categories: category ? [category] : [],
+          tags: keywordList,
           // Include AI settings in the template
           aiSettings: selectedKey ? {
             model: selectedModel,
             keyId: selectedKey.id
+          } : undefined,
+          // Include image generation settings
+          imageSettings: imageGenerationEnabled ? {
+            enabled: imageGenerationEnabled,
+            provider: imageProvider,
+            quality: imageQuality,
+            size: imageSize,
+            style: imageStyle,
+            aspectRatio: imageAspectRatio
           } : undefined,
         };
         
@@ -462,6 +484,79 @@ export const BlogWriter: React.FC<BlogWriterProps> = ({
             </button>
           </div>
         )}
+
+        {/* Image Generation Settings */}
+        <div className="bw-section-title">🖼️ 이미지 생성 설정</div>
+        <div className="bw-image-settings">
+          <div className="bw-field">
+            <label className="bw-checkbox-label">
+              <input
+                type="checkbox"
+                checked={imageGenerationEnabled}
+                onChange={(e) => setImageGenerationEnabled(e.target.checked)}
+              />
+              <span>이미지 자동 생성 활성화</span>
+            </label>
+          </div>
+
+          {imageGenerationEnabled && (
+            <>
+              <div className="bw-row">
+                <div className="bw-field">
+                  <label>이미지 제공자</label>
+                  <select
+                    value={imageProvider}
+                    onChange={(e) => setImageProvider(e.target.value as any)}
+                  >
+                    <option value="dalle">OpenAI DALL-E 3 (권장)</option>
+                    <option value="placeholder">Placeholder (테스트용)</option>
+                    <option value="stability">Stability AI</option>
+                    <option value="midjourney">Midjourney</option>
+                  </select>
+                </div>
+                <div className="bw-field">
+                  <label>품질</label>
+                  <select
+                    value={imageQuality}
+                    onChange={(e) => setImageQuality(e.target.value as any)}
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="hd">HD</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="bw-row">
+                <div className="bw-field">
+                  <label>스타일</label>
+                  <select
+                    value={imageStyle}
+                    onChange={(e) => setImageStyle(e.target.value as any)}
+                  >
+                    <option value="realistic">Realistic</option>
+                    <option value="illustration">Illustration</option>
+                    <option value="minimalist">Minimalist</option>
+                    <option value="artistic">Artistic</option>
+                    <option value="photographic">Photographic</option>
+                  </select>
+                </div>
+                <div className="bw-field">
+                  <label>화면 비율</label>
+                  <select
+                    value={imageAspectRatio}
+                    onChange={(e) => setImageAspectRatio(e.target.value as any)}
+                  >
+                    <option value="square">Square (1:1)</option>
+                    <option value="landscape">Landscape (16:9)</option>
+                    <option value="portrait">Portrait (9:16)</option>
+                    <option value="wide">Wide (21:9)</option>
+                  </select>
+                </div>
+              </div>
+
+            </>
+          )}
+        </div>
 
         {error && (
           <div className="bw-error">

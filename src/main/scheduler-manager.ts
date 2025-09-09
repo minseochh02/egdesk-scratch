@@ -187,7 +187,11 @@ export class SchedulerManager {
 
       // Prepare command and environment
       const { command } = task;
-      const workingDir = task.workingDirectory || os.homedir();
+      // Use app directory as default working directory for better script resolution
+      const appDir = process.env.NODE_ENV === 'development' 
+        ? path.join(__dirname, '..', '..') // Development: go up two levels from dist/main to project root
+        : process.resourcesPath; // Production: use resources path
+      const workingDir = task.workingDirectory || appDir;
       const env = { ...process.env, ...task.environment };
 
       // Execute the command
@@ -221,6 +225,13 @@ export class SchedulerManager {
         execution.output = output;
         execution.error = error;
 
+        // Add debugging information
+        if (code !== 0) {
+          console.error(`Task ${task.name} failed with exit code ${code}`);
+          console.error(`Output: ${output}`);
+          console.error(`Error: ${error}`);
+        }
+
         this.executions.set(executionId, execution);
         this.runningTasks.delete(task.id);
 
@@ -239,16 +250,19 @@ export class SchedulerManager {
       childProcess.on('error', (err) => {
         execution.endTime = new Date();
         execution.status = 'failed';
-        execution.error = err.message;
+        execution.error = `Process error: ${err.message}\nStack: ${err.stack || 'No stack trace available'}`;
         this.executions.set(executionId, execution);
         this.runningTasks.delete(task.id);
+        console.error(`Task ${task.name} failed with error:`, err);
       });
     } catch (error) {
       execution.endTime = new Date();
       execution.status = 'failed';
-      execution.error =
-        error instanceof Error ? error.message : 'Unknown error';
+      execution.error = error instanceof Error 
+        ? `Execution error: ${error.message}\nStack: ${error.stack || 'No stack trace available'}`
+        : `Unknown error: ${String(error)}`;
       this.executions.set(executionId, execution);
+      console.error(`Task ${task.name} execution failed:`, error);
     }
   }
 

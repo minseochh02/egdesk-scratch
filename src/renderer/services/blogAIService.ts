@@ -104,6 +104,14 @@ export class BlogAIService {
 5. Natural keyword integration
 6. Engaging conclusion with call-to-action
 
+## Image Requirements:
+- Suggest appropriate images for the blog post
+- Provide detailed image descriptions for AI image generation
+- Include image placement suggestions within the content
+- Ensure images are relevant to the content and enhance readability
+- Use specific image insertion markers in the content: [IMAGE:description:placement]
+- Place images strategically throughout the content to break up text and enhance readability
+
 ## SEO Requirements:
 - Include primary keywords in title and headings
 - Use secondary keywords naturally throughout content
@@ -114,13 +122,20 @@ export class BlogAIService {
 Return your response in the following JSON format:
 {
   "title": "Blog post title",
-  "content": "Full blog post content in HTML format",
+  "content": "Full blog post content in HTML format with [IMAGE:description:placement] markers",
   "excerpt": "Brief summary of the post",
   "tags": ["tag1", "tag2", "tag3"],
   "categories": ["category1", "category2"],
   "seoTitle": "SEO optimized title",
   "metaDescription": "Meta description for search engines"
-}`;
+}
+
+## Image Marker Format:
+Use [IMAGE:description:placement] markers in your content where images should be inserted:
+- [IMAGE:A professional headshot of a business person:header] - for header images
+- [IMAGE:A detailed infographic showing the process:content] - for content images
+- [IMAGE:A call-to-action banner:footer] - for footer images
+- [IMAGE:A featured image representing the main topic:featured] - for featured images`;
   }
 
   /**
@@ -163,14 +178,19 @@ Please generate the content following the JSON format specified in the system pr
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
+        
+        // Process image markers in content
+        const processedContent = this.processImageMarkers(parsed.content || content);
+        const extractedImages = this.extractImagesFromContent(parsed.content || content);
+        
         return {
           title: parsed.title || request.topic,
-          content: parsed.content || content,
-          excerpt: parsed.excerpt || this.generateExcerpt(content),
+          content: processedContent,
+          excerpt: parsed.excerpt || this.generateExcerpt(processedContent),
           tags: parsed.tags || request.keywords,
           categories: parsed.categories || [request.category],
           seoTitle: parsed.seoTitle || parsed.title || request.topic,
-          metaDescription: parsed.metaDescription || this.generateMetaDescription(content)
+          metaDescription: parsed.metaDescription || this.generateMetaDescription(processedContent)
         };
       }
     } catch (error) {
@@ -178,14 +198,17 @@ Please generate the content following the JSON format specified in the system pr
     }
 
     // Fallback parsing if JSON extraction fails
+    const processedContent = this.processImageMarkers(content);
+    const extractedImages = this.extractImagesFromContent(content);
+    
     return {
       title: this.extractTitle(content) || request.topic,
-      content: content,
-      excerpt: this.generateExcerpt(content),
+      content: processedContent,
+      excerpt: this.generateExcerpt(processedContent),
       tags: request.keywords,
       categories: [request.category],
       seoTitle: this.extractTitle(content) || request.topic,
-      metaDescription: this.generateMetaDescription(content)
+      metaDescription: this.generateMetaDescription(processedContent)
     };
   }
 
@@ -217,22 +240,70 @@ Please generate the content following the JSON format specified in the system pr
   }
 
   /**
+   * Process image markers in content and convert them to HTML placeholders
+   */
+  private processImageMarkers(content: string): string {
+    if (!content) return content;
+    
+    // Replace [IMAGE:description:placement] markers with HTML placeholders
+    const imageMarkerRegex = /\[IMAGE:([^:]+):([^\]]+)\]/g;
+    let imageIndex = 0;
+    
+    return content.replace(imageMarkerRegex, (match, description, placement) => {
+      imageIndex++;
+      const imageId = `image_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      return `<div class="image-placeholder" data-image-id="${imageId}" data-image-index="${imageIndex}" data-description="${description.trim()}" data-placement="${placement.trim()}">
+        <div class="image-placeholder-content">
+          <div class="image-placeholder-icon">🖼️</div>
+          <div class="image-placeholder-text">
+            <strong>이미지 순서:</strong> ${imageIndex}<br>
+            <strong>이미지 위치:</strong> ${placement.trim()}<br>
+            <strong>설명:</strong> ${description.trim()}
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  /**
+   * Extract image information from content markers
+   */
+  private extractImagesFromContent(content: string): Array<{
+    description: string;
+    altText: string;
+    caption: string;
+    placement: string;
+  }> {
+    if (!content) return [];
+    
+    const images = [];
+    const imageMarkerRegex = /\[IMAGE:([^:]+):([^\]]+)\]/g;
+    let match;
+    
+    while ((match = imageMarkerRegex.exec(content)) !== null) {
+      const description = match[1].trim();
+      const placement = match[2].trim();
+      
+      images.push({
+        description: description,
+        altText: description,
+        caption: description,
+        placement: placement
+      });
+    }
+    
+    return images;
+  }
+
+  /**
    * Generate content for a specific template type
    */
   async generateTemplateContent(
     templateType: string,
     request: BlogContentRequest
   ): Promise<GeneratedBlogContent> {
-    const templatePrompts = {
-      'bw_weekly_update': 'Create a weekly update blog post that summarizes key highlights, challenges, metrics, and upcoming priorities.',
-      'bw_how_to': 'Create a comprehensive how-to guide with step-by-step instructions, prerequisites, common issues, and next steps.',
-      'bw_listicle': 'Create a top 10 listicle with engaging items, clear selection criteria, and actionable conclusions.',
-      'bw_announcement': 'Create a product announcement post highlighting new features, benefits, getting started guide, and support links.',
-      'bw_case_study': 'Create a detailed case study with background, challenges, solutions, results, and key learnings.'
-    };
-
-    const templatePrompt = templatePrompts[templateType as keyof typeof templatePrompts] || 
-                          'Create an engaging blog post on the given topic.';
+    // Use default prompt since built-in templates are removed
+    const templatePrompt = 'Create an engaging blog post on the given topic.';
 
     const enhancedRequest = {
       ...request,

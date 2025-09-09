@@ -495,6 +495,16 @@ const electronHandler = {
       ipcRenderer.invoke('scheduler-stop-task', taskId),
     getSystemInfo: () => ipcRenderer.invoke('scheduler-get-system-info'),
   } as SchedulerAPI,
+  debug: {
+    executeWorkflow: (config: {
+      wordpressUrl: string;
+      wordpressUsername: string;
+      wordpressPassword: string;
+      generatedContent: any;
+      downloadedImages: any[];
+    }) => ipcRenderer.invoke('debug-workflow-execute', config),
+    downloadImages: (images: Array<{id: string; url: string}>) => ipcRenderer.invoke('download-images', images),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

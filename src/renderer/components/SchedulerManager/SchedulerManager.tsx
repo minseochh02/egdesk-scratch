@@ -618,7 +618,14 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                   </div>
                   {execution.output && (
                     <div className="execution-output">
+                      <strong>Output:</strong>
                       <pre>{execution.output}</pre>
+                    </div>
+                  )}
+                  {execution.error && (
+                    <div className="execution-error">
+                      <strong>Error:</strong>
+                      <pre>{execution.error}</pre>
                     </div>
                   )}
                 </div>
