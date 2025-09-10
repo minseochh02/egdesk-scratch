@@ -846,12 +846,16 @@ async function uploadBlogImages(images, postTitle) {
       console.log(`✅ Downloaded ${downloadResult.summary.successful}/${downloadResult.summary.total} images`);
       
       // Update generated images with download results
-      for (const result of downloadResult.results) {
-        const image = generatedImages.find(img => img.url && img.url.includes(result.imageId));
+      for (let i = 0; i < downloadResult.results.length; i++) {
+        const result = downloadResult.results[i];
+        const image = generatedImages[i]; // Match by index instead of URL
         if (image && result.success) {
           image.downloadedData = result.data;
           image.downloadedMimeType = result.mimeType;
           image.downloadedSize = result.size;
+          console.log(`✅ Updated image ${i + 1} with downloaded data: ${result.size} bytes`);
+        } else {
+          console.log(`⚠️  Failed to update image ${i + 1}: ${result.error || 'No matching image'}`);
         }
       }
     } catch (error) {
