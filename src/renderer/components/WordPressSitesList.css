@@ -857,7 +857,6 @@
 }
 
 .wordpress-scheduler-manager .btn {
-  background: rgba(255, 255, 255, 0.2);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(10px);
