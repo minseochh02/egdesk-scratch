@@ -331,7 +331,15 @@ export class SchedulerManager {
       this.cronJobs.delete(taskId);
     }
 
-    return this.tasks.delete(taskId);
+    // Remove task from memory
+    const deleted = this.tasks.delete(taskId);
+    
+    // Save tasks to persist the deletion
+    if (deleted) {
+      this.saveTasks();
+    }
+    
+    return deleted;
   }
 
   public getTask(taskId: string): ScheduledTask | null {

@@ -238,7 +238,6 @@ function replaceImageMarkers(content, uploadedImages) {
   
   // Keep track of which uploaded images we've used
   const usedImages = new Set();
-  let imageIndex = 0;
   
   updatedContent = updatedContent.replace(imageMarkerRegex, (match, description, placement) => {
     console.log(`🔍 Looking for image with description: "${description.trim()}"`);
@@ -332,7 +331,7 @@ async function createWordPressPost(postData, uploadedImages = []) {
   const uniqueId = `${now.getTime()}-${Math.random().toString(36).substr(2, 9)}`;
 
   const payload = {
-    title: `${postData.title} - ${now.toLocaleString()}`,
+    title: postData.title,
     content: updatedContent,
     status: 'publish',
     excerpt: postData.excerpt || '',

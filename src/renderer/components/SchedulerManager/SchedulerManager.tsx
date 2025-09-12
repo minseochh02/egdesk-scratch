@@ -660,7 +660,15 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             <div className="topics-modal-content">
               {selectedTaskTopics.length > 0 ? (
                 <div className="topics-list">
-                  {selectedTaskTopics.map((topicItem, index) => (
+                  {selectedTaskTopics
+                    .sort((a, b) => {
+                      // Sort by lastUsed date in descending order (most recent first)
+                      if (!a.lastUsed && !b.lastUsed) return 0;
+                      if (!a.lastUsed) return 1;
+                      if (!b.lastUsed) return -1;
+                      return new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime();
+                    })
+                    .map((topicItem, index) => (
                     <div key={index} className="topic-item">
                       <div className="topic-info">
                         <div className="topic-text">{topicItem.topic}</div>

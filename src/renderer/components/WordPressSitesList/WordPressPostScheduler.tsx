@@ -8,6 +8,8 @@ import {
   faTimes,
   faExclamationTriangle,
   faRobot,
+  faKey,
+  faCog,
 } from '@fortawesome/free-solid-svg-icons';
 import SchedulerService, {
   CreateTaskData,
@@ -15,6 +17,7 @@ import SchedulerService, {
 import { WordPressConnection } from '../../../main/preload';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
+import { CHAT_PROVIDERS } from '../ChatInterface/types';
 import './WordPressPostScheduler.css';
 
 interface WordPressPostSchedulerProps {
@@ -68,6 +71,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
   // AI Configuration state
   const [activeKeys, setActiveKeys] = useState<AIKey[]>([]);
+  const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest');
 
   const schedulerService = SchedulerService.getInstance();
 
@@ -80,27 +85,72 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   // Load AI keys and configuration
   useEffect(() => {
     const unsub = aiKeysStore.subscribe((state) => {
-      setActiveKeys(state.keys.filter((k) => k.isActive));
+      const activeKeys = state.keys.filter((k) => k.isActive);
+      setActiveKeys(activeKeys);
+      
+      // Auto-select first Google key if none selected and keys are available
+      if (!selectedKey && activeKeys.length > 0) {
+        const googleKey = activeKeys.find(key => key.providerId === 'google');
+        if (googleKey) {
+          setSelectedKey(googleKey);
+        } else {
+          setSelectedKey(activeKeys[0]);
+        }
+      }
     });
     return () => unsub();
-  }, []);
+  }, [selectedKey]);
+
+  // Handle model change
+  const handleModelChange = (providerId: string, modelId: string) => {
+    setSelectedModel(modelId);
+
+    // Auto-select a compatible API key for the new provider
+    const compatibleKeys = activeKeys.filter(
+      (key) => key.providerId === providerId,
+    );
+    if (compatibleKeys.length > 0) {
+      setSelectedKey(compatibleKeys[0]);
+    } else {
+      setSelectedKey(null);
+    }
+  };
+
+  // Handle key change
+  const handleKeyChange = (key: AIKey | null) => {
+    setSelectedKey(key);
+  };
 
   // Topic management functions
   const addTopic = () => {
     if (!newTopic.trim()) return;
     
-    const topicExists = topics.some(t => t.topic.toLowerCase() === newTopic.trim().toLowerCase());
-    if (topicExists) {
-      setError('이미 존재하는 주제입니다.');
+    // Split by comma and process each topic
+    const topicStrings = newTopic.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    
+    if (topicStrings.length === 0) return;
+    
+    // Check for existing topics
+    const existingTopics = topics.map(t => t.topic.toLowerCase());
+    const duplicateTopics = topicStrings.filter(topic => 
+      existingTopics.includes(topic.toLowerCase())
+    );
+    
+    if (duplicateTopics.length > 0) {
+      setError(`이미 존재하는 주제들: ${duplicateTopics.join(', ')}`);
       return;
     }
     
-    setTopics(prev => [...prev, {
-      topic: newTopic.trim(),
+    // Add all new topics
+    const newTopics = topicStrings.map(topic => ({
+      topic: topic,
       lastUsed: '',
       count: 0
-    }]);
+    }));
+    
+    setTopics(prev => [...prev, ...newTopics]);
     setNewTopic('');
+    setError(null); // Clear any previous errors
   };
 
   const removeTopic = (index: number) => {
@@ -116,6 +166,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       console.error('Failed to clear topics from localStorage:', error);
     }
   };
+
 
 
 
@@ -141,20 +192,14 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
     }
 
     // Validate AI settings
-    if (activeKeys.length === 0) {
-      setError('Gemini AI 설정이 필요합니다. AI Keys Manager에서 Google API 키를 추가해주세요.');
-      return;
-    }
-
-    const selectedKey = activeKeys.find(key => key.providerId === 'google');
     if (!selectedKey) {
-      setError('Gemini 블로그 생성을 위해서는 Google API 키가 필요합니다.');
+      setError('AI API 키를 선택해주세요.');
       return;
     }
 
-    // Validate Gemini API key exists
+    // Validate API key exists
     if (!selectedKey.fields.apiKey) {
-      setError('Gemini API 키가 설정되지 않았습니다.');
+      setError('선택된 API 키가 유효하지 않습니다.');
       return;
     }
 
@@ -166,15 +211,29 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       // Get the script path - use relative path from working directory
       const scriptPath = './scripts/generate-and-upload-blog.js';
       
-      // Prepare environment variables for the Gemini script
+      // Prepare environment variables for the AI script
       const environment = {
-        GEMINI_API_KEY: selectedKey.fields.apiKey,
+        // AI Configuration - pass the selected API key based on provider
+        ...(selectedKey.providerId === 'google' && {
+          GEMINI_API_KEY: selectedKey.fields.apiKey,
+        }),
+        ...(selectedKey.providerId === 'openai' && {
+          OPENAI_API_KEY: selectedKey.fields.apiKey,
+        }),
+        ...(selectedKey.providerId === 'anthropic' && {
+          ANTHROPIC_API_KEY: selectedKey.fields.apiKey,
+        }),
+        // Generic AI settings
+        AI_API_KEY: selectedKey.fields.apiKey,
+        AI_PROVIDER: selectedKey.providerId,
+        AI_MODEL: selectedModel,
+        // WordPress settings
         WORDPRESS_URL: selectedSite.url,
         WORDPRESS_USERNAME: selectedSite.username,
         WORDPRESS_PASSWORD: selectedSite.password,
         // Image generation settings (enabled by default)
         IMAGE_GENERATION_ENABLED: 'true',
-        IMAGE_PROVIDER: 'gemini',
+        IMAGE_PROVIDER: selectedKey.providerId === 'google' ? 'gemini' : 'dalle',
         IMAGE_QUALITY: 'standard',
         IMAGE_SIZE: '1024x1024',
         IMAGE_STYLE: 'realistic',
@@ -185,8 +244,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       const command = `node --max-old-space-size=4096 ${scriptPath}`;
 
       const taskData: CreateTaskData = {
-        name: `WordPress Blog: ${topics.length} topics - ${selectedSite.name || selectedSite.url} (Gemini AI)`,
-        description: `자동으로 ${topics.length}개의 주제로 구성된 블로그 게시물을 ${selectedSite.url}에 Gemini AI가 매번 새로 생성한 콘텐츠와 이미지로 게시합니다.`,
+        name: `WordPress Blog: ${topics.length} topics - ${selectedSite.name || selectedSite.url} (${selectedKey.providerId.toUpperCase()} AI)`,
+        description: `자동으로 ${topics.length}개의 주제로 구성된 블로그 게시물을 ${selectedSite.url}에 ${selectedKey.providerId.toUpperCase()} AI(${selectedModel})가 매번 새로 생성한 콘텐츠와 이미지로 게시합니다.`,
         command,
         schedule,
         enabled: true,
@@ -203,9 +262,10 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
             username: selectedSite.username
           },
           aiSettings: {
-            provider: 'gemini',
+            provider: selectedKey.providerId,
+            model: selectedModel,
             imageGenerationEnabled: true,
-            imageProvider: 'gemini',
+            imageProvider: selectedKey.providerId === 'google' ? 'gemini' : 'dalle',
             imageQuality: 'standard',
             imageSize: '1024x1024',
             imageStyle: 'realistic',
@@ -226,7 +286,14 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         setSuccess(
           `블로그 작업이 성공적으로 생성되었습니다! ${topics.length}개의 주제로 구성된 게시물이 Gemini AI가 매번 새로 생성한 콘텐츠와 이미지와 함께 ${selectedSite.name || selectedSite.url}에 게시됩니다.`,
         );
-        setTopics([]); // Clear the topics
+        
+        // Clear form data after successful task creation
+        setTopics([]);
+        setNewTopic('');
+        setSchedule('interval:3600000');
+        setTopicSelectionMode('least-used');
+        
+        // Notify parent component to refresh
         onTaskCreated?.();
       } else {
         setError(response.error || 'WordPress 블로그 작업 생성에 실패했습니다.');
@@ -324,15 +391,82 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         </div>
       )}
 
-
       <div className="blog-creation-section">
         <h4>
           <FontAwesomeIcon icon={faRobot} />
-          Gemini AI 블로그 생성
+          AI 블로그 자동화
         </h4>
         <p className="section-description">
-          주제만 입력하면 Gemini AI가 고품질 블로그 콘텐츠와 이미지를 자동으로 생성하여 WordPress에 게시합니다.
+          주제만 입력하면 선택한 AI가 고품질 블로그 콘텐츠와 이미지를 자동으로 생성하여 WordPress에 게시합니다.
         </p>
+        
+        {/* AI Configuration Controls */}
+        <div className="ai-config-controls">
+          <div className="config-control-group">
+            <label className="config-label">
+              <FontAwesomeIcon icon={faKey} />
+              API 키
+            </label>
+            <select
+              className="api-key-select"
+              value={selectedKey?.id || ''}
+              onChange={(e) => {
+                const key = activeKeys.find((k) => k.id === e.target.value);
+                handleKeyChange(key || null);
+              }}
+              disabled={activeKeys.length === 0}
+            >
+              <option value="">
+                {activeKeys.length === 0
+                  ? '사용 가능한 키가 없습니다'
+                  : 'API 키를 선택하세요'}
+              </option>
+              {activeKeys.map((key) => (
+                <option key={key.id} value={key.id}>
+                  {key.name} ({key.providerId})
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="config-control-group">
+            <label className="config-label">
+              <FontAwesomeIcon icon={faCog} />
+              모델
+            </label>
+            <select
+              className="model-select"
+              value={
+                selectedModel
+                  ? `${selectedKey?.providerId || 'google'}::${selectedModel}`
+                  : ''
+              }
+              onChange={(e) => {
+                const { value } = e.target;
+                if (!value) {
+                  handleModelChange('', '');
+                  return;
+                }
+                const [providerId, modelId] = value.split('::');
+                handleModelChange(providerId, modelId);
+              }}
+            >
+              <option value="">모델을 선택하세요...</option>
+              {CHAT_PROVIDERS.map((provider) => (
+                <optgroup key={provider.id} label={provider.name}>
+                  {provider.models.map((model) => (
+                    <option
+                      key={`${provider.id}::${model.id}`}
+                      value={`${provider.id}::${model.id}`}
+                    >
+                      {model.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        </div>
         
         <div className="blog-creation-form">
           <div className="form-group">
@@ -377,29 +511,25 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                 </button>
               </div>
               <div className="topics-items">
-                {topics.map((topicItem, index) => (
-                  <div key={index} className="topic-item">
-                    <div className="topic-info">
-                      <span className="topic-text">{topicItem.topic}</span>
-                      <div className="topic-stats">
-                        <span className="usage-count">사용: {topicItem.count}회</span>
-                        {topicItem.lastUsed && (
-                          <span className="last-used">
-                            마지막: {new Date(topicItem.lastUsed).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                {topics.slice(0, 10).map((topicItem, index) => (
+                  <div key={index} className="topic-badge">
+                    <span className="topic-text">{topicItem.topic}</span>
                     <button
                       type="button"
                       onClick={() => removeTopic(index)}
                       className="remove-topic-btn"
                       disabled={isCreating}
+                      title={`사용: ${topicItem.count}회${topicItem.lastUsed ? `, 마지막: ${new Date(topicItem.lastUsed).toLocaleDateString()}` : ''}`}
                     >
                       <FontAwesomeIcon icon={faTimes} />
                     </button>
                   </div>
                 ))}
+                {topics.length > 10 && (
+                  <div className="topics-overflow">
+                    <span className="overflow-text">+{topics.length - 10}개 더</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -481,7 +611,14 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           {activeKeys.length === 0 && (
             <div className="form-warning">
               <FontAwesomeIcon icon={faExclamationTriangle} />
-              AI Keys Manager에서 Google API 키를 추가해주세요.
+              AI Keys Manager에서 API 키를 추가해주세요.
+            </div>
+          )}
+
+          {!selectedKey && activeKeys.length > 0 && (
+            <div className="form-warning">
+              <FontAwesomeIcon icon={faExclamationTriangle} />
+              AI API 키를 선택해주세요.
             </div>
           )}
         </div>

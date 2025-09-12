@@ -20,11 +20,16 @@ import {
   faSpinner,
   faExclamationTriangle,
   faRefresh,
+  faKey,
+  faRobot,
 } from '@fortawesome/free-solid-svg-icons';
 import ScheduledPosts from './ScheduledPosts';
 import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
 import SchedulerManager from './SchedulerManager/SchedulerManager';
 import DebugButton from './DebugButton';
+import { aiKeysStore } from './AIKeysManager/store/aiKeysStore';
+import { AIKey } from './AIKeysManager/types';
+import { CHAT_PROVIDERS } from './ChatInterface/types';
 import './WordPressSitesList.css';
 
 interface WordPressSite {
@@ -82,6 +87,58 @@ function WordPressSitesList(): React.JSX.Element {
   const [error, setError] = useState<string>('');
   const [showScheduledPosts, setShowScheduledPosts] = useState(false);
   const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
+  
+  // AI Keys state
+  const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
+  const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
+
+  // Subscribe to AI keys store
+  useEffect(() => {
+    const unsubscribe = aiKeysStore.subscribe((keyState) => {
+      const activeKeys = keyState.keys.filter((key) => key.isActive);
+      setAiKeys(activeKeys);
+
+      // Auto-select first key if none selected and keys are available
+      if (!selectedKey && activeKeys.length > 0) {
+        setSelectedKey(activeKeys[0]);
+      }
+    });
+
+    // Get initial state immediately
+    try {
+      const currentState = aiKeysStore.getState();
+      const activeKeys = currentState.keys.filter((key) => key.isActive);
+      setAiKeys(activeKeys);
+      if (!selectedKey && activeKeys.length > 0) {
+        setSelectedKey(activeKeys[0]);
+      }
+    } catch (error) {
+      console.warn('Failed to get initial AI keys state:', error);
+    }
+
+    return () => unsubscribe();
+  }, [selectedKey]);
+
+  // Handle model change
+  const handleModelChange = (providerId: string, modelId: string) => {
+    setSelectedModel(modelId);
+
+    // Auto-select a compatible API key for the new provider
+    const compatibleKeys = aiKeys.filter(
+      (key) => key.providerId === providerId,
+    );
+    if (compatibleKeys.length > 0) {
+      setSelectedKey(compatibleKeys[0]);
+    } else {
+      setSelectedKey(null);
+    }
+  };
+
+  // Handle key change
+  const handleKeyChange = (key: AIKey | null) => {
+    setSelectedKey(key);
+  };
 
   const loadSavedConnections = useCallback(async () => {
     try {
@@ -396,8 +453,9 @@ function WordPressSitesList(): React.JSX.Element {
           sites={connections}
           selectedSite={selectedSite}
           onTaskCreated={() => {
-            // Refresh any data if needed
-            console.log('WordPress post task created');
+            // Refresh the WordPressPostScheduler component to show newly created task
+            setTemplateRefreshKey(prev => prev + 1);
+            console.log('WordPress post task created - refreshing component');
           }}
         />
 

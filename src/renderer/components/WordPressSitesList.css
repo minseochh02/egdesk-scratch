@@ -1291,3 +1291,83 @@
   outline: 2px solid #3182ce;
   outline-offset: 2px;
 }
+
+/* AI Configuration Styles */
+.ai-config-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.config-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 4px;
+}
+
+.config-label svg {
+  color: #3182ce;
+  font-size: 0.8rem;
+}
+
+.api-key-select,
+.model-select {
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  color: #2d3748;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.api-key-select:focus,
+.model-select:focus {
+  outline: none;
+  border-color: #3182ce;
+  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+}
+
+.api-key-select:disabled,
+.model-select:disabled {
+  background-color: #f7fafc;
+  color: #a0aec0;
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+.api-key-select:hover:not(:disabled),
+.model-select:hover:not(:disabled) {
+  border-color: #cbd5e0;
+}
+
+/* Responsive adjustments for AI config */
+@media (max-width: 768px) {
+  .ai-config-controls {
+    gap: 12px;
+  }
+  
+  .config-control-group {
+    gap: 6px;
+  }
+  
+  .api-key-select,
+  .model-select {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    min-height: 36px;
+  }
+}

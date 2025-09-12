@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 /**
  * Get task metadata by task ID
@@ -16,12 +17,8 @@ const path = require('path');
  */
 function getTaskMetadata(taskId) {
   try {
-    // Look for the tasks file in the user data directory
-    const userDataPath = process.env.APPDATA || 
-      (process.platform === 'darwin' ? process.env.HOME + '/Library/Application Support' : process.env.HOME + '/.config');
-    
-    const appName = 'EGDesk-scratch'; // Update this to match your app name
-    const tasksFilePath = path.join(userDataPath, appName, 'scheduler', 'tasks.json');
+    // Look for the tasks file in the correct location
+    const tasksFilePath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
     
     console.log(`🔍 Looking for tasks file at: ${tasksFilePath}`);
     
@@ -30,8 +27,7 @@ function getTaskMetadata(taskId) {
       return null;
     }
     
-    const tasksData = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
-    const tasks = tasksData.tasks || [];
+    const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
     
     console.log(`📊 Found ${tasks.length} tasks in file`);
     
@@ -44,7 +40,6 @@ function getTaskMetadata(taskId) {
     }
     
     console.log(`✅ Found task: ${task.name}`);
-    console.log(`📝 Task metadata:`, task.metadata);
     
     return task.metadata || null;
     

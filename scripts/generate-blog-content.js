@@ -992,7 +992,7 @@ async function postToWordPress(content, uploadedImages = []) {
   console.log(`📄 Content length after replacement: ${updatedContent.length} characters`);
 
   const payload = {
-    title: `${content.title} - ${now.toLocaleString()}`,
+    title: content.title,
     content: updatedContent,
     status: 'publish',
     excerpt: content.excerpt,

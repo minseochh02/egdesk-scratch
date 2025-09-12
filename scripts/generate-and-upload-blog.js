@@ -12,6 +12,7 @@ const { processBlogContent } = require('./wordpress-uploader');
 const { getTaskMetadata } = require('./get-task-metadata');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 /**
  * Select a topic based on the selection mode
@@ -77,10 +78,14 @@ function updateTopicUsage(topics, selectedTopicText) {
   
   return topics.map(topic => {
     if (topic.topic === selectedTopicText) {
+      const oldCount = topic.count || 0;
+      const newCount = oldCount + 1;
+      console.log(`📊 Topic usage count: ${oldCount} > ${newCount}`);
+      
       return {
         ...topic,
         lastUsed: now,
-        count: (topic.count || 0) + 1
+        count: newCount
       };
     }
     return topic;
@@ -94,20 +99,15 @@ function updateTopicUsage(topics, selectedTopicText) {
  */
 function updateTaskMetadata(taskId, updatedMetadata) {
   try {
-    // Look for the tasks file in the user data directory
-    const userDataPath = process.env.APPDATA || 
-      (process.platform === 'darwin' ? process.env.HOME + '/Library/Application Support' : process.env.HOME + '/.config');
-    
-    const appName = 'EGDesk-scratch'; // Update this to match your app name
-    const tasksFilePath = path.join(userDataPath, appName, 'scheduler', 'tasks.json');
+    // Look for the tasks file in the correct location
+    const tasksFilePath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
     
     if (!fs.existsSync(tasksFilePath)) {
       console.warn('⚠️  Tasks file not found, cannot update metadata');
       return;
     }
     
-    const tasksData = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
-    const tasks = tasksData.tasks || [];
+    const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
     
     // Find and update the task
     const taskIndex = tasks.findIndex(t => t.id === taskId);
@@ -116,7 +116,7 @@ function updateTaskMetadata(taskId, updatedMetadata) {
       tasks[taskIndex].updatedAt = new Date().toISOString();
       
       // Save the updated tasks back to file
-      fs.writeFileSync(tasksFilePath, JSON.stringify(tasksData, null, 2));
+      fs.writeFileSync(tasksFilePath, JSON.stringify(tasks, null, 2));
       console.log('✅ Task metadata updated successfully');
     } else {
       console.warn('⚠️  Task not found for metadata update');
@@ -134,10 +134,6 @@ async function generateAndUploadBlog(topic, metadata = null) {
   try {
     console.log('🚀 Starting combined blog generation and upload...');
     console.log(`📝 Topic: ${topic}`);
-    
-    if (metadata) {
-      console.log('📊 Task metadata:', JSON.stringify(metadata, null, 2));
-    }
     
     // Step 1: Generate blog content with Gemini
     console.log('\n🤖 Step 1: Generating blog content with Gemini AI...');
@@ -175,7 +171,6 @@ async function main() {
     console.log(`🆔 Task ID: ${taskId}`);
     
     // Retrieve task metadata
-    console.log('📊 Retrieving task metadata...');
     const metadata = getTaskMetadata(taskId);
     
     if (!metadata) {
