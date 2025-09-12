@@ -973,20 +973,24 @@ async function postToWordPress(content, uploadedImages = []) {
         if (beforeReplace !== updatedContent) {
           console.log(`✅ Replaced image placeholder ${imageIndex} for: ${image.description}`);
         } else {
-          console.log(`⚠️  Could not find placeholder ${imageIndex} for image: ${image.description}`);
-          // Debug: Show what placeholders exist in the content
-          const existingPlaceholders = updatedContent.match(/<div class="image-placeholder"[^>]*data-image-index="([^"]*)"[^>]*>/g);
-          if (existingPlaceholders) {
-            console.log(`🔍 Found ${existingPlaceholders.length} existing placeholders in content`);
-            existingPlaceholders.forEach((placeholder, i) => {
-              const indexMatch = placeholder.match(/data-image-index="([^"]*)"/);
-              const placeholderIndex = indexMatch ? indexMatch[1] : 'unknown';
-              console.log(`   Placeholder ${i + 1}: index=${placeholderIndex}`);
-            });
-          }
+          console.log(`⚠️  Could not find placeholder ${imageIndex} for image: ${image.description} - will be removed from content`);
+          // Remove any remaining placeholders for failed images
+          const placeholderRegex = new RegExp(
+            `<div class="image-placeholder"[^>]*data-image-index="${imageIndex}"[^>]*>.*?</div>`,
+            'gs'
+          );
+          updatedContent = updatedContent.replace(placeholderRegex, '');
         }
       }
     });
+  }
+  
+  // Clean up any remaining placeholders for failed images
+  console.log('🧹 Cleaning up remaining placeholders for failed images...');
+  const remainingPlaceholders = updatedContent.match(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs);
+  if (remainingPlaceholders) {
+    console.log(`🔍 Found ${remainingPlaceholders.length} remaining placeholders to remove`);
+    updatedContent = updatedContent.replace(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs, '');
   }
   
   console.log(`📄 Content length after replacement: ${updatedContent.length} characters`);

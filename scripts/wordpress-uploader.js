@@ -284,12 +284,9 @@ function replaceImageMarkers(content, uploadedImages) {
       // Use WordPress image shortcode with media ID
       return `[caption id="attachment_${uploadedImage.mediaId}" align="aligncenter" width="800"]<img class="wp-image-${uploadedImage.mediaId}" src="${uploadedImage.wordpressUrl}" alt="${uploadedImage.altText || description.trim()}" width="800" height="auto" /> ${uploadedImage.caption || ''}[/caption]`;
     } else {
-      console.log(`❌ No matching uploaded image found for: "${description.trim()}"`);
-      // Fallback to placeholder if image upload failed
-      return `<div class="image-placeholder" style="background: #f0f0f0; padding: 20px; text-align: center; border: 2px dashed #ccc;">
-        <p><strong>Image: ${description.trim()}</strong></p>
-        <p><em>Image upload failed</em></p>
-      </div>`;
+      console.log(`❌ No matching uploaded image found for: "${description.trim()}" - removing from content`);
+      // Remove the image marker completely if upload failed
+      return '';
     }
   });
   

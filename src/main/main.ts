@@ -1470,15 +1470,18 @@ ipcMain.handle('debug-workflow-execute', async (event, config) => {
           return `<img src="${uploadedImage.wordpressUrl}" alt="${uploadedImage.altText}" class="blog-image blog-image-${placement}" style="max-width: 100%; height: auto; margin: 20px 0;" />`;
         }
         
-        log(`❌ No image found at index ${imageIndex} (array index ${index}), total images: ${uploadedMedia.length}`);
-        return `<div class="image-placeholder-missing" style="border: 2px dashed #ccc; padding: 20px; text-align: center; margin: 20px 0; background: #f9f9f9;">
-          <div style="font-size: 24px; margin-bottom: 10px;">🖼️</div>
-          <div><strong>이미지 순서:</strong> ${imageIndex}</div>
-          <div><strong>이미지 위치:</strong> ${placement}</div>
-          <div><strong>설명:</strong> ${description}</div>
-          <div style="color: #666; font-size: 12px; margin-top: 10px;">이미지 업로드 실패</div>
-        </div>`;
+        log(`❌ No image found at index ${imageIndex} (array index ${index}), total images: ${uploadedMedia.length} - removing from content`);
+        // Remove the image placeholder completely if upload failed
+        return '';
       });
+      
+      // Clean up any remaining placeholders for failed images
+      log('🧹 Cleaning up remaining placeholders for failed images...');
+      const remainingPlaceholders = processedContent.match(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs);
+      if (remainingPlaceholders) {
+        log(`🔍 Found ${remainingPlaceholders.length} remaining placeholders to remove`);
+        processedContent = processedContent.replace(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs, '');
+      }
       
       log(`Processed content length: ${processedContent.length} characters`);
 

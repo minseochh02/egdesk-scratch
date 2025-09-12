@@ -801,15 +801,18 @@ Generate a detailed, specific prompt that would create an engaging ${context.typ
         return `<img src="${matchingImage.url}" alt="${matchingImage.altText}" class="blog-image blog-image-${placement}" style="max-width: 100%; height: auto; margin: 20px 0;" />`;
       }
       
-      // If no matching image found, keep the placeholder but make it more visible
-      return `<div class="image-placeholder-missing" style="border: 2px dashed #ccc; padding: 20px; text-align: center; margin: 20px 0; background: #f9f9f9;">
-        <div style="font-size: 24px; margin-bottom: 10px;">🖼️</div>
-        <div><strong>이미지 순서:</strong> ${imageIndex}</div>
-        <div><strong>이미지 위치:</strong> ${placement}</div>
-        <div><strong>설명:</strong> ${description}</div>
-        <div style="color: #666; font-size: 12px; margin-top: 10px;">이미지 생성 중...</div>
-      </div>`;
+      // If no matching image found, remove the placeholder completely
+      console.log(`❌ No matching image found for index ${imageIndex} - removing from content`);
+      return '';
     });
+    
+    // Clean up any remaining placeholders for failed images
+    console.log('🧹 Cleaning up remaining placeholders for failed images...');
+    const remainingPlaceholders = processedContent.match(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs);
+    if (remainingPlaceholders) {
+      console.log(`🔍 Found ${remainingPlaceholders.length} remaining placeholders to remove`);
+      processedContent = processedContent.replace(/<div class="image-placeholder"[^>]*>.*?<\/div>/gs, '');
+    }
     
     return processedContent;
   }

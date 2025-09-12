@@ -76,11 +76,15 @@ function selectLeastUsedTopic(topics) {
 function updateTopicUsage(topics, selectedTopicText) {
   const now = new Date().toISOString();
   
-  return topics.map(topic => {
+  console.log(`🔄 Updating topic usage for: "${selectedTopicText}"`);
+  console.log(`📊 Total topics to process: ${topics.length}`);
+  
+  const updatedTopics = topics.map(topic => {
     if (topic.topic === selectedTopicText) {
       const oldCount = topic.count || 0;
       const newCount = oldCount + 1;
       console.log(`📊 Topic usage count: ${oldCount} > ${newCount}`);
+      console.log(`⏰ Last used updated to: ${now}`);
       
       return {
         ...topic,
@@ -90,6 +94,16 @@ function updateTopicUsage(topics, selectedTopicText) {
     }
     return topic;
   });
+  
+  // Verify the update worked
+  const updatedTopic = updatedTopics.find(t => t.topic === selectedTopicText);
+  if (updatedTopic) {
+    console.log(`✅ Verification - Updated topic: "${updatedTopic.topic}", count: ${updatedTopic.count}, lastUsed: ${updatedTopic.lastUsed}`);
+  } else {
+    console.error(`❌ ERROR - Could not find updated topic: "${selectedTopicText}"`);
+  }
+  
+  return updatedTopics;
 }
 
 /**
@@ -102,28 +116,71 @@ function updateTaskMetadata(taskId, updatedMetadata) {
     // Look for the tasks file in the correct location
     const tasksFilePath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
     
+    console.log(`📁 Tasks file path: ${tasksFilePath}`);
+    
     if (!fs.existsSync(tasksFilePath)) {
       console.warn('⚠️  Tasks file not found, cannot update metadata');
       return;
     }
     
+    console.log('📖 Reading tasks file...');
     const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
+    console.log(`📊 Found ${tasks.length} tasks in file`);
     
     // Find and update the task
     const taskIndex = tasks.findIndex(t => t.id === taskId);
     if (taskIndex !== -1) {
-      tasks[taskIndex].metadata = updatedMetadata;
+      console.log(`🔍 Found task at index ${taskIndex}`);
+      
+      // Log current topic counts before update
+      if (tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
+        const currentTopics = tasks[taskIndex].metadata.topics;
+        const selectedTopic = currentTopics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+        if (selectedTopic) {
+          console.log(`📊 Current count for "${selectedTopic.topic}": ${selectedTopic.count}`);
+        }
+      }
+      
+      // Merge the updated metadata with the existing metadata to preserve other fields
+      tasks[taskIndex].metadata = {
+        ...tasks[taskIndex].metadata,
+        ...updatedMetadata
+      };
       tasks[taskIndex].updatedAt = new Date().toISOString();
       
+      // Log updated topic counts after update
+      if (tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
+        const updatedTopics = tasks[taskIndex].metadata.topics;
+        const selectedTopic = updatedTopics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+        if (selectedTopic) {
+          console.log(`📊 Updated count for "${selectedTopic.topic}": ${selectedTopic.count}`);
+        }
+      }
+      
+      console.log('💾 Writing updated tasks to file...');
       // Save the updated tasks back to file
       fs.writeFileSync(tasksFilePath, JSON.stringify(tasks, null, 2));
       console.log('✅ Task metadata updated successfully');
+      console.log(`📊 Updated topics count for task ${taskId}`);
+      
+      // Verify the write worked by reading back the file
+      console.log('🔍 Verifying file write...');
+      const verifyTasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
+      const verifyTask = verifyTasks.find(t => t.id === taskId);
+      if (verifyTask && verifyTask.metadata && verifyTask.metadata.topics) {
+        const verifyTopic = verifyTask.metadata.topics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+        if (verifyTopic) {
+          console.log(`✅ Verification - File contains updated count for "${verifyTopic.topic}": ${verifyTopic.count}`);
+        }
+      }
+      
     } else {
       console.warn('⚠️  Task not found for metadata update');
     }
     
   } catch (error) {
     console.error('❌ Error updating task metadata:', error.message);
+    console.error('❌ Stack trace:', error.stack);
   }
 }
 
@@ -187,10 +244,12 @@ async function main() {
     console.log(`📊 Topic Selection Mode: ${metadata.topicSelectionMode || 'least-used'}`);
     
     // Update topic usage tracking
+    console.log('\n🔄 Updating topic usage tracking...');
     const updatedTopics = updateTopicUsage(metadata.topics, selectedTopic.topic);
     
     // Update metadata with new usage data
     metadata.topics = updatedTopics;
+    console.log(`📊 Updated metadata with ${updatedTopics.length} topics`);
     
     // Update environment variables from metadata if available
     if (metadata.wordpressSite) {
@@ -222,11 +281,23 @@ async function main() {
       }
     }
     
-    // Generate and upload blog
-    const result = await generateAndUploadBlog(selectedTopic.topic, metadata);
+    // Update task metadata with new usage data FIRST (before blog generation)
+    console.log('\n💾 Saving updated topic usage to tasks.json...');
+    try {
+      updateTaskMetadata(taskId, metadata);
+    } catch (error) {
+      console.error('❌ Error updating task metadata:', error.message);
+      console.error('❌ Stack trace:', error.stack);
+    }
     
-    // Update task metadata with new usage data
-    updateTaskMetadata(taskId, metadata);
+    // Generate and upload blog
+    let result;
+    try {
+      result = await generateAndUploadBlog(selectedTopic.topic, metadata);
+    } catch (error) {
+      console.error('❌ Error during blog generation:', error.message);
+      // Metadata was already updated above
+    }
     
     console.log('✅ Process completed successfully!');
     
