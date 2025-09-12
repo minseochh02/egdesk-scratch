@@ -1,12 +1,12 @@
 {
-  "name": "electron-react-boilerplate",
-  "version": "4.6.0",
-  "description": "A foundation for scalable desktop apps",
+  "name": "egdesk",
+  "version": "1.0.0",
+  "description": "EGDesk - 태화트랜스 WordPress Management Desktop Application",
   "license": "MIT",
   "author": {
-    "name": "Electron React Boilerplate Maintainers",
-    "email": "electronreactboilerplate@gmail.com",
-    "url": "https://github.com/electron-react-boilerplate"
+    "name": "태화트랜스",
+    "email": "contact@taesung.com",
+    "url": "https://taesung.com"
   },
   "main": "./dist/main/main.js",
   "scripts": {

@@ -1,8 +1,8 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 /**
- * This module executes inside of electron's main process. You can start
- * electron renderer process from here and communicate with the other processes
+ * This module executes inside of EGDesk's main process. You can start
+ * renderer process from here and communicate with the other processes
  * through IPC.
  *
  * When running `npm run build` or `npm run build:main`, this file is compiled to
@@ -560,6 +560,125 @@ ipcMain.handle('wp-update-connection', async (event, connectionId, updates) => {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Debug IPC handlers
+ipcMain.handle('debug-get-store-info', async () => {
+  try {
+    if (!store) {
+      return {
+        success: false,
+        error: 'Store not initialized',
+        available: false,
+        path: '',
+        size: 0,
+        writable: false
+      };
+    }
+
+    const storePath = store.path;
+    const fs = require('fs');
+    
+    let size = 0;
+    let writable = false;
+    let error = undefined;
+
+    try {
+      const stats = fs.statSync(storePath);
+      size = stats.size;
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Unknown error';
+    }
+
+    try {
+      fs.accessSync(storePath, fs.constants.W_OK);
+      writable = true;
+    } catch (e) {
+      writable = false;
+    }
+
+    return {
+      success: true,
+      available: true,
+      path: storePath,
+      size,
+      writable,
+      error
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      available: false,
+      path: '',
+      size: 0,
+      writable: false
+    };
+  }
+});
+
+ipcMain.handle('debug-get-filesystem-info', async () => {
+  try {
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+
+    const tempDir = os.tmpdir();
+    const userDataDir = app.getPath('userData');
+    
+    let writable = false;
+    let error = undefined;
+
+    try {
+      const testFile = path.join(tempDir, 'egdesk-debug-test.txt');
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      writable = true;
+    } catch (e) {
+      writable = false;
+      error = e instanceof Error ? e.message : 'Unknown error';
+    }
+
+    return {
+      success: true,
+      tempDir,
+      userDataDir,
+      writable,
+      error
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      tempDir: '',
+      userDataDir: '',
+      writable: false
+    };
+  }
+});
+
+ipcMain.handle('debug-get-disk-space', async () => {
+  try {
+    const os = require('os');
+    const fs = require('fs');
+    
+    const homeDir = os.homedir();
+    const stats = fs.statSync(homeDir);
+    
+    // This is a simplified version - in production you might want to use a proper disk space library
+    return {
+      success: true,
+      homeDir,
+      available: true // Simplified - would need proper disk space calculation
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      homeDir: '',
+      available: false
     };
   }
 });
@@ -1849,6 +1968,19 @@ ipcMain.handle('scheduler-get-system-info', async () => {
     return { success: true, systemInfo };
   } catch (error) {
     console.error('Error getting scheduler system info:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+ipcMain.handle('scheduler-get-task-metadata', async (event, taskId: string) => {
+  try {
+    const metadata = schedulerManager.getTaskMetadata(taskId);
+    return { success: true, metadata };
+  } catch (error) {
+    console.error('Error getting task metadata:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

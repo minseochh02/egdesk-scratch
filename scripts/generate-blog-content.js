@@ -206,14 +206,14 @@ async function generateGoogleContent(client, systemPrompt, userPrompt) {
  * Build system prompt for blog content generation
  */
 function buildSystemPrompt() {
-  const targetAudience = TEMPLATE_AUDIENCE || '일반 독자';
-  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 단어';
-  const tone = TEMPLATE_TONE || '친근하고 실용적인';
+  const targetAudience = TEMPLATE_AUDIENCE || 'general readers';
+  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 words';
+  const tone = TEMPLATE_TONE || 'friendly and practical';
   
   return `You are an expert blog writer and content creator. Your task is to create high-quality, engaging blog posts that are optimized for SEO and user engagement.
 
 ## Writing Guidelines:
-- Write in Korean (한국어)
+- Write in English
 - Use a ${tone} tone
 - Target audience: ${targetAudience}
 - Target length: ${targetLength}
@@ -276,11 +276,11 @@ Use [IMAGE:description:placement] markers in your content where images should be
  * Build user prompt with specific requirements
  */
 function buildUserPrompt() {
-  const categories = TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반'];
+  const categories = TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['General'];
   const tags = TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : [];
-  const targetAudience = TEMPLATE_AUDIENCE || '일반 독자';
-  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 단어';
-  const tone = TEMPLATE_TONE || '친근하고 실용적인';
+  const targetAudience = TEMPLATE_AUDIENCE || 'general readers';
+  const targetLength = TEMPLATE_WORD_LENGTH || '1200-1600 words';
+  const tone = TEMPLATE_TONE || 'friendly and practical';
 
   let templatePrompt = '';
   if (TEMPLATE_TYPE) {
@@ -297,8 +297,8 @@ function buildUserPrompt() {
 
   return `Please create a blog post with the following specifications:
 
-**Category:** ${categories[0] || '일반'}
-**Topic:** ${TEMPLATE_TITLE || '일반적인 주제'}
+**Category:** ${categories[0] || 'General'}
+**Topic:** ${TEMPLATE_TITLE || 'General Topic'}
 **Keywords:** ${tags.join(', ')}
 **Audience:** ${targetAudience}
 **Tone:** ${tone}
@@ -353,7 +353,7 @@ function parseGeneratedContent(content) {
         content: processedContent,
         excerpt: parsed.excerpt || generateExcerpt(processedContent),
         tags: parsed.tags || (TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : []),
-        categories: parsed.categories || (TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반']),
+        categories: parsed.categories || (TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['General']),
         seoTitle: parsed.seoTitle || parsed.title || TEMPLATE_TITLE || 'AI Generated Post',
         metaDescription: parsed.metaDescription || generateMetaDescription(processedContent),
         images: [...(parsed.images || []), ...extractedImages]
@@ -374,7 +374,7 @@ function parseGeneratedContent(content) {
     content: processedContent,
     excerpt: generateExcerpt(processedContent),
     tags: TEMPLATE_TAGS ? TEMPLATE_TAGS.split(',').map(t => t.trim()) : [],
-    categories: TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['일반'],
+    categories: TEMPLATE_CATEGORIES ? TEMPLATE_CATEGORIES.split(',').map(c => c.trim()) : ['General'],
     seoTitle: extractTitle(processedContent) || TEMPLATE_TITLE || 'AI Generated Post',
     metaDescription: generateMetaDescription(processedContent),
     images: extractedImages
@@ -398,9 +398,9 @@ function processImageMarkers(content) {
       <div class="image-placeholder-content">
         <div class="image-placeholder-icon">🖼️</div>
         <div class="image-placeholder-text">
-          <strong>이미지 순서:</strong> ${imageIndex}<br>
-          <strong>이미지 위치:</strong> ${placement.trim()}<br>
-          <strong>설명:</strong> ${description.trim()}
+          <strong>Image Order:</strong> ${imageIndex}<br>
+          <strong>Image Position:</strong> ${placement.trim()}<br>
+          <strong>Description:</strong> ${description.trim()}
         </div>
       </div>
     </div>`;

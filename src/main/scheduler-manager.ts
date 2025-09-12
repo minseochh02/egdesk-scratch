@@ -18,6 +18,7 @@ export interface ScheduledTask {
   environment?: Record<string, string>;
   outputFile?: string;
   errorFile?: string;
+  metadata?: Record<string, any>; // For storing task-specific data like topics, WordPress settings, etc.
 }
 
 export interface TaskExecution {
@@ -364,6 +365,11 @@ export class SchedulerManager {
     runningProcess.kill();
     this.runningTasks.delete(taskId);
     return true;
+  }
+
+  public getTaskMetadata(taskId: string): Record<string, any> | null {
+    const task = this.tasks.get(taskId);
+    return task?.metadata || null;
   }
 
   public getSystemInfo() {

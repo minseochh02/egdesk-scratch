@@ -1,9 +1,10 @@
 {
-  "name": "electron-react-boilerplate",
-  "description": "A foundation for scalable desktop apps",
+  "name": "egdesk",
+  "description": "EGDesk - 태화트랜스 WordPress Management Desktop Application",
   "keywords": [
-    "electron",
-    "boilerplate",
+    "egdesk",
+    "wordpress",
+    "desktop",
     "react",
     "typescript",
     "ts",
@@ -12,19 +13,19 @@
     "hot",
     "reload"
   ],
-  "homepage": "https://github.com/electron-react-boilerplate/electron-react-boilerplate#readme",
+  "homepage": "https://github.com/taesung/egdesk#readme",
   "bugs": {
-    "url": "https://github.com/electron-react-boilerplate/electron-react-boilerplate/issues"
+    "url": "https://github.com/taesung/egdesk/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/electron-react-boilerplate/electron-react-boilerplate.git"
+    "url": "git+https://github.com/taesung/egdesk.git"
   },
   "license": "MIT",
   "author": {
-    "name": "Electron React Boilerplate Maintainers",
-    "email": "electronreactboilerplate@gmail.com",
-    "url": "https://electron-react-boilerplate.js.org"
+    "name": "태화트랜스",
+    "email": "contact@taesung.com",
+    "url": "https://taesung.com"
   },
   "contributors": [
     {
@@ -45,6 +46,8 @@
     "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never && npm run build:dll",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "prestart": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS=\"-r ts-node/register --no-warnings\" webpack --config ./.erb/configs/webpack.config.main.dev.ts",
+    "debug:test": "node scripts/test-debugger.js",
+    "debug:report": "node scripts/generate-debug-report.js",
     "start": "ts-node ./.erb/scripts/check-port-in-use.js && npm run prestart && npm run start:renderer",
     "start:main": "concurrently -k -P \"cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --watch --config ./.erb/configs/webpack.config.main.dev.ts\" \"electronmon . -- {@}\" --",
     "start:preload": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS=\"-r ts-node/register --no-warnings\" webpack --config ./.erb/configs/webpack.config.preload.dev.ts",
@@ -118,12 +121,15 @@
     "@fortawesome/fontawesome-svg-core": "^7.0.0",
     "@fortawesome/free-solid-svg-icons": "^7.0.0",
     "@fortawesome/react-fontawesome": "^3.0.2",
+    "@google/genai": "^1.19.0",
     "@google/generative-ai": "^0.24.1",
     "electron-debug": "^4.1.0",
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",
     "electron-updater": "^6.3.9",
     "lucide-react": "^0.542.0",
+    "mime": "^4.0.7",
+    "mime-types": "^3.0.1",
     "openai": "^5.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -137,7 +143,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/jest": "^29.5.14",
-    "@types/node": "22.13.10",
+    "@types/node": "^22.13.10",
     "@types/react": "^19.0.11",
     "@types/react-dom": "^19.0.4",
     "@types/react-test-renderer": "^19.0.0",
@@ -197,8 +203,8 @@
     "webpack-merge": "^6.0.1"
   },
   "build": {
-    "productName": "ElectronReact",
-    "appId": "org.erb.ElectronReact",
+    "productName": "EGDesk",
+    "appId": "com.taesung.egdesk",
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": "**\\*.{node,dll}",
@@ -273,8 +279,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "electron-react-boilerplate",
-      "repo": "electron-react-boilerplate"
+      "owner": "taesung",
+      "repo": "egdesk"
     }
   },
   "collective": {

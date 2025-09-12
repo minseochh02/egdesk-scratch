@@ -288,6 +288,7 @@ export interface ScheduledTask {
   environment?: Record<string, string>;
   outputFile?: string;
   errorFile?: string;
+  metadata?: Record<string, any>; // For storing task-specific data like topics, WordPress settings, etc.
 }
 
 export interface TaskExecution {
@@ -331,9 +332,23 @@ export interface SchedulerAPI {
     systemInfo?: any;
     error?: string;
   }>;
+  getTaskMetadata: (taskId: string) => Promise<{
+    success: boolean;
+    metadata?: Record<string, any>;
+    error?: string;
+  }>;
 }
 
 const electronHandler = {
+  versions: {
+    electron: process.versions.electron,
+    node: process.versions.node,
+    chrome: process.versions.chrome,
+    app: process.env.npm_package_version || 'Unknown',
+  },
+  platform: process.platform,
+  arch: process.arch,
+  isPackaged: process.env.NODE_ENV === 'production',
   ipcRenderer: {
     sendMessage(channel: Channels, ...args: unknown[]) {
       ipcRenderer.send(channel, ...args);
@@ -366,6 +381,8 @@ const electronHandler = {
     readFile: (path: string) => ipcRenderer.invoke('fs-read-file', path),
     writeFile: (path: string, content: string) =>
       ipcRenderer.invoke('fs-write-file', path, content),
+    getFileSystemInfo: () => ipcRenderer.invoke('debug-get-filesystem-info'),
+    getDiskSpace: () => ipcRenderer.invoke('debug-get-disk-space'),
   } as FileSystemAPI,
   wordpress: {
     saveConnection: (connection: WordPressConnection) =>
@@ -408,6 +425,7 @@ const electronHandler = {
     get: () => ipcRenderer.invoke('prefs-get'),
     set: (preferences: UserPreferences) =>
       ipcRenderer.invoke('prefs-set', preferences),
+    getStoreInfo: () => ipcRenderer.invoke('debug-get-store-info'),
   } as PreferencesAPI,
   store: {
     get: (key: string) => ipcRenderer.invoke('store-get', key),
@@ -494,6 +512,8 @@ const electronHandler = {
     stopTask: (taskId: string) =>
       ipcRenderer.invoke('scheduler-stop-task', taskId),
     getSystemInfo: () => ipcRenderer.invoke('scheduler-get-system-info'),
+    getTaskMetadata: (taskId: string) =>
+      ipcRenderer.invoke('scheduler-get-task-metadata', taskId),
   } as SchedulerAPI,
   debug: {
     executeWorkflow: (config: {

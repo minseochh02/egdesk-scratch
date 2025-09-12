@@ -107,7 +107,7 @@ export const AIKeysManager: React.FC = () => {
   };
 
   const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('en-US', {
+    return new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -133,7 +133,7 @@ export const AIKeysManager: React.FC = () => {
       <div className="ai-keys-manager">
         <div className="loading-container">
           <div className="spinner" />
-          <p>Loading AI keys...</p>
+          <p>AI 키를 불러오는 중...</p>
         </div>
       </div>
     );
@@ -145,16 +145,16 @@ export const AIKeysManager: React.FC = () => {
       <div className="manager-header">
         <div className="header-left">
           <h1>
-            <FontAwesomeIcon icon={faRobot} /> AI Keys Manager
+            <FontAwesomeIcon icon={faRobot} /> API 키 관리
           </h1>
-          <p>Manage your AI service API keys and configurations</p>
+          <p>AI 서비스 API 키와 설정을 관리하세요</p>
         </div>
         <div className="header-right">
           <button
             className="add-key-btn"
             onClick={() => setShowAddDialog(true)}
           >
-            <FontAwesomeIcon icon={faPlus} /> Add New Key
+            <FontAwesomeIcon icon={faPlus} /> 새 키 추가
           </button>
         </div>
       </div>
@@ -167,7 +167,7 @@ export const AIKeysManager: React.FC = () => {
           </div>
           <div className="stat-content">
             <div className="stat-value">{state.keys.length}</div>
-            <div className="stat-label">Total Keys</div>
+            <div className="stat-label">전체 키</div>
           </div>
         </div>
         <div className="stat-card">
@@ -176,7 +176,7 @@ export const AIKeysManager: React.FC = () => {
           </div>
           <div className="stat-content">
             <div className="stat-value">{getActiveKeysCount()}</div>
-            <div className="stat-label">Active Keys</div>
+            <div className="stat-label">활성 키</div>
           </div>
         </div>
         <div className="stat-card">
@@ -187,7 +187,7 @@ export const AIKeysManager: React.FC = () => {
             <div className="stat-value">
               {new Set(state.keys.map((k) => k.providerId)).size}
             </div>
-            <div className="stat-label">Providers</div>
+            <div className="stat-label">제공업체</div>
           </div>
         </div>
       </div>
@@ -207,13 +207,13 @@ export const AIKeysManager: React.FC = () => {
             <div className="empty-icon">
               <FontAwesomeIcon icon={faKey} />
             </div>
-            <h3>No AI Keys Found</h3>
-            <p>Get started by adding your first AI service API key</p>
+            <h3>AI 키가 없습니다</h3>
+            <p>첫 번째 AI 서비스 API 키를 추가하여 시작하세요</p>
             <button
               className="add-first-key-btn"
               onClick={() => setShowAddDialog(true)}
             >
-              Add Your First Key
+              첫 번째 키 추가
             </button>
           </div>
         ) : (
@@ -242,7 +242,7 @@ export const AIKeysManager: React.FC = () => {
                         <span
                           className={`status-badge ${key.isActive ? 'active' : 'inactive'}`}
                         >
-                          {key.isActive ? 'Active' : 'Inactive'}
+                          {key.isActive ? '활성' : '비활성'}
                         </span>
                       </div>
                     </div>
@@ -251,12 +251,12 @@ export const AIKeysManager: React.FC = () => {
                       <h3 className="key-name">{key.name}</h3>
                       <div className="key-meta">
                         <span className="meta-item">
-                          <span className="meta-label">Created:</span>
+                          <span className="meta-label">생성일:</span>
                           {formatDate(key.createdAt)}
                         </span>
                         {key.lastUsed && (
                           <span className="meta-item">
-                            <span className="meta-label">Last Used:</span>
+                            <span className="meta-label">마지막 사용:</span>
                             {formatDate(key.lastUsed)}
                           </span>
                         )}
@@ -270,7 +270,7 @@ export const AIKeysManager: React.FC = () => {
                           e.stopPropagation();
                           handleTestKey(key.id);
                         }}
-                        title="Test Connection"
+                        title="연결 테스트"
                         disabled={testingKeyId === key.id}
                       >
                         {testingKeyId === key.id ? (
@@ -278,7 +278,7 @@ export const AIKeysManager: React.FC = () => {
                         ) : (
                           <FontAwesomeIcon icon={faFlask} />
                         )}{' '}
-                        {testingKeyId === key.id ? 'Testing...' : 'Test'}
+                        {testingKeyId === key.id ? '테스트 중...' : '테스트'}
                       </button>
                       <button
                         className="action-btn edit-btn"
@@ -286,9 +286,9 @@ export const AIKeysManager: React.FC = () => {
                           e.stopPropagation();
                           setEditingKey(key);
                         }}
-                        title="Edit Key"
+                        title="키 편집"
                       >
-                        <FontAwesomeIcon icon={faEdit} /> Edit
+                        <FontAwesomeIcon icon={faEdit} /> 편집
                       </button>
                       <button
                         className={`action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
@@ -296,7 +296,7 @@ export const AIKeysManager: React.FC = () => {
                           e.stopPropagation();
                           handleToggleActive(key.id);
                         }}
-                        title={key.isActive ? 'Deactivate' : 'Activate'}
+                        title={key.isActive ? '비활성화' : '활성화'}
                       >
                         {key.isActive ? '⏸️' : '▶️'}
                       </button>
@@ -306,7 +306,7 @@ export const AIKeysManager: React.FC = () => {
                           e.stopPropagation();
                           setShowDeleteConfirm(key.id);
                         }}
-                        title="Delete Key"
+                        title="키 삭제"
                       >
                         <FontAwesomeIcon icon={faTrash} />
                       </button>
@@ -366,7 +366,7 @@ export const AIKeysManager: React.FC = () => {
       {/* Provider Summary */}
       {state.keys.length > 0 && (
         <div className="provider-summary">
-          <h3>Provider Summary</h3>
+          <h3>제공업체 요약</h3>
           <div className="provider-grid">
             {state.providers
               .filter((provider) => getKeysByProvider(provider.id).length > 0)
@@ -387,11 +387,11 @@ export const AIKeysManager: React.FC = () => {
                     <div className="provider-summary-stats">
                       <div className="summary-stat">
                         <span className="stat-value">{keys.length}</span>
-                        <span className="stat-label">Keys</span>
+                        <span className="stat-label">키</span>
                       </div>
                       <div className="summary-stat">
                         <span className="stat-value">{activeKeys.length}</span>
-                        <span className="stat-label">Active</span>
+                        <span className="stat-label">활성</span>
                       </div>
                     </div>
                   </div>
@@ -429,17 +429,15 @@ export const AIKeysManager: React.FC = () => {
           <div className="dialog-content">
             <div className="dialog-header">
               <h3>
-                <FontAwesomeIcon icon={faTrash} /> Delete AI Key
+                <FontAwesomeIcon icon={faTrash} /> AI 키 삭제
               </h3>
             </div>
             <div className="dialog-body">
               <p>
-                Are you sure you want to delete this AI key? This action cannot
-                be undone.
+                이 AI 키를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
               </p>
               <p className="warning-text">
-                <strong>Warning:</strong> Deleting this key will remove all
-                associated configurations.
+                <strong>경고:</strong> 이 키를 삭제하면 관련된 모든 설정이 제거됩니다.
               </p>
             </div>
             <div className="dialog-footer">
@@ -447,13 +445,13 @@ export const AIKeysManager: React.FC = () => {
                 className="button-secondary"
                 onClick={() => setShowDeleteConfirm(null)}
               >
-                Cancel
+                취소
               </button>
               <button
                 className="button-danger"
                 onClick={() => handleDeleteKey(showDeleteConfirm)}
               >
-                Delete Key
+                키 삭제
               </button>
             </div>
           </div>

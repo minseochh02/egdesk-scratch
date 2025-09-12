@@ -10,6 +10,7 @@ export interface CreateTaskData {
   environment?: Record<string, string>;
   outputFile?: string;
   errorFile?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface UpdateTaskData {
@@ -22,6 +23,7 @@ export interface UpdateTaskData {
   environment?: Record<string, string>;
   outputFile?: string;
   errorFile?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface SchedulerServiceResponse<T = any> {

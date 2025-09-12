@@ -21,20 +21,20 @@
 #   - Returns: Console output showing detected platforms and PHP paths
 #
 # electron-builder --mac:
-#   - Creates: release/build/ElectronReact-4.6.0-arm64.dmg
-#   - Creates: release/build/ElectronReact-4.6.0.dmg (Intel)
-#   - Creates: release/build/mac/ElectronReact.app/
+#   - Creates: release/build/EGDesk-1.0.0-arm64.dmg
+#   - Creates: release/build/EGDesk-1.0.0.dmg (Intel)
+#   - Creates: release/build/mac/EGDesk.app/
 #   - Returns: macOS distribution packages and .app bundle
 #
 # electron-builder --win:
-#   - Creates: release/build/ElectronReact Setup 4.6.0.exe (NSIS installer)
-#   - Creates: release/build/ElectronReact 4.6.0.exe (Portable)
+#   - Creates: release/build/EGDesk Setup 1.0.0.exe (NSIS installer)
+#   - Creates: release/build/EGDesk 1.0.0.exe (Portable)
 #   - Creates: release/build/win-unpacked/ (x64 unpacked)
 #   - Creates: release/build/win-ia32-unpacked/ (x86 unpacked)
 #   - Returns: Windows installers and portable executables
 #
 # electron-builder --linux:
-#   - Creates: release/build/ElectronReact-4.6.0.AppImage
+#   - Creates: release/build/EGDesk-1.0.0.AppImage
 #   - Creates: release/build/linux-unpacked/
 #   - Returns: Linux AppImage and unpacked directory
 #
@@ -225,15 +225,15 @@ show_script_outputs() {
     echo ""
     
     echo "🍎 electron-builder --mac OUTPUTS:"
-    echo "   📦 release/build/ElectronReact-4.6.0-arm64.dmg (ARM64 DMG)"
-    echo "   📦 release/build/ElectronReact-4.6.0.dmg (Intel DMG)"
-    echo "   📁 release/build/mac/ElectronReact.app/ (macOS app bundle)"
+    echo "   📦 release/build/EGDesk-1.0.0-arm64.dmg (ARM64 DMG)"
+    echo "   📦 release/build/EGDesk-1.0.0.dmg (Intel DMG)"
+    echo "   📁 release/build/mac/EGDesk.app/ (macOS app bundle)"
     echo "      └── Contents/Resources/php-bundle/ (bundled PHP)"
     echo ""
     
     echo "🪟 electron-builder --win OUTPUTS:"
-    echo "   📦 release/build/ElectronReact Setup 4.6.0.exe (NSIS installer)"
-    echo "   📦 release/build/ElectronReact 4.6.0.exe (Portable executable)"
+    echo "   📦 release/build/EGDesk Setup 1.0.0.exe (NSIS installer)"
+    echo "   📦 release/build/EGDesk 1.0.0.exe (Portable executable)"
     echo "   📁 release/build/win-unpacked/ (x64 unpacked app)"
     echo "      └── resources/php-bundle/ (bundled PHP)"
     echo "   📁 release/build/win-ia32-unpacked/ (x86 unpacked app)"
@@ -241,7 +241,7 @@ show_script_outputs() {
     echo ""
     
     echo "🐧 electron-builder --linux OUTPUTS:"
-    echo "   📦 release/build/ElectronReact-4.6.0.AppImage (Linux AppImage)"
+    echo "   📦 release/build/EGDesk-1.0.0.AppImage (Linux AppImage)"
     echo "   📁 release/build/linux-unpacked/ (unpacked app directory)"
     echo "      └── resources/php-bundle/ (bundled PHP)"
     echo ""

@@ -1,3 +1,13 @@
+# 1.0.0
+
+## Initial Release
+
+- Renamed from Electron React Boilerplate to EGDesk
+- WordPress management desktop application
+- Built with Electron, React, TypeScript
+- Cross-platform support (macOS, Windows, Linux)
+- PHP bundling for WordPress server functionality
+
 # 2.1.0
 
 - Migrate to `css-minifier-webpack-plugin`

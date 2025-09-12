@@ -292,13 +292,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   return (
     <div className="local-server">
       <div className="server-header">
-        <h2>🖥️ Local Server</h2>
-        <p>Manage your local PHP server for development</p>
+        <h2>🖥️ 로컬 서버</h2>
+        <p>개발을 위한 로컬 PHP 서버를 관리하세요</p>
       </div>
 
       {/* Project Context Section */}
       <div className="project-context-section">
-        <h3>📁 Project Context</h3>
+        <h3>📁 프로젝트 컨텍스트</h3>
         <div className="project-context-content">
           <ProjectSelector
             onProjectSelect={handleProjectSelect}
@@ -312,22 +312,22 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
             <div className="project-details">
               <div className="project-metadata">
                 <div className="metadata-item">
-                  <strong>Type:</strong> {currentProject.type}
+                  <strong>타입:</strong> {currentProject.type}
                 </div>
                 <div className="metadata-item">
-                  <strong>Language:</strong> {currentProject.metadata.language}
+                  <strong>언어:</strong> {currentProject.metadata.language}
                 </div>
                 <div className="metadata-item">
-                  <strong>Framework:</strong>{' '}
+                  <strong>프레임워크:</strong>{' '}
                   {currentProject.metadata.framework}
                 </div>
                 {currentProject.metadata.version && (
                   <div className="metadata-item">
-                    <strong>Version:</strong> {currentProject.metadata.version}
+                    <strong>버전:</strong> {currentProject.metadata.version}
                   </div>
                 )}
                 <div className="metadata-item">
-                  <strong>Last Accessed:</strong>{' '}
+                  <strong>마지막 접근:</strong>{' '}
                   {currentProject.lastAccessed.toLocaleDateString()}
                 </div>
               </div>
@@ -349,7 +349,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                     ProjectContextService.getInstance().refreshAllProjects()
                   }
                 >
-                  <FontAwesomeIcon icon={faRefresh} /> Refresh All Projects
+                  <FontAwesomeIcon icon={faRefresh} /> 모든 프로젝트 새로고침
                 </button>
               </div>
             </div>
@@ -359,13 +359,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
       <div className="server-controls">
         <div className="folder-section">
-          <h3>📁 Folder</h3>
+          <h3>📁 폴더</h3>
           <div className="folder-input">
             <input
               type="text"
               value={currentFolder}
               onChange={(e) => setCurrentFolder(e.target.value)}
-              placeholder="Enter folder path or click Select Folder"
+              placeholder="폴더 경로를 입력하거나 폴더 선택을 클릭하세요"
               disabled={isLoading}
             />
             <button
@@ -373,7 +373,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               disabled={isLoading}
               className="btn btn-secondary"
             >
-              Select Folder
+              폴더 선택
             </button>
           </div>
 
@@ -382,7 +382,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               <div
                 className={`status-indicator ${folderInfo.hasWordPress ? 'success' : 'warning'}`}
               >
-                {folderInfo.hasWordPress ? '✅' : '⚠️'} Server Compatible
+                {folderInfo.hasWordPress ? '✅' : '⚠️'} 서버 호환
               </div>
               <div
                 className={`status-indicator ${folderInfo.folderType === 'www' ? 'success' : folderInfo.folderType === 'wordpress' ? 'success' : folderInfo.folderType === 'mixed' ? 'success' : 'warning'}`}
@@ -401,13 +401,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               {folderInfo.htmlFileCount > 0 && (
                 <div className="status-indicator success">
                   <FontAwesomeIcon icon={faGlobe} /> {folderInfo.htmlFileCount}{' '}
-                  HTML files
+                  HTML 파일
                 </div>
               )}
               {folderInfo.phpFileCount > 0 && (
                 <div className="status-indicator success">
                   <FontAwesomeIcon icon={faCode} /> {folderInfo.phpFileCount}{' '}
-                  PHP files
+                  PHP 파일
                 </div>
               )}
               {folderInfo.folderType === 'wordpress' ||
@@ -425,14 +425,14 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   </div>
                 </>
               ) : (
-                <div className="status-indicator success">
-                  ✅ Ready to serve files
+                  <div className="status-indicator success">
+                  ✅ 파일 제공 준비 완료
                 </div>
               )}
               {folderInfo.detectedRoot &&
                 folderInfo.detectedRoot !== currentFolder && (
                   <div className="status-indicator success">
-                    🎯 Will serve: {folderInfo.detectedRoot}
+                    🎯 제공할 경로: {folderInfo.detectedRoot}
                   </div>
                 )}
             </div>
@@ -440,7 +440,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
         </div>
 
         <div className="server-section">
-          <h3>🚀 Server Controls</h3>
+          <h3>🚀 서버 제어</h3>
           <div className="server-buttons">
             {!serverStatus.isRunning ? (
               <button
@@ -448,7 +448,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 disabled={isLoading || !folderInfo?.exists}
                 className="btn btn-primary"
               >
-                {isLoading ? 'Starting...' : 'Start Server'}
+                {isLoading ? '시작 중...' : '서버 시작'}
               </button>
             ) : (
               <button
@@ -456,13 +456,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 disabled={isLoading}
                 className="btn btn-danger"
               >
-                {isLoading ? 'Stopping...' : 'Stop Server'}
+                {isLoading ? '중지 중...' : '서버 중지'}
               </button>
             )}
 
             {serverStatus.isRunning && (
               <button onClick={openInBrowser} className="btn btn-success">
-                Open in Browser
+                브라우저에서 열기
               </button>
             )}
 
@@ -471,24 +471,24 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               className="btn btn-primary"
               disabled={!serverStatus.isRunning}
             >
-              <FontAwesomeIcon icon={faEdit} /> Open Dual Screen Editor
+              <FontAwesomeIcon icon={faEdit} /> 듀얼 스크린 에디터 열기
             </button>
           </div>
         </div>
 
         <div className="server-status">
-          <h3>📊 Server Status</h3>
+          <h3>📊 서버 상태</h3>
           <div
             className={`status ${serverStatus.isRunning ? 'running' : 'stopped'}`}
           >
             <span className="status-dot" />
-            {serverStatus.isRunning ? 'Running' : 'Stopped'}
+            {serverStatus.isRunning ? '실행 중' : '중지됨'}
           </div>
 
           {serverStatus.isRunning && (
             <div className="status-details">
               <p>
-                <strong>Port:</strong> {serverStatus.port}
+                <strong>포트:</strong> {serverStatus.port}
               </p>
               <p>
                 <strong>URL:</strong>{' '}
@@ -501,11 +501,11 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                 </a>
               </p>
               <p>
-                <strong>Folder:</strong> {currentFolder}
+                <strong>폴더:</strong> {currentFolder}
               </p>
               {currentProject && (
                 <p>
-                  <strong>Project:</strong> {currentProject.name} (
+                  <strong>프로젝트:</strong> {currentProject.name} (
                   {currentProject.type})
                 </p>
               )}
@@ -514,7 +514,7 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
           {serverStatus.error && (
             <div className="error-message">
-              <strong>Error:</strong> {serverStatus.error}
+              <strong>오류:</strong> {serverStatus.error}
             </div>
           )}
         </div>
@@ -522,15 +522,15 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
       <div className="logs-section">
         <div className="logs-header">
-          <h3>📝 Server Logs</h3>
+          <h3>📝 서버 로그</h3>
           <button onClick={clearLogs} className="btn btn-small">
-            Clear Logs
+            로그 지우기
           </button>
         </div>
         <div className="logs-container">
           {logs.length === 0 ? (
             <p className="no-logs">
-              No logs yet. Start the server to see activity.
+              아직 로그가 없습니다. 서버를 시작하여 활동을 확인하세요.
             </p>
           ) : (
             logs.map((log, index) => (
@@ -543,57 +543,57 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       </div>
 
       <div className="server-info">
-        <h3>ℹ️ Server Information</h3>
+        <h3>ℹ️ 서버 정보</h3>
         <div className="info-grid">
           <div className="info-item">
-            <strong>PHP Version:</strong> {phpInfo?.version || 'Loading...'}
+            <strong>PHP 버전:</strong> {phpInfo?.version || '로딩 중...'}
           </div>
           <div className="info-item">
-            <strong>PHP Source:</strong>
+            <strong>PHP 소스:</strong>
             {phpInfo?.isBundled ? (
               <span className="php-bundled">
-                <FontAwesomeIcon icon={faDownload} /> Bundled
+                <FontAwesomeIcon icon={faDownload} /> 번들됨
               </span>
             ) : phpInfo?.isAvailable ? (
               <span className="php-system">
-                <FontAwesomeIcon icon={faCheckCircle} /> System
+                <FontAwesomeIcon icon={faCheckCircle} /> 시스템
               </span>
             ) : (
               <span className="php-error">
-                <FontAwesomeIcon icon={faExclamationTriangle} /> Not Available
+                <FontAwesomeIcon icon={faExclamationTriangle} /> 사용 불가
               </span>
             )}
           </div>
           <div className="info-item">
-            <strong>PHP Path:</strong> {phpInfo?.path || 'Not found'}
+            <strong>PHP 경로:</strong> {phpInfo?.path || '찾을 수 없음'}
           </div>
           <div className="info-item">
-            <strong>Default Port:</strong> 8000
+            <strong>기본 포트:</strong> 8000
           </div>
           <div className="info-item">
-            <strong>Document Root:</strong> {currentFolder || 'Not set'}
+            <strong>문서 루트:</strong> {currentFolder || '설정되지 않음'}
           </div>
           <div className="info-item">
-            <strong>Server Type:</strong> PHP Built-in Server
+            <strong>서버 타입:</strong> PHP 내장 서버
           </div>
           {folderInfo && (
             <>
               <div className="info-item">
-                <strong>Folder Type:</strong> {folderInfo.folderType}
+                <strong>폴더 타입:</strong> {folderInfo.folderType}
               </div>
               {folderInfo.htmlFileCount > 0 && (
                 <div className="info-item">
-                  <strong>HTML Files:</strong> {folderInfo.htmlFileCount}
+                  <strong>HTML 파일:</strong> {folderInfo.htmlFileCount}
                 </div>
               )}
               {folderInfo.phpFileCount > 0 && (
                 <div className="info-item">
-                  <strong>PHP Files:</strong> {folderInfo.phpFileCount}
+                  <strong>PHP 파일:</strong> {folderInfo.phpFileCount}
                 </div>
               )}
               {folderInfo.detectedRoot && (
                 <div className="info-item">
-                  <strong>Detected Root:</strong> {folderInfo.detectedRoot}
+                  <strong>감지된 루트:</strong> {folderInfo.detectedRoot}
                 </div>
               )}
             </>

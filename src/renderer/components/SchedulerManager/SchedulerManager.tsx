@@ -13,6 +13,8 @@ import {
   faCog,
   faHistory,
   faInfoCircle,
+  faList,
+  faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 import SchedulerService, {
   CreateTaskData,
@@ -45,6 +47,9 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
   const [editingTaskData, setEditingTaskData] = useState<CreateTaskData | null>(
     null,
   );
+  const [showTopicsModal, setShowTopicsModal] = useState(false);
+  const [selectedTaskTopics, setSelectedTaskTopics] = useState<Array<{topic: string, lastUsed: string, count: number}>>([]);
+  const [selectedTaskName, setSelectedTaskName] = useState<string>('');
 
   const schedulerService = SchedulerService.getInstance();
 
@@ -76,7 +81,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setSystemInfo(systemInfoResponse.data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      setError(err instanceof Error ? err.message : '데이터를 불러오는데 실패했습니다');
     } finally {
       setLoading(false);
     }
@@ -90,10 +95,10 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setShowCreateModal(false);
         setError(null);
       } else {
-        setError(response.error || 'Failed to create task');
+        setError(response.error || '작업 생성에 실패했습니다');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task');
+      setError(err instanceof Error ? err.message : '작업 생성에 실패했습니다');
     }
   };
 
@@ -116,15 +121,15 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setEditingTaskData(null);
         setError(null);
       } else {
-        setError(response.error || 'Failed to update task');
+        setError(response.error || '작업 업데이트에 실패했습니다');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update task');
+      setError(err instanceof Error ? err.message : '작업 업데이트에 실패했습니다');
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm('Are you sure you want to delete this task?')) {
+    if (!window.confirm('이 작업을 삭제하시겠습니까?')) {
       return;
     }
 
@@ -134,10 +139,10 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setTasks((prev) => prev.filter((task) => task.id !== taskId));
         setExecutions((prev) => prev.filter((exec) => exec.taskId !== taskId));
       } else {
-        setError(response.error || 'Failed to delete task');
+        setError(response.error || '작업 삭제에 실패했습니다');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete task');
+      setError(err instanceof Error ? err.message : '작업 삭제에 실패했습니다');
     }
   };
 
@@ -147,10 +152,10 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       if (response.success) {
         await loadData(); // Refresh data to show new execution
       } else {
-        setError(response.error || 'Failed to run task');
+        setError(response.error || '작업 실행에 실패했습니다');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to run task');
+      setError(err instanceof Error ? err.message : '작업 실행에 실패했습니다');
     }
   };
 
@@ -160,10 +165,10 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       if (response.success) {
         await loadData(); // Refresh data to show updated execution status
       } else {
-        setError(response.error || 'Failed to stop task');
+        setError(response.error || '작업 중지에 실패했습니다');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to stop task');
+      setError(err instanceof Error ? err.message : '작업 중지에 실패했습니다');
     }
   };
 
@@ -175,49 +180,32 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
         setSelectedTaskExecutions(response.data || []);
         setShowExecutionsModal(true);
       } else {
-        setError(response.error || 'Failed to load executions');
+        setError(response.error || '실행 기록을 불러오는데 실패했습니다');
       }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Failed to load executions',
+        err instanceof Error ? err.message : '실행 기록을 불러오는데 실패했습니다',
       );
     }
   };
 
-  const createHttpRequestTask = async () => {
-    const url = 'https://demo-chatbot-iota.vercel.app/';
-    const taskData: CreateTaskData = {
-      name: 'HTTP Request to Demo Chatbot',
-      description: `Sends a GET request to ${url} every 5 minutes`,
-      command: `curl -X GET "${url}"`,
-      schedule: 'interval:300000', // 5 minutes
-      enabled: true,
-      workingDirectory: '',
-      environment: {},
-      outputFile: '',
-      errorFile: '',
-    };
-
+  const handleViewTopics = async (task: ScheduledTask) => {
     try {
-      const response = await schedulerService.createTask(taskData);
-      if (response.success) {
-        setTasks((prev) => [...prev, response.data!]);
-        setError(null);
-        // Show success message
-        alert(
-          'HTTP Request task created successfully! It will run every 5 minutes.',
-        );
+      const response = await (window as any).electron.scheduler.getTaskMetadata(task.id);
+      if (response.success && response.metadata?.topics) {
+        setSelectedTaskTopics(response.metadata.topics);
+        setSelectedTaskName(task.name);
+        setShowTopicsModal(true);
       } else {
-        setError(response.error || 'Failed to create HTTP request task');
+        setError('주제 정보를 불러오는데 실패했습니다');
       }
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to create HTTP request task',
+        err instanceof Error ? err.message : '주제 정보를 불러오는데 실패했습니다',
       );
     }
   };
+
 
   const formatDate = (date: Date | string) => {
     return new Date(date).toLocaleString();
@@ -262,7 +250,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       <div className={`scheduler-manager ${className || ''}`}>
         <div className="loading">
           <FontAwesomeIcon icon={faSpinner} className="spinning" />
-          <span>Loading scheduler...</span>
+          <span>스케줄러를 불러오는 중...</span>
         </div>
       </div>
     );
@@ -273,23 +261,19 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       <div className="scheduler-header">
         <h2>
           <FontAwesomeIcon icon={faClock} />
-          Task Scheduler
+          작업 스케줄러
         </h2>
         <div className="header-actions">
-          <button className="btn btn-success" onClick={createHttpRequestTask}>
-            <FontAwesomeIcon icon={faPlus} />
-            HTTP Request (5min)
-          </button>
           <button
             className="btn btn-primary"
             onClick={() => setShowCreateModal(true)}
           >
             <FontAwesomeIcon icon={faPlus} />
-            New Task
+            새 작업
           </button>
           <button className="btn btn-secondary" onClick={loadData}>
             <FontAwesomeIcon icon={faCog} />
-            Refresh
+            새로고침
           </button>
         </div>
       </div>
@@ -308,21 +292,21 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
           onClick={() => setActiveTab('tasks')}
         >
           <FontAwesomeIcon icon={faClock} />
-          Tasks ({tasks.length})
+          작업 ({tasks.length})
         </button>
         <button
           className={`tab ${activeTab === 'executions' ? 'active' : ''}`}
           onClick={() => setActiveTab('executions')}
         >
           <FontAwesomeIcon icon={faHistory} />
-          Executions ({executions.length})
+          실행 기록 ({executions.length})
         </button>
         <button
           className={`tab ${activeTab === 'system' ? 'active' : ''}`}
           onClick={() => setActiveTab('system')}
         >
           <FontAwesomeIcon icon={faInfoCircle} />
-          System Info
+          시스템 정보
         </button>
       </div>
 
@@ -332,14 +316,14 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             {tasks.length === 0 ? (
               <div className="empty-state">
                 <FontAwesomeIcon icon={faClock} />
-                <h3>No tasks found</h3>
-                <p>Create your first scheduled task to get started.</p>
+                <h3>작업이 없습니다</h3>
+                <p>첫 번째 예약된 작업을 생성하여 시작하세요.</p>
                 <button
                   className="btn btn-primary"
                   onClick={() => setShowCreateModal(true)}
                 >
                   <FontAwesomeIcon icon={faPlus} />
-                  Create Task
+                  작업 생성
                 </button>
               </div>
             ) : (
@@ -360,7 +344,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                           <span
                             className={`task-status ${task.enabled ? 'enabled' : 'disabled'}`}
                           >
-                            {task.enabled ? 'Enabled' : 'Disabled'}
+                            {task.enabled ? '활성화됨' : '비활성화됨'}
                           </span>
                         </div>
                       </div>
@@ -369,7 +353,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                           <button
                             className="btn btn-warning btn-sm"
                             onClick={() => handleStopTask(task.id)}
-                            title="Stop Task"
+                            title="작업 중지"
                           >
                             <FontAwesomeIcon icon={faStop} />
                           </button>
@@ -377,7 +361,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                           <button
                             className="btn btn-success btn-sm"
                             onClick={() => handleRunTask(task.id)}
-                            title="Run Now"
+                            title="지금 실행"
                           >
                             <FontAwesomeIcon icon={faPlay} />
                           </button>
@@ -385,10 +369,19 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                         <button
                           className="btn btn-info btn-sm"
                           onClick={() => handleViewExecutions(task)}
-                          title="View Executions"
+                          title="실행 기록 보기"
                         >
                           <FontAwesomeIcon icon={faHistory} />
                         </button>
+                        {task.metadata?.topics && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleViewTopics(task)}
+                            title="주제 보기"
+                          >
+                            <FontAwesomeIcon icon={faList} />
+                          </button>
+                        )}
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => {
@@ -406,14 +399,14 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                             });
                             setShowEditModal(true);
                           }}
-                          title="Edit Task"
+                          title="작업 편집"
                         >
                           <FontAwesomeIcon icon={faEdit} />
                         </button>
                         <button
                           className="btn btn-danger btn-sm"
                           onClick={() => handleDeleteTask(task.id)}
-                          title="Delete Task"
+                          title="작업 삭제"
                         >
                           <FontAwesomeIcon icon={faTrash} />
                         </button>
@@ -421,21 +414,21 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                     </div>
                     <div className="task-details">
                       <div className="task-command">
-                        <strong>Command:</strong> {task.command}
+                        <strong>명령어:</strong> {task.command}
                       </div>
                       {task.workingDirectory && (
                         <div className="task-working-dir">
-                          <strong>Working Directory:</strong>{' '}
+                          <strong>작업 디렉토리:</strong>{' '}
                           {task.workingDirectory}
                         </div>
                       )}
                       <div className="task-timestamps">
-                        <span>Created: {formatDate(task.createdAt)}</span>
+                        <span>생성일: {formatDate(task.createdAt)}</span>
                         {task.lastRun && (
-                          <span>Last Run: {formatDate(task.lastRun)}</span>
+                          <span>마지막 실행: {formatDate(task.lastRun)}</span>
                         )}
                         {task.nextRun && (
-                          <span>Next Run: {formatDate(task.nextRun)}</span>
+                          <span>다음 실행: {formatDate(task.nextRun)}</span>
                         )}
                       </div>
                     </div>
@@ -451,8 +444,8 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             {executions.length === 0 ? (
               <div className="empty-state">
                 <FontAwesomeIcon icon={faHistory} />
-                <h3>No executions found</h3>
-                <p>Task executions will appear here when tasks are run.</p>
+                <h3>실행 기록이 없습니다</h3>
+                <p>작업이 실행되면 여기에 실행 기록이 표시됩니다.</p>
               </div>
             ) : (
               <div className="executions-list">
@@ -466,7 +459,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                     <div key={execution.id} className="execution-card">
                       <div className="execution-header">
                         <div className="execution-info">
-                          <h4>Execution {execution.id}</h4>
+                          <h4>실행 {execution.id}</h4>
                           <div className="execution-meta">
                             <span
                               className={`execution-status ${getStatusClass(execution.status)}`}
@@ -489,13 +482,13 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                       </div>
                       {execution.output && (
                         <div className="execution-output">
-                          <strong>Output:</strong>
+                          <strong>출력:</strong>
                           <pre>{execution.output}</pre>
                         </div>
                       )}
                       {execution.error && (
                         <div className="execution-error">
-                          <strong>Error:</strong>
+                          <strong>오류:</strong>
                           <pre>{execution.error}</pre>
                         </div>
                       )}
@@ -511,54 +504,54 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             {systemInfo ? (
               <div className="system-info">
                 <div className="info-section">
-                  <h3>System Information</h3>
+                  <h3>시스템 정보</h3>
                   <div className="info-grid">
                     <div className="info-item">
-                      <strong>Platform:</strong> {systemInfo.platform}
+                      <strong>플랫폼:</strong> {systemInfo.platform}
                     </div>
                     <div className="info-item">
-                      <strong>Architecture:</strong> {systemInfo.arch}
+                      <strong>아키텍처:</strong> {systemInfo.arch}
                     </div>
                     <div className="info-item">
-                      <strong>Node Version:</strong> {systemInfo.nodeVersion}
+                      <strong>Node 버전:</strong> {systemInfo.nodeVersion}
                     </div>
                     <div className="info-item">
-                      <strong>Uptime:</strong>{' '}
-                      {Math.floor(systemInfo.uptime / 60)} minutes
+                      <strong>가동 시간:</strong>{' '}
+                      {Math.floor(systemInfo.uptime / 60)} 분
                     </div>
                   </div>
                 </div>
                 <div className="info-section">
-                  <h3>Scheduler Statistics</h3>
+                  <h3>스케줄러 통계</h3>
                   <div className="info-grid">
                     <div className="info-item">
-                      <strong>Total Tasks:</strong> {systemInfo.totalTasks}
+                      <strong>총 작업 수:</strong> {systemInfo.totalTasks}
                     </div>
                     <div className="info-item">
-                      <strong>Running Tasks:</strong> {systemInfo.runningTasks}
+                      <strong>실행 중인 작업:</strong> {systemInfo.runningTasks}
                     </div>
                     <div className="info-item">
-                      <strong>Total Executions:</strong>{' '}
+                      <strong>총 실행 횟수:</strong>{' '}
                       {systemInfo.totalExecutions}
                     </div>
                   </div>
                 </div>
                 <div className="info-section">
-                  <h3>Memory Usage</h3>
+                  <h3>메모리 사용량</h3>
                   <div className="info-grid">
                     <div className="info-item">
                       <strong>RSS:</strong>{' '}
                       {Math.round(systemInfo.memoryUsage.rss / 1024 / 1024)} MB
                     </div>
                     <div className="info-item">
-                      <strong>Heap Used:</strong>{' '}
+                      <strong>사용된 힙:</strong>{' '}
                       {Math.round(
                         systemInfo.memoryUsage.heapUsed / 1024 / 1024,
                       )}{' '}
                       MB
                     </div>
                     <div className="info-item">
-                      <strong>Heap Total:</strong>{' '}
+                      <strong>전체 힙:</strong>{' '}
                       {Math.round(
                         systemInfo.memoryUsage.heapTotal / 1024 / 1024,
                       )}{' '}
@@ -570,7 +563,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
             ) : (
               <div className="empty-state">
                 <FontAwesomeIcon icon={faInfoCircle} />
-                <h3>System information not available</h3>
+                <h3>시스템 정보를 사용할 수 없습니다</h3>
               </div>
             )}
           </div>
@@ -601,7 +594,7 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
       {showExecutionsModal && selectedTask && (
         <div className="modal-overlay">
           <div className="modal large">
-            <h3>Executions for: {selectedTask.name}</h3>
+            <h3>실행 기록: {selectedTask.name}</h3>
             <div className="executions-list">
               {selectedTaskExecutions.map((execution) => (
                 <div key={execution.id} className="execution-card">
@@ -618,13 +611,13 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                   </div>
                   {execution.output && (
                     <div className="execution-output">
-                      <strong>Output:</strong>
+                      <strong>출력:</strong>
                       <pre>{execution.output}</pre>
                     </div>
                   )}
                   {execution.error && (
                     <div className="execution-error">
-                      <strong>Error:</strong>
+                      <strong>오류:</strong>
                       <pre>{execution.error}</pre>
                     </div>
                   )}
@@ -640,7 +633,68 @@ const SchedulerManager: React.FC<SchedulerManagerProps> = ({ className }) => {
                   setSelectedTaskExecutions([]);
                 }}
               >
-                Close
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Topics Modal */}
+      {showTopicsModal && (
+        <div className="modal-overlay">
+          <div className="modal large">
+            <div className="modal-header">
+              <h3>주제 목록: {selectedTaskName}</h3>
+              <button
+                className="close-button"
+                onClick={() => {
+                  setShowTopicsModal(false);
+                  setSelectedTaskTopics([]);
+                  setSelectedTaskName('');
+                }}
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            <div className="topics-modal-content">
+              {selectedTaskTopics.length > 0 ? (
+                <div className="topics-list">
+                  {selectedTaskTopics.map((topicItem, index) => (
+                    <div key={index} className="topic-item">
+                      <div className="topic-info">
+                        <div className="topic-text">{topicItem.topic}</div>
+                        <div className="topic-stats">
+                          <span className="usage-count">
+                            사용: {topicItem.count}회
+                          </span>
+                          {topicItem.lastUsed && (
+                            <span className="last-used">
+                              마지막: {new Date(topicItem.lastUsed).toLocaleDateString('ko-KR')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <FontAwesomeIcon icon={faList} />
+                  <p>주제가 없습니다.</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowTopicsModal(false);
+                  setSelectedTaskTopics([]);
+                  setSelectedTaskName('');
+                }}
+              >
+                닫기
               </button>
             </div>
           </div>

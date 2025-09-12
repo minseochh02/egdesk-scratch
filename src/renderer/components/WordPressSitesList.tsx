@@ -22,9 +22,9 @@ import {
   faRefresh,
 } from '@fortawesome/free-solid-svg-icons';
 import ScheduledPosts from './ScheduledPosts';
-import { BlogWriter } from './BlogWriter/BlogWriter';
 import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
-import BlogImageGeneratorComponent from './WordPressSitesList/BlogImageGenerator';
+import SchedulerManager from './SchedulerManager/SchedulerManager';
+import DebugButton from './DebugButton';
 import './WordPressSitesList.css';
 
 interface WordPressSite {
@@ -81,7 +81,6 @@ function WordPressSitesList(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [showScheduledPosts, setShowScheduledPosts] = useState(false);
-  const [showBlogWriter, setShowBlogWriter] = useState(false);
   const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
 
   const loadSavedConnections = useCallback(async () => {
@@ -268,13 +267,16 @@ function WordPressSitesList(): React.JSX.Element {
             </h1>
             <p>총 {connections.length}개의 사이트가 연결되어 있습니다</p>
           </div>
-          <button
-            type="button"
-            onClick={navigateToWordPressConnector}
-            className="add-connection-btn"
-          >
-            <FontAwesomeIcon icon={faPlus} />새 연결 추가
-          </button>
+          <div className="header-actions">
+            <button
+              type="button"
+              onClick={navigateToWordPressConnector}
+              className="add-connection-btn"
+            >
+              <FontAwesomeIcon icon={faPlus} />새 연결 추가
+            </button>
+            <DebugButton className="debug-btn" />
+          </div>
         </div>
       </div>
 
@@ -387,80 +389,6 @@ function WordPressSitesList(): React.JSX.Element {
           ))}
         </div>
 
-        {/* Blog Writer Block between grid and scheduler (always visible) */}
-        <div className="inline-blog-writer">
-          <div className="inline-header">
-            <h3>
-              <FontAwesomeIcon icon={faEdit} />
-              블로그 작성기
-            </h3>
-          </div>
-          <div className="inline-body">
-            <BlogWriter
-              initialTopic={(selectedSite as any)?.blog_topic}
-              initialCategory={selectedSite?.blog_category}
-              initialProviderId={selectedSite?.ai_provider_id}
-              initialModelId={selectedSite?.ai_model_id}
-              initialKeyId={selectedSite?.ai_key_id}
-              initialKeywords={(selectedSite as any)?.blog_keywords || []}
-              onTopicChange={async (value) => {
-                if (selectedSite?.id) {
-                  await window.electron.wordpress.updateConnection(
-                    selectedSite.id,
-                    { blog_topic: value },
-                  );
-                }
-              }}
-              onCategoryChange={async (value) => {
-                if (selectedSite?.id) {
-                  await window.electron.wordpress.updateConnection(
-                    selectedSite.id,
-                    { blog_category: value },
-                  );
-                }
-              }}
-              onAIChange={async (providerId, modelId, keyId) => {
-                if (selectedSite?.id) {
-                  await window.electron.wordpress.updateConnection(
-                    selectedSite.id,
-                    {
-                      ai_provider_id: providerId,
-                      ai_model_id: modelId,
-                      ai_key_id: keyId,
-                    },
-                  );
-                }
-              }}
-              onKeywordsChange={async (keywords) => {
-                if (selectedSite?.id) {
-                  await window.electron.wordpress.updateConnection(
-                    selectedSite.id,
-                    { blog_keywords: keywords },
-                  );
-                }
-              }}
-              onTemplateSaved={async (template) => {
-                console.log('WordPressSitesList - Template received:', template);
-                console.log('WordPressSitesList - selectedSite:', selectedSite);
-                if (selectedSite?.id) {
-                  const currentTemplates = (selectedSite as any)?.blog_templates || [];
-                  console.log('WordPressSitesList - currentTemplates:', currentTemplates);
-                  const updatedTemplates = [...currentTemplates, template];
-                  console.log('WordPressSitesList - updatedTemplates:', updatedTemplates);
-                  await window.electron.wordpress.updateConnection(
-                    selectedSite.id,
-                    { blog_templates: updatedTemplates },
-                  );
-                  console.log('WordPressSitesList - Template saved to site');
-                  // Refresh the connections to update the UI
-                  loadSavedConnections();
-                  // Trigger scheduler refresh
-                  setTemplateRefreshKey(prev => prev + 1);
-                }
-              }}
-            />
-          </div>
-        </div>
 
         {/* WordPress Post Scheduler */}
         <WordPressPostScheduler
@@ -472,6 +400,11 @@ function WordPressSitesList(): React.JSX.Element {
             console.log('WordPress post task created');
           }}
         />
+
+        {/* Task Scheduler Manager */}
+        <div className="scheduler-section">
+          <SchedulerManager className="wordpress-scheduler-manager" />
+        </div>
 
         {/* Right Sidebar: Site Summary */}
         {selectedSite && (
