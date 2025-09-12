@@ -446,7 +446,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           <div className="form-actions">
             <button
               type="button"
-              className="wp-scheduler-btn wp-scheduler-btn-primary wp-scheduler-btn-large"
+              className="blog-scheduler-button blog-scheduler-button-primary blog-scheduler-button-large"
               onClick={createBlogPostTask}
               disabled={isCreating || topics.length === 0 || !selectedSite}
             >

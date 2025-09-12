@@ -35,7 +35,7 @@
   line-height: 1.5;
 }
 
-.wp-scheduler-btn {
+.wordpress-post-scheduler .blog-scheduler-button {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
@@ -47,27 +47,34 @@
   gap: 6px;
   transition: all 0.2s ease;
   text-decoration: none;
+  background: none !important;
 }
 
-.wp-scheduler-btn:hover:not(:disabled) {
+.wordpress-post-scheduler .blog-scheduler-button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.wp-scheduler-btn:disabled {
+.wordpress-post-scheduler .blog-scheduler-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
-.wp-scheduler-btn-primary {
-  background-color: #3498db;
-  color: white;
+.wordpress-post-scheduler .blog-scheduler-button-primary {
+  background-color: #3498db !important;
+  background: #3498db !important;
+  color: white !important;
 }
 
-.wp-scheduler-btn-primary:hover:not(:disabled) {
-  background-color: #2980b9;
+.wordpress-post-scheduler .blog-scheduler-button-primary svg {
+  color: white !important;
+}
+
+.wordpress-post-scheduler .blog-scheduler-button-primary:hover:not(:disabled) {
+  background-color: #2980b9 !important;
+  background: #2980b9 !important;
 }
 
 .wp-scheduler-btn-secondary {
@@ -697,7 +704,7 @@
     flex-direction: column;
   }
   
-  .wp-scheduler-btn {
+  .wordpress-post-scheduler .blog-scheduler-button {
     justify-content: center;
   }
 }
@@ -979,7 +986,7 @@
   border-top: 1px solid #e1e5e9;
 }
 
-.wp-scheduler-btn-large {
+.wordpress-post-scheduler .blog-scheduler-button-large {
   padding: 14px 28px;
   font-size: 16px;
   font-weight: 600;
@@ -1012,7 +1019,7 @@
 
 .add-topic-btn {
   padding: 10px 16px;
-  background: #28a745;
+  background: #28a745 !important;
   color: white;
   border: none;
   border-radius: 6px;
@@ -1024,6 +1031,10 @@
   gap: 6px;
   transition: all 0.2s ease;
   white-space: nowrap;
+}
+
+.add-topic-btn svg {
+  color: white !important;
 }
 
 .add-topic-btn:hover:not(:disabled) {
@@ -1065,7 +1076,7 @@
 
 .clear-all-btn {
   padding: 6px 12px;
-  background: #dc3545;
+  background: #dc3545 !important;
   color: white;
   border: none;
   border-radius: 4px;
@@ -1140,7 +1151,7 @@
 
 .remove-topic-btn {
   padding: 6px 8px;
-  background: #dc3545;
+  background: #dc3545 !important;
   color: white;
   border: none;
   border-radius: 4px;
