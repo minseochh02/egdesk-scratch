@@ -35,7 +35,7 @@
   line-height: 1.5;
 }
 
-.btn {
+.wp-scheduler-btn {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
@@ -49,51 +49,51 @@
   text-decoration: none;
 }
 
-.btn:hover:not(:disabled) {
+.wp-scheduler-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.btn:disabled {
+.wp-scheduler-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
-.btn-primary {
+.wp-scheduler-btn-primary {
   background-color: #3498db;
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
+.wp-scheduler-btn-primary:hover:not(:disabled) {
   background-color: #2980b9;
 }
 
-.btn-secondary {
+.wp-scheduler-btn-secondary {
   background-color: #95a5a6;
   color: white;
 }
 
-.btn-secondary:hover:not(:disabled) {
+.wp-scheduler-btn-secondary:hover:not(:disabled) {
   background-color: #7f8c8d;
 }
 
-.btn-success {
+.wp-scheduler-btn-success {
   background-color: #27ae60;
   color: white;
 }
 
-.btn-success:hover:not(:disabled) {
+.wp-scheduler-btn-success:hover:not(:disabled) {
   background-color: #229954;
 }
 
-.btn-warning {
+.wp-scheduler-btn-warning {
   background-color: #f39c12;
   color: white;
 }
 
-.btn-warning:hover:not(:disabled) {
+.wp-scheduler-btn-warning:hover:not(:disabled) {
   background-color: #e67e22;
 }
 
@@ -697,7 +697,7 @@
     flex-direction: column;
   }
   
-  .btn {
+  .wp-scheduler-btn {
     justify-content: center;
   }
 }
@@ -979,7 +979,7 @@
   border-top: 1px solid #e1e5e9;
 }
 
-.btn-large {
+.wp-scheduler-btn-large {
   padding: 14px 28px;
   font-size: 16px;
   font-weight: 600;

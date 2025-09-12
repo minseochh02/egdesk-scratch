@@ -38,6 +38,34 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   const [success, setSuccess] = useState<string | null>(null);
   const [topicSelectionMode, setTopicSelectionMode] = useState<'round-robin' | 'random' | 'least-used'>('least-used');
 
+  // Load topics from localStorage on component mount
+  useEffect(() => {
+    const loadTopics = () => {
+      try {
+        const stored = localStorage.getItem('wordpress-blog-topics');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setTopics(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to load topics from localStorage:', error);
+      }
+    };
+    loadTopics();
+  }, []);
+
+  // Save topics to localStorage whenever topics change
+  useEffect(() => {
+    const saveTopics = () => {
+      try {
+        localStorage.setItem('wordpress-blog-topics', JSON.stringify(topics));
+      } catch (error) {
+        console.error('Failed to save topics to localStorage:', error);
+      }
+    };
+    saveTopics();
+  }, [topics]);
+
   // AI Configuration state
   const [activeKeys, setActiveKeys] = useState<AIKey[]>([]);
 
@@ -81,6 +109,12 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
   const clearAllTopics = () => {
     setTopics([]);
+    // Clear from localStorage as well
+    try {
+      localStorage.removeItem('wordpress-blog-topics');
+    } catch (error) {
+      console.error('Failed to clear topics from localStorage:', error);
+    }
   };
 
 
@@ -412,7 +446,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           <div className="form-actions">
             <button
               type="button"
-              className="btn btn-primary btn-large"
+              className="wp-scheduler-btn wp-scheduler-btn-primary wp-scheduler-btn-large"
               onClick={createBlogPostTask}
               disabled={isCreating || topics.length === 0 || !selectedSite}
             >
