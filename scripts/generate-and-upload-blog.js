@@ -110,8 +110,9 @@ function updateTopicUsage(topics, selectedTopicText) {
  * Update task metadata in the tasks file
  * @param {string} taskId - The task ID
  * @param {Object} updatedMetadata - The updated metadata
+ * @param {string} selectedTopicText - The topic that was selected/updated (for verification)
  */
-function updateTaskMetadata(taskId, updatedMetadata) {
+function updateTaskMetadata(taskId, updatedMetadata, selectedTopicText = null) {
   try {
     // Look for the tasks file in the correct location
     const tasksFilePath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
@@ -127,15 +128,22 @@ function updateTaskMetadata(taskId, updatedMetadata) {
     const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
     console.log(`📊 Found ${tasks.length} tasks in file`);
     
-    // Find and update the task
-    const taskIndex = tasks.findIndex(t => t.id === taskId);
+    // Find and update the task by extracting task ID from command field
+    const taskIndex = tasks.findIndex(t => {
+      if (t.command && typeof t.command === 'string') {
+        // Extract task ID from command string like: node script.js "task-1234567890-abc123"
+        const match = t.command.match(/"([^"]+)"/);
+        return match && match[1] === taskId;
+      }
+      return false;
+    });
     if (taskIndex !== -1) {
       console.log(`🔍 Found task at index ${taskIndex}`);
       
       // Log current topic counts before update
-      if (tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
+      if (selectedTopicText && tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
         const currentTopics = tasks[taskIndex].metadata.topics;
-        const selectedTopic = currentTopics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+        const selectedTopic = currentTopics.find(t => t.topic === selectedTopicText);
         if (selectedTopic) {
           console.log(`📊 Current count for "${selectedTopic.topic}": ${selectedTopic.count}`);
         }
@@ -149,9 +157,9 @@ function updateTaskMetadata(taskId, updatedMetadata) {
       tasks[taskIndex].updatedAt = new Date().toISOString();
       
       // Log updated topic counts after update
-      if (tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
+      if (selectedTopicText && tasks[taskIndex].metadata && tasks[taskIndex].metadata.topics) {
         const updatedTopics = tasks[taskIndex].metadata.topics;
-        const selectedTopic = updatedTopics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+        const selectedTopic = updatedTopics.find(t => t.topic === selectedTopicText);
         if (selectedTopic) {
           console.log(`📊 Updated count for "${selectedTopic.topic}": ${selectedTopic.count}`);
         }
@@ -166,9 +174,15 @@ function updateTaskMetadata(taskId, updatedMetadata) {
       // Verify the write worked by reading back the file
       console.log('🔍 Verifying file write...');
       const verifyTasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
-      const verifyTask = verifyTasks.find(t => t.id === taskId);
-      if (verifyTask && verifyTask.metadata && verifyTask.metadata.topics) {
-        const verifyTopic = verifyTask.metadata.topics.find(t => t.topic === updatedMetadata.topics[0]?.topic);
+      const verifyTask = verifyTasks.find(t => {
+        if (t.command && typeof t.command === 'string') {
+          const match = t.command.match(/"([^"]+)"/);
+          return match && match[1] === taskId;
+        }
+        return false;
+      });
+      if (selectedTopicText && verifyTask && verifyTask.metadata && verifyTask.metadata.topics) {
+        const verifyTopic = verifyTask.metadata.topics.find(t => t.topic === selectedTopicText);
         if (verifyTopic) {
           console.log(`✅ Verification - File contains updated count for "${verifyTopic.topic}": ${verifyTopic.count}`);
         }
@@ -284,7 +298,7 @@ async function main() {
     // Update task metadata with new usage data FIRST (before blog generation)
     console.log('\n💾 Saving updated topic usage to tasks.json...');
     try {
-      updateTaskMetadata(taskId, metadata);
+      updateTaskMetadata(taskId, metadata, selectedTopic.topic);
     } catch (error) {
       console.error('❌ Error updating task metadata:', error.message);
       console.error('❌ Stack trace:', error.stack);
@@ -312,4 +326,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { generateAndUploadBlog };
+module.exports = { generateAndUploadBlog, updateTaskMetadata };
