@@ -1,6 +1,25 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faRobot,
+  faSearch,
+  faCloud,
+  faCog,
+  faTimes,
+} from '../../utils/fontAwesomeIcons';
 import { AIKey, AIProvider, AIKeyFormData } from './types';
 import './AIKeysManager.css';
+
+// Helper function to get FontAwesome icon from provider icon name
+const getProviderIcon = (iconName: string) => {
+  const iconMap: Record<string, any> = {
+    faRobot,
+    faSearch,
+    faCloud,
+    faCog,
+  };
+  return iconMap[iconName] || faRobot;
+};
 
 interface AddEditKeyDialogProps {
   onSave: (keyData: AIKeyFormData) => void;
@@ -118,7 +137,7 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
         <div className="dialog-header">
           <h2>{initialKey ? 'Edit AI Key' : 'Add New AI Key'}</h2>
           <button className="close-button" onClick={onClose}>
-            ×
+            <FontAwesomeIcon icon={faTimes} className="close-icon" />
           </button>
         </div>
 
@@ -136,7 +155,10 @@ export const AddEditKeyDialog: React.FC<AddEditKeyDialogProps> = ({
               <option value="">Select a provider...</option>
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
-                  {provider.icon} {provider.name}
+                  <FontAwesomeIcon 
+                    icon={getProviderIcon(provider.icon)} 
+                    className="provider-fa-icon" 
+                  /> {provider.name}
                 </option>
               ))}
             </select>

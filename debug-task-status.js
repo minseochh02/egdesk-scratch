@@ -31,7 +31,7 @@ async function checkTaskStatus() {
         const lines = psOutput.split('\n');
         const nodeProcesses = lines.filter(line => 
           line.includes('node') && 
-          (line.includes('generate-blog-content') || line.includes('task-1757448394796'))
+          (line.includes('scripts/content/generate-blog-content') || line.includes('task-1757448394796'))
         );
         
         console.log('📋 Found Node.js processes:');
@@ -135,7 +135,7 @@ function checkSystemResources() {
 function checkScriptFile() {
   console.log('\n📄 Checking script file...');
   const fs = require('fs');
-  const scriptPath = path.join(process.cwd(), 'scripts', 'generate-blog-content.js');
+  const scriptPath = path.join(process.cwd(), 'scripts', 'content', 'generate-blog-content.js');
   
   if (fs.existsSync(scriptPath)) {
     console.log(`✅ Script exists: ${scriptPath}`);

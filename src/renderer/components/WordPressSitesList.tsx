@@ -22,7 +22,7 @@ import {
   faRefresh,
   faKey,
   faRobot,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../utils/fontAwesomeIcons';
 import ScheduledPosts from './ScheduledPosts';
 import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
 import SchedulerManager from './SchedulerManager/SchedulerManager';
@@ -432,7 +432,7 @@ function WordPressSitesList(): React.JSX.Element {
               <div className="site-actions">
                 <button
                   type="button"
-                  className="action-btn primary"
+                  className="wordpress-sites-action-btn primary"
                   onClick={(e) => {
                     e.stopPropagation();
                     navigateToWordPressConnector();

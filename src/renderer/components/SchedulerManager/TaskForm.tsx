@@ -4,7 +4,7 @@ import {
   faTimes,
   faCheck,
   faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../../utils/fontAwesomeIcons';
 import SchedulerService, {
   CreateTaskData,
   UpdateTaskData,

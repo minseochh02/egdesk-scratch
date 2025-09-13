@@ -10,14 +10,15 @@ import {
   faRobot,
   faKey,
   faCog,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../../utils/fontAwesomeIcons';
 import SchedulerService, {
   CreateTaskData,
 } from '../../services/schedulerService';
 import { WordPressConnection } from '../../../main/preload';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { AIKey } from '../AIKeysManager/types';
-import { CHAT_PROVIDERS } from '../ChatInterface/types';
+// AI_PROVIDERS from AIKeysManager types
+import { AI_PROVIDERS } from '../AIKeysManager/types';
 import './WordPressPostScheduler.css';
 
 interface WordPressPostSchedulerProps {
@@ -209,7 +210,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
     try {
       // Get the script path - use relative path from working directory
-      const scriptPath = './scripts/generate-and-upload-blog.js';
+      const scriptPath = './scripts/content/generate-and-upload-blog.js';
       
       // Prepare environment variables for the AI script
       const environment = {
@@ -240,13 +241,11 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         IMAGE_ASPECT_RATIO: 'landscape',
       };
 
-      // Create the command to run the combined script with task ID as argument
-      const command = `node --max-old-space-size=4096 ${scriptPath}`;
-
+      // Create the task data with a custom command that uses the main process script execution
       const taskData: CreateTaskData = {
         name: `WordPress Blog: ${topics.length} topics - ${selectedSite.name || selectedSite.url} (${selectedKey.providerId.toUpperCase()} AI)`,
         description: `자동으로 ${topics.length}개의 주제로 구성된 블로그 게시물을 ${selectedSite.url}에 ${selectedKey.providerId.toUpperCase()} AI(${selectedModel})가 매번 새로 생성한 콘텐츠와 이미지로 게시합니다.`,
-        command,
+        command: `ELECTRON_SCRIPT:${scriptPath}`, // Special marker for Electron script execution
         schedule,
         enabled: true,
         workingDirectory: '',
@@ -277,14 +276,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       const response = await schedulerService.createTask(taskData);
 
       if (response.success && response.data) {
-        // Update the task with the correct command that includes the task ID
-        const updatedCommand = `node --max-old-space-size=4096 ${scriptPath} "${response.data.id}"`;
-        await schedulerService.updateTask(response.data.id, {
-          command: updatedCommand
-        });
-
         setSuccess(
-          `블로그 작업이 성공적으로 생성되었습니다! ${topics.length}개의 주제로 구성된 게시물이 Gemini AI가 매번 새로 생성한 콘텐츠와 이미지와 함께 ${selectedSite.name || selectedSite.url}에 게시됩니다.`,
+          `블로그 작업이 성공적으로 생성되었습니다! ${topics.length}개의 주제로 구성된 게시물이 ${selectedKey.providerId.toUpperCase()} AI가 매번 새로 생성한 콘텐츠와 이미지와 함께 ${selectedSite.name || selectedSite.url}에 게시됩니다.`,
         );
         
         // Clear form data after successful task creation
@@ -452,9 +445,9 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
               }}
             >
               <option value="">모델을 선택하세요...</option>
-              {CHAT_PROVIDERS.map((provider) => (
+              {AI_PROVIDERS.map((provider: any) => (
                 <optgroup key={provider.id} label={provider.name}>
-                  {provider.models.map((model) => (
+                  {provider.models.map((model: any) => (
                     <option
                       key={`${provider.id}::${model.id}`}
                       value={`${provider.id}::${model.id}`}

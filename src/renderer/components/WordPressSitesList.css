@@ -404,7 +404,7 @@
   margin-top: 20px;
 }
 
-.action-btn {
+.wordpress-sites-action-btn {
   flex: 1;
   padding: 12px 16px;
   border: none;
@@ -419,35 +419,35 @@
   gap: 6px;
 }
 
-.action-btn.primary {
+.wordpress-sites-action-btn.primary {
   background: linear-gradient(135deg, #3182ce 0%, #2c5aa0 100%);
   color: white;
   box-shadow: 0 4px 15px rgba(49, 130, 206, 0.4);
 }
 
-.action-btn.primary:hover {
+.wordpress-sites-action-btn.primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(49, 130, 206, 0.6);
 }
 
-.action-btn.secondary {
+.wordpress-sites-action-btn.secondary {
   background: linear-gradient(135deg, #718096 0%, #4a5568 100%);
   color: white;
   box-shadow: 0 4px 15px rgba(113, 128, 150, 0.4);
 }
 
-.action-btn.secondary:hover {
+.wordpress-sites-action-btn.secondary:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(113, 128, 150, 0.6);
 }
 
-.action-btn.scheduled {
+.wordpress-sites-action-btn.scheduled {
   background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
   color: white;
   box-shadow: 0 4px 15px rgba(237, 137, 54, 0.4);
 }
 
-.action-btn.scheduled:hover {
+.wordpress-sites-action-btn.scheduled:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(237, 137, 54, 0.6);
 }
@@ -1277,7 +1277,7 @@
 }
 
 /* Focus states for accessibility */
-.action-btn:focus,
+.wordpress-sites-action-btn:focus,
 .disconnect-btn:focus,
 .close-btn:focus,
 .add-connection-btn:focus,

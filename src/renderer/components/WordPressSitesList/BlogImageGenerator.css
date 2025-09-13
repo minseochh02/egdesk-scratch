@@ -472,7 +472,7 @@
   justify-content: flex-end;
 }
 
-.action-btn {
+.blog-image-action-btn {
   width: 32px;
   height: 32px;
   border: none;
@@ -485,21 +485,21 @@
   font-size: 0.9em;
 }
 
-.action-btn.view {
+.blog-image-action-btn.view {
   background: #dbeafe;
   color: #1d4ed8;
 }
 
-.action-btn.view:hover {
+.blog-image-action-btn.view:hover {
   background: #bfdbfe;
 }
 
-.action-btn.delete {
+.blog-image-action-btn.delete {
   background: #fee2e2;
   color: #dc2626;
 }
 
-.action-btn.delete:hover {
+.blog-image-action-btn.delete:hover {
   background: #fecaca;
 }
 

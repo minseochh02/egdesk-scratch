@@ -15,7 +15,7 @@ import {
   faInfoCircle,
   faList,
   faTimes,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../../utils/fontAwesomeIcons';
 import SchedulerService, {
   CreateTaskData,
   UpdateTaskData,

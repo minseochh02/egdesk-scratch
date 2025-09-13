@@ -1,4 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faTag,
+  faEdit,
+  faEye,
+  faTrash,
+  faCalendarAlt,
+  faUser,
+  faClock,
+  faCheckCircle,
+  faTimesCircle,
+  faExclamationTriangle,
+  faFileAlt,
+  faQuestion,
+} from '../utils/fontAwesomeIcons';
 import './ScheduledPosts.css';
 
 interface ScheduledPost {
@@ -322,16 +337,16 @@ ${topic}에 대해 자세히 알아보겠습니다.
     }
   };
 
-  const getStatusIcon = (status: string): string => {
+  const getStatusIcon = (status: string): JSX.Element => {
     switch (status) {
       case 'future':
-        return '📅';
+        return <FontAwesomeIcon icon={faCalendarAlt} className="status-icon" />;
       case 'draft':
-        return '📝';
+        return <FontAwesomeIcon icon={faFileAlt} className="status-icon" />;
       case 'pending':
-        return '⏳';
+        return <FontAwesomeIcon icon={faClock} className="status-icon" />;
       default:
-        return '❓';
+        return <FontAwesomeIcon icon={faQuestion} className="status-icon" />;
     }
   };
 
@@ -370,7 +385,9 @@ ${topic}에 대해 자세히 알아보겠습니다.
             </div>
           ) : scheduledPosts.length === 0 ? (
             <div className="empty-state">
-              <h4>📝 예약된 포스트가 없습니다</h4>
+              <h4>
+                <FontAwesomeIcon icon={faFileAlt} className="empty-icon" /> 예약된 포스트가 없습니다
+              </h4>
               <p>
                 현재 예약된 블로그 포스트가 없습니다. 새로운 포스트를
                 예약해보세요!
@@ -379,7 +396,7 @@ ${topic}에 대해 자세히 알아보겠습니다.
                 className="create-first-post-btn"
                 onClick={() => setShowCreateForm(true)}
               >
-                📝 첫 번째 포스트 예약하기
+                <FontAwesomeIcon icon={faFileAlt} className="action-icon" /> 첫 번째 포스트 예약하기
               </button>
             </div>
           ) : (
@@ -418,14 +435,16 @@ ${topic}에 대해 자세히 알아보겠습니다.
                         </span>
                       </div>
                       <div className="meta-item">
-                        <span className="meta-label">🏷️ 타입:</span>
+                        <span className="meta-label">
+                          <FontAwesomeIcon icon={faTag} className="meta-icon" /> 타입:
+                        </span>
                         <span className="meta-value">{post.type}</span>
                       </div>
                     </div>
 
                     <div className="post-actions">
                       <button
-                        className="action-btn small primary"
+                        className="scheduled-posts-action-btn small primary"
                         onClick={() => {
                           window.open(
                             `${site.url}/wp-admin/post.php?post=${post.id}&action=edit`,
@@ -433,10 +452,10 @@ ${topic}에 대해 자세히 알아보겠습니다.
                           );
                         }}
                       >
-                        ✏️ 편집
+                        <FontAwesomeIcon icon={faEdit} className="action-icon" /> 편집
                       </button>
                       <button
-                        className="action-btn small secondary"
+                        className="scheduled-posts-action-btn small secondary"
                         onClick={() => {
                           window.open(
                             `${site.url}/?p=${post.id}&preview=true`,
@@ -444,13 +463,13 @@ ${topic}에 대해 자세히 알아보겠습니다.
                           );
                         }}
                       >
-                        👁️ 미리보기
+                        <FontAwesomeIcon icon={faEye} className="action-icon" /> 미리보기
                       </button>
                       <button
-                        className="action-btn small danger"
+                        className="scheduled-posts-action-btn small danger"
                         onClick={() => deleteScheduledPost(post.id)}
                       >
-                        🗑️ 삭제
+                        <FontAwesomeIcon icon={faTrash} className="action-icon" /> 삭제
                       </button>
                     </div>
                   </div>
@@ -461,11 +480,11 @@ ${topic}에 대해 자세히 알아보겠습니다.
         </div>
 
         <div className="modal-footer">
-          <button className="action-btn secondary" onClick={onClose}>
+          <button className="scheduled-posts-action-btn secondary" onClick={onClose}>
             닫기
           </button>
           <button
-            className="action-btn primary"
+            className="scheduled-posts-action-btn primary"
             onClick={() => {
               window.open(
                 `${site.url}/wp-admin/edit.php?post_status=future`,
@@ -487,7 +506,9 @@ ${topic}에 대해 자세히 알아보겠습니다.
           />
           <div className="modal-content create-modal">
             <div className="modal-header">
-              <h3>📝 새 포스트 예약하기</h3>
+              <h3>
+                <FontAwesomeIcon icon={faFileAlt} className="form-icon" /> 새 포스트 예약하기
+              </h3>
               <button
                 className="close-btn"
                 onClick={() => setShowCreateForm(false)}
@@ -514,7 +535,9 @@ ${topic}에 대해 자세히 알아보겠습니다.
                 </div>
 
                 <div className="form-section">
-                  <h4>📝 포스트 정보</h4>
+                  <h4>
+                    <FontAwesomeIcon icon={faFileAlt} className="section-icon" /> 포스트 정보
+                  </h4>
                   <div className="form-group">
                     <label htmlFor="title">제목 *</label>
                     <input
@@ -581,13 +604,13 @@ ${topic}에 대해 자세히 알아보겠습니다.
 
             <div className="modal-footer">
               <button
-                className="action-btn secondary"
+                className="scheduled-posts-action-btn secondary"
                 onClick={() => setShowCreateForm(false)}
               >
                 취소
               </button>
               <button
-                className="action-btn primary"
+                className="scheduled-posts-action-btn primary"
                 onClick={createScheduledPost}
                 disabled={isCreating}
               >

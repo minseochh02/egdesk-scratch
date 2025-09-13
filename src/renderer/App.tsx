@@ -10,17 +10,18 @@ import {
   faGlobe,
   faServer,
   faRobot,
-  faSearch,
   faList,
   faHome,
-} from '@fortawesome/free-solid-svg-icons';
+  faComments,
+  faLock,
+} from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import WordPressConnector from './components/WordPressConnector';
 import WordPressSitesList from './components/WordPressSitesList';
 import LocalServer from './components/LocalServer';
 import { AIKeysManager } from './components/AIKeysManager';
-import { DualScreenDemo } from './components/DualScreenEditor/DualScreenDemo';
-import { CodespaceVectorAnalysis } from './components/AIEditor/CodespaceVectorAnalysis';
+import { AIChat } from './components/AIChat/AIChat';
+import SSLAnalyzer from './components/SSLAnalyzer';
 import './App.css';
 
 function NavigationBar() {
@@ -60,16 +61,16 @@ function NavigationBar() {
           <FontAwesomeIcon icon={faRobot} /> API 키 관리
         </Link>
         <Link
-          to="/dual-screen"
-          className={`nav-link ${location.pathname === '/dual-screen' ? 'active' : ''}`}
+          to="/ai-chat"
+          className={`nav-link ${location.pathname === '/ai-chat' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faServer} /> 듀얼 스크린
+          <FontAwesomeIcon icon={faComments} /> AI 채팅
         </Link>
         <Link
-          to="/codespace-analysis"
-          className={`nav-link ${location.pathname === '/codespace-analysis' ? 'active' : ''}`}
+          to="/ssl-analyzer"
+          className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faSearch} /> 코드스페이스 분석
+          <FontAwesomeIcon icon={faLock} /> SSL 분석기
         </Link>
       </nav>
     </div>
@@ -88,11 +89,8 @@ export default function App() {
             <Route path="/wordpress-sites" element={<WordPressSitesList />} />
             <Route path="/local-server" element={<LocalServer />} />
             <Route path="/ai-keys" element={<AIKeysManager />} />
-            <Route path="/dual-screen" element={<DualScreenDemo />} />
-            <Route
-              path="/codespace-analysis"
-              element={<CodespaceVectorAnalysis />}
-            />
+            <Route path="/ai-chat" element={<AIChat />} />
+            <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
           </Routes>
         </main>
       </div>

@@ -303,6 +303,22 @@ export interface TaskExecution {
   pid?: number;
 }
 
+export interface ScriptExecutionResult {
+  success: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+export interface ScriptExecutionAPI {
+  executeNodeScript: (
+    scriptPath: string,
+    args?: string[],
+    environment?: Record<string, string>
+  ) => Promise<ScriptExecutionResult>;
+}
+
 export interface SchedulerAPI {
   createTask: (
     taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>,
@@ -525,6 +541,13 @@ const electronHandler = {
     }) => ipcRenderer.invoke('debug-workflow-execute', config),
     downloadImages: (images: Array<{id: string; url: string}>) => ipcRenderer.invoke('download-images', images),
   },
+  scriptExecution: {
+    executeNodeScript: (
+      scriptPath: string,
+      args?: string[],
+      environment?: Record<string, string>
+    ) => ipcRenderer.invoke('execute-node-script', scriptPath, args, environment),
+  } as ScriptExecutionAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

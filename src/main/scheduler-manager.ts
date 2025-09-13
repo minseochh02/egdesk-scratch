@@ -195,67 +195,139 @@ export class SchedulerManager {
       const workingDir = task.workingDirectory || appDir;
       const env = { ...process.env, ...task.environment };
 
-      // Execute the command
-      const childProcess = spawn(command, [], {
-        cwd: workingDir,
-        env,
-        shell: true,
-        detached: false,
-      });
+      // Check if this is an Electron script command
+      if (command.startsWith('ELECTRON_SCRIPT:')) {
+        const scriptPath = command.replace('ELECTRON_SCRIPT:', '');
+        const args = [task.id]; // Pass task ID as argument
+        
+        console.log(`🚀 Executing Electron script: ${scriptPath} with args: ${args.join(' ')}`);
+        
+        // Use the main process script execution
+        const { spawn } = require('child_process');
+        const resolvedScriptPath = path.resolve(workingDir, scriptPath);
+        
+        const childProcess = spawn('node', ['--max-old-space-size=4096', resolvedScriptPath, ...args], {
+          cwd: workingDir,
+          env,
+          detached: false,
+        });
 
-      execution.pid = childProcess.pid;
-      this.runningTasks.set(task.id, childProcess);
+        execution.pid = childProcess.pid;
+        this.runningTasks.set(task.id, childProcess);
 
-      // Handle output
-      let output = '';
-      let error = '';
+        // Handle output
+        let output = '';
+        let error = '';
 
-      childProcess.stdout?.on('data', (data) => {
-        output += data.toString();
-      });
+        childProcess.stdout?.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
 
-      childProcess.stderr?.on('data', (data) => {
-        error += data.toString();
-      });
+        childProcess.stderr?.on('data', (data: Buffer) => {
+          error += data.toString();
+        });
 
-      // Handle process completion
-      childProcess.on('close', (code) => {
-        execution.endTime = new Date();
-        execution.status = code === 0 ? 'completed' : 'failed';
-        execution.exitCode = code || 0;
-        execution.output = output;
-        execution.error = error;
+        // Handle process completion
+        childProcess.on('close', (code: number | null) => {
+          execution.endTime = new Date();
+          execution.status = code === 0 ? 'completed' : 'failed';
+          execution.exitCode = code || 0;
+          execution.output = output;
+          execution.error = error;
 
-        // Add debugging information
-        if (code !== 0) {
-          console.error(`Task ${task.name} failed with exit code ${code}`);
-          console.error(`Output: ${output}`);
-          console.error(`Error: ${error}`);
-        }
+          // Add debugging information
+          if (code !== 0) {
+            console.error(`Task ${task.name} failed with exit code ${code}`);
+            console.error(`Output: ${output}`);
+            console.error(`Error: ${error}`);
+          }
 
-        this.executions.set(executionId, execution);
-        this.runningTasks.delete(task.id);
+          this.executions.set(executionId, execution);
+          this.runningTasks.delete(task.id);
 
-        // Save output to files if specified
-        if (task.outputFile && output) {
-          fs.writeFileSync(task.outputFile, output);
-        }
-        if (task.errorFile && error) {
-          fs.writeFileSync(task.errorFile, error);
-        }
+          // Save output to files if specified
+          if (task.outputFile && output) {
+            fs.writeFileSync(task.outputFile, output);
+          }
+          if (task.errorFile && error) {
+            fs.writeFileSync(task.errorFile, error);
+          }
 
-        // Update task's next run time
-        this.updateNextRunTime(task);
-      });
+          // Update task's next run time
+          this.updateNextRunTime(task);
+        });
 
-      childProcess.on('error', (err) => {
-        execution.endTime = new Date();
-        execution.status = 'failed';
-        execution.error = `Process error: ${err.message}\nStack: ${err.stack || 'No stack trace available'}`;
-        this.executions.set(executionId, execution);
-        this.runningTasks.delete(task.id);
-        console.error(`Task ${task.name} failed with error:`, err);
-      });
+        childProcess.on('error', (err: Error) => {
+          execution.endTime = new Date();
+          execution.status = 'failed';
+          execution.error = `Process error: ${err.message}\nStack: ${err.stack || 'No stack trace available'}`;
+          this.executions.set(executionId, execution);
+          this.runningTasks.delete(task.id);
+          console.error(`Task ${task.name} failed with error:`, err);
+        });
+      } else {
+        // Execute the command normally
+        const childProcess = spawn(command, [], {
+          cwd: workingDir,
+          env,
+          shell: true,
+          detached: false,
+        });
+
+        execution.pid = childProcess.pid;
+        this.runningTasks.set(task.id, childProcess);
+
+        // Handle output
+        let output = '';
+        let error = '';
+
+        childProcess.stdout?.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+
+        childProcess.stderr?.on('data', (data: Buffer) => {
+          error += data.toString();
+        });
+
+        // Handle process completion
+        childProcess.on('close', (code: number | null) => {
+          execution.endTime = new Date();
+          execution.status = code === 0 ? 'completed' : 'failed';
+          execution.exitCode = code || 0;
+          execution.output = output;
+          execution.error = error;
+
+          // Add debugging information
+          if (code !== 0) {
+            console.error(`Task ${task.name} failed with exit code ${code}`);
+            console.error(`Output: ${output}`);
+            console.error(`Error: ${error}`);
+          }
+
+          this.executions.set(executionId, execution);
+          this.runningTasks.delete(task.id);
+
+          // Save output to files if specified
+          if (task.outputFile && output) {
+            fs.writeFileSync(task.outputFile, output);
+          }
+          if (task.errorFile && error) {
+            fs.writeFileSync(task.errorFile, error);
+          }
+
+          // Update task's next run time
+          this.updateNextRunTime(task);
+        });
+
+        childProcess.on('error', (err: Error) => {
+          execution.endTime = new Date();
+          execution.status = 'failed';
+          execution.error = `Process error: ${err.message}\nStack: ${err.stack || 'No stack trace available'}`;
+          this.executions.set(executionId, execution);
+          this.runningTasks.delete(task.id);
+          console.error(`Task ${task.name} failed with error:`, err);
+        });
+      }
     } catch (error) {
       execution.endTime = new Date();
       execution.status = 'failed';

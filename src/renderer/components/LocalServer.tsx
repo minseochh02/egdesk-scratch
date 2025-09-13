@@ -11,7 +11,14 @@ import {
   faCheckCircle,
   faExclamationTriangle,
   faEdit,
-} from '@fortawesome/free-solid-svg-icons';
+  faDesktop,
+  faInfoCircle,
+  faFolder,
+  faTarget,
+  faChartBar,
+  faFileAlt,
+  faTimesCircle,
+} from '../utils/fontAwesomeIcons';
 import ProjectSelector from './ProjectSelector';
 import ProjectContextService, {
   ProjectInfo,
@@ -292,13 +299,17 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
   return (
     <div className="local-server">
       <div className="server-header">
-        <h2>🖥️ 로컬 서버</h2>
+        <h2>
+          <FontAwesomeIcon icon={faDesktop} className="section-icon" /> 로컬 서버
+        </h2>
         <p>개발을 위한 로컬 PHP 서버를 관리하세요</p>
       </div>
 
       {/* Project Context Section */}
       <div className="project-context-section">
-        <h3>📁 프로젝트 컨텍스트</h3>
+        <h3>
+          <FontAwesomeIcon icon={faFolder} className="section-icon" /> 프로젝트 컨텍스트
+        </h3>
         <div className="project-context-content">
           <ProjectSelector
             onProjectSelect={handleProjectSelect}
@@ -359,7 +370,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
       <div className="server-controls">
         <div className="folder-section">
-          <h3>📁 폴더</h3>
+          <h3>
+            <FontAwesomeIcon icon={faFolder} className="section-icon" /> 폴더
+          </h3>
           <div className="folder-input">
             <input
               type="text"
@@ -382,7 +395,10 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               <div
                 className={`status-indicator ${folderInfo.hasWordPress ? 'success' : 'warning'}`}
               >
-                {folderInfo.hasWordPress ? '✅' : '⚠️'} 서버 호환
+                <FontAwesomeIcon 
+                  icon={folderInfo.hasWordPress ? faCheckCircle : faExclamationTriangle} 
+                  className="compatibility-icon" 
+                /> 서버 호환
               </div>
               <div
                 className={`status-indicator ${folderInfo.folderType === 'www' ? 'success' : folderInfo.folderType === 'wordpress' ? 'success' : folderInfo.folderType === 'mixed' ? 'success' : 'warning'}`}
@@ -416,23 +432,29 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
                   <div
                     className={`status-indicator ${folderInfo.hasIndexPhp ? 'success' : 'error'}`}
                   >
-                    {folderInfo.hasIndexPhp ? '✅' : '❌'} index.php
+                    <FontAwesomeIcon 
+                      icon={folderInfo.hasIndexPhp ? faCheckCircle : faTimesCircle} 
+                      className="compatibility-icon" 
+                    /> index.php
                   </div>
                   <div
                     className={`status-indicator ${folderInfo.hasWpContent ? 'success' : 'error'}`}
                   >
-                    {folderInfo.hasWpContent ? '✅' : '❌'} wp-content
+                    <FontAwesomeIcon 
+                      icon={folderInfo.hasWpContent ? faCheckCircle : faTimesCircle} 
+                      className="compatibility-icon" 
+                    /> wp-content
                   </div>
                 </>
               ) : (
                   <div className="status-indicator success">
-                  ✅ 파일 제공 준비 완료
+                  <FontAwesomeIcon icon={faCheckCircle} className="compatibility-icon" /> 파일 제공 준비 완료
                 </div>
               )}
               {folderInfo.detectedRoot &&
                 folderInfo.detectedRoot !== currentFolder && (
                   <div className="status-indicator success">
-                    🎯 제공할 경로: {folderInfo.detectedRoot}
+                    <FontAwesomeIcon icon={faTarget} className="target-icon" /> 제공할 경로: {folderInfo.detectedRoot}
                   </div>
                 )}
             </div>
@@ -466,18 +488,13 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
               </button>
             )}
 
-            <button
-              onClick={() => navigate('/dual-screen')}
-              className="btn btn-primary"
-              disabled={!serverStatus.isRunning}
-            >
-              <FontAwesomeIcon icon={faEdit} /> 듀얼 스크린 에디터 열기
-            </button>
           </div>
         </div>
 
         <div className="server-status">
-          <h3>📊 서버 상태</h3>
+          <h3>
+            <FontAwesomeIcon icon={faChartBar} className="section-icon" /> 서버 상태
+          </h3>
           <div
             className={`status ${serverStatus.isRunning ? 'running' : 'stopped'}`}
           >
@@ -522,7 +539,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
 
       <div className="logs-section">
         <div className="logs-header">
-          <h3>📝 서버 로그</h3>
+          <h3>
+            <FontAwesomeIcon icon={faFileAlt} className="section-icon" /> 서버 로그
+          </h3>
           <button onClick={clearLogs} className="btn btn-small">
             로그 지우기
           </button>
@@ -543,7 +562,9 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
       </div>
 
       <div className="server-info">
-        <h3>ℹ️ 서버 정보</h3>
+        <h3>
+          <FontAwesomeIcon icon={faInfoCircle} className="section-icon" /> 서버 정보
+        </h3>
         <div className="info-grid">
           <div className="info-item">
             <strong>PHP 버전:</strong> {phpInfo?.version || '로딩 중...'}

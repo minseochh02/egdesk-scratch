@@ -30,3 +30,4 @@ npm-debug.log.*
 
 # Output directory for generated content
 output/
+scripts/php-bundle/

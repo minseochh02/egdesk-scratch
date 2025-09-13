@@ -18,7 +18,7 @@ import {
   faKey,
   faSave,
   faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../utils/fontAwesomeIcons';
 import './WindowsTemplateDebugger.css';
 
 interface DebugInfo {
@@ -126,8 +126,8 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
     // Disk space (if available)
     let diskSpace = null;
     try {
-      // This would need to be implemented in the main process
-      diskSpace = await window.electron.fileSystem.getDiskSpace?.() || null;
+      // Disk space info not available in current API
+      console.log('Disk space info not available');
     } catch (e) {
       console.log('Disk space info not available');
     }
@@ -142,16 +142,14 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
     };
     
     try {
-      const storeInfo = await window.electron.preferences.getStoreInfo?.();
-      if (storeInfo) {
-        electronStore = {
-          available: true,
-          path: storeInfo.path || '',
-          size: storeInfo.size || 0,
-          writable: storeInfo.writable || false,
-          error: storeInfo.error
-        };
-      }
+      // Store info not available in current API
+      electronStore = {
+        available: false,
+        path: '',
+        size: 0,
+        writable: false,
+        error: 'Store info not available in current API'
+      };
     } catch (e) {
       electronStore.error = e instanceof Error ? e.message : 'Unknown error';
     }
@@ -202,15 +200,13 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
     };
     
     try {
-      const fsInfo = await window.electron.fileSystem.getFileSystemInfo?.();
-      if (fsInfo) {
-        fileSystem = {
-          tempDir: fsInfo.tempDir || '',
-          userDataDir: fsInfo.userDataDir || '',
-          writable: fsInfo.writable || false,
-          error: fsInfo.error
-        };
-      }
+      // File system info not available in current API
+      fileSystem = {
+        tempDir: '',
+        userDataDir: '',
+        writable: false,
+        error: 'File system info not available in current API'
+      };
     } catch (e) {
       fileSystem.error = e instanceof Error ? e.message : 'Unknown error';
     }
@@ -306,9 +302,11 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
         name: 'Test Electron Store Write',
         test: async () => {
           try {
-            const result = await window.electron.preferences.set('debugTest', {
-              timestamp: new Date().toISOString(),
-              test: true
+            const result = await window.electron.preferences.set({
+              debugTest: {
+                timestamp: new Date().toISOString(),
+                test: true
+              }
             });
             return { success: result.success, error: result.error };
           } catch (e) {
@@ -595,7 +593,7 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
               <span className="label">Last Updated:</span>
               <span className="value">{debugInfo?.wordpressConnections.lastUpdated || 'Never'}</span>
             </div>
-            {debugInfo?.wordpressConnections.errors.length > 0 && (
+            {debugInfo?.wordpressConnections.errors && debugInfo.wordpressConnections.errors.length > 0 && (
               <div className="status-item error">
                 <span className="label">Errors:</span>
                 <div className="error-list">
@@ -640,7 +638,7 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
         </div>
 
         {/* Template Save Attempts */}
-        {debugInfo?.templateSaveAttempts.length > 0 && (
+        {debugInfo?.templateSaveAttempts && debugInfo.templateSaveAttempts.length > 0 && (
           <div className="debug-section">
             <h3>
               <FontAwesomeIcon icon={faSave} />
@@ -670,7 +668,7 @@ const WindowsTemplateDebugger: React.FC<WindowsTemplateDebuggerProps> = ({ onClo
         )}
 
         {/* Recent Errors */}
-        {debugInfo?.recentErrors.length > 0 && (
+        {debugInfo?.recentErrors && debugInfo.recentErrors.length > 0 && (
           <div className="debug-section">
             <h3>
               <FontAwesomeIcon icon={faExclamationTriangle} />

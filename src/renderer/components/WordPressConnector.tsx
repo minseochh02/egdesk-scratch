@@ -1,5 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faTrash,
+  faImage,
+  faCog,
+  faTag,
+  faSync,
+  faEdit,
+  faFileAlt,
+  faImage as faImageFile,
+  faArrowRight,
+  faCalendarAlt,
+  faChartBar,
+  faCheckCircle,
+  faTimesCircle,
+  faExclamationTriangle,
+  faArrowRight as faArrowRightIcon,
+  faUser,
+  faFileAlt as faDocument,
+  faClock,
+  faSpinner,
+  faGlobe,
+  faFileAlt as faTextFile,
+  faCode as faJsonIcon,
+  faRocket,
+  faWrench,
+  faArrowRight as faNextIcon,
+  faFolder,
+  faPlus,
+} from '../utils/fontAwesomeIcons';
 import './WordPressConnector.css';
 
 interface WordPressPost {
@@ -1755,7 +1785,9 @@ get_header(); ?>
           </div>
 
           {connectionError && (
-            <div className="connection-error">❌ {connectionError}</div>
+            <div className="connection-error">
+              <FontAwesomeIcon icon={faTimesCircle} className="error-icon" /> {connectionError}
+            </div>
           )}
 
           <div className="connection-tips">
@@ -1779,7 +1811,7 @@ get_header(); ?>
                 disabled={isRefreshing}
                 title="연결 목록 새로고침"
               >
-                {isRefreshing ? '🔄' : '🔄'} 새로고침
+                <FontAwesomeIcon icon={faSync} className="refresh-icon" /> 새로고침
               </button>
             </div>
             <div className="connections-grid">
@@ -1803,7 +1835,7 @@ get_header(); ?>
                         disabled={isRefreshing}
                         title="사이트 콘텐츠 새로고침"
                       >
-                        {isRefreshing ? '🔄' : '🔄'}
+                        <FontAwesomeIcon icon={faSync} className="refresh-icon" />
                       </button>
                       <button
                         className="disconnect-btn"
@@ -1813,15 +1845,21 @@ get_header(); ?>
                         }}
                         title="연결 삭제"
                       >
-                        🗑️
+                        <FontAwesomeIcon icon={faTrash} className="delete-icon" />
                       </button>
                     </div>
                   </div>
                   <p className="connection-url">{connection.url}</p>
                   <div className="connection-stats">
-                    <span>📝 {connection.posts_count || 0} 포스트</span>
-                    <span>📄 {connection.pages_count || 0} 페이지</span>
-                    <span>🖼️ {connection.media_count || 0} 미디어</span>
+                    <span>
+                      <FontAwesomeIcon icon={faFileAlt} className="stats-icon" /> {connection.posts_count || 0} 포스트
+                    </span>
+                    <span>
+                      <FontAwesomeIcon icon={faFileAlt} className="stats-icon" /> {connection.pages_count || 0} 페이지
+                    </span>
+                    <span>
+                      <FontAwesomeIcon icon={faImage} className="stats-icon" /> {connection.media_count || 0} 미디어
+                    </span>
                   </div>
                   {connection.local_sync_path && (
                     <div className="sync-info">
@@ -1842,13 +1880,13 @@ get_header(); ?>
                 className={`tab-btn ${activeTab === 'posts' ? 'active' : ''}`}
                 onClick={() => setActiveTab('posts')}
               >
-                📝 포스트 ({selectedSite.posts_count || 0})
+                <FontAwesomeIcon icon={faFileAlt} className="tab-icon" /> 포스트 ({selectedSite.posts_count || 0})
               </button>
               <button
                 className={`tab-btn ${activeTab === 'media' ? 'active' : ''}`}
                 onClick={() => setActiveTab('media')}
               >
-                🖼️ 미디어 ({selectedSite.media_count || 0})
+                <FontAwesomeIcon icon={faImage} className="tab-icon" /> 미디어 ({selectedSite.media_count || 0})
               </button>
               <button
                 className={`tab-btn ${activeTab === 'sync' ? 'active' : ''}`}
@@ -1860,7 +1898,7 @@ get_header(); ?>
                 className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
                 onClick={() => setActiveTab('settings')}
               >
-                ⚙️ 설정
+                <FontAwesomeIcon icon={faCog} className="tab-icon" /> 설정
               </button>
               <button
                 className="refresh-content-btn"
@@ -1868,7 +1906,7 @@ get_header(); ?>
                 disabled={isRefreshing}
                 title="사이트 콘텐츠 새로고침"
               >
-                {isRefreshing ? '🔄 새로고침 중...' : '🔄 새로고침'}
+                <FontAwesomeIcon icon={faSync} className="refresh-icon" /> {isRefreshing ? '새로고침 중...' : '새로고침'}
               </button>
             </div>
             
@@ -1893,15 +1931,26 @@ get_header(); ?>
                           disabled={isDeletingPost}
                           title="포스트 삭제"
                         >
-                          {isDeletingPost ? '🔄' : '🗑️'}
+                          <FontAwesomeIcon 
+                            icon={isDeletingPost ? faSync : faTrash} 
+                            className="delete-icon" 
+                          />
                         </button>
                       </div>
                       <p className="post-excerpt">{post.excerpt}</p>
                       <div className="post-meta">
-                        <span>👤 {post.author}</span>
-                        <span>📅 {post.date}</span>
-                        <span>📊 {getStatusText(post.status)}</span>
-                        <span>🏷️ {getTypeText(post.type)}</span>
+                        <span>
+                          <FontAwesomeIcon icon={faUser} className="meta-icon" /> {post.author}
+                        </span>
+                        <span>
+                          <FontAwesomeIcon icon={faCalendarAlt} className="meta-icon" /> {post.date}
+                        </span>
+                        <span>
+                          <FontAwesomeIcon icon={faChartBar} className="meta-icon" /> {getStatusText(post.status)}
+                        </span>
+                        <span>
+                          <FontAwesomeIcon icon={faTag} className="meta-icon" /> {getTypeText(post.type)}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -1925,8 +1974,12 @@ get_header(); ?>
                       </div>
                       <h4>{item.title}</h4>
                       <p className="media-meta">
-                        <span>📅 {item.date}</span>
-                        <span>🏷️ {item.type}</span>
+                        <span>
+                          <FontAwesomeIcon icon={faCalendarAlt} className="meta-icon" /> {item.date}
+                        </span>
+                        <span>
+                          <FontAwesomeIcon icon={faTag} className="meta-icon" /> {item.type}
+                        </span>
                       </p>
                     </div>
                   ))}
@@ -1978,7 +2031,7 @@ get_header(); ?>
                       }}
                       title={`동기화된 폴더로 이동: ${selectedSite.local_sync_path}`}
                     >
-                      📁 동기화된 폴더로 이동
+                      <FontAwesomeIcon icon={faFolder} className="action-icon" /> 동기화된 폴더로 이동
                     </button>
                     <p className="quick-nav-help">
                       💡 이 버튼을 클릭하면 Finder UI에서 동기화된 폴더로 바로
@@ -2006,19 +2059,19 @@ get_header(); ?>
                       className="format-select"
                     >
                       <option value="wordpress">
-                        🚀 WordPress XML (.xml) - 로컬 개발/테스트용 (권장)
+                        <FontAwesomeIcon icon={faRocket} className="format-icon" /> WordPress XML (.xml) - 로컬 개발/테스트용 (권장)
                       </option>
                       <option value="html">
-                        🌐 HTML (.html) - 원본 포맷 유지
+                        <FontAwesomeIcon icon={faGlobe} className="format-icon" /> HTML (.html) - 원본 포맷 유지
                       </option>
                       <option value="markdown">
-                        📝 Markdown (.md) - 읽기 쉬운 형식
+                        <FontAwesomeIcon icon={faFileAlt} className="format-icon" /> Markdown (.md) - 읽기 쉬운 형식
                       </option>
                       <option value="txt">
-                        📄 Plain Text (.txt) - 순수 텍스트
+                        <FontAwesomeIcon icon={faTextFile} className="format-icon" /> Plain Text (.txt) - 순수 텍스트
                       </option>
                       <option value="json">
-                        🔧 JSON (.json) - 데이터 형식
+                        <FontAwesomeIcon icon={faJsonIcon} className="format-icon" /> JSON (.json) - 데이터 형식
                       </option>
                     </select>
                     <small className="form-help">
@@ -2060,7 +2113,7 @@ get_header(); ?>
                         }}
                         title="폴더 선택 (새 폴더 생성 가능)"
                       >
-                        📁
+                        <FontAwesomeIcon icon={faFolder} className="folder-icon" />
                       </button>
                       <button
                         type="button"
@@ -2106,11 +2159,11 @@ get_header(); ?>
                         }}
                         title="새 폴더 생성"
                       >
-                        ➕
+                        <FontAwesomeIcon icon={faPlus} className="new-folder-icon" />
                       </button>
                     </div>
                     <small className="form-help">
-                      📁 버튼: 기존 폴더 선택 (새 폴더 생성 가능) | ➕ 버튼: 새
+                      <FontAwesomeIcon icon={faFolder} className="help-icon" /> 버튼: 기존 폴더 선택 (새 폴더 생성 가능) | <FontAwesomeIcon icon={faPlus} className="help-icon" /> 버튼: 새
                       폴더 생성
                     </small>
                   </div>
@@ -2147,7 +2200,9 @@ get_header(); ?>
                     <h4>동기화 오류:</h4>
                     <ul>
                       {syncStatus.errors.map((error, index) => (
-                        <li key={index}>❌ {error}</li>
+                        <li key={index}>
+                          <FontAwesomeIcon icon={faTimesCircle} className="error-icon" /> {error}
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -2155,7 +2210,9 @@ get_header(); ?>
 
                 {syncStatus.progress === 100 && !syncStatus.isSyncing && (
                   <div className="sync-success">
-                    <h4>✅ 동기화 완료!</h4>
+                    <h4>
+                      <FontAwesomeIcon icon={faCheckCircle} className="success-icon" /> 동기화 완료!
+                    </h4>
                     <p>
                       {syncStatus.syncedFiles}개 파일이 성공적으로
                       동기화되었습니다.
@@ -2176,10 +2233,10 @@ get_header(); ?>
                           <div className="history-header">
                             <h4>
                               {record.status === 'completed'
-                                ? '✅'
+                                ? <FontAwesomeIcon icon={faCheckCircle} className="status-icon" />
                                 : record.status === 'failed'
-                                  ? '❌'
-                                  : '⏳'}
+                                  ? <FontAwesomeIcon icon={faTimesCircle} className="status-icon" />
+                                  : <FontAwesomeIcon icon={faSpinner} className="status-icon" />}
                               {record.connectionName} 동기화
                             </h4>
                             <span className="history-date">
@@ -2226,17 +2283,20 @@ get_header(); ?>
                                     className={`file-item ${file.status}`}
                                   >
                                     <span className="file-icon">
-                                      {file.type === 'post' ? '📝' : '🖼️'}
+                                      {file.type === 'post' ? 
+                                        <FontAwesomeIcon icon={faFileAlt} className="file-type-icon" /> : 
+                                        <FontAwesomeIcon icon={faImage} className="file-type-icon" />
+                                      }
                                     </span>
                                     <span className="file-name">
                                       {file.name}
                                     </span>
                                     <span className="file-status">
                                       {file.status === 'synced'
-                                        ? '✅'
+                                        ? <FontAwesomeIcon icon={faCheckCircle} className="file-status-icon" />
                                         : file.status === 'failed'
-                                          ? '❌'
-                                          : '⏭️'}
+                                          ? <FontAwesomeIcon icon={faTimesCircle} className="file-status-icon" />
+                                          : <FontAwesomeIcon icon={faNextIcon} className="file-status-icon" />}
                                     </span>
                                     <span className="file-path">
                                       {file.localPath}
@@ -2257,7 +2317,9 @@ get_header(); ?>
                               <h5>오류:</h5>
                               <ul>
                                 {record.errors.map((error, index) => (
-                                  <li key={index}>❌ {error}</li>
+                                  <li key={index}>
+                                    <FontAwesomeIcon icon={faTimesCircle} className="error-icon" /> {error}
+                                  </li>
                                 ))}
                               </ul>
                             </div>

@@ -7,7 +7,7 @@ import {
   faRocket,
   faCode,
   faClock,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
 const LandingPage: React.FC = () => {
@@ -69,10 +69,6 @@ const LandingPage: React.FC = () => {
           <div className="additional-options">
             <h3 className="options-title">추가 도구</h3>
             <div className="options-grid">
-              <Link to="/code-editor" className="option-item">
-                <FontAwesomeIcon icon={faCode} />
-                <span>코드 에디터</span>
-              </Link>
               <Link to="/ai-keys" className="option-item">
                 <FontAwesomeIcon icon={faRocket} />
                 <span>API 키 관리</span>

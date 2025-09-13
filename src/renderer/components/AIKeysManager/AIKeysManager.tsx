@@ -11,12 +11,29 @@ import {
   faKey,
   faBuilding,
   faEdit,
-} from '@fortawesome/free-solid-svg-icons';
+  faExclamationTriangle,
+  faPlay,
+  faPause,
+  faSearch,
+  faCloud,
+  faCog,
+} from '../../utils/fontAwesomeIcons';
 import { AIKey, AIProvider } from './types';
 import { aiKeysStore } from './store/aiKeysStore';
 import { AddEditKeyDialog } from './AddEditKeyDialog';
 import { TestResult } from './services/apiTester';
 import './AIKeysManager.css';
+
+// Helper function to get FontAwesome icon from provider icon name
+const getProviderIcon = (iconName: string) => {
+  const iconMap: Record<string, any> = {
+    faRobot,
+    faSearch,
+    faCloud,
+    faCog,
+  };
+  return iconMap[iconName] || faRobot;
+};
 
 export const AIKeysManager: React.FC = () => {
   const [state, setState] = useState(aiKeysStore.getState());
@@ -143,60 +160,54 @@ export const AIKeysManager: React.FC = () => {
     <div className="ai-keys-manager">
       {/* Header */}
       <div className="manager-header">
-        <div className="header-left">
-          <h1>
-            <FontAwesomeIcon icon={faRobot} /> API 키 관리
-          </h1>
-          <p>AI 서비스 API 키와 설정을 관리하세요</p>
-        </div>
-        <div className="header-right">
-          <button
-            className="add-key-btn"
-            onClick={() => setShowAddDialog(true)}
-          >
-            <FontAwesomeIcon icon={faPlus} /> 새 키 추가
-          </button>
+        <div className="header-main">
+          <div className="header-title-section">
+            <div className="title-icon-wrapper">
+              <FontAwesomeIcon icon={faRobot} className="header-icon" />
+            </div>
+            <div className="title-content">
+              <h1>API 키 관리</h1>
+              <p>AI 서비스 API 키와 설정을 관리하세요</p>
+            </div>
+          </div>
+          <div className="header-stats">
+            <div className="header-stat">
+              <span className="stat-number">{state.keys.length}</span>
+              <span className="stat-label">전체 키</span>
+            </div>
+            <div className="header-stat">
+              <span className="stat-number">{getActiveKeysCount()}</span>
+              <span className="stat-label">활성</span>
+            </div>
+            <div className="header-stat">
+              <span className="stat-number">{new Set(state.keys.map((k) => k.providerId)).size}</span>
+              <span className="stat-label">제공업체</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="stats-container">
-        <div className="stat-card">
-          <div className="stat-icon">
-            <FontAwesomeIcon icon={faKey} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{state.keys.length}</div>
-            <div className="stat-label">전체 키</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <FontAwesomeIcon icon={faCheck} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{getActiveKeysCount()}</div>
-            <div className="stat-label">활성 키</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <FontAwesomeIcon icon={faBuilding} />
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">
-              {new Set(state.keys.map((k) => k.providerId)).size}
-            </div>
-            <div className="stat-label">제공업체</div>
-          </div>
-        </div>
+      {/* Action Bar */}
+      <div className="action-bar">
+        <button
+          className="add-key-btn"
+          onClick={() => setShowAddDialog(true)}
+        >
+          <FontAwesomeIcon icon={faPlus} className="btn-icon" />
+          <span>새 API 키 추가</span>
+        </button>
       </div>
+
 
       {/* Error Display */}
       {state.error && (
         <div className="error-banner">
-          <span>⚠️ {state.error}</span>
-          <button onClick={() => aiKeysStore.clearError()}>×</button>
+          <span>
+            <FontAwesomeIcon icon={faExclamationTriangle} className="ai-keys-manager-icon" /> {state.error}
+          </span>
+          <button onClick={() => aiKeysStore.clearError()}>
+            <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
+          </button>
         </div>
       )}
 
@@ -205,7 +216,7 @@ export const AIKeysManager: React.FC = () => {
         {state.keys.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
-              <FontAwesomeIcon icon={faKey} />
+              <FontAwesomeIcon icon={faKey} className="ai-keys-manager-icon" />
             </div>
             <h3>AI 키가 없습니다</h3>
             <p>첫 번째 AI 서비스 API 키를 추가하여 시작하세요</p>
@@ -213,7 +224,7 @@ export const AIKeysManager: React.FC = () => {
               className="add-first-key-btn"
               onClick={() => setShowAddDialog(true)}
             >
-              첫 번째 키 추가
+              <FontAwesomeIcon icon={faPlus} className="ai-keys-manager-icon" /> 키 추가
             </button>
           </div>
         ) : (
@@ -234,7 +245,10 @@ export const AIKeysManager: React.FC = () => {
                           className="provider-icon"
                           style={{ color: provider?.color }}
                         >
-                          {provider?.icon}
+                          <FontAwesomeIcon 
+                            icon={getProviderIcon(provider?.icon || 'faRobot')} 
+                            className="provider-fa-icon" 
+                          />
                         </span>
                         <span className="provider-name">{provider?.name}</span>
                       </div>
@@ -251,12 +265,12 @@ export const AIKeysManager: React.FC = () => {
                       <h3 className="key-name">{key.name}</h3>
                       <div className="key-meta">
                         <span className="meta-item">
-                          <span className="meta-label">생성일:</span>
+                          <span className="meta-label">생성:</span>
                           {formatDate(key.createdAt)}
                         </span>
                         {key.lastUsed && (
                           <span className="meta-item">
-                            <span className="meta-label">마지막 사용:</span>
+                            <span className="meta-label">사용:</span>
                             {formatDate(key.lastUsed)}
                           </span>
                         )}
@@ -265,7 +279,7 @@ export const AIKeysManager: React.FC = () => {
 
                     <div className="key-actions">
                       <button
-                        className={`action-btn test-btn ${testingKeyId === key.id ? 'testing' : ''}`}
+                        className={`ai-keys-action-btn test-btn ${testingKeyId === key.id ? 'testing' : ''}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleTestKey(key.id);
@@ -274,41 +288,44 @@ export const AIKeysManager: React.FC = () => {
                         disabled={testingKeyId === key.id}
                       >
                         {testingKeyId === key.id ? (
-                          <FontAwesomeIcon icon={faClock} />
+                          <FontAwesomeIcon icon={faClock} className="ai-keys-manager-icon" />
                         ) : (
-                          <FontAwesomeIcon icon={faFlask} />
-                        )}{' '}
+                          <FontAwesomeIcon icon={faFlask} className="ai-keys-manager-icon" />
+                        )}
                         {testingKeyId === key.id ? '테스트 중...' : '테스트'}
                       </button>
                       <button
-                        className="action-btn edit-btn"
+                        className="ai-keys-action-btn edit-btn"
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingKey(key);
                         }}
                         title="키 편집"
                       >
-                        <FontAwesomeIcon icon={faEdit} /> 편집
+                        <FontAwesomeIcon icon={faEdit} className="ai-keys-manager-icon" />
                       </button>
                       <button
-                        className={`action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
+                        className={`ai-keys-action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleActive(key.id);
                         }}
                         title={key.isActive ? '비활성화' : '활성화'}
                       >
-                        {key.isActive ? '⏸️' : '▶️'}
+                        <FontAwesomeIcon 
+                          icon={key.isActive ? faPause : faPlay} 
+                          className="ai-keys-manager-icon" 
+                        />
                       </button>
                       <button
-                        className="action-btn delete-btn"
+                        className="ai-keys-action-btn delete-btn"
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowDeleteConfirm(key.id);
                         }}
                         title="키 삭제"
                       >
-                        <FontAwesomeIcon icon={faTrash} />
+                        <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" />
                       </button>
                     </div>
                   </div>
@@ -321,9 +338,9 @@ export const AIKeysManager: React.FC = () => {
                       <div className="test-result-header">
                         <span className="test-result-icon">
                           {testResults[key.id].success ? (
-                            <FontAwesomeIcon icon={faCheck} />
+                            <FontAwesomeIcon icon={faCheck} className="ai-keys-manager-icon" />
                           ) : (
-                            <FontAwesomeIcon icon={faTimes} />
+                            <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
                           )}
                         </span>
                         <span className="test-result-message">
@@ -340,7 +357,7 @@ export const AIKeysManager: React.FC = () => {
                             });
                           }}
                         >
-                          ×
+                          <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
                         </button>
                       </div>
                       {testResults[key.id].details && (
@@ -363,43 +380,6 @@ export const AIKeysManager: React.FC = () => {
         )}
       </div>
 
-      {/* Provider Summary */}
-      {state.keys.length > 0 && (
-        <div className="provider-summary">
-          <h3>제공업체 요약</h3>
-          <div className="provider-grid">
-            {state.providers
-              .filter((provider) => getKeysByProvider(provider.id).length > 0)
-              .map((provider) => {
-                const keys = getKeysByProvider(provider.id);
-                const activeKeys = keys.filter((k) => k.isActive);
-                return (
-                  <div key={provider.id} className="provider-summary-card">
-                    <div className="provider-summary-header">
-                      <span
-                        className="provider-icon"
-                        style={{ color: provider.color }}
-                      >
-                        {provider.icon}
-                      </span>
-                      <span className="provider-name">{provider.name}</span>
-                    </div>
-                    <div className="provider-summary-stats">
-                      <div className="summary-stat">
-                        <span className="stat-value">{keys.length}</span>
-                        <span className="stat-label">키</span>
-                      </div>
-                      <div className="summary-stat">
-                        <span className="stat-value">{activeKeys.length}</span>
-                        <span className="stat-label">활성</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      )}
 
       {/* Add/Edit Dialog */}
       {showAddDialog && (
@@ -429,7 +409,7 @@ export const AIKeysManager: React.FC = () => {
           <div className="dialog-content">
             <div className="dialog-header">
               <h3>
-                <FontAwesomeIcon icon={faTrash} /> AI 키 삭제
+                <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" /> AI 키 삭제
               </h3>
             </div>
             <div className="dialog-body">

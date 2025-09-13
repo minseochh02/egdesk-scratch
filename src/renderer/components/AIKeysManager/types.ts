@@ -2,7 +2,7 @@ export interface AIProvider {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  icon: string; // FontAwesome icon name
   color: string;
   fields: AIProviderField[];
 }
@@ -53,7 +53,7 @@ export const AI_PROVIDERS: AIProvider[] = [
     id: 'openai',
     name: 'OpenAI',
     description: 'GPT-4, GPT-3.5, DALL-E, and other OpenAI services',
-    icon: '🤖',
+    icon: 'faRobot',
     color: '#10a37f',
     fields: [
       {
@@ -95,7 +95,7 @@ export const AI_PROVIDERS: AIProvider[] = [
     id: 'google',
     name: 'Google AI',
     description: 'Gemini, PaLM, and other Google AI services',
-    icon: '🔍',
+    icon: 'faSearch',
     color: '#4285f4',
     fields: [
       {

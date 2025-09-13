@@ -292,7 +292,7 @@
   flex-wrap: wrap;
 }
 
-.action-btn {
+.scheduled-posts-action-btn {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
@@ -305,42 +305,42 @@
   gap: 4px;
 }
 
-.action-btn.primary {
+.scheduled-posts-action-btn.primary {
   background: #3498db;
   color: white;
 }
 
-.action-btn.primary:hover {
+.scheduled-posts-action-btn.primary:hover {
   background: #2980b9;
   transform: translateY(-1px);
 }
 
-.action-btn.secondary {
+.scheduled-posts-action-btn.secondary {
   background: #6c757d;
   color: white;
 }
 
-.action-btn.secondary:hover {
+.scheduled-posts-action-btn.secondary:hover {
   background: #5a6268;
   transform: translateY(-1px);
 }
 
-.action-btn.danger {
+.scheduled-posts-action-btn.danger {
   background: #e74c3c;
   color: white;
 }
 
-.action-btn.danger:hover {
+.scheduled-posts-action-btn.danger:hover {
   background: #c0392b;
   transform: translateY(-1px);
 }
 
-.action-btn.small {
+.scheduled-posts-action-btn.small {
   padding: 6px 12px;
   font-size: 0.8rem;
 }
 
-.action-btn:disabled {
+.scheduled-posts-action-btn:disabled {
   background: #bdc3c7;
   cursor: not-allowed;
   transform: none;
@@ -490,7 +490,7 @@
     flex-direction: column;
   }
   
-  .action-btn.small {
+  .scheduled-posts-action-btn.small {
     width: 100%;
   }
   

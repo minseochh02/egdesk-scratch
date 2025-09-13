@@ -12,7 +12,8 @@ import {
   faMagic,
   faCog,
   faUpload,
-} from '@fortawesome/free-solid-svg-icons';
+  faFileAlt,
+} from '../../utils/fontAwesomeIcons';
 import BlogImageGenerator, { BlogImageRequest, GeneratedImage, ImageGenerationOptions } from '../../services/blogImageGenerator';
 import WordPressMediaService from '../../services/wordpressMediaService';
 import './BlogImageGenerator.css';
@@ -261,7 +262,7 @@ As we move forward, developers who embrace AI tools while maintaining strong fun
             className="load-sample-btn"
             title="샘플 블로그 콘텐츠를 로드합니다"
           >
-            📝 샘플 블로그 로드
+            <FontAwesomeIcon icon={faFileAlt} className="sample-icon" /> 샘플 블로그 로드
           </button>
         </div>
         
@@ -545,14 +546,14 @@ As we move forward, developers who embrace AI tools while maintaining strong fun
                 <div className="image-actions">
                   <button
                     onClick={() => openImageUrl(image.url)}
-                    className="action-btn view"
+                    className="blog-image-action-btn view"
                     title="새 탭에서 보기"
                   >
                     <FontAwesomeIcon icon={faEye} />
                   </button>
                   <button
                     onClick={() => handleDeleteImage(image.id)}
-                    className="action-btn delete"
+                    className="blog-image-action-btn delete"
                     title="삭제"
                   >
                     <FontAwesomeIcon icon={faTrash} />

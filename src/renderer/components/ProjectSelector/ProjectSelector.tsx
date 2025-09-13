@@ -4,20 +4,19 @@ import {
   faFolder,
   faFolderOpen,
   faCode,
-  faJava,
-  faPython,
-  faGlobe,
   faCog,
+  faTerminal,
+  faGlobe,
   faPlus,
   faTimes,
   faChevronDown,
-} from '@fortawesome/free-solid-svg-icons';
+} from '../../utils/fontAwesomeIcons';
 import ProjectContextService, {
   ProjectInfo,
 } from '../../services/projectContextService';
 import './ProjectSelector.css';
 
-interface ProjectSelectorProps {
+export interface ProjectSelectorProps {
   onProjectSelect?: (project: ProjectInfo) => void;
   showCurrentProject?: boolean;
   showRecentProjects?: boolean;
@@ -89,9 +88,9 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       case 'node':
         return faCode;
       case 'python':
-        return faPython;
+        return faTerminal;
       case 'java':
-        return faJava;
+        return faCog;
       case 'cpp':
         return faCog;
       case 'web':

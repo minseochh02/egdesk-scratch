@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBug, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+import { faBug, faExclamationTriangle } from '../utils/fontAwesomeIcons';
 import WindowsTemplateDebugger from './WindowsTemplateDebugger';
 import DebugService from '../services/debugService';
 import './DebugButton.css';

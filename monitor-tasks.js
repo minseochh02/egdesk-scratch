@@ -80,7 +80,7 @@ class TaskMonitor {
         const processes = [];
         
         for (const line of lines) {
-          if (line.includes('generate-blog-content.js') && !line.includes('grep')) {
+          if (line.includes('scripts/content/generate-blog-content.js') && !line.includes('grep')) {
             const parts = line.trim().split(/\s+/);
             if (parts.length >= 11) {
               processes.push({

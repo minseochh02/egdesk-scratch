@@ -1287,7 +1287,7 @@ ipcMain.handle('download-images', async (event, images) => {
     const { spawn } = require('child_process');
     const path = require('path');
 
-    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'download-images.js');
+    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'utils', 'download-images.js');
     const imagesJson = JSON.stringify(images);
 
     return new Promise((resolve, reject) => {
@@ -1300,7 +1300,7 @@ ipcMain.handle('download-images', async (event, images) => {
       let stderr = '';
       let tempFilePath = '';
 
-      child.stdout.on('data', (data) => {
+      child.stdout.on('data', (data: Buffer) => {
         const output = data.toString();
         stdout += output;
         console.log('[Download Script]', output.trim());
@@ -1317,13 +1317,13 @@ ipcMain.handle('download-images', async (event, images) => {
         }
       });
 
-      child.stderr.on('data', (data) => {
+      child.stderr.on('data', (data: Buffer) => {
         const output = data.toString();
         stderr += output;
         console.error('[Download Script Error]', output.trim());
       });
 
-      child.on('close', (code) => {
+      child.on('close', (code: number | null) => {
         console.log(`Download script exited with code: ${code}`);
         
         if (code === 0) {
@@ -1350,14 +1350,15 @@ ipcMain.handle('download-images', async (event, images) => {
               stderr: stderr
             });
           } catch (error) {
-            reject(new Error(`Failed to read download results from temp file: ${error.message}`));
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            reject(new Error(`Failed to read download results from temp file: ${errorMessage}`));
           }
         } else {
           reject(new Error(`Download script failed with exit code ${code}. stderr: ${stderr}`));
         }
       });
 
-      child.on('error', (error) => {
+      child.on('error', (error: Error) => {
         reject(new Error(`Failed to spawn download script: ${error.message}`));
       });
     });
@@ -1844,6 +1845,81 @@ ipcMain.handle(
     }
   },
 );
+
+// Script execution IPC handler
+ipcMain.handle('execute-node-script', async (event, scriptPath: string, args: string[] = [], environment: Record<string, string> = {}) => {
+  try {
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    // Resolve the script path relative to the project root
+    const resolvedScriptPath = path.resolve(process.cwd(), scriptPath);
+    
+    console.log(`🚀 Executing Node.js script: ${resolvedScriptPath}`);
+    console.log(`Arguments: ${args.join(' ')}`);
+    console.log(`Environment variables: ${Object.keys(environment).length} set`);
+    
+    return new Promise((resolve) => {
+      const child = spawn('node', ['--max-old-space-size=4096', resolvedScriptPath, ...args], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ...environment
+        }
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let exitCode: number | null = null;
+
+      child.stdout.on('data', (data: Buffer) => {
+        const output = data.toString();
+        stdout += output;
+        console.log('[Script Output]', output.trim());
+      });
+
+      child.stderr.on('data', (data: Buffer) => {
+        const output = data.toString();
+        stderr += output;
+        console.error('[Script Error]', output.trim());
+      });
+
+      child.on('close', (code: number | null) => {
+        exitCode = code;
+        console.log(`Script exited with code: ${code}`);
+        
+        resolve({
+          success: code === 0,
+          exitCode: code,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          error: code !== 0 ? `Script failed with exit code ${code}` : undefined
+        });
+      });
+
+      child.on('error', (error: Error) => {
+        console.error('Failed to spawn script:', error);
+        resolve({
+          success: false,
+          exitCode: -1,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          error: `Failed to spawn script: ${error.message}`
+        });
+      });
+    });
+  } catch (error) {
+    console.error('Script execution failed:', error);
+    return {
+      success: false,
+      exitCode: -1,
+      stdout: '',
+      stderr: '',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
 
 // Scheduler IPC handlers
 ipcMain.handle(

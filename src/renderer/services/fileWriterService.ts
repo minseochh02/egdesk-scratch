@@ -1,4 +1,20 @@
-import { AIEdit } from '../components/AIEditor/types';
+
+/**
+ * Generic edit interface for file modifications
+ */
+interface FileEdit {
+  type: 'insert' | 'replace' | 'delete' | 'create' | 'delete_file';
+  filePath?: string;
+  description?: string;
+  oldText?: string;
+  newText?: string;
+  range?: {
+    start?: number;
+    end?: number;
+    startLine?: number;
+    endLine?: number;
+  };
+}
 
 /**
  * Comprehensive File Writer Service
@@ -26,7 +42,7 @@ export class FileWriterService {
    * Apply code changes to files safely with backup and validation
    */
   async applyChangesToFiles(
-    edits: AIEdit[],
+    edits: FileEdit[],
     projectRoot?: string,
   ): Promise<{
     success: boolean;
@@ -137,7 +153,7 @@ export class FileWriterService {
    */
   applyEditToContent(
     content: string,
-    edit: AIEdit,
+    edit: FileEdit,
   ): { success: boolean; content: string; error?: string } {
     try {
       console.log(`🔧 Applying ${edit.type} edit: ${edit.description}`);
@@ -180,7 +196,7 @@ export class FileWriterService {
    */
   applyEditsToContent(
     originalContent: string,
-    edits: AIEdit[],
+    edits: FileEdit[],
   ): { success: boolean; content: string; errors: string[] } {
     let currentContent = originalContent;
     const errors: string[] = [];
@@ -334,7 +350,7 @@ export class FileWriterService {
    */
   private async applyEditsToSingleFile(
     filePath: string,
-    edits: AIEdit[],
+    edits: FileEdit[],
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Handle file creation
@@ -384,7 +400,7 @@ export class FileWriterService {
    */
   private applyReplaceEdit(
     content: string,
-    edit: AIEdit,
+    edit: FileEdit,
   ): { success: boolean; content: string; error?: string } {
     if (!edit.oldText || edit.newText === undefined) {
       return {
@@ -450,7 +466,7 @@ export class FileWriterService {
    */
   private applyInsertEdit(
     content: string,
-    edit: AIEdit,
+    edit: FileEdit,
   ): { success: boolean; content: string; error?: string } {
     if (!edit.newText) {
       return { success: false, content, error: 'Insert edit missing newText' };
@@ -484,7 +500,7 @@ export class FileWriterService {
    */
   private applyDeleteEdit(
     content: string,
-    edit: AIEdit,
+    edit: FileEdit,
   ): { success: boolean; content: string; error?: string } {
     if (edit.oldText && content.includes(edit.oldText)) {
       // Delete specific text
@@ -531,8 +547,8 @@ export class FileWriterService {
   /**
    * Group edits by file path for efficient processing
    */
-  private groupEditsByFile(edits: AIEdit[]): Map<string, AIEdit[]> {
-    const grouped = new Map<string, AIEdit[]>();
+  private groupEditsByFile(edits: FileEdit[]): Map<string, FileEdit[]> {
+    const grouped = new Map<string, FileEdit[]>();
 
     for (const edit of edits) {
       const filePath = edit.filePath || '';
@@ -548,7 +564,7 @@ export class FileWriterService {
   /**
    * Sort edits for safe application (reverse order by position)
    */
-  private sortEditsForApplication(edits: AIEdit[]): AIEdit[] {
+  private sortEditsForApplication(edits: FileEdit[]): FileEdit[] {
     return edits.slice().sort((a, b) => {
       // Sort by line number (descending) then by character position (descending)
       const aLine = a.range?.startLine || 0;
