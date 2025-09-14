@@ -255,13 +255,22 @@ export class PHPManager {
     const possiblePaths = [];
 
     if (platform === 'win32') {
+      // Use environment variables for better cross-platform compatibility
+      const programFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+      const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+      const systemDrive = process.env.SYSTEMDRIVE || 'C:';
+      
       possiblePaths.push(
-        'C:\\php\\php.exe',
-        'C:\\xampp\\php\\php.exe',
-        'C:\\wamp64\\bin\\php\\php8.3.0\\php.exe',
-        'C:\\Program Files\\PHP\\php.exe',
-        'C:\\Program Files (x86)\\PHP\\php.exe',
-        'C:\\tools\\php\\php.exe',
+        path.join(systemDrive, 'php', 'php.exe'),
+        path.join(systemDrive, 'xampp', 'php', 'php.exe'),
+        path.join(systemDrive, 'wamp64', 'bin', 'php', 'php8.3.0', 'php.exe'),
+        path.join(programFiles, 'PHP', 'php.exe'),
+        path.join(programFilesX86, 'PHP', 'php.exe'),
+        path.join(systemDrive, 'tools', 'php', 'php.exe'),
+        // Additional common locations
+        path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.3.0', 'php.exe'),
+        path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.2.0', 'php.exe'),
+        path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.1.0', 'php.exe'),
       );
     } else if (platform === 'darwin') {
       possiblePaths.push(

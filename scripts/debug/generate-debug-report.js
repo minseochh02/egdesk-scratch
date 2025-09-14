@@ -90,14 +90,41 @@ function generateDebugReport() {
     }
     
     // Check for antivirus interference
-    const commonAntivirusPaths = [
-      'C:\\Program Files\\Windows Defender',
-      'C:\\Program Files (x86)\\Windows Defender',
-      'C:\\Program Files\\McAfee',
-      'C:\\Program Files (x86)\\McAfee',
-      'C:\\Program Files\\Norton',
-      'C:\\Program Files (x86)\\Norton',
-    ];
+    const commonAntivirusPaths = [];
+    
+    if (process.platform === 'win32') {
+      const programFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+      const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+      
+      commonAntivirusPaths.push(
+        path.join(programFiles, 'Windows Defender'),
+        path.join(programFilesX86, 'Windows Defender'),
+        path.join(programFiles, 'McAfee'),
+        path.join(programFilesX86, 'McAfee'),
+        path.join(programFiles, 'Norton'),
+        path.join(programFilesX86, 'Norton'),
+        path.join(programFiles, 'Avast'),
+        path.join(programFilesX86, 'Avast'),
+        path.join(programFiles, 'Kaspersky'),
+        path.join(programFilesX86, 'Kaspersky'),
+      );
+    } else if (process.platform === 'darwin') {
+      // macOS antivirus locations
+      commonAntivirusPaths.push(
+        '/Applications/McAfee Endpoint Security for Mac.app',
+        '/Applications/Norton Security.app',
+        '/Applications/Intego Mac Internet Security X9.app',
+        '/Applications/ClamXAV.app',
+      );
+    } else if (process.platform === 'linux') {
+      // Linux antivirus locations
+      commonAntivirusPaths.push(
+        '/usr/bin/clamav',
+        '/usr/bin/clamscan',
+        '/opt/bitdefender',
+        '/usr/local/bin/clamav',
+      );
+    }
     
     let antivirusDetected = false;
     for (const avPath of commonAntivirusPaths) {

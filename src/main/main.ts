@@ -1638,7 +1638,21 @@ ipcMain.handle('browser-window-get-all-localhost', async () => {
 ipcMain.handle('browser-window-close-external', async (event, pid) => {
   try {
     if (process.platform === 'win32') {
-      require('child_process').exec(`taskkill /PID ${pid} /F`);
+      // Use spawn instead of exec for better error handling
+      const { spawn } = require('child_process');
+      const taskkill = spawn('taskkill', ['/PID', pid.toString(), '/F'], {
+        stdio: 'ignore'
+      });
+      
+      taskkill.on('close', (code: number | null) => {
+        if (code !== 0) {
+          console.warn(`taskkill exited with code ${code} for PID ${pid}`);
+        }
+      });
+      
+      taskkill.on('error', (error: Error) => {
+        console.error('Failed to spawn taskkill:', error);
+      });
     } else {
       process.kill(pid, 'SIGTERM');
     }
@@ -2206,7 +2220,7 @@ const createWindow = async () => {
 
   const RESOURCES_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
+    : path.join(app.getAppPath(), 'assets');
 
   const getAssetPath = (...paths: string[]): string => {
     return path.join(RESOURCES_PATH, ...paths);
@@ -2221,14 +2235,41 @@ const createWindow = async () => {
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: app.isPackaged
-        ? path.join(__dirname, 'preload.js')
-        : path.join(__dirname, '../../.erb/dll/preload.js'),
+        ? path.join(app.getAppPath(), 'dist', 'main', 'preload.js')
+        : path.join(app.getAppPath(), '.erb', 'dll', 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
     },
   });
 
-  mainWindow.loadURL(resolveHtmlPath('index.html'));
+  // Load the HTML file with error handling
+  const htmlPath = resolveHtmlPath('index.html');
+  console.log('Loading HTML from:', htmlPath);
+  
+  // Check if the file exists in production
+  if (process.env.NODE_ENV === 'production') {
+    const fs = require('fs');
+    // Cross-platform file:// URL to path conversion
+    let filePath: string;
+    if (htmlPath.startsWith('file:///')) {
+      // Windows: file:///C:/path -> C:/path
+      // Unix: file:///path -> /path
+      filePath = htmlPath.replace('file:///', '');
+    } else if (htmlPath.startsWith('file://')) {
+      // Fallback for file:// (2 slashes)
+      filePath = htmlPath.replace('file://', '');
+    } else {
+      filePath = htmlPath;
+    }
+    
+    if (!fs.existsSync(filePath)) {
+      console.error('Built HTML file not found at:', filePath);
+      console.error('Please run npm run build first to create the production build.');
+      return;
+    }
+  }
+  
+  mainWindow.loadURL(htmlPath);
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {

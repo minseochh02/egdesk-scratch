@@ -2,6 +2,7 @@ import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { app } from 'electron';
 
 export interface ScheduledTask {
   id: string;
@@ -190,8 +191,8 @@ export class SchedulerManager {
       const { command } = task;
       // Use app directory as default working directory for better script resolution
       const appDir = process.env.NODE_ENV === 'development' 
-        ? path.join(__dirname, '..', '..') // Development: go up two levels from dist/main to project root
-        : process.resourcesPath; // Production: use resources path
+        ? path.join(app.getAppPath(), '..', '..') // Development: go up two levels from dist/main to project root
+        : app.getAppPath(); // Production: use app path
       const workingDir = task.workingDirectory || appDir;
       const env = { ...process.env, ...task.environment };
 

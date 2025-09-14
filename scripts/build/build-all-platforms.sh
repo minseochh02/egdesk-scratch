@@ -137,12 +137,7 @@ build_linux() {
     print_success "Linux build completed"
 }
 
-# Function to build all platforms
-build_all() {
-    print_status "Building for all platforms..."
-    npx electron-builder --mac --win --linux
-    print_success "All platform builds completed"
-}
+# Function to build all platforms (now handled inline in main function)
 
 # Function to show build results
 show_results() {
@@ -384,13 +379,17 @@ main() {
     # Bundle PHP
     bundle_php
     
-    # Build TypeScript
-    build_typescript
-    
     # Build for requested platforms
     if [ "$BUILD_ALL" = true ]; then
-        build_all
+        # Use npm run package for all platforms (includes build + packaging)
+        print_status "Building and packaging for all platforms..."
+        npm run package
+        print_success "All platform builds completed"
     else
+        # Build TypeScript first for individual platforms
+        build_typescript
+        
+        # Then build for specific platforms
         if [ "$BUILD_MACOS" = true ]; then
             build_macos
         fi

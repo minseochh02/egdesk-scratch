@@ -689,7 +689,9 @@ export class FileWriterService {
    */
   private resolveFilePath(filePath: string, projectRoot?: string): string {
     // If it's already an absolute path, return as-is
-    if (filePath.startsWith('/') || filePath.startsWith('C:\\')) {
+    // Cross-platform absolute path detection
+    if (filePath.startsWith('/') || // Unix absolute path
+        (process.platform === 'win32' && /^[A-Za-z]:\\/.test(filePath))) { // Windows absolute path
       return filePath;
     }
 
