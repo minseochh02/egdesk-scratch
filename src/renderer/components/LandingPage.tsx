@@ -5,8 +5,8 @@ import {
   faHome,
   faCalendarAlt,
   faRocket,
-  faCode,
-  faClock,
+  faCog,
+  faShieldAlt,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -14,38 +14,27 @@ const LandingPage: React.FC = () => {
   return (
     <div className="landing-page">
       <div className="landing-container">
-        {/* Header Section */}
-        <div className="landing-header">
-          <div className="logo-section">
-            <FontAwesomeIcon icon={faRocket} className="logo-icon" />
-            <h1 className="app-title">EGDesk</h1>
-          </div>
-          <p className="welcome-subtitle">워드프레스 관리 허브</p>
-        </div>
 
         {/* Main Content */}
         <div className="landing-content">
           <div className="welcome-section">
             <h2 className="welcome-title">EGDesk에 오신 것을 환영합니다!</h2>
-            <p className="welcome-description">
-              오늘 작업하고 싶은 것을 선택하세요. 워드프레스 사이트를 효율적으로 관리할 수 있도록 도와드리겠습니다.
-            </p>
           </div>
 
           {/* Action Cards */}
           <div className="action-cards">
-            <Link to="/local-server" className="action-card homepage-card">
+            <Link to="/ai-chat" className="action-card homepage-card">
               <div className="card-icon">
-                <FontAwesomeIcon icon={faHome} />
+                <FontAwesomeIcon icon={faCog} />
               </div>
-              <h3 className="card-title">홈페이지 수정</h3>
+              <h3 className="card-title">홈페이지 관리</h3>
               <p className="card-description">
-                로컬 서버를 시작하고 듀얼 스크린 에디터로 워드프레스 사이트 파일을 효율적으로 편집하세요.
+                AI 도움으로 홈페이지를 효율적으로 관리하고 수정하세요. 콘텐츠 생성과 편집을 자동화하세요.
               </p>
               <div className="card-features">
-                <span className="feature-tag">로컬 서버</span>
-                <span className="feature-tag">듀얼 스크린 에디터</span>
-                <span className="feature-tag">실시간 미리보기</span>
+                <span className="feature-tag">AI 관리</span>
+                <span className="feature-tag">자동 편집</span>
+                <span className="feature-tag">콘텐츠 생성</span>
               </div>
             </Link>
 
@@ -63,30 +52,36 @@ const LandingPage: React.FC = () => {
                 <span className="feature-tag">콘텐츠 계획</span>
               </div>
             </Link>
+
+            <Link to="/ssl-analyzer" className="action-card security-card">
+              <div className="card-icon">
+                <FontAwesomeIcon icon={faShieldAlt} />
+              </div>
+              <h3 className="card-title">사이트 보안 분석</h3>
+              <p className="card-description">
+                웹사이트의 SSL 인증서와 보안 상태를 분석하여 안전한 사이트 운영을 보장하세요.
+              </p>
+              <div className="card-features">
+                <span className="feature-tag">SSL 분석</span>
+                <span className="feature-tag">보안 검사</span>
+                <span className="feature-tag">취약점 탐지</span>
+              </div>
+            </Link>
           </div>
 
           {/* Additional Options */}
           <div className="additional-options">
-            <h3 className="options-title">추가 도구</h3>
+            <h3 className="options-title">도구 모음</h3>
             <div className="options-grid">
               <Link to="/ai-keys" className="option-item">
                 <FontAwesomeIcon icon={faRocket} />
                 <span>API 키 관리</span>
               </Link>
-              <Link to="/local-server" className="option-item">
-                <FontAwesomeIcon icon={faClock} />
-                <span>로컬 서버</span>
-              </Link>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="landing-footer">
-          <p className="footer-text">
-            시작할 준비가 되셨나요? 위의 옵션 중 하나를 선택하여 워드프레스 사이트 관리를 시작하세요.
-          </p>
-        </div>
+        
       </div>
     </div>
   );

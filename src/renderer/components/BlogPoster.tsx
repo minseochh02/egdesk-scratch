@@ -39,7 +39,6 @@ import SchedulerManager from './SchedulerManager/SchedulerManager';
 import DebugButton from './DebugButton';
 import { aiKeysStore } from './AIKeysManager/store/aiKeysStore';
 import { AIKey } from './AIKeysManager/types';
-import { CHAT_PROVIDERS } from './ChatInterface/types';
 import './BlogPoster.css';
 
 interface WordPressPost {

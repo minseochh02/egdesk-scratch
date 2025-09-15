@@ -9,7 +9,7 @@
 
 const { generateStructuredBlogContent } = require('./gemini-generate-blog');
 const { processBlogContent } = require('./wordpress-uploader');
-const { getTaskMetadata } = require('./get-task-metadata');
+const { getTaskMetadata } = require('../debug/get-task-metadata');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -227,25 +227,35 @@ async function generateAndUploadBlog(topic, metadata = null) {
 }
 
 /**
- * Main execution function
+ * Main execution function - can be called directly with metadata or from command line
  */
-async function main() {
+async function main(providedMetadata = null, providedTaskId = null) {
   try {
-    // Get task ID from command line argument
-    const taskId = process.argv[2];
+    let taskId, metadata;
     
-    if (!taskId) {
-      throw new Error('Task ID is required as command line argument');
-    }
-    
-    console.log('🚀 Starting Gemini blog generation and WordPress upload...');
-    console.log(`🆔 Task ID: ${taskId}`);
-    
-    // Retrieve task metadata
-    const metadata = getTaskMetadata(taskId);
-    
-    if (!metadata) {
-      throw new Error('Failed to retrieve task metadata');
+    if (providedMetadata && providedTaskId) {
+      // Called directly with parameters (from scheduler)
+      taskId = providedTaskId;
+      metadata = providedMetadata;
+      console.log('🚀 Starting Gemini blog generation and WordPress upload...');
+      console.log(`🆔 Task ID: ${taskId}`);
+    } else {
+      // Called from command line (legacy support)
+      taskId = process.argv[2];
+      
+      if (!taskId) {
+        throw new Error('Task ID is required as command line argument');
+      }
+      
+      console.log('🚀 Starting Gemini blog generation and WordPress upload...');
+      console.log(`🆔 Task ID: ${taskId}`);
+      
+      // Retrieve task metadata
+      metadata = getTaskMetadata(taskId);
+      
+      if (!metadata) {
+        throw new Error('Failed to retrieve task metadata');
+      }
     }
     
     if (!metadata.topics || !Array.isArray(metadata.topics) || metadata.topics.length === 0) {
@@ -326,4 +336,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { generateAndUploadBlog, updateTaskMetadata };
+module.exports = { generateAndUploadBlog, updateTaskMetadata, main };

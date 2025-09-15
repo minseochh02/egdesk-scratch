@@ -36,7 +36,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   const [selectedSite, setSelectedSite] = useState<WordPressConnection | null>(propSelectedSite || null);
   const [topics, setTopics] = useState<Array<{topic: string, lastUsed: string, count: number}>>([]);
   const [newTopic, setNewTopic] = useState<string>('');
-  const [schedule, setSchedule] = useState<string>('interval:3600000'); // Default to 1 hour
+  const [schedule, setSchedule] = useState<string>('cron:0 9 * * 1'); // Default to Monday 9:00 AM
+  const [dayTimePairs, setDayTimePairs] = useState<Array<{day: string, time: string}>>([{day: '1', time: '09:00'}]); // Array of day-time pairs
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -100,7 +101,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       }
     });
     return () => unsub();
-  }, [selectedKey]);
+  }, []); // Remove selectedKey from dependencies to prevent infinite loop
 
   // Handle model change
   const handleModelChange = (providerId: string, modelId: string) => {
@@ -120,6 +121,45 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
   // Handle key change
   const handleKeyChange = (key: AIKey | null) => {
     setSelectedKey(key);
+  };
+
+  // Add a new day-time pair
+  const addDayTimePair = () => {
+    setDayTimePairs(prev => [...prev, { day: '1', time: '09:00' }]);
+  };
+
+  // Remove a day-time pair
+  const removeDayTimePair = (index: number) => {
+    setDayTimePairs(prev => {
+      const newPairs = prev.filter((_, i) => i !== index);
+      updateScheduleWithPairs(newPairs);
+      return newPairs;
+    });
+  };
+
+  // Update day for a specific pair
+  const updateDayTimePair = (index: number, day: string, time: string) => {
+    setDayTimePairs(prev => {
+      const newPairs = prev.map((pair, i) => 
+        i === index ? { day, time } : pair
+      );
+      updateScheduleWithPairs(newPairs);
+      return newPairs;
+    });
+  };
+
+  // Update schedule with day-time pairs
+  const updateScheduleWithPairs = (pairs: Array<{day: string, time: string}>) => {
+    if (pairs.length === 0) {
+      setSchedule('cron:0 9 * * 1'); // Default to Monday if no pairs
+      return;
+    }
+    
+    // For now, use the first pair as the primary schedule
+    // In a more complex implementation, you might want to create multiple cron jobs
+    const firstPair = pairs[0];
+    const [hours, minutes] = firstPair.time.split(':');
+    setSchedule(`cron:${minutes} ${hours} * * ${firstPair.day}`);
   };
 
   // Topic management functions
@@ -184,6 +224,11 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       return;
     }
 
+    if (dayTimePairs.length === 0) {
+      setError('최소 하나의 스케줄을 설정해주세요');
+      return;
+    }
+
     // Validate WordPress credentials
     if (!selectedSite.username || !selectedSite.password) {
       setError(
@@ -241,55 +286,84 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
         IMAGE_ASPECT_RATIO: 'landscape',
       };
 
-      // Create the task data with a custom command that uses the main process script execution
-      const taskData: CreateTaskData = {
-        name: `WordPress Blog: ${topics.length} topics - ${selectedSite.name || selectedSite.url} (${selectedKey.providerId.toUpperCase()} AI)`,
-        description: `자동으로 ${topics.length}개의 주제로 구성된 블로그 게시물을 ${selectedSite.url}에 ${selectedKey.providerId.toUpperCase()} AI(${selectedModel})가 매번 새로 생성한 콘텐츠와 이미지로 게시합니다.`,
-        command: `ELECTRON_SCRIPT:${scriptPath}`, // Special marker for Electron script execution
-        schedule,
-        enabled: true,
-        workingDirectory: '',
-        environment,
-        outputFile: '',
-        errorFile: '',
-        metadata: {
-          topics: topics,
-          topicSelectionMode: topicSelectionMode,
-          wordpressSite: {
-            url: selectedSite.url,
-            name: selectedSite.name || selectedSite.url,
-            username: selectedSite.username
-          },
-          aiSettings: {
-            provider: selectedKey.providerId,
-            model: selectedModel,
-            imageGenerationEnabled: true,
-            imageProvider: selectedKey.providerId === 'google' ? 'gemini' : 'dalle',
-            imageQuality: 'standard',
-            imageSize: '1024x1024',
-            imageStyle: 'realistic',
-            imageAspectRatio: 'landscape'
+      // Create multiple tasks for each day-time pair
+      const createdTasks = [];
+      const dayLabels = { '1': '월', '2': '화', '3': '수', '4': '목', '5': '금', '6': '토', '0': '일' };
+
+      for (let i = 0; i < dayTimePairs.length; i++) {
+        const pair = dayTimePairs[i];
+        const [hours, minutes] = pair.time.split(':');
+        const cronSchedule = `cron:${minutes} ${hours} * * ${pair.day}`;
+        const dayLabel = dayLabels[pair.day as keyof typeof dayLabels];
+
+        const taskData: CreateTaskData = {
+          name: `WordPress Blog: ${topics.length} topics - ${selectedSite.name || selectedSite.url} (${dayLabel} ${pair.time})`,
+          description: `${dayLabel}요일 ${pair.time}에 자동으로 ${topics.length}개의 주제로 구성된 블로그 게시물을 ${selectedSite.url}에 ${selectedKey.providerId.toUpperCase()} AI(${selectedModel})가 매번 새로 생성한 콘텐츠와 이미지로 게시합니다.`,
+          command: `ELECTRON_SCRIPT:${scriptPath}`,
+          schedule: cronSchedule,
+          enabled: true,
+          workingDirectory: '',
+          environment,
+          outputFile: '',
+          errorFile: '',
+          metadata: {
+            topics: topics,
+            topicSelectionMode: topicSelectionMode,
+            wordpressSite: {
+              url: selectedSite.url,
+              name: selectedSite.name || selectedSite.url,
+              username: selectedSite.username
+            },
+            aiSettings: {
+              provider: selectedKey.providerId,
+              model: selectedModel,
+              imageGenerationEnabled: true,
+              imageProvider: selectedKey.providerId === 'google' ? 'gemini' : 'dalle',
+              imageQuality: 'standard',
+              imageSize: '1024x1024',
+              imageStyle: 'realistic',
+              imageAspectRatio: 'landscape'
+            },
+            scheduleInfo: {
+              day: pair.day,
+              time: pair.time,
+              dayLabel: dayLabel,
+              pairIndex: i,
+              totalPairs: dayTimePairs.length
+            }
           }
+        };
+
+        const response = await schedulerService.createTask(taskData);
+        
+        if (response.success && response.data) {
+          createdTasks.push(response.data);
+        } else {
+          throw new Error(`Failed to create task for ${dayLabel} ${pair.time}: ${response.error}`);
         }
-      };
+      }
 
-      const response = await schedulerService.createTask(taskData);
+      if (createdTasks.length > 0) {
+        const scheduleSummary = dayTimePairs.map(pair => {
+          const dayLabel = dayLabels[pair.day as keyof typeof dayLabels];
+          return `${dayLabel} ${pair.time}`;
+        }).join(', ');
 
-      if (response.success && response.data) {
         setSuccess(
-          `블로그 작업이 성공적으로 생성되었습니다! ${topics.length}개의 주제로 구성된 게시물이 ${selectedKey.providerId.toUpperCase()} AI가 매번 새로 생성한 콘텐츠와 이미지와 함께 ${selectedSite.name || selectedSite.url}에 게시됩니다.`,
+          `${createdTasks.length}개의 블로그 작업이 성공적으로 생성되었습니다! ${topics.length}개의 주제로 구성된 게시물이 ${selectedKey.providerId.toUpperCase()} AI가 매번 새로 생성한 콘텐츠와 이미지와 함께 ${selectedSite.name || selectedSite.url}에 다음 스케줄로 게시됩니다: ${scheduleSummary}`,
         );
         
         // Clear form data after successful task creation
         setTopics([]);
         setNewTopic('');
-        setSchedule('interval:3600000');
+        setSchedule('cron:0 9 * * 1');
+        setDayTimePairs([{day: '1', time: '09:00'}]);
         setTopicSelectionMode('least-used');
         
         // Notify parent component to refresh
         onTaskCreated?.();
       } else {
-        setError(response.error || 'WordPress 블로그 작업 생성에 실패했습니다.');
+        setError('모든 작업 생성에 실패했습니다.');
       }
     } catch (err) {
       setError(
@@ -422,7 +496,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
             </select>
           </div>
           
-          <div className="config-control-group">
+          {/* Model selector hidden as requested */}
+          {/* <div className="config-control-group">
             <label className="config-label">
               <FontAwesomeIcon icon={faCog} />
               모델
@@ -458,7 +533,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
                 </optgroup>
               ))}
             </select>
-          </div>
+          </div> */}
         </div>
         
         <div className="blog-creation-form">
@@ -547,22 +622,71 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
           <div className="form-group">
             <label htmlFor="blog-schedule">게시 스케줄</label>
-            <select
-              id="blog-schedule"
-              value={schedule}
-              onChange={(e) => setSchedule(e.target.value)}
-              disabled={isCreating}
-            >
-              <option value="interval:300000">5분마다</option>
-              <option value="interval:1800000">30분마다</option>
-              <option value="interval:3600000">1시간마다</option>
-              <option value="interval:86400000">매일</option>
-              <option value="interval:604800000">매주</option>
-              <option value="cron:0 9 * * 1-5">평일 오전 9시</option>
-              <option value="cron:0 0 * * 0">일요일 자정</option>
-            </select>
+            <div className="schedule-controls">
+              <div className="day-time-pairs">
+                <div className="pairs-header">
+                  <label>요일과 시간 설정:</label>
+                  <button
+                    type="button"
+                    className="add-pair-btn"
+                    onClick={addDayTimePair}
+                    disabled={isCreating}
+                  >
+                    <FontAwesomeIcon icon={faPlus} />
+                    추가
+                  </button>
+                </div>
+                
+                <div className="pairs-list">
+                  {dayTimePairs.map((pair, index) => (
+                    <div key={index} className="day-time-pair">
+                      <div className="pair-controls">
+                        <div className="day-selector">
+                          <select
+                            value={pair.day}
+                            onChange={(e) => updateDayTimePair(index, e.target.value, pair.time)}
+                            disabled={isCreating}
+                            className="day-select"
+                          >
+                            <option value="1">월요일</option>
+                            <option value="2">화요일</option>
+                            <option value="3">수요일</option>
+                            <option value="4">목요일</option>
+                            <option value="5">금요일</option>
+                            <option value="6">토요일</option>
+                            <option value="0">일요일</option>
+                          </select>
+                        </div>
+                        
+                        <div className="time-selector">
+                          <input
+                            type="time"
+                            value={pair.time}
+                            onChange={(e) => updateDayTimePair(index, pair.day, e.target.value)}
+                            disabled={isCreating}
+                            className="time-input"
+                          />
+                        </div>
+                        
+                        {dayTimePairs.length > 1 && (
+                          <button
+                            type="button"
+                            className="remove-pair-btn"
+                            onClick={() => removeDayTimePair(index)}
+                            disabled={isCreating}
+                            title="삭제"
+                          >
+                            <FontAwesomeIcon icon={faTimes} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
             <small className="form-help">
-              선택한 주제로 블로그를 자동 생성하는 빈도를 설정합니다.
+              각 요일마다 다른 시간을 설정할 수 있습니다. 여러 개의 스케줄을 추가하려면 "추가" 버튼을 클릭하세요.
             </small>
           </div>
 

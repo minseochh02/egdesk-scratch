@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -24,12 +23,6 @@ import {
   faKey,
   faRobot,
 } from '../utils/fontAwesomeIcons';
-import ScheduledPosts from './ScheduledPosts';
-import WordPressPostScheduler from './WordPressSitesList/WordPressPostScheduler';
-import SchedulerManager from './SchedulerManager/SchedulerManager';
-import DebugButton from './DebugButton';
-import { aiKeysStore } from './AIKeysManager/store/aiKeysStore';
-import { AIKey } from './AIKeysManager/types';
 import './WordPressSitesList.css';
 
 interface WordPressSite {
@@ -78,11 +71,11 @@ interface SyncFileDetail {
   error?: string;
 }
 
-interface WordPressSitesListProps {
-  onSwitchToConnector?: () => void;
-}
-
-function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): React.JSX.Element {
+/**
+ * WordPressSitesList with components added one by one
+ * This version tests each complex child component individually
+ */
+function WordPressSitesListWithComponents(): React.JSX.Element {
   const navigate = useNavigate();
   const [connections, setConnections] = useState<WordPressSite[]>([]);
   const [selectedSite, setSelectedSite] = useState<WordPressSite | null>(null);
@@ -93,76 +86,55 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
   const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
   
   // AI Keys state
-  const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
-  const [selectedKey, setSelectedKey] = useState<AIKey | null>(null);
+  const [aiKeys, setAiKeys] = useState<any[]>([]);
+  const [selectedKey, setSelectedKey] = useState<any | null>(null);
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
 
   // Add error boundary state
   const [componentError, setComponentError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
-  // Subscribe to AI keys store with error handling
+  const addDebugInfo = (info: string) => {
+    setDebugInfo(prev => [...prev, `${new Date().toISOString()}: ${info}`]);
+  };
+
+  // Test AI Keys Store
   useEffect(() => {
     try {
+      addDebugInfo('Testing AI Keys Store...');
+      const { aiKeysStore } = require('./AIKeysManager/store/aiKeysStore');
+      
       const unsubscribe = aiKeysStore.subscribe((keyState) => {
         try {
           const activeKeys = keyState.keys.filter((key) => key.isActive);
           setAiKeys(activeKeys);
-
-          // Auto-select first key if none selected and keys are available
-          if (!selectedKey && activeKeys.length > 0) {
-            setSelectedKey(activeKeys[0]);
-          }
+          addDebugInfo(`AI Keys loaded: ${activeKeys.length} keys`);
         } catch (error) {
-          console.error('Error in AI keys subscription:', error);
+          addDebugInfo(`AI Keys subscription error: ${error}`);
           setComponentError('Failed to load AI keys configuration');
         }
       });
 
-      // Get initial state immediately
-      try {
-        const currentState = aiKeysStore.getState();
-        const activeKeys = currentState.keys.filter((key) => key.isActive);
-        setAiKeys(activeKeys);
-        if (!selectedKey && activeKeys.length > 0) {
-          setSelectedKey(activeKeys[0]);
-        }
-      } catch (error) {
-        console.warn('Failed to get initial AI keys state:', error);
-        setComponentError('Failed to initialize AI keys');
+      const currentState = aiKeysStore.getState();
+      const activeKeys = currentState.keys.filter((key) => key.isActive);
+      setAiKeys(activeKeys);
+      if (!selectedKey && activeKeys.length > 0) {
+        setSelectedKey(activeKeys[0]);
       }
 
+      addDebugInfo('AI Keys Store initialized successfully');
       return () => unsubscribe();
     } catch (error) {
-      console.error('Failed to set up AI keys subscription:', error);
+      addDebugInfo(`AI Keys Store error: ${error}`);
       setComponentError('Failed to set up AI keys subscription');
     }
   }, [selectedKey]);
 
-  // Handle model change
-  const handleModelChange = (providerId: string, modelId: string) => {
-    setSelectedModel(modelId);
-
-    // Auto-select a compatible API key for the new provider
-    const compatibleKeys = aiKeys.filter(
-      (key) => key.providerId === providerId,
-    );
-    if (compatibleKeys.length > 0) {
-      setSelectedKey(compatibleKeys[0]);
-    } else {
-      setSelectedKey(null);
-    }
-  };
-
-  // Handle key change
-  const handleKeyChange = (key: AIKey | null) => {
-    setSelectedKey(key);
-  };
-
   const loadSavedConnections = useCallback(async () => {
     try {
+      addDebugInfo('Loading WordPress connections...');
       setIsLoading(true);
       
-      // Check if electron APIs are available
       if (!window.electron || !window.electron.wordpress) {
         throw new Error('Electron WordPress API not available');
       }
@@ -170,6 +142,7 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
       const result = await window.electron.wordpress.getConnections();
       if (result.success && result.connections) {
         setConnections(result.connections);
+        addDebugInfo(`Loaded ${result.connections.length} connections`);
         if (result.connections.length > 0 && !selectedSite) {
           setSelectedSite(result.connections[0]);
         }
@@ -177,29 +150,41 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
         setError('연결된 WordPress 사이트를 불러올 수 없습니다.');
       }
     } catch (error) {
-      console.error('Failed to load saved connections:', error);
+      addDebugInfo(`Connection loading error: ${error}`);
       setError(`연결된 WordPress 사이트를 불러오는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedSite]);
 
   const loadSyncHistory = useCallback(async (connectionId: string) => {
     try {
-      // Check if electron APIs are available
       if (!window.electron || !window.electron.sync) {
-        console.warn('Electron sync API not available');
+        addDebugInfo('Sync API not available (normal)');
         return;
       }
       
       const result = await window.electron.sync.getHistory(connectionId);
       if (result.success && result.syncHistory) {
         setSyncHistory(result.syncHistory);
+        addDebugInfo(`Loaded sync history for ${connectionId}`);
       }
     } catch (error) {
-      console.error('Failed to load sync history:', error);
+      addDebugInfo(`Sync history error: ${error}`);
     }
   }, []);
+
+  // Load saved connections on component mount
+  useEffect(() => {
+    loadSavedConnections();
+  }, [loadSavedConnections]);
+
+  // Load sync history when selected site changes
+  useEffect(() => {
+    if (selectedSite?.id) {
+      loadSyncHistory(selectedSite.id);
+    }
+  }, [selectedSite, loadSyncHistory]);
 
   const disconnectSite = async (siteId: string) => {
     if (window.confirm('정말로 이 연결을 삭제하시겠습니까?')) {
@@ -230,19 +215,12 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
     }
 
     try {
-      // First navigate to the Finder UI
       navigate('/');
-
-      // Wait a bit for the component to mount
       await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Then trigger the folder navigation
       await (window.electron.wordpress as any).navigateToSyncedFolder({
         syncPath: site.local_sync_path,
         connectionName: site.name || site.url,
       });
-
-      // Show success message
       alert(`동기화된 폴더로 이동합니다: ${site.local_sync_path}`);
     } catch (error) {
       console.error('Failed to navigate to synced folder:', error);
@@ -252,41 +230,21 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
 
   const getStatusText = (status: string): string => {
     switch (status) {
-      case 'completed':
-        return '완료';
-      case 'failed':
-        return '실패';
-      case 'in_progress':
-        return '진행 중';
-      default:
-        return status;
+      case 'completed': return '완료';
+      case 'failed': return '실패';
+      case 'in_progress': return '진행 중';
+      default: return status;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <FontAwesomeIcon icon={faCheckCircle} />;
-      case 'failed':
-        return <FontAwesomeIcon icon={faTimesCircle} />;
-      case 'in_progress':
-        return <FontAwesomeIcon icon={faClock} />;
-      default:
-        return <FontAwesomeIcon icon={faExclamationTriangle} />;
+      case 'completed': return <FontAwesomeIcon icon={faCheckCircle} />;
+      case 'failed': return <FontAwesomeIcon icon={faTimesCircle} />;
+      case 'in_progress': return <FontAwesomeIcon icon={faClock} />;
+      default: return <FontAwesomeIcon icon={faExclamationTriangle} />;
     }
   };
-
-  // Load saved connections on component mount
-  useEffect(() => {
-    loadSavedConnections();
-  }, [loadSavedConnections]);
-
-  // Load sync history when selected site changes
-  useEffect(() => {
-    if (selectedSite?.id) {
-      loadSyncHistory(selectedSite.id);
-    }
-  }, [selectedSite, loadSyncHistory]);
 
   // Show component error if any
   if (componentError) {
@@ -298,6 +256,10 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           </div>
           <h2>구성 오류</h2>
           <p>{componentError}</p>
+          <div className="debug-info">
+            <h4>디버그 정보:</h4>
+            <pre>{debugInfo.join('\n')}</pre>
+          </div>
           <button 
             type="button" 
             onClick={() => {
@@ -337,6 +299,10 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           </div>
           <h2>연결 오류</h2>
           <p>{error}</p>
+          <div className="debug-info">
+            <h4>디버그 정보:</h4>
+            <pre>{debugInfo.join('\n')}</pre>
+          </div>
           <button type="button" onClick={loadSavedConnections} className="retry-btn">
             <FontAwesomeIcon icon={faRefresh} />
             다시 시도
@@ -376,30 +342,18 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           <div className="header-text">
             <h1>
               <FontAwesomeIcon icon={faGlobe} />
-              WordPress 사이트 관리
+              WordPress 사이트 관리 (컴포넌트 테스트)
             </h1>
             <p>총 {connections.length}개의 사이트가 연결되어 있습니다</p>
           </div>
           <div className="header-actions">
-            {onSwitchToConnector && (
-              <button
-                type="button"
-                onClick={onSwitchToConnector}
-                className="add-connection-btn"
-              >
-                <FontAwesomeIcon icon={faPlus} />새 연결 추가
-              </button>
-            )}
-            {!onSwitchToConnector && (
-              <button
-                type="button"
-                onClick={navigateToWordPressConnector}
-                className="add-connection-btn"
-              >
-                <FontAwesomeIcon icon={faPlus} />새 연결 추가
-              </button>
-            )}
-            <DebugButton className="debug-btn" />
+            <button
+              type="button"
+              onClick={navigateToWordPressConnector}
+              className="add-connection-btn"
+            >
+              <FontAwesomeIcon icon={faPlus} />새 연결 추가
+            </button>
           </div>
         </div>
       </div>
@@ -413,14 +367,6 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
               key={connection.id}
               className={`site-card ${selectedSite?.id === connection.id ? 'selected' : ''}`}
               onClick={() => setSelectedSite(connection)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setSelectedSite(connection);
-                }
-              }}
-              role="button"
-              tabIndex={0}
             >
               {/* Card Header */}
               <div className="site-card-header">
@@ -513,129 +459,202 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           ))}
         </div>
 
+        {/* Test WordPressPostScheduler Component */}
+        <div className="component-test-section">
+          <h3>테스트: WordPressPostScheduler 컴포넌트</h3>
+          <div className="component-test">
+            {(() => {
+              try {
+                addDebugInfo('Testing WordPressPostScheduler...');
+                const WordPressPostScheduler = require('./WordPressSitesList/WordPressPostScheduler').default;
+                return (
+                  <WordPressPostScheduler
+                    key={templateRefreshKey}
+                    sites={connections}
+                    selectedSite={selectedSite}
+                    onTaskCreated={() => {
+                      setTemplateRefreshKey(prev => prev + 1);
+                      addDebugInfo('WordPressPostScheduler task created');
+                    }}
+                  />
+                );
+              } catch (error) {
+                addDebugInfo(`WordPressPostScheduler error: ${error}`);
+                return (
+                  <div className="component-error">
+                    <FontAwesomeIcon icon={faExclamationTriangle} />
+                    <span>WordPressPostScheduler 로드 실패: {error.message}</span>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+        </div>
 
-        {/* WordPress Post Scheduler */}
-        <WordPressPostScheduler
-          key={templateRefreshKey}
-          sites={connections}
-          selectedSite={selectedSite}
-          onTaskCreated={() => {
-            // Refresh the WordPressPostScheduler component to show newly created task
-            setTemplateRefreshKey(prev => prev + 1);
-            console.log('WordPress post task created - refreshing component');
-          }}
-        />
+        {/* Test SchedulerManager Component */}
+        <div className="component-test-section">
+          <h3>테스트: SchedulerManager 컴포넌트</h3>
+          <div className="component-test">
+            {(() => {
+              try {
+                addDebugInfo('Testing SchedulerManager...');
+                const SchedulerManager = require('./SchedulerManager/SchedulerManager').default;
+                return (
+                  <div className="scheduler-section">
+                    <SchedulerManager className="wordpress-scheduler-manager" />
+                  </div>
+                );
+              } catch (error) {
+                addDebugInfo(`SchedulerManager error: ${error}`);
+                return (
+                  <div className="component-error">
+                    <FontAwesomeIcon icon={faExclamationTriangle} />
+                    <span>SchedulerManager 로드 실패: {error.message}</span>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+        </div>
 
-        {/* Task Scheduler Manager */}
-        <div className="scheduler-section">
-          <SchedulerManager className="wordpress-scheduler-manager" />
+        {/* Test ScheduledPosts Component */}
+        <div className="component-test-section">
+          <h3>테스트: ScheduledPosts 컴포넌트</h3>
+          <div className="component-test">
+            {(() => {
+              try {
+                addDebugInfo('Testing ScheduledPosts...');
+                const ScheduledPosts = require('./ScheduledPosts').default;
+                return (
+                  <div>
+                    <button 
+                      onClick={() => setShowScheduledPosts(true)}
+                      className="test-btn"
+                    >
+                      ScheduledPosts 모달 열기
+                    </button>
+                    {showScheduledPosts && selectedSite && (
+                      <ScheduledPosts
+                        site={selectedSite}
+                        onClose={() => setShowScheduledPosts(false)}
+                      />
+                    )}
+                  </div>
+                );
+              } catch (error) {
+                addDebugInfo(`ScheduledPosts error: ${error}`);
+                return (
+                  <div className="component-error">
+                    <FontAwesomeIcon icon={faExclamationTriangle} />
+                    <span>ScheduledPosts 로드 실패: {error.message}</span>
+                  </div>
+                );
+              }
+            })()}
+          </div>
         </div>
 
         {/* Right Sidebar: Site Summary */}
         {selectedSite && (
           <div className="sidebar-stack">
             <div className="site-details">
-                <div className="details-header">
-                  <h3>
-                    <FontAwesomeIcon icon={faChartBar} />
-                    {selectedSite.name || '이름 없음'} 상세 정보
-                  </h3>
-                </div>
+              <div className="details-header">
+                <h3>
+                  <FontAwesomeIcon icon={faChartBar} />
+                  {selectedSite.name || '이름 없음'} 상세 정보
+                </h3>
+              </div>
 
-                <div className="details-content">
-                  <div className="detail-section">
-                    <h4>연결 정보</h4>
-                    <div className="detail-item">
-                      <div className="detail-label">
-                        <FontAwesomeIcon icon={faGlobe} />
-                        사이트 URL
-                      </div>
-                      <span className="url-value">{selectedSite.url}</span>
+              <div className="details-content">
+                <div className="detail-section">
+                  <h4>연결 정보</h4>
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FontAwesomeIcon icon={faGlobe} />
+                      사이트 URL
                     </div>
-                    <div className="detail-item">
-                      <div className="detail-label">
-                        <FontAwesomeIcon icon={faCog} />
-                        사용자명
-                      </div>
-                      <span>{selectedSite.username}</span>
-                    </div>
-                    <div className="detail-item">
-                      <div className="detail-label">
-                        <FontAwesomeIcon icon={faExternalLinkAlt} />
-                        연결 ID
-                      </div>
-                      <span className="id-value">{selectedSite.id}</span>
-                    </div>
-                    {selectedSite.local_sync_path && (
-                      <div className="detail-item">
-                        <div className="detail-label">
-                          <FontAwesomeIcon icon={faFolderOpen} />
-                          로컬 동기화 경로
-                        </div>
-                        <span className="sync-path">
-                          {selectedSite.local_sync_path}
-                        </span>
-                      </div>
-                    )}
+                    <span className="url-value">{selectedSite.url}</span>
                   </div>
-
-                  {/* Sync History */}
-                  {syncHistory.length > 0 && (
-                    <div className="sync-history-section">
-                      <h4>
-                        <FontAwesomeIcon icon={faClock} />
-                        동기화 기록
-                      </h4>
-                      <div className="sync-history-list">
-                        {syncHistory.slice(0, 5).map((record) => (
-                          <div
-                            key={record.id}
-                            className={`sync-record ${record.status}`}
-                          >
-                            <div className="sync-record-header">
-                              <div className="sync-status">
-                                {getStatusIcon(record.status)}
-                                <span>{getStatusText(record.status)}</span>
-                              </div>
-                              <span className="sync-date">
-                                {new Date(record.startedAt).toLocaleString('ko-KR')}
-                              </span>
-                            </div>
-                            <div className="sync-record-details">
-                              <span>
-                                파일: {record.syncedFiles}/{record.totalFiles}개
-                              </span>
-                              {record.completedAt && (
-                                <span>
-                                  완료:{' '}
-                                  {new Date(record.completedAt).toLocaleString(
-                                    'ko-KR',
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FontAwesomeIcon icon={faCog} />
+                      사용자명
+                    </div>
+                    <span>{selectedSite.username}</span>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FontAwesomeIcon icon={faExternalLinkAlt} />
+                      연결 ID
+                    </div>
+                    <span className="id-value">{selectedSite.id}</span>
+                  </div>
+                  {selectedSite.local_sync_path && (
+                    <div className="detail-item">
+                      <div className="detail-label">
+                        <FontAwesomeIcon icon={faFolderOpen} />
+                        로컬 동기화 경로
                       </div>
+                      <span className="sync-path">
+                        {selectedSite.local_sync_path}
+                      </span>
                     </div>
                   )}
                 </div>
+
+                {/* Sync History */}
+                {syncHistory.length > 0 && (
+                  <div className="sync-history-section">
+                    <h4>
+                      <FontAwesomeIcon icon={faClock} />
+                      동기화 기록
+                    </h4>
+                    <div className="sync-history-list">
+                      {syncHistory.slice(0, 5).map((record) => (
+                        <div
+                          key={record.id}
+                          className={`sync-record ${record.status}`}
+                        >
+                          <div className="sync-record-header">
+                            <div className="sync-status">
+                              {getStatusIcon(record.status)}
+                              <span>{getStatusText(record.status)}</span>
+                            </div>
+                            <span className="sync-date">
+                              {new Date(record.startedAt).toLocaleString('ko-KR')}
+                            </span>
+                          </div>
+                          <div className="sync-record-details">
+                            <span>
+                              파일: {record.syncedFiles}/{record.totalFiles}개
+                            </span>
+                            {record.completedAt && (
+                              <span>
+                                완료:{' '}
+                                {new Date(record.completedAt).toLocaleString(
+                                  'ko-KR',
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
           </div>
         )}
 
-        {/* Scheduled Posts Modal */}
-        {showScheduledPosts && selectedSite && (
-          <ScheduledPosts
-            site={selectedSite}
-            onClose={() => setShowScheduledPosts(false)}
-          />
-        )}
-
-        
+        {/* Debug Info */}
+        <div className="debug-section">
+          <h3>디버그 정보</h3>
+          <pre>{debugInfo.join('\n')}</pre>
+        </div>
       </div>
     </div>
   );
-};
+}
 
-export default WordPressSitesList;
+export default WordPressSitesListWithComponents;

@@ -381,9 +381,12 @@ main() {
     
     # Build for requested platforms
     if [ "$BUILD_ALL" = true ]; then
-        # Use npm run package for all platforms (includes build + packaging)
-        print_status "Building and packaging for all platforms..."
-        npm run package
+        # Build TypeScript first
+        build_typescript
+        
+        # Build for all platforms using electron-builder with platform flags
+        print_status "Building and packaging for all platforms (macOS, Windows, Linux)..."
+        npx electron-builder -mwl --publish never
         print_success "All platform builds completed"
     else
         # Build TypeScript first for individual platforms

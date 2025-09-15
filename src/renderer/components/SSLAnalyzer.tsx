@@ -162,7 +162,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
   return (
     <div className="ssl-analyzer">
       <div className="ssl-analyzer-header">
-        <h1>SSL 분석기</h1>
+        <h1>사이트 보안 분석</h1>
         <p>웹사이트의 SSL 인증서와 보안 설정을 분석합니다</p>
       </div>
 

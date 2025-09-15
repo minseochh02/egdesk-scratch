@@ -5,6 +5,13 @@ export interface AIProvider {
   icon: string; // FontAwesome icon name
   color: string;
   fields: AIProviderField[];
+  models: AIProviderModel[];
+}
+
+export interface AIProviderModel {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 export interface AIProviderField {
@@ -73,6 +80,12 @@ export const AI_PROVIDERS: AIProvider[] = [
         helpText: 'Your OpenAI organization ID if you have one',
       },
     ],
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable GPT-4 model' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster, cheaper GPT-4 model' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation GPT-4' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and efficient model' },
+    ],
   },
   {
     id: 'anthropic',
@@ -89,6 +102,11 @@ export const AI_PROVIDERS: AIProvider[] = [
         required: true,
         helpText: 'Get your API key from https://console.anthropic.com/',
       },
+    ],
+    models: [
+      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most capable Claude model' },
+      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast and efficient Claude model' },
+      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation Claude model' },
     ],
   },
   {
@@ -107,6 +125,11 @@ export const AI_PROVIDERS: AIProvider[] = [
         helpText:
           'Get your API key from https://makersuite.google.com/app/apikey',
       },
+    ],
+    models: [
+      { id: 'gemini-1.5-flash-latest', name: 'Gemini 1.5 Flash', description: 'Fast and efficient model' },
+      { id: 'gemini-1.5-pro-latest', name: 'Gemini 1.5 Pro', description: 'Most capable Gemini model' },
+      { id: 'gemini-1.0-pro', name: 'Gemini 1.0 Pro', description: 'Previous generation Gemini model' },
     ],
   },
   {
@@ -141,6 +164,12 @@ export const AI_PROVIDERS: AIProvider[] = [
         helpText: 'Your model deployment name',
       },
     ],
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable GPT-4 model' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster, cheaper GPT-4 model' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation GPT-4' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and efficient model' },
+    ],
   },
   {
     id: 'custom',
@@ -170,6 +199,9 @@ export const AI_PROVIDERS: AIProvider[] = [
         placeholder: 'gpt-4',
         required: false,
       },
+    ],
+    models: [
+      { id: 'custom-model', name: 'Custom Model', description: 'Your custom AI model' },
     ],
   },
 ];

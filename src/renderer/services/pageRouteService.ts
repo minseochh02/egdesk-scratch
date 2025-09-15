@@ -1,5 +1,4 @@
 import { aiKeysStore } from '../components/AIKeysManager/store/aiKeysStore';
-import { ChatService } from '../components/ChatInterface/services/chatService';
 
 export interface PageRouteState {
   currentUrl: string;
@@ -270,43 +269,44 @@ class PageRouteService {
         console.log(userPromptText);
       }
 
-      const response = await ChatService.sendMessage(
-        key,
-        model,
-        [
-          { id: 'sys', role: 'system', content: systemPromptText } as any,
-          { id: 'usr', role: 'user', content: userPromptText } as any,
-        ],
-        { temperature: 0.1, maxTokens: 4096 },
-      );
+      // ChatService removed - AI functionality disabled
+      // const response = await ChatService.sendMessage(
+      //   key,
+      //   model,
+      //   [
+      //     { id: 'sys', role: 'system', content: systemPromptText } as any,
+      //     { id: 'usr', role: 'user', content: userPromptText } as any,
+      //   ],
+      //   { temperature: 0.1, maxTokens: 4096 },
+      // );
 
-      if (response?.success && response.message) {
-        let files: string[] = [];
-        const text = response.message.trim();
-        try {
-          const jsonMatch = text.match(/```json[\s\S]*?```/i);
-          const raw = jsonMatch
-            ? jsonMatch[0].replace(/```json|```/g, '')
-            : text;
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed))
-            files = parsed.filter((x) => typeof x === 'string');
-        } catch {
-          files = text
-            .split(/\r?\n/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-        }
+      // if (response?.success && response.message) {
+      //   let files: string[] = [];
+      //   const text = response.message.trim();
+      //   try {
+      //     const jsonMatch = text.match(/```json[\s\S]*?```/i);
+      //     const raw = jsonMatch
+      //       ? jsonMatch[0].replace(/```json|```/g, '')
+      //       : text;
+      //     const parsed = JSON.parse(raw);
+      //     if (Array.isArray(parsed))
+      //       files = parsed.filter((x) => typeof x === 'string');
+      //   } catch {
+      //     files = text
+      //       .split(/\r?\n/)
+      //       .map((s) => s.trim())
+      //       .filter(Boolean);
+      //   }
 
-        if (files.length > 0) {
-          // Update mapping with relative paths and expose filesToOpen as absolute for consumers
-          this.setFilesForPath(projectRoot, urlPath, files, /* notify */ false);
-          const abs = files.map((p) =>
-            p.startsWith('/') ? p : `${projectRoot}/${p}`,
-          );
-          this.setFilesToOpen(abs);
-        }
-      }
+      //   if (files.length > 0) {
+      //     // Update mapping with relative paths and expose filesToOpen as absolute for consumers
+      //     this.setFilesForPath(projectRoot, urlPath, files, /* notify */ false);
+      //     const abs = files.map((p) =>
+      //       p.startsWith('/') ? p : `${projectRoot}/${p}`,
+      //     );
+      //     this.setFilesToOpen(abs);
+      //   }
+      // }
     } catch {
       // ignore
     } finally {

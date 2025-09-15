@@ -5,7 +5,6 @@ import {
   faTrash,
   faImage,
   faCog,
-  faTag,
   faSync,
   faEdit,
   faFileAlt,
@@ -29,6 +28,8 @@ import {
   faArrowRight as faNextIcon,
   faFolder,
   faPlus,
+  faList,
+  faRobot,
 } from '../utils/fontAwesomeIcons';
 import './WordPressConnector.css';
 
@@ -121,7 +122,11 @@ interface SyncFileDetail {
   error?: string;
 }
 
-const WordPressConnector: React.FC = () => {
+interface WordPressConnectorProps {
+  onSwitchToSites?: () => void;
+}
+
+const WordPressConnector: React.FC<WordPressConnectorProps> = ({ onSwitchToSites }) => {
   const navigate = useNavigate();
   const [connections, setConnections] = useState<WordPressSite[]>([]);
   const [selectedSite, setSelectedSite] = useState<WordPressSite | null>(null);
@@ -1719,8 +1724,25 @@ get_header(); ?>
   return (
     <div className="wordpress-connector">
       <div className="connector-header">
-        <h1>🌐 WordPress 커넥터</h1>
-        <p>WordPress 사이트에 연결하고 콘텐츠를 관리하세요</p>
+        <div className="header-content">
+          <div className="header-text">
+            <h1>🌐 WordPress 커넥터</h1>
+            <p>WordPress 사이트에 연결하고 콘텐츠를 관리하세요</p>
+          </div>
+          {onSwitchToSites && (
+            <div className="header-actions">
+              <button
+                type="button"
+                onClick={onSwitchToSites}
+                className="back-to-sites-btn"
+                title="사이트 목록으로 돌아가기"
+              >
+                <FontAwesomeIcon icon={faList} />
+                사이트 목록
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="connector-content">
@@ -1824,6 +1846,19 @@ get_header(); ?>
                   <div className="connection-header">
                     <h3>{connection.name}</h3>
                     <div className="connection-actions">
+                      {onSwitchToSites && (
+                        <button
+                          className="automate-blog-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSwitchToSites();
+                          }}
+                          title="블로그 자동화 관리"
+                        >
+                          <FontAwesomeIcon icon={faRobot} className="automate-icon" />
+                          자동화
+                        </button>
+                      )}
                       <button
                         className="refresh-site-btn"
                         onClick={(e) => {
@@ -1949,7 +1984,7 @@ get_header(); ?>
                           <FontAwesomeIcon icon={faChartBar} className="meta-icon" /> {getStatusText(post.status)}
                         </span>
                         <span>
-                          <FontAwesomeIcon icon={faTag} className="meta-icon" /> {getTypeText(post.type)}
+                          <FontAwesomeIcon icon={faFileAlt} className="meta-icon" /> {getTypeText(post.type)}
                         </span>
                       </div>
                     </div>
@@ -1978,7 +2013,7 @@ get_header(); ?>
                           <FontAwesomeIcon icon={faCalendarAlt} className="meta-icon" /> {item.date}
                         </span>
                         <span>
-                          <FontAwesomeIcon icon={faTag} className="meta-icon" /> {item.type}
+                          <FontAwesomeIcon icon={faFileAlt} className="meta-icon" /> {item.type}
                         </span>
                       </p>
                     </div>

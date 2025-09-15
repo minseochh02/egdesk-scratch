@@ -146,6 +146,14 @@
   background: linear-gradient(90deg, #ff9500, #ff6b00);
 }
 
+.security-card:hover {
+  border-color: #ff3b30;
+}
+
+.security-card:hover::before {
+  background: linear-gradient(90deg, #ff3b30, #ff2d92);
+}
+
 .card-icon {
   width: 80px;
   height: 80px;
@@ -164,6 +172,10 @@
 
 .scheduler-card .card-icon {
   background: linear-gradient(135deg, #ff9500, #ff6b00);
+}
+
+.security-card .card-icon {
+  background: linear-gradient(135deg, #ff3b30, #ff2d92);
 }
 
 .card-title {
@@ -203,6 +215,11 @@
 .scheduler-card:hover .feature-tag {
   background: #fff4e6;
   color: #ff9500;
+}
+
+.security-card:hover .feature-tag {
+  background: #ffe6e6;
+  color: #ff3b30;
 }
 
 /* Additional Options */

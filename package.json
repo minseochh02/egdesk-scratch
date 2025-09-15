@@ -63,6 +63,7 @@
     "debug:workflow": "node scripts/debug/debug-workflow.js",
     "debug:single-image": "node scripts/debug/debug-single-image.js",
     "debug:single-image-real": "node scripts/debug/debug-single-image-real.js",
+    "debug:production": "node scripts/debug/production-debug.js",
     "download:images": "node scripts/utils/download-images.js"
   },
   "browserslist": [
@@ -208,12 +209,16 @@
     "appId": "com.taesung.egdesk",
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
-    "asarUnpack": "**\\*.{node,dll}",
+    "asarUnpack": [
+      "scripts/**",
+      "**\\*.{node,dll,js}"
+    ],
     "files": [
       "dist",
       "node_modules",
       "package.json",
-      "php-bundle/**"
+      "php-bundle/**",
+      "scripts/**"
     ],
     "mac": {
       "notarize": false,
@@ -276,7 +281,8 @@
     },
     "extraResources": [
       "./assets/**",
-      "./php-bundle/**"
+      "./php-bundle/**",
+      "./scripts/**"
     ],
     "publish": {
       "provider": "github",
