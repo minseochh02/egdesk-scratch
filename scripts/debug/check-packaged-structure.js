@@ -75,3 +75,4 @@ if (app.isPackaged) {
 }
 
 console.log('\n✅ Directory structure check completed!');
+
