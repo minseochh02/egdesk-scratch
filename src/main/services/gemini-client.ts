@@ -131,35 +131,80 @@ export class GeminiClientService implements AIClientService {
         responseText = '';
       }
 
-      // Execute function calls if any
+      // Execute function calls if any and continue conversation
       if (functionCalls.length > 0) {
         console.log(`🔧 Executing ${functionCalls.length} function call(s)`);
         
+        // Execute all function calls and collect results
+        const toolResponseParts: any[] = [];
+        
         for (const functionCall of functionCalls) {
           try {
+            console.log(`🔧 Executing tool: ${functionCall.name} with params:`, functionCall.args);
             const toolResult = await toolRegistry.executeTool(
               functionCall.name, 
               functionCall.args
             );
             
-            // Add function result to response text
-            responseText += `\n\n✅ **${functionCall.name}** executed successfully:\n`;
-            if (toolResult.success) {
-              if (functionCall.name === 'write_file') {
-                responseText += `📄 Created file: \`${toolResult.relative_path || toolResult.file_path}\`\n`;
-                responseText += `📊 Size: ${toolResult.file_size} bytes (${toolResult.lines_written} lines)\n`;
-                if (toolResult.description) {
-                  responseText += `📝 Description: ${toolResult.description}\n`;
-                }
-              } else if (functionCall.name === 'read_file') {
-                responseText += `📖 Read file: \`${toolResult.file_path}\`\n`;
-                responseText += `📊 Content length: ${toolResult.content?.length || 0} characters\n`;
+            console.log(`✅ Tool '${functionCall.name}' completed:`, toolResult.success ? 'SUCCESS' : 'ERROR');
+            
+            // Create function response part for the AI
+            const functionResponse = {
+              functionResponse: {
+                name: functionCall.name,
+                response: toolResult
               }
-            } else {
-              responseText += `❌ Error: ${toolResult.error}\n`;
+            };
+            
+            toolResponseParts.push(functionResponse);
+          } catch (error) {
+            console.error(`❌ Tool '${functionCall.name}' failed:`, error);
+            
+            // Create error response part for the AI
+            const errorResponse = {
+              functionResponse: {
+                name: functionCall.name,
+                response: {
+                  success: false,
+                  error: error instanceof Error ? error.message : 'Unknown error'
+                }
+              }
+            };
+            
+            toolResponseParts.push(errorResponse);
+          }
+        }
+
+        // If we have tool responses, send them back to the AI for a follow-up response
+        if (toolResponseParts.length > 0) {
+          try {
+            // Create a new chat session with the conversation history
+            const chat = this.model!.startChat({
+              history: [
+                { role: 'user', parts: [{ text: enhancedMessage }] },
+                { role: 'model', parts: response.candidates[0].content.parts }
+              ],
+              generationConfig: {
+                temperature: this.config!.temperature,
+                topK: this.config!.topK,
+                topP: this.config!.topP,
+                maxOutputTokens: this.config!.maxOutputTokens,
+              }
+            });
+
+            // Send the tool results as a user message
+            const followUpResult = await chat.sendMessage(toolResponseParts);
+            const followUpResponse = followUpResult.response;
+            
+            // Get the AI's response to the tool results
+            try {
+              responseText = followUpResponse.text() || '';
+            } catch (e) {
+              responseText = 'Tool execution completed successfully.';
             }
           } catch (error) {
-            responseText += `\n❌ **${functionCall.name}** failed: ${error instanceof Error ? error.message : 'Unknown error'}\n`;
+            console.error('Error getting AI follow-up response:', error);
+            responseText = 'Tools executed successfully, but AI response failed.';
           }
         }
       }
