@@ -19,8 +19,11 @@ import { resolveHtmlPath } from './util';
 import { PHPManager } from './php/php-manager';
 import { ReadFileTool } from './tools/read-file';
 import { WriteFileTool } from './tools/write-file';
+import { ListDirectoryTool } from './tools/list-directory';
+import { EditFileTool } from './tools/edit-file';
 import { GeminiClientService } from './services/gemini-client';
 import { toolRegistry } from './services/tool-registry';
+import { projectContextBridge } from './services/project-context-bridge';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { LocalServerManager } from './wordpress/local-server';
 import { BrowserController } from './browser-controller';
@@ -123,6 +126,30 @@ const createWindow = async () => {
       console.log('✅ WriteFileTool handlers registered');
     } catch (error) {
       console.error('❌ Failed to register WriteFileTool handlers:', error);
+    }
+
+    // Register ListDirectoryTool handlers
+    try {
+      ListDirectoryTool.registerHandlers();
+      console.log('✅ ListDirectoryTool handlers registered');
+    } catch (error) {
+      console.error('❌ Failed to register ListDirectoryTool handlers:', error);
+    }
+
+    // Register EditFileTool handlers
+    try {
+      EditFileTool.registerHandlers();
+      console.log('✅ EditFileTool handlers registered');
+    } catch (error) {
+      console.error('❌ Failed to register EditFileTool handlers:', error);
+    }
+
+    // Initialize Project Context Bridge
+    try {
+      console.log('✅ Project Context Bridge initialized');
+      // Note: projectContextBridge auto-registers IPC handlers in constructor
+    } catch (error) {
+      console.error('❌ Failed to initialize Project Context Bridge:', error);
     }
 
     // Initialize Tool Registry

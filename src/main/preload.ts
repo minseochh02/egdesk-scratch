@@ -432,6 +432,12 @@ export interface AIServiceAPI {
   clearHistory: () => Promise<void>;
 }
 
+export interface ProjectContextAPI {
+  updateContext: (context: any) => Promise<boolean>;
+  getCurrentProject: () => Promise<any>;
+  getContext: () => Promise<any>;
+}
+
 
 export interface SchedulerAPI {
   createTask: (
@@ -708,6 +714,11 @@ const electronHandler = {
     getHistory: () => ipcRenderer.invoke('ai-get-history'),
     clearHistory: () => ipcRenderer.invoke('ai-clear-history'),
   } as AIServiceAPI,
+  projectContext: {
+    updateContext: (context: any) => ipcRenderer.invoke('project-context-update', context),
+    getCurrentProject: () => ipcRenderer.invoke('project-context-get-current'),
+    getContext: () => ipcRenderer.invoke('project-context-get'),
+  } as ProjectContextAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

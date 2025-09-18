@@ -6,6 +6,7 @@
 import { GoogleGenerativeAI, GenerateContentConfig, GenerateContentRequest, Tool, Content, Part } from '@google/generative-ai';
 import { ipcMain } from 'electron';
 import { toolRegistry } from './tool-registry';
+import { projectContextBridge } from './project-context-bridge';
 import type { 
   AIClientConfig, 
   ConversationMessage, 
@@ -81,11 +82,11 @@ export class GeminiClientService implements AIClientService {
     }
 
     try {
-      // Set working directory to EGDesk project root
-      const projectRoot = process.cwd();
-      toolRegistry.setWorkingDirectory(projectRoot);
+      // Get project context and enhance the message
+      const projectContext = toolRegistry.getProjectContext();
+      const enhancedMessage = `${projectContext}\n\nUser Request: ${message}`;
 
-      // Add user message to history
+      // Add user message to history (original message)
       const userMessage: ConversationMessage = {
         role: 'user',
         parts: [{ text: message }],
@@ -107,8 +108,8 @@ export class GeminiClientService implements AIClientService {
         }
       });
 
-      // Generate response with tools
-      const result = await modelWithTools.generateContent(message);
+      // Generate response with tools using enhanced message with project context
+      const result = await modelWithTools.generateContent(enhancedMessage);
 
       const response = result.response;
       let responseText = '';

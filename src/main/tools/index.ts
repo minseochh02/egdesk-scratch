@@ -15,6 +15,8 @@
 
 export { ReadFileTool, type ReadFileToolParams, type ReadFileResult, type FileInfoResult } from './read-file';
 export { WriteFileTool, type WriteFileToolParams, type WriteFileResult } from './write-file';
+export { ListDirectoryTool, type ListDirectoryParams, type ListDirectoryResult, type FileEntry } from './list-directory';
+export { EditFileTool, type EditFileParams, type EditFileResult } from './edit-file';
 
 // Future tools can be added here:
 // export { DatabaseTool } from './database';

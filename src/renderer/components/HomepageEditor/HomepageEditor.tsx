@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './HomepageEditor.css';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import ProjectContextService from '../../services/projectContextService';
 import { ReadFileTool, type ReadFileToolParams, type ReadFileResult } from './tools/read-file';
 import { WriteFileTool, type WriteFileToolParams, type WriteFileResult } from './tools/write-file';
 import { AIChat } from '../AIChat/AIChat';
@@ -33,12 +34,31 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
   });
   const [writeFileResult, setWriteFileResult] = useState<WriteFileResult | null>(null);
   const [isWritingFile, setIsWritingFile] = useState<boolean>(false);
+  const [currentProject, setCurrentProject] = useState<any>(null);
 
   useEffect(() => {
     // Subscribe to AI keys store changes
     const unsubscribe = aiKeysStore.subscribe(setAiKeysState);
     
+    // Subscribe to project context changes
+    const unsubscribeProject = ProjectContextService.getInstance().subscribe((context) => {
+      setCurrentProject(context.currentProject);
+      // Send project context to main process
+      if (context.currentProject) {
+        window.electron.projectContext.updateContext(context);
+      }
+    });
+    
     // Initialize with default content or load from storage
+    const projectInfo = currentProject ? `
+## Current Project
+- **Name:** ${currentProject.name}
+- **Type:** ${currentProject.type}
+- **Path:** ${currentProject.path}
+- **Language:** ${currentProject.metadata.language || 'Unknown'}
+- **Framework:** ${currentProject.metadata.framework || 'None'}
+` : '';
+
     setContent(`
 # Welcome to EGDesk
 
@@ -49,16 +69,22 @@ This is your homepage editor. You can customize this content to create your pers
 - Preview mode
 - Save and load configurations
 - Customize layout and styling
+- AI-powered file operations
+
+${projectInfo}
 
 ## AI Keys Status
 - Active Keys: ${aiKeysState.keys.filter(key => key.isActive).length}
 - Total Keys: ${aiKeysState.keys.length}
 
 ## Getting Started
-Start editing this content to make it your own!
+Start editing this content to make it your own! Use the AI assistant below to create and edit files in your project.
     `.trim());
     
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeProject();
+    };
   }, [aiKeysState.keys.length, aiKeysState.keys.filter(key => key.isActive).length]);
 
   const handleContentChange = (newContent: string) => {
