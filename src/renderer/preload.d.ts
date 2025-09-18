@@ -40,6 +40,8 @@ export interface IElectronAPI {
       path: string,
       content: string,
     ): Promise<{ success: boolean; error?: string }>;
+    writeFileWithParams: (params: any) => Promise<any>;
+    writeFileSimple: (filePath: string, content: string) => Promise<any>;
   };
   wordpress: {
     saveConnection(
@@ -75,6 +77,66 @@ export interface IElectronAPI {
       mediaUrl: string,
       filePath: string,
     ): Promise<{ success: boolean; size?: number; error?: string }>;
+    // SQLite-based sync handlers
+    createSyncOperation(operationData: any): Promise<{
+      success: boolean;
+      operationId?: string;
+      error?: string;
+    }>;
+    updateSyncOperation(operationId: string, updates: any): Promise<{
+      success: boolean;
+      error?: string;
+    }>;
+    savePost(postData: any): Promise<{
+      success: boolean;
+      size?: number;
+      error?: string;
+    }>;
+    downloadMedia(mediaData: any): Promise<{
+      success: boolean;
+      size?: number;
+      error?: string;
+    }>;
+    getPosts(siteId: string, limit?: number, offset?: number): Promise<{
+      success: boolean;
+      posts?: any[];
+      error?: string;
+    }>;
+    getMedia(siteId: string, limit?: number, offset?: number): Promise<{
+      success: boolean;
+      media?: any[];
+      error?: string;
+    }>;
+    getSyncOperations(siteId: string, limit?: number): Promise<{
+      success: boolean;
+      operations?: any[];
+      error?: string;
+    }>;
+    getSyncStats(siteId: string): Promise<{
+      success: boolean;
+      stats?: any;
+      error?: string;
+    }>;
+    addSyncFileDetail(fileDetailData: any): Promise<{
+      success: boolean;
+      fileDetailId?: string;
+      error?: string;
+    }>;
+    updateSyncFileDetail(fileDetailId: string, status: string, errorMessage?: string): Promise<{
+      success: boolean;
+      error?: string;
+    }>;
+    getSyncFileDetails(operationId: string): Promise<{
+      success: boolean;
+      fileDetails?: any[];
+      error?: string;
+    }>;
+    exportToFiles(exportOptions: any): Promise<{
+      success: boolean;
+      exportedFiles?: string[];
+      totalSize?: number;
+      error?: string;
+    }>;
   };
   sync: {
     saveHistory(
@@ -165,39 +227,6 @@ export interface IElectronAPI {
     ): Promise<{ success: boolean; error?: string }>;
     onUrlChanged(windowId: number, callback: (url: string) => void): void;
     removeUrlChangedListener(windowId: number): void;
-  };
-  debug: {
-    executeWorkflow(config: {
-      wordpressUrl: string;
-      wordpressUsername: string;
-      wordpressPassword: string;
-      generatedContent: any;
-      downloadedImages: any[];
-    }): Promise<{
-      success: boolean;
-      output: string;
-      error: string;
-      exitCode: number;
-    }>;
-    downloadImages(images: Array<{id: string; url: string}>): Promise<{
-      success: boolean;
-      results: Array<{
-        success: boolean;
-        imageId: string;
-        data?: string;
-        mimeType?: string;
-        size?: number;
-        error?: string;
-      }>;
-      summary: {
-        total: number;
-        successful: number;
-        failed: number;
-        errors: string[];
-      };
-      stdout: string;
-      stderr: string;
-    }>;
   };
   store: {
     get(key: string): Promise<any>;

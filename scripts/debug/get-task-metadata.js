@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { default: Store } = require('electron-store');
 
 /**
  * Get task metadata by task ID
@@ -17,25 +18,27 @@ const os = require('os');
  */
 function getTaskMetadata(taskId) {
   try {
-    // Look for the tasks file in the correct location
-    const tasksFilePath = path.join(os.homedir(), '.egdesk-scheduler', 'tasks.json');
+    // Initialize Electron Store with the same encryption key as the main app
+    const store = new Store({
+      encryptionKey: 'your-encryption-key-here',
+      projectName: 'egdesk'
+    });
     
-    console.log(`🔍 Looking for tasks file at: ${tasksFilePath}`);
+    console.log(`🔍 Accessing Electron Store for task: ${taskId}`);
     
-    if (!fs.existsSync(tasksFilePath)) {
-      console.error(`❌ Tasks file not found at: ${tasksFilePath}`);
-      return null;
-    }
+    // Debug: List all keys in the store
+    const allKeys = store.store;
+    console.log(`🔍 All keys in store:`, Object.keys(allKeys));
     
-    const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf8'));
-    
-    console.log(`📊 Found ${tasks.length} tasks in file`);
+    const tasks = store.get('scheduledTasks', []);
+    console.log(`📊 Found ${tasks.length} tasks in store`);
     
     // Find the task by ID
     const task = tasks.find(t => t.id === taskId);
     
     if (!task) {
       console.error(`❌ Task with ID ${taskId} not found`);
+      console.log(`📋 Available task IDs: ${tasks.map(t => t.id).join(', ')}`);
       return null;
     }
     
@@ -50,6 +53,43 @@ function getTaskMetadata(taskId) {
 }
 
 /**
+ * List all tasks in the store
+ */
+function listAllTasks() {
+  try {
+    const store = new Store({
+      encryptionKey: 'your-encryption-key-here',
+      projectName: 'egdesk'
+    });
+    
+    console.log(`🔍 Accessing Electron Store...`);
+    
+    const allKeys = store.store;
+    console.log(`🔍 All keys in store:`, Object.keys(allKeys));
+    
+    const tasks = store.get('scheduledTasks', []);
+    console.log(`📊 Found ${tasks.length} tasks in store`);
+    
+    if (tasks.length > 0) {
+      console.log('\n📋 Available tasks:');
+      tasks.forEach((task, index) => {
+        console.log(`${index + 1}. ID: ${task.id}`);
+        console.log(`   Name: ${task.name}`);
+        console.log(`   Schedule: ${task.schedule}`);
+        console.log(`   Enabled: ${task.enabled}`);
+        console.log(`   Command: ${task.command}`);
+        console.log('');
+      });
+    }
+    
+    return tasks;
+  } catch (error) {
+    console.error(`❌ Error listing tasks:`, error.message);
+    return [];
+  }
+}
+
+/**
  * Main execution function
  */
 function main() {
@@ -58,7 +98,14 @@ function main() {
   if (!taskId) {
     console.error('❌ Task ID is required');
     console.log('Usage: node get-task-metadata.js <taskId>');
+    console.log('To list all tasks: node get-task-metadata.js list');
     process.exit(1);
+  }
+  
+  if (taskId === 'list') {
+    console.log(`🚀 Listing all tasks...`);
+    listAllTasks();
+    return;
   }
   
   console.log(`🚀 Retrieving metadata for task: ${taskId}`);

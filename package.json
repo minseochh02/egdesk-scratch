@@ -52,10 +52,6 @@
     "start:preload": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS=\"-r ts-node/register --no-warnings\" webpack --config ./.erb/configs/webpack.config.preload.dev.ts",
     "start:renderer": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS=\"-r ts-node/register --no-warnings\" webpack serve --config ./.erb/configs/webpack.config.renderer.dev.ts",
     "test": "jest",
-    "wordpress:setup": "node setup-wordpress.js",
-    "wordpress:server": "node wordpress-server.js",
-    "wordpress:start": "concurrently \"npm run wordpress:server\" \"npm run start\"",
-    "wordpress:dev": "concurrently \"npm run wordpress:server\" \"npm run start:renderer\"",
     "php:bundle": "node scripts/build/bundle-php-cross-platform.js",
     "php:docker": "node scripts/build/bundle-php-docker.js",
     "php:setup": "npm run php:bundle && npm run build",
@@ -64,7 +60,7 @@
     "debug:single-image": "node scripts/debug/debug-single-image.js",
     "debug:single-image-real": "node scripts/debug/debug-single-image-real.js",
     "debug:production": "node scripts/debug/production-debug.js",
-    "download:images": "node scripts/utils/download-images.js"
+    "cleanup:old-storage": "node scripts/cleanup/cleanup-old-storage.js"
   },
   "browserslist": [
     "extends browserslist-config-erb"
@@ -119,10 +115,14 @@
     "@anthropic-ai/sdk": "^0.61.0",
     "@electron/notarize": "^3.0.0",
     "@fortawesome/fontawesome-svg-core": "^7.0.0",
+    "@fortawesome/free-brands-svg-icons": "^7.0.1",
     "@fortawesome/free-solid-svg-icons": "^7.0.0",
     "@fortawesome/react-fontawesome": "^3.0.2",
     "@google/genai": "^1.19.0",
     "@google/generative-ai": "^0.24.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node-schedule": "^2.1.8",
+    "better-sqlite3": "^12.2.0",
     "electron-debug": "^4.1.0",
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",
@@ -132,10 +132,12 @@
     "lucide-react": "^0.542.0",
     "mime": "^4.0.7",
     "mime-types": "^3.0.1",
+    "node-schedule": "^2.1.1",
     "openai": "^5.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.3.0"
+    "react-router-dom": "^7.3.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
@@ -149,6 +151,7 @@
     "@types/react": "^19.0.11",
     "@types/react-dom": "^19.0.4",
     "@types/react-test-renderer": "^19.0.0",
+    "@types/uuid": "^10.0.0",
     "@types/webpack-bundle-analyzer": "^4.7.0",
     "@typescript-eslint/eslint-plugin": "^8.26.1",
     "@typescript-eslint/parser": "^8.26.1",

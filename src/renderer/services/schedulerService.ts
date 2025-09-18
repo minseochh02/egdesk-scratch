@@ -336,9 +336,63 @@ export class SchedulerService {
       return { valid: true };
     }
 
+    if (schedule.startsWith('date:')) {
+      const dateString = schedule.replace('date:', '');
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return {
+          valid: false,
+          error: 'Invalid date format. Use ISO date string.',
+        };
+      }
+      if (date <= new Date()) {
+        return {
+          valid: false,
+          error: 'Date must be in the future.',
+        };
+      }
+      return { valid: true };
+    }
+
+    if (schedule.startsWith('weekly:')) {
+      const parts = schedule.replace('weekly:', '').split(':');
+      if (parts.length !== 3) {
+        return {
+          valid: false,
+          error: 'Invalid weekly format. Use "weekly:day:hour:minute"',
+        };
+      }
+      const [day, hour, minute] = parts.map(p => parseInt(p));
+      if (day < 0 || day > 6 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return {
+          valid: false,
+          error: 'Invalid weekly values. Day: 0-6, Hour: 0-23, Minute: 0-59',
+        };
+      }
+      return { valid: true };
+    }
+
+    if (schedule.startsWith('monthly:')) {
+      const parts = schedule.replace('monthly:', '').split(':');
+      if (parts.length !== 3) {
+        return {
+          valid: false,
+          error: 'Invalid monthly format. Use "monthly:day:hour:minute"',
+        };
+      }
+      const [day, hour, minute] = parts.map(p => parseInt(p));
+      if (day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return {
+          valid: false,
+          error: 'Invalid monthly values. Day: 1-31, Hour: 0-23, Minute: 0-59',
+        };
+      }
+      return { valid: true };
+    }
+
     return {
       valid: false,
-      error: 'Invalid schedule format. Use "interval:ms" or "cron:expression"',
+      error: 'Invalid schedule format. Use "interval:ms", "cron:expression", "date:ISO", "weekly:day:hour:minute", or "monthly:day:hour:minute"',
     };
   }
 
@@ -358,6 +412,27 @@ export class SchedulerService {
 
     if (schedule.startsWith('cron:')) {
       return `Cron: ${schedule.replace('cron:', '')}`;
+    }
+
+    if (schedule.startsWith('date:')) {
+      const dateString = schedule.replace('date:', '');
+      const date = new Date(dateString);
+      return `특정 날짜: ${date.toLocaleString('ko-KR')}`;
+    }
+
+    if (schedule.startsWith('weekly:')) {
+      const parts = schedule.replace('weekly:', '').split(':');
+      const [day, hour, minute] = parts.map(p => parseInt(p));
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      return `매주 ${dayNames[day]}요일 ${timeStr}`;
+    }
+
+    if (schedule.startsWith('monthly:')) {
+      const parts = schedule.replace('monthly:', '').split(':');
+      const [day, hour, minute] = parts.map(p => parseInt(p));
+      const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      return `매월 ${day}일 ${timeStr}`;
     }
 
     return schedule;

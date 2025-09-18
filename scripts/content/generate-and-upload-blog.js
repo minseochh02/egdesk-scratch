@@ -227,6 +227,25 @@ async function generateAndUploadBlog(topic, metadata = null) {
 }
 
 /**
+ * Get task metadata from environment variables (preferred method)
+ */
+function getTaskMetadataFromEnv() {
+  try {
+    const metadataJson = process.env.TASK_METADATA;
+    if (!metadataJson) {
+      throw new Error('TASK_METADATA environment variable not found');
+    }
+    
+    const metadata = JSON.parse(metadataJson);
+    console.log('✅ Retrieved task metadata from environment variables');
+    return metadata;
+  } catch (error) {
+    console.error('❌ Error parsing task metadata from environment:', error.message);
+    return null;
+  }
+}
+
+/**
  * Main execution function - can be called directly with metadata or from command line
  */
 async function main(providedMetadata = null, providedTaskId = null) {
@@ -240,21 +259,27 @@ async function main(providedMetadata = null, providedTaskId = null) {
       console.log('🚀 Starting Gemini blog generation and WordPress upload...');
       console.log(`🆔 Task ID: ${taskId}`);
     } else {
-      // Called from command line (legacy support)
-      taskId = process.argv[2];
+      // Called from command line - try environment variables first, then fallback to file
+      taskId = process.argv[2] || process.env.TASK_ID;
       
       if (!taskId) {
-        throw new Error('Task ID is required as command line argument');
+        throw new Error('Task ID is required as command line argument or TASK_ID environment variable');
       }
       
       console.log('🚀 Starting Gemini blog generation and WordPress upload...');
       console.log(`🆔 Task ID: ${taskId}`);
       
-      // Retrieve task metadata
-      metadata = getTaskMetadata(taskId);
+      // Try to get metadata from environment variables first (preferred method)
+      metadata = getTaskMetadataFromEnv();
       
+      // Fallback to file-based method if environment variables not available
       if (!metadata) {
-        throw new Error('Failed to retrieve task metadata');
+        console.log('⚠️  Environment variables not available, falling back to file-based metadata retrieval...');
+        metadata = getTaskMetadata(taskId);
+        
+        if (!metadata) {
+          throw new Error('Failed to retrieve task metadata from both environment variables and file');
+        }
       }
     }
     
@@ -305,14 +330,12 @@ async function main(providedMetadata = null, providedTaskId = null) {
       }
     }
     
-    // Update task metadata with new usage data FIRST (before blog generation)
-    console.log('\n💾 Saving updated topic usage to tasks.json...');
-    try {
-      updateTaskMetadata(taskId, metadata, selectedTopic.topic);
-    } catch (error) {
-      console.error('❌ Error updating task metadata:', error.message);
-      console.error('❌ Stack trace:', error.stack);
-    }
+    // Note: Task metadata updates are handled by the main app when the task completes
+    // The script logs the updated metadata for the main app to process
+    console.log('\n📊 Updated topic usage data (will be saved by main app):');
+    console.log(`   Selected topic: "${selectedTopic.topic}"`);
+    console.log(`   Updated count: ${selectedTopic.count}`);
+    console.log(`   Last used: ${selectedTopic.lastUsed}`);
     
     // Generate and upload blog
     let result;

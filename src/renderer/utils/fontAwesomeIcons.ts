@@ -142,3 +142,15 @@ export {
   faSave,
   faHistory,
 } from '@fortawesome/free-solid-svg-icons';
+
+// Homepage Editor specific icons
+export {
+  faArrowLeft as faUndo,
+  faArrowRight as faRedo,
+  faImage as faPalette,
+  faPhone as faMobile,
+  faMonitor as faDesktop,
+  faLaptop as faTablet,
+  faPaperPlane,
+  faLightbulb as faBrain,
+} from '@fortawesome/free-solid-svg-icons';

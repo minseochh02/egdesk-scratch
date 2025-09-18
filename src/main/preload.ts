@@ -1,6 +1,7 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import type { WriteFileToolParams, WriteFileResult } from './tools/write-file';
 
 export type Channels =
   | 'ipc-example'
@@ -34,6 +35,31 @@ export interface SystemDirectory {
   icon: string;
 }
 
+export interface ReadFileParams {
+  absolute_path: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface ReadFileResult {
+  success: boolean;
+  content?: string;
+  error?: string;
+  isTruncated?: boolean;
+  totalLines?: number;
+  linesShown?: [number, number];
+  mimetype?: string;
+  fileSize?: number;
+}
+
+export interface FileInfoResult {
+  exists: boolean;
+  size?: number;
+  isDirectory?: boolean;
+  mimetype?: string;
+  error?: string;
+}
+
 export interface FileSystemAPI {
   readDirectory: (
     path: string,
@@ -61,6 +87,10 @@ export interface FileSystemAPI {
     path: string,
     content: string,
   ) => Promise<{ success: boolean; error?: string }>;
+  readFileWithParams: (params: ReadFileParams) => Promise<ReadFileResult>;
+  getFileInfoOnly: (filePath: string) => Promise<FileInfoResult>;
+  writeFileWithParams: (params: WriteFileToolParams) => Promise<WriteFileResult>;
+  writeFileSimple: (filePath: string, content: string) => Promise<WriteFileResult>;
 }
 
 export interface WordPressConnection {
@@ -153,6 +183,66 @@ export interface WordPressAPI {
     mediaUrl: string,
     filePath: string,
   ) => Promise<{ success: boolean; size?: number; error?: string }>;
+  // SQLite-based sync handlers
+  createSyncOperation: (operationData: any) => Promise<{
+    success: boolean;
+    operationId?: string;
+    error?: string;
+  }>;
+  updateSyncOperation: (operationId: string, updates: any) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  savePost: (postData: any) => Promise<{
+    success: boolean;
+    size?: number;
+    error?: string;
+  }>;
+  downloadMedia: (mediaData: any) => Promise<{
+    success: boolean;
+    size?: number;
+    error?: string;
+  }>;
+  getPosts: (siteId: string, limit?: number, offset?: number) => Promise<{
+    success: boolean;
+    posts?: any[];
+    error?: string;
+  }>;
+  getMedia: (siteId: string, limit?: number, offset?: number) => Promise<{
+    success: boolean;
+    media?: any[];
+    error?: string;
+  }>;
+  getSyncOperations: (siteId: string, limit?: number) => Promise<{
+    success: boolean;
+    operations?: any[];
+    error?: string;
+  }>;
+  getSyncStats: (siteId: string) => Promise<{
+    success: boolean;
+    stats?: any;
+    error?: string;
+  }>;
+  addSyncFileDetail: (fileDetailData: any) => Promise<{
+    success: boolean;
+    fileDetailId?: string;
+    error?: string;
+  }>;
+  updateSyncFileDetail: (fileDetailId: string, status: string, errorMessage?: string) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  getSyncFileDetails: (operationId: string) => Promise<{
+    success: boolean;
+    fileDetails?: any[];
+    error?: string;
+  }>;
+  exportToFiles: (exportOptions: any) => Promise<{
+    success: boolean;
+    exportedFiles?: string[];
+    totalSize?: number;
+    error?: string;
+  }>;
 }
 
 export interface SyncAPI {
@@ -280,8 +370,11 @@ export interface ScheduledTask {
   command: string;
   schedule: string; // cron expression or interval
   enabled: boolean;
-  lastRun?: Date;
-  nextRun?: Date;
+  lastRun?: Date | null;
+  nextRun?: Date | null;
+  runCount: number;
+  successCount: number;
+  failureCount: number;
   createdAt: Date;
   updatedAt: Date;
   workingDirectory?: string;
@@ -301,6 +394,7 @@ export interface TaskExecution {
   output?: string;
   error?: string;
   pid?: number;
+  createdAt: Date;
 }
 
 export interface ScriptExecutionResult {
@@ -318,6 +412,7 @@ export interface ScriptExecutionAPI {
     environment?: Record<string, string>
   ) => Promise<ScriptExecutionResult>;
 }
+
 
 export interface SchedulerAPI {
   createTask: (
@@ -351,6 +446,10 @@ export interface SchedulerAPI {
   getTaskMetadata: (taskId: string) => Promise<{
     success: boolean;
     metadata?: Record<string, any>;
+    error?: string;
+  }>;
+  updateTaskMetadata: (taskId: string, metadata: Record<string, any>) => Promise<{
+    success: boolean;
     error?: string;
   }>;
 }
@@ -399,6 +498,14 @@ const electronHandler = {
       ipcRenderer.invoke('fs-write-file', path, content),
     getFileSystemInfo: () => ipcRenderer.invoke('debug-get-filesystem-info'),
     getDiskSpace: () => ipcRenderer.invoke('debug-get-disk-space'),
+    readFileWithParams: (params: ReadFileParams) =>
+      ipcRenderer.invoke('read-file', params),
+    getFileInfoOnly: (filePath: string) =>
+      ipcRenderer.invoke('get-file-info', { absolute_path: filePath }),
+    writeFileWithParams: (params: WriteFileToolParams) =>
+      ipcRenderer.invoke('fs-write-file', params),
+    writeFileSimple: (filePath: string, content: string) =>
+      ipcRenderer.invoke('fs-write-file-simple', filePath, content),
   } as FileSystemAPI,
   wordpress: {
     saveConnection: (connection: WordPressConnection) =>
@@ -422,6 +529,31 @@ const electronHandler = {
       ipcRenderer.invoke('wp-sync-save-post', filePath, content),
     syncDownloadMedia: (mediaUrl: string, filePath: string) =>
       ipcRenderer.invoke('wp-sync-download-media', mediaUrl, filePath),
+    // SQLite-based sync handlers
+    createSyncOperation: (operationData: any) =>
+      ipcRenderer.invoke('wp-sync-create-operation', operationData),
+    updateSyncOperation: (operationId: string, updates: any) =>
+      ipcRenderer.invoke('wp-sync-update-operation', operationId, updates),
+    savePost: (postData: any) =>
+      ipcRenderer.invoke('wp-sync-save-post', postData),
+    downloadMedia: (mediaData: any) =>
+      ipcRenderer.invoke('wp-sync-download-media', mediaData),
+    getPosts: (siteId: string, limit?: number, offset?: number) =>
+      ipcRenderer.invoke('wp-sync-get-posts', siteId, limit, offset),
+    getMedia: (siteId: string, limit?: number, offset?: number) =>
+      ipcRenderer.invoke('wp-sync-get-media', siteId, limit, offset),
+    getSyncOperations: (siteId: string, limit?: number) =>
+      ipcRenderer.invoke('wp-sync-get-operations', siteId, limit),
+    getSyncStats: (siteId: string) =>
+      ipcRenderer.invoke('wp-sync-get-stats', siteId),
+    addSyncFileDetail: (fileDetailData: any) =>
+      ipcRenderer.invoke('wp-sync-add-file-detail', fileDetailData),
+    updateSyncFileDetail: (fileDetailId: string, status: string, errorMessage?: string) =>
+      ipcRenderer.invoke('wp-sync-update-file-detail', fileDetailId, status, errorMessage),
+    getSyncFileDetails: (operationId: string) =>
+      ipcRenderer.invoke('wp-sync-get-file-details', operationId),
+    exportToFiles: (exportOptions: any) =>
+      ipcRenderer.invoke('wp-sync-export-to-files', exportOptions),
   } as WordPressAPI,
   sync: {
     saveHistory: (syncData: any) =>
@@ -530,17 +662,9 @@ const electronHandler = {
     getSystemInfo: () => ipcRenderer.invoke('scheduler-get-system-info'),
     getTaskMetadata: (taskId: string) =>
       ipcRenderer.invoke('scheduler-get-task-metadata', taskId),
+    updateTaskMetadata: (taskId: string, metadata: Record<string, any>) =>
+      ipcRenderer.invoke('scheduler-update-task-metadata', taskId, metadata),
   } as SchedulerAPI,
-  debug: {
-    executeWorkflow: (config: {
-      wordpressUrl: string;
-      wordpressUsername: string;
-      wordpressPassword: string;
-      generatedContent: any;
-      downloadedImages: any[];
-    }) => ipcRenderer.invoke('debug-workflow-execute', config),
-    downloadImages: (images: Array<{id: string; url: string}>) => ipcRenderer.invoke('download-images', images),
-  },
   scriptExecution: {
     executeNodeScript: (
       scriptPath: string,

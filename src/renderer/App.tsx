@@ -12,18 +12,17 @@ import {
   faRobot,
   faList,
   faHome,
-  faComments,
   faLock,
   faShieldAlt,
   faCog,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
-import BlogManager from './components/BlogManager';
-import WordPressConnector from './components/WordPressConnector';
-import WordPressSitesList from './components/WordPressSitesList';
+import BlogManager from './components/BlogManager/BlogManager';
+import WordPressConnector from './components/BlogManager/WordPressConnector';
+import WordPressSitesList from './components/BlogManager/WordPressSitesList';
 import { AIKeysManager } from './components/AIKeysManager';
-import { AIChat } from './components/AIChat/AIChat';
-import SSLAnalyzer from './components/SSLAnalyzer';
+import { HomepageEditor } from './components/HomepageEditor';
+import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
@@ -46,10 +45,10 @@ function NavigationBar() {
           <FontAwesomeIcon icon={faGlobe} /> 블로그 관리
         </Link>
         <Link
-          to="/ai-chat"
-          className={`nav-link ${location.pathname === '/ai-chat' ? 'active' : ''}`}
+          to="/homepage-editor"
+          className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faCog} /> 홈페이지 관리
+          <FontAwesomeIcon icon={faCog} /> 홈페이지 에디터
         </Link>
         <Link
           to="/ssl-analyzer"
@@ -94,7 +93,7 @@ export default function App() {
               } 
             />
             <Route path="/ai-keys" element={<AIKeysManager />} />
-            <Route path="/ai-chat" element={<AIChat />} />
+            <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
           </Routes>
         </main>
