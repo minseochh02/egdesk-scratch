@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AIService } from '../../services/ai-service';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import ProjectContextService from '../../services/projectContextService';
 import type { ConversationMessage, AIResponse } from '../../../main/types/ai-types';
 import type { AIKey } from '../AIKeysManager/types';
 import './AIChat.css';
@@ -22,6 +23,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [aiKeysState, setAiKeysState] = useState(aiKeysStore.getState());
   const [selectedGoogleKey, setSelectedGoogleKey] = useState<AIKey | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
+  const [currentProject, setCurrentProject] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,7 +32,19 @@ export const AIChat: React.FC<AIChatProps> = () => {
     checkConfiguration();
     loadHistory();
     
-    return unsubscribe;
+    // Subscribe to project context changes
+    const unsubscribeProject = ProjectContextService.getInstance().subscribe((context) => {
+      setCurrentProject(context.currentProject);
+      // Send project context to main process
+      if (context.currentProject) {
+        window.electron.projectContext.updateContext(context);
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+      unsubscribeProject();
+    };
   }, []);
 
   useEffect(() => {
@@ -204,6 +218,16 @@ export const AIChat: React.FC<AIChatProps> = () => {
           </button>
         </div>
       </div>
+
+      {/* Project Context Display */}
+      {currentProject && (
+        <div className="project-context">
+          <span className="project-indicator">📁</span>
+          <span className="project-name">{currentProject.name}</span>
+          <span className="project-type">({currentProject.type})</span>
+          <span className="project-path">{currentProject.path}</span>
+        </div>
+      )}
 
       {/* Google AI Key Selector */}
       {googleKeys.length > 1 && (

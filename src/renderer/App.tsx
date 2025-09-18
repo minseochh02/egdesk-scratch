@@ -23,6 +23,7 @@ import WordPressSitesList from './components/BlogManager/WordPressSitesList';
 import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
+import LocalServer from './components/LocalServer';
 import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
@@ -62,6 +63,12 @@ function NavigationBar() {
         >
           <FontAwesomeIcon icon={faRobot} /> API 키 관리
         </Link>
+        <Link
+          to="/local-server"
+          className={`nav-link ${location.pathname === '/local-server' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faServer} /> 로컬 서버
+        </Link>
       </nav>
     </div>
   );
@@ -95,6 +102,14 @@ export default function App() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
+            <Route 
+              path="/local-server" 
+              element={
+                <ErrorBoundary>
+                  <LocalServer />
+                </ErrorBoundary>
+              } 
+            />
           </Routes>
         </main>
       </div>

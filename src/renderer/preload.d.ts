@@ -244,6 +244,18 @@ export interface IElectronAPI {
     search(query: string): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
     clearAll(): Promise<{ success: boolean; error?: string }>;
   };
+  aiService: {
+    configure(config: any): Promise<boolean>;
+    isConfigured(): Promise<boolean>;
+    sendMessage(message: string): Promise<any>;
+    getHistory(): Promise<any[]>;
+    clearHistory(): Promise<void>;
+  };
+  projectContext: {
+    updateContext(context: any): Promise<boolean>;
+    getCurrentProject(): Promise<any>;
+    getContext(): Promise<any>;
+  };
 }
 
 declare global {
