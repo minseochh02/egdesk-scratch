@@ -109,25 +109,8 @@ export class HTMLReportService {
     };
     
     printButton.onclick = () => {
-      // Create a new window for printing with clean, print-optimized content
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        // Create a clean HTML document optimized for printing
-        const cleanHtmlContent = this.generatePrintOptimizedHTML(htmlContent);
-        printWindow.document.write(cleanHtmlContent);
-        printWindow.document.close();
-        
-        // Wait for content to load, then print
-        printWindow.onload = () => {
-          printWindow.focus();
-          setTimeout(() => {
-            printWindow.print();
-          }, 500);
-        };
-      } else {
-        // Fallback: create a temporary print-optimized element
-        this.printFallback(htmlContent);
-      }
+      // Use the iframe fallback method directly for reliable printing
+      this.printFallback(htmlContent);
     };
 
     // Close button

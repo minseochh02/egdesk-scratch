@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SSLAnalysisService, WebsiteAccessibilityResult, SSLCertificateResult, SecurityHeadersResult, SecurityGrade, BusinessImpactResult, OverallSecurityResult } from '../../services/sslAnalysisService';
 import { HTMLReportService } from '../../services/htmlReportService';
+import { SSLAnalysisStorageService, StoredSSLAnalysis, SSLAnalysisStats } from '../../services/sslAnalysisStorageService';
 import './SSLAnalyzer.css';
 
 interface SSLAnalyzerProps {}
@@ -67,6 +68,37 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
   const [securityGrade, setSecurityGrade] = useState<SecurityGrade | null>(null);
   const [businessImpact, setBusinessImpact] = useState<BusinessImpactResult | null>(null);
   const [completeAnalysis, setCompleteAnalysis] = useState<OverallSecurityResult | null>(null);
+  
+  // Analysis history state
+  const [analysisHistory, setAnalysisHistory] = useState<StoredSSLAnalysis[]>([]);
+  const [analysisStats, setAnalysisStats] = useState<SSLAnalysisStats | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAnalysis, setSelectedAnalysis] = useState<StoredSSLAnalysis | null>(null);
+
+  // Load analysis history on component mount
+  useEffect(() => {
+    loadAnalysisHistory();
+    loadAnalysisStats();
+  }, []);
+
+  const loadAnalysisHistory = async () => {
+    try {
+      const analyses = await SSLAnalysisStorageService.getAnalyses();
+      setAnalysisHistory(analyses);
+    } catch (error) {
+      console.error('Error loading analysis history:', error);
+    }
+  };
+
+  const loadAnalysisStats = async () => {
+    try {
+      const stats = await SSLAnalysisStorageService.getAnalysisStats();
+      setAnalysisStats(stats);
+    } catch (error) {
+      console.error('Error loading analysis stats:', error);
+    }
+  };
 
   const handleAnalyze = async () => {
     if (!websiteUrl.trim()) {
@@ -94,6 +126,17 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
       setBusinessImpact(completeAnalysis.businessImpact);
       setCompleteAnalysis(completeAnalysis);
       setAnalysisResult(completeAnalysis.combinedReport);
+      
+      // Save analysis to storage
+      try {
+        await SSLAnalysisStorageService.saveAnalysis(websiteUrl, completeAnalysis);
+        // Reload history and stats after saving
+        await loadAnalysisHistory();
+        await loadAnalysisStats();
+      } catch (saveError) {
+        console.error('Error saving analysis:', saveError);
+        // Don't show error to user as analysis was successful
+      }
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다';
@@ -159,6 +202,77 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Analysis history handlers
+  const handleShowHistory = () => {
+    setShowHistory(true);
+    loadAnalysisHistory();
+  };
+
+  const handleHideHistory = () => {
+    setShowHistory(false);
+    setSelectedAnalysis(null);
+  };
+
+  const handleSelectAnalysis = (analysis: StoredSSLAnalysis) => {
+    setSelectedAnalysis(analysis);
+    setWebsiteUrl(analysis.websiteUrl);
+    setAccessibilityData(analysis.analysis.accessibility);
+    setCertificateData(analysis.analysis.certificate);
+    setSecurityHeadersData(analysis.analysis.securityHeaders);
+    setSecurityGrade(analysis.analysis.grade);
+    setBusinessImpact(analysis.analysis.businessImpact);
+    setCompleteAnalysis(analysis.analysis);
+    setAnalysisResult(analysis.analysis.combinedReport);
+    setShowHistory(false);
+  };
+
+  const handleDeleteAnalysis = async (analysisId: string) => {
+    if (confirm('이 분석을 삭제하시겠습니까?')) {
+      try {
+        await SSLAnalysisStorageService.deleteAnalysis(analysisId);
+        await loadAnalysisHistory();
+        await loadAnalysisStats();
+        if (selectedAnalysis?.id === analysisId) {
+          setSelectedAnalysis(null);
+        }
+      } catch (error) {
+        console.error('Error deleting analysis:', error);
+        alert('분석 삭제 중 오류가 발생했습니다');
+      }
+    }
+  };
+
+  const handleSearchAnalyses = async () => {
+    try {
+      if (searchQuery.trim()) {
+        const analyses = await SSLAnalysisStorageService.searchAnalyses(searchQuery);
+        setAnalysisHistory(analyses);
+      } else {
+        await loadAnalysisHistory();
+      }
+    } catch (error) {
+      console.error('Error searching analyses:', error);
+    }
+  };
+
+  const handleExportAnalyses = async () => {
+    try {
+      const exportData = await SSLAnalysisStorageService.exportAnalyses();
+      const blob = new Blob([exportData], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `SSL_분석_내역_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting analyses:', error);
+      alert('분석 내역 내보내기 중 오류가 발생했습니다');
+    }
+  };
+
   return (
     <div className="ssl-analyzer">
       <div className="ssl-analyzer-header">
@@ -184,6 +298,22 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
           >
             {isAnalyzing ? '분석 중...' : '이 웹사이트 분석하기'}
           </button>
+        </div>
+        
+        <div className="analyzer-actions">
+          <button
+            onClick={handleShowHistory}
+            className="history-button"
+            title="분석 내역 보기"
+          >
+            📊 분석 내역 ({analysisHistory.length})
+          </button>
+          {analysisStats && (
+            <div className="stats-summary">
+              <span>평균 점수: {analysisStats.averageScore}/100</span>
+              <span>총 분석: {analysisStats.totalAnalyses}개</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -535,6 +665,118 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Analysis History Modal */}
+      {showHistory && (
+        <div className="history-modal-overlay">
+          <div className="history-modal">
+            <div className="history-modal-header">
+              <h2>SSL 분석 내역</h2>
+              <div className="history-actions">
+                <div className="search-group">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="검색..."
+                    className="search-input"
+                  />
+                  <button onClick={handleSearchAnalyses} className="search-button">
+                    🔍
+                  </button>
+                </div>
+                <button onClick={handleExportAnalyses} className="export-button">
+                  📤 내보내기
+                </button>
+                <button onClick={handleHideHistory} className="close-button">
+                  ✕
+                </button>
+              </div>
+            </div>
+            
+            <div className="history-content">
+              {analysisStats && (
+                <div className="history-stats">
+                  <div className="stat-item">
+                    <span className="stat-label">총 분석 수:</span>
+                    <span className="stat-value">{analysisStats.totalAnalyses}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">평균 점수:</span>
+                    <span className="stat-value">{analysisStats.averageScore}/100</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">등급 분포:</span>
+                    <div className="grade-distribution">
+                      {Object.entries(analysisStats.gradeDistribution).map(([grade, count]) => (
+                        <span key={grade} className="grade-stat">
+                          {grade}: {count}개
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="analysis-list">
+                {analysisHistory.length === 0 ? (
+                  <div className="no-analyses">
+                    <p>분석 내역이 없습니다.</p>
+                  </div>
+                ) : (
+                  analysisHistory.map((analysis) => {
+                    const summary = SSLAnalysisStorageService.getAnalysisSummary(analysis);
+                    return (
+                      <div key={analysis.id} className="analysis-item">
+                        <div className="analysis-info">
+                          <div className="analysis-url">{summary.url}</div>
+                          <div className="analysis-details">
+                            <span className={`grade-badge ${getGradeClass(summary.grade)}`}>
+                              {summary.grade} ({summary.score}/100)
+                            </span>
+                            <span className="analysis-date">{summary.date}</span>
+                            {summary.hasIssues && (
+                              <span className="issues-indicator">
+                                ⚠️ {summary.criticalIssues}개 문제
+                              </span>
+                            )}
+                          </div>
+                          {analysis.tags && analysis.tags.length > 0 && (
+                            <div className="analysis-tags">
+                              {analysis.tags.map((tag, index) => (
+                                <span key={index} className="tag">#{tag}</span>
+                              ))}
+                            </div>
+                          )}
+                          {analysis.notes && (
+                            <div className="analysis-notes">{analysis.notes}</div>
+                          )}
+                        </div>
+                        <div className="analysis-actions">
+                          <button
+                            onClick={() => handleSelectAnalysis(analysis)}
+                            className="select-button"
+                            title="이 분석 보기"
+                          >
+                            👁️ 보기
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAnalysis(analysis.id)}
+                            className="delete-button"
+                            title="이 분석 삭제"
+                          >
+                            🗑️ 삭제
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -234,6 +234,16 @@ export interface IElectronAPI {
     delete(key: string): Promise<void>;
     has(key: string): Promise<boolean>;
   };
+  sslAnalysis: {
+    save(analysis: any): Promise<{ success: boolean; analysis?: any; error?: string }>;
+    getAll(filter?: any): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
+    getById(id: string): Promise<{ success: boolean; analysis?: any; error?: string }>;
+    update(id: string, updates: any): Promise<{ success: boolean; analysis?: any; error?: string }>;
+    delete(id: string): Promise<{ success: boolean; error?: string }>;
+    getStats(): Promise<{ success: boolean; stats?: any; error?: string }>;
+    search(query: string): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
+    clearAll(): Promise<{ success: boolean; error?: string }>;
+  };
 }
 
 declare global {

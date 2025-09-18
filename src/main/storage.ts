@@ -406,3 +406,209 @@ ipcMain.handle('store-clear', async () => {
     throw error;
   }
 });
+
+// SSL Analysis Storage IPC handlers
+ipcMain.handle('ssl-analysis-save', async (event, analysis) => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    analyses.push(analysis);
+    store.set('sslAnalysisHistory', analyses);
+    return { success: true, analysis };
+  } catch (error) {
+    console.error('Error saving SSL analysis:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-get-all', async (event, filter) => {
+  try {
+    let analyses = store.get('sslAnalysisHistory', []) as any[];
+    
+    // Apply filters
+    if (filter) {
+      if (filter.websiteUrl) {
+        analyses = analyses.filter(a => 
+          a.websiteUrl.toLowerCase().includes(filter.websiteUrl.toLowerCase())
+        );
+      }
+      
+      if (filter.dateFrom) {
+        const fromDate = new Date(filter.dateFrom);
+        analyses = analyses.filter(a => new Date(a.createdAt) >= fromDate);
+      }
+      
+      if (filter.dateTo) {
+        const toDate = new Date(filter.dateTo);
+        analyses = analyses.filter(a => new Date(a.createdAt) <= toDate);
+      }
+      
+      if (filter.grade) {
+        analyses = analyses.filter(a => a.analysis.grade.grade === filter.grade);
+      }
+      
+      if (filter.tags && filter.tags.length > 0) {
+        analyses = analyses.filter(a => 
+          a.tags && filter.tags.some((tag: string) => a.tags.includes(tag))
+        );
+      }
+    }
+    
+    // Sort by creation date (newest first)
+    analyses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    return { success: true, analyses };
+  } catch (error) {
+    console.error('Error getting SSL analyses:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      analyses: []
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-get-by-id', async (event, id) => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    const analysis = analyses.find(a => a.id === id);
+    return { success: true, analysis };
+  } catch (error) {
+    console.error('Error getting SSL analysis by ID:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      analysis: null
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-update', async (event, id, updates) => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    const index = analyses.findIndex(a => a.id === id);
+    
+    if (index >= 0) {
+      analyses[index] = {
+        ...analyses[index],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      store.set('sslAnalysisHistory', analyses);
+      return { success: true, analysis: analyses[index] };
+    } else {
+      return { success: false, error: 'Analysis not found' };
+    }
+  } catch (error) {
+    console.error('Error updating SSL analysis:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-delete', async (event, id) => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    const filteredAnalyses = analyses.filter(a => a.id !== id);
+    store.set('sslAnalysisHistory', filteredAnalyses);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting SSL analysis:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-get-stats', async () => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    
+    const stats = {
+      totalAnalyses: analyses.length,
+      averageScore: 0,
+      gradeDistribution: {} as Record<string, number>,
+      mostAnalyzedSites: [] as Array<{ url: string; count: number }>,
+      recentAnalyses: analyses.slice(0, 5)
+    };
+    
+    if (analyses.length > 0) {
+      // Calculate average score
+      const totalScore = analyses.reduce((sum, a) => sum + a.analysis.grade.score, 0);
+      stats.averageScore = Math.round(totalScore / analyses.length);
+      
+      // Calculate grade distribution
+      analyses.forEach(a => {
+        const grade = a.analysis.grade.grade;
+        stats.gradeDistribution[grade] = (stats.gradeDistribution[grade] || 0) + 1;
+      });
+      
+      // Calculate most analyzed sites
+      const siteCounts = analyses.reduce((acc, a) => {
+        acc[a.websiteUrl] = (acc[a.websiteUrl] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      stats.mostAnalyzedSites = Object.entries(siteCounts)
+        .map(([url, count]) => ({ url, count: count as number }))
+        .sort((a, b) => (b.count as number) - (a.count as number))
+        .slice(0, 10);
+    }
+    
+    return { success: true, stats };
+  } catch (error) {
+    console.error('Error getting SSL analysis stats:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stats: {
+        totalAnalyses: 0,
+        averageScore: 0,
+        gradeDistribution: {},
+        mostAnalyzedSites: [],
+        recentAnalyses: []
+      }
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-search', async (event, query) => {
+  try {
+    const analyses = store.get('sslAnalysisHistory', []) as any[];
+    const searchQuery = query.toLowerCase();
+    
+    const filteredAnalyses = analyses.filter(a => 
+      a.websiteUrl.toLowerCase().includes(searchQuery) ||
+      (a.tags && a.tags.some((tag: string) => tag.toLowerCase().includes(searchQuery))) ||
+      (a.notes && a.notes.toLowerCase().includes(searchQuery)) ||
+      a.analysis.grade.grade.toLowerCase().includes(searchQuery)
+    );
+    
+    return { success: true, analyses: filteredAnalyses };
+  } catch (error) {
+    console.error('Error searching SSL analyses:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      analyses: []
+    };
+  }
+});
+
+ipcMain.handle('ssl-analysis-clear-all', async () => {
+  try {
+    store.set('sslAnalysisHistory', []);
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing SSL analyses:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});

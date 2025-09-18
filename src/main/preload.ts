@@ -298,6 +298,17 @@ export interface StoreAPI {
   clear: () => Promise<void>;
 }
 
+export interface SSLAnalysisAPI {
+  save(analysis: any): Promise<{ success: boolean; analysis?: any; error?: string }>;
+  getAll(filter?: any): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
+  getById(id: string): Promise<{ success: boolean; analysis?: any; error?: string }>;
+  update(id: string, updates: any): Promise<{ success: boolean; analysis?: any; error?: string }>;
+  delete(id: string): Promise<{ success: boolean; error?: string }>;
+  getStats(): Promise<{ success: boolean; stats?: any; error?: string }>;
+  search(query: string): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
+  clearAll(): Promise<{ success: boolean; error?: string }>;
+}
+
 export interface PHPInfo {
   version: string;
   path: string;
@@ -583,6 +594,16 @@ const electronHandler = {
     has: (key: string) => ipcRenderer.invoke('store-has', key),
     clear: () => ipcRenderer.invoke('store-clear'),
   } as StoreAPI,
+  sslAnalysis: {
+    save: (analysis: any) => ipcRenderer.invoke('ssl-analysis-save', analysis),
+    getAll: (filter?: any) => ipcRenderer.invoke('ssl-analysis-get-all', filter),
+    getById: (id: string) => ipcRenderer.invoke('ssl-analysis-get-by-id', id),
+    update: (id: string, updates: any) => ipcRenderer.invoke('ssl-analysis-update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('ssl-analysis-delete', id),
+    getStats: () => ipcRenderer.invoke('ssl-analysis-get-stats'),
+    search: (query: string) => ipcRenderer.invoke('ssl-analysis-search', query),
+    clearAll: () => ipcRenderer.invoke('ssl-analysis-clear-all'),
+  } as SSLAnalysisAPI,
   wordpressServer: {
     analyzeFolder: (folderPath: string) =>
       ipcRenderer.invoke('wp-server-analyze-folder', folderPath),
