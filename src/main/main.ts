@@ -19,6 +19,8 @@ import { resolveHtmlPath } from './util';
 import { PHPManager } from './php/php-manager';
 import { ReadFileTool } from './tools/read-file';
 import { WriteFileTool } from './tools/write-file';
+import { GeminiClientService } from './services/gemini-client';
+import { toolRegistry } from './services/tool-registry';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { LocalServerManager } from './wordpress/local-server';
 import { BrowserController } from './browser-controller';
@@ -121,6 +123,23 @@ const createWindow = async () => {
       console.log('✅ WriteFileTool handlers registered');
     } catch (error) {
       console.error('❌ Failed to register WriteFileTool handlers:', error);
+    }
+
+    // Initialize Tool Registry
+    try {
+      toolRegistry.setWorkingDirectory(process.cwd());
+      console.log('✅ Tool Registry initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Tool Registry:', error);
+    }
+
+    // Initialize Gemini AI Client (handlers are auto-registered in constructor)
+    try {
+      const geminiClient = new GeminiClientService();
+      console.log('✅ Gemini AI Client initialized');
+      // Note: geminiClient auto-registers IPC handlers in constructor
+    } catch (error) {
+      console.error('❌ Failed to initialize Gemini AI Client:', error);
     }
 
     // Initialize central SQLite manager

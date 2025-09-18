@@ -607,3 +607,22 @@
   font-size: 0.875rem;
   font-weight: 600;
 }
+
+/* AI Chat section */
+.ai-chat-section {
+  padding: 1rem 2rem;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.ai-chat-section h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.ai-chat-container {
+  margin-top: 16px;
+  height: 600px;
+}

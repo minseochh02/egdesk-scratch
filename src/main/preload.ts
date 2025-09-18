@@ -424,6 +424,14 @@ export interface ScriptExecutionAPI {
   ) => Promise<ScriptExecutionResult>;
 }
 
+export interface AIServiceAPI {
+  configure: (config: any) => Promise<boolean>;
+  isConfigured: () => Promise<boolean>;
+  sendMessage: (message: string) => Promise<any>;
+  getHistory: () => Promise<any[]>;
+  clearHistory: () => Promise<void>;
+}
+
 
 export interface SchedulerAPI {
   createTask: (
@@ -693,6 +701,13 @@ const electronHandler = {
       environment?: Record<string, string>
     ) => ipcRenderer.invoke('execute-node-script', scriptPath, args, environment),
   } as ScriptExecutionAPI,
+  aiService: {
+    configure: (config: any) => ipcRenderer.invoke('ai-configure', config),
+    isConfigured: () => ipcRenderer.invoke('ai-is-configured'),
+    sendMessage: (message: string) => ipcRenderer.invoke('ai-send-message', message),
+    getHistory: () => ipcRenderer.invoke('ai-get-history'),
+    clearHistory: () => ipcRenderer.invoke('ai-clear-history'),
+  } as AIServiceAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

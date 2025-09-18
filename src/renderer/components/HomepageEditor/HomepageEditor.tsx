@@ -3,6 +3,7 @@ import './HomepageEditor.css';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import { ReadFileTool, type ReadFileToolParams, type ReadFileResult } from './tools/read-file';
 import { WriteFileTool, type WriteFileToolParams, type WriteFileResult } from './tools/write-file';
+import { AIChat } from '../AIChat/AIChat';
 
 interface HomepageEditorProps {
   // Add any props you need
@@ -319,6 +320,14 @@ Start editing this content to make it your own!
               </div>
             </div>
           )}
+        </div>
+
+        {/* AI Chat Section */}
+        <div className="ai-chat-section">
+          <h3>AI Assistant (Gemini)</h3>
+          <div className="ai-chat-container">
+            <AIChat />
+          </div>
         </div>
 
         {/* File Writer Test Section */}
