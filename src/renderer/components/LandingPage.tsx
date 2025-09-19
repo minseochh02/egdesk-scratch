@@ -23,7 +23,7 @@ const LandingPage: React.FC = () => {
 
           {/* Action Cards */}
           <div className="action-cards">
-            <Link to="/ai-chat" className="action-card homepage-card">
+            <Link to="/homepage-editor" className="action-card homepage-card">
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCog} />
               </div>

@@ -4,7 +4,7 @@ export interface IElectronAPI {
   ipcRenderer: {
     sendMessage(
       channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
-      args: unknown[],
+      ...args: unknown[]
     ): void;
     on(
       channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',

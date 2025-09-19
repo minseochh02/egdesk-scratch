@@ -6,7 +6,8 @@ import type { WriteFileToolParams, WriteFileResult } from './tools/write-file';
 export type Channels =
   | 'ipc-example'
   | 'sync-completed'
-  | 'navigate-to-synced-folder';
+  | 'navigate-to-synced-folder'
+  | 'ai-stream-event';
 
 export interface FileSystemItem {
   name: string;
@@ -488,6 +489,22 @@ export interface SchedulerAPI {
 }
 
 const electronHandler = {
+  ipcRenderer: {
+    sendMessage: (channel: Channels, ...args: unknown[]) => {
+      ipcRenderer.send(channel, ...args);
+    },
+    on: (channel: Channels, func: (...args: unknown[]) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
+        func(...args);
+      ipcRenderer.on(channel, subscription);
+      return () => {
+        ipcRenderer.removeListener(channel, subscription);
+      };
+    },
+    once: (channel: Channels, func: (...args: unknown[]) => void) => {
+      ipcRenderer.once(channel, (_event, ...args) => func(...args));
+    },
+  },
   versions: {
     electron: process.versions.electron,
     node: process.versions.node,
@@ -497,23 +514,6 @@ const electronHandler = {
   platform: process.platform,
   arch: process.arch,
   isPackaged: process.env.NODE_ENV === 'production',
-  ipcRenderer: {
-    sendMessage(channel: Channels, ...args: unknown[]) {
-      ipcRenderer.send(channel, ...args);
-    },
-    on(channel: Channels, func: (...args: unknown[]) => void) {
-      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
-        func(...args);
-      ipcRenderer.on(channel, subscription);
-
-      return () => {
-        ipcRenderer.removeListener(channel, subscription);
-      };
-    },
-    once(channel: Channels, func: (...args: unknown[]) => void) {
-      ipcRenderer.once(channel, (_event, ...args) => func(...args));
-    },
-  },
   fileSystem: {
     readDirectory: (path: string) =>
       ipcRenderer.invoke('fs-read-directory', path),
