@@ -39,6 +39,13 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [streamingEvents, setStreamingEvents] = useState<AIStreamEvent[]>([]);
   const [toolCalls, setToolCalls] = useState<any[]>([]);
   const [isConversationActive, setIsConversationActive] = useState(false);
+  
+  // Live typing state
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingIndex, setTypingIndex] = useState(0);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const contentBufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingContentRef = useRef<string>('');
 
   useEffect(() => {
     // Subscribe to AI keys store changes
@@ -135,6 +142,149 @@ export const AIChat: React.FC<AIChatProps> = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  /**
+   * Start live typing effect for AI content
+   */
+  const startLiveTyping = (content: string) => {
+    console.log('🎯 startLiveTyping called with content:', JSON.stringify(content));
+    console.log('🎯 Current typing state:', { isTyping, typingContent: typingContentRef.current, typingIndex });
+    
+    // If a timeout is set to end typing, clear it because new content has arrived.
+    if (contentBufferTimeoutRef.current) {
+      clearTimeout(contentBufferTimeoutRef.current);
+      contentBufferTimeoutRef.current = null;
+    }
+
+    // Always append to existing content to avoid losing characters
+    const newContent = typingContentRef.current + content;
+    typingContentRef.current = newContent;
+    console.log('🎯 Appending content. Old:', JSON.stringify(typingContentRef.current.slice(0, -content.length)), 'New:', JSON.stringify(newContent));
+
+    // Only start typing if not already typing
+    if (!isTyping) {
+      console.log('🎯 Starting new typing animation');
+      setIsTyping(true);
+      // The cleanup timeout in useEffect now handles resetting the index.
+      // setTypingIndex(0); // This was causing the flicker.
+
+      // Create the initial message if it doesn't exist
+      setMessages(prev => {
+        const filteredPrev = prev.filter(msg => 
+          !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+        );
+        
+        // Check if there's already a typing message
+        const lastMessage = filteredPrev[filteredPrev.length - 1];
+        if (lastMessage && lastMessage.role === 'model' && 
+            !lastMessage.parts[0]?.text?.startsWith('🔧') && 
+            !lastMessage.parts[0]?.text?.startsWith('✅') &&
+            !lastMessage.parts[0]?.text?.startsWith('❌') &&
+            !lastMessage.parts[0]?.text?.startsWith('💭') &&
+            !lastMessage.parts[0]?.text?.startsWith('⏳')) {
+          // Message already exists, don't create a new one
+          console.log('🎯 Using existing message for typing');
+          return prev;
+        } else {
+          // Create new typing message
+          console.log('🎯 Creating new message for typing');
+          return [...filteredPrev, {
+            role: 'model' as const,
+            parts: [{ text: '' }],
+            timestamp: new Date()
+          }];
+        }
+      });
+    } else {
+      console.log('🎯 Already typing, content appended to queue');
+    }
+  };
+
+  /**
+   * Effect to handle typing animation
+   */
+  useEffect(() => {
+    const currentContent = typingContentRef.current;
+    console.log('🎯 Typing effect triggered:', { isTyping, typingIndex, typingContentLength: currentContent.length });
+    
+    if (isTyping && typingIndex < currentContent.length) {
+      // If there was a timeout to end typing, clear it since we are still typing.
+      if (contentBufferTimeoutRef.current) {
+        clearTimeout(contentBufferTimeoutRef.current);
+        contentBufferTimeoutRef.current = null;
+      }
+
+      const nextChar = currentContent[typingIndex];
+      console.log('🎯 Typing next character:', JSON.stringify(nextChar), 'at index:', typingIndex, 'of total:', currentContent.length);
+      
+      // Update the last message with the new character
+      setMessages(prev => {
+        const filteredPrev = prev.filter(msg => 
+          !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+        );
+        
+        const lastMessage = filteredPrev[filteredPrev.length - 1];
+        if (lastMessage && lastMessage.role === 'model' && 
+            !lastMessage.parts[0]?.text?.startsWith('🔧') && 
+            !lastMessage.parts[0]?.text?.startsWith('✅') &&
+            !lastMessage.parts[0]?.text?.startsWith('❌') &&
+            !lastMessage.parts[0]?.text?.startsWith('💭')) {
+          
+          // Calculate what the text should be by taking the first typingIndex+1 characters
+          const targetText = currentContent.substring(0, typingIndex + 1);
+          console.log('🎯 Setting message text to:', JSON.stringify(targetText));
+          
+          const updatedMessage = {
+            ...lastMessage,
+            parts: [{
+              text: targetText
+            }]
+          };
+          return [...filteredPrev.slice(0, -1), updatedMessage];
+        } else {
+          console.log('🎯 No suitable message found to update');
+        }
+        return prev;
+      });
+
+      // Schedule next character
+      const delay = nextChar === '\n' ? 50 : 20;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        console.log('🎯 Advancing typing index from', typingIndex, 'to', typingIndex + 1);
+        setTypingIndex(prev => prev + 1);
+      }, delay);
+    } else if (isTyping && typingIndex >= currentContent.length && currentContent.length > 0) {
+      // Typing of current buffer is complete. Set a timeout to end the stream if no more content arrives.
+      console.log('🎯 Buffer empty, waiting for more content...');
+      contentBufferTimeoutRef.current = setTimeout(() => {
+        console.log('🎯 Typing stream finished, cleaning up.');
+        setIsTyping(false);
+        typingContentRef.current = '';
+        setTypingIndex(0);
+      }, 300); // Wait 300ms for more content.
+    }
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [isTyping, typingIndex]); // Removed typingContent dependency!
+
+  /**
+   * Clean up typing on unmount
+   */
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (contentBufferTimeoutRef.current) {
+        clearTimeout(contentBufferTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading || !isConfigured) return;
 
@@ -188,39 +338,19 @@ export const AIChat: React.FC<AIChatProps> = () => {
         
         switch (event.type) {
           case AIEventType.Content:
-            // Add AI response content as it streams
+            // Add AI response content as it streams with live typing effect
             const contentEvent = event as any;
             console.log('📝 Processing content event:', contentEvent);
             
-            setMessages(prev => {
-              // Remove any loading messages first
-              const filteredPrev = prev.filter(msg => 
-                !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
-              );
-              
-              const lastMessage = filteredPrev[filteredPrev.length - 1];
-              if (lastMessage && lastMessage.role === 'model' && 
-                  !lastMessage.parts[0]?.text?.startsWith('🔧') && 
-                  !lastMessage.parts[0]?.text?.startsWith('✅') &&
-                  !lastMessage.parts[0]?.text?.startsWith('❌') &&
-                  !lastMessage.parts[0]?.text?.startsWith('💭')) {
-                // Append to existing AI message (only if it's a content message)
-                const updatedMessage = {
-                  ...lastMessage,
-                  parts: [{
-                    text: (lastMessage.parts[0]?.text || '') + (contentEvent.content || contentEvent.data || '')
-                  }]
-                };
-                return [...filteredPrev.slice(0, -1), updatedMessage];
-              } else {
-                // Create new AI message
-                return [...filteredPrev, {
-                  role: 'model' as const,
-                  parts: [{ text: contentEvent.content || contentEvent.data || 'AI response received' }],
-                  timestamp: new Date()
-                }];
-              }
-            });
+            const newContent = contentEvent.content || contentEvent.data || '';
+            console.log('📝 New content to type:', JSON.stringify(newContent), 'length:', newContent.length);
+            
+            if (newContent) {
+              // Start live typing effect for this content
+              startLiveTyping(newContent);
+            } else {
+              console.log('📝 No content to type');
+            }
             break;
 
           case AIEventType.ToolCallRequest:
@@ -287,6 +417,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
 
           case AIEventType.Finished:
             console.log('🏁 Autonomous conversation completed');
+            // Don't stop typing immediately - let it finish naturally
+            // The typing effect will complete on its own
             break;
 
           case AIEventType.TurnStarted:
@@ -356,6 +488,14 @@ export const AIChat: React.FC<AIChatProps> = () => {
       setIsConversationActive(false);
       setIsLoading(false);
       
+      // Stop any ongoing typing
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      setIsTyping(false);
+      typingContentRef.current = '';
+      setTypingIndex(0);
+      
       setMessages(prev => [...prev, {
         role: 'model' as const,
         parts: [{ text: '⏹️ Conversation cancelled by user.' }],
@@ -422,22 +562,20 @@ export const AIChat: React.FC<AIChatProps> = () => {
             className="test-btn" 
             onClick={async () => {
               try {
-                console.log('🧪 Testing autonomous AI...');
-                // Test removed - using autonomous mode only
-                console.log('🧪 Autonomous mode is active');
-                
-                setMessages(prev => [...prev, {
-                  role: 'model' as const,
-                  parts: [{ text: `🧪 Test: Autonomous mode is active - use the chat input to test` }],
-                  timestamp: new Date()
-                }]);
+                console.log('🧪 Testing typing effect...');
+                // Clear any existing content first
+                typingContentRef.current = '';
+                setIsTyping(false);
+                setTypingIndex(0);
+                // Test the typing effect directly
+                startLiveTyping('Hello! This is a test of the typing effect. It should appear character by character.');
               } catch (error) {
                 console.error('🧪 Test failed:', error);
               }
             }}
             disabled={!selectedGoogleKey}
           >
-            Test
+            Test Typing
           </button>
 
           {/* Cancel button (only show when conversation is active) */}
@@ -561,6 +699,9 @@ export const AIChat: React.FC<AIChatProps> = () => {
                     {part.text && <pre className="message-text">{part.text}</pre>}
                   </div>
                 ))}
+                {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
+                  <span className="typing-indicator">▋</span>
+                )}
               </div>
             </div>
           ))

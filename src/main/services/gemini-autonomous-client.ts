@@ -231,11 +231,8 @@ export class AutonomousGeminiClient implements AIClientService {
           for (const part of content.parts) {
             // Handle text content
             if (part.text) {
-              yield {
-                type: AIEventType.Content,
-                content: part.text,
-                timestamp: new Date()
-              };
+              // Stream the text in chunks for better UX
+              yield* this.streamTextContent(part.text);
 
               // Check for response loops
               if (loopDetectionService.checkResponseLoop(part.text)) {
@@ -315,9 +312,9 @@ export class AutonomousGeminiClient implements AIClientService {
                     functionResponse: {
                       name: toolCallRequest.name,
                       response: toolResponse.success 
-                        ? (Array.isArray(toolResponse.result) 
-                            ? { result: toolResponse.result }  // Wrap arrays in an object
-                            : toolResponse.result)
+                        ? (typeof toolResponse.result === 'object' && !Array.isArray(toolResponse.result)
+                            ? toolResponse.result  // Already an object, use directly
+                            : { result: toolResponse.result })  // Wrap primitives and arrays
                         : { error: toolResponse.error }
                     }
                   }],
@@ -406,6 +403,41 @@ export class AutonomousGeminiClient implements AIClientService {
 
     // Continue for other reasons (SAFETY, LENGTH, etc.)
     return true;
+  }
+
+  /**
+   * Stream text content in chunks for better UX
+   */
+  private async *streamTextContent(text: string): AsyncGenerator<AIStreamEvent> {
+    // Split text into words for more natural streaming
+    const words = text.split(/(\s+)/);
+    let currentChunk = '';
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      currentChunk += word;
+      
+      // Yield chunk every few words or at punctuation
+      const shouldYield = 
+        i === words.length - 1 || // Last word
+        currentChunk.length > 50 || // Chunk size limit
+        /[.!?]\s*$/.test(currentChunk) || // End of sentence
+        (i > 0 && i % 3 === 0); // Every 3 words
+      
+      if (shouldYield) {
+        yield {
+          type: AIEventType.Content,
+          content: currentChunk,
+          timestamp: new Date()
+        };
+        currentChunk = '';
+        
+        // Small delay between chunks for streaming effect
+        if (i < words.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+    }
   }
 
   /**
