@@ -182,7 +182,7 @@ export class ToolRegistry {
       }
 
       // Execute the tool with mapped parameters
-      const result = await tool.execute(mappedParams, signal);
+      const result = await tool.execute(mappedParams, signal, request.conversationId);
       
       return {
         id: request.id,

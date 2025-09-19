@@ -252,6 +252,13 @@ export interface IElectronAPI {
     getCurrentProject(): Promise<any>;
     getContext(): Promise<any>;
   };
+  backup: {
+    getAvailableBackups: () => Promise<{ success: boolean; backups?: any[]; error?: string }>;
+    getBackupStats: () => Promise<{ success: boolean; stats?: any; error?: string }>;
+    revertConversation: (conversationId: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+    revertToConversation: (targetConversationId: string) => Promise<{ success: boolean; summary?: any; error?: string }>;
+    cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
 }
 
 declare global {

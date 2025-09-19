@@ -283,7 +283,8 @@ export class AutonomousGeminiClient implements AIClientService {
                 name: part.functionCall.name || 'unknown',
                 parameters: part.functionCall.args || {},
                 timestamp: new Date(),
-                turnNumber
+                turnNumber,
+                conversationId: this.currentConversationId
               };
 
               // Check for tool call loops
@@ -362,10 +363,15 @@ export class AutonomousGeminiClient implements AIClientService {
                   toolStatus: toolResponse.success ? 'completed' : 'failed'
                 });
 
-                // Continue conversation with tool result
-                currentMessage = toolResponse.success 
-                  ? `Tool execution completed. Result: ${JSON.stringify(toolResponse.result)}`
-                  : `Tool execution failed: ${toolResponse.error}`;
+                // Continue conversation with tool result and context
+                if (toolResponse.success) {
+                  // Provide context-aware continuation message based on the tool and result
+                  currentMessage = this.generateContinuationMessage(toolCallRequest.name, toolResponse.result, initialMessage);
+                  console.log('🔄 Generated continuation message:', currentMessage.substring(0, 200) + '...');
+                } else {
+                  currentMessage = `Tool execution failed: ${toolResponse.error}. Please try a different approach or fix the issue.`;
+                  console.log('❌ Tool execution failed, generated error message');
+                }
               }
             }
           }
@@ -386,7 +392,16 @@ export class AutonomousGeminiClient implements AIClientService {
 
         // Check if conversation should continue
         const shouldContinue = this.shouldContinueConversation(turn, response);
+        console.log('🔄 Conversation continuation check:', {
+          shouldContinue,
+          toolCallsInTurn: turn.toolCalls.length,
+          finishReason: response.candidates?.[0]?.finishReason,
+          turnNumber,
+          maxTurns: this.conversationState?.maxTurns
+        });
+        
         if (!shouldContinue) {
+          console.log('🏁 Conversation ending: AI indicated completion');
           yield {
             type: AIEventType.Finished,
             reason: 'tool_calls_complete',
@@ -431,21 +446,60 @@ export class AutonomousGeminiClient implements AIClientService {
   }
 
   /**
+   * Generate a context-aware continuation message after tool execution
+   */
+  private generateContinuationMessage(toolName: string, toolResult: any, originalRequest: string): string {
+    switch (toolName) {
+      case 'analyze_project':
+        return `Project analysis completed. Based on the analysis, the project is a ${toolResult.analysis?.projectType || 'Unknown'} project with ${toolResult.analysis?.totalFiles || 0} files. Now please continue with the original request: "${originalRequest}". Use the project analysis data to inform your next actions.`;
+      
+      case 'list_directory':
+        const fileCount = Array.isArray(toolResult) ? toolResult.length : 0;
+        return `Directory listing completed, found ${fileCount} items. Please continue with the original request: "${originalRequest}". Use this directory information to guide your next steps.`;
+      
+      case 'read_file':
+        const contentLength = typeof toolResult === 'string' ? toolResult.length : 0;
+        return `File read completed (${contentLength} characters). Please continue with the original request: "${originalRequest}". Use the file content to inform your next actions.`;
+      
+      case 'write_file':
+        return `File write completed successfully. Please continue with the original request: "${originalRequest}". Consider what additional files or documentation might be needed.`;
+      
+      default:
+        return `Tool "${toolName}" execution completed. Result: ${JSON.stringify(toolResult)}. Please continue with the original request: "${originalRequest}".`;
+    }
+  }
+
+  /**
    * Determine if conversation should continue
    */
   private shouldContinueConversation(turn: ConversationTurn, response: any): boolean {
-    // Continue if there were tool calls (AI might need results)
+    // Check finish reason first - if AI explicitly says STOP, respect that
+    const finishReason = response.candidates?.[0]?.finishReason;
+    if (finishReason === 'STOP') {
+      // Only stop if there were no tool calls in this turn (AI is truly done)
+      return turn.toolCalls.length > 0;
+    }
+
+    // Continue if there were tool calls (AI needs to process results)
     if (turn.toolCalls.length > 0) {
       return true;
     }
 
-    // Check finish reason
-    const finishReason = response.candidates?.[0]?.finishReason;
-    if (finishReason === 'STOP') {
-      return false; // AI indicated completion
+    // Check if the AI response contains completion indicators
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const completionIndicators = [
+      'task completed',
+      'documentation created',
+      'analysis complete',
+      'all files created',
+      'project documentation is now complete'
+    ];
+    
+    if (completionIndicators.some(indicator => responseText.toLowerCase().includes(indicator))) {
+      return false;
     }
 
-    // Continue for other reasons (SAFETY, LENGTH, etc.)
+    // Continue for other reasons (SAFETY, LENGTH, etc.) but with limits
     return true;
   }
 

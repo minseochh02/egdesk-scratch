@@ -13,7 +13,7 @@ export class ListDirectoryTool implements ToolExecutor {
   description = 'List files and directories in a path. If no path is provided, lists the current project directory.';
   dangerous = false;
 
-  async execute(params: { dirPath?: string }): Promise<Array<{name: string; type: string; path: string}>> {
+  async execute(params: { dirPath?: string }, signal?: AbortSignal, conversationId?: string): Promise<Array<{name: string; type: string; path: string}>> {
     // Use provided dirPath or fall back to current project directory
     let targetPath = params.dirPath;
     

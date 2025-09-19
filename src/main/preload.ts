@@ -475,6 +475,14 @@ export interface AIChatDataAPI {
   clearAllData: () => Promise<{ success: boolean; error?: string }>;
 }
 
+export interface BackupAPI {
+  getAvailableBackups: () => Promise<{ success: boolean; backups?: any[]; error?: string }>;
+  getBackupStats: () => Promise<{ success: boolean; stats?: any; error?: string }>;
+  revertConversation: (conversationId: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+  revertToConversation: (targetConversationId: string) => Promise<{ success: boolean; summary?: any; error?: string }>;
+  cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
+}
+
 
 export interface SchedulerAPI {
   createTask: (
@@ -793,6 +801,13 @@ const electronHandler = {
     cleanupOldData: (daysToKeep?: number) => ipcRenderer.invoke('ai-chat-cleanup-old-data', daysToKeep),
     clearAllData: () => ipcRenderer.invoke('ai-chat-clear-all-data'),
   } as AIChatDataAPI,
+  backup: {
+    getAvailableBackups: () => ipcRenderer.invoke('backup-get-available'),
+    getBackupStats: () => ipcRenderer.invoke('backup-get-stats'),
+    revertConversation: (conversationId: string) => ipcRenderer.invoke('backup-revert-conversation', conversationId),
+    revertToConversation: (targetConversationId: string) => ipcRenderer.invoke('backup-revert-to-conversation', targetConversationId),
+    cleanupOldBackups: (keepCount?: number) => ipcRenderer.invoke('backup-cleanup-old', keepCount),
+  } as BackupAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

@@ -134,6 +134,7 @@ export interface ToolCallRequestInfo {
   parameters: Record<string, any>;
   timestamp: Date;
   turnNumber: number;
+  conversationId?: string;
 }
 
 export interface ToolCallResponseInfo {
@@ -226,6 +227,6 @@ export interface ToolExecutor {
   description: string;
   dangerous?: boolean;
   requiresConfirmation?: boolean;
-  execute(parameters: Record<string, any>, signal?: AbortSignal): Promise<any>;
+  execute(parameters: Record<string, any>, signal?: AbortSignal, conversationId?: string): Promise<any>;
   shouldConfirm?(parameters: Record<string, any>): Promise<ToolCallConfirmationDetails | false>;
 }
