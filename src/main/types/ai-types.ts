@@ -187,8 +187,6 @@ export interface AIClientService {
   configure(config: AIClientConfig): Promise<boolean>;
   isConfigured(): boolean;
   
-  // Basic chat (legacy)
-  sendMessage(message: string): Promise<AIResponse>;
   
   // Streaming conversation (new autonomous mode)
   sendMessageStream(
@@ -203,7 +201,6 @@ export interface AIClientService {
   ): AsyncGenerator<AIStreamEvent>;
   
   // Tool integration
-  sendMessageWithTools(message: string, tools: Tool[]): Promise<AIResponse>;
   executeToolCall(request: ToolCallRequestInfo): Promise<ToolCallResponseInfo>;
   
   // Conversation management

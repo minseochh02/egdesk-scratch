@@ -427,9 +427,17 @@ export interface ScriptExecutionAPI {
 export interface AIServiceAPI {
   configure: (config: any) => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
-  sendMessage: (message: string) => Promise<any>;
+  startAutonomousConversation: (message: string, options: any) => Promise<{ conversationId: string }>;
+  conversationReady: (conversationId: string) => Promise<boolean>;
+  cancelConversation: () => Promise<boolean>;
+  getConversationState: () => Promise<any>;
   getHistory: () => Promise<any[]>;
   clearHistory: () => Promise<void>;
+  getAvailableModels: () => Promise<string[]>;
+  simpleAI: {
+    configure: (config: any) => Promise<boolean>;
+    isConfigured: () => Promise<boolean>;
+  };
 }
 
 export interface ProjectContextAPI {
@@ -710,7 +718,6 @@ const electronHandler = {
   aiService: {
     configure: (config: any) => ipcRenderer.invoke('ai-configure', config),
     isConfigured: () => ipcRenderer.invoke('ai-is-configured'),
-    sendMessage: (message: string) => ipcRenderer.invoke('ai-send-message', message),
     startAutonomousConversation: (message: string, options: any) => 
       ipcRenderer.invoke('ai-start-autonomous-conversation', message, options),
     conversationReady: (conversationId: string) => 
@@ -724,7 +731,6 @@ const electronHandler = {
     simpleAI: {
       configure: (config: any) => ipcRenderer.invoke('simple-ai-configure', config),
       isConfigured: () => ipcRenderer.invoke('simple-ai-is-configured'),
-      sendMessage: (message: string) => ipcRenderer.invoke('simple-ai-send-message', message),
     },
   } as AIServiceAPI,
   projectContext: {

@@ -1,15 +1,17 @@
+import type { AIServiceAPI } from '../main/preload';
+
 export interface IElectronAPI {
   ipcRenderer: {
     sendMessage(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder',
+      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       args: unknown[],
     ): void;
     on(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder',
+      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       func: (...args: unknown[]) => void,
     ): (() => void) | undefined;
     once(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder',
+      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       func: (...args: unknown[]) => void,
     ): void;
   };
@@ -244,13 +246,7 @@ export interface IElectronAPI {
     search(query: string): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
     clearAll(): Promise<{ success: boolean; error?: string }>;
   };
-  aiService: {
-    configure(config: any): Promise<boolean>;
-    isConfigured(): Promise<boolean>;
-    sendMessage(message: string): Promise<any>;
-    getHistory(): Promise<any[]>;
-    clearHistory(): Promise<void>;
-  };
+  aiService: AIServiceAPI;
   projectContext: {
     updateContext(context: any): Promise<boolean>;
     getCurrentProject(): Promise<any>;
