@@ -711,8 +711,21 @@ const electronHandler = {
     configure: (config: any) => ipcRenderer.invoke('ai-configure', config),
     isConfigured: () => ipcRenderer.invoke('ai-is-configured'),
     sendMessage: (message: string) => ipcRenderer.invoke('ai-send-message', message),
+    startAutonomousConversation: (message: string, options: any) => 
+      ipcRenderer.invoke('ai-start-autonomous-conversation', message, options),
+    conversationReady: (conversationId: string) => 
+      ipcRenderer.invoke('ai-conversation-ready', conversationId),
+    cancelConversation: () => ipcRenderer.invoke('ai-cancel-conversation'),
+    getConversationState: () => ipcRenderer.invoke('ai-get-conversation-state'),
     getHistory: () => ipcRenderer.invoke('ai-get-history'),
     clearHistory: () => ipcRenderer.invoke('ai-clear-history'),
+    getAvailableModels: () => ipcRenderer.invoke('ai-get-models'),
+    // Simple client for testing
+    simpleAI: {
+      configure: (config: any) => ipcRenderer.invoke('simple-ai-configure', config),
+      isConfigured: () => ipcRenderer.invoke('simple-ai-is-configured'),
+      sendMessage: (message: string) => ipcRenderer.invoke('simple-ai-send-message', message),
+    },
   } as AIServiceAPI,
   projectContext: {
     updateContext: (context: any) => ipcRenderer.invoke('project-context-update', context),

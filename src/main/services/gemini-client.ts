@@ -1,441 +1,700 @@
-/**
- * Gemini AI Client Service
- * Simple implementation for EGDesk based on Gemini CLI patterns
- */
+// /**
+//  * Autonomous Gemini AI Client Service
+//  * Implements streaming conversation loops with tool execution
+//  * Based on Gemini CLI patterns adapted for EGDesk
+//  */
 
-import { GoogleGenerativeAI, GenerateContentConfig, GenerateContentRequest, Tool, Content, Part } from '@google/generative-ai';
-import { ipcMain } from 'electron';
-import { toolRegistry } from './tool-registry';
-import { projectContextBridge } from './project-context-bridge';
-import type { 
-  AIClientConfig, 
-  ConversationMessage, 
-  AIResponse, 
-  AIClientService,
-  ToolCallRequest,
-  ToolCallResponse
-} from '../types/ai-types';
+// import { GoogleGenerativeAI, GenerationConfig, Content, Part, FunctionCall, Tool } from '@google/generative-ai';
+// import { ipcMain } from 'electron';
+// import { v4 as uuidv4 } from 'uuid';
+// import { toolRegistry } from './tool-executor';
+// import { loopDetectionService } from './loop-detection';
+// import { projectContextBridge } from './project-context-bridge';
+// import { getEGDeskSystemPrompt } from '../prompts/system-prompt';
+// import type { 
+//   AIClientConfig, 
+//   ConversationMessage, 
+//   AIResponse, 
+//   AIClientService,
+//   AIStreamEvent,
+//   ToolCallRequestInfo,
+//   ToolCallResponseInfo,
+//   ConversationState,
+//   ConversationTurn,
+//   ToolDefinition
+// } from '../types/ai-types';
+// import { AIEventType } from '../types/ai-types';
 
-export class GeminiClientService implements AIClientService {
-  private genAI?: GoogleGenerativeAI;
-  private model?: any;
-  private config?: AIClientConfig;
-  private conversationHistory: ConversationMessage[] = [];
-  private isInitialized = false;
+// export class AutonomousGeminiClient implements AIClientService {
+//   private genAI?: GoogleGenerativeAI;
+//   private model?: any;
+//   private config?: AIClientConfig;
+//   private conversationHistory: ConversationMessage[] = [];
+//   private conversationState: ConversationState | null = null;
+//   private abortController?: AbortController;
+  
+//   // Event buffering for conversations
+//   private conversationEventBuffers = new Map<string, AIStreamEvent[]>();
+//   private conversationSenders = new Map<string, Electron.WebContents>();
 
-  constructor() {
-    this.registerIPCHandlers();
-  }
+//   constructor() {
+//     this.registerIPCHandlers();
+//   }
 
-  /**
-   * Configure the Gemini client with API key and settings
-   */
-  async configure(config: AIClientConfig): Promise<boolean> {
-    try {
-      this.config = {
-        model: 'gemini-1.5-flash',
-        temperature: 0.7,
-        topP: 1,
-        maxOutputTokens: 8192,
-        ...config
-      };
-
-      // Initialize Google Generative AI
-      this.genAI = new GoogleGenerativeAI(config.apiKey);
+//   /**
+//    * Configure the Gemini client
+//    */
+//   async configure(config: AIClientConfig): Promise<boolean> {
+//     try {
+//       this.genAI = new GoogleGenerativeAI(config.apiKey);
       
-      // Get the model
-      this.model = this.genAI.getGenerativeModel({ 
-        model: this.config.model!,
-        generationConfig: {
-          temperature: this.config.temperature,
-          topP: this.config.topP,
-          maxOutputTokens: this.config.maxOutputTokens,
-        }
-      });
+//       // Get project context for system prompt
+//       const projectContext = await this.getProjectContext();
+//       const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
+      
+//       this.model = this.genAI.getGenerativeModel({
+//         model: config.model || 'gemini-1.5-flash-latest',
+//         generationConfig: {
+//           temperature: config.temperature || 0.7,
+//           topP: config.topP || 0.8,
+//           maxOutputTokens: config.maxOutputTokens || 4096,
+//         },
+//         systemInstruction: systemPrompt
+//       });
 
-      this.isInitialized = true;
-      console.log('✅ Gemini client configured successfully');
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to configure Gemini client:', error);
-      this.isInitialized = false;
-      return false;
-    }
-  }
+//       this.config = config;
+//       console.log('✅ Autonomous Gemini client configured with EGDesk system prompt');
+//       return true;
+//     } catch (error) {
+//       console.error('❌ Failed to configure Gemini client:', error);
+//       return false;
+//     }
+//   }
 
-  /**
-   * Check if client is properly configured
-   */
-  isConfigured(): boolean {
-    return this.isInitialized && !!this.genAI && !!this.model;
-  }
+//   /**
+//    * Check if client is configured
+//    */
+//   isConfigured(): boolean {
+//     return !!(this.genAI && this.model && this.config);
+//   }
 
-  /**
-   * Send a message with tools automatically available
-   */
-  async sendMessage(message: string): Promise<AIResponse> {
-    if (!this.isConfigured()) {
-      return {
-        success: false,
-        error: 'Gemini client not configured. Please provide API key.'
-      };
-    }
+//   /**
+//    * Legacy single message method (for backward compatibility)
+//    */
+//   async sendMessage(message: string): Promise<AIResponse> {
+//     if (!this.isConfigured()) {
+//       return { success: false, error: 'AI client not configured' };
+//     }
 
-    try {
-      // Get project context and enhance the message
-      const projectContext = toolRegistry.getProjectContext();
-      const enhancedMessage = `${projectContext}\n\nUser Request: ${message}`;
+//     try {
+//       const result = await this.model!.generateContent(message);
+//       const response = await result.response;
+//       const text = response.text();
 
-      // Add user message to history (original message)
-      const userMessage: ConversationMessage = {
-        role: 'user',
-        parts: [{ text: message }],
-        timestamp: new Date()
-      };
-      this.addToHistory(userMessage);
+//       // Add to history
+//       this.addToHistory({
+//         role: 'user',
+//         parts: [{ text: message }],
+//         timestamp: new Date()
+//       });
 
-      // Get available tools
-      const tools = toolRegistry.getGeminiTools();
+//       this.addToHistory({
+//         role: 'model',
+//         parts: [{ text }],
+//         timestamp: new Date()
+//       });
 
-      // Create model with tools
-      const modelWithTools = this.genAI!.getGenerativeModel({
-        model: this.config!.model!,
-        tools: tools,
-        generationConfig: {
-          temperature: this.config!.temperature,
-          topP: this.config!.topP,
-          maxOutputTokens: this.config!.maxOutputTokens,
-        }
-      });
+//       return {
+//         success: true,
+//         content: text,
+//         fullResponse: response
+//       };
+//     } catch (error) {
+//       console.error('Error in sendMessage:', error);
+//       return {
+//         success: false,
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       };
+//     }
+//   }
 
-      // Generate response with tools using enhanced message with project context
-      const result = await modelWithTools.generateContent(enhancedMessage);
+//   /**
+//    * NEW: Autonomous streaming conversation with tool execution
+//    */
+//   async *sendMessageStream(
+//     message: string, 
+//     options: {
+//       tools?: ToolDefinition[];
+//       maxTurns?: number;
+//       timeoutMs?: number;
+//       autoExecuteTools?: boolean;
+//       context?: Record<string, any>;
+//     } = {}
+//   ): AsyncGenerator<AIStreamEvent> {
+//     if (!this.isConfigured()) {
+//       yield {
+//         type: AIEventType.Error,
+//         error: { message: 'AI client not configured', recoverable: false },
+//         timestamp: new Date()
+//       };
+//       return;
+//     }
 
-      const response = result.response;
-      let responseText = '';
-      let functionCalls: any[] = [];
+//     // Initialize conversation state
+//     this.conversationState = {
+//       sessionId: uuidv4(),
+//       turns: [],
+//       currentTurn: 0,
+//       isActive: true,
+//       maxTurns: options.maxTurns || 20,
+//       timeoutMs: options.timeoutMs || 300000, // 5 minutes
+//       startTime: new Date(),
+//       context: options.context
+//     };
 
-      // Get function calls if any
-      try {
-        functionCalls = response.functionCalls() || [];
-      } catch (e) {
-        // No function calls
-        functionCalls = [];
-      }
+//     // Setup abort controller for cancellation
+//     this.abortController = new AbortController();
+//     const timeoutId = setTimeout(() => {
+//       this.abortController?.abort();
+//     }, this.conversationState.timeoutMs);
 
-      // Get response text
-      try {
-        responseText = response.text();
-      } catch (e) {
-        // Sometimes response.text() fails if there are only function calls
-        responseText = '';
-      }
+//     // Reset loop detection
+//     loopDetectionService.reset();
 
-      // Execute function calls if any and continue conversation
-      if (functionCalls.length > 0) {
-        console.log(`🔧 Executing ${functionCalls.length} function call(s)`);
-        
-        // Execute all function calls and collect results
-        const toolResponseParts: any[] = [];
-        
-        for (const functionCall of functionCalls) {
-          try {
-            console.log(`🔧 Executing tool: ${functionCall.name} with params:`, functionCall.args);
-            const toolResult = await toolRegistry.executeTool(
-              functionCall.name, 
-              functionCall.args
-            );
-            
-            console.log(`✅ Tool '${functionCall.name}' completed:`, toolResult.success ? 'SUCCESS' : 'ERROR');
-            
-            // Create function response part for the AI
-            const functionResponse = {
-              functionResponse: {
-                name: functionCall.name,
-                response: toolResult
-              }
-            };
-            
-            toolResponseParts.push(functionResponse);
-          } catch (error) {
-            console.error(`❌ Tool '${functionCall.name}' failed:`, error);
-            
-            // Create error response part for the AI
-            const errorResponse = {
-              functionResponse: {
-                name: functionCall.name,
-                response: {
-                  success: false,
-                  error: error instanceof Error ? error.message : 'Unknown error'
-                }
-              }
-            };
-            
-            toolResponseParts.push(errorResponse);
-          }
-        }
+//     try {
+//       console.log('🛠️ Getting available tools...');
+//       // Get available tools
+//       const availableTools = options.tools || toolRegistry.getToolDefinitions();
+//       console.log('📋 Available tools:', availableTools.map(t => t.name));
+      
+//       const geminiTools: Tool[] = this.convertToolsForGemini(availableTools);
+//       const totalFunctions = geminiTools.reduce((sum, tool) => sum + ((tool as any).functionDeclarations?.length || 0), 0);
+//       console.log('🔧 Converted tools for Gemini:', `${geminiTools.length} tool objects containing ${totalFunctions} functions`);
 
-        // If we have tool responses, send them back to the AI for a follow-up response
-        if (toolResponseParts.length > 0) {
-          try {
-            // Create a new chat session with the conversation history
-            const chat = this.model!.startChat({
-              history: [
-                { role: 'user', parts: [{ text: enhancedMessage }] },
-                { role: 'model', parts: response.candidates[0].content.parts }
-              ],
-              generationConfig: {
-                temperature: this.config!.temperature,
-                topK: this.config!.topK,
-                topP: this.config!.topP,
-                maxOutputTokens: this.config!.maxOutputTokens,
-              }
-            });
+//       // Start conversation loop
+//       console.log('🚀 Starting conversation loop...');
+//       yield* this.conversationLoop(message, geminiTools, options.autoExecuteTools || true);
 
-            // Send the tool results as a user message
-            const followUpResult = await chat.sendMessage(toolResponseParts);
-            const followUpResponse = followUpResult.response;
-            
-            // Get the AI's response to the tool results
-            try {
-              responseText = followUpResponse.text() || '';
-            } catch (e) {
-              responseText = 'Tool execution completed successfully.';
-            }
-          } catch (error) {
-            console.error('Error getting AI follow-up response:', error);
-            responseText = 'Tools executed successfully, but AI response failed.';
-          }
-        }
-      }
+//     } catch (error) {
+//       yield {
+//         type: AIEventType.Error,
+//         error: { 
+//           message: error instanceof Error ? error.message : 'Unknown error',
+//           recoverable: false 
+//         },
+//         timestamp: new Date()
+//       };
+//     } finally {
+//       clearTimeout(timeoutId);
+//       this.conversationState = null;
+//       this.abortController = undefined;
+//     }
+//   }
 
-      // If no response text, provide default
-      if (!responseText.trim()) {
-        responseText = 'Task completed successfully.';
-      }
-
-      // Add model response to history
-      const modelParts: Part[] = [];
-      if (responseText) {
-        modelParts.push({ text: responseText });
-      }
-      if (functionCalls.length > 0) {
-        functionCalls.forEach(fc => {
-          modelParts.push({ functionCall: fc });
-        });
-      }
-
-      const modelMessage: ConversationMessage = {
-        role: 'model',
-        parts: modelParts,
-        timestamp: new Date()
-      };
-      this.addToHistory(modelMessage);
-
-      return {
-        success: true,
-        content: responseText,
-        functionCalls: functionCalls.length > 0 ? functionCalls : undefined
-        // Note: fullResponse removed to prevent IPC cloning errors
-      };
-    } catch (error) {
-      console.error('❌ Error sending message to Gemini:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
-
-  /**
-   * Send a message with tools available for function calling
-   */
-  async sendMessageWithTools(message: string, tools: Tool[]): Promise<AIResponse> {
-    if (!this.isConfigured()) {
-      return {
-        success: false,
-        error: 'Gemini client not configured. Please provide API key.'
-      };
-    }
-
-    try {
-      // Add user message to history
-      const userMessage: ConversationMessage = {
-        role: 'user',
-        parts: [{ text: message }],
-        timestamp: new Date()
-      };
-      this.addToHistory(userMessage);
-
-      // Create model with tools
-      const modelWithTools = this.genAI!.getGenerativeModel({
-        model: this.config!.model!,
-        tools: tools,
-        generationConfig: {
-          temperature: this.config!.temperature,
-          topP: this.config!.topP,
-          maxOutputTokens: this.config!.maxOutputTokens,
-        }
-      });
-
-      // Convert history to Content format for Gemini
-      const history: Content[] = this.conversationHistory.slice(0, -1).map(msg => ({
-        role: msg.role,
-        parts: msg.parts
-      }));
-
-      // Start chat with history
-      const chat = modelWithTools.startChat({
-        history: history
-      });
-
-      // Send message
-      const result = await chat.sendMessage(message);
-      const response = result.response;
-
-      // Check for function calls
-      const functionCalls = response.functionCalls();
-
-      let responseText = '';
-      try {
-        responseText = response.text();
-      } catch (e) {
-        // Sometimes response.text() fails if there are only function calls
-        responseText = '';
-      }
-
-      // Add model response to history
-      const modelParts: Part[] = [];
-      if (responseText) {
-        modelParts.push({ text: responseText });
-      }
-      if (functionCalls && functionCalls.length > 0) {
-        functionCalls.forEach(fc => {
-          modelParts.push({ functionCall: fc });
-        });
-      }
-
-      const modelMessage: ConversationMessage = {
-        role: 'model',
-        parts: modelParts,
-        timestamp: new Date()
-      };
-      this.addToHistory(modelMessage);
-
-      return {
-        success: true,
-        content: responseText,
-        functionCalls: functionCalls || undefined
-        // Note: fullResponse removed to prevent IPC cloning errors
-      };
-    } catch (error) {
-      console.error('❌ Error sending message with tools to Gemini:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
-
-  /**
-   * Add message to conversation history
-   */
-  addToHistory(message: ConversationMessage): void {
-    this.conversationHistory.push(message);
+//   /**
+//    * Main conversation loop - the heart of autonomous operation
+//    */
+//   private async *conversationLoop(
+//     initialMessage: string, 
+//     tools: Tool[], 
+//     autoExecuteTools: boolean
+//   ): AsyncGenerator<AIStreamEvent> {
+//     console.log('🔄 Starting conversation loop with message:', initialMessage);
+//     console.log('🛠️ Available tools:', tools.length);
     
-    // Keep history manageable (last 50 messages)
-    if (this.conversationHistory.length > 50) {
-      this.conversationHistory = this.conversationHistory.slice(-50);
-    }
-  }
+//     let currentMessage = initialMessage;
+//     let turnNumber = 0;
 
-  /**
-   * Get conversation history
-   */
-  getHistory(): ConversationMessage[] {
-    // Convert Date objects to ISO strings for IPC serialization
-    return this.conversationHistory.map(msg => ({
-      ...msg,
-      timestamp: new Date(msg.timestamp) // Ensure it's properly serializable
-    }));
-  }
+//     // Add initial user message to history
+//     this.addToHistory({
+//       role: 'user',
+//       parts: [{ text: currentMessage }],
+//       timestamp: new Date()
+//     });
 
-  /**
-   * Clear conversation history
-   */
-  clearHistory(): void {
-    this.conversationHistory = [];
-    console.log('🧹 Conversation history cleared');
-  }
+//     while (this.conversationState?.isActive && turnNumber < this.conversationState.maxTurns) {
+//       if (this.abortController?.signal.aborted) {
+//         yield {
+//           type: AIEventType.UserCancelled,
+//           timestamp: new Date()
+//         } as any;
+//         break;
+//       }
 
-  /**
-   * Get available Gemini models
-   */
-  getAvailableModels(): string[] {
-    return [
-      'gemini-1.5-flash',
-      'gemini-1.5-pro',
-      'gemini-1.0-pro'
-    ];
-  }
+//       turnNumber++;
+//       yield {
+//         type: AIEventType.TurnStarted,
+//         turnNumber,
+//         timestamp: new Date()
+//       };
 
-  /**
-   * Register IPC handlers for renderer process communication
-   */
-  private registerIPCHandlers(): void {
-    // Configure Gemini client
-    ipcMain.handle('ai-configure', async (event, config: AIClientConfig) => {
-      return await this.configure(config);
-    });
+//       // Create new turn
+//       const turn: ConversationTurn = {
+//         turnNumber,
+//         toolCalls: [],
+//         toolResponses: [],
+//         startTime: new Date(),
+//         status: 'active'
+//       };
 
-    // Check if configured
-    ipcMain.handle('ai-is-configured', async () => {
-      return this.isConfigured();
-    });
+//       this.conversationState.turns.push(turn);
+//       this.conversationState.currentTurn = turnNumber;
 
-    // Send simple message
-    ipcMain.handle('ai-send-message', async (event, message: string) => {
-      return await this.sendMessage(message);
-    });
+//       try {
+//         // Project context is now handled via system instructions, so we can use the message directly
+//         console.log('🔍 Using system instruction for project context');
+//         const contextualMessage = currentMessage;
 
-    // Send message with tools
-    ipcMain.handle('ai-send-message-with-tools', async (event, message: string, tools: Tool[]) => {
-      return await this.sendMessageWithTools(message, tools);
-    });
+//         // Send message to Gemini with tools
+//         const result = await this.model!.generateContent({
+//           contents: [
+//             ...this.getConversationHistory(),
+//             { role: 'user', parts: [{ text: contextualMessage }] }
+//           ],
+//           tools: tools.length > 0 ? tools : undefined
+//         });
 
-    // Get conversation history
-    ipcMain.handle('ai-get-history', async () => {
-      return this.getHistory();
-    });
+//         const response = await result.response;
+//         const candidates = response.candidates || [];
+        
+//         if (candidates.length === 0) {
+//           throw new Error('No response candidates from Gemini');
+//         }
 
-    // Clear conversation history
-    ipcMain.handle('ai-clear-history', async () => {
-      this.clearHistory();
-      return true;
-    });
+//         const candidate = candidates[0];
+//         const content = candidate.content;
 
-    // Get available models
-    ipcMain.handle('ai-get-models', async () => {
-      return this.getAvailableModels();
-    });
+//         // Process response content
+//         if (content?.parts) {
+//           for (const part of content.parts) {
+//             // Handle text content
+//             if (part.text) {
+//               yield {
+//                 type: AIEventType.Content,
+//                 content: part.text,
+//                 timestamp: new Date()
+//               };
 
-    console.log('✅ Gemini AI IPC handlers registered');
-  }
+//               // Check for response loops
+//               if (loopDetectionService.checkResponseLoop(part.text)) {
+//                 yield {
+//                   type: AIEventType.LoopDetected,
+//                   pattern: 'Repetitive AI responses detected',
+//                   timestamp: new Date()
+//                 };
+//                 this.conversationState.isActive = false;
+//                 break;
+//               }
+//             }
 
-  /**
-   * Unregister IPC handlers
-   */
-  unregisterHandlers(): void {
-    ipcMain.removeHandler('ai-configure');
-    ipcMain.removeHandler('ai-is-configured');
-    ipcMain.removeHandler('ai-send-message');
-    ipcMain.removeHandler('ai-send-message-with-tools');
-    ipcMain.removeHandler('ai-get-history');
-    ipcMain.removeHandler('ai-clear-history');
-    ipcMain.removeHandler('ai-get-models');
-    console.log('✅ Gemini AI IPC handlers unregistered');
-  }
-}
+//             // Handle function calls
+//             if (part.functionCall) {
+//               const toolCallRequest: ToolCallRequestInfo = {
+//                 id: uuidv4(),
+//                 name: part.functionCall.name || 'unknown',
+//                 parameters: part.functionCall.args || {},
+//                 timestamp: new Date(),
+//                 turnNumber
+//               };
 
-// Export singleton instance
-export const geminiClient = new GeminiClientService();
+//               // Check for tool call loops
+//               if (loopDetectionService.checkToolCallLoop(toolCallRequest)) {
+//                 yield {
+//                   type: AIEventType.LoopDetected,
+//                   pattern: 'Repetitive tool calls detected',
+//                   timestamp: new Date()
+//                 };
+//                 this.conversationState.isActive = false;
+//                 break;
+//               }
+
+//               turn.toolCalls.push(toolCallRequest);
+
+//               yield {
+//                 type: AIEventType.ToolCallRequest,
+//                 toolCall: toolCallRequest,
+//                 timestamp: new Date()
+//               };
+
+//               // Execute tool if auto-execution is enabled
+//               if (autoExecuteTools) {
+//                 console.log('🔧 Executing tool call:', toolCallRequest.name, 'with params:', toolCallRequest.parameters);
+                
+//                 const toolResponse = await toolRegistry.executeToolCall(
+//                   toolCallRequest, 
+//                   this.abortController?.signal
+//                 );
+
+//                 console.log('🔧 Tool response:', {
+//                   success: toolResponse.success,
+//                   error: toolResponse.error,
+//                   resultType: typeof toolResponse.result
+//                 });
+
+//                 turn.toolResponses.push(toolResponse);
+
+//                 yield {
+//                   type: AIEventType.ToolCallResponse,
+//                   response: toolResponse,
+//                   timestamp: new Date()
+//                 };
+
+//                 // Add tool response to conversation history
+//                 this.addToHistory({
+//                   role: 'model',
+//                   parts: [part],
+//                   timestamp: new Date()
+//                 });
+
+//                 // FIXED: The Gemini API expects the response data directly under functionResponse
+//                 // not nested in another 'response' field
+//                 this.addToHistory({
+//                   role: 'user',
+//                   parts: [{
+//                     functionResponse: {
+//                       name: toolCallRequest.name,
+//                       response: toolResponse.success ? toolResponse.result : { error: toolResponse.error }
+//                     }
+//                   }],
+//                   timestamp: new Date()
+//                 });
+
+//                 // Continue conversation with tool result
+//                 currentMessage = toolResponse.success 
+//                   ? `Tool execution completed. Result: ${JSON.stringify(toolResponse.result)}`
+//                   : `Tool execution failed: ${toolResponse.error}`;
+//               }
+//             }
+//           }
+//         }
+
+//         // Mark turn as completed
+//         turn.endTime = new Date();
+//         turn.status = 'completed';
+
+//         yield {
+//           type: AIEventType.TurnCompleted,
+//           turnNumber,
+//           timestamp: new Date()
+//         };
+
+//         // Check if conversation should continue
+//         const shouldContinue = this.shouldContinueConversation(turn, response);
+//         if (!shouldContinue) {
+//           yield {
+//             type: AIEventType.Finished,
+//             reason: 'tool_calls_complete',
+//             timestamp: new Date()
+//           };
+//           break;
+//         }
+
+//       } catch (error) {
+//         turn.status = 'error';
+//         turn.endTime = new Date();
+
+//         const isRecoverable = !this.abortController?.signal.aborted;
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        
+//         console.error('❌ Error in conversation turn:', errorMessage);
+//         console.error('❌ Error details:', error);
+        
+//         yield {
+//           type: AIEventType.Error,
+//           error: {
+//             message: errorMessage,
+//             recoverable: isRecoverable
+//           },
+//           timestamp: new Date()
+//         };
+
+//         if (!isRecoverable) break;
+//       }
+//     }
+
+//     // Conversation ended
+//     if (this.conversationState) {
+//       this.conversationState.isActive = false;
+//     }
+
+//     yield {
+//       type: AIEventType.Finished,
+//       reason: turnNumber >= (this.conversationState?.maxTurns || 20) ? 'max_turns' : 'tool_calls_complete',
+//       timestamp: new Date()
+//     };
+//   }
+
+//   /**
+//    * Determine if conversation should continue
+//    */
+//   private shouldContinueConversation(turn: ConversationTurn, response: any): boolean {
+//     // Continue if there were tool calls (AI might need results)
+//     if (turn.toolCalls.length > 0) {
+//       return true;
+//     }
+
+//     // Check finish reason
+//     const finishReason = response.candidates?.[0]?.finishReason;
+//     if (finishReason === 'STOP') {
+//       return false; // AI indicated completion
+//     }
+
+//     // Continue for other reasons (SAFETY, LENGTH, etc.)
+//     return true;
+//   }
+
+//   /**
+//    * Convert tool definitions to Gemini format
+//    */
+//   private convertToolsForGemini(tools: ToolDefinition[]): Tool[] {
+//     return [{
+//       functionDeclarations: tools.map(tool => ({
+//         name: tool.name,
+//         description: tool.description,
+//         parameters: tool.parameters as any // Cast to bypass type issues
+//       }))
+//     } as any]; // Cast the whole tool object
+//   }
+
+//   /**
+//    * Get conversation history in Gemini format
+//    */
+//   private getConversationHistory(): Content[] {
+//     return this.conversationHistory.map(msg => ({
+//       role: msg.role,
+//       parts: msg.parts
+//     }));
+//   }
+
+//   /**
+//    * Get project context for AI
+//    */
+//   private async getProjectContext(): Promise<string | null> {
+//     try {
+//       // Use the full project context string that includes tool instructions and exploration strategy
+//       return projectContextBridge.getProjectContextString();
+//     } catch {
+//       return null;
+//     }
+//   }
+
+//   // Legacy methods (for backward compatibility)
+//   async sendMessageWithTools(message: string, tools: Tool[]): Promise<AIResponse> {
+//     // Convert to streaming and get final result
+//     const events: AIStreamEvent[] = [];
+//     for await (const event of this.sendMessageStream(message, { autoExecuteTools: true })) {
+//       events.push(event);
+//     }
+
+//     // Extract final response
+//     const contentEvents = events.filter(e => e.type === AIEventType.Content);
+//     const errorEvents = events.filter(e => e.type === AIEventType.Error);
+
+//     if (errorEvents.length > 0) {
+//       const lastError = errorEvents[errorEvents.length - 1] as any;
+//       return { success: false, error: lastError.error.message };
+//     }
+
+//     const content = contentEvents.map(e => (e as any).content).join('');
+//     return { success: true, content };
+//   }
+
+//   async executeToolCall(request: ToolCallRequestInfo): Promise<ToolCallResponseInfo> {
+//     return toolRegistry.executeToolCall(request);
+//   }
+
+//   addToHistory(message: ConversationMessage): void {
+//     this.conversationHistory.push(message);
+    
+//     // Keep history manageable (last 50 messages)
+//     if (this.conversationHistory.length > 50) {
+//       this.conversationHistory = this.conversationHistory.slice(-50);
+//     }
+//   }
+
+//   getHistory(): ConversationMessage[] {
+//     return [...this.conversationHistory];
+//   }
+
+//   clearHistory(): void {
+//     this.conversationHistory = [];
+//   }
+
+//   getConversationState(): ConversationState | null {
+//     return this.conversationState ? { ...this.conversationState } : null;
+//   }
+
+//   cancelConversation(): void {
+//     if (this.conversationState?.isActive) {
+//       this.conversationState.isActive = false;
+//       this.abortController?.abort();
+//     }
+//   }
+
+//   isConversationActive(): boolean {
+//     return this.conversationState?.isActive || false;
+//   }
+
+//   getAvailableModels(): string[] {
+//     return [
+//       'gemini-1.5-flash-latest',
+//       'gemini-1.5-pro-latest',
+//       'gemini-1.0-pro'
+//     ];
+//   }
+
+//   /**
+//    * Register IPC handlers for renderer communication
+//    */
+//   private registerIPCHandlers(): void {
+//     // Legacy handlers
+//     ipcMain.handle('ai-configure', async (event, config: AIClientConfig) => {
+//       return await this.configure(config);
+//     });
+
+//     ipcMain.handle('ai-is-configured', async () => {
+//       return this.isConfigured();
+//     });
+
+//     ipcMain.handle('ai-send-message', async (event, message: string) => {
+//       return await this.sendMessage(message);
+//     });
+
+//     // New streaming handlers
+//     ipcMain.handle('ai-start-autonomous-conversation', async (event, message: string, options: any) => {
+//       console.log('🎯 IPC: ai-start-autonomous-conversation called with:', message);
+      
+//       // Return a conversation ID for tracking
+//       const conversationId = uuidv4();
+//       console.log('🆔 Generated conversation ID:', conversationId);
+      
+//       // Initialize event buffer and store sender for this conversation
+//       this.conversationEventBuffers.set(conversationId, []);
+//       this.conversationSenders.set(conversationId, event.sender);
+      
+//       // Start streaming in background with a small delay to allow renderer to register event handlers
+//       setTimeout(async () => {
+//         try {
+//           console.log('🔄 Starting autonomous conversation stream...');
+//           for await (const streamEvent of this.sendMessageStream(message, options)) {
+//             console.log('📡 Buffering stream event:', streamEvent.type);
+//             this.bufferEvent(conversationId, streamEvent);
+//           }
+//           console.log('✅ Autonomous conversation stream completed');
+          
+//           // Clean up conversation resources after completion
+//           setTimeout(() => {
+//             this.cleanupConversation(conversationId);
+//           }, 5000); // Clean up after 5 seconds to allow final events to be processed
+//         } catch (error) {
+//           console.error('❌ Error in autonomous conversation stream:', error);
+//           this.bufferEvent(conversationId, {
+//             type: AIEventType.Error,
+//             error: { message: error instanceof Error ? error.message : 'Unknown error', recoverable: false },
+//             timestamp: new Date()
+//           });
+//         }
+//       }, 100); // 100ms delay to allow renderer to register event handlers
+
+//       return { conversationId };
+//     });
+
+//     // Add handler for renderer to signal it's ready to receive events
+//     ipcMain.handle('ai-conversation-ready', async (event, conversationId: string) => {
+//       console.log('🎯 Renderer ready for conversation:', conversationId);
+//       this.flushEventBuffer(conversationId);
+//       return true;
+//     });
+
+//     ipcMain.handle('ai-cancel-conversation', async () => {
+//       this.cancelConversation();
+//       return true;
+//     });
+
+//     ipcMain.handle('ai-get-conversation-state', async () => {
+//       return this.getConversationState();
+//     });
+
+//     // History and utility handlers
+//     ipcMain.handle('ai-get-history', async () => {
+//       return this.getHistory();
+//     });
+
+//     ipcMain.handle('ai-clear-history', async () => {
+//       this.clearHistory();
+//       return true;
+//     });
+
+//     ipcMain.handle('ai-get-models', async () => {
+//       return this.getAvailableModels();
+//     });
+
+//     console.log('✅ Autonomous Gemini AI IPC handlers registered');
+//   }
+
+//   /**
+//    * Buffer an event for a conversation
+//    */
+//   private bufferEvent(conversationId: string, event: AIStreamEvent): void {
+//     const buffer = this.conversationEventBuffers.get(conversationId);
+//     if (buffer) {
+//       buffer.push(event);
+//     }
+//   }
+
+//   /**
+//    * Flush all buffered events for a conversation
+//    */
+//   private flushEventBuffer(conversationId: string): void {
+//     const buffer = this.conversationEventBuffers.get(conversationId);
+//     const sender = this.conversationSenders.get(conversationId);
+    
+//     if (buffer && sender) {
+//       console.log(`📤 Flushing ${buffer.length} buffered events for conversation:`, conversationId);
+//       for (const event of buffer) {
+//         sender.send('ai-stream-event', conversationId, event);
+//       }
+      
+//       // Clear buffer after flushing
+//       this.conversationEventBuffers.delete(conversationId);
+//       this.conversationSenders.delete(conversationId);
+//     }
+//   }
+
+//   /**
+//    * Clean up resources for a specific conversation
+//    */
+//   private cleanupConversation(conversationId: string): void {
+//     console.log('🧹 Cleaning up conversation:', conversationId);
+//     this.conversationEventBuffers.delete(conversationId);
+//     this.conversationSenders.delete(conversationId);
+//   }
+
+//   /**
+//    * Clean up all conversation resources
+//    */
+//   private cleanupAllConversations(): void {
+//     console.log('🧹 Cleaning up all conversations');
+//     this.conversationEventBuffers.clear();
+//     this.conversationSenders.clear();
+//   }
+
+//   /**
+//    * Cleanup method
+//    */
+//   unregisterHandlers(): void {
+//     ipcMain.removeHandler('ai-configure');
+//     ipcMain.removeHandler('ai-is-configured');
+//     ipcMain.removeHandler('ai-send-message');
+//     ipcMain.removeHandler('ai-start-autonomous-conversation');
+//     ipcMain.removeHandler('ai-conversation-ready');
+//     ipcMain.removeHandler('ai-cancel-conversation');
+//     ipcMain.removeHandler('ai-get-conversation-state');
+//     ipcMain.removeHandler('ai-get-history');
+//     ipcMain.removeHandler('ai-clear-history');
+//     ipcMain.removeHandler('ai-get-models');
+//   }
+// }
+
+// // Export singleton instance
+// export const autonomousGeminiClient = new AutonomousGeminiClient();

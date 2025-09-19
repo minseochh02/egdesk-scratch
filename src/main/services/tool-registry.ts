@@ -64,7 +64,7 @@ export class ToolRegistry {
       description: 'Read the contents of a file',
       functionDeclaration: {
         name: 'read_file',
-        description: 'Read and return the contents of a file. Can read any text file including HTML, CSS, JavaScript, etc.',
+        description: 'Read and return the contents of a file. Use this to analyze code, understand project configuration, read documentation, or examine any text file. Essential for understanding what already exists before making changes.',
         parameters: {
           type: 'object',
           properties: {
@@ -199,7 +199,7 @@ export class ToolRegistry {
       description: 'List the contents of a directory',
       functionDeclaration: {
         name: 'list_directory',
-        description: 'List files and directories in a specified directory. Returns information about each entry including type, size, and modification time.',
+        description: 'List files and directories in a specified directory. Use this to explore project structure, understand codebase organization, and identify what files exist. Returns information about each entry including type, size, and modification time.',
         parameters: {
           type: 'object',
           properties: {

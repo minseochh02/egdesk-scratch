@@ -519,6 +519,91 @@
   white-space: nowrap;
 }
 
+/* Autonomous Mode Styles */
+.mode-toggle {
+  padding: 6px 10px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #fff;
+  color: #3c4043;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-toggle:hover {
+  background: #f8f9fa;
+  border-color: #1a73e8;
+}
+
+.mode-toggle.autonomous {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.mode-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  padding: 6px 12px;
+  border: 1px solid #ea4335;
+  border-radius: 4px;
+  background: #fff;
+  color: #ea4335;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: #fce8e6;
+}
+
+.autonomous-status {
+  padding: 8px 16px;
+  background: #f0f4ff;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 12px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.status-row:last-child {
+  margin-bottom: 0;
+}
+
+.status-label {
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+.status-value {
+  color: #5f6368;
+  font-family: monospace;
+}
+
+/* Enhanced welcome message for autonomous mode */
+.welcome-message p strong {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+/* Tool execution indicators in messages */
+.message.model .message-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .ai-chat {
@@ -545,5 +630,19 @@
   
   .project-path {
     max-width: 150px;
+  }
+  
+  .header-buttons {
+    gap: 6px;
+  }
+  
+  .clear-btn, .cancel-btn, .mode-toggle {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  
+  .autonomous-status {
+    padding: 6px 12px;
+    font-size: 11px;
   }
 }
