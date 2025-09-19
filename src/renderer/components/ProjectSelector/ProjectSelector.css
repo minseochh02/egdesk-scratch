@@ -1,22 +1,27 @@
+/* TEMPORARILY COMMENTED OUT - ProjectSelector.css */
+/*
 .project-selector {
   position: relative;
   display: flex;
   align-items: center;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   /* width: 100%; */
+/*
 }
 
 .project-selector.compact {
   width: 100%;
   max-width: 100%;
 }
-
+*/
 /* Compact Current Project Display */
+/*
 .project-selector .current-project.compact {
   display: flex;
   align-items: center;
   justify-content: space-between;
   /* gap: 6px; */
+  /*
   padding: 2px 8px;
   background: var(--bg-color, #2d2d30);
   border: 1px solid var(--border-color, #3e3e42);
@@ -79,6 +84,7 @@
 }
 
 /* Compact Project Dropdown */
+/*
 .project-dropdown.compact {
   position: absolute;
   top: 100%;
@@ -273,6 +279,7 @@
 }
 
 /* Scrollbar styling */
+/*
 .project-dropdown::-webkit-scrollbar {
   width: 6px;
 }
@@ -292,6 +299,7 @@
 }
 
 /* Responsive design */
+/*
 @media (max-width: 768px) {
   .project-dropdown.compact {
     min-width: 220px;
@@ -304,6 +312,7 @@
 }
 
 /* Animation */
+/*
 .project-dropdown.compact {
   animation: slideDown 0.2s ease-out;
 }
@@ -320,6 +329,7 @@
 }
 
 /* Legacy styles for backward compatibility */
+/*
 .current-project {
   display: flex;
   align-items: center;
@@ -410,6 +420,7 @@
 }
 
 /* Status indicator styles */
+/*
 .project-selector .current-project.status-indicator {
   border-left: 3px solid var(--status-color, #007acc);
 }
@@ -425,3 +436,4 @@
 .project-selector .current-project.status-indicator.error {
   border-left-color: var(--error-color, #f44336);
 }
+*/
