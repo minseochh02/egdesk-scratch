@@ -5,7 +5,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCaretDown, faFolderOpen, faKey, faClock, faTrash, faTimes, faHistory, faFolder, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import { 
+  faKey, 
+  faClock, 
+  faTrash, 
+  faTimes, 
+  faHistory, 
+  faFolder, 
+  faChevronDown,
+  faArrowLeft
+} from '../../../utils/fontAwesomeIcons';
 import { AIService } from '../../../services/ai-service';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
 import ProjectContextService from '../../../services/projectContextService';
@@ -24,7 +33,7 @@ import type { AIKey } from '../../AIKeysManager/types';
 import './AIChat.css';
 
 interface AIChatProps {
-  // Add props as needed
+  onBackToProjectSelection?: () => void;
 }
 
 /**
@@ -88,7 +97,7 @@ const getToolNameFromMessage = (message: string): string => {
   return 'tool';
 };
 
-export const AIChat: React.FC<AIChatProps> = () => {
+export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -99,8 +108,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [currentProject, setCurrentProject] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // New autonomous conversation state
-  const [isAutonomousMode, setIsAutonomousMode] = useState(true);
+  // Conversation state
   const [conversationState, setConversationState] = useState<ConversationState | null>(null);
   const [streamingEvents, setStreamingEvents] = useState<AIStreamEvent[]>([]);
   const [toolCalls, setToolCalls] = useState<(ToolCallRequestInfo & { status: 'executing' | 'completed' | 'failed'; result?: ToolCallResponseInfo })[]>([]);
@@ -283,8 +291,52 @@ export const AIChat: React.FC<AIChatProps> = () => {
     setIsLoading(true);
     setIsConversationActive(true);
 
-    // Use autonomous conversation mode
-    await handleAutonomousConversation(messageToSend);
+    try {
+      // Use stream conversation but with simple chat settings (no tools, single turn)
+      let responseText = '';
+      
+      for await (const event of AIService.streamConversation(messageToSend, {
+        autoExecuteTools: false, // Disable tool execution for simple chat
+        maxTurns: 1, // Single turn conversation
+        timeoutMs: 30000, // 30 seconds timeout
+        context: {
+          currentProject: currentProject?.name,
+          projectPath: currentProject?.path
+        }
+      })) {
+        if (event.type === AIEventType.Content) {
+          const contentEvent = event as any;
+          const newContent = contentEvent.content || contentEvent.data || '';
+          if (newContent) {
+            responseText += newContent;
+          }
+        } else if (event.type === AIEventType.Finished) {
+          break;
+        } else if (event.type === AIEventType.Error) {
+          const errorEvent = event as any;
+          throw new Error(errorEvent.error.message);
+        }
+      }
+
+      // Add the complete response as a single message
+      if (responseText) {
+        setMessages(prev => [...prev, {
+          role: 'model',
+          parts: [{ text: responseText }],
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setMessages(prev => [...prev, {
+        role: 'model',
+        parts: [{ text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsLoading(false);
+      setIsConversationActive(false);
+    }
   };
 
   /**
@@ -587,6 +639,18 @@ export const AIChat: React.FC<AIChatProps> = () => {
             </div>
           </div>
           <div className="header-buttons">
+            {/* Back to Project Selection Button */}
+            {onBackToProjectSelection && (
+              <button 
+                className="back-btn" 
+                onClick={onBackToProjectSelection}
+                title="Back to project selection"
+              >
+                <FontAwesomeIcon icon={faArrowLeft} className="btn-icon" />
+                Back
+              </button>
+            )}
+
             {/* Google AI Key Selector */}
             {googleKeys.length > 1 && (
               <div className="key-selector">
@@ -600,12 +664,6 @@ export const AIChat: React.FC<AIChatProps> = () => {
                 </div>
               </div>
             )}
-
-            {/* Connection Status (simplified) */}
-            <div className="connection-status">
-              <span className="status-icon">{getConnectionStatusIcon()}</span>
-              <span className="status-text">{selectedGoogleKey?.name || 'No Key'}</span>
-            </div>
 
             {/* Cancel button (only show when conversation is active) */}
             {isConversationActive && (
@@ -696,15 +754,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
         {messages.length === 0 ? (
           <div className="welcome-message">
             <p>👋 Welcome to the AI Assistant!</p>
-            {isAutonomousMode ? (
-              <>
-                <p>🤖 <strong>Autonomous Mode</strong>: AI can execute tools and work independently to complete complex tasks.</p>
-                <p>Available tools: read files, write files, list directories, run commands, analyze project structure.</p>
-                <p>Try: "Analyze my project and create missing documentation" or "Fix all linting errors in my code"</p>
-              </>
-            ) : (
-              <p>💬 <strong>Chat Mode</strong>: Simple conversation with Gemini AI.</p>
-            )}
+            <p>💬 <strong>Chat Mode</strong>: Ask questions and get AI responses.</p>
+            <p>Start a conversation by typing your message below.</p>
             {!isConfigured && (
               <p className="config-hint">Configure your Google AI key first to begin.</p>
             )}
@@ -757,9 +808,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
           placeholder={
             !isConfigured 
               ? "Configure Google AI key first..." 
-              : isAutonomousMode
-                ? "Describe a task for AI to complete autonomously... (Enter to send, Shift+Enter for new line)"
-                : "Type your message... (Enter to send, Shift+Enter for new line)"
+              : "Type your message... (Enter to send, Shift+Enter for new line)"
           }
           disabled={!isConfigured || isLoading}
           rows={2}
