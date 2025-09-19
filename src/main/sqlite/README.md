@@ -1,16 +1,37 @@
-# SQLite Manager Architecture
+# SQLite Manager for AI Chat Storage
 
 ## Overview
 
-The SQLite system is now managed through a central `SQLiteManager` singleton that provides a unified API for all database operations. This makes the code more maintainable and provides a single entry point for all SQLite functionality.
+The SQLite system is managed through a central `SQLiteManager` singleton that provides a unified API for AI chat storage operations. This makes the code more maintainable and provides a single entry point for all SQLite functionality.
 
 ## Architecture
 
 ```
 SQLiteManager (Singleton)
-├── WordPressSQLiteManager (WordPress data)
-└── WordPressExportUtils (Export functionality)
+├── Database Connection (better-sqlite3)
+├── Conversations Table
+└── Messages Table
 ```
+
+## Database Schema
+
+### Conversations Table
+- `id` (TEXT PRIMARY KEY) - Unique conversation identifier
+- `title` (TEXT) - Optional conversation title
+- `created_at` (DATETIME) - Creation timestamp
+- `updated_at` (DATETIME) - Last update timestamp
+- `project_context` (TEXT) - JSON string for project context
+- `is_active` (BOOLEAN) - Whether conversation is active
+
+### Messages Table
+- `id` (TEXT PRIMARY KEY) - Unique message identifier
+- `conversation_id` (TEXT) - Foreign key to conversations
+- `role` (TEXT) - 'user' or 'model'
+- `content` (TEXT) - Message content
+- `timestamp` (DATETIME) - Message timestamp
+- `tool_call_id` (TEXT) - Optional tool call identifier
+- `tool_status` (TEXT) - Tool execution status
+- `metadata` (TEXT) - JSON string for additional data
 
 ## Usage
 
@@ -25,111 +46,50 @@ const sqliteManager = getSQLiteManager();
 ### 2. Initialization
 
 ```typescript
-// Initialize all SQLite components
+// Initialize SQLite database
 const result = await sqliteManager.initialize();
 if (!result.success) {
   console.error('SQLite initialization failed:', result.error);
 }
 ```
 
-### 3. WordPress Operations
+### 3. Basic Operations
 
 ```typescript
-// Save a post
-const post: WordPressPost = {
-  id: 123,
-  title: 'My Post',
-  content: '<p>Post content</p>',
-  // ... other fields
-};
-sqliteManager.savePost(post);
-
-// Get posts for a site
-const posts = sqliteManager.getPostsBySite('site-123', 50, 0);
-
-// Save media
-const media: WordPressMedia = {
-  id: 456,
-  title: 'Image',
-  source_url: 'https://example.com/image.jpg',
-  local_data: Buffer.from('...'),
-  // ... other fields
-};
-sqliteManager.saveMedia(media);
-```
-
-### 4. Sync Operations
-
-```typescript
-// Create a sync operation
-const operationId = sqliteManager.createSyncOperation({
-  site_id: 'site-123',
-  site_name: 'My Site',
-  operation_type: 'full_sync',
-  status: 'pending',
-  start_time: new Date().toISOString(),
-  total_posts: 100,
-  synced_posts: 0,
-  total_media: 50,
-  synced_media: 0,
-  errors: '[]',
-  export_format: 'wordpress'
-});
-
-// Update sync progress
-sqliteManager.updateSyncOperation(operationId, {
-  synced_posts: 25,
-  status: 'running'
-});
-```
-
-### 5. Export Operations
-
-```typescript
-// Export to WordPress XML
-const result = await sqliteManager.exportPostsToWordPressXML('site-123', '/path/to/export.xml');
-
-// Export to Markdown
-const result = await sqliteManager.exportPostsToMarkdown('site-123', '/path/to/markdown/');
-
-// Export to JSON
-const result = await sqliteManager.exportPostsToJSON('site-123', '/path/to/posts.json');
-```
-
-### 6. Statistics and Monitoring
-
-```typescript
-// Get sync statistics
-const stats = sqliteManager.getSyncStats('site-123');
-console.log(`Total posts: ${stats.totalPosts}`);
-console.log(`Total media: ${stats.totalMedia}`);
-
-// Get database statistics
-const dbStats = sqliteManager.getDatabaseStats();
-console.log(`Database size: ${dbStats.databaseSize} bytes`);
-
 // Check if SQLite is available
 if (sqliteManager.isAvailable()) {
   console.log('SQLite is ready');
 } else {
   console.log('SQLite not available:', sqliteManager.getInitializationError());
 }
+
+// Get database status
+const status = sqliteManager.getStatus();
+console.log('Database path:', status.databasePath);
+console.log('Database size:', sqliteManager.getDatabaseSize(), 'MB');
 ```
 
-### 7. Database Maintenance
+### 4. Database Access
 
 ```typescript
-// Optimize database
-sqliteManager.optimize();
+// Get database instance for direct operations
+const db = sqliteManager.getDatabase();
 
-// Vacuum database
-sqliteManager.vacuum();
+// Example: Create a conversation
+const conversationId = 'conv_' + Date.now();
+const stmt = db.prepare(`
+  INSERT INTO conversations (id, title, project_context) 
+  VALUES (?, ?, ?)
+`);
+stmt.run(conversationId, 'My AI Chat', JSON.stringify({ project: 'my-project' }));
 
-// Backup database
-const backupResult = await sqliteManager.backup('/path/to/backup.db');
-
-// Restore from backup
-const restoreResult = await sqliteManager.restore('/path/to/backup.db');
+// Example: Add a message
+const messageId = 'msg_' + Date.now();
+const messageStmt = db.prepare(`
+  INSERT INTO messages (id, conversation_id, role, content) 
+  VALUES (?, ?, ?, ?)
+`);
+messageStmt.run(messageId, conversationId, 'user', 'Hello AI!');
 ```
 
 ## Benefits
@@ -146,7 +106,7 @@ const restoreResult = await sqliteManager.restore('/path/to/backup.db');
 
 The SQLite database is stored at:
 ```
-~/Library/Application Support/egdesk/wordpress-sync/wordpress-sync.db
+~/Library/Application Support/EGDesk/ai-chat/ai-chat.db
 ```
 
 ## Error Handling
@@ -155,3 +115,10 @@ The manager provides graceful error handling:
 - Initialization errors are captured and can be retrieved
 - Individual operations throw descriptive errors
 - Fallback mechanisms for when SQLite is not available
+
+## Performance Features
+
+- **Indexes**: Optimized for common queries
+- **Triggers**: Automatic timestamp updates
+- **Foreign Keys**: Data integrity constraints
+- **Prepared Statements**: Efficient query execution
