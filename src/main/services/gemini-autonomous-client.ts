@@ -6,11 +6,13 @@
 
 import { GoogleGenerativeAI, GenerationConfig, Content, Part, FunctionCall, Tool } from '@google/generative-ai';
 import { ipcMain } from 'electron';
-import { v4 as uuidv4 } from 'uuid';
+const { v4: uuidv4 } = require('uuid');
 import { toolRegistry } from './tool-executor';
 import { loopDetectionService } from './loop-detection';
 import { projectContextBridge } from './project-context-bridge';
 import { getEGDeskSystemPrompt } from '../prompts/system-prompt';
+import { getSQLiteManager } from '../sqlite/sqlite-manager';
+import { AIChatDatabase, conversationMessageToAIMessage } from '../sqlite/ai';
 import type { 
   AIClientConfig, 
   ConversationMessage, 
@@ -36,9 +38,32 @@ export class AutonomousGeminiClient implements AIClientService {
   // Event buffering for conversations
   private conversationEventBuffers = new Map<string, AIStreamEvent[]>();
   private conversationSenders = new Map<string, Electron.WebContents>();
+  
+  // SQLite integration
+  private sqliteManager = getSQLiteManager();
+  private aiChatDb?: AIChatDatabase;
+  private currentConversationId?: string;
 
   constructor() {
+    this.initializeSQLite();
     this.registerIPCHandlers();
+  }
+
+  /**
+   * Initialize SQLite database for AI chat storage
+   */
+  private async initializeSQLite(): Promise<void> {
+    try {
+      const result = await this.sqliteManager.initialize();
+      if (result.success) {
+        this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
+        console.log('✅ SQLite database initialized for AI chat storage');
+      } else {
+        console.error('❌ Failed to initialize SQLite for AI chat:', result.error);
+      }
+    } catch (error) {
+      console.error('❌ Error initializing SQLite for AI chat:', error);
+    }
   }
 
   /**
@@ -102,8 +127,9 @@ export class AutonomousGeminiClient implements AIClientService {
     }
 
     // Initialize conversation state
+    const sessionId = uuidv4();
     this.conversationState = {
-      sessionId: uuidv4(),
+      sessionId,
       turns: [],
       currentTurn: 0,
       isActive: true,
@@ -112,6 +138,10 @@ export class AutonomousGeminiClient implements AIClientService {
       startTime: new Date(),
       context: options.context
     };
+
+    // Create conversation in SQLite
+    this.currentConversationId = sessionId;
+    await this.createConversationInSQLite(sessionId, message, options.context);
 
     // Setup abort controller for cancellation
     this.abortController = new AbortController();
@@ -210,7 +240,7 @@ export class AutonomousGeminiClient implements AIClientService {
         // Send message to Gemini with tools
         const result = await this.model!.generateContent({
           contents: [
-            ...this.getConversationHistory(),
+            ...this.getConversationHistoryForGemini(),
             { role: 'user', parts: [{ text: contextualMessage }] }
           ],
           tools: tools.length > 0 ? tools : undefined
@@ -334,6 +364,9 @@ export class AutonomousGeminiClient implements AIClientService {
         turn.endTime = new Date();
         turn.status = 'completed';
 
+        // Save turn data to SQLite
+        this.saveTurnToSQLite(turn);
+
         yield {
           type: AIEventType.TurnCompleted,
           turnNumber,
@@ -456,7 +489,7 @@ export class AutonomousGeminiClient implements AIClientService {
   /**
    * Get conversation history in Gemini format
    */
-  private getConversationHistory(): Content[] {
+  private getConversationHistoryForGemini(): Content[] {
     return this.conversationHistory.map(msg => ({
       role: msg.role,
       parts: msg.parts
@@ -490,11 +523,36 @@ export class AutonomousGeminiClient implements AIClientService {
   }
 
   getHistory(): ConversationMessage[] {
+    // Return in-memory history for current session
     return [...this.conversationHistory];
   }
 
   clearHistory(): void {
     this.conversationHistory = [];
+  }
+
+  /**
+   * Get conversation history from SQLite
+   */
+  async getConversationHistory(conversationId: string): Promise<ConversationMessage[]> {
+    if (!this.aiChatDb) {
+      console.warn('⚠️ AI Chat database not available, returning empty history');
+      return [];
+    }
+
+    try {
+      const messages = this.aiChatDb.getMessages(conversationId);
+      return messages.map(msg => ({
+        role: msg.role === 'tool' ? 'model' : msg.role as 'user' | 'model',
+        parts: [{ text: msg.content }],
+        timestamp: new Date(msg.timestamp),
+        toolCallId: msg.tool_call_id,
+        toolStatus: msg.tool_status
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get conversation history from SQLite:', error);
+      return [];
+    }
   }
 
   getConversationState(): ConversationState | null {
@@ -674,6 +732,117 @@ export class AutonomousGeminiClient implements AIClientService {
     console.log('🧹 Cleaning up all conversations');
     this.conversationEventBuffers.clear();
     this.conversationSenders.clear();
+  }
+
+  /**
+   * Create conversation in SQLite database
+   */
+  private async createConversationInSQLite(sessionId: string, initialMessage: string, context?: Record<string, any>): Promise<void> {
+    if (!this.aiChatDb) {
+      console.warn('⚠️ AI Chat database not available, skipping conversation creation');
+      return;
+    }
+
+    try {
+      const conversationTitle = this.generateConversationTitle(initialMessage);
+      const projectContext = context ? JSON.stringify(context) : '{}';
+      
+      console.log('🔧 Creating conversation in SQLite:', {
+        id: sessionId,
+        title: conversationTitle,
+        projectContext: projectContext.substring(0, 100) + '...'
+      });
+      
+      this.aiChatDb.createConversation({
+        id: sessionId,
+        title: conversationTitle,
+        project_context: projectContext,
+        is_active: true
+      });
+
+      console.log('✅ Successfully created conversation in SQLite:', sessionId);
+    } catch (error) {
+      console.error('❌ Failed to create conversation in SQLite:', error);
+      console.error('❌ Conversation ID:', sessionId);
+      console.error('❌ Error details:', error);
+    }
+  }
+
+  /**
+   * Save turn data to SQLite database
+   */
+  private saveTurnToSQLite(turn: ConversationTurn): void {
+    if (!this.aiChatDb || !this.currentConversationId) {
+      console.warn('⚠️ AI Chat database or conversation ID not available, skipping turn save');
+      return;
+    }
+
+    try {
+      // For now, let's save all messages from the conversation history
+      // TODO: Optimize to only save new messages per turn
+      const turnMessages = this.conversationHistory;
+
+      console.log('🔧 Saving turn to SQLite:', {
+        conversationId: this.currentConversationId,
+        turnNumber: turn.turnNumber,
+        messageCount: turnMessages.length,
+        totalHistoryLength: this.conversationHistory.length
+      });
+
+      // Convert and save messages
+      const aiMessages = turnMessages.map(msg => conversationMessageToAIMessage(msg, this.currentConversationId!));
+      
+      // Remove duplicates based on content and timestamp (simple deduplication)
+      const uniqueMessages = aiMessages.filter((msg, index, arr) => 
+        arr.findIndex(m => m.content === msg.content && m.role === msg.role) === index
+      );
+      
+      console.log('🔧 Converted messages for SQLite:', aiMessages.map(m => ({
+        id: m.id,
+        role: m.role,
+        contentLength: m.content.length,
+        content: m.content.substring(0, 100) + (m.content.length > 100 ? '...' : ''),
+        conversationId: m.conversation_id
+      })));
+
+      // Debug: Log the original conversation messages
+      console.log('🔧 Original conversation messages:', turnMessages.map(msg => ({
+        role: msg.role,
+        partsCount: msg.parts.length,
+        parts: msg.parts.map(part => ({
+          hasText: !!part.text,
+          hasFunctionCall: !!part.functionCall,
+          hasFunctionResponse: !!part.functionResponse,
+          text: part.text?.substring(0, 50) || 'N/A'
+        }))
+      })));
+
+      this.aiChatDb.addMessages(uniqueMessages);
+
+      // Update conversation metadata
+      this.aiChatDb.updateConversation(this.currentConversationId, {
+        updated_at: new Date().toISOString()
+      });
+
+      console.log(`✅ Successfully saved ${uniqueMessages.length} messages from turn ${turn.turnNumber} to SQLite`);
+    } catch (error) {
+      console.error('❌ Failed to save turn to SQLite:', error);
+      console.error('❌ Conversation ID:', this.currentConversationId);
+      console.error('❌ Turn number:', turn.turnNumber);
+      console.error('❌ Error details:', error);
+    }
+  }
+
+  /**
+   * Generate a conversation title from the initial message
+   */
+  private generateConversationTitle(message: string): string {
+    // Truncate and clean the message for use as title
+    const maxLength = 50;
+    const cleaned = message.replace(/\n/g, ' ').trim();
+    return cleaned.length > maxLength 
+      ? cleaned.substring(0, maxLength) + '...'
+      : cleaned || 'AI Conversation';
   }
 
   /**

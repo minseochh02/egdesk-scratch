@@ -1,20 +1,21 @@
 import { app, ipcMain } from 'electron';
-import { WordPressSQLiteManager, WordPressPost, WordPressMedia, SyncOperation, SyncFileDetail, SyncStats } from './wordpress-sqlite-manager';
-import { WordPressExportUtils, ExportOptions } from './wordpress-export-utils';
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * Central SQLite Manager
  * 
  * This is the main entry point for all SQLite operations in the application.
  * It manages initialization, provides a unified API, and handles all database
- * operations through specialized managers.
+ * operations for AI chat storage.
  */
 export class SQLiteManager {
   private static instance: SQLiteManager | null = null;
   
-  // Specialized managers
-  private wordpressManager: WordPressSQLiteManager | null = null;
-  private exportUtils: WordPressExportUtils | null = null;
+  // Database connection
+  private db: Database.Database | null = null;
+  private dbPath: string = '';
   
   // State management
   private isInitialized = false;
@@ -35,19 +36,23 @@ export class SQLiteManager {
   }
 
   /**
-   * Initialize all SQLite components
+   * Initialize SQLite database
    */
-  public async initialize(schedulerManager?: any): Promise<{ success: boolean; error?: string }> {
+  public async initialize(): Promise<{ success: boolean; error?: string }> {
     try {
       console.log('🔧 Initializing SQLite Manager...');
       
-      // Initialize WordPress manager
-      this.wordpressManager = new WordPressSQLiteManager();
-      console.log('✅ WordPress SQLite Manager initialized');
+      // Create data directory if it doesn't exist
+      const dataDir = path.join(app.getPath('userData'), 'ai-chat');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      this.dbPath = path.join(dataDir, 'ai-chat.db');
+      this.db = new Database(this.dbPath);
       
-      // Initialize export utils with dependency injection
-      this.exportUtils = new WordPressExportUtils(this.wordpressManager);
-      console.log('✅ WordPress Export Utils initialized');
+      // Initialize database schema
+      this.initializeDatabase();
       
       this.isInitialized = true;
       console.log('🎉 SQLite Manager fully initialized');
@@ -66,10 +71,70 @@ export class SQLiteManager {
   }
 
   /**
+   * Initialize database schema for AI chat storage
+   */
+  private initializeDatabase(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Create conversations table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        project_context TEXT, -- JSON string for project context
+        is_active BOOLEAN DEFAULT 1
+      )
+    `);
+
+    // Create messages table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'model', 'tool')),
+        content TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        tool_call_id TEXT,
+        tool_status TEXT CHECK (tool_status IN ('executing', 'completed', 'failed')),
+        metadata TEXT, -- JSON string for additional data
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create indexes for better performance
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
+      CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_conversations_is_active ON conversations(is_active);
+    `);
+
+    // Create triggers for updated_at timestamps
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS update_conversations_timestamp 
+      AFTER UPDATE ON conversations
+      BEGIN
+        UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END
+    `);
+
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS update_messages_timestamp 
+      AFTER UPDATE ON messages
+      BEGIN
+        UPDATE messages SET timestamp = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END
+    `);
+  }
+
+  /**
    * Check if SQLite is available and initialized
    */
   public isAvailable(): boolean {
-    return this.isInitialized && this.wordpressManager !== null;
+    return this.isInitialized && this.db !== null;
   }
 
   /**
@@ -84,179 +149,43 @@ export class SQLiteManager {
    */
   public getStatus(): {
     isInitialized: boolean;
-    hasWordPressManager: boolean;
-    hasExportUtils: boolean;
+    hasDatabase: boolean;
     error: string | null;
+    databasePath: string;
   } {
     return {
       isInitialized: this.isInitialized,
-      hasWordPressManager: this.wordpressManager !== null,
-      hasExportUtils: this.exportUtils !== null,
-      error: this.initializationError
+      hasDatabase: this.db !== null,
+      error: this.initializationError,
+      databasePath: this.dbPath
     };
   }
 
-  // ===========================================
-  // WORDPRESS OPERATIONS
-  // ===========================================
-
   /**
-   * WordPress Posts Operations
+   * Get database path for debugging
    */
-  public savePost(post: WordPressPost): void {
-    this.ensureInitialized();
-    this.wordpressManager!.savePost(post);
+  public getDatabasePath(): string {
+    return this.dbPath;
   }
-
-  public getPostsBySite(siteId: string, limit: number = 100, offset: number = 0): WordPressPost[] {
-    this.ensureInitialized();
-    return this.wordpressManager!.getPostsBySite(siteId, limit, offset);
-  }
-
-  // Note: Individual post operations can be added to WordPressSQLiteManager if needed
 
   /**
-   * WordPress Media Operations
+   * Get database size in MB
    */
-  public saveMedia(media: WordPressMedia): void {
-    this.ensureInitialized();
-    this.wordpressManager!.saveMedia(media);
+  public getDatabaseSize(): number {
+    if (!this.db || !fs.existsSync(this.dbPath)) return 0;
+    const stats = fs.statSync(this.dbPath);
+    return Math.round((stats.size / 1024 / 1024) * 100) / 100;
   }
-
-  public getMediaBySite(siteId: string, limit: number = 100, offset: number = 0): WordPressMedia[] {
-    this.ensureInitialized();
-    return this.wordpressManager!.getMediaBySite(siteId, limit, offset);
-  }
-
-  // Note: Individual media operations can be added to WordPressSQLiteManager if needed
 
   /**
-   * Sync Operations
-   */
-  public createSyncOperation(operation: Omit<SyncOperation, 'id' | 'created_at'>): string {
-    this.ensureInitialized();
-    return this.wordpressManager!.createSyncOperation(operation);
-  }
-
-  public updateSyncOperation(operationId: string, updates: Partial<SyncOperation>): void {
-    this.ensureInitialized();
-    this.wordpressManager!.updateSyncOperation(operationId, updates);
-  }
-
-  public getSyncOperationsBySite(siteId: string, limit: number = 50): SyncOperation[] {
-    this.ensureInitialized();
-    return this.wordpressManager!.getSyncOperationsBySite(siteId, limit);
-  }
-
-  // Note: Individual sync operation management can be added if needed
-
-  /**
-   * Sync File Details
-   */
-  public addSyncFileDetail(fileDetail: Omit<SyncFileDetail, 'id'>): string {
-    this.ensureInitialized();
-    return this.wordpressManager!.addSyncFileDetail(fileDetail);
-  }
-
-  public updateSyncFileDetail(fileDetailId: string, status: string, errorMessage?: string): void {
-    this.ensureInitialized();
-    this.wordpressManager!.updateSyncFileDetail(fileDetailId, status, errorMessage);
-  }
-
-  public getSyncFileDetails(operationId: string): SyncFileDetail[] {
-    this.ensureInitialized();
-    return this.wordpressManager!.getSyncFileDetails(operationId);
-  }
-
-  // Note: Bulk file detail operations can be added if needed
-
-  /**
-   * Statistics
-   */
-  public getSyncStats(siteId: string): SyncStats {
-    this.ensureInitialized();
-    return this.wordpressManager!.getSyncStats(siteId);
-  }
-
-  // Note: Database statistics can be added to WordPressSQLiteManager if needed
-
-  // ===========================================
-  // EXPORT OPERATIONS
-  // ===========================================
-
-  /**
-   * Export WordPress data to files
-   */
-  public async exportToFiles(options: ExportOptions): Promise<{
-    success: boolean;
-    exportedFiles: string[];
-    totalSize: number;
-    error?: string;
-  }> {
-    this.ensureInitialized();
-    return await this.exportUtils!.exportToFiles(options);
-  }
-
-  public async exportPostsToWordPressXML(siteId: string, outputPath: string): Promise<{
-    success: boolean;
-    filePath?: string;
-    error?: string;
-  }> {
-    this.ensureInitialized();
-    return await this.exportUtils!.exportPostsToWordPressXML(siteId, outputPath);
-  }
-
-  public async exportPostsToMarkdown(siteId: string, outputPath: string): Promise<{
-    success: boolean;
-    exportedFiles: string[];
-    error?: string;
-  }> {
-    this.ensureInitialized();
-    return await this.exportUtils!.exportPostsToMarkdown(siteId, outputPath);
-  }
-
-  public async exportPostsToHTML(siteId: string, outputPath: string): Promise<{
-    success: boolean;
-    exportedFiles: string[];
-    error?: string;
-  }> {
-    this.ensureInitialized();
-    return await this.exportUtils!.exportPostsToHTML(siteId, outputPath);
-  }
-
-  public async exportPostsToJSON(siteId: string, outputPath: string): Promise<{
-    success: boolean;
-    filePath?: string;
-    error?: string;
-  }> {
-    this.ensureInitialized();
-    return await this.exportUtils!.exportPostsToJSON(siteId, outputPath);
-  }
-
-
-
-  // ===========================================
-  // UTILITY OPERATIONS
-  // ===========================================
-
-  // Note: Database maintenance operations (vacuum, optimize, backup, restore) 
-  // can be added to WordPressSQLiteManager if needed
-
-  /**
-   * Cleanup operations
+   * Clean up database connection
    */
   public cleanup(): void {
     try {
-      if (this.wordpressManager) {
-        this.wordpressManager.close();
-        this.wordpressManager = null;
+      if (this.db) {
+        this.db.close();
+        this.db = null;
       }
-      
-      if (this.exportUtils) {
-        this.exportUtils.close();
-        this.exportUtils = null;
-      }
-      
       
       this.isInitialized = false;
       this.initializationError = null;
@@ -267,15 +196,11 @@ export class SQLiteManager {
     }
   }
 
-  // ===========================================
-  // PRIVATE HELPER METHODS
-  // ===========================================
-
   /**
    * Ensure SQLite is initialized before operations
    */
   private ensureInitialized(): void {
-    if (!this.isInitialized || !this.wordpressManager) {
+    if (!this.isInitialized || !this.db) {
       throw new Error(
         this.initializationError || 
         'SQLite Manager is not initialized. Please call initialize() first.'
@@ -283,15 +208,14 @@ export class SQLiteManager {
     }
   }
 
-
   /**
-   * Get database path for debugging
+   * Get the database instance (for internal use)
    */
-  public getDatabasePath(): string {
-    return app.getPath('userData') + '/wordpress-sync/wordpress-sync.db';
+  public getDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.db!;
   }
 }
 
 // Export singleton instance getter
 export const getSQLiteManager = (): SQLiteManager => SQLiteManager.getInstance();
-
