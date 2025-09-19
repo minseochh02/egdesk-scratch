@@ -78,45 +78,6 @@ export class AutonomousGeminiClient implements AIClientService {
     return !!(this.genAI && this.model && this.config);
   }
 
-  /**
-   * Legacy single message method (for backward compatibility)
-   */
-  async sendMessage(message: string): Promise<AIResponse> {
-    if (!this.isConfigured()) {
-      return { success: false, error: 'AI client not configured' };
-    }
-
-    try {
-      const result = await this.model!.generateContent(message);
-      const response = await result.response;
-      const text = response.text();
-
-      // Add to history
-      this.addToHistory({
-        role: 'user',
-        parts: [{ text: message }],
-        timestamp: new Date()
-      });
-
-      this.addToHistory({
-        role: 'model',
-        parts: [{ text }],
-        timestamp: new Date()
-      });
-
-      return {
-        success: true,
-        content: text,
-        fullResponse: response
-      };
-    } catch (error) {
-      console.error('Error in sendMessage:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
 
   /**
    * NEW: Autonomous streaming conversation with tool execution
@@ -482,26 +443,6 @@ export class AutonomousGeminiClient implements AIClientService {
     }
   }
 
-  // Legacy methods (for backward compatibility)
-  async sendMessageWithTools(message: string, tools: Tool[]): Promise<AIResponse> {
-    // Convert to streaming and get final result
-    const events: AIStreamEvent[] = [];
-    for await (const event of this.sendMessageStream(message, { autoExecuteTools: true })) {
-      events.push(event);
-    }
-
-    // Extract final response
-    const contentEvents = events.filter(e => e.type === AIEventType.Content);
-    const errorEvents = events.filter(e => e.type === AIEventType.Error);
-
-    if (errorEvents.length > 0) {
-      const lastError = errorEvents[errorEvents.length - 1] as any;
-      return { success: false, error: lastError.error.message };
-    }
-
-    const content = contentEvents.map(e => (e as any).content).join('');
-    return { success: true, content };
-  }
 
   async executeToolCall(request: ToolCallRequestInfo): Promise<ToolCallResponseInfo> {
     return toolRegistry.executeToolCall(request);
@@ -560,9 +501,6 @@ export class AutonomousGeminiClient implements AIClientService {
       return this.isConfigured();
     });
 
-    ipcMain.handle('ai-send-message', async (event, message: string) => {
-      return await this.sendMessage(message);
-    });
 
     // New streaming handlers
     ipcMain.handle('ai-start-autonomous-conversation', async (event, message: string, options: any) => {
@@ -705,7 +643,6 @@ export class AutonomousGeminiClient implements AIClientService {
   unregisterHandlers(): void {
     ipcMain.removeHandler('ai-configure');
     ipcMain.removeHandler('ai-is-configured');
-    ipcMain.removeHandler('ai-send-message');
     ipcMain.removeHandler('ai-start-autonomous-conversation');
     ipcMain.removeHandler('ai-conversation-ready');
     ipcMain.removeHandler('ai-cancel-conversation');

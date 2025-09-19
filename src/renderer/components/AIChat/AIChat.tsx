@@ -150,13 +150,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
     setIsLoading(true);
     setIsConversationActive(true);
 
-    if (isAutonomousMode) {
-      // Use autonomous conversation mode
-      await handleAutonomousConversation(messageToSend);
-    } else {
-      // Use simple chat mode
-      await handleLegacyConversation(messageToSend);
-    }
+    // Use autonomous conversation mode
+    await handleAutonomousConversation(messageToSend);
   };
 
   /**
@@ -342,41 +337,6 @@ export const AIChat: React.FC<AIChatProps> = () => {
     }
   };
 
-  /**
-   * Legacy conversation handler (for backward compatibility)
-   */
-  const handleLegacyConversation = async (message: string) => {
-    try {
-      const response: AIResponse = await AIService.sendMessage(message);
-      
-      if (response.success && response.content) {
-        const aiMessage: ConversationMessage = {
-          role: 'model',
-          parts: [{ text: response.content }],
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } else {
-        const errorMessage: ConversationMessage = {
-          role: 'model',
-          parts: [{ text: `Error: ${response.error || 'Unknown error occurred'}` }],
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, errorMessage]);
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage: ConversationMessage = {
-        role: 'model',
-        parts: [{ text: 'Error: Failed to send message' }],
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-      setIsConversationActive(false);
-    }
-  };
 
   const handleClearHistory = async () => {
     try {
@@ -461,17 +421,13 @@ export const AIChat: React.FC<AIChatProps> = () => {
             className="test-btn" 
             onClick={async () => {
               try {
-                console.log('🧪 Testing simple AI...');
-                await (window.electron as any).aiService.simpleAI.configure({
-                  apiKey: selectedGoogleKey?.fields.apiKey || 'test',
-                  model: 'gemini-1.5-flash-latest'
-                });
-                const response = await (window.electron as any).aiService.simpleAI.sendMessage('Hello, can you respond?');
-                console.log('🧪 Simple AI response:', response);
+                console.log('🧪 Testing autonomous AI...');
+                // Test removed - using autonomous mode only
+                console.log('🧪 Autonomous mode is active');
                 
                 setMessages(prev => [...prev, {
                   role: 'model' as const,
-                  parts: [{ text: `🧪 Test Response: ${response.content || response.error}` }],
+                  parts: [{ text: `🧪 Test: Autonomous mode is active - use the chat input to test` }],
                   timestamp: new Date()
                 }]);
               } catch (error) {

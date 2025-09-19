@@ -39,20 +39,6 @@ export class AIService {
     }
   }
 
-  /**
-   * Send a message to the AI (legacy method)
-   */
-  static async sendMessage(message: string): Promise<AIResponse> {
-    try {
-      return await window.electron.aiService.sendMessage(message);
-    } catch (error) {
-      console.error('Error sending message to AI:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
 
   /**
    * NEW: Start an autonomous conversation with streaming responses
@@ -162,20 +148,6 @@ export class AIService {
     this.streamEventListeners.clear();
   }
 
-  /**
-   * Send a message with tools available for function calling
-   */
-  static async sendMessageWithTools(message: string, tools: any[]): Promise<AIResponse> {
-    try {
-      return await window.electron.aiService.sendMessage(message); // TODO: Add tools support
-    } catch (error) {
-      console.error('Error sending message with tools to AI:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
 
   /**
    * Get conversation history
