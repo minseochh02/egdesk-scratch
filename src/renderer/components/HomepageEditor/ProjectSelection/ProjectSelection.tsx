@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ProjectSelection.css';
 import ProjectContextService, { type ProjectInfo } from '../../../services/projectContextService';
+import { AIService } from '../../../services/ai-service';
 
 interface Project extends ProjectInfo {
   // Additional properties specific to the component can be added here
@@ -21,6 +22,7 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
+  const [isInitializing, setIsInitializing] = useState(false);
 
   useEffect(() => {
     // Subscribe to project context changes
@@ -64,35 +66,77 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
     }
 
     try {
-      // Use ProjectContextService to set the current project
-      // This will automatically analyze the project and add it to availableProjects
+      setIsInitializing(true);
+      
+      // First, create the project in the context (this will analyze and save it)
       const newProject = await ProjectContextService.getInstance().setCurrentProject(newProjectPath.trim());
       
-      if (newProject) {
-        // Update the project name if it was auto-generated
-        if (newProject.name !== newProjectName.trim()) {
-          newProject.name = newProjectName.trim();
-          // The context will be updated automatically through the subscription
-        }
-        
-        setNewProjectName('');
-        setNewProjectPath('');
-        setShowNewProjectForm(false);
-      } else {
+      if (!newProject) {
         console.error('Failed to create project');
+        alert('Failed to create project');
+        return;
       }
+
+      // Update the project name if it was auto-generated
+      if (newProject.name !== newProjectName.trim()) {
+        newProject.name = newProjectName.trim();
+        // The context will be updated automatically through the subscription
+      }
+
+      // Mark project as pending initialization
+      ProjectContextService.getInstance().updateProjectInitializationStatus(newProject.id, 'pending');
+
+      // Initialize the project using the init-project tool
+      const initMessage = `Please initialize a new project in the folder: ${newProjectPath.trim()}`;
+      
+      // Use AI service to call the init-project tool
+      const { conversationId } = await AIService.startAutonomousConversation(
+        initMessage,
+        {
+          autoExecuteTools: true,
+          maxTurns: 1,
+          timeoutMs: 30000
+        },
+        (event) => {
+          console.log('Init project event:', event);
+          if (event.type === 'tool_call_response') {
+            const response = event.response;
+            if (response.success) {
+              console.log('Project initialized successfully:', response.result);
+              // Mark project as successfully initialized
+              ProjectContextService.getInstance().markProjectAsInitialized(newProject.id);
+            } else {
+              console.error('Project initialization failed:', response.error);
+              // Mark project as failed initialization
+              ProjectContextService.getInstance().updateProjectInitializationStatus(newProject.id, 'failed');
+              alert(`Project initialization failed: ${response.error}`);
+              setIsInitializing(false);
+              return;
+            }
+          }
+        }
+      );
+
+      // Wait a moment for the tool execution to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      setNewProjectName('');
+      setNewProjectPath('');
+      setShowNewProjectForm(false);
     } catch (error) {
       console.error('Failed to create project:', error);
+      alert(`Failed to create project: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsInitializing(false);
     }
   };
 
   const handleBrowsePath = async () => {
     try {
-      // TODO: Open folder picker dialog
-      // const result = await window.electron.dialog.openFolder();
-      // if (result) {
-      //   setNewProjectPath(result);
-      // }
+      const result = await window.electron.fileSystem.pickFolder();
+      if (result.success && result.folderPath) {
+        setNewProjectPath(result.folderPath);
+      }
     } catch (error) {
       console.error('Failed to browse for folder:', error);
     }
@@ -124,6 +168,12 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
       {showNewProjectForm && (
         <div className="new-project-form">
           <h3>Create New Project</h3>
+          {isInitializing && (
+            <div className="initialization-status">
+              <div className="spinner"></div>
+              <p>Initializing project...</p>
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="project-name">Project Name</label>
             <input
@@ -156,13 +206,14 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
           <div className="form-actions">
             <button 
               onClick={handleCreateProject}
-              disabled={!newProjectName.trim() || !newProjectPath.trim()}
+              disabled={!newProjectName.trim() || !newProjectPath.trim() || isInitializing}
               className="create-btn"
             >
-              Create Project
+              {isInitializing ? 'Initializing...' : 'Create Project'}
             </button>
             <button 
               onClick={() => setShowNewProjectForm(false)}
+              disabled={isInitializing}
               className="cancel-btn"
             >
               Cancel
@@ -194,6 +245,9 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
                     <span className="status-badge active">Active</span>
                   ) : (
                     <span className="status-badge inactive">Inactive</span>
+                  )}
+                  {project.isInitialized && (
+                    <span className="status-badge initialized">✓ Initialized</span>
                   )}
                 </div>
               </div>

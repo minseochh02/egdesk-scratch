@@ -16,7 +16,8 @@ import {
   WriteFileTool,
   ListDirectoryTool,
   ShellCommandTool,
-  AnalyzeProjectTool
+  AnalyzeProjectTool,
+  InitProjectTool
 } from './tools';
 
 
@@ -122,6 +123,18 @@ export class ToolRegistry {
           required: []
         };
       
+      case 'init_project':
+        return {
+          type: 'object',
+          properties: {
+            folder_path: {
+              type: 'string',
+              description: 'The folder path where to initialize the new project'
+            }
+          },
+          required: ['folder_path']
+        };
+      
       default:
         return {
           type: 'object',
@@ -223,7 +236,8 @@ export class ToolRegistry {
     const parameterMappings: Record<string, string> = {
       'file_path': 'filePath',
       'dir_path': 'dirPath',
-      'project_path': 'projectPath'
+      'project_path': 'projectPath',
+      'folder_path': 'folderPath'
     };
     
     for (const [key, value] of Object.entries(params)) {
@@ -257,6 +271,7 @@ export class ToolRegistry {
     
     // Project Tools
     this.registerTool(new AnalyzeProjectTool());
+    this.registerTool(new InitProjectTool());
   }
 }
 

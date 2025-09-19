@@ -27,6 +27,7 @@ import { initializeStore, getStore } from './storage';
 import { getSQLiteManager } from './sqlite/sqlite-manager';
 import { createSchedulerManager } from './scheduler/scheduler-manager';
 import { aiChatDataService } from './ai-services/ai-chat-data-service';
+import { registerFileSystemHandlers } from './fs';
 let schedulerManager: any;
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
@@ -151,6 +152,14 @@ const createWindow = async () => {
       // Note: aiChatDataService auto-registers IPC handlers in constructor
     } catch (error) {
       console.error('❌ Failed to initialize AI Chat Data Service:', error);
+    }
+
+    // Initialize File System handlers
+    try {
+      registerFileSystemHandlers();
+      console.log('✅ File System handlers initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize File System handlers:', error);
     }
 
     // Initialize scheduler manager with store (critical component)
