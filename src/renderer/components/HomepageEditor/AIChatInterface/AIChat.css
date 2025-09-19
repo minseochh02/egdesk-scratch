@@ -660,3 +660,72 @@
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
 }
+
+/* Tool calls container (keeping for backward compatibility) */
+.tool-calls-container {
+  margin: 8px 0;
+  padding: 0 16px;
+}
+
+/* Tool message styles */
+.message.tool-message {
+  border-left: 3px solid #1a73e8;
+  background: rgba(26, 115, 232, 0.05);
+}
+
+.message.tool-message.tool-executing {
+  border-left-color: #ff9800;
+  background: rgba(255, 152, 0, 0.05);
+}
+
+.message.tool-message.tool-completed {
+  border-left-color: #4caf50;
+  background: rgba(76, 175, 80, 0.05);
+}
+
+.message.tool-message.tool-failed {
+  border-left-color: #f44336;
+  background: rgba(244, 67, 54, 0.05);
+}
+
+.tool-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.tool-status-badge.executing {
+  background: rgba(255, 152, 0, 0.1);
+  color: #ff9800;
+  animation: pulse-executing 1.5s ease-in-out infinite;
+}
+
+.tool-status-badge.completed {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.tool-status-badge.failed {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+}
+
+@keyframes pulse-executing {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Tool message text styling */
+.tool-message .message-text {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
