@@ -156,6 +156,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setCurrentProject(context.currentProject);
       // Send project context to main process (always send, even if null)
       window.electron.projectContext.updateContext(context);
+      // Filter conversations by selected project path
+      const projectPath = context.currentProject?.path;
+      loadConversationsForProject(projectPath);
     });
 
     // Also send initial project context immediately on component mount
@@ -163,6 +166,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     if (initialContext.currentProject) {
       window.electron.projectContext.updateContext(initialContext);
       setCurrentProject(initialContext.currentProject);
+      // Initial load filtered by current project
+      loadConversationsForProject(initialContext.currentProject.path);
     }
     
     return () => {
@@ -204,6 +209,28 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setMessages(history);
     } catch (error) {
       console.error('Error loading chat history:', error);
+    }
+  };
+
+  const loadConversationsForProject = async (projectPath?: string) => {
+    try {
+      const convs = await aiChatDataService.getConversations({ 
+        limit: 20, 
+        activeOnly: false,
+        projectContext: projectPath
+      });
+      setConversations(convs);
+
+      // Auto-select the most recent conversation for this project
+      if (convs.length > 0) {
+        await loadConversationMessages(convs[0].id);
+      } else {
+        // If no conversation for this project, clear messages UI
+        setMessages([]);
+        setCurrentConversationId(null);
+      }
+    } catch (error) {
+      console.error('Error loading conversations:', error);
     }
   };
 

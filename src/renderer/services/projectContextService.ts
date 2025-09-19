@@ -6,6 +6,8 @@ export interface ProjectInfo {
   description?: string;
   lastAccessed: Date;
   isActive: boolean;
+  isInitialized: boolean; // New: tracks if project has been initialized (.backup folder exists)
+  createdAt: Date; // New: when project was first added
   metadata: {
     hasWordPress?: boolean;
     hasPackageJson?: boolean;
@@ -15,6 +17,10 @@ export interface ProjectInfo {
     language?: string;
     framework?: string;
     version?: string;
+    // New: initialization metadata
+    hasBackupFolder?: boolean;
+    initializationDate?: Date;
+    initializationStatus?: 'pending' | 'completed' | 'failed';
   };
 }
 
@@ -144,6 +150,9 @@ class ProjectContextService {
       // Analyze project structure
       const metadata = await this.analyzeProjectStructure(projectPath);
 
+      // Check if project is initialized (has .backup folder)
+      const isInitialized = await this.checkFileExists(`${projectPath}/.backup`);
+      
       const project: ProjectInfo = {
         id: projectId,
         name: projectName,
@@ -152,7 +161,14 @@ class ProjectContextService {
         description: this.generateProjectDescription(metadata),
         lastAccessed: new Date(),
         isActive: false,
-        metadata,
+        isInitialized,
+        createdAt: new Date(),
+        metadata: {
+          ...metadata,
+          hasBackupFolder: isInitialized,
+          initializationDate: isInitialized ? new Date() : undefined,
+          initializationStatus: isInitialized ? 'completed' : 'pending',
+        },
       };
 
       return project;
@@ -425,16 +441,42 @@ class ProjectContextService {
       const stored = localStorage.getItem('projectContext');
       if (stored) {
         const parsed = JSON.parse(stored);
+        
         // Convert date strings back to Date objects
         if (parsed.currentProject) {
-          parsed.currentProject.lastAccessed = new Date(
-            parsed.currentProject.lastAccessed,
-          );
+          parsed.currentProject.lastAccessed = new Date(parsed.currentProject.lastAccessed);
+          parsed.currentProject.createdAt = new Date(parsed.currentProject.createdAt || parsed.currentProject.lastAccessed);
+          if (parsed.currentProject.metadata?.initializationDate) {
+            parsed.currentProject.metadata.initializationDate = new Date(parsed.currentProject.metadata.initializationDate);
+          }
         }
+        
         parsed.recentProjects = parsed.recentProjects.map((p: any) => ({
           ...p,
           lastAccessed: new Date(p.lastAccessed),
+          createdAt: new Date(p.createdAt || p.lastAccessed),
+          isInitialized: p.isInitialized || false,
+          metadata: {
+            ...p.metadata,
+            hasBackupFolder: p.metadata?.hasBackupFolder || false,
+            initializationStatus: p.metadata?.initializationStatus || 'pending',
+            initializationDate: p.metadata?.initializationDate ? new Date(p.metadata.initializationDate) : undefined,
+          },
         }));
+        
+        parsed.availableProjects = parsed.availableProjects.map((p: any) => ({
+          ...p,
+          lastAccessed: new Date(p.lastAccessed),
+          createdAt: new Date(p.createdAt || p.lastAccessed),
+          isInitialized: p.isInitialized || false,
+          metadata: {
+            ...p.metadata,
+            hasBackupFolder: p.metadata?.hasBackupFolder || false,
+            initializationStatus: p.metadata?.initializationStatus || 'pending',
+            initializationDate: p.metadata?.initializationDate ? new Date(p.metadata.initializationDate) : undefined,
+          },
+        }));
+        
         parsed.lastUpdated = new Date(parsed.lastUpdated);
 
         this.context = parsed;
@@ -453,6 +495,58 @@ class ProjectContextService {
     } catch (error) {
       console.error('Failed to save project context:', error);
     }
+  }
+
+  /**
+   * Mark project as initialized
+   */
+  markProjectAsInitialized(projectId: string): void {
+    const project = this.getProjectById(projectId);
+    if (project) {
+      project.isInitialized = true;
+      project.metadata.hasBackupFolder = true;
+      project.metadata.initializationDate = new Date();
+      project.metadata.initializationStatus = 'completed';
+      this.notifyListeners();
+    }
+  }
+
+  /**
+   * Update project initialization status
+   */
+  updateProjectInitializationStatus(projectId: string, status: 'pending' | 'completed' | 'failed'): void {
+    const project = this.getProjectById(projectId);
+    if (project) {
+      project.metadata.initializationStatus = status;
+      if (status === 'completed') {
+        project.isInitialized = true;
+        project.metadata.hasBackupFolder = true;
+        project.metadata.initializationDate = new Date();
+      }
+      this.notifyListeners();
+    }
+  }
+
+  /**
+   * Get initialization status for a project
+   */
+  getProjectInitializationStatus(projectId: string): {
+    isInitialized: boolean;
+    status: 'pending' | 'completed' | 'failed';
+    initializationDate?: Date;
+  } {
+    const project = this.getProjectById(projectId);
+    if (project) {
+      return {
+        isInitialized: project.isInitialized,
+        status: project.metadata.initializationStatus || 'pending',
+        initializationDate: project.metadata.initializationDate,
+      };
+    }
+    return {
+      isInitialized: false,
+      status: 'pending',
+    };
   }
 
   /**
