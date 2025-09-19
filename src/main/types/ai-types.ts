@@ -219,3 +219,13 @@ export interface AIClientService {
   // Utility
   getAvailableModels(): string[];
 }
+
+// Tool Execution Types
+export interface ToolExecutor {
+  name: string;
+  description: string;
+  dangerous?: boolean;
+  requiresConfirmation?: boolean;
+  execute(parameters: Record<string, any>, signal?: AbortSignal): Promise<any>;
+  shouldConfirm?(parameters: Record<string, any>): Promise<ToolCallConfirmationDetails | false>;
+}
