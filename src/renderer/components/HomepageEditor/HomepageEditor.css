@@ -627,3 +627,132 @@
   margin-top: 16px;
   height: 600px;
 }
+
+/* Server Status Indicator */
+.server-status-indicator {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.server-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.running {
+  background-color: #28a745;
+  box-shadow: 0 0 4px rgba(40, 167, 69, 0.3);
+}
+
+.status-dot.stopped {
+  background-color: #dc3545;
+}
+
+.status-text {
+  color: #495057;
+  font-weight: 500;
+}
+
+.server-link {
+  color: #007bff;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #007bff;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.server-link:hover {
+  background-color: #007bff;
+  color: white;
+  text-decoration: none;
+}
+
+.server-error {
+  color: #dc3545;
+  font-size: 13px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+.server-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e9ecef;
+}
+
+.auto-start-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #495057;
+}
+
+.auto-start-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.toggle-label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.start-server-btn,
+.stop-server-btn {
+  padding: 4px 12px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.start-server-btn {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: white;
+}
+
+.start-server-btn:hover:not(:disabled) {
+  background-color: #218838;
+  border-color: #1e7e34;
+}
+
+.start-server-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.stop-server-btn {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+.stop-server-btn:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
