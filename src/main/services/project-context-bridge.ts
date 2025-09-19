@@ -49,6 +49,14 @@ export class ProjectContextBridge {
       this.context = context;
       this.currentProject = context.currentProject;
       console.log(`📁 Project context updated: ${this.currentProject?.name || 'None'} (${this.currentProject?.path || 'No path'})`);
+      
+      // Additional debugging for AI tools
+      if (this.currentProject?.path) {
+        console.log(`🔧 Tools will now use project path: ${this.currentProject.path}`);
+      } else {
+        console.log(`⚠️ No project path available, tools will use cwd: ${process.cwd()}`);
+      }
+      
       return true;
     });
 
@@ -120,7 +128,22 @@ export class ProjectContextBridge {
    */
   getProjectContextString(): string {
     if (!this.currentProject) {
-      return 'No active project selected. Working in default directory.';
+      return `No active project selected. Working in default directory.
+
+AVAILABLE TOOLS: You have access to powerful tools to explore and modify the codebase:
+- list_directory: Explore directory contents and project structure (can be called without parameters to list current project directory)
+- read_file: Read and analyze file contents (supports relative paths like "package.json" - they will be resolved to the current project directory)
+- write_file: Create new files or completely rewrite existing ones (supports relative paths)
+- edit_file: Make precise edits to existing files
+
+IMPORTANT: Always use these tools to gather information rather than asking the user for details. Be proactive and explore the codebase yourself.
+
+EXPLORATION STRATEGY: When asked about specific files or project analysis:
+1. FIRST: Use list_directory (without parameters) to see what files and folders exist in the project
+2. THEN: Read relevant files you discovered (like package.json, README.md, etc.)
+3. You can use relative file paths like "package.json", "README.md", "src/index.js" etc. - they will be automatically resolved to the current project directory.
+
+Never assume files exist - always explore first to understand the project structure!`;
     }
 
     const metadata = this.getProjectMetadata();
@@ -139,6 +162,20 @@ export class ProjectContextBridge {
     }
 
     contextStr += `\nWhen creating or editing files, use paths relative to: ${this.currentProject.path}`;
+    contextStr += `\n\nAVAILABLE TOOLS: You have access to powerful tools to explore and modify the codebase:
+- list_directory: Explore directory contents and project structure (can be called without parameters to list current project directory)
+- read_file: Read and analyze file contents (supports relative paths like "package.json" - they will be resolved to the current project directory)
+- write_file: Create new files or completely rewrite existing ones (supports relative paths)
+- edit_file: Make precise edits to existing files
+
+IMPORTANT: Always use these tools to gather information rather than asking the user for details. Be proactive and explore the codebase yourself.
+
+EXPLORATION STRATEGY: When asked about specific files or project analysis:
+1. FIRST: Use list_directory (without parameters) to see what files and folders exist in the project
+2. THEN: Read relevant files you discovered (like package.json, README.md, etc.)
+3. You can use relative file paths like "package.json", "README.md", "src/index.js" etc. - they will be automatically resolved to the current project directory.
+
+Never assume files exist - always explore first to understand the project structure!`;
     
     return contextStr;
   }

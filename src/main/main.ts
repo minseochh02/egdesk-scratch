@@ -21,8 +21,9 @@ import { ReadFileTool } from './tools/read-file';
 import { WriteFileTool } from './tools/write-file';
 import { ListDirectoryTool } from './tools/list-directory';
 import { EditFileTool } from './tools/edit-file';
-import { GeminiClientService } from './services/gemini-client';
-import { toolRegistry } from './services/tool-registry';
+import { autonomousGeminiClient } from './services/gemini-autonomous-client';
+import { simpleAIClient } from './services/simple-ai-client';
+import { toolRegistry } from './services/tool-executor';
 import { projectContextBridge } from './services/project-context-bridge';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { LocalServerManager } from './wordpress/local-server';
@@ -45,11 +46,6 @@ class AppUpdater {
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
 
-ipcMain.on('ipc-example', async (event, arg) => {
-  const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
-  console.log(msgTemplate(arg));
-  event.reply('ipc-example', msgTemplate('pong'));
-});
 
 // WordPress handlers are now managed by WordPressHandler class
 
@@ -152,21 +148,31 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize Project Context Bridge:', error);
     }
 
-    // Initialize Tool Registry
+    // Initialize Tool Registry (new autonomous tool executor)
     try {
-      toolRegistry.setWorkingDirectory(process.cwd());
-      console.log('✅ Tool Registry initialized');
+      // The toolRegistry is automatically initialized with built-in tools
+      console.log('✅ Tool Registry (Autonomous) initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Tool Registry:', error);
     }
 
-    // Initialize Gemini AI Client (handlers are auto-registered in constructor)
+    // Initialize Simple AI Client for testing (handlers are auto-registered in constructor)
     try {
-      const geminiClient = new GeminiClientService();
-      console.log('✅ Gemini AI Client initialized');
-      // Note: geminiClient auto-registers IPC handlers in constructor
+      // Force initialization of the simple client for testing
+      const testClient = simpleAIClient;
+      console.log('✅ Simple AI Client initialized for testing');
     } catch (error) {
-      console.error('❌ Failed to initialize Gemini AI Client:', error);
+      console.error('❌ Failed to initialize Simple AI Client:', error);
+    }
+
+    // Initialize Autonomous Gemini AI Client with streaming and tool execution (handlers are auto-registered in constructor)
+    try {
+      // Force initialization of the singleton instance
+      const client = autonomousGeminiClient;
+      console.log('✅ Autonomous Gemini AI Client initialized');
+      // Note: autonomousGeminiClient auto-registers IPC handlers in constructor
+    } catch (error) {
+      console.error('❌ Failed to initialize Autonomous Gemini AI Client:', error);
     }
 
     // Initialize central SQLite manager

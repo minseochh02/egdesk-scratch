@@ -7,7 +7,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AIService } from '../../services/ai-service';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
 import ProjectContextService from '../../services/projectContextService';
-import type { ConversationMessage, AIResponse } from '../../../main/types/ai-types';
+import type { 
+  ConversationMessage, 
+  AIResponse, 
+  AIStreamEvent, 
+  ConversationState,
+  ToolDefinition 
+} from '../../../main/types/ai-types';
+import { AIEventType } from '../../../main/types/ai-types';
 import type { AIKey } from '../AIKeysManager/types';
 import './AIChat.css';
 
@@ -25,6 +32,13 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [currentProject, setCurrentProject] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // New autonomous conversation state
+  const [isAutonomousMode, setIsAutonomousMode] = useState(true);
+  const [conversationState, setConversationState] = useState<ConversationState | null>(null);
+  const [streamingEvents, setStreamingEvents] = useState<AIStreamEvent[]>([]);
+  const [toolCalls, setToolCalls] = useState<any[]>([]);
+  const [isConversationActive, setIsConversationActive] = useState(false);
 
   useEffect(() => {
     // Subscribe to AI keys store changes
@@ -35,11 +49,16 @@ export const AIChat: React.FC<AIChatProps> = () => {
     // Subscribe to project context changes
     const unsubscribeProject = ProjectContextService.getInstance().subscribe((context) => {
       setCurrentProject(context.currentProject);
-      // Send project context to main process
-      if (context.currentProject) {
-        window.electron.projectContext.updateContext(context);
-      }
+      // Send project context to main process (always send, even if null)
+      window.electron.projectContext.updateContext(context);
     });
+
+    // Also send initial project context immediately on component mount
+    const initialContext = ProjectContextService.getInstance().getContext();
+    if (initialContext.currentProject) {
+      window.electron.projectContext.updateContext(initialContext);
+      setCurrentProject(initialContext.currentProject);
+    }
     
     return () => {
       unsubscribe();
@@ -126,11 +145,209 @@ export const AIChat: React.FC<AIChatProps> = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageToSend = inputMessage.trim();
     setInputMessage('');
     setIsLoading(true);
+    setIsConversationActive(true);
 
+    if (isAutonomousMode) {
+      // Use autonomous conversation mode
+      await handleAutonomousConversation(messageToSend);
+    } else {
+      // Use simple chat mode
+      await handleLegacyConversation(messageToSend);
+    }
+  };
+
+  /**
+   * NEW: Handle autonomous conversation with tool execution
+   */
+  const handleAutonomousConversation = async (message: string) => {
     try {
-      const response: AIResponse = await AIService.sendMessage(inputMessage.trim());
+      console.log('🎯 Starting autonomous conversation with:', message);
+      setStreamingEvents([]);
+      setToolCalls([]);
+
+      // Add a loading indicator message immediately
+      setMessages(prev => [...prev, {
+        role: 'model' as const,
+        parts: [{ text: '🔄 Starting autonomous conversation...' }],
+        timestamp: new Date()
+      }]);
+
+      // Start autonomous conversation
+      console.log('📞 Calling AIService.streamConversation...');
+      
+      for await (const event of AIService.streamConversation(message, {
+        autoExecuteTools: true,
+        maxTurns: 10, // Increased from 5 to allow more complex conversations
+        timeoutMs: 300000, // 5 minutes - increased from 1 minute
+        context: {
+          currentProject: currentProject?.name,
+          projectPath: currentProject?.path
+        }
+      })) {
+        console.log('🎉 Received stream event:', event.type, event);
+        setStreamingEvents(prev => [...prev, event]);
+        
+        switch (event.type) {
+          case AIEventType.Content:
+            // Add AI response content as it streams
+            const contentEvent = event as any;
+            console.log('📝 Processing content event:', contentEvent);
+            
+            setMessages(prev => {
+              // Remove any loading messages first
+              const filteredPrev = prev.filter(msg => 
+                !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+              );
+              
+              const lastMessage = filteredPrev[filteredPrev.length - 1];
+              if (lastMessage && lastMessage.role === 'model' && 
+                  !lastMessage.parts[0]?.text?.startsWith('🔧') && 
+                  !lastMessage.parts[0]?.text?.startsWith('✅') &&
+                  !lastMessage.parts[0]?.text?.startsWith('❌') &&
+                  !lastMessage.parts[0]?.text?.startsWith('💭')) {
+                // Append to existing AI message (only if it's a content message)
+                const updatedMessage = {
+                  ...lastMessage,
+                  parts: [{
+                    text: (lastMessage.parts[0]?.text || '') + (contentEvent.content || contentEvent.data || '')
+                  }]
+                };
+                return [...filteredPrev.slice(0, -1), updatedMessage];
+              } else {
+                // Create new AI message
+                return [...filteredPrev, {
+                  role: 'model' as const,
+                  parts: [{ text: contentEvent.content || contentEvent.data || 'AI response received' }],
+                  timestamp: new Date()
+                }];
+              }
+            });
+            break;
+
+          case AIEventType.ToolCallRequest:
+            const toolCallEvent = event as any;
+            setToolCalls(prev => [...prev, {
+              ...toolCallEvent.toolCall,
+              status: 'executing'
+            }]);
+            
+            // Add tool call indicator to messages
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: `🔧 Executing tool: ${toolCallEvent.toolCall.name}` }],
+              timestamp: new Date()
+            }]);
+            break;
+
+          case AIEventType.ToolCallResponse:
+            const toolResponseEvent = event as any;
+            setToolCalls(prev => prev.map(call => 
+              call.id === toolResponseEvent.response.id 
+                ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
+                : call
+            ));
+
+            // Add tool result to messages
+            const resultText = toolResponseEvent.response.success 
+              ? `✅ Tool completed: ${JSON.stringify(toolResponseEvent.response.result)}`
+              : `❌ Tool failed: ${toolResponseEvent.response.error}`;
+            
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: resultText }],
+              timestamp: new Date()
+            }]);
+            break;
+
+          case AIEventType.Thought:
+            const thoughtEvent = event as any;
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: `💭 **${thoughtEvent.thought.subject}**: ${thoughtEvent.thought.description}` }],
+              timestamp: new Date()
+            }]);
+            break;
+
+          case AIEventType.Error:
+            const errorEvent = event as any;
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: `❌ Error: ${errorEvent.error.message}` }],
+              timestamp: new Date()
+            }]);
+            break;
+
+          case AIEventType.LoopDetected:
+            const loopEvent = event as any;
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: `🔄 Loop detected: ${loopEvent.pattern}. Stopping conversation to prevent infinite loop.` }],
+              timestamp: new Date()
+            }]);
+            break;
+
+          case AIEventType.Finished:
+            console.log('🏁 Autonomous conversation completed');
+            break;
+
+          case AIEventType.TurnStarted:
+            const turnEvent = event as any;
+            console.log(`🔄 Turn ${turnEvent.turnNumber} started`);
+            break;
+
+          case AIEventType.TurnCompleted:
+            const turnCompletedEvent = event as any;
+            console.log(`✅ Turn ${turnCompletedEvent.turnNumber} completed`);
+            break;
+
+          default:
+            // Handle any unrecognized event types
+            console.log('🔍 Unhandled event type:', (event as any).type, event);
+            
+            // Check if this might be a content event with a different structure
+            const unknownEvent = event as any;
+            if (unknownEvent.content || unknownEvent.data || unknownEvent.text) {
+              console.log('📝 Treating unknown event as content:', unknownEvent);
+              setMessages(prev => {
+                // Remove any loading messages first
+                const filteredPrev = prev.filter(msg => 
+                  !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+                );
+                
+                return [...filteredPrev, {
+                  role: 'model' as const,
+                  parts: [{ text: unknownEvent.content || unknownEvent.data || unknownEvent.text || `Unknown event: ${JSON.stringify(unknownEvent)}` }],
+                  timestamp: new Date()
+                }];
+              });
+            }
+            break;
+        }
+      }
+    } catch (error) {
+      console.error('Error in autonomous conversation:', error);
+      setMessages(prev => [...prev, {
+        role: 'model' as const,
+        parts: [{ 
+          text: `❌ **Autonomous Conversation Error**\n\n${error instanceof Error ? error.message : 'Unknown error in autonomous conversation'}\n\n💡 *Try switching to Chat Mode (💬) for simple conversations, or check your connection and try again.*` 
+        }],
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsLoading(false);
+      setIsConversationActive(false);
+    }
+  };
+
+  /**
+   * Legacy conversation handler (for backward compatibility)
+   */
+  const handleLegacyConversation = async (message: string) => {
+    try {
+      const response: AIResponse = await AIService.sendMessage(message);
       
       if (response.success && response.content) {
         const aiMessage: ConversationMessage = {
@@ -157,6 +374,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setIsConversationActive(false);
     }
   };
 
@@ -164,8 +382,26 @@ export const AIChat: React.FC<AIChatProps> = () => {
     try {
       await AIService.clearHistory();
       setMessages([]);
+      setStreamingEvents([]);
+      setToolCalls([]);
     } catch (error) {
       console.error('Error clearing history:', error);
+    }
+  };
+
+  const handleCancelConversation = async () => {
+    try {
+      await AIService.cancelConversation();
+      setIsConversationActive(false);
+      setIsLoading(false);
+      
+      setMessages(prev => [...prev, {
+        role: 'model' as const,
+        parts: [{ text: '⏹️ Conversation cancelled by user.' }],
+        timestamp: new Date()
+      }]);
+    } catch (error) {
+      console.error('Error cancelling conversation:', error);
     }
   };
 
@@ -203,16 +439,64 @@ export const AIChat: React.FC<AIChatProps> = () => {
   return (
     <div className="ai-chat">
       <div className="ai-chat-header">
-        <h3>AI Assistant (Gemini)</h3>
+        <h3>AI Assistant (Gemini) {isAutonomousMode ? '🤖 Autonomous' : '💬 Chat'}</h3>
         <div className="header-buttons">
           <div className="connection-status">
             <span className="status-icon">{getConnectionStatusIcon()}</span>
             <span className="status-text">{getConnectionStatusText()}</span>
           </div>
+          
+          {/* Mode Toggle */}
+          <button 
+            className={`mode-toggle ${isAutonomousMode ? 'autonomous' : 'chat'}`}
+            onClick={() => setIsAutonomousMode(!isAutonomousMode)}
+            disabled={isConversationActive}
+            title={isAutonomousMode ? 'Switch to simple chat mode' : 'Switch to autonomous mode with tools'}
+          >
+            {isAutonomousMode ? '🤖→💬' : '💬→🤖'}
+          </button>
+
+          {/* Test button for debugging */}
+          <button 
+            className="test-btn" 
+            onClick={async () => {
+              try {
+                console.log('🧪 Testing simple AI...');
+                await (window.electron as any).aiService.simpleAI.configure({
+                  apiKey: selectedGoogleKey?.fields.apiKey || 'test',
+                  model: 'gemini-1.5-flash-latest'
+                });
+                const response = await (window.electron as any).aiService.simpleAI.sendMessage('Hello, can you respond?');
+                console.log('🧪 Simple AI response:', response);
+                
+                setMessages(prev => [...prev, {
+                  role: 'model' as const,
+                  parts: [{ text: `🧪 Test Response: ${response.content || response.error}` }],
+                  timestamp: new Date()
+                }]);
+              } catch (error) {
+                console.error('🧪 Test failed:', error);
+              }
+            }}
+            disabled={!selectedGoogleKey}
+          >
+            Test
+          </button>
+
+          {/* Cancel button (only show when conversation is active) */}
+          {isConversationActive && (
+            <button 
+              className="cancel-btn" 
+              onClick={handleCancelConversation}
+            >
+              Cancel
+            </button>
+          )}
+
           <button 
             className="clear-btn" 
             onClick={handleClearHistory}
-            disabled={messages.length === 0}
+            disabled={messages.length === 0 || isConversationActive}
           >
             Clear
           </button>
@@ -258,12 +542,47 @@ export const AIChat: React.FC<AIChatProps> = () => {
         </div>
       )}
 
+      {/* Autonomous Mode Status */}
+      {isAutonomousMode && (
+        <div className="autonomous-status">
+          <div className="status-row">
+            <span className="status-label">Mode:</span>
+            <span className="status-value">
+              🤖 Autonomous {isConversationActive ? '(Active)' : '(Ready)'}
+            </span>
+          </div>
+          {toolCalls.length > 0 && (
+            <div className="status-row">
+              <span className="status-label">Tools:</span>
+              <span className="status-value">
+                {toolCalls.filter(t => t.status === 'executing').length} executing, 
+                {' '}{toolCalls.filter(t => t.status === 'completed').length} completed
+              </span>
+            </div>
+          )}
+          {streamingEvents.length > 0 && (
+            <div className="status-row">
+              <span className="status-label">Events:</span>
+              <span className="status-value">{streamingEvents.length} total</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
       <div className="messages-container">
         {messages.length === 0 ? (
           <div className="welcome-message">
             <p>👋 Welcome to the AI Assistant!</p>
-            <p>Start a conversation with Gemini AI.</p>
+            {isAutonomousMode ? (
+              <>
+                <p>🤖 <strong>Autonomous Mode</strong>: AI can execute tools and work independently to complete complex tasks.</p>
+                <p>Available tools: read files, write files, list directories, run commands, analyze project structure.</p>
+                <p>Try: "Analyze my project and create missing documentation" or "Fix all linting errors in my code"</p>
+              </>
+            ) : (
+              <p>💬 <strong>Chat Mode</strong>: Simple conversation with Gemini AI.</p>
+            )}
             {!isConfigured && (
               <p className="config-hint">Configure your Google AI key first to begin.</p>
             )}
@@ -301,7 +620,9 @@ export const AIChat: React.FC<AIChatProps> = () => {
           placeholder={
             !isConfigured 
               ? "Configure Google AI key first..." 
-              : "Type your message... (Enter to send, Shift+Enter for new line)"
+              : isAutonomousMode
+                ? "Describe a task for AI to complete autonomously... (Enter to send, Shift+Enter for new line)"
+                : "Type your message... (Enter to send, Shift+Enter for new line)"
           }
           disabled={!isConfigured || isLoading}
           rows={2}
