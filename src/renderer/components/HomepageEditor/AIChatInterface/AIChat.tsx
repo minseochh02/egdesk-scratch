@@ -13,7 +13,8 @@ import {
   faHistory, 
   faFolder, 
   faChevronDown,
-  faArrowLeft
+  faArrowLeft,
+  faUndo
 } from '../../../utils/fontAwesomeIcons';
 import { AIService } from '../../../services/ai-service';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
@@ -30,6 +31,7 @@ import type {
 } from '../../../../main/types/ai-types';
 import { AIEventType } from '../../../../main/types/ai-types';
 import type { AIKey } from '../../AIKeysManager/types';
+import { BackupManager } from '../../BackupManager/BackupManager';
 import './AIChat.css';
 
 interface AIChatProps {
@@ -125,6 +127,13 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [showConversationList, setShowConversationList] = useState(false);
   const [overallStats, setOverallStats] = useState<any>(null);
+  
+  // Key selector dropdown state
+  const [showKeyDropdown, setShowKeyDropdown] = useState(false);
+  const keySelectorRef = useRef<HTMLDivElement>(null);
+
+  // Backup manager state
+  const [showBackupManager, setShowBackupManager] = useState(false);
 
   // Effect to update the last message with currentMessage content
   useEffect(() => {
@@ -147,7 +156,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     // Subscribe to AI keys store changes
     const unsubscribe = aiKeysStore.subscribe(setAiKeysState);
     checkConfiguration();
-    loadHistory();
+    // Don't load history automatically - start with blank state
+    // loadHistory();
     loadConversations();
     loadOverallStats();
     
@@ -156,9 +166,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setCurrentProject(context.currentProject);
       // Send project context to main process (always send, even if null)
       window.electron.projectContext.updateContext(context);
-      // Filter conversations by selected project path
-      const projectPath = context.currentProject?.path;
-      loadConversationsForProject(projectPath);
+      // Don't auto-load conversations - let user choose
+      // const projectPath = context.currentProject?.path;
+      // loadConversationsForProject(projectPath);
     });
 
     // Also send initial project context immediately on component mount
@@ -166,8 +176,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     if (initialContext.currentProject) {
       window.electron.projectContext.updateContext(initialContext);
       setCurrentProject(initialContext.currentProject);
-      // Initial load filtered by current project
-      loadConversationsForProject(initialContext.currentProject.path);
+      // Don't auto-load conversations - start with blank state
+      // loadConversationsForProject(initialContext.currentProject.path);
     }
     
     return () => {
@@ -196,6 +206,23 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     scrollToBottom();
   }, [messages]);
 
+  // Click outside handler for key dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (keySelectorRef.current && !keySelectorRef.current.contains(event.target as Node)) {
+        setShowKeyDropdown(false);
+      }
+    };
+
+    if (showKeyDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showKeyDropdown]);
+
   const checkConfiguration = async () => {
     setConnectionStatus('checking');
     const configured = await AIService.isConfigured();
@@ -221,14 +248,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       });
       setConversations(convs);
 
-      // Auto-select the most recent conversation for this project
-      if (convs.length > 0) {
-        await loadConversationMessages(convs[0].id);
-      } else {
-        // If no conversation for this project, clear messages UI
-        setMessages([]);
-        setCurrentConversationId(null);
-      }
+      // Don't auto-select conversations - let user choose
+      // Just update the conversation list without loading messages
+      setCurrentConversationId(null);
     } catch (error) {
       console.error('Error loading conversations:', error);
     }
@@ -294,6 +316,11 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const handleKeySelection = (key: AIKey) => {
     setSelectedGoogleKey(key);
     configureWithKey(key);
+    setShowKeyDropdown(false); // Close dropdown after selection
+  };
+
+  const toggleKeyDropdown = () => {
+    setShowKeyDropdown(!showKeyDropdown);
   };
 
   const scrollToBottom = () => {
@@ -319,11 +346,16 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     setIsConversationActive(true);
 
     try {
-      // Use stream conversation but with simple chat settings (no tools, single turn)
+      console.log('🎯 Starting conversation with:', messageToSend);
+      setStreamingEvents([]);
+      setToolCalls([]);
+
+      // Use the same stream handling as autonomous conversation but with simpler settings
       let responseText = '';
+      let currentMessage = '';
       
       for await (const event of AIService.streamConversation(messageToSend, {
-        autoExecuteTools: false, // Disable tool execution for simple chat
+        autoExecuteTools: true, // Enable tool execution
         maxTurns: 1, // Single turn conversation
         timeoutMs: 30000, // 30 seconds timeout
         context: {
@@ -331,27 +363,99 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           projectPath: currentProject?.path
         }
       })) {
-        if (event.type === AIEventType.Content) {
-          const contentEvent = event as any;
-          const newContent = contentEvent.content || contentEvent.data || '';
-          if (newContent) {
-            responseText += newContent;
-          }
-        } else if (event.type === AIEventType.Finished) {
-          break;
-        } else if (event.type === AIEventType.Error) {
-          const errorEvent = event as any;
-          throw new Error(errorEvent.error.message);
-        }
-      }
+        console.log('🎉 Received stream event in handleSendMessage:', event.type, event);
+        setStreamingEvents(prev => [...prev, event]);
+        
+        switch (event.type) {
+          case AIEventType.Content:
+            const contentEvent = event as any;
+            const newContent = contentEvent.content || contentEvent.data || '';
+            if (newContent) {
+              responseText += newContent;
+              currentMessage += newContent;
+              
+              // Update the last message with streaming content
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastMessage = updated[updated.length - 1];
+                if (lastMessage && lastMessage.role === 'model' && !lastMessage.toolCallId) {
+                  updated[updated.length - 1] = {
+                    ...lastMessage,
+                    parts: [{ text: currentMessage }]
+                  };
+                } else {
+                  // Add new message if none exists
+                  updated.push({
+                    role: 'model',
+                    parts: [{ text: currentMessage }],
+                    timestamp: new Date()
+                  });
+                }
+                return updated;
+              });
+            }
+            break;
 
-      // Add the complete response as a single message
-      if (responseText) {
-        setMessages(prev => [...prev, {
-          role: 'model',
-          parts: [{ text: responseText }],
-          timestamp: new Date()
-        }]);
+          case AIEventType.ToolCallRequest:
+            const toolCallEvent = event as any;
+            const toolCall = toolCallEvent.toolCall;
+            
+            // Add a natural message for tool execution
+            const toolMessage = getToolExecutionMessage(toolCall.name, toolCall.arguments);
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: toolMessage }],
+              timestamp: new Date(),
+              toolCallId: toolCall.id,
+              toolStatus: 'executing'
+            }]);
+            
+            setToolCalls(prev => [...prev, {
+              ...toolCallEvent.toolCall,
+              status: 'executing'
+            }]);
+            break;
+
+          case AIEventType.ToolCallResponse:
+            const toolResponseEvent = event as any;
+            const response = toolResponseEvent.response;
+            
+            // Update the tool message with completion status
+            setMessages(prev => prev.map(msg => {
+              if (msg.toolCallId === response.id) {
+                const statusText = response.success ? 'success!' : 'failed!';
+                const statusIcon = response.success ? '✅' : '❌';
+                const originalText = msg.parts[0]?.text || '';
+                const toolName = getToolNameFromMessage(originalText);
+                
+                return {
+                  ...msg,
+                  parts: [{ text: `${originalText}\n${toolName}: ${statusIcon} ${statusText}` }],
+                  toolStatus: response.success ? 'completed' : 'failed'
+                };
+              }
+              return msg;
+            }));
+            
+            setToolCalls(prev => prev.map(call => 
+              call.id === toolResponseEvent.response.id 
+                ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
+                : call
+            ));
+            break;
+
+          case AIEventType.Finished:
+            console.log('🏁 Conversation completed');
+            break;
+
+          case AIEventType.Error:
+            const errorEvent = event as any;
+            throw new Error(errorEvent.error.message);
+
+          default:
+            console.log('🔍 Unhandled event type in handleSendMessage:', (event as any).type, event);
+            break;
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -364,6 +468,27 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setIsLoading(false);
       setIsConversationActive(false);
     }
+  };
+
+  /**
+   * Handle sending message in autonomous mode
+   */
+  const handleSendAutonomous = async () => {
+    if (!inputMessage.trim() || isLoading || !isConfigured) return;
+
+    const userMessage: ConversationMessage = {
+      role: 'user',
+      parts: [{ text: inputMessage.trim() }],
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    const messageToSend = inputMessage.trim();
+    setInputMessage('');
+    setIsLoading(true);
+    setIsConversationActive(true);
+
+    await handleAutonomousConversation(messageToSend);
   };
 
   /**
@@ -590,6 +715,14 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   };
 
 
+  const handleNewConversation = () => {
+    setMessages([]);
+    setStreamingEvents([]);
+    setToolCalls([]);
+    setCurrentConversationId(null);
+    setShowConversationList(false);
+  };
+
   const handleClearHistory = async () => {
     try {
       await AIService.clearHistory();
@@ -624,7 +757,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage();
+      handleSendAutonomous();
     }
   };
 
@@ -680,8 +813,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
             {/* Google AI Key Selector */}
             {googleKeys.length > 1 && (
-              <div className="key-selector">
-                <div className="key-info">
+              <div className="key-selector" ref={keySelectorRef}>
+                <div className="key-info" onClick={toggleKeyDropdown}>
                   <FontAwesomeIcon icon={faKey} className="key-icon" />
                   <span className="key-label">AI Key:</span>
                   <span className="key-name">
@@ -689,6 +822,23 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                   </span>
                   <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
                 </div>
+                {showKeyDropdown && (
+                  <div className="key-dropdown">
+                    {googleKeys.map((key) => (
+                      <div
+                        key={key.id}
+                        className={`key-option ${selectedGoogleKey?.id === key.id ? 'selected' : ''}`}
+                        onClick={() => handleKeySelection(key)}
+                      >
+                        <FontAwesomeIcon icon={faKey} className="key-option-icon" />
+                        <span className="key-option-name">{key.name}</span>
+                        {selectedGoogleKey?.id === key.id && (
+                          <span className="key-option-check">✓</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -703,12 +853,30 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             )}
 
             <button 
+              className="new-conversation-btn" 
+              onClick={handleNewConversation}
+              title="Start a new conversation"
+            >
+              <FontAwesomeIcon icon={faHistory} className="btn-icon" />
+              New Chat
+            </button>
+
+            <button 
               className="conversations-btn" 
               onClick={() => setShowConversationList(!showConversationList)}
               title="View conversation history"
             >
               <FontAwesomeIcon icon={faClock} className="btn-icon" />
               History ({conversations.length})
+            </button>
+
+            <button 
+              className="backup-btn" 
+              onClick={() => setShowBackupManager(true)}
+              title="Manage backups and revert changes"
+            >
+              <FontAwesomeIcon icon={faUndo} className="btn-icon" />
+              Backups
             </button>
 
             <button 
@@ -781,10 +949,10 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         {messages.length === 0 ? (
           <div className="welcome-message">
             <p>👋 Welcome to the AI Assistant!</p>
-            <p>💬 <strong>Chat Mode</strong>: Ask questions and get AI responses.</p>
-            <p>Start a conversation by typing your message below.</p>
+            <p>💬 <strong>Start a new conversation</strong> by typing your message below.</p>
+            <p>📚 Use the <strong>History</strong> button to view past conversations.</p>
             {!isConfigured && (
-              <p className="config-hint">Configure your Google AI key first to begin.</p>
+              <p className="config-hint">⚠️ Configure your Google AI key first to begin chatting.</p>
             )}
           </div>
         ) : (
@@ -841,13 +1009,23 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           rows={2}
         />
         <button 
-          onClick={handleSendMessage}
+          onClick={handleSendAutonomous}
           disabled={!inputMessage.trim() || isLoading || !isConfigured}
           className="send-btn"
         >
           {isLoading ? 'Sending...' : 'Send'}
         </button>
       </div>
+
+      {/* Backup Manager */}
+      <BackupManager
+        isVisible={showBackupManager}
+        onClose={() => setShowBackupManager(false)}
+        onBackupReverted={() => {
+          // Optionally refresh conversations or show a notification
+          loadConversations();
+        }}
+      />
     </div>
   );
 };

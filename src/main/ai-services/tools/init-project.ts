@@ -12,7 +12,7 @@ export class InitProjectTool implements ToolExecutor {
   description = 'Initialize a new project in the specified folder';
   dangerous = false;
 
-  async execute(params: { folderPath: string }): Promise<any> {
+  async execute(params: { folderPath: string }, signal?: AbortSignal, conversationId?: string): Promise<any> {
     const { folderPath } = params;
     
     if (!folderPath) {

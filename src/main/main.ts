@@ -28,6 +28,7 @@ import { getSQLiteManager } from './sqlite/sqlite-manager';
 import { createSchedulerManager } from './scheduler/scheduler-manager';
 import { aiChatDataService } from './ai-services/ai-chat-data-service';
 import { registerFileSystemHandlers } from './fs';
+import { backupHandler } from './backup-handler';
 let schedulerManager: any;
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
@@ -152,6 +153,16 @@ const createWindow = async () => {
       // Note: aiChatDataService auto-registers IPC handlers in constructor
     } catch (error) {
       console.error('❌ Failed to initialize AI Chat Data Service:', error);
+    }
+
+    // Initialize Backup Handler (handlers are auto-registered in constructor)
+    try {
+      // Force initialization of the singleton instance
+      const backupService = backupHandler;
+      console.log('✅ Backup Handler initialized');
+      // Note: backupHandler auto-registers IPC handlers in constructor
+    } catch (error) {
+      console.error('❌ Failed to initialize Backup Handler:', error);
     }
 
     // Initialize File System handlers

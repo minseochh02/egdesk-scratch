@@ -12,7 +12,7 @@ export class AnalyzeProjectTool implements ToolExecutor {
   description = 'Analyze project structure and provide insights';
   dangerous = false;
 
-  async execute(params: { projectPath?: string }): Promise<any> {
+  async execute(params: { projectPath?: string }, signal?: AbortSignal, conversationId?: string): Promise<any> {
     const projectPath = params.projectPath || process.cwd();
     
     try {

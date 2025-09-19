@@ -375,6 +375,7 @@
 
 /* Key Selector */
 .key-selector {
+  position: relative;
   display: flex;
   align-items: center;
   font-size: 12px;
@@ -424,6 +425,67 @@
 .key-info:hover .dropdown-icon {
   color: #1a73e8;
   transform: rotate(180deg);
+}
+
+/* Key Dropdown */
+.key-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.key-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.key-option:last-child {
+  border-bottom: none;
+}
+
+.key-option:hover {
+  background: #f8f9fa;
+}
+
+.key-option.selected {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.key-option-icon {
+  font-size: 12px;
+  color: #1a73e8;
+  flex-shrink: 0;
+}
+
+.key-option-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.key-option-check {
+  font-size: 12px;
+  color: #1a73e8;
+  font-weight: bold;
+  flex-shrink: 0;
 }
 
 /* Warning Messages */
@@ -979,6 +1041,28 @@
   background: #e8f0fe;
   border-color: #1a73e8;
   color: #1a73e8;
+}
+
+.new-conversation-btn {
+  background: #1a73e8;
+  border: 1px solid #1a73e8;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.new-conversation-btn:hover {
+  background: #1557b0;
+  border-color: #1557b0;
 }
 
 .btn-icon {

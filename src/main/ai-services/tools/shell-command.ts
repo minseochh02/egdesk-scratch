@@ -12,7 +12,7 @@ export class ShellCommandTool implements ToolExecutor {
   dangerous = true;
   requiresConfirmation = false;
 
-  async execute(params: { command: string; cwd?: string }, signal?: AbortSignal): Promise<string> {
+  async execute(params: { command: string; cwd?: string }, signal?: AbortSignal, conversationId?: string): Promise<string> {
     if (!params.command) {
       throw new Error('command parameter is required');
     }

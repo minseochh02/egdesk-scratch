@@ -13,7 +13,7 @@ export class ReadFileTool implements ToolExecutor {
   description = 'Read the contents of a file. Supports relative paths (resolved against current project directory) and absolute paths.';
   dangerous = false;
 
-  async execute(params: { filePath: string }): Promise<string> {
+  async execute(params: { filePath: string }, signal?: AbortSignal, conversationId?: string): Promise<string> {
     if (!params.filePath) {
       throw new Error('filePath parameter is required');
     }
