@@ -299,6 +299,15 @@ export class AutonomousGeminiClient implements AIClientService {
 
               turn.toolCalls.push(toolCallRequest);
 
+              // Add tool call to conversation history with 'tool' role
+              this.addToHistory({
+                role: 'tool', // Tool calls should be marked as 'tool' role
+                parts: [part],
+                timestamp: new Date(),
+                toolCallId: toolCallRequest.id,
+                toolStatus: 'executing'
+              });
+
               yield {
                 type: AIEventType.ToolCallRequest,
                 toolCall: toolCallRequest,
@@ -337,7 +346,7 @@ export class AutonomousGeminiClient implements AIClientService {
                 });
 
                 this.addToHistory({
-                  role: 'user',
+                  role: 'model',
                   parts: [{
                     functionResponse: {
                       name: toolCallRequest.name,
@@ -348,7 +357,9 @@ export class AutonomousGeminiClient implements AIClientService {
                         : { error: toolResponse.error }
                     }
                   }],
-                  timestamp: new Date()
+                  timestamp: new Date(),
+                  toolCallId: toolCallRequest.id,
+                  toolStatus: toolResponse.success ? 'completed' : 'failed'
                 });
 
                 // Continue conversation with tool result

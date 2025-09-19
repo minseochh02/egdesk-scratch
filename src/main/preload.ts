@@ -447,6 +447,34 @@ export interface ProjectContextAPI {
   getContext: () => Promise<any>;
 }
 
+export interface AIChatDataAPI {
+  // Conversation operations
+  getConversations: (options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getConversation: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getConversationWithMessages: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  createConversation: (conversationData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateConversation: (conversationId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+  deleteConversation: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  archiveConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  restoreConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  
+  // Message operations
+  getMessages: (conversationId: string, options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  addMessage: (messageData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  addMessages: (messagesData: any[]) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateMessage: (messageId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+  deleteMessage: (messageId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  deleteMessagesInConversation: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  
+  // Statistics
+  getConversationStats: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getOverallStats: () => Promise<{ success: boolean; data?: any; error?: string }>;
+  
+  // Cleanup
+  cleanupOldData: (daysToKeep?: number) => Promise<{ success: boolean; data?: any; error?: string }>;
+  clearAllData: () => Promise<{ success: boolean; error?: string }>;
+}
+
 
 export interface SchedulerAPI {
   createTask: (
@@ -738,6 +766,33 @@ const electronHandler = {
     getCurrentProject: () => ipcRenderer.invoke('project-context-get-current'),
     getContext: () => ipcRenderer.invoke('project-context-get'),
   } as ProjectContextAPI,
+  aiChatData: {
+    // Conversation operations
+    getConversations: (options?: any) => ipcRenderer.invoke('ai-chat-get-conversations', options),
+    getConversation: (conversationId: string) => ipcRenderer.invoke('ai-chat-get-conversation', conversationId),
+    getConversationWithMessages: (conversationId: string) => ipcRenderer.invoke('ai-chat-get-conversation-with-messages', conversationId),
+    createConversation: (conversationData: any) => ipcRenderer.invoke('ai-chat-create-conversation', conversationData),
+    updateConversation: (conversationId: string, updates: any) => ipcRenderer.invoke('ai-chat-update-conversation', conversationId, updates),
+    deleteConversation: (conversationId: string) => ipcRenderer.invoke('ai-chat-delete-conversation', conversationId),
+    archiveConversation: (conversationId: string) => ipcRenderer.invoke('ai-chat-archive-conversation', conversationId),
+    restoreConversation: (conversationId: string) => ipcRenderer.invoke('ai-chat-restore-conversation', conversationId),
+    
+    // Message operations
+    getMessages: (conversationId: string, options?: any) => ipcRenderer.invoke('ai-chat-get-messages', conversationId, options),
+    addMessage: (messageData: any) => ipcRenderer.invoke('ai-chat-add-message', messageData),
+    addMessages: (messagesData: any[]) => ipcRenderer.invoke('ai-chat-add-messages', messagesData),
+    updateMessage: (messageId: string, updates: any) => ipcRenderer.invoke('ai-chat-update-message', messageId, updates),
+    deleteMessage: (messageId: string) => ipcRenderer.invoke('ai-chat-delete-message', messageId),
+    deleteMessagesInConversation: (conversationId: string) => ipcRenderer.invoke('ai-chat-delete-messages-in-conversation', conversationId),
+    
+    // Statistics
+    getConversationStats: (conversationId: string) => ipcRenderer.invoke('ai-chat-get-conversation-stats', conversationId),
+    getOverallStats: () => ipcRenderer.invoke('ai-chat-get-overall-stats'),
+    
+    // Cleanup
+    cleanupOldData: (daysToKeep?: number) => ipcRenderer.invoke('ai-chat-cleanup-old-data', daysToKeep),
+    clearAllData: () => ipcRenderer.invoke('ai-chat-clear-all-data'),
+  } as AIChatDataAPI,
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

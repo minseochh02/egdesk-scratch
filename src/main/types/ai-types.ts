@@ -23,7 +23,7 @@ export interface AIClientConfig {
 }
 
 export interface ConversationMessage {
-  role: 'user' | 'model';
+  role: 'user' | 'model' | 'tool';
   parts: Part[];
   timestamp: Date;
   // Optional fields for tool execution tracking
