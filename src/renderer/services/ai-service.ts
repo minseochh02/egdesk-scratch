@@ -14,6 +14,7 @@ import type {
 
 export class AIService {
   private static streamEventListeners = new Map<string, (event: AIStreamEvent) => void>();
+  private static eventHandlerRegistered = false;
 
   /**
    * Configure the AI client with API key and settings
@@ -55,6 +56,9 @@ export class AIService {
     onStreamEvent?: (event: AIStreamEvent) => void
   ): Promise<{ conversationId: string }> {
     try {
+      // Ensure event handler is registered first
+      this.registerStreamEventHandler();
+      
       // Start the conversation and get the conversation ID
       const result = await window.electron.aiService.startAutonomousConversation(message, options);
       
@@ -115,20 +119,32 @@ export class AIService {
    * Register global stream event handler
    */
   static registerStreamEventHandler(): void {
+    if (this.eventHandlerRegistered) {
+      console.log('📡 Stream event handler already registered');
+      return;
+    }
+    
     if (window.electron?.ipcRenderer) {
       console.log('📡 Registering stream event handler');
-      window.electron.ipcRenderer.on('ai-stream-event', (conversationId: string, event: AIStreamEvent) => {
+      window.electron.ipcRenderer.on('ai-stream-event', (...args: unknown[]) => {
+        const conversationId = args[0] as string;
+        const event = args[1] as AIStreamEvent;
         console.log('📥 Received IPC stream event:', event.type, 'for conversation:', conversationId);
+        console.log('📥 Event details:', event);
+        console.log('📥 Available handlers:', Array.from(this.streamEventListeners.keys()));
         const handler = this.streamEventListeners.get(conversationId);
         if (handler) {
           console.log('✅ Calling event handler for conversation:', conversationId);
           handler(event);
         } else {
           console.warn('⚠️ No handler found for conversation:', conversationId);
+          console.warn('⚠️ Available conversation IDs:', Array.from(this.streamEventListeners.keys()));
         }
       });
+      this.eventHandlerRegistered = true;
     } else {
       console.error('❌ window.electron.ipcRenderer not available for stream event handler');
+      console.error('❌ window.electron:', window.electron);
     }
   }
 

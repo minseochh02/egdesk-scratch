@@ -544,9 +544,12 @@ export class AutonomousGeminiClient implements AIClientService {
     // Add handler for renderer to signal it's ready to receive events
     ipcMain.handle('ai-conversation-ready', async (event, conversationId: string) => {
       console.log('🎯 Renderer ready for conversation:', conversationId);
+      console.log('🎯 Event sender:', event.sender);
       
       // Store the sender for immediate event transmission
       this.conversationSenders.set(conversationId, event.sender);
+      console.log('🎯 Stored sender for conversation:', conversationId);
+      console.log('🎯 Total senders:', this.conversationSenders.size);
       
       // Flush any buffered events
       this.flushEventBuffer(conversationId);
@@ -586,9 +589,18 @@ export class AutonomousGeminiClient implements AIClientService {
     const buffer = this.conversationEventBuffers.get(conversationId);
     const sender = this.conversationSenders.get(conversationId);
     
+    console.log('📤 BufferEvent called:', {
+      conversationId,
+      eventType: event.type,
+      hasSender: !!sender,
+      hasBuffer: !!buffer,
+      bufferSize: buffer?.length || 0
+    });
+    
     if (sender) {
       // If sender is available, send immediately instead of buffering
       console.log('📤 Sending event immediately:', event.type, 'for conversation:', conversationId);
+      console.log('📤 Event details:', JSON.stringify(event, null, 2));
       sender.send('ai-stream-event', conversationId, event);
     } else if (buffer) {
       // Otherwise, buffer the event

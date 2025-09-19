@@ -4,18 +4,18 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AIService } from '../../services/ai-service';
-import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
-import ProjectContextService from '../../services/projectContextService';
+import { AIService } from '../../../services/ai-service';
+import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
+import ProjectContextService from '../../../services/projectContextService';
 import type { 
   ConversationMessage, 
   AIResponse, 
   AIStreamEvent, 
   ConversationState,
   ToolDefinition 
-} from '../../../main/types/ai-types';
-import { AIEventType } from '../../../main/types/ai-types';
-import type { AIKey } from '../AIKeysManager/types';
+} from '../../../../main/types/ai-types';
+import { AIEventType } from '../../../../main/types/ai-types';
+import type { AIKey } from '../../AIKeysManager/types';
 import './AIChat.css';
 
 interface AIChatProps {
@@ -182,7 +182,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
           projectPath: currentProject?.path
         }
       })) {
-        console.log('🎉 Received stream event:', event.type, event);
+        console.log('🎉 Received stream event in AIChat:', event.type, event);
+        console.log('🎉 Event details:', JSON.stringify(event, null, 2));
         setStreamingEvents(prev => [...prev, event]);
         
         switch (event.type) {
