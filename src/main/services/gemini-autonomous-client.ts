@@ -630,13 +630,8 @@ export class AutonomousGeminiClient implements AIClientService {
     });
     
     if (sender) {
-      // If sender is available, send immediately instead of buffering
-      console.log('📤 Sending event immediately:', event.type, 'for conversation:', conversationId);
-      console.log('📤 Event details:', JSON.stringify(event, null, 2));
       sender.send('ai-stream-event', conversationId, event);
     } else if (buffer) {
-      // Otherwise, buffer the event
-      console.log('📦 Buffering event:', event.type, 'for conversation:', conversationId);
       buffer.push(event);
     } else {
       console.warn('⚠️ No buffer or sender available for conversation:', conversationId);

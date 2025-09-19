@@ -26,6 +26,9 @@ export interface ConversationMessage {
   role: 'user' | 'model';
   parts: Part[];
   timestamp: Date;
+  // Optional fields for tool execution tracking
+  toolCallId?: string;
+  toolStatus?: 'executing' | 'completed' | 'failed';
 }
 
 export interface AIResponse {

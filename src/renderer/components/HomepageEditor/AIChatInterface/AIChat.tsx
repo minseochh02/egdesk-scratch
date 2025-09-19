@@ -12,7 +12,9 @@ import type {
   AIResponse, 
   AIStreamEvent, 
   ConversationState,
-  ToolDefinition 
+  ToolDefinition,
+  ToolCallRequestInfo,
+  ToolCallResponseInfo
 } from '../../../../main/types/ai-types';
 import { AIEventType } from '../../../../main/types/ai-types';
 import type { AIKey } from '../../AIKeysManager/types';
@@ -21,6 +23,67 @@ import './AIChat.css';
 interface AIChatProps {
   // Add props as needed
 }
+
+/**
+ * Generate natural language message for tool execution
+ */
+const getToolExecutionMessage = (toolName: string, toolArgs?: any): string => {
+  const messages: { [key: string]: string } = {
+    'read_file': 'Let me read the file',
+    'write_file': 'Let me write to the file',
+    'list_directory': 'Let me check the directory contents',
+    'run_shell_command': 'Let me run a command',
+    'analyze_project': 'Let me analyze the project structure',
+    'search_files': 'Let me search through the files',
+    'create_file': 'Let me create a new file',
+    'delete_file': 'Let me delete the file',
+    'move_file': 'Let me move the file',
+    'copy_file': 'Let me copy the file'
+  };
+
+  // Try to get a natural message, fallback to generic
+  const naturalMessage = messages[toolName] || `Let me execute ${toolName}`;
+  
+  // Add context if available
+  if (toolArgs) {
+    if (toolArgs.path || toolArgs.file_path) {
+      return `${naturalMessage}: ${toolArgs.path || toolArgs.file_path}`;
+    }
+    if (toolArgs.command) {
+      return `${naturalMessage}: ${toolArgs.command}`;
+    }
+    if (toolArgs.directory || toolArgs.dir) {
+      return `${naturalMessage}: ${toolArgs.directory || toolArgs.dir}`;
+    }
+  }
+  
+  return naturalMessage;
+};
+
+/**
+ * Extract tool name from natural message for status updates
+ */
+const getToolNameFromMessage = (message: string): string => {
+  // Extract the actual tool name from common patterns
+  if (message.includes('read the file')) return 'read_file';
+  if (message.includes('write to the file')) return 'write_file';
+  if (message.includes('check the directory')) return 'list_directory';
+  if (message.includes('run a command')) return 'run_shell_command';
+  if (message.includes('analyze the project')) return 'analyze_project';
+  if (message.includes('search through')) return 'search_files';
+  if (message.includes('create a new file')) return 'create_file';
+  if (message.includes('delete the file')) return 'delete_file';
+  if (message.includes('move the file')) return 'move_file';
+  if (message.includes('copy the file')) return 'copy_file';
+  
+  // Fallback: try to extract from "execute X" pattern
+  const executeMatch = message.match(/execute (\w+)/);
+  if (executeMatch) {
+    return executeMatch[1];
+  }
+  
+  return 'tool';
+};
 
 export const AIChat: React.FC<AIChatProps> = () => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -37,15 +100,31 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [isAutonomousMode, setIsAutonomousMode] = useState(true);
   const [conversationState, setConversationState] = useState<ConversationState | null>(null);
   const [streamingEvents, setStreamingEvents] = useState<AIStreamEvent[]>([]);
-  const [toolCalls, setToolCalls] = useState<any[]>([]);
+  const [toolCalls, setToolCalls] = useState<(ToolCallRequestInfo & { status: 'executing' | 'completed' | 'failed'; result?: ToolCallResponseInfo })[]>([]);
   const [isConversationActive, setIsConversationActive] = useState(false);
   
   // Live typing state
   const [isTyping, setIsTyping] = useState(false);
-  const [typingIndex, setTypingIndex] = useState(0);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const contentBufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const typingContentRef = useRef<string>('');
+  const [currentMessage, setCurrentMessage] = useState<string>('');
+  const [lastEventType, setLastEventType] = useState<AIEventType | null>(null);
+  const [currentTurnNumber, setCurrentTurnNumber] = useState<number | null>(null);
+
+  // Effect to update the last message with currentMessage content
+  useEffect(() => {
+    if (currentMessage && isTyping) {
+      setMessages(prev => {
+        const updated = [...prev];
+        const lastMessage = updated[updated.length - 1];
+        if (lastMessage && lastMessage.role === 'model' && !lastMessage.toolCallId) {
+          updated[updated.length - 1] = {
+            ...lastMessage,
+            parts: [{ text: currentMessage }]
+          };
+        }
+        return updated;
+      });
+    }
+  }, [currentMessage, isTyping]);
 
   useEffect(() => {
     // Subscribe to AI keys store changes
@@ -142,148 +221,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  /**
-   * Start live typing effect for AI content
-   */
-  const startLiveTyping = (content: string) => {
-    console.log('🎯 startLiveTyping called with content:', JSON.stringify(content));
-    console.log('🎯 Current typing state:', { isTyping, typingContent: typingContentRef.current, typingIndex });
-    
-    // If a timeout is set to end typing, clear it because new content has arrived.
-    if (contentBufferTimeoutRef.current) {
-      clearTimeout(contentBufferTimeoutRef.current);
-      contentBufferTimeoutRef.current = null;
-    }
 
-    // Always append to existing content to avoid losing characters
-    const newContent = typingContentRef.current + content;
-    typingContentRef.current = newContent;
-    console.log('🎯 Appending content. Old:', JSON.stringify(typingContentRef.current.slice(0, -content.length)), 'New:', JSON.stringify(newContent));
 
-    // Only start typing if not already typing
-    if (!isTyping) {
-      console.log('🎯 Starting new typing animation');
-      setIsTyping(true);
-      // The cleanup timeout in useEffect now handles resetting the index.
-      // setTypingIndex(0); // This was causing the flicker.
-
-      // Create the initial message if it doesn't exist
-      setMessages(prev => {
-        const filteredPrev = prev.filter(msg => 
-          !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
-        );
-        
-        // Check if there's already a typing message
-        const lastMessage = filteredPrev[filteredPrev.length - 1];
-        if (lastMessage && lastMessage.role === 'model' && 
-            !lastMessage.parts[0]?.text?.startsWith('🔧') && 
-            !lastMessage.parts[0]?.text?.startsWith('✅') &&
-            !lastMessage.parts[0]?.text?.startsWith('❌') &&
-            !lastMessage.parts[0]?.text?.startsWith('💭') &&
-            !lastMessage.parts[0]?.text?.startsWith('⏳')) {
-          // Message already exists, don't create a new one
-          console.log('🎯 Using existing message for typing');
-          return prev;
-        } else {
-          // Create new typing message
-          console.log('🎯 Creating new message for typing');
-          return [...filteredPrev, {
-            role: 'model' as const,
-            parts: [{ text: '' }],
-            timestamp: new Date()
-          }];
-        }
-      });
-    } else {
-      console.log('🎯 Already typing, content appended to queue');
-    }
-  };
-
-  /**
-   * Effect to handle typing animation
-   */
-  useEffect(() => {
-    const currentContent = typingContentRef.current;
-    console.log('🎯 Typing effect triggered:', { isTyping, typingIndex, typingContentLength: currentContent.length });
-    
-    if (isTyping && typingIndex < currentContent.length) {
-      // If there was a timeout to end typing, clear it since we are still typing.
-      if (contentBufferTimeoutRef.current) {
-        clearTimeout(contentBufferTimeoutRef.current);
-        contentBufferTimeoutRef.current = null;
-      }
-
-      const nextChar = currentContent[typingIndex];
-      console.log('🎯 Typing next character:', JSON.stringify(nextChar), 'at index:', typingIndex, 'of total:', currentContent.length);
-      
-      // Update the last message with the new character
-      setMessages(prev => {
-        const filteredPrev = prev.filter(msg => 
-          !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
-        );
-        
-        const lastMessage = filteredPrev[filteredPrev.length - 1];
-        if (lastMessage && lastMessage.role === 'model' && 
-            !lastMessage.parts[0]?.text?.startsWith('🔧') && 
-            !lastMessage.parts[0]?.text?.startsWith('✅') &&
-            !lastMessage.parts[0]?.text?.startsWith('❌') &&
-            !lastMessage.parts[0]?.text?.startsWith('💭')) {
-          
-          // Calculate what the text should be by taking the first typingIndex+1 characters
-          const targetText = currentContent.substring(0, typingIndex + 1);
-          console.log('🎯 Setting message text to:', JSON.stringify(targetText));
-          
-          const updatedMessage = {
-            ...lastMessage,
-            parts: [{
-              text: targetText
-            }]
-          };
-          return [...filteredPrev.slice(0, -1), updatedMessage];
-        } else {
-          console.log('🎯 No suitable message found to update');
-        }
-        return prev;
-      });
-
-      // Schedule next character
-      const delay = nextChar === '\n' ? 50 : 20;
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        console.log('🎯 Advancing typing index from', typingIndex, 'to', typingIndex + 1);
-        setTypingIndex(prev => prev + 1);
-      }, delay);
-    } else if (isTyping && typingIndex >= currentContent.length && currentContent.length > 0) {
-      // Typing of current buffer is complete. Set a timeout to end the stream if no more content arrives.
-      console.log('🎯 Buffer empty, waiting for more content...');
-      contentBufferTimeoutRef.current = setTimeout(() => {
-        console.log('🎯 Typing stream finished, cleaning up.');
-        setIsTyping(false);
-        typingContentRef.current = '';
-        setTypingIndex(0);
-      }, 300); // Wait 300ms for more content.
-    }
-
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-    };
-  }, [isTyping, typingIndex]); // Removed typingContent dependency!
-
-  /**
-   * Clean up typing on unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      if (contentBufferTimeoutRef.current) {
-        clearTimeout(contentBufferTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading || !isConfigured) return;
@@ -338,58 +277,83 @@ export const AIChat: React.FC<AIChatProps> = () => {
         
         switch (event.type) {
           case AIEventType.Content:
-            // Add AI response content as it streams with live typing effect
+            // Build the message by appending content
             const contentEvent = event as any;
-            console.log('📝 Processing content event:', contentEvent);
+            console.log('✍️ Processing content event:', contentEvent);
             
             const newContent = contentEvent.content || contentEvent.data || '';
-            console.log('📝 New content to type:', JSON.stringify(newContent), 'length:', newContent.length);
+            console.log('✍️ New content to append:', JSON.stringify(newContent), 'length:', newContent.length);
             
             if (newContent) {
-              // Start live typing effect for this content
-              startLiveTyping(newContent);
+              // Append text from content event to currentMessage
+              setCurrentMessage(prev => {
+                const updated = prev + newContent;
+                console.log('✍️ Updated currentMessage:', JSON.stringify(updated));
+                return updated;
+              });
             } else {
-              console.log('📝 No content to type');
+              console.log('✍️ No content to append');
             }
             break;
 
           case AIEventType.ToolCallRequest:
             const toolCallEvent = event as any;
+            const toolCall = toolCallEvent.toolCall;
+            
+            // Add a natural message for tool execution
+            const toolMessage = getToolExecutionMessage(toolCall.name, toolCall.arguments);
+            setLastEventType(AIEventType.ToolCallRequest);
+            setMessages(prev => {
+              const filteredPrev = prev.filter(msg => 
+                !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+              );
+              return [...filteredPrev, {
+                role: 'model' as const,
+                parts: [{ text: toolMessage }],
+                timestamp: new Date(),
+                toolCallId: toolCall.id,
+                toolStatus: 'executing'
+              }];
+            });
+            
             setToolCalls(prev => [...prev, {
               ...toolCallEvent.toolCall,
               status: 'executing'
-            }]);
-            
-            // Add tool call indicator to messages
-            setMessages(prev => [...prev, {
-              role: 'model' as const,
-              parts: [{ text: `🔧 Executing tool: ${toolCallEvent.toolCall.name}` }],
-              timestamp: new Date()
             }]);
             break;
 
           case AIEventType.ToolCallResponse:
             const toolResponseEvent = event as any;
+            const response = toolResponseEvent.response;
+            
+            // Update the tool message with completion status
+            setLastEventType(AIEventType.ToolCallResponse);
+            setMessages(prev => prev.map(msg => {
+              if (msg.toolCallId === response.id) {
+                const statusText = response.success ? 'success!' : 'failed!';
+                const statusIcon = response.success ? '✅' : '❌';
+                const originalText = msg.parts[0]?.text || '';
+                const toolName = getToolNameFromMessage(originalText);
+                
+                return {
+                  ...msg,
+                  parts: [{ text: `${originalText}\n${toolName}: ${statusIcon} ${statusText}` }],
+                  toolStatus: response.success ? 'completed' : 'failed'
+                };
+              }
+              return msg;
+            }));
+            
             setToolCalls(prev => prev.map(call => 
               call.id === toolResponseEvent.response.id 
                 ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
                 : call
             ));
-
-            // Add tool result to messages
-            const resultText = toolResponseEvent.response.success 
-              ? `✅ Tool completed: ${JSON.stringify(toolResponseEvent.response.result)}`
-              : `❌ Tool failed: ${toolResponseEvent.response.error}`;
-            
-            setMessages(prev => [...prev, {
-              role: 'model' as const,
-              parts: [{ text: resultText }],
-              timestamp: new Date()
-            }]);
             break;
 
           case AIEventType.Thought:
             const thoughtEvent = event as any;
+            setLastEventType(AIEventType.Thought);
             setMessages(prev => [...prev, {
               role: 'model' as const,
               parts: [{ text: `💭 **${thoughtEvent.thought.subject}**: ${thoughtEvent.thought.description}` }],
@@ -399,6 +363,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
 
           case AIEventType.Error:
             const errorEvent = event as any;
+            setLastEventType(AIEventType.Error);
             setMessages(prev => [...prev, {
               role: 'model' as const,
               parts: [{ text: `❌ Error: ${errorEvent.error.message}` }],
@@ -408,6 +373,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
 
           case AIEventType.LoopDetected:
             const loopEvent = event as any;
+            setLastEventType(AIEventType.LoopDetected);
             setMessages(prev => [...prev, {
               role: 'model' as const,
               parts: [{ text: `🔄 Loop detected: ${loopEvent.pattern}. Stopping conversation to prevent infinite loop.` }],
@@ -417,18 +383,49 @@ export const AIChat: React.FC<AIChatProps> = () => {
 
           case AIEventType.Finished:
             console.log('🏁 Autonomous conversation completed');
-            // Don't stop typing immediately - let it finish naturally
-            // The typing effect will complete on its own
+            
+            // Ensure isTyping is false as final guarantee
+            setIsTyping(false);
+            
+            // Final cleanup of entire session
+            console.log('🏁 Final cleanup - conversation stream ended');
+            
             break;
 
           case AIEventType.TurnStarted:
             const turnEvent = event as any;
-            console.log(`🔄 Turn ${turnEvent.turnNumber} started`);
+            console.log(`📬 Turn ${turnEvent.turnNumber} started`);
+            
+            // Create a new, empty message bubble in UI
+            setMessages(prev => [...prev, {
+              role: 'model' as const,
+              parts: [{ text: '' }],
+              timestamp: new Date()
+            }]);
+            
+            // Set isTyping to true to show user something is happening
+            setIsTyping(true);
+            
+            // Clear currentMessage to start fresh
+            setCurrentMessage('');
+            
+            // Update turn state
+            setCurrentTurnNumber(turnEvent.turnNumber);
+            setLastEventType(AIEventType.TurnStarted);
             break;
 
           case AIEventType.TurnCompleted:
             const turnCompletedEvent = event as any;
             console.log(`✅ Turn ${turnCompletedEvent.turnNumber} completed`);
+            
+            // Set isTyping to false - typing indicator can now be hidden
+            setIsTyping(false);
+            
+            // Final cleanup for this specific message bubble
+            // The message is now fully delivered
+            console.log('✅ Message fully delivered, final content:', currentMessage);
+            
+            setLastEventType(AIEventType.TurnCompleted);
             break;
 
           default:
@@ -489,12 +486,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
       setIsLoading(false);
       
       // Stop any ongoing typing
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
       setIsTyping(false);
-      typingContentRef.current = '';
-      setTypingIndex(0);
+      setCurrentMessage('');
       
       setMessages(prev => [...prev, {
         role: 'model' as const,
@@ -562,20 +555,49 @@ export const AIChat: React.FC<AIChatProps> = () => {
             className="test-btn" 
             onClick={async () => {
               try {
-                console.log('🧪 Testing typing effect...');
-                // Clear any existing content first
-                typingContentRef.current = '';
-                setIsTyping(false);
-                setTypingIndex(0);
-                // Test the typing effect directly
-                startLiveTyping('Hello! This is a test of the typing effect. It should appear character by character.');
+                console.log('🧪 Testing tool execution flow...');
+                
+                // Simulate tool execution flow
+                const mockToolCall = {
+                  id: 'test-' + Date.now(),
+                  name: 'read_file',
+                  arguments: { path: '/test/file.txt' }
+                };
+                
+                // Add initial tool message
+                const toolMessage = getToolExecutionMessage(mockToolCall.name, mockToolCall.arguments);
+                setMessages(prev => [...prev, {
+                  role: 'model' as const,
+                  parts: [{ text: toolMessage }],
+                  timestamp: new Date(),
+                  toolCallId: mockToolCall.id,
+                  toolStatus: 'executing'
+                }]);
+                
+                // Simulate completion after 2 seconds
+                setTimeout(() => {
+                  setMessages(prev => prev.map(msg => {
+                    if (msg.toolCallId === mockToolCall.id) {
+                      const originalText = msg.parts[0]?.text || '';
+                      const toolName = getToolNameFromMessage(originalText);
+                      
+                      return {
+                        ...msg,
+                        parts: [{ text: `${originalText}\n${toolName}: ✅ success!` }],
+                        toolStatus: 'completed' as const
+                      };
+                    }
+                    return msg;
+                  }));
+                }, 2000);
+                
               } catch (error) {
                 console.error('🧪 Test failed:', error);
               }
             }}
             disabled={!selectedGoogleKey}
           >
-            Test Typing
+            Test Tool Flow
           </button>
 
           {/* Cancel button (only show when conversation is active) */}
@@ -683,28 +705,35 @@ export const AIChat: React.FC<AIChatProps> = () => {
             )}
           </div>
         ) : (
-          messages.map((message, index) => (
-            <div key={index} className={`message ${message.role}`}>
-              <div className="message-header">
-                <span className="role">
-                  {message.role === 'user' ? '👤 You' : '🤖 Gemini'}
-                </span>
-                <span className="timestamp">
-                  {message.timestamp.toLocaleTimeString()}
-                </span>
+          <>
+            {messages.map((message, index) => (
+              <div key={index} className={`message ${message.role} ${message.toolCallId ? 'tool-message' : ''} ${message.toolStatus ? `tool-${message.toolStatus}` : ''}`}>
+                <div className="message-header">
+                  <span className="role">
+                    {message.role === 'user' ? '👤 You' : message.toolCallId ? '🔧 Tool' : '🤖 Gemini'}
+                  </span>
+                  <span className="timestamp">
+                    {message.timestamp.toLocaleTimeString()}
+                  </span>
+                  {message.toolStatus && (
+                    <span className={`tool-status-badge ${message.toolStatus}`}>
+                      {message.toolStatus === 'executing' ? '⏳' : message.toolStatus === 'completed' ? '✅' : '❌'}
+                    </span>
+                  )}
+                </div>
+                <div className="message-content">
+                  {message.parts.map((part, partIndex) => (
+                    <div key={partIndex}>
+                      {part.text && <pre className="message-text">{part.text}</pre>}
+                    </div>
+                  ))}
+                  {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
+                    <span className="typing-indicator">▋</span>
+                  )}
+                </div>
               </div>
-              <div className="message-content">
-                {message.parts.map((part, partIndex) => (
-                  <div key={partIndex}>
-                    {part.text && <pre className="message-text">{part.text}</pre>}
-                  </div>
-                ))}
-                {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
-                  <span className="typing-indicator">▋</span>
-                )}
-              </div>
-            </div>
-          ))
+            ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
