@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCaretDown, faFolderOpen, faKey, faClock, faTrash, faTimes, faHistory, faFolder, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import { AIService } from '../../../services/ai-service';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
 import ProjectContextService from '../../../services/projectContextService';
@@ -330,7 +332,6 @@ export const AIChat: React.FC<AIChatProps> = () => {
               // Append text from content event to currentMessage
               setCurrentMessage(prev => {
                 const updated = prev + newContent;
-                console.log('✍️ Updated currentMessage:', JSON.stringify(updated));
                 return updated;
               });
             } else {
@@ -575,110 +576,68 @@ export const AIChat: React.FC<AIChatProps> = () => {
   return (
     <div className="ai-chat">
       <div className="ai-chat-header">
-        <h3>AI Assistant (Gemini) {isAutonomousMode ? '🤖 Autonomous' : '💬 Chat'}</h3>
-        <div className="header-buttons">
-          <div className="connection-status">
-            <span className="status-icon">{getConnectionStatusIcon()}</span>
-            <span className="status-text">{getConnectionStatusText()}</span>
+        <div className="header-top">
+          <div className="project-selector">
+            <div className="project-info">
+              <FontAwesomeIcon icon={faFolder} className="project-icon" />
+              <span className="project-label">Project:</span>
+              <span className="project-name">
+                {currentProject ? `${currentProject.name} (${currentProject.type})` : 'No project selected'}
+              </span>
+            </div>
           </div>
-          
-          {/* Mode Toggle */}
-          <button 
-            className={`mode-toggle ${isAutonomousMode ? 'autonomous' : 'chat'}`}
-            onClick={() => setIsAutonomousMode(!isAutonomousMode)}
-            disabled={isConversationActive}
-            title={isAutonomousMode ? 'Switch to simple chat mode' : 'Switch to autonomous mode with tools'}
-          >
-            {isAutonomousMode ? '🤖→💬' : '💬→🤖'}
-          </button>
+          <div className="header-buttons">
+            {/* Google AI Key Selector */}
+            {googleKeys.length > 1 && (
+              <div className="key-selector">
+                <div className="key-info">
+                  <FontAwesomeIcon icon={faKey} className="key-icon" />
+                  <span className="key-label">AI Key:</span>
+                  <span className="key-name">
+                    {selectedGoogleKey?.name || 'No key selected'}
+                  </span>
+                  <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
+                </div>
+              </div>
+            )}
 
-          {/* Test button for debugging */}
-          <button 
-            className="test-btn" 
-            onClick={async () => {
-              try {
-                console.log('🧪 Testing tool execution flow...');
-                
-                // Simulate tool execution flow
-                const mockToolCall = {
-                  id: 'test-' + Date.now(),
-                  name: 'read_file',
-                  arguments: { path: '/test/file.txt' }
-                };
-                
-                // Add initial tool message
-                const toolMessage = getToolExecutionMessage(mockToolCall.name, mockToolCall.arguments);
-                setMessages(prev => [...prev, {
-                  role: 'model' as const,
-                  parts: [{ text: toolMessage }],
-                  timestamp: new Date(),
-                  toolCallId: mockToolCall.id,
-                  toolStatus: 'executing'
-                }]);
-                
-                // Simulate completion after 2 seconds
-                setTimeout(() => {
-                  setMessages(prev => prev.map(msg => {
-                    if (msg.toolCallId === mockToolCall.id) {
-                      const originalText = msg.parts[0]?.text || '';
-                      const toolName = getToolNameFromMessage(originalText);
-                      
-                      return {
-                        ...msg,
-                        parts: [{ text: `${originalText}\n${toolName}: ✅ success!` }],
-                        toolStatus: 'completed' as const
-                      };
-                    }
-                    return msg;
-                  }));
-                }, 2000);
-                
-              } catch (error) {
-                console.error('🧪 Test failed:', error);
-              }
-            }}
-            disabled={!selectedGoogleKey}
-          >
-            Test Tool Flow
-          </button>
+            {/* Connection Status (simplified) */}
+            <div className="connection-status">
+              <span className="status-icon">{getConnectionStatusIcon()}</span>
+              <span className="status-text">{selectedGoogleKey?.name || 'No Key'}</span>
+            </div>
 
-          {/* Cancel button (only show when conversation is active) */}
-          {isConversationActive && (
+            {/* Cancel button (only show when conversation is active) */}
+            {isConversationActive && (
+              <button 
+                className="cancel-btn" 
+                onClick={handleCancelConversation}
+              >
+                Cancel
+              </button>
+            )}
+
             <button 
-              className="cancel-btn" 
-              onClick={handleCancelConversation}
+              className="conversations-btn" 
+              onClick={() => setShowConversationList(!showConversationList)}
+              title="View conversation history"
             >
-              Cancel
+              <FontAwesomeIcon icon={faClock} className="btn-icon" />
+              History ({conversations.length})
             </button>
-          )}
 
-          <button 
-            className="conversations-btn" 
-            onClick={() => setShowConversationList(!showConversationList)}
-            title="View conversation history"
-          >
-            📚 Conversations ({conversations.length})
-          </button>
-
-          <button 
-            className="clear-btn" 
-            onClick={handleClearHistory}
-            disabled={messages.length === 0 || isConversationActive}
-          >
-            Clear
-          </button>
+            <button 
+              className="clear-btn" 
+              onClick={handleClearHistory}
+              disabled={messages.length === 0 || isConversationActive}
+            >
+              <FontAwesomeIcon icon={faTrash} className="btn-icon" />
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Project Context Display */}
-      {currentProject && (
-        <div className="project-context">
-          <span className="project-indicator">📁</span>
-          <span className="project-name">{currentProject.name}</span>
-          <span className="project-type">({currentProject.type})</span>
-          <span className="project-path">{currentProject.path}</span>
-        </div>
-      )}
 
       {/* Conversation List */}
       {showConversationList && (
@@ -689,7 +648,7 @@ export const AIChat: React.FC<AIChatProps> = () => {
               className="close-btn" 
               onClick={() => setShowConversationList(false)}
             >
-              ✕
+              <FontAwesomeIcon icon={faTimes} />
             </button>
           </div>
           <div className="conversation-stats">
@@ -731,61 +690,6 @@ export const AIChat: React.FC<AIChatProps> = () => {
         </div>
       )}
 
-      {/* Google AI Key Selector */}
-      {googleKeys.length > 1 && (
-        <div className="key-selector">
-          <label htmlFor="google-key-select">Google AI Key:</label>
-          <select 
-            id="google-key-select"
-            value={selectedGoogleKey?.id || ''}
-            onChange={(e) => {
-              const key = googleKeys.find(k => k.id === e.target.value);
-              if (key) handleKeySelection(key);
-            }}
-          >
-            {googleKeys.map(key => (
-              <option key={key.id} value={key.id}>
-                {key.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* No Key Warning */}
-      {googleKeys.length === 0 && (
-        <div className="no-key-warning">
-          <p>⚠️ No active Google AI keys found.</p>
-          <p>Please add and activate a Google AI key in the AI Keys Manager.</p>
-        </div>
-      )}
-
-      {/* Autonomous Mode Status */}
-      {isAutonomousMode && (
-        <div className="autonomous-status">
-          <div className="status-row">
-            <span className="status-label">Mode:</span>
-            <span className="status-value">
-              🤖 Autonomous {isConversationActive ? '(Active)' : '(Ready)'}
-            </span>
-          </div>
-          {toolCalls.length > 0 && (
-            <div className="status-row">
-              <span className="status-label">Tools:</span>
-              <span className="status-value">
-                {toolCalls.filter(t => t.status === 'executing').length} executing, 
-                {' '}{toolCalls.filter(t => t.status === 'completed').length} completed
-              </span>
-            </div>
-          )}
-          {streamingEvents.length > 0 && (
-            <div className="status-row">
-              <span className="status-label">Events:</span>
-              <span className="status-value">{streamingEvents.length} total</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Messages */}
       <div className="messages-container">

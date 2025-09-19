@@ -17,20 +17,16 @@ import * as os from 'os';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { PHPManager } from './php/php-manager';
-import { ReadFileTool } from './tools/read-file';
-import { WriteFileTool } from './tools/write-file';
-import { ListDirectoryTool } from './tools/list-directory';
-import { EditFileTool } from './tools/edit-file';
-import { autonomousGeminiClient } from './services/gemini-autonomous-client';
-import { toolRegistry } from './services/tool-executor';
-import { projectContextBridge } from './services/project-context-bridge';
+import { autonomousGeminiClient } from './ai-services/gemini-autonomous-client';
+import { toolRegistry } from './ai-services/tool-executor';
+import { projectContextBridge } from './ai-services/project-context-bridge';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { LocalServerManager } from './wordpress/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
 import { getSQLiteManager } from './sqlite/sqlite-manager';
 import { createSchedulerManager } from './scheduler/scheduler-manager';
-import { aiChatDataService } from './services/ai-chat-data-service';
+import { aiChatDataService } from './ai-services/ai-chat-data-service';
 let schedulerManager: any;
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
@@ -107,39 +103,6 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
-
-    // Initialize Read File Tool handlers (doesn't need main window)
-    try {
-      ReadFileTool.registerHandlers();
-      console.log('✅ ReadFileTool handlers registered');
-    } catch (error) {
-      console.error('❌ Failed to register ReadFileTool handlers:', error);
-    }
-    
-    // Initialize Write File Tool handlers (doesn't need main window)
-    try {
-      WriteFileTool.registerHandlers();
-      console.log('✅ WriteFileTool handlers registered');
-    } catch (error) {
-      console.error('❌ Failed to register WriteFileTool handlers:', error);
-    }
-
-    // Register ListDirectoryTool handlers
-    try {
-      ListDirectoryTool.registerHandlers();
-      console.log('✅ ListDirectoryTool handlers registered');
-    } catch (error) {
-      console.error('❌ Failed to register ListDirectoryTool handlers:', error);
-    }
-
-    // Register EditFileTool handlers
-    try {
-      EditFileTool.registerHandlers();
-      console.log('✅ EditFileTool handlers registered');
-    } catch (error) {
-      console.error('❌ Failed to register EditFileTool handlers:', error);
-    }
-
     // Initialize Project Context Bridge
     try {
       console.log('✅ Project Context Bridge initialized');
