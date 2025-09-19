@@ -22,7 +22,6 @@ import { WriteFileTool } from './tools/write-file';
 import { ListDirectoryTool } from './tools/list-directory';
 import { EditFileTool } from './tools/edit-file';
 import { autonomousGeminiClient } from './services/gemini-autonomous-client';
-import { simpleAIClient } from './services/simple-ai-client';
 import { toolRegistry } from './services/tool-executor';
 import { projectContextBridge } from './services/project-context-bridge';
 import { WordPressHandler } from './wordpress/wordpress-handler';
@@ -31,6 +30,7 @@ import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
 import { getSQLiteManager } from './sqlite/sqlite-manager';
 import { createSchedulerManager } from './scheduler/scheduler-manager';
+import { aiChatDataService } from './services/ai-chat-data-service';
 let schedulerManager: any;
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
@@ -156,14 +156,6 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize Tool Registry:', error);
     }
 
-    // Initialize Simple AI Client for testing (handlers are auto-registered in constructor)
-    try {
-      // Force initialization of the simple client for testing
-      const testClient = simpleAIClient;
-      console.log('✅ Simple AI Client initialized for testing');
-    } catch (error) {
-      console.error('❌ Failed to initialize Simple AI Client:', error);
-    }
 
     // Initialize Autonomous Gemini AI Client with streaming and tool execution (handlers are auto-registered in constructor)
     try {
@@ -186,6 +178,16 @@ const createWindow = async () => {
       }
     } catch (error) {
       console.error('❌ Failed to initialize SQLite Manager:', error);
+    }
+
+    // Initialize AI Chat Data Service (handlers are auto-registered in constructor)
+    try {
+      // Force initialization of the singleton instance
+      const dataService = aiChatDataService;
+      console.log('✅ AI Chat Data Service initialized');
+      // Note: aiChatDataService auto-registers IPC handlers in constructor
+    } catch (error) {
+      console.error('❌ Failed to initialize AI Chat Data Service:', error);
     }
 
     // Initialize scheduler manager with store (critical component)

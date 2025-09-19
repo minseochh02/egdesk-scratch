@@ -495,7 +495,19 @@ export function conversationMessageToAIMessage(
       } else if (part.functionCall) {
         return `[Tool Call: ${part.functionCall.name}]`;
       } else if (part.functionResponse) {
-        return `[Tool Response: ${part.functionResponse.name}]`;
+        // Extract the actual response content, not just the tool name
+        const response = part.functionResponse.response;
+        if (response && typeof response === 'object') {
+          if (response.error) {
+            return `[Tool Response: ${part.functionResponse.name}] Error: ${response.error}`;
+          } else if (response.result) {
+            return `[Tool Response: ${part.functionResponse.name}] Result: ${JSON.stringify(response.result)}`;
+          } else {
+            return `[Tool Response: ${part.functionResponse.name}] ${JSON.stringify(response)}`;
+          }
+        } else {
+          return `[Tool Response: ${part.functionResponse.name}] ${JSON.stringify(response)}`;
+        }
       } else {
         return JSON.stringify(part);
       }
@@ -504,10 +516,18 @@ export function conversationMessageToAIMessage(
 
   const content = extractTextFromParts(message.parts);
 
+  // Determine the role for the database
+  let dbRole: 'user' | 'model' | 'tool' = message.role;
+  
+  // If this is a tool call (has functionCall in parts), mark as 'tool' role
+  if (message.parts.some(part => part.functionCall)) {
+    dbRole = 'tool';
+  }
+
   return {
     id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     conversation_id: conversationId,
-    role: message.role,
+    role: dbRole,
     content: content || '[Empty message]', // Fallback for empty content
     tool_call_id: message.toolCallId,
     tool_status: message.toolStatus,
@@ -524,12 +544,26 @@ export function conversationMessageToAIMessage(
 export function aiMessageToConversationMessage(message: AIMessage): ConversationMessage {
   const metadata = message.metadata ? JSON.parse(message.metadata) : {};
   
-  // Convert 'tool' role to 'model' for ConversationMessage compatibility
-  const role = message.role === 'tool' ? 'model' : message.role;
+  // For tool messages, show only success/failure status instead of full content
+  let displayContent = message.content;
+  if (message.role === 'tool' && message.tool_status) {
+    const statusIcon = message.tool_status === 'completed' ? '✅' : 
+                      message.tool_status === 'failed' ? '❌' : '⏳';
+    const statusText = message.tool_status === 'completed' ? 'success!' : 
+                      message.tool_status === 'failed' ? 'failed!' : 'executing...';
+    
+    // Extract tool name from content if possible (handle both Tool Call and Tool Response)
+    const toolResponseMatch = message.content.match(/\[Tool Response: ([^\]]+)\]/);
+    const toolCallMatch = message.content.match(/\[Tool Call: ([^\]]+)\]/);
+    const toolName = toolResponseMatch ? toolResponseMatch[1] : 
+                    toolCallMatch ? toolCallMatch[1] : 'Tool';
+    
+    displayContent = `${toolName}: ${statusIcon} ${statusText}`;
+  }
   
   return {
-    role: role as 'user' | 'model',
-    parts: [{ text: message.content }],
+    role: message.role, // Now supports 'user' | 'model' | 'tool'
+    parts: [{ text: displayContent }],
     timestamp: new Date(message.timestamp),
     toolCallId: message.tool_call_id,
     toolStatus: message.tool_status

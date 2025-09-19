@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AIService } from '../../../services/ai-service';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
 import ProjectContextService from '../../../services/projectContextService';
+import { aiChatDataService } from '../../../services/ai-chat-data-service';
 import type { 
   ConversationMessage, 
   AIResponse, 
@@ -108,6 +109,12 @@ export const AIChat: React.FC<AIChatProps> = () => {
   const [currentMessage, setCurrentMessage] = useState<string>('');
   const [lastEventType, setLastEventType] = useState<AIEventType | null>(null);
   const [currentTurnNumber, setCurrentTurnNumber] = useState<number | null>(null);
+  
+  // Data fetching state
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [showConversationList, setShowConversationList] = useState(false);
+  const [overallStats, setOverallStats] = useState<any>(null);
 
   // Effect to update the last message with currentMessage content
   useEffect(() => {
@@ -131,6 +138,8 @@ export const AIChat: React.FC<AIChatProps> = () => {
     const unsubscribe = aiKeysStore.subscribe(setAiKeysState);
     checkConfiguration();
     loadHistory();
+    loadConversations();
+    loadOverallStats();
     
     // Subscribe to project context changes
     const unsubscribeProject = ProjectContextService.getInstance().subscribe((context) => {
@@ -185,6 +194,39 @@ export const AIChat: React.FC<AIChatProps> = () => {
       setMessages(history);
     } catch (error) {
       console.error('Error loading chat history:', error);
+    }
+  };
+
+  const loadConversations = async () => {
+    try {
+      const convs = await aiChatDataService.getConversations({ limit: 20, activeOnly: true });
+      setConversations(convs);
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    }
+  };
+
+  const loadOverallStats = async () => {
+    try {
+      const stats = await aiChatDataService.getOverallStats();
+      setOverallStats(stats);
+    } catch (error) {
+      console.error('Error loading overall stats:', error);
+    }
+  };
+
+  const loadConversationMessages = async (conversationId: string) => {
+    try {
+      const result = await aiChatDataService.getConversationWithMessages(conversationId);
+      if (result) {
+        const conversationMessages = result.messages.map(msg => 
+          aiChatDataService.aiMessageToConversationMessage(msg)
+        );
+        setMessages(conversationMessages);
+        setCurrentConversationId(conversationId);
+      }
+    } catch (error) {
+      console.error('Error loading conversation messages:', error);
     }
   };
 
@@ -611,6 +653,14 @@ export const AIChat: React.FC<AIChatProps> = () => {
           )}
 
           <button 
+            className="conversations-btn" 
+            onClick={() => setShowConversationList(!showConversationList)}
+            title="View conversation history"
+          >
+            📚 Conversations ({conversations.length})
+          </button>
+
+          <button 
             className="clear-btn" 
             onClick={handleClearHistory}
             disabled={messages.length === 0 || isConversationActive}
@@ -627,6 +677,57 @@ export const AIChat: React.FC<AIChatProps> = () => {
           <span className="project-name">{currentProject.name}</span>
           <span className="project-type">({currentProject.type})</span>
           <span className="project-path">{currentProject.path}</span>
+        </div>
+      )}
+
+      {/* Conversation List */}
+      {showConversationList && (
+        <div className="conversation-list">
+          <div className="conversation-list-header">
+            <h4>📚 Conversation History</h4>
+            <button 
+              className="close-btn" 
+              onClick={() => setShowConversationList(false)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="conversation-stats">
+            {overallStats && (
+              <div className="stats-summary">
+                <span>Total: {overallStats.totalConversations}</span>
+                <span>Active: {overallStats.activeConversations}</span>
+                <span>Messages: {overallStats.totalMessages}</span>
+                <span>Size: {overallStats.databaseSize}MB</span>
+              </div>
+            )}
+          </div>
+          <div className="conversation-items">
+            {conversations.length === 0 ? (
+              <div className="no-conversations">
+                <p>No conversations found</p>
+                <button onClick={loadConversations}>Refresh</button>
+              </div>
+            ) : (
+              conversations.map((conv) => (
+                <div 
+                  key={conv.id} 
+                  className={`conversation-item ${currentConversationId === conv.id ? 'active' : ''}`}
+                  onClick={() => loadConversationMessages(conv.id)}
+                >
+                  <div className="conversation-title">{conv.title || 'Untitled Conversation'}</div>
+                  <div className="conversation-meta">
+                    <span className="conversation-date">
+                      {new Date(conv.updated_at).toLocaleDateString()}
+                    </span>
+                    <span className={`conversation-status ${conv.is_active ? 'active' : 'archived'}`}>
+                      {conv.is_active ? 'Active' : 'Archived'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
 
@@ -706,33 +807,38 @@ export const AIChat: React.FC<AIChatProps> = () => {
           </div>
         ) : (
           <>
-            {messages.map((message, index) => (
-              <div key={index} className={`message ${message.role} ${message.toolCallId ? 'tool-message' : ''} ${message.toolStatus ? `tool-${message.toolStatus}` : ''}`}>
-                <div className="message-header">
-                  <span className="role">
-                    {message.role === 'user' ? '👤 You' : message.toolCallId ? '🔧 Tool' : '🤖 Gemini'}
-                  </span>
-                  <span className="timestamp">
-                    {message.timestamp.toLocaleTimeString()}
-                  </span>
-                  {message.toolStatus && (
-                    <span className={`tool-status-badge ${message.toolStatus}`}>
-                      {message.toolStatus === 'executing' ? '⏳' : message.toolStatus === 'completed' ? '✅' : '❌'}
+            {messages.map((message, index) => {
+              const isToolMessage = message.role === 'tool' || message.toolCallId;
+              
+              return (
+                <div key={index} className={`message ${message.role} ${isToolMessage ? 'tool-message' : ''} ${message.toolStatus ? `tool-${message.toolStatus}` : ''}`}>
+                  <div className="message-header">
+                    <span className="role">
+                      {message.role === 'user' ? '👤 You' : 
+                       message.role === 'tool' || isToolMessage ? '🔧 Tool' : '🤖 Gemini'}
                     </span>
-                  )}
+                    <span className="timestamp">
+                      {message.timestamp.toLocaleTimeString()}
+                    </span>
+                    {message.toolStatus && (
+                      <span className={`tool-status-badge ${message.toolStatus}`}>
+                        {message.toolStatus === 'executing' ? '⏳' : message.toolStatus === 'completed' ? '✅' : '❌'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="message-content">
+                    {message.parts.map((part, partIndex) => (
+                      <div key={partIndex}>
+                        {part.text && <pre className="message-text">{part.text}</pre>}
+                      </div>
+                    ))}
+                    {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
+                      <span className="typing-indicator">▋</span>
+                    )}
+                  </div>
                 </div>
-                <div className="message-content">
-                  {message.parts.map((part, partIndex) => (
-                    <div key={partIndex}>
-                      {part.text && <pre className="message-text">{part.text}</pre>}
-                    </div>
-                  ))}
-                  {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
-                    <span className="typing-indicator">▋</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
         <div ref={messagesEndRef} />
