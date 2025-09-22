@@ -100,6 +100,8 @@ const getToolNameFromMessage = (message: string): string => {
 };
 
 export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
+  // Track the preview browser window we open for localhost so we can switch its URL later
+  const [previewWindowId, setPreviewWindowId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -185,6 +187,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       unsubscribeProject();
     };
   }, []);
+
+  // (Viewer init moved out of AIChat; AIChat only deep-links the preview window)
 
   useEffect(() => {
     // Auto-select the first active Google AI key
@@ -325,6 +329,150 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const openProjectInBrowser = async () => {
+    try {
+      const status = await window.electron.wordpressServer.getServerStatus();
+      if (status.success && status.status?.isRunning) {
+        const url = status.status.url || `http://localhost:${status.status.port}`;
+        await tileChatAndPreview(url);
+      } else {
+        // If server is not running, try starting it for the current project, then open
+        if (currentProject?.path) {
+          try {
+            const start = await window.electron.wordpressServer.startServer(currentProject.path, 8000);
+            if (start.success) {
+              const port = start.port || 8000;
+              const url = `http://localhost:${port}`;
+              await tileChatAndPreview(url);
+            } else {
+              console.warn('Failed to start local server:', start.error);
+            }
+          } catch (e) {
+            console.error('Failed to start local server:', e);
+          }
+        } else {
+          console.warn('Local server is not running and no project is selected.');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to open project in browser:', err);
+    }
+  };
+
+  const tileChatAndPreview = async (url: string) => {
+    try {
+      const electronAny = (window as any).electron;
+      const work = await electronAny.mainWindow.getWorkArea();
+      if (!work?.success || !work.workArea) {
+        // Fallback: just open centered window
+        const created = await electronAny.browserWindow.createWindow({ url, title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview', width: 1200, height: 800, show: true });
+        if (created?.success && created.windowId) {
+          setPreviewWindowId(created.windowId);
+          // Clean up when closed
+          electronAny.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
+        }
+        return;
+      }
+      const { x, y, width, height } = work.workArea;
+
+      // Left 30% for chat, respect updated main window minWidth (400)
+      let chatWidth = Math.max(400, Math.floor(width * 0.3));
+      let previewWidth = width - chatWidth; // 70%
+
+      // Ensure preview has a reasonable minimum width
+      const minPreview = 500;
+      if (previewWidth < minPreview) {
+        previewWidth = minPreview;
+        chatWidth = Math.max(800, width - previewWidth);
+      }
+
+      // Resize/move main window (chat) to left 30%
+      await electronAny.mainWindow.setBounds({ x, y, width: chatWidth, height });
+
+      // Open preview window on right 70%
+      const created = await electronAny.browserWindow.createWindow({
+        url,
+        title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview',
+        x: x + chatWidth,
+        y,
+        width: previewWidth,
+        height,
+        show: true,
+      });
+      if (created?.success && created.windowId) {
+        setPreviewWindowId(created.windowId);
+        electronAny.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
+      }
+    } catch (error) {
+      console.error('Failed to tile chat and preview windows:', error);
+      // Fallback open
+      const created = await (window as any).electron.browserWindow.createWindow({ url, title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview', width: 1200, height: 800, show: true });
+      if (created?.success && created.windowId) {
+        setPreviewWindowId(created.windowId);
+        (window as any).electron.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
+      }
+    }
+  };
+
+  // Switch the preview window from localhost to our application UI
+  const switchPreviewToApp = async () => {
+    try {
+      const appUrl = window.location.href; // load current app in the preview window
+      const electronAny = (window as any).electron;
+      if (previewWindowId != null) {
+        await electronAny.browserWindow.switchURL(appUrl, previewWindowId);
+      } else {
+        // Fallback: let main pick the first localhost window
+        await electronAny.browserWindow.switchURL(appUrl);
+      }
+    } catch (err) {
+      console.error('Failed to switch preview to app:', err);
+    }
+  };
+
+  const showHostedWebsite = async () => {
+    try {
+      // Switch preview back to localhost URL
+      const status = await window.electron.wordpressServer.getServerStatus();
+      if (status?.success && status.status?.isRunning) {
+        const port = status.status.port || 8000;
+        const url = `http://localhost:${port}`;
+        const electronAny = (window as any).electron;
+        if (previewWindowId != null) {
+          await electronAny.browserWindow.switchURL(url, previewWindowId);
+        } else {
+          await electronAny.browserWindow.switchURL(url);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to switch to hosted website:', err);
+    }
+  };
+
+  const openHostedWebsiteFiles = async () => {
+    try {
+      if (!currentProject?.path) return;
+      const base = currentProject.path as string;
+      const candidates = [
+        `${base}/index.php`,
+        `${base}/wp-config.php`,
+        `${base}/index.html`,
+        `${base}/readme.md`,
+      ];
+      // Deep-link preview window into URLFileViewer via query params
+      const filesEncoded = encodeURIComponent(candidates.join('|'));
+      const appViewerUrl = `${window.location.origin}/viewer?viewer=url&files=${filesEncoded}`;
+      const electronAny = (window as any).electron;
+      if (previewWindowId != null) {
+        await electronAny.browserWindow.switchURL(appViewerUrl, previewWindowId);
+      } else {
+        await electronAny.browserWindow.switchURL(appViewerUrl);
+      }
+    } catch (err) {
+      console.error('Failed to open hosted website files:', err);
+    }
   };
 
 
@@ -791,9 +939,14 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         <div className="header-top">
           <div className="project-selector">
             <div className="project-info">
-              <FontAwesomeIcon icon={faFolder} className="project-icon" />
-              <span className="project-label">Project:</span>
-              <span className="project-name">
+              <FontAwesomeIcon icon={faFolder} className="homepage-editor-project-icon" />
+              <span className="homepage-editor-project-label">Project:</span>
+              <span 
+                className="homepage-editor-project-name"
+                onClick={openProjectInBrowser}
+                title={currentProject ? 'Open in browser' : undefined}
+                style={{ cursor: currentProject ? 'pointer' as const : 'default' as const }}
+              >
                 {currentProject ? `${currentProject.name} (${currentProject.type})` : 'No project selected'}
               </span>
             </div>
@@ -806,7 +959,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                 onClick={onBackToProjectSelection}
                 title="Back to project selection"
               >
-                <FontAwesomeIcon icon={faArrowLeft} className="btn-icon" />
+                <FontAwesomeIcon icon={faArrowLeft} className="homepage-editor-btn-icon" />
                 Back
               </button>
             )}
@@ -815,12 +968,12 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             {googleKeys.length > 1 && (
               <div className="key-selector" ref={keySelectorRef}>
                 <div className="key-info" onClick={toggleKeyDropdown}>
-                  <FontAwesomeIcon icon={faKey} className="key-icon" />
+                  <FontAwesomeIcon icon={faKey} className="homepage-editor-key-icon" />
                   <span className="key-label">AI Key:</span>
                   <span className="key-name">
                     {selectedGoogleKey?.name || 'No key selected'}
                   </span>
-                  <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
+                  <FontAwesomeIcon icon={faChevronDown} className="homepage-editor-dropdown-icon" />
                 </div>
                 {showKeyDropdown && (
                   <div className="key-dropdown">
@@ -830,7 +983,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                         className={`key-option ${selectedGoogleKey?.id === key.id ? 'selected' : ''}`}
                         onClick={() => handleKeySelection(key)}
                       >
-                        <FontAwesomeIcon icon={faKey} className="key-option-icon" />
+                        <FontAwesomeIcon icon={faKey} className="homepage-editor-key-option-icon" />
                         <span className="key-option-name">{key.name}</span>
                         {selectedGoogleKey?.id === key.id && (
                           <span className="key-option-check">✓</span>
@@ -852,12 +1005,12 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
               </button>
             )}
 
-            <button 
+          <button 
               className="new-conversation-btn" 
               onClick={handleNewConversation}
               title="Start a new conversation"
             >
-              <FontAwesomeIcon icon={faHistory} className="btn-icon" />
+              <FontAwesomeIcon icon={faHistory} className="homepage-editor-btn-icon" />
               New Chat
             </button>
 
@@ -866,7 +1019,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
               onClick={() => setShowConversationList(!showConversationList)}
               title="View conversation history"
             >
-              <FontAwesomeIcon icon={faClock} className="btn-icon" />
+              <FontAwesomeIcon icon={faClock} className="homepage-editor-btn-icon" />
               History ({conversations.length})
             </button>
 
@@ -875,16 +1028,43 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
               onClick={() => setShowBackupManager(true)}
               title="Manage backups and revert changes"
             >
-              <FontAwesomeIcon icon={faUndo} className="btn-icon" />
+              <FontAwesomeIcon icon={faUndo} className="homepage-editor-btn-icon" />
               Backups
             </button>
+
+          {/* Switch preview window from localhost to the app UI */}
+          <button
+            className="switch-app-btn"
+            onClick={switchPreviewToApp}
+            title="Show AI Chat in the preview window"
+          >
+            Show App
+          </button>
+
+          {/* Toggle hosted website and open hosted website files (viewer opens in preview window) */}
+          <button
+            className="hosted-website-btn"
+            onClick={showHostedWebsite}
+            title="Show hosted website in the preview window"
+          >
+            Show Website
+          </button>
+
+          <button
+            className="open-website-files-btn"
+            onClick={openHostedWebsiteFiles}
+            disabled={!currentProject}
+            title="Open hosted website files in URL File Viewer"
+          >
+            Website Files
+          </button>
 
             <button 
               className="clear-btn" 
               onClick={handleClearHistory}
               disabled={messages.length === 0 || isConversationActive}
             >
-              <FontAwesomeIcon icon={faTrash} className="btn-icon" />
+              <FontAwesomeIcon icon={faTrash} className="homepage-editor-btn-icon" />
               Clear
             </button>
           </div>
@@ -946,52 +1126,52 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
       {/* Messages */}
       <div className="messages-container">
-        {messages.length === 0 ? (
-          <div className="welcome-message">
-            <p>👋 Welcome to the AI Assistant!</p>
-            <p>💬 <strong>Start a new conversation</strong> by typing your message below.</p>
-            <p>📚 Use the <strong>History</strong> button to view past conversations.</p>
-            {!isConfigured && (
-              <p className="config-hint">⚠️ Configure your Google AI key first to begin chatting.</p>
-            )}
-          </div>
-        ) : (
-          <>
-            {messages.map((message, index) => {
-              const isToolMessage = message.role === 'tool' || message.toolCallId;
-              
-              return (
-                <div key={index} className={`message ${message.role} ${isToolMessage ? 'tool-message' : ''} ${message.toolStatus ? `tool-${message.toolStatus}` : ''}`}>
-                  <div className="message-header">
-                    <span className="role">
-                      {message.role === 'user' ? '👤 You' : 
-                       message.role === 'tool' || isToolMessage ? '🔧 Tool' : '🤖 Gemini'}
-                    </span>
-                    <span className="timestamp">
-                      {message.timestamp.toLocaleTimeString()}
-                    </span>
-                    {message.toolStatus && (
-                      <span className={`tool-status-badge ${message.toolStatus}`}>
-                        {message.toolStatus === 'executing' ? '⏳' : message.toolStatus === 'completed' ? '✅' : '❌'}
+          {messages.length === 0 ? (
+            <div className="welcome-message">
+              <p>👋 Welcome to the AI Assistant!</p>
+              <p>💬 <strong>Start a new conversation</strong> by typing your message below.</p>
+              <p>📚 Use the <strong>History</strong> button to view past conversations.</p>
+              {!isConfigured && (
+                <p className="config-hint">⚠️ Configure your Google AI key first to begin chatting.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              {messages.map((message, index) => {
+                const isToolMessage = message.role === 'tool' || message.toolCallId;
+                
+                return (
+                  <div key={index} className={`message ${message.role} ${isToolMessage ? 'tool-message' : ''} ${message.toolStatus ? `tool-${message.toolStatus}` : ''}`}>
+                    <div className="message-header">
+                      <span className="role">
+                        {message.role === 'user' ? '👤 You' : 
+                         message.role === 'tool' || isToolMessage ? '🔧 Tool' : '🤖 Gemini'}
                       </span>
-                    )}
+                      <span className="timestamp">
+                        {message.timestamp.toLocaleTimeString()}
+                      </span>
+                      {message.toolStatus && (
+                        <span className={`tool-status-badge ${message.toolStatus}`}>
+                          {message.toolStatus === 'executing' ? '⏳' : message.toolStatus === 'completed' ? '✅' : '❌'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="message-content">
+                      {message.parts.map((part, partIndex) => (
+                        <div key={partIndex}>
+                          {part.text && <pre className="message-text">{part.text}</pre>}
+                        </div>
+                      ))}
+                      {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
+                        <span className="typing-indicator">▋</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="message-content">
-                    {message.parts.map((part, partIndex) => (
-                      <div key={partIndex}>
-                        {part.text && <pre className="message-text">{part.text}</pre>}
-                      </div>
-                    ))}
-                    {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
-                      <span className="typing-indicator">▋</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
-        <div ref={messagesEndRef} />
+                );
+              })}
+            </>
+          )}
+          <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}

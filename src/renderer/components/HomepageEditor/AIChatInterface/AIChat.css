@@ -3,8 +3,10 @@
 .ai-chat {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 600px;
+  flex: 1; /* occupy available vertical space */
+  min-height: 0;
+  height: auto;
+  max-height: none; /* allow parent to control */
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #fff;
@@ -85,8 +87,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: 300px;
-  max-height: 400px;
+  min-height: 200px;
+  max-height: none;
 }
 
 .empty-state {
@@ -400,29 +402,29 @@
   border-color: #1a73e8;
 }
 
-.key-icon {
+.homepage-editor-key-icon {
   font-size: 14px;
   color: #1a73e8;
 }
 
-.key-label {
+.homepage-editor-key-label {
   font-weight: 500;
   color: #5f6368;
 }
 
-.key-name {
+.homepage-editor-key-name {
   font-weight: 500;
   color: #202124;
   min-width: 100px;
 }
 
-.dropdown-icon {
+.homepage-editor-dropdown-icon {
   font-size: 10px;
   color: #5f6368;
   transition: transform 0.2s ease;
 }
 
-.key-info:hover .dropdown-icon {
+.key-info:hover .homepage-editor-dropdown-icon {
   color: #1a73e8;
   transform: rotate(180deg);
 }
@@ -466,7 +468,7 @@
   color: #1a73e8;
 }
 
-.key-option-icon {
+.homepage-editor-key-option-icon {
   font-size: 12px;
   color: #1a73e8;
   flex-shrink: 0;
@@ -583,8 +585,8 @@
   font-family: inherit;
 }
 
-/* Project Context Styles */
-.project-context {
+/* Homepage Editor Project Context Styles */
+.homepage-editor-project-context {
   background: #e8f0fe;
   border: 1px solid #1a73e8;
   border-radius: 4px;
@@ -597,23 +599,28 @@
   flex-shrink: 0;
 }
 
-.project-indicator {
+.homepage-editor-project-indicator {
   font-size: 16px;
 }
 
-.project-name {
+.homepage-editor-project-name {
   font-weight: 600;
   color: #2c3e50;
 }
 
-.project-type {
+.homepage-editor-project-label {
+  color: #5f6368;
+  font-weight: 500;
+}
+
+.homepage-editor-project-type {
   color: #6c757d;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.project-path {
+.homepage-editor-project-path {
   color: #6c757d;
   font-size: 10px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -717,11 +724,11 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .ai-chat {
-    max-height: 500px;
+    max-height: none;
   }
   
   .messages-container {
-    max-height: 300px;
+    max-height: none;
   }
   
   .message {
@@ -733,13 +740,13 @@
     padding: 24px;
   }
   
-  .project-context {
+  .homepage-editor-project-context {
     margin: 8px;
     flex-wrap: wrap;
   }
   
-  .project-path {
-    max-width: 150px;
+  .homepage-editor-project-path {
+    max-width: 120px;
   }
   
   .header-buttons {
@@ -754,6 +761,79 @@
   .autonomous-status {
     padding: 6px 12px;
     font-size: 11px;
+  }
+  
+  .connection-status {
+    font-size: 11px;
+  }
+  
+  .config-btn, .clear-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  .homepage-editor-project-label {
+    font-size: 11px;
+  }
+}
+
+/* Extra-compact mode for very narrow tiles */
+@media (max-width: 600px) {
+  .ai-chat-header .header-top {
+    padding: 6px 8px;
+  }
+  
+  .header-buttons {
+    gap: 4px;
+  }
+  
+  .connection-status {
+    font-size: 10px;
+    margin-right: 8px;
+  }
+  
+  .config-btn, .clear-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+  
+  .homepage-editor-project-context {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  
+  .homepage-editor-project-name {
+    font-size: 11px;
+  }
+  
+  .homepage-editor-project-label {
+    font-size: 11px;
+  }
+  
+  .homepage-editor-project-type {
+    font-size: 10px;
+  }
+  
+  .homepage-editor-project-path {
+    font-size: 9px;
+    max-width: 100px;
+  }
+  
+  .input-container {
+    padding: 8px;
+  }
+  
+  .message-content {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  
+  .message-header {
+    font-size: 10px;
+  }
+  
+  .timestamp {
+    font-size: 9px;
   }
 }
 
@@ -1043,6 +1123,89 @@
   color: #1a73e8;
 }
 
+.backup-btn {
+  background: #fff7e6;
+  border: 1px solid #ffa726;
+  color: #ef6c00;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.backup-btn:hover {
+  background: #ffedd1;
+  border-color: #fb8c00;
+  color: #e65100;
+}
+
+.switch-app-btn {
+  background: #e8f0fe;
+  border: 1px solid #1a73e8;
+  color: #1a73e8;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.switch-app-btn:hover {
+  background: #dbe7ff;
+  border-color: #1557b0;
+  color: #1557b0;
+}
+
+.hosted-website-btn {
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  color: #5f6368;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.hosted-website-btn:hover {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.open-website-files-btn {
+  background: #eef7ee;
+  border: 1px solid #66bb6a;
+  color: #2e7d32;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.open-website-files-btn:hover {
+  background: #e1f3e1;
+  border-color: #43a047;
+  color: #1b5e20;
+}
+
 .new-conversation-btn {
   background: #1a73e8;
   border: 1px solid #1a73e8;
@@ -1065,7 +1228,13 @@
   border-color: #1557b0;
 }
 
-.btn-icon {
+.homepage-editor-btn-icon {
   margin-right: 4px;
   font-size: 12px;
+}
+
+.homepage-editor-project-icon {
+  font-size: 14px;
+  color: #1a73e8;
+  margin-right: 6px;
 }

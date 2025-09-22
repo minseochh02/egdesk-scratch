@@ -1,7 +1,9 @@
 .homepage-editor {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1; /* occupy space below the navigation header */
+  min-height: 0; /* allow children to size/scroll correctly */
+  height: auto; /* avoid overlapping the header (no fixed 100vh) */
   background-color: #f5f5f5;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -271,6 +273,7 @@
   flex: 1;
   display: flex;
   overflow: hidden;
+  min-height: 0; /* allow children to scroll */
 }
 
 .editor-panel,
@@ -306,6 +309,7 @@
   font-size: 14px;
   line-height: 1.5;
   background-color: #fff;
+  overflow-y: auto;
 }
 
 .preview-content {
@@ -503,6 +507,25 @@
   }
 }
 
+/* Narrow mode: compact headings and scrollable panels when window is narrow */
+@media (max-width: 600px) {
+  .editor-panel h2,
+  .preview-panel h2 {
+    font-size: 0.95rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .editor-panel,
+  .preview-panel {
+    margin: 0.25rem;
+  }
+
+  .content-editor,
+  .preview-content {
+    padding: 0.5rem;
+  }
+}
+
 /* Write File Tool Styles */
 .file-writer-test {
   margin-top: 2rem;
@@ -614,6 +637,11 @@
   padding: 1rem 2rem;
   background-color: #f8f9fa;
   border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;              /* take remaining height */
+  min-height: 0; /* allow child to grow fully */
+  overflow: hidden;
 }
 
 .ai-chat-section h3 {

@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import path from 'path';
 import { spawn } from 'child_process';
 
 export interface BrowserWindowOptions {
@@ -32,6 +33,24 @@ export class BrowserController {
   }
 
   registerHandlers() {
+    // Screen work area for tiling windows
+    ipcMain.handle('screen-get-work-area', async () => {
+      try {
+        const targetWindow = this.mainWindow ?? BrowserWindow.getFocusedWindow();
+        const bounds = targetWindow?.getBounds();
+        const display = bounds
+          ? screen.getDisplayMatching(bounds)
+          : screen.getPrimaryDisplay();
+        const { x, y, width, height } = display.workArea;
+        return { success: true, workArea: { x, y, width, height } };
+      } catch (error) {
+        console.error('Failed to get screen work area:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
     // Browser Window management IPC handlers
     ipcMain.handle('browser-window-create', async (event, options: BrowserWindowOptions) => {
       try {
@@ -57,6 +76,10 @@ export class BrowserController {
             nodeIntegration: false,
             contextIsolation: true,
             webSecurity: true,
+            // Ensure renderer has access to the same preload bridge (window.electron)
+            preload: app.isPackaged
+              ? path.join(app.getAppPath(), 'dist', 'main', 'preload.js')
+              : path.join(app.getAppPath(), '.erb', 'dll', 'preload.js'),
             ...webPreferences,
           },
         });
@@ -160,6 +183,45 @@ export class BrowserController {
         };
       }
     });
+
+    // Switch a browser window's URL (defaults to first localhost window if windowId omitted)
+    ipcMain.handle(
+      'browser-window-switch-url',
+      async (event, url: string, windowId?: number) => {
+        try {
+          let targetWindow: BrowserWindow | undefined;
+
+          if (typeof windowId === 'number') {
+            targetWindow = this.browserWindows.get(windowId);
+          } else {
+            // Fallback: pick the first window currently showing localhost
+            for (const [, bw] of this.browserWindows.entries()) {
+              const currentUrl = bw.webContents.getURL();
+              if (
+                currentUrl &&
+                (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))
+              ) {
+                targetWindow = bw;
+                break;
+              }
+            }
+          }
+
+          if (!targetWindow) {
+            return { success: false, error: 'Target window not found' };
+          }
+
+          await targetWindow.loadURL(url);
+          return { success: true };
+        } catch (error) {
+          console.error('Failed to switch browser window URL:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      },
+    );
 
     // External browser control IPC handlers
     ipcMain.handle(

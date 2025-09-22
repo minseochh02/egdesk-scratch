@@ -1,9 +1,12 @@
+import React, { useState, useEffect } from 'react';
 import {
   MemoryRouter as Router,
   Routes,
   Route,
   Link,
   useLocation,
+  useNavigate,
+  Navigate,
 } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -24,50 +27,68 @@ import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import LocalServer from './components/LocalServer';
+import URLFileViewerPage from './components/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
 function NavigationBar() {
   const location = useLocation();
+  const [isNarrow, setIsNarrow] = useState(false);
+
+  useEffect(() => {
+    const checkWidth = () => {
+      setIsNarrow(window.innerWidth < 600);
+    };
+    
+    checkWidth();
+    window.addEventListener('resize', checkWidth);
+    return () => window.removeEventListener('resize', checkWidth);
+  }, []);
 
   return (
-    <div className="navigation-bar">
+    <div className={`navigation-bar ${isNarrow ? 'narrow' : ''}`}>
       <nav className="nav-links">
         <Link
           to="/"
           className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faHome} /> 홈
+          <FontAwesomeIcon icon={faHome} />
+          {!isNarrow && <span>홈</span>}
         </Link>
         <Link
           to="/blog-manager"
           className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faGlobe} /> 블로그 관리
+          <FontAwesomeIcon icon={faGlobe} />
+          {!isNarrow && <span>블로그 관리</span>}
         </Link>
         <Link
           to="/homepage-editor"
           className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faCog} /> 홈페이지 에디터
+          <FontAwesomeIcon icon={faCog} />
+          {!isNarrow && <span>홈페이지 에디터</span>}
         </Link>
         <Link
           to="/ssl-analyzer"
           className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faShieldAlt} /> 사이트 보안 분석
+          <FontAwesomeIcon icon={faShieldAlt} />
+          {!isNarrow && <span>사이트 보안 분석</span>}
         </Link>
         <Link
           to="/ai-keys"
           className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faRobot} /> API 키 관리
+          <FontAwesomeIcon icon={faRobot} />
+          {!isNarrow && <span>API 키 관리</span>}
         </Link>
         <Link
           to="/local-server"
           className={`nav-link ${location.pathname === '/local-server' ? 'active' : ''}`}
         >
-          <FontAwesomeIcon icon={faServer} /> 로컬 서버
+          <FontAwesomeIcon icon={faServer} />
+          {!isNarrow && <span>로컬 서버</span>}
         </Link>
       </nav>
     </div>
@@ -75,13 +96,17 @@ function NavigationBar() {
 }
 
 export default function App() {
+  // Sync initial route from window.location for deep-link support in preview windows
+  const initialPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.search) : '/';
   return (
-    <Router>
+    <Router initialEntries={[initialPath]} initialIndex={0}>
       <div className="app-container">
         <NavigationBar />
         <main className="main-content">
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/index.html" element={<LandingPage />} />
+            <Route path="/viewer" element={<URLFileViewerPage />} />
             <Route 
               path="/blog-manager" 
               element={
@@ -110,6 +135,8 @@ export default function App() {
                 </ErrorBoundary>
               } 
             />
+            {/* Fallback to home for unknown routes */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>

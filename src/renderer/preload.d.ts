@@ -15,6 +15,13 @@ export interface IElectronAPI {
       func: (...args: unknown[]) => void,
     ): void;
   };
+  mainWindow: {
+    getBounds(): Promise<{ success: boolean; bounds?: any; error?: string }>;
+    setBounds(bounds: any): Promise<{ success: boolean; error?: string }>;
+    setSize(width: number, height: number): Promise<{ success: boolean; error?: string }>;
+    setPosition(x: number, y: number): Promise<{ success: boolean; error?: string }>;
+    getWorkArea(): Promise<{ success: boolean; workArea?: { x: number; y: number; width: number; height: number }; error?: string }>;
+  };
   fileSystem: {
     readDirectory(
       path: string,
@@ -204,6 +211,10 @@ export interface IElectronAPI {
     loadURL(
       windowId: number,
       url: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    switchURL(
+      url: string,
+      windowId?: number,
     ): Promise<{ success: boolean; error?: string }>;
     reload(windowId: number): Promise<{ success: boolean; error?: string }>;
     refreshAllLocalhost(): Promise<{

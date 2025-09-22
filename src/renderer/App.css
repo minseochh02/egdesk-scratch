@@ -29,11 +29,22 @@ body {
   height: 48px;
   display: flex;
   align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.navigation-bar.narrow {
+  padding: 0 12px;
 }
 
 .nav-links {
   display: flex;
   gap: 32px;
+  min-width: max-content;
+}
+
+.navigation-bar.narrow .nav-links {
+  gap: 16px;
 }
 
 .nav-link {
@@ -47,6 +58,13 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.navigation-bar.narrow .nav-link {
+  padding: 8px 12px;
+  gap: 4px;
 }
 
 .nav-link:hover {
@@ -430,6 +448,8 @@ html {
   overflow-y: auto;
   min-height: 0;
   position: relative;
+  display: flex;           /* allow children to flex */
+  flex-direction: column;  /* vertical stacking */
 }
 
 /* Landing page specific styles */
