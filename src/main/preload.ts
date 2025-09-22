@@ -679,6 +679,8 @@ const electronHandler = {
       ipcRenderer.invoke('browser-window-close', windowId),
     loadURL: (windowId: number, url: string) =>
       ipcRenderer.invoke('browser-window-load-url', windowId, url),
+    switchURL: (url: string, windowId?: number) =>
+      ipcRenderer.invoke('browser-window-switch-url', url, windowId),
     reload: (windowId: number) =>
       ipcRenderer.invoke('browser-window-reload', windowId),
     refreshAllLocalhost: () =>
@@ -720,6 +722,7 @@ const electronHandler = {
       ipcRenderer.invoke('main-window-set-size', width, height),
     setPosition: (x: number, y: number) =>
       ipcRenderer.invoke('main-window-set-position', x, y),
+    getWorkArea: () => ipcRenderer.invoke('screen-get-work-area'),
   },
   scheduler: {
     createTask: (

@@ -17,6 +17,7 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     url?: string;
     error?: string;
   }>({ isRunning: false });
+  const [lastServerFolderPath, setLastServerFolderPath] = useState<string | null>(null);
   const [isStartingServer, setIsStartingServer] = useState(false);
   const [autoStartEnabled, setAutoStartEnabled] = useState(() => {
     // Load from localStorage, default to true
@@ -75,7 +76,19 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     // Check if server is already running
     const status = await checkServerStatus();
     if (status.isRunning) {
-      console.log('Server already running');
+      const runningFolder = (status as any).folderPath || lastServerFolderPath;
+      if (runningFolder && runningFolder === project.path) {
+        console.log('Server already running for this project');
+        openPreviewWindow(status.port || 8000);
+        return;
+      }
+      console.log('Project changed, restarting local server for new project');
+      try {
+        await stopLocalServer();
+      } catch (e) {
+        console.warn('Failed to stop existing server before restart:', e);
+      }
+      await startLocalServer(project.path);
       return;
     }
 
@@ -101,6 +114,9 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
           url: result.status.url,
           error: undefined,
         });
+        if ((result.status as any).folderPath) {
+          setLastServerFolderPath((result.status as any).folderPath as string);
+        }
         return result.status;
       }
     } catch (error) {
@@ -124,7 +140,10 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
           url: `http://localhost:${result.port}`,
           error: undefined,
         });
+        setLastServerFolderPath(folderPath);
         console.log(`Local server started successfully on port ${result.port}`);
+        // Open preview window after successful start
+        openPreviewWindow(result.port || 8000);
       } else {
         setServerStatus(prev => ({ 
           ...prev, 
@@ -143,12 +162,29 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     }
   };
 
+  // Open a new Electron browser window pointing to the local server
+  const openPreviewWindow = (port: number) => {
+    try {
+      const url = `http://localhost:${port}`;
+      window.electron.browserWindow.createWindow({
+        url,
+        title: 'Local Preview',
+        width: 1200,
+        height: 800,
+        show: true,
+      });
+    } catch (err) {
+      console.error('Failed to open preview window:', err);
+    }
+  };
+
   // Stop local server
   const stopLocalServer = async () => {
     try {
       const result = await window.electron.wordpressServer.stopServer();
       if (result.success) {
         setServerStatus({ isRunning: false });
+        setLastServerFolderPath(null);
         console.log('Local server stopped');
       }
     } catch (error) {
@@ -185,61 +221,7 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
       ) : (
         /* AI Chat Section - Show after project is selected */
         <div className="ai-chat-section full-height">
-          {/* Server Status Indicator */}
-          {currentProject && (
-            <div className="server-status-indicator">
-              <div className="server-info">
-                <span className={`status-dot ${serverStatus.isRunning ? 'running' : 'stopped'}`}></span>
-                <span className="status-text">
-                  {isStartingServer ? 'Starting server...' : 
-                   serverStatus.isRunning ? `Server running on port ${serverStatus.port}` : 
-                   'Server stopped'}
-                </span>
-                {serverStatus.url && serverStatus.isRunning && (
-                  <a 
-                    href={serverStatus.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="server-link"
-                  >
-                    Open in browser
-                  </a>
-                )}
-              </div>
-              <div className="server-controls">
-                <label className="auto-start-toggle">
-                  <input
-                    type="checkbox"
-                    checked={autoStartEnabled}
-                    onChange={toggleAutoStart}
-                  />
-                  <span className="toggle-label">Auto-start server</span>
-                </label>
-                {!serverStatus.isRunning && !isStartingServer && (
-                  <button
-                    onClick={() => startLocalServer(currentProject.path)}
-                    className="start-server-btn"
-                    disabled={isStartingServer}
-                  >
-                    Start Server
-                  </button>
-                )}
-                {serverStatus.isRunning && (
-                  <button
-                    onClick={stopLocalServer}
-                    className="stop-server-btn"
-                  >
-                    Stop Server
-                  </button>
-                )}
-              </div>
-              {serverStatus.error && (
-                <div className="server-error">
-                  Error: {serverStatus.error}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Server controller UI removed for silent start */}
           <AIChat onBackToProjectSelection={handleBackToProjectSelection} />
         </div>
       )}
