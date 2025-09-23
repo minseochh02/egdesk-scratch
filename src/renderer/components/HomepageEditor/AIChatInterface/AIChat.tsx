@@ -152,6 +152,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // Backup manager state
   const [showBackupManager, setShowBackupManager] = useState(false);
 
+  // Recently inserted photo previews (keep preview URL and saved file path)
+  const [uploadPreviews, setUploadPreviews] = useState<Array<{ previewUrl: string; filePath?: string }>>([]);
+
+  const removeUploadPreview = async (index: number) => {
+    const removed = uploadPreviews[index];
+    try {
+      if (removed?.filePath) {
+        await (window as any).electron.photos.removeFromProject(removed.filePath);
+      }
+    } catch {}
+    try { if (removed?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(removed.previewUrl); } catch {}
+    setUploadPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // Tool confirmation state
   const [pendingToolConfirmation, setPendingToolConfirmation] = useState<{
     requestId: string;
@@ -1194,7 +1208,32 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   );
 
   return (
-    <div className="ai-chat">
+    <div className="ai-chat" onDragOver={(e) => { e.preventDefault(); }} onDrop={async (e) => {
+      try {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length === 0) return;
+        const file = files[0];
+        if (!currentProject?.path) {
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: 'No project selected. Cannot insert photo.' }], timestamp: new Date() }]);
+          return;
+        }
+        // Prefer buffer-based insert to avoid sandboxed path issues
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await (window as any).electron.photos.insertIntoProjectFromBuffer(arrayBuffer, currentProject.path, file.name);
+        // Create an object URL from the dropped file bytes for immediate preview
+        const blob = new Blob([arrayBuffer], { type: (file as any).type || 'application/octet-stream' });
+        const objectUrl = URL.createObjectURL(blob);
+        if (result?.success) {
+          setUploadPreviews((prev) => ([{ previewUrl: objectUrl, filePath: result.destinationPath }, ...prev].slice(0, 6)));
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `📷 Photo inserted: ${result.destinationPath}`, imageUrl: objectUrl } as any], timestamp: new Date() }]);
+        } else {
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Failed to insert photo: ${result?.error || 'Unknown error'}` }], timestamp: new Date() }]);
+        }
+      } catch (err) {
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Error inserting photo: ${err instanceof Error ? err.message : String(err)}` }], timestamp: new Date() }]);
+      }
+    }}>
       <div className="ai-chat-header">
         <div className="header-top">
           <div className="project-selector">
@@ -1391,11 +1430,17 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                       )}
                     </div>
                     <div className="message-content">
-                      {message.parts.map((part, partIndex) => (
-                        <div key={partIndex}>
-                          {part.text && <pre className="message-text">{part.text}</pre>}
-                        </div>
-                      ))}
+                      {message.parts.map((part, partIndex) => {
+                        const anyPart: any = part as any;
+                        return (
+                          <div key={partIndex}>
+                            {part.text && <pre className="message-text">{part.text}</pre>}
+                            {anyPart.imageUrl && (
+                              <img src={anyPart.imageUrl} alt="uploaded" className="chat-image-preview" />
+                            )}
+                          </div>
+                        );
+                      })}
                       {isTyping && message.role === 'model' && message === messages[messages.length - 1] && (
                         <span className="typing-indicator">▋</span>
                       )}
@@ -1410,6 +1455,16 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
       {/* Input */}
       <div className="input-container">
+        {uploadPreviews.length > 0 && (
+          <div className="upload-previews">
+            {uploadPreviews.map((entry, i) => (
+              <div key={i} className="upload-thumb-wrap">
+                <img src={entry.previewUrl} className="upload-thumb" alt="preview" />
+                <button type="button" className="upload-thumb-remove" onClick={() => removeUploadPreview(i)} aria-label="Remove image">×</button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}

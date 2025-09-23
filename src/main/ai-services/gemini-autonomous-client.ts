@@ -301,9 +301,9 @@ export class AutonomousGeminiClient implements AIClientService {
 
               turn.toolCalls.push(toolCallRequest);
 
-              // Add tool call to conversation history with 'tool' role
+              // Add tool call to conversation history as a model turn with functionCall
               this.addToHistory({
-                role: 'tool', // Tool calls should be marked as 'tool' role
+                role: 'model',
                 parts: [part],
                 timestamp: new Date(),
                 toolCallId: toolCallRequest.id,

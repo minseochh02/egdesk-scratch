@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ipcMain } from 'electron';
+import { insertPhoto, removePhoto } from './ai-services/tools/insert-photo';
 
 // Dynamic import for electron-store to avoid CommonJS/ESM issues
 let Store: any;
@@ -614,5 +615,53 @@ ipcMain.handle('ssl-analysis-clear-all', async () => {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
+  }
+});
+
+// Simple photo insertion handler: move a file into project root (or specified path)
+ipcMain.handle('photo-insert-into-project', async (event, sourceFilePath: string, projectRootPath: string, destinationFileName?: string) => {
+  try {
+    if (!sourceFilePath || !projectRootPath) {
+      return { success: false, error: 'sourceFilePath and projectRootPath are required' };
+    }
+    const path = require('path');
+    const destName = destinationFileName || path.basename(sourceFilePath);
+    const destinationPath = path.join(projectRootPath, destName);
+    const result = await insertPhoto(sourceFilePath, destinationPath);
+    return { success: true, destinationPath: result.destinationPath };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Buffer-based photo insertion: write provided bytes into project root
+ipcMain.handle('photo-insert-into-project-buffer', async (event, fileBytes: ArrayBuffer, projectRootPath: string, destinationFileName: string) => {
+  try {
+    if (!fileBytes || !projectRootPath || !destinationFileName) {
+      return { success: false, error: 'fileBytes, projectRootPath and destinationFileName are required' };
+    }
+    const path = require('path');
+    const fs = require('fs/promises');
+    const destPath = path.join(projectRootPath, destinationFileName);
+    const dir = path.dirname(destPath);
+    await fs.mkdir(dir, { recursive: true });
+    const nodeBuffer = Buffer.from(fileBytes as any);
+    await fs.writeFile(destPath, nodeBuffer);
+    return { success: true, destinationPath: destPath };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Remove a photo by absolute file path
+ipcMain.handle('photo-remove-from-project', async (event, absoluteFilePath: string) => {
+  try {
+    if (!absoluteFilePath) {
+      return { success: false, error: 'absoluteFilePath is required' };
+    }
+    await removePhoto(absoluteFilePath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
