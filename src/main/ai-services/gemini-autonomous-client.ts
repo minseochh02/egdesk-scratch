@@ -796,6 +796,49 @@ export class AutonomousGeminiClient implements AIClientService {
       return toolRegistry.getToolDefinitions();
     });
 
+    // Simple image send handler: send an image file to Gemini with optional prompt
+    ipcMain.handle('ai-send-image', async (event, filePath: string, prompt?: string) => {
+      try {
+        if (!this.isConfigured()) {
+          return { success: false, error: 'AI client not configured' };
+        }
+        const fs = require('fs');
+        const path = require('path');
+
+        if (!filePath || !fs.existsSync(filePath)) {
+          return { success: false, error: 'Invalid file path' };
+        }
+
+        const buffer = fs.readFileSync(filePath);
+        const base64 = buffer.toString('base64');
+        const ext = (path.extname(filePath) || '').toLowerCase();
+        const mimeMap: Record<string, string> = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.bmp': 'image/bmp',
+          '.svg': 'image/svg+xml'
+        };
+        const mimeType = mimeMap[ext] || 'application/octet-stream';
+
+        const parts: any[] = [];
+        if (prompt && prompt.trim()) {
+          parts.push({ text: prompt.trim() });
+        }
+        parts.push({ inlineData: { data: base64, mimeType } });
+
+        const result = await this.model!.generateContent({
+          contents: [ { role: 'user', parts } ]
+        });
+        const text = result?.response?.text ? await result.response.text() : '';
+        return { success: true, text };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
     console.log('✅ Autonomous Gemini AI IPC handlers registered');
   }
 

@@ -769,6 +769,7 @@ const electronHandler = {
     getHistory: () => ipcRenderer.invoke('ai-get-history'),
     clearHistory: () => ipcRenderer.invoke('ai-clear-history'),
     getAvailableModels: () => ipcRenderer.invoke('ai-get-models'),
+    sendImage: (filePath: string, prompt?: string) => ipcRenderer.invoke('ai-send-image', filePath, prompt),
     // Tool confirmation
     confirmTool: (requestId: string, approved: boolean) => ipcRenderer.invoke('ai-tool-confirm', requestId, approved),
     getToolDefinitions: () => ipcRenderer.invoke('ai-get-tool-definitions'),
