@@ -365,36 +365,80 @@ export class PHPManager {
     const platform = os.platform();
     const args = ['-S', `localhost:${port}`, '-t', documentRoot];
 
+    // Add a router script for WordPress and pretty URLs
+    // Router will forward non-existent paths to index.php while serving real files directly
+    const routerPath = this.createOrGetRouterScript(documentRoot);
+    if (routerPath) {
+      args.push(routerPath);
+      console.log(`Using PHP router script: ${routerPath}`);
+    }
+
     // Windows-specific configuration
     if (platform === 'win32') {
       // Use development configuration for better compatibility
       args.push('-c', path.join(path.dirname(phpPath), 'php.ini-development'));
     }
 
-    // Set up environment variables for better server environment simulation
+    // Use a clean environment; let PHP's built-in server set per-request variables
     const env = {
       ...process.env,
-      SERVER_NAME: 'localhost',
-      SERVER_PORT: port.toString(),
-      SERVER_SOFTWARE: 'PHP Development Server',
       DOCUMENT_ROOT: documentRoot,
-      REQUEST_URI: '/',
-      HTTP_HOST: `localhost:${port}`,
-      REQUEST_METHOD: 'GET',
-      SERVER_PROTOCOL: 'HTTP/1.1',
     };
-
-    console.log(`Environment variables set for ${platform}:`, {
-      SERVER_NAME: env.SERVER_NAME,
-      SERVER_PORT: env.SERVER_PORT,
-      DOCUMENT_ROOT: env.DOCUMENT_ROOT,
-      REQUEST_URI: env.REQUEST_URI,
-    });
 
     return spawn(phpPath, args, {
       env,
       cwd: documentRoot,
     });
+  }
+
+  /**
+   * Create or reuse a PHP router script for the built-in server.
+   * Returns absolute path to router script if created/available, otherwise null.
+   */
+  private createOrGetRouterScript(documentRoot: string): string | null {
+    try {
+      // Only create a router if an index.php exists (typical WordPress or PHP front controller)
+      const indexPhpPath = path.join(documentRoot, 'index.php');
+      if (!fs.existsSync(indexPhpPath)) {
+        return null;
+      }
+
+      const routerFileName = '.egdesk-router.php';
+      const routerPath = path.join(documentRoot, routerFileName);
+
+      const routerContents = `<?php\n` +
+        `$uri = urldecode(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH));\n` +
+        `$root = getcwd();\n` +
+        `if ($uri !== '/' && file_exists($root . $uri)) {\n` +
+        `  return false; // Serve the requested resource as-is\n` +
+        `}\n` +
+        `if (file_exists($root . '/index.php')) {\n` +
+        `  require $root . '/index.php';\n` +
+        `  return true;\n` +
+        `}\n` +
+        `return false;\n`;
+
+      // Create or update if missing/changed
+      let shouldWrite = true;
+      if (fs.existsSync(routerPath)) {
+        try {
+          const current = fs.readFileSync(routerPath, 'utf8');
+          if (current === routerContents) {
+            shouldWrite = false;
+          }
+        } catch {}
+      }
+      if (shouldWrite) {
+        fs.writeFileSync(routerPath, routerContents, { encoding: 'utf8' });
+        try {
+          fs.chmodSync(routerPath, 0o644);
+        } catch {}
+      }
+      return routerPath;
+    } catch (err) {
+      console.warn('Failed to prepare PHP router script:', err);
+      return null;
+    }
   }
 
   /**

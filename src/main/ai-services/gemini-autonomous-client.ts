@@ -233,9 +233,10 @@ export class AutonomousGeminiClient implements AIClientService {
       this.conversationState.currentTurn = turnNumber;
 
       try {
-        // Project context is now handled via system instructions, so we can use the message directly
-        console.log('🔍 Using system instruction for project context');
-        const contextualMessage = currentMessage;
+        // Prefix the user message with a concise route hint if available
+        console.log('🔍 Using route hint when available to provide current path/url context');
+        const routeHint = this.buildRouteHint();
+        const contextualMessage = routeHint ? `${routeHint}\n\n${currentMessage}` : currentMessage;
 
         // Send message to Gemini with tools
         const result = await this.model!.generateContent({
@@ -443,6 +444,57 @@ export class AutonomousGeminiClient implements AIClientService {
       reason: turnNumber >= (this.conversationState?.maxTurns || 20) ? 'max_turns' : 'tool_calls_complete',
       timestamp: new Date()
     };
+  }
+
+  /**
+   * Build a one-line route hint for the model from conversation context
+   */
+  private buildRouteHint(): string | null {
+    try {
+      const ctx: any = (this.conversationState as any)?.context || {};
+      const currentPath = ctx.currentPath as string | undefined;
+      const currentUrl = ctx.currentUrl as string | undefined;
+      const projectPath = ctx.projectPath as string | undefined;
+      if (!currentPath && !currentUrl) return null;
+      const parts: string[] = [];
+      if (currentPath) parts.push(`route: ${currentPath}`);
+      if (currentUrl) parts.push(`url: ${currentUrl}`);
+      const suggestedDir = this.deriveSuggestedDir(projectPath, currentPath);
+      // Also nudge the model to list directory and read likely files first, with a concrete dirPath
+      const dirNudge = suggestedDir ? `Use list_directory with dirPath: ${suggestedDir}. Then read_file likely candidates (e.g., index.php, inc/header.php).` : `First list that route's directory, then open likely files (e.g., index.php or matching templates).`;
+      return `Currently viewing (${parts.join(', ')}). ${dirNudge}`;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Heuristically derive a filesystem directory for the current route
+   */
+  private deriveSuggestedDir(projectPath?: string, currentPath?: string): string | null {
+    try {
+      if (!projectPath) return null;
+      const root = projectPath.replace(/\\+/g, '/');
+      const pathPart = (currentPath || '/').replace(/\?.*$/, '').replace(/\/+/g, '/');
+      // Common PHP site structure: use www as web root when present
+      const wwwRoot = `${root}/www`;
+      const hasWww = require('fs').existsSync(wwwRoot);
+      const base = hasWww ? wwwRoot : root;
+      // Handle locale prefix like /en_v1
+      const segs = pathPart.split('/').filter(Boolean);
+      let rel = '';
+      if (segs.length === 0) {
+        rel = '';
+      } else if (segs[0].match(/^en(_v\d+)?$/) || segs[0].startsWith('en_') || segs[0] === 'en_v1') {
+        rel = segs.slice(0, 2).join('/'); // e.g., en_v1 or en_v1/index.php
+      } else {
+        rel = segs.join('/');
+      }
+      const candidate = `${base}/${rel}`.replace(/\/+$|\/$/g, '');
+      return candidate || base;
+    } catch {
+      return null;
+    }
   }
 
   /**
