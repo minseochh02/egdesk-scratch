@@ -18,7 +18,8 @@ import {
   ShellCommandTool,
   AnalyzeProjectTool,
   InitProjectTool,
-  PartialEditTool
+  PartialEditTool,
+  MoveFileTool
 } from './tools';
 
 
@@ -295,6 +296,7 @@ export class ToolRegistry {
     this.registerTool(new ReadFileTool());
     this.registerTool(new WriteFileTool());
     this.registerTool(new ListDirectoryTool());
+    this.registerTool(new MoveFileTool());
     this.registerTool(new PartialEditTool());
     
     // Shell Tools
