@@ -220,6 +220,43 @@
   border-radius: 0 0 8px 8px;
 }
 
+.upload-previews {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.upload-thumb-wrap {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+
+.upload-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.upload-thumb-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.2);
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
 .message-input {
   flex: 1;
   border: 1px solid #dadce0;
@@ -583,6 +620,14 @@
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: inherit;
+}
+
+.chat-image-preview {
+  display: block;
+  margin-top: 6px;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 /* Homepage Editor Project Context Styles */

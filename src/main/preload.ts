@@ -817,6 +817,14 @@ const electronHandler = {
     revertToConversation: (targetConversationId: string) => ipcRenderer.invoke('backup-revert-to-conversation', targetConversationId),
     cleanupOldBackups: (keepCount?: number) => ipcRenderer.invoke('backup-cleanup-old', keepCount),
   } as BackupAPI,
+  photos: {
+    insertIntoProject: (sourceFilePath: string, projectRootPath: string, destinationFileName?: string) =>
+      ipcRenderer.invoke('photo-insert-into-project', sourceFilePath, projectRootPath, destinationFileName),
+    insertIntoProjectFromBuffer: (fileBytes: ArrayBuffer, projectRootPath: string, destinationFileName: string) =>
+      ipcRenderer.invoke('photo-insert-into-project-buffer', fileBytes, projectRootPath, destinationFileName),
+    removeFromProject: (absoluteFilePath: string) =>
+      ipcRenderer.invoke('photo-remove-from-project', absoluteFilePath),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
