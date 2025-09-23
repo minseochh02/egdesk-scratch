@@ -28,6 +28,10 @@ export function initializeStore(): Promise<void> {
           },
           scheduledTasks: [],
           taskExecutions: [],
+          // smartProjectContext: Reserved for upcoming automatic project analysis cache
+          // This will store summarized/derived project insights keyed by project id/path
+          // Example shape (planned): { [projectId]: { lastAnalyzedAt, summary, features, risks, todos } }
+          smartProjectContext: {},
         },
       });
       resolve();

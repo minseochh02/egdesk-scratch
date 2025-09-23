@@ -116,6 +116,7 @@ const getToolNameFromMessage = (message: string): string => {
 export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // Track the preview browser window we open for localhost so we can switch its URL later
   const [previewWindowId, setPreviewWindowId] = useState<number | null>(null);
+  const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -267,6 +268,38 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     };
   }, []);
 
+  // On mount, try to capture existing localhost window URL (if any)
+  useEffect(() => {
+    (async () => {
+      try {
+        const electronAny = (window as any).electron;
+        const list = await electronAny.browserWindow.getAllLocalhostWindows();
+        if (list?.success && Array.isArray(list.windows) && list.windows.length > 0) {
+          const first = list.windows[0];
+          if (previewWindowId == null) setPreviewWindowId(first.windowId);
+          if (first.url) setCurrentPreviewUrl(first.url);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Listen for URL changes on the preview window to keep current URL/path
+  useEffect(() => {
+    try {
+      const electronAny = (window as any).electron;
+      if (previewWindowId != null && electronAny?.browserWindow?.onUrlChanged) {
+        const off = electronAny.browserWindow.onUrlChanged(previewWindowId, (url: string) => {
+          setCurrentPreviewUrl(url);
+        });
+        return () => {
+          try { off && off(); } catch {}
+        };
+      }
+    } catch {}
+  }, [previewWindowId]);
+
+  
+
   // Auto-start server and open preview window when project changes
   useEffect(() => {
     if (currentProject?.path) {
@@ -389,7 +422,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     try {
       const success = await AIService.configure({
         apiKey: key.fields.apiKey,
-        model: 'gemini-1.5-flash-latest'
+        model: 'gemini-2.5-flash'
       });
 
       if (success) {
@@ -509,6 +542,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const tileChatAndPreview = async (url: string) => {
     try {
       const electronAny = (window as any).electron;
+      
 
       // If we already have a preview window, just switch its URL instead of creating a new one
       if (previewWindowId != null) {
@@ -575,6 +609,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       });
       if (created?.success && created.windowId) {
         setPreviewWindowId(created.windowId);
+        setCurrentPreviewUrl(url);
         electronAny.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
       }
     } catch (error) {
@@ -583,6 +618,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       const created = await (window as any).electron.browserWindow.createWindow({ url, title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview', width: 1200, height: 800, show: true });
       if (created?.success && created.windowId) {
         setPreviewWindowId(created.windowId);
+        setCurrentPreviewUrl(url);
         (window as any).electron.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
       }
     }
@@ -606,6 +642,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       const filesEncoded = encodeURIComponent(filesParam.join('|'));
       const appViewerUrl = `${window.location.origin}/viewer?viewer=url&files=${filesEncoded}`;
       const electronAny = (window as any).electron;
+      setCurrentPreviewUrl(appViewerUrl);
       if (previewWindowId != null) {
         await electronAny.browserWindow.switchURL(appViewerUrl, previewWindowId);
       } else {
@@ -615,6 +652,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       console.error('Failed to open hosted website files:', err);
     }
   };
+
+  const getCurrentPathFromPreview = (): string => {
+    try {
+      if (!currentPreviewUrl) return '/';
+      const isLocal = currentPreviewUrl.includes('localhost') || currentPreviewUrl.includes('127.0.0.1');
+      if (!isLocal) return '/';
+      const u = new URL(currentPreviewUrl);
+      return u.pathname || '/';
+    } catch {
+      return '/';
+    }
+  };
+  
+
 
 
 
@@ -643,13 +694,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       let responseText = '';
       let currentMessage = '';
       
+      console.log('🌐 Route debug (chat mode):', {
+        currentUrl: currentPreviewUrl || null,
+        currentPath: getCurrentPathFromPreview(),
+        projectPath: currentProject?.path || null,
+      });
       for await (const event of AIService.streamConversation(messageToSend, {
         autoExecuteTools: true, // Enable tool execution
         maxTurns: 1, // Single turn conversation
         timeoutMs: 30000, // 30 seconds timeout
         context: {
           currentProject: currentProject?.name,
-          projectPath: currentProject?.path
+          projectPath: currentProject?.path,
+          currentUrl: currentPreviewUrl || null,
+          currentPath: getCurrentPathFromPreview()
         }
       })) {
         console.log('🎉 Received stream event in handleSendMessage:', event.type, event);
@@ -809,13 +867,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       // Start autonomous conversation
       console.log('📞 Calling AIService.streamConversation...');
       
+      console.log('🌐 Route debug (autonomous mode):', {
+        currentUrl: currentPreviewUrl || null,
+        currentPath: getCurrentPathFromPreview(),
+        projectPath: currentProject?.path || null,
+      });
       for await (const event of AIService.streamConversation(message, {
         autoExecuteTools: true,
         maxTurns: 10, // Increased from 5 to allow more complex conversations
         timeoutMs: 300000, // 5 minutes - increased from 1 minute
         context: {
           currentProject: currentProject?.name,
-          projectPath: currentProject?.path
+          projectPath: currentProject?.path,
+          currentUrl: currentPreviewUrl || null,
+          currentPath: getCurrentPathFromPreview()
         }
       })) {
         console.log('🎉 Received stream event in AIChat:', event.type, event);
