@@ -175,6 +175,66 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     parameters: any;
   } | null>(null);
 
+  // Quick undo (Ctrl/Cmd+Z) to revert last backup for current conversation
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      const isUndo = (e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
+      if (!isUndo) return;
+      try {
+        e.preventDefault();
+        let targetConversationId = currentConversationId;
+        // Fallback to most recent conversation if no active one
+        if (!targetConversationId) {
+          // Prefer backup list to ensure we pick a conversation that has backups
+          try {
+            const backupsResult = await (window as any).electron.backup.getAvailableBackups();
+            const backups = Array.isArray(backupsResult)
+              ? backupsResult
+              : (backupsResult?.backups || []);
+            if (Array.isArray(backups) && backups.length > 0) {
+              // Assume backups are returned newest-first; otherwise sort by timestamp desc
+              const sorted = backups.slice().sort((a: any, b: any) => {
+                const ta = new Date(a.timestamp || a.createdAt || 0).getTime();
+                const tb = new Date(b.timestamp || b.createdAt || 0).getTime();
+                return tb - ta;
+              });
+              targetConversationId = sorted[0].conversationId || sorted[0].id;
+            }
+          } catch {}
+          // Fallback: use latest conversation if backups call yields nothing
+          if (!targetConversationId) {
+            targetConversationId = conversations?.[0]?.id || null as any;
+            if (!targetConversationId) {
+              try {
+                const latest = await aiChatDataService.getConversations({ limit: 1, activeOnly: false });
+                if (Array.isArray(latest) && latest.length > 0) {
+                  targetConversationId = latest[0].id;
+                }
+              } catch {}
+            }
+          }
+        }
+        if (!targetConversationId) {
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: 'No conversation history found to revert.' }], timestamp: new Date() }]);
+          return;
+        }
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text: `↩️ Reverting last change for conversation ${String(targetConversationId).slice(0,8)}...` }], timestamp: new Date() }]);
+        const result = await (window as any).electron.backup.revertConversation(targetConversationId);
+        if (result?.success) {
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `✅ Reverted last change for conversation ${String(targetConversationId).slice(0,8)}.` }], timestamp: new Date() }]);
+          // Refresh localhost windows to reflect file changes
+          await refreshBrowser();
+        } else {
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Revert failed: ${result?.error || 'Unknown error'}` }], timestamp: new Date() }]);
+        }
+      } catch (err) {
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Revert error: ${err instanceof Error ? err.message : String(err)}` }], timestamp: new Date() }]);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentConversationId]);
+
   // Restart local PHP server and refresh localhost browser windows
   const refreshBrowser = async () => {
     try {
