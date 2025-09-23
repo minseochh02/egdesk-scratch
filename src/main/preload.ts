@@ -435,6 +435,9 @@ export interface AIServiceAPI {
   getHistory: () => Promise<any[]>;
   clearHistory: () => Promise<void>;
   getAvailableModels: () => Promise<string[]>;
+  // Tool confirmation
+  confirmTool: (requestId: string, approved: boolean) => Promise<any>;
+  getToolDefinitions: () => Promise<any[]>;
   simpleAI: {
     configure: (config: any) => Promise<boolean>;
     isConfigured: () => Promise<boolean>;
@@ -766,6 +769,9 @@ const electronHandler = {
     getHistory: () => ipcRenderer.invoke('ai-get-history'),
     clearHistory: () => ipcRenderer.invoke('ai-clear-history'),
     getAvailableModels: () => ipcRenderer.invoke('ai-get-models'),
+    // Tool confirmation
+    confirmTool: (requestId: string, approved: boolean) => ipcRenderer.invoke('ai-tool-confirm', requestId, approved),
+    getToolDefinitions: () => ipcRenderer.invoke('ai-get-tool-definitions'),
     // Simple client for testing
     simpleAI: {
       configure: (config: any) => ipcRenderer.invoke('simple-ai-configure', config),

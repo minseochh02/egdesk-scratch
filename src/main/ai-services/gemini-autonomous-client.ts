@@ -734,6 +734,16 @@ export class AutonomousGeminiClient implements AIClientService {
       return this.getAvailableModels();
     });
 
+    // Tool confirmation handlers
+    ipcMain.handle('ai-tool-confirm', async (event, requestId: string, approved: boolean) => {
+      const result = await toolRegistry.confirmToolExecution(requestId, approved);
+      return result;
+    });
+
+    ipcMain.handle('ai-get-tool-definitions', async () => {
+      return toolRegistry.getToolDefinitions();
+    });
+
     console.log('✅ Autonomous Gemini AI IPC handlers registered');
   }
 

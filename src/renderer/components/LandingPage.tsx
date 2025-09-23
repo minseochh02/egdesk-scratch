@@ -57,9 +57,9 @@ const LandingPage: React.FC = () => {
               <div className="card-icon">
                 <FontAwesomeIcon icon={faShieldAlt} />
               </div>
-              <h3 className="card-title">사이트 보안 분석</h3>
+              <h3 className="card-title">블로그 보안 분석</h3>
               <p className="card-description">
-                웹사이트의 SSL 인증서와 보안 상태를 분석하여 안전한 사이트 운영을 보장하세요.
+                웹블로그의 SSL 인증서와 보안 상태를 분석하여 안전한 블로그 운영을 보장하세요.
               </p>
               <div className="card-features">
                 <span className="feature-tag">SSL 분석</span>

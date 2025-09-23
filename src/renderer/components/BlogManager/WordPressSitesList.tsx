@@ -191,11 +191,11 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           setSelectedSite(result.connections[0]);
         }
       } else {
-        setError('연결된 WordPress 사이트를 불러올 수 없습니다.');
+        setError('연결된 블로그를 불러올 수 없습니다.');
       }
     } catch (error) {
       console.error('Failed to load saved connections:', error);
-      setError(`연결된 WordPress 사이트를 불러오는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`연결된 블로그를 불러오는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -249,7 +249,7 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
 
   const navigateToSyncedFolder = async (site: WordPressSite) => {
     if (!site.local_sync_path) {
-      alert('이 사이트는 아직 동기화되지 않았습니다.');
+      alert('이 블로그는 아직 동기화되지 않았습니다.');
       return;
     }
 
@@ -353,7 +353,7 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           <div className="loading-spinner">
             <FontAwesomeIcon icon={faSpinner} spin />
           </div>
-          <h3>WordPress 사이트를 불러오는 중...</h3>
+          <h3>블로그를 불러오는 중...</h3>
           <p>잠시만 기다려주세요</p>
         </div>
       </div>
@@ -385,15 +385,15 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           <div className="empty-icon">
             <FontAwesomeIcon icon={faGlobe} />
           </div>
-          <h2>연결된 WordPress 사이트가 없습니다</h2>
-          <p>새로운 WordPress 사이트를 연결하여 시작하세요</p>
+          <h2>연결된 블로그가 없습니다</h2>
+          <p>새로운 블로그를 연결하여 시작하세요</p>
           <button
             type="button"
             onClick={navigateToWordPressConnector}
             className="connect-btn"
           >
             <FontAwesomeIcon icon={faPlus} />
-            WordPress 사이트 연결하기
+            블로그 연결하기
           </button>
         </div>
       </div>
@@ -408,9 +408,9 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
           <div className="header-text">
             <h1>
               <FontAwesomeIcon icon={faGlobe} />
-              WordPress 사이트 관리
+              블로그 관리
             </h1>
-            <p>총 {connections.length}개의 사이트가 연결되어 있습니다</p>
+            <p>총 {connections.length}개의 블로그가 연결되어 있습니다</p>
           </div>
           <div className="header-actions">
             {onSwitchToConnector && (
@@ -603,7 +603,7 @@ function WordPressSitesList({ onSwitchToConnector }: WordPressSitesListProps): R
                     <div className="detail-item">
                       <div className="detail-label">
                         <FontAwesomeIcon icon={faGlobe} />
-                        사이트 URL
+                        블로그 URL
                       </div>
                       <span className="url-value">{selectedSite.url}</span>
                     </div>

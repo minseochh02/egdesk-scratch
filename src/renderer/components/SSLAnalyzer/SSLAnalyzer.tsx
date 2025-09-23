@@ -102,7 +102,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleAnalyze = async () => {
     if (!websiteUrl.trim()) {
-      alert('웹사이트 URL을 입력해주세요');
+      alert('웹블로그 URL을 입력해주세요');
       return;
     }
 
@@ -158,7 +158,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleOpenHTMLReport = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹사이트를 분석해주세요');
+      alert('먼저 웹블로그를 분석해주세요');
       return;
     }
 
@@ -172,7 +172,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleSaveHTMLReport = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹사이트를 분석해주세요');
+      alert('먼저 웹블로그를 분석해주세요');
       return;
     }
 
@@ -186,7 +186,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleDownloadText = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹사이트를 분석해주세요');
+      alert('먼저 웹블로그를 분석해주세요');
       return;
     }
 
@@ -276,8 +276,8 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
   return (
     <div className="ssl-analyzer">
       <div className="ssl-analyzer-header">
-        <h1>사이트 보안 분석</h1>
-        <p>웹사이트의 SSL 인증서와 보안 설정을 분석합니다</p>
+        <h1>블로그 보안 분석</h1>
+        <p>웹블로그의 SSL 인증서와 보안 설정을 분석합니다</p>
       </div>
 
       <div className="ssl-analyzer-input-section">
@@ -287,7 +287,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
             value={websiteUrl}
             onChange={handleUrlChange}
             onKeyPress={handleKeyPress}
-            placeholder="웹사이트 URL을 입력하세요 (예: https://example.com)"
+            placeholder="웹블로그 URL을 입력하세요 (예: https://example.com)"
             className="url-input"
             disabled={isAnalyzing}
           />
@@ -296,7 +296,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
             disabled={isAnalyzing || !websiteUrl.trim()}
             className="analyze-button"
           >
-            {isAnalyzing ? '분석 중...' : '이 웹사이트 분석하기'}
+            {isAnalyzing ? '분석 중...' : '이 웹블로그 분석하기'}
           </button>
         </div>
         
@@ -410,10 +410,10 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
           
           {accessibilityData && (
             <div className="analysis-details">
-              <h4>웹사이트 접근성</h4>
+              <h4>웹블로그 접근성</h4>
               <div className="detail-grid">
                 <div className="detail-item">
-                  <span className="detail-label">웹사이트 상태:</span>
+                  <span className="detail-label">웹블로그 상태:</span>
                   <span className={`detail-value ${accessibilityData.accessible ? 'success' : 'error'}`}>
                     {accessibilityData.accessible ? '✅ 접근 가능' : '❌ 접근 불가'}
                   </span>

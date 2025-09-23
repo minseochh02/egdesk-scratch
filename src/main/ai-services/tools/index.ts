@@ -9,3 +9,4 @@ export { ListDirectoryTool } from './list-directory';
 export { ShellCommandTool } from './shell-command';
 export { AnalyzeProjectTool } from './analyze-project';
 export { InitProjectTool } from './init-project';
+export { PartialEditTool } from './partial-edit';

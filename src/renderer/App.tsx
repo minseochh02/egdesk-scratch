@@ -74,7 +74,7 @@ function NavigationBar() {
           className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faShieldAlt} />
-          {!isNarrow && <span>사이트 보안 분석</span>}
+          {!isNarrow && <span>블로그 보안 분석</span>}
         </Link>
         <Link
           to="/ai-keys"

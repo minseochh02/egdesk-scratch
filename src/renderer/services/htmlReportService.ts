@@ -1233,7 +1233,7 @@ export class HTMLReportService {
     return `
       <div class="report-header">
         <h1 class="report-title">🔒 SSL 보안 분석 보고서</h1>
-        <p class="report-subtitle">웹사이트 보안 상태 종합 분석</p>
+        <p class="report-subtitle">웹블로그 보안 상태 종합 분석</p>
         <div class="report-meta">
           <div class="meta-item">
             <span class="meta-label">분석 대상</span>
@@ -1381,10 +1381,10 @@ export class HTMLReportService {
   private static generateAccessibilitySection(accessibility: any): string {
     return `
       <div class="section">
-        <h2 class="section-title">웹사이트 접근성</h2>
+        <h2 class="section-title">웹블로그 접근성</h2>
         <div class="detail-grid">
           <div class="detail-item">
-            <span class="detail-label">웹사이트 상태</span>
+            <span class="detail-label">웹블로그 상태</span>
             <span class="detail-value ${accessibility.accessible ? 'success' : 'error'}">
               ${accessibility.accessible ? '✅ 접근 가능' : '❌ 접근 불가'}
             </span>
