@@ -229,11 +229,11 @@ const BlogPoster: React.FC = () => {
           setSelectedSite(result.connections[0]);
         }
       } else {
-        setError('연결된 WordPress 사이트를 불러올 수 없습니다.');
+        setError('연결된 블로그를 불러올 수 없습니다.');
       }
     } catch (error) {
       console.error('Failed to load saved connections:', error);
-      setError('연결된 WordPress 사이트를 불러오는 중 오류가 발생했습니다.');
+      setError('연결된 블로그를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -257,7 +257,7 @@ const BlogPoster: React.FC = () => {
 
   const validateForm = (): boolean => {
     if (!formData.url.trim()) {
-      setConnectionError('WordPress 사이트 URL을 입력해주세요.');
+      setConnectionError('블로그 URL을 입력해주세요.');
       return false;
     }
     if (!formData.username.trim()) {
@@ -717,7 +717,7 @@ const BlogPoster: React.FC = () => {
 
   const navigateToSyncedFolder = async (site: WordPressSite) => {
     if (!site.local_sync_path) {
-      alert('이 사이트는 아직 동기화되지 않았습니다.');
+      alert('이 블로그는 아직 동기화되지 않았습니다.');
       return;
     }
 
@@ -755,7 +755,7 @@ const BlogPoster: React.FC = () => {
           <div className="loading-spinner">
             <FontAwesomeIcon icon={faSpinner} spin />
           </div>
-          <h3>WordPress 사이트를 불러오는 중...</h3>
+          <h3>블로그를 불러오는 중...</h3>
           <p>잠시만 기다려주세요</p>
         </div>
       </div>
@@ -789,7 +789,7 @@ const BlogPoster: React.FC = () => {
               <FontAwesomeIcon icon={faRobot} />
               Blog Poster
             </h1>
-            <p>WordPress 사이트를 연결하고 블로그 포스트를 관리하세요</p>
+            <p>블로그를 연결하고 블로그 포스트를 관리하세요</p>
           </div>
           <div className="header-actions">
             <DebugButton className="debug-btn" />
@@ -804,7 +804,7 @@ const BlogPoster: React.FC = () => {
             className={`tab-btn ${activeTab === 'sites' ? 'active' : ''}`}
             onClick={() => setActiveTab('sites')}
           >
-            <FontAwesomeIcon icon={faGlobe} className="tab-icon" /> 사이트 관리
+            <FontAwesomeIcon icon={faGlobe} className="tab-icon" /> 블로그 관리
           </button>
           <button
             className={`tab-btn ${activeTab === 'posts' ? 'active' : ''}`}
@@ -861,7 +861,7 @@ const BlogPoster: React.FC = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="url">WordPress 사이트 URL *</label>
+                  <label htmlFor="url">블로그 URL *</label>
                   <input
                     type="url"
                     id="url"
@@ -954,7 +954,7 @@ const BlogPoster: React.FC = () => {
                               }
                             }}
                             disabled={isRefreshing}
-                            title="사이트 콘텐츠 새로고침"
+                            title="블로그 콘텐츠 새로고침"
                           >
                             <FontAwesomeIcon icon={faSync} className="refresh-icon" />
                           </button>
@@ -998,8 +998,8 @@ const BlogPoster: React.FC = () => {
                 <div className="empty-icon">
                   <FontAwesomeIcon icon={faGlobe} />
                 </div>
-                <h2>연결된 WordPress 사이트가 없습니다</h2>
-                <p>새로운 WordPress 사이트를 연결하여 시작하세요</p>
+                <h2>연결된 블로그가 없습니다</h2>
+                <p>새로운 블로그를 연결하여 시작하세요</p>
               </div>
             )}
           </div>
@@ -1014,7 +1014,7 @@ const BlogPoster: React.FC = () => {
                 className="refresh-content-btn"
                 onClick={refreshSiteContent}
                 disabled={isRefreshing}
-                title="사이트 콘텐츠 새로고침"
+                title="블로그 콘텐츠 새로고침"
               >
                 <FontAwesomeIcon icon={faSync} className="refresh-icon" /> {isRefreshing ? '새로고침 중...' : '새로고침'}
               </button>
@@ -1129,7 +1129,7 @@ const BlogPoster: React.FC = () => {
             <h3>연결 설정 - {selectedSite.name}</h3>
             <div className="settings-form">
               <div className="form-group">
-                <label htmlFor="siteName">사이트 이름</label>
+                <label htmlFor="siteName">블로그 이름</label>
                 <input
                   type="text"
                   id="siteName"
@@ -1148,7 +1148,7 @@ const BlogPoster: React.FC = () => {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="siteUrl">사이트 URL</label>
+                <label htmlFor="siteUrl">블로그 URL</label>
                 <input
                   type="url"
                   id="siteUrl"
@@ -1212,7 +1212,7 @@ const BlogPoster: React.FC = () => {
               <br />
               <strong>이 작업은 되돌릴 수 없습니다.</strong>
               <br />
-              <em>포스트가 WordPress 사이트에서 영구적으로 삭제됩니다.</em>
+              <em>포스트가 블로그에서 영구적으로 삭제됩니다.</em>
             </p>
             <div className="modal-actions">
               <button

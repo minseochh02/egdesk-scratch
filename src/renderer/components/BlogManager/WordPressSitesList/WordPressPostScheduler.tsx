@@ -275,7 +275,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
   const createBlogPostTask = async () => {
     if (!selectedSite) {
-      setError('WordPress 사이트를 선택해주세요');
+      setError('블로그를 선택해주세요');
       return;
     }
 
@@ -476,8 +476,8 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
       <div className="wordpress-post-scheduler">
         <div className="empty-state">
           <FontAwesomeIcon icon={faGlobe} />
-          <h3>사용 가능한 WordPress 사이트가 없습니다</h3>
-          <p>예약 게시물을 생성하려면 먼저 WordPress 사이트를 추가해주세요.</p>
+          <h3>사용 가능한 블로그가 없습니다</h3>
+          <p>예약 게시물을 생성하려면 먼저 블로그를 추가해주세요.</p>
         </div>
       </div>
     );
@@ -513,7 +513,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
 
       <div className="site-selector">
-        <label htmlFor="site-select">WordPress 사이트 선택:</label>
+        <label htmlFor="site-select">블로그 선택:</label>
         <select
           id="site-select"
           value={selectedSite?.id || ''}
@@ -522,7 +522,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
             setSelectedSite(site || null);
           }}
         >
-          <option value="">사이트를 선택하세요...</option>
+          <option value="">블로그를 선택하세요...</option>
           {sites.map((site) => (
             <option key={site.id} value={site.id}>
               {site.name || site.url} ({site.url})
@@ -533,7 +533,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
 
       {selectedSite && (
         <div className="selected-site-info">
-          <h4>선택된 사이트: {selectedSite.name || selectedSite.url}</h4>
+          <h4>선택된 블로그: {selectedSite.name || selectedSite.url}</h4>
           <p>URL: {selectedSite.url}</p>
           <p>사용자명: {selectedSite.username}</p>
           <p>
@@ -964,7 +964,7 @@ const WordPressPostScheduler: React.FC<WordPressPostSchedulerProps> = ({
           {!selectedSite && (
             <div className="form-warning">
               <FontAwesomeIcon icon={faExclamationTriangle} />
-              먼저 WordPress 사이트를 선택해주세요.
+              먼저 블로그를 선택해주세요.
             </div>
           )}
 

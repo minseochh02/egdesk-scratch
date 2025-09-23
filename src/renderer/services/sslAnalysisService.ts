@@ -321,7 +321,7 @@ export class SSLAnalysisService {
     report += `📅 생성일: ${new Date(result.timestamp).toLocaleString()}\n\n`;
     
     if (result.accessible && result.hasSSL) {
-      report += `✅ 웹사이트 상태: 접근 가능\n`;
+      report += `✅ 웹블로그 상태: 접근 가능\n`;
       report += `🔒 SSL 상태: 사용 가능\n`;
       
       if (result.connectionDetails) {
@@ -334,7 +334,7 @@ export class SSLAnalysisService {
       
       report += `\n🎯 다음 단계: SSL 인증서 분석 준비 완료\n`;
     } else {
-      report += `❌ 웹사이트 상태: 접근 불가\n`;
+      report += `❌ 웹블로그 상태: 접근 불가\n`;
       report += `🔒 SSL 상태: ${result.hasSSL ? '사용 가능' : '사용 불가'}\n`;
       
       if (result.error) {
@@ -349,7 +349,7 @@ export class SSLAnalysisService {
         report += `   • 연결 시간: ${result.connectionDetails.connectionTime}ms\n`;
       }
       
-      report += `\n🚫 SSL 분석을 진행할 수 없습니다 - 웹사이트에 접근할 수 없습니다\n`;
+      report += `\n🚫 SSL 분석을 진행할 수 없습니다 - 웹블로그에 접근할 수 없습니다\n`;
     }
     
     return report;
@@ -420,8 +420,8 @@ export class SSLAnalysisService {
           headers: [],
           missingHeaders: [],
           securityScore: 0,
-          recommendations: ['웹사이트에 접근할 수 없어 보안 헤더를 분석할 수 없습니다'],
-          error: '웹사이트에 접근할 수 없습니다',
+          recommendations: ['웹블로그에 접근할 수 없어 보안 헤더를 분석할 수 없습니다'],
+          error: '웹블로그에 접근할 수 없습니다',
           timestamp
         };
       }
@@ -686,11 +686,11 @@ export class SSLAnalysisService {
 
     // Step 1: Basic SSL and accessibility checks (SSL_Analyzer.md criteria)
     if (!accessibility.accessible) {
-      criticalIssues.push('웹사이트에 접근할 수 없습니다');
+      criticalIssues.push('웹블로그에 접근할 수 없습니다');
       return {
         grade: 'F',
         score: 0,
-        description: '웹사이트에 접근할 수 없어 분석할 수 없습니다',
+        description: '웹블로그에 접근할 수 없어 분석할 수 없습니다',
         criticalIssues,
         highIssues,
         mediumIssues,
@@ -884,13 +884,13 @@ export class SSLAnalysisService {
     // Generate combined report
     let combinedReport = `🔍 완전한 SSL 보안 분석\n`;
     combinedReport += `📅 생성일: ${new Date().toLocaleString()}\n`;
-    combinedReport += `🌐 웹사이트: ${url}\n\n`;
+    combinedReport += `🌐 웹블로그: ${url}\n\n`;
     
     combinedReport += `=== 보안 등급 ===\n`;
     combinedReport += this.generateSecurityGradeReport(grade);
     combinedReport += `\n\n=== 비즈니스 영향 분석 ===\n`;
     combinedReport += businessImpact.report;
-    combinedReport += `\n\n=== 웹사이트 접근성 ===\n`;
+    combinedReport += `\n\n=== 웹블로그 접근성 ===\n`;
     combinedReport += this.generateAccessibilityReport(accessibility);
     combinedReport += `\n\n=== SSL 인증서 분석 ===\n`;
     combinedReport += this.generateCertificateReport(certificate);

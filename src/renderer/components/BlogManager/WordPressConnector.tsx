@@ -209,7 +209,7 @@ const WordPressConnector: React.FC<WordPressConnectorProps> = ({ onSwitchToSites
 
   const validateForm = (): boolean => {
     if (!formData.url.trim()) {
-      setConnectionError('WordPress 사이트 URL을 입력해주세요.');
+      setConnectionError('블로그 URL을 입력해주세요.');
       return false;
     }
     if (!formData.username.trim()) {
@@ -763,7 +763,7 @@ const WordPressConnector: React.FC<WordPressConnectorProps> = ({ onSwitchToSites
 
 ### 1. 로컬 WordPress 환경 설정
 - XAMPP, WAMP, MAMP 또는 Local by Flywheel 설치
-- 새로운 WordPress 사이트 생성
+- 새로운 블로그 생성
 
 ### 2. 콘텐츠 가져오기
 1. WordPress 관리자 페이지 접속
@@ -1458,7 +1458,7 @@ function get_header() {
     echo '<div class="container">';
     echo '<div class="header">';
     echo '<h1>${siteName}</h1>';
-    echo '<p>WordPress 사이트 - EGDesk로 동기화됨</p>';
+    echo '<p>블로그 - EGDesk로 동기화됨</p>';
     echo '</div>';
 }
 
@@ -1727,7 +1727,7 @@ get_header(); ?>
         <div className="header-content">
           <div className="header-text">
             <h1>🌐 WordPress 커넥터</h1>
-            <p>WordPress 사이트에 연결하고 콘텐츠를 관리하세요</p>
+            <p>블로그에 연결하고 콘텐츠를 관리하세요</p>
           </div>
           {onSwitchToSites && (
             <div className="header-actions">
@@ -1735,10 +1735,10 @@ get_header(); ?>
                 type="button"
                 onClick={onSwitchToSites}
                 className="back-to-sites-btn"
-                title="사이트 목록으로 돌아가기"
+                title="블로그 목록으로 돌아가기"
               >
                 <FontAwesomeIcon icon={faList} />
-                사이트 목록
+                블로그 목록
               </button>
             </div>
           )}
@@ -1762,7 +1762,7 @@ get_header(); ?>
               />
             </div>
             <div className="form-group">
-              <label htmlFor="url">WordPress 사이트 URL *</label>
+              <label htmlFor="url">블로그 URL *</label>
               <input
                 type="url"
                 id="url"
@@ -1868,7 +1868,7 @@ get_header(); ?>
                           }
                         }}
                         disabled={isRefreshing}
-                        title="사이트 콘텐츠 새로고침"
+                        title="블로그 콘텐츠 새로고침"
                       >
                         <FontAwesomeIcon icon={faSync} className="refresh-icon" />
                       </button>
@@ -1939,7 +1939,7 @@ get_header(); ?>
                 className="refresh-content-btn"
                 onClick={refreshSiteContent}
                 disabled={isRefreshing}
-                title="사이트 콘텐츠 새로고침"
+                title="블로그 콘텐츠 새로고침"
               >
                 <FontAwesomeIcon icon={faSync} className="refresh-icon" /> {isRefreshing ? '새로고침 중...' : '새로고침'}
               </button>
@@ -2373,7 +2373,7 @@ get_header(); ?>
                 <h3>연결 설정</h3>
                 <div className="settings-form">
                   <div className="form-group">
-                    <label htmlFor="siteName">사이트 이름</label>
+                    <label htmlFor="siteName">블로그 이름</label>
                     <input
                       type="text"
                       id="siteName"
@@ -2392,7 +2392,7 @@ get_header(); ?>
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="siteUrl">사이트 URL</label>
+                    <label htmlFor="siteUrl">블로그 URL</label>
                     <input
                       type="url"
                       id="siteUrl"
@@ -2457,7 +2457,7 @@ get_header(); ?>
                 <br />
                 <strong>이 작업은 되돌릴 수 없습니다.</strong>
                 <br />
-                <em>포스트가 WordPress 사이트에서 영구적으로 삭제됩니다.</em>
+                <em>포스트가 블로그에서 영구적으로 삭제됩니다.</em>
               </p>
               <div className="modal-actions">
                 <button

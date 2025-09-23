@@ -45,9 +45,11 @@ const getToolExecutionMessage = (toolName: string, toolArgs?: any): string => {
   const messages: { [key: string]: string } = {
     'read_file': 'Let me read the file',
     'write_file': 'Let me write to the file',
+    'partial_edit': 'Let me edit the file',
     'list_directory': 'Let me check the directory contents',
-    'run_shell_command': 'Let me run a command',
+    'shell_command': 'Let me run a command',
     'analyze_project': 'Let me analyze the project structure',
+    'init_project': 'Let me initialize the project',
     'search_files': 'Let me search through the files',
     'create_file': 'Let me create a new file',
     'delete_file': 'Let me delete the file',
@@ -61,7 +63,17 @@ const getToolExecutionMessage = (toolName: string, toolArgs?: any): string => {
   // Add context if available
   if (toolArgs) {
     if (toolArgs.path || toolArgs.file_path) {
-      return `${naturalMessage}: ${toolArgs.path || toolArgs.file_path}`;
+      const filePath = toolArgs.path || toolArgs.file_path;
+      if (toolName === 'partial_edit') {
+        // For partial edit, show what's being changed
+        const oldString = toolArgs.old_string || toolArgs.oldString;
+        const newString = toolArgs.new_string || toolArgs.newString;
+        if (oldString && newString) {
+          const preview = oldString.length > 50 ? oldString.substring(0, 50) + '...' : oldString;
+          return `${naturalMessage}: ${filePath} (replacing "${preview}")`;
+        }
+      }
+      return `${naturalMessage}: ${filePath}`;
     }
     if (toolArgs.command) {
       return `${naturalMessage}: ${toolArgs.command}`;
@@ -81,9 +93,11 @@ const getToolNameFromMessage = (message: string): string => {
   // Extract the actual tool name from common patterns
   if (message.includes('read the file')) return 'read_file';
   if (message.includes('write to the file')) return 'write_file';
+  if (message.includes('edit the file')) return 'partial_edit';
   if (message.includes('check the directory')) return 'list_directory';
-  if (message.includes('run a command')) return 'run_shell_command';
+  if (message.includes('run a command')) return 'shell_command';
   if (message.includes('analyze the project')) return 'analyze_project';
+  if (message.includes('initialize the project')) return 'init_project';
   if (message.includes('search through')) return 'search_files';
   if (message.includes('create a new file')) return 'create_file';
   if (message.includes('delete the file')) return 'delete_file';
@@ -137,6 +151,66 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // Backup manager state
   const [showBackupManager, setShowBackupManager] = useState(false);
 
+  // Tool confirmation state
+  const [pendingToolConfirmation, setPendingToolConfirmation] = useState<{
+    requestId: string;
+    toolName: string;
+    description: string;
+    risks: string[];
+    parameters: any;
+  } | null>(null);
+
+  // Restart local PHP server and refresh localhost browser windows
+  const refreshBrowser = async () => {
+    try {
+      const electronAny = (window as any).electron;
+      const status = await electronAny.wordpressServer.getServerStatus();
+      const folderPath = status?.status?.folderPath || currentProject?.path;
+      const port = status?.status?.port || 8000;
+      const serverUrl = status?.status?.url || (port ? `http://localhost:${port}` : undefined);
+
+      if (status?.status?.isRunning) {
+        try {
+          await electronAny.wordpressServer.stopServer();
+        } catch (e) {
+          console.warn('Failed to stop server before restart:', e);
+        }
+      }
+
+      if (folderPath) {
+        try {
+          await electronAny.wordpressServer.startServer(folderPath, port);
+          // Give the server a brief moment to bind the port
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.warn('Failed to start server during refreshBrowser:', e);
+        }
+      }
+
+      // Switch preview window back to localhost site before refreshing, so URLFileViewer isn't refreshed
+      try {
+        if (serverUrl) {
+          if (previewWindowId != null) {
+            await electronAny.browserWindow.switchURL(serverUrl, previewWindowId);
+          } else {
+            await electronAny.browserWindow.switchURL(serverUrl);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to switch preview window back to localhost URL:', e);
+      }
+
+      // Refresh all localhost windows so the change is picked up
+      try {
+        await electronAny.browserWindow.refreshAllLocalhost();
+      } catch (e) {
+        console.warn('Failed to refresh localhost browser windows:', e);
+      }
+    } catch (error) {
+      console.error('Failed to refresh browser after stream finished:', error);
+    }
+  };
+
   // Effect to update the last message with currentMessage content
   useEffect(() => {
     if (currentMessage && isTyping) {
@@ -180,6 +254,11 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setCurrentProject(initialContext.currentProject);
       // Don't auto-load conversations - start with blank state
       // loadConversationsForProject(initialContext.currentProject.path);
+      
+      // Auto-start server and open preview window when project is available
+      setTimeout(() => {
+        openProjectInBrowser();
+      }, 500);
     }
     
     return () => {
@@ -187,6 +266,18 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       unsubscribeProject();
     };
   }, []);
+
+  // Auto-start server and open preview window when project changes
+  useEffect(() => {
+    if (currentProject?.path) {
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        openProjectInBrowser();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentProject?.path]);
 
   // (Viewer init moved out of AIChat; AIChat only deep-links the preview window)
 
@@ -331,6 +422,45 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Heuristic extractor for file paths from tool call responses/args
+  const extractFilePathsFromToolArtifacts = (response: any, toolCallEvent?: any): string[] => {
+    const collect = new Set<string>();
+
+    const pushPath = (p: any) => {
+      if (!p || typeof p !== 'string') return;
+      const trimmed = p.trim();
+      if (!trimmed) return;
+      collect.add(trimmed);
+    };
+
+    const pushMany = (arr: any) => {
+      if (!arr) return;
+      if (Array.isArray(arr)) arr.forEach(pushPath);
+      else if (typeof arr === 'string') arr.split('|').forEach(pushPath);
+    };
+
+    // Common shapes on response
+    try {
+      pushMany(response?.files);
+      pushMany(response?.data?.files);
+      pushMany(response?.result?.files);
+      pushPath(response?.path);
+      pushPath(response?.filePath);
+      pushPath(response?.data?.path);
+      pushPath(response?.result?.path);
+    } catch {}
+
+    // Also inspect tool call arguments if present
+    try {
+      const args = toolCallEvent?.toolCall?.arguments || toolCallEvent?.arguments;
+      pushMany(args?.files);
+      pushPath(args?.path);
+      pushPath(args?.filePath);
+    } catch {}
+
+    return Array.from(collect);
+  };
+
   const openProjectInBrowser = async () => {
     try {
       const status = await window.electron.wordpressServer.getServerStatus();
@@ -338,22 +468,37 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         const url = status.status.url || `http://localhost:${status.status.port}`;
         await tileChatAndPreview(url);
       } else {
-        // If server is not running, try starting it for the current project, then open
-        if (currentProject?.path) {
-          try {
-            const start = await window.electron.wordpressServer.startServer(currentProject.path, 8000);
-            if (start.success) {
-              const port = start.port || 8000;
-              const url = `http://localhost:${port}`;
-              await tileChatAndPreview(url);
-            } else {
-              console.warn('Failed to start local server:', start.error);
-            }
-          } catch (e) {
-            console.error('Failed to start local server:', e);
+        // If server is not running, try to recover project info and start it, else open known port
+        try {
+          // Try to fetch current project from main if not available yet in this window
+          const mainProject = await (window as any).electron.projectContext.getCurrentProject();
+          const projectPath = mainProject?.path || currentProject?.path;
+          if (mainProject?.path && !currentProject?.path) {
+            setCurrentProject(mainProject);
           }
-        } else {
-          console.warn('Local server is not running and no project is selected.');
+
+          if (projectPath) {
+            try {
+              const start = await window.electron.wordpressServer.startServer(projectPath, 8000);
+              if (start.success) {
+                const port = start.port || 8000;
+                const url = `http://localhost:${port}`;
+                await tileChatAndPreview(url);
+              } else {
+                console.warn('Failed to start local server:', start.error);
+              }
+            } catch (e) {
+              console.error('Failed to start local server:', e);
+            }
+          } else if (status.status?.port) {
+            // Fallback: if a port is known from status, try opening it anyway
+            const url = status.status.url || `http://localhost:${status.status.port}`;
+            await tileChatAndPreview(url);
+          } else {
+            console.warn('Local server is not running and no project is selected.');
+          }
+        } catch (e) {
+          console.warn('Unable to resolve project/server state:', e);
         }
       }
     } catch (err) {
@@ -364,6 +509,33 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const tileChatAndPreview = async (url: string) => {
     try {
       const electronAny = (window as any).electron;
+
+      // If we already have a preview window, just switch its URL instead of creating a new one
+      if (previewWindowId != null) {
+        try {
+          const switched = await electronAny.browserWindow.switchURL(url, previewWindowId);
+          if (switched?.success) {
+            return; // Reused existing preview window
+          }
+        } catch (e) {
+          console.warn('Failed to switch existing preview window URL, will try to locate an existing one:', e);
+        }
+      }
+
+      // If no known preview window, try to locate an existing localhost window to reuse
+      try {
+        const list = await electronAny.browserWindow.getAllLocalhostWindows();
+        if (list?.success && Array.isArray(list.windows) && list.windows.length > 0) {
+          const first = list.windows[0];
+          setPreviewWindowId(first.windowId);
+          const switched = await electronAny.browserWindow.switchURL(url, first.windowId);
+          if (switched?.success) {
+            return; // Reused existing localhost window
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to enumerate localhost browser windows, proceeding to create one:', e);
+      }
       const work = await electronAny.mainWindow.getWorkArea();
       if (!work?.success || !work.workArea) {
         // Fallback: just open centered window
@@ -416,53 +588,22 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     }
   };
 
-  // Switch the preview window from localhost to our application UI
-  const switchPreviewToApp = async () => {
-    try {
-      const appUrl = window.location.href; // load current app in the preview window
-      const electronAny = (window as any).electron;
-      if (previewWindowId != null) {
-        await electronAny.browserWindow.switchURL(appUrl, previewWindowId);
-      } else {
-        // Fallback: let main pick the first localhost window
-        await electronAny.browserWindow.switchURL(appUrl);
-      }
-    } catch (err) {
-      console.error('Failed to switch preview to app:', err);
-    }
-  };
 
-  const showHostedWebsite = async () => {
-    try {
-      // Switch preview back to localhost URL
-      const status = await window.electron.wordpressServer.getServerStatus();
-      if (status?.success && status.status?.isRunning) {
-        const port = status.status.port || 8000;
-        const url = `http://localhost:${port}`;
-        const electronAny = (window as any).electron;
-        if (previewWindowId != null) {
-          await electronAny.browserWindow.switchURL(url, previewWindowId);
-        } else {
-          await electronAny.browserWindow.switchURL(url);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to switch to hosted website:', err);
-    }
-  };
-
-  const openHostedWebsiteFiles = async () => {
+  const openHostedWebsiteFiles = async (filesToOpen?: string[]) => {
     try {
       if (!currentProject?.path) return;
       const base = currentProject.path as string;
-      const candidates = [
+      const fallbackCandidates = [
         `${base}/index.php`,
         `${base}/wp-config.php`,
         `${base}/index.html`,
         `${base}/readme.md`,
       ];
+      const filesParam = (filesToOpen && filesToOpen.length > 0)
+        ? filesToOpen
+        : fallbackCandidates;
       // Deep-link preview window into URLFileViewer via query params
-      const filesEncoded = encodeURIComponent(candidates.join('|'));
+      const filesEncoded = encodeURIComponent(filesParam.join('|'));
       const appViewerUrl = `${window.location.origin}/viewer?viewer=url&files=${filesEncoded}`;
       const electronAny = (window as any).electron;
       if (previewWindowId != null) {
@@ -590,10 +731,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                 ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
                 : call
             ));
+
+            // Auto-switch to URL File Viewer when tool call completes, pass files if available
+            if (response.success && currentProject?.path) {
+              const filesFromArtifacts = extractFilePathsFromToolArtifacts(response, toolResponseEvent);
+              setTimeout(() => {
+                openHostedWebsiteFiles(filesFromArtifacts);
+              }, 500); // Small delay to let the UI update
+            }
             break;
 
           case AIEventType.Finished:
             console.log('🏁 Conversation completed');
+            // Restart server and refresh browser to pick up file changes
+            await refreshBrowser();
             break;
 
           case AIEventType.Error:
@@ -744,6 +895,14 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                 ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
                 : call
             ));
+
+            // Auto-switch to URL File Viewer when tool call completes, pass files if available
+            if (response.success && currentProject?.path) {
+              const filesFromArtifacts = extractFilePathsFromToolArtifacts(response, toolResponseEvent);
+              setTimeout(() => {
+                openHostedWebsiteFiles(filesFromArtifacts);
+              }, 500); // Small delay to let the UI update
+            }
             break;
 
           case AIEventType.Thought:
@@ -784,6 +943,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             
             // Final cleanup of entire session
             console.log('🏁 Final cleanup - conversation stream ended');
+            // Restart server and refresh browser to pick up file changes
+            await refreshBrowser();
             
             break;
 
@@ -899,6 +1060,40 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       }]);
     } catch (error) {
       console.error('Error cancelling conversation:', error);
+    }
+  };
+
+  const handleToolConfirmation = async (approved: boolean) => {
+    if (!pendingToolConfirmation) return;
+
+    try {
+      const result = await (window.electron.aiService as any).confirmTool(
+        pendingToolConfirmation.requestId, 
+        approved
+      );
+      
+      if (result) {
+        // Add result message to chat
+        const statusText = result.success ? 'completed successfully' : 'failed';
+        const statusIcon = result.success ? '✅' : '❌';
+        
+        setMessages(prev => [...prev, {
+          role: 'model' as const,
+          parts: [{ 
+            text: `🔧 Tool ${pendingToolConfirmation.toolName}: ${statusIcon} ${statusText}${result.error ? `\nError: ${result.error}` : ''}` 
+          }],
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error('Error confirming tool:', error);
+      setMessages(prev => [...prev, {
+        role: 'model' as const,
+        parts: [{ text: `❌ Error confirming tool: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+        timestamp: new Date()
+      }]);
+    } finally {
+      setPendingToolConfirmation(null);
     }
   };
 
@@ -1032,32 +1227,6 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
               Backups
             </button>
 
-          {/* Switch preview window from localhost to the app UI */}
-          <button
-            className="switch-app-btn"
-            onClick={switchPreviewToApp}
-            title="Show AI Chat in the preview window"
-          >
-            Show App
-          </button>
-
-          {/* Toggle hosted website and open hosted website files (viewer opens in preview window) */}
-          <button
-            className="hosted-website-btn"
-            onClick={showHostedWebsite}
-            title="Show hosted website in the preview window"
-          >
-            Show Website
-          </button>
-
-          <button
-            className="open-website-files-btn"
-            onClick={openHostedWebsiteFiles}
-            disabled={!currentProject}
-            title="Open hosted website files in URL File Viewer"
-          >
-            Website Files
-          </button>
 
             <button 
               className="clear-btn" 
@@ -1206,6 +1375,70 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           loadConversations();
         }}
       />
+
+      {/* Tool Confirmation Modal */}
+      {pendingToolConfirmation && (
+        <div className="tool-confirmation-modal">
+          <div className="tool-confirmation-content">
+            <div className="tool-confirmation-header">
+              <h3>🔧 Tool Confirmation Required</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => setPendingToolConfirmation(null)}
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            <div className="tool-confirmation-body">
+              <div className="tool-info">
+                <strong>Tool:</strong> {pendingToolConfirmation.toolName}
+              </div>
+              <div className="tool-description">
+                <strong>Description:</strong> {pendingToolConfirmation.description}
+              </div>
+              {pendingToolConfirmation.risks.length > 0 && (
+                <div className="tool-risks">
+                  <strong>Risks:</strong>
+                  <ul>
+                    {pendingToolConfirmation.risks.map((risk, index) => (
+                      <li key={index}>{risk}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {pendingToolConfirmation.toolName === 'partial_edit' && (
+                <div className="tool-preview">
+                  <strong>Preview:</strong>
+                  <div className="edit-preview">
+                    <div className="old-string">
+                      <strong>Replace:</strong>
+                      <pre>{pendingToolConfirmation.parameters.old_string || pendingToolConfirmation.parameters.oldString}</pre>
+                    </div>
+                    <div className="new-string">
+                      <strong>With:</strong>
+                      <pre>{pendingToolConfirmation.parameters.new_string || pendingToolConfirmation.parameters.newString}</pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="tool-confirmation-actions">
+              <button 
+                className="approve-btn"
+                onClick={() => handleToolConfirmation(true)}
+              >
+                ✅ Approve & Execute
+              </button>
+              <button 
+                className="deny-btn"
+                onClick={() => handleToolConfirmation(false)}
+              >
+                ❌ Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -4,7 +4,7 @@
  * Provides API endpoints for the renderer to fetch chat data
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { getSQLiteManager } from '../sqlite/sqlite-manager';
 import { AIChatDatabase, type AIConversation, type AIMessage, type ConversationStats } from '../sqlite/ai';
 import type { ConversationMessage } from '../types/ai-types';
@@ -12,9 +12,10 @@ import type { ConversationMessage } from '../types/ai-types';
 export class AIChatDataService {
   private sqliteManager = getSQLiteManager();
   private aiChatDb?: AIChatDatabase;
+  private initializationPromise: Promise<void>;
 
   constructor() {
-    this.initializeDatabase();
+    this.initializationPromise = this.initializeDatabase();
     this.registerIPCHandlers();
   }
 
@@ -23,6 +24,10 @@ export class AIChatDataService {
    */
   private async initializeDatabase(): Promise<void> {
     try {
+      // Ensure Electron app is ready before accessing app paths via SQLite manager
+      if (!app.isReady()) {
+        await app.whenReady();
+      }
       const result = await this.sqliteManager.initialize();
       if (result.success) {
         this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
@@ -36,6 +41,15 @@ export class AIChatDataService {
   }
 
   /**
+   * Ensure aiChatDb is attached if the manager was initialized later
+   */
+  private tryAttachDatabaseIfAvailable(): void {
+    if (!this.aiChatDb && this.sqliteManager.isAvailable()) {
+      this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
+    }
+  }
+
+  /**
    * Register IPC handlers for data operations
    */
   private registerIPCHandlers(): void {
@@ -44,6 +58,8 @@ export class AIChatDataService {
     // Get all conversations
     ipcMain.handle('ai-chat-get-conversations', async (event, options = {}) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -61,6 +77,8 @@ export class AIChatDataService {
     // Get a specific conversation
     ipcMain.handle('ai-chat-get-conversation', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -82,6 +100,8 @@ export class AIChatDataService {
     // Get messages for a conversation
     ipcMain.handle('ai-chat-get-messages', async (event, conversationId: string, options = {}) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -99,6 +119,8 @@ export class AIChatDataService {
     // Get conversation with all its messages
     ipcMain.handle('ai-chat-get-conversation-with-messages', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -116,6 +138,8 @@ export class AIChatDataService {
     // Get conversation statistics
     ipcMain.handle('ai-chat-get-conversation-stats', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -133,6 +157,8 @@ export class AIChatDataService {
     // Get overall statistics
     ipcMain.handle('ai-chat-get-overall-stats', async (event) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -150,6 +176,8 @@ export class AIChatDataService {
     // Create a new conversation
     ipcMain.handle('ai-chat-create-conversation', async (event, conversationData: Omit<AIConversation, 'created_at' | 'updated_at'>) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -167,6 +195,8 @@ export class AIChatDataService {
     // Update a conversation
     ipcMain.handle('ai-chat-update-conversation', async (event, conversationId: string, updates: Partial<AIConversation>) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -184,6 +214,8 @@ export class AIChatDataService {
     // Delete a conversation
     ipcMain.handle('ai-chat-delete-conversation', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -201,6 +233,8 @@ export class AIChatDataService {
     // Archive a conversation
     ipcMain.handle('ai-chat-archive-conversation', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -218,6 +252,8 @@ export class AIChatDataService {
     // Restore a conversation
     ipcMain.handle('ai-chat-restore-conversation', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -235,6 +271,8 @@ export class AIChatDataService {
     // Add a message to a conversation
     ipcMain.handle('ai-chat-add-message', async (event, messageData: Omit<AIMessage, 'timestamp'>) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -252,6 +290,8 @@ export class AIChatDataService {
     // Add multiple messages to a conversation
     ipcMain.handle('ai-chat-add-messages', async (event, messagesData: Omit<AIMessage, 'timestamp'>[]) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -269,6 +309,8 @@ export class AIChatDataService {
     // Update a message
     ipcMain.handle('ai-chat-update-message', async (event, messageId: string, updates: Partial<AIMessage>) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -286,6 +328,8 @@ export class AIChatDataService {
     // Delete a message
     ipcMain.handle('ai-chat-delete-message', async (event, messageId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -303,6 +347,8 @@ export class AIChatDataService {
     // Delete all messages in a conversation
     ipcMain.handle('ai-chat-delete-messages-in-conversation', async (event, conversationId: string) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -320,6 +366,8 @@ export class AIChatDataService {
     // Clean up old data
     ipcMain.handle('ai-chat-cleanup-old-data', async (event, daysToKeep: number = 90) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }
@@ -337,6 +385,8 @@ export class AIChatDataService {
     // Clear all data
     ipcMain.handle('ai-chat-clear-all-data', async (event) => {
       try {
+        await this.initializationPromise;
+        this.tryAttachDatabaseIfAvailable();
         if (!this.aiChatDb) {
           return { success: false, error: 'Database not available' };
         }

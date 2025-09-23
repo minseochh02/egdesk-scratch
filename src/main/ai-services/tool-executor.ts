@@ -17,7 +17,8 @@ import {
   ListDirectoryTool,
   ShellCommandTool,
   AnalyzeProjectTool,
-  InitProjectTool
+  InitProjectTool,
+  PartialEditTool
 } from './tools';
 
 
@@ -135,6 +136,38 @@ export class ToolRegistry {
           required: ['folder_path']
         };
       
+      case 'partial_edit':
+        return {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'The path to the file to edit. Can be relative to current directory or absolute path.'
+            },
+            old_string: {
+              type: 'string',
+              description: 'The exact text to replace. Must match exactly including whitespace and indentation.'
+            },
+            new_string: {
+              type: 'string',
+              description: 'The text to replace old_string with.'
+            },
+            expected_replacements: {
+              type: 'number',
+              description: 'Number of occurrences to replace. Defaults to 1 if not specified.'
+            },
+            instruction: {
+              type: 'string',
+              description: 'Optional instruction describing what needs to be changed for better context.'
+            },
+            flexible_matching: {
+              type: 'boolean',
+              description: 'Whether to use flexible matching that tolerates whitespace differences. Defaults to true.'
+            }
+          },
+          required: ['file_path', 'old_string', 'new_string']
+        };
+      
       default:
         return {
           type: 'object',
@@ -237,7 +270,11 @@ export class ToolRegistry {
       'file_path': 'filePath',
       'dir_path': 'dirPath',
       'project_path': 'projectPath',
-      'folder_path': 'folderPath'
+      'folder_path': 'folderPath',
+      'old_string': 'oldString',
+      'new_string': 'newString',
+      'expected_replacements': 'expectedReplacements',
+      'flexible_matching': 'flexibleMatching'
     };
     
     for (const [key, value] of Object.entries(params)) {
@@ -265,6 +302,7 @@ export class ToolRegistry {
     this.registerTool(new ReadFileTool());
     this.registerTool(new WriteFileTool());
     this.registerTool(new ListDirectoryTool());
+    this.registerTool(new PartialEditTool());
     
     // Shell Tools
     this.registerTool(new ShellCommandTool());
