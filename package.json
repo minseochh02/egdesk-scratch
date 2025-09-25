@@ -120,7 +120,6 @@
     "@fortawesome/react-fontawesome": "^3.0.2",
     "@google/genai": "^1.19.0",
     "@google/generative-ai": "^0.24.1",
-    "better-sqlite3": "^12.2.0",
     "electron-debug": "^4.1.0",
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",
@@ -138,16 +137,16 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node-schedule": "^2.1.8",
     "@electron/rebuild": "^3.7.1",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.15",
     "@svgr/webpack": "^8.1.0",
     "@teamsupercell/typings-for-css-modules-loader": "^2.5.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.13.10",
+    "@types/node-schedule": "^2.1.8",
     "@types/react": "^19.0.11",
     "@types/react-dom": "^19.0.4",
     "@types/react-test-renderer": "^19.0.0",
@@ -214,7 +213,9 @@
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": [
       "scripts/**",
-      "**\\*.{node,dll,js}"
+      "**\\*.{node,dll,js}",
+      "node_modules/@google/genai/**",
+      "node_modules/mime-types/**"
     ],
     "files": [
       "dist",

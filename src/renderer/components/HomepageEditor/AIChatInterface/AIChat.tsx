@@ -330,10 +330,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       // Don't auto-load conversations - start with blank state
       // loadConversationsForProject(initialContext.currentProject.path);
       
-      // Auto-start server and open preview window when project is available
-      setTimeout(() => {
-        openProjectInBrowser();
-      }, 500);
+      // Note: initial preview opening is handled by the project change effect below
     }
     
     return () => {
@@ -377,12 +374,29 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // Auto-start server and open preview window when project changes
   useEffect(() => {
     if (currentProject?.path) {
-      // Small delay to ensure component is fully mounted
-      const timer = setTimeout(() => {
-        openProjectInBrowser();
-      }, 500);
-      
-      return () => clearTimeout(timer);
+      let timer: any;
+      (async () => {
+        try {
+          const electronAny = (window as any).electron;
+          // Close existing preview window before opening a new one for the new project
+          if (previewWindowId != null) {
+            try {
+              await electronAny.browserWindow.closeWindow(previewWindowId);
+            } catch (e) {
+              console.warn('Failed to close existing preview window:', e);
+            }
+            setPreviewWindowId(null);
+            setCurrentPreviewUrl(null);
+          }
+        } catch {}
+        // Small delay to ensure component is fully mounted and previous window closed
+        timer = setTimeout(() => {
+          openProjectInBrowser();
+        }, 500);
+      })();
+      return () => {
+        try { clearTimeout(timer); } catch {}
+      };
     }
   }, [currentProject?.path]);
 

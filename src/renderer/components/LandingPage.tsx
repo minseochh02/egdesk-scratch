@@ -27,7 +27,7 @@ const LandingPage: React.FC = () => {
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCog} />
               </div>
-              <h3 className="card-title">홈페이지 관리</h3>
+              <h3 className="card-title">EG Coding</h3>
               <p className="card-description">
                 AI 도움으로 홈페이지를 효율적으로 관리하고 수정하세요. 콘텐츠 생성과 편집을 자동화하세요.
               </p>
@@ -42,7 +42,7 @@ const LandingPage: React.FC = () => {
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCalendarAlt} />
               </div>
-              <h3 className="card-title">블로그 관리</h3>
+              <h3 className="card-title">EG Bloging</h3>
               <p className="card-description">
                 AI 도움으로 블로그 콘텐츠를 계획하고 일정을 잡으세요. 자동 포스팅과 콘텐츠 관리를 설정하세요.
               </p>
@@ -57,7 +57,7 @@ const LandingPage: React.FC = () => {
               <div className="card-icon">
                 <FontAwesomeIcon icon={faShieldAlt} />
               </div>
-              <h3 className="card-title">블로그 보안 분석</h3>
+              <h3 className="card-title">EG SSL-Checker</h3>
               <p className="card-description">
                 웹블로그의 SSL 인증서와 보안 상태를 분석하여 안전한 블로그 운영을 보장하세요.
               </p>

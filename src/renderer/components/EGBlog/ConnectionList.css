@@ -1,0 +1,527 @@
+/* Connection List Styles */
+.connection-list {
+  padding: 24px;
+  background-color: #ffffff;
+  min-height: 100vh;
+}
+
+.connection-header {
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.connection-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.connection-header p {
+  font-size: 16px;
+  color: #6b7280;
+}
+
+/* Loading State */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.loading-state .spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e5e7eb;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Error State */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.error-state svg {
+  font-size: 48px;
+  color: #ef4444;
+  margin-bottom: 16px;
+}
+
+.error-state h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.error-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+.retry-btn {
+  padding: 12px 24px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+  background: #5a6fd8;
+  transform: translateY(-1px);
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.empty-state svg {
+  font-size: 64px;
+  color: #9ca3af;
+  margin-bottom: 24px;
+}
+
+.empty-state h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+
+.empty-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+/* Connections Grid */
+.connections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Connection Card */
+.connection-card {
+  background: white !important;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.connection-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.connection-card:hover::before {
+  transform: scaleX(1);
+}
+
+.connection-card:hover {
+  border-color: #667eea;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.connection-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.connection-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection-list-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.connection-list-icon svg {
+  color: white !important;
+}
+
+.connection-list-icon img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+/* Only apply white filter to non-SVG images (like FontAwesome icons) */
+.connection-list-icon img:not([src$=".svg"]) {
+  filter: brightness(0) invert(1);
+}
+
+/* Make SVG images white */
+.connection-list-icon img[src$=".svg"] {
+  filter: brightness(0) invert(1);
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-indicator.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-indicator.error {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.status-indicator.warning {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+/* Connection Info */
+.connection-info h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a1a !important;
+  margin-bottom: 8px;
+}
+
+.connection-type {
+  font-size: 14px;
+  color: #6b7280 !important;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.connection-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  gap: 8px;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.detail-item svg {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.detail-text {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  justify-content: space-between;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #374151;
+  text-decoration: underline;
+  text-decoration-color: #e5e7eb;
+  text-underline-offset: 4px;
+  transition: all 0.3s ease;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.detail-item:hover .detail-label {
+  text-decoration-color: #667eea;
+  text-decoration-thickness: 2px;
+}
+
+.detail-value {
+  color: #6b7280;
+  word-break: break-all;
+  font-weight: 500;
+  text-align: right;
+  flex: 1;
+  margin-left: 16px;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Ensure proper contrast for connection cards */
+.connection-card .detail-value {
+  color: #374151 !important;
+  font-weight: 500;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.connection-card .detail-label {
+  color: #1f2937 !important;
+  font-weight: 600;
+  text-decoration-color: #e5e7eb !important;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.connection-card .detail-item:hover .detail-label {
+  text-decoration-color: #667eea !important;
+}
+
+.connection-card .detail-item {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.connection-card .detail-text {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Override any inherited platform card styles */
+.connection-card {
+  background: white !important;
+  color: #1a1a1a !important;
+}
+
+.connection-card * {
+  color: inherit !important;
+}
+
+.connection-card .detail-value {
+  color: #374151 !important;
+}
+
+.connection-card .detail-label {
+  color: #1f2937 !important;
+}
+
+.connection-card h3 {
+  color: #1a1a1a !important;
+}
+
+/* Connection Actions */
+.connection-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.action-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.view-btn {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.view-btn:hover {
+  background: #e0f2fe;
+  transform: translateY(-1px);
+}
+
+.test-btn {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.test-btn:hover {
+  background: #a7f3d0;
+  transform: translateY(-1px);
+}
+
+.edit-btn {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.edit-btn:hover {
+  background: #bfdbfe;
+  transform: translateY(-1px);
+}
+
+.delete-btn {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .connections-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .connection-list {
+    padding: 16px;
+  }
+  
+  .connections-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .connection-card {
+    padding: 20px;
+  }
+  
+  .connection-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .action-btn {
+    flex: 1;
+    min-width: 80px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .connection-header h2 {
+    font-size: 24px;
+  }
+  
+  .connection-card {
+    padding: 16px;
+  }
+  
+  .connection-info h3 {
+    font-size: 18px;
+  }
+  
+  .detail-item {
+    font-size: 13px;
+    gap: 6px;
+  }
+  
+  .detail-label {
+    min-width: 30px;
+    text-underline-offset: 3px;
+  }
+  
+  .detail-value {
+    margin-left: 8px;
+    font-size: 12px;
+  }
+}

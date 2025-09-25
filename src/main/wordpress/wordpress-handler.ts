@@ -3,9 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as mime from 'mime-types';
-import { getSQLiteManager } from '../sqlite/sqlite-manager';
+import { getSQLiteManager } from '../sqlite/manager';
 import { WordPressPost, WordPressMedia, SyncOperation, SyncFileDetail } from '../sqlite/wordpress-sqlite-manager';
-import { ExportOptions } from '../sqlite/wordpress-export-utils';
 
 export interface WordPressConnection {
   id?: string;
