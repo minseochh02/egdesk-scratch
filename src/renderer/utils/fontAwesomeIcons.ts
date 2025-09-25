@@ -18,6 +18,8 @@ export {
   faEdit,
   faTrash,
   faClock,
+  faEye,
+  faEyeSlash,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Feature icons
@@ -142,6 +144,11 @@ export {
   faSave,
   faHistory,
 } from '@fortawesome/free-solid-svg-icons';
+
+// Brand icons
+export {
+  faWordpress,
+} from '@fortawesome/free-brands-svg-icons';
 
 // Homepage Editor specific icons
 export {

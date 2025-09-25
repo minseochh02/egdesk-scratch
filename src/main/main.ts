@@ -9,26 +9,21 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import * as fs from 'fs';
-import * as os from 'os';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
-import { PHPManager } from './php/php-manager';
-import { autonomousGeminiClient } from './ai-services/gemini-autonomous-client';
-import { toolRegistry } from './ai-services/tool-executor';
-import { projectContextBridge } from './ai-services/project-context-bridge';
+import { autonomousGeminiClient } from './ai-code/gemini-autonomous-client';
 import { WordPressHandler } from './wordpress/wordpress-handler';
-import { LocalServerManager } from './wordpress/local-server';
+import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
-import { getSQLiteManager } from './sqlite/sqlite-manager';
+import { getSQLiteManager } from './sqlite/manager';
 import { createSchedulerManager } from './scheduler/scheduler-manager';
-import { aiChatDataService } from './ai-services/ai-chat-data-service';
+import { aiChatDataService } from './ai-code/ai-chat-data-service';
 import { registerFileSystemHandlers } from './fs';
-import { backupHandler } from './backup-handler';
+import { backupHandler } from './codespace/backup-handler';
 let schedulerManager: any;
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
@@ -44,34 +39,6 @@ class AppUpdater {
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
 
-
-// WordPress handlers are now managed by WordPressHandler class
-
-// WordPress server management is now handled by WordPressHandler class
-
-// WordPress server helper functions are now in WordPressHandler class
-
-// WordPress server and connection handlers are now managed by WordPressHandler class
-
-// Storage-related IPC handlers are now in storage.ts
-
-// File system IPC handlers are now managed by ReadFileTool class
-
-// Browser Window management is now handled by BrowserController class
-
-// Image download handler removed - was unused
-
-// Debug workflow execution handler removed - was unused
-
-// Browser window management and main window management are now handled by BrowserController class
-
-// File system IPC handlers are now managed by ReadFileTool class
-
-
-
-// Read File Tool IPC handlers are now managed by ReadFileTool class
-
-// WordPress sync file operations are now managed by WordPressHandler class
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -105,22 +72,6 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
-    // Initialize Project Context Bridge
-    try {
-      console.log('✅ Project Context Bridge initialized');
-      // Note: projectContextBridge auto-registers IPC handlers in constructor
-    } catch (error) {
-      console.error('❌ Failed to initialize Project Context Bridge:', error);
-    }
-
-    // Initialize Tool Registry (new autonomous tool executor)
-    try {
-      // The toolRegistry is automatically initialized with built-in tools
-      console.log('✅ Tool Registry (Autonomous) initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize Tool Registry:', error);
-    }
-
 
     // Initialize Autonomous Gemini AI Client with streaming and tool execution (handlers are auto-registered in constructor)
     try {
@@ -222,6 +173,16 @@ const createWindow = async () => {
     await wordpressHandler.initialize();
     wordpressHandler.registerHandlers();
 
+    // Initialize SQLite manager and register IPC handlers
+    try {
+      const sqliteManager = getSQLiteManager();
+      await sqliteManager.initialize();
+      sqliteManager.registerIPCHandlers();
+      console.log('✅ SQLite Manager initialized and IPC handlers registered successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize SQLite Manager:', error);
+    }
+
     // Initialize Local Server Manager with the main window
     localServerManager = new LocalServerManager(mainWindow);
     await localServerManager.initialize();
@@ -234,6 +195,9 @@ const createWindow = async () => {
   } catch (error) {
     console.error('❌ Failed to initialize components:', error);
   }
+
+  // Register blog generation IPC handlers
+  // registerBlogGenerationHandlers(); // TODO: Implement blog generation handlers
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');

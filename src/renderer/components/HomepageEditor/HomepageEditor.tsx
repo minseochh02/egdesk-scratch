@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './HomepageEditor.css';
 import ProjectContextService from '../../services/projectContextService';
 import { AIChat } from './AIChatInterface/AIChat';
@@ -24,6 +24,36 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     const saved = localStorage.getItem('homepage-editor-auto-start');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const originalBoundsRef = useRef<any | null>(null);
+
+  useEffect(() => {
+    // Capture original main window bounds on mount, restore on unmount
+    (async () => {
+      try {
+        if (!originalBoundsRef.current) {
+          const result = await window.electron.mainWindow.getBounds();
+          if (result?.success && result.bounds) {
+            originalBoundsRef.current = result.bounds;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to capture original window bounds:', e);
+      }
+    })();
+
+    return () => {
+      (async () => {
+        try {
+          const bounds = originalBoundsRef.current;
+          if (bounds) {
+            await window.electron.mainWindow.setBounds(bounds);
+          }
+        } catch (e) {
+          console.warn('Failed to restore original window bounds:', e);
+        }
+      })();
+    };
+  }, []);
 
   useEffect(() => {
     // Subscribe to project context changes
