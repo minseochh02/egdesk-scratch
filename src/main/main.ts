@@ -9,7 +9,7 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -72,6 +72,19 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
+
+    try {
+      ipcMain.handle('start-automation', async (_event, creds?: { id?: string; pw?: string; proxy?: string }) => {
+        const { runAutomation } = require('./automator');
+        return await runAutomation(creds?.id, creds?.pw, creds?.proxy);
+      });
+      ipcMain.handle('start-woori-automation', async (_event, opts?: { proxy?: string; geminiApiKey?: string }) => {
+        const { runWooriAutomation } = require('./bank-automator');
+        return await runWooriAutomation(undefined, undefined, opts?.proxy, opts?.geminiApiKey);
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize Automation:', error);
+    }
 
     // Initialize Autonomous Gemini AI Client with streaming and tool execution (handlers are auto-registered in constructor)
     try {

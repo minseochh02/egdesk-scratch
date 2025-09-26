@@ -34,6 +34,12 @@ import './App.css';
 function NavigationBar() {
   const location = useLocation();
   const [isNarrow, setIsNarrow] = useState(false);
+  const [showDebugForm, setShowDebugForm] = useState(false);
+  const [debugId, setDebugId] = useState('');
+  const [debugPw, setDebugPw] = useState('');
+  const [debugProxy, setDebugProxy] = useState('');
+  const [wooriProxy, setWooriProxy] = useState('');
+  const [wooriGeminiKey, setWooriGeminiKey] = useState('');
 
   useEffect(() => {
     const checkWidth = () => {
@@ -91,8 +97,117 @@ function NavigationBar() {
           <FontAwesomeIcon icon={faRobot} />
           {!isNarrow && <span>API 키 관리</span>}
         </Link>
-        
+        <button
+          className="nav-link"
+          onClick={async () => {
+            setShowDebugForm((v) => !v);
+          }}
+          style={{ cursor: 'pointer' }}
+          title="Run Playwright automation"
+        >
+          <FontAwesomeIcon icon={faRobot} />
+          {!isNarrow && <span>Debug</span>}
+        </button>
+
       </nav>
+      {showDebugForm && (
+        <div style={{ padding: '8px', background: '#1e1e1e', borderTop: '1px solid #333', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {!isNarrow && <span style={{ color: '#ddd' }}>Naver Login:</span>}
+          <input
+            type="text"
+            placeholder="ID"
+            value={debugId}
+            onChange={(e) => setDebugId(e.target.value)}
+            style={{ padding: '4px 8px' }}
+          />
+          <input
+            type="password"
+            placeholder="PW"
+            value={debugPw}
+            onChange={(e) => setDebugPw(e.target.value)}
+            style={{ padding: '4px 8px' }}
+          />
+          <input
+            type="text"
+            placeholder="Proxy (e.g. http://user:pass@host:port)"
+            value={debugProxy}
+            onChange={(e) => setDebugProxy(e.target.value)}
+            style={{ padding: '4px 8px', minWidth: '320px' }}
+          />
+          <button
+            onClick={async () => {
+              try {
+                const result = await (window as any).electron.debug.startAutomation(
+                  debugId || undefined,
+                  debugPw || undefined,
+                  debugProxy || undefined
+                );
+                if (!result?.success) {
+                  console.error('Debug automation failed:', result?.error);
+                  alert(`Automation failed${result?.error ? `: ${result.error}` : ''}`);
+                }
+              } catch (e: any) {
+                console.error('Debug automation error:', e);
+                alert(`Automation error: ${e?.message || e}`);
+              }
+            }}
+            style={{ padding: '4px 10px', cursor: 'pointer' }}
+          >
+            Start
+          </button>
+          <span style={{ margin: '0 8px', color: '#888' }}>|</span>
+          {!isNarrow && <span style={{ color: '#ddd' }}>Woori Spot:</span>}
+          <input
+            type="text"
+            placeholder="Proxy (optional)"
+            value={wooriProxy}
+            onChange={(e) => setWooriProxy(e.target.value)}
+            style={{ padding: '4px 8px', minWidth: '180px' }}
+          />
+          <input
+            type="password"
+            placeholder="Gemini API Key (optional)"
+            value={wooriGeminiKey}
+            onChange={(e) => setWooriGeminiKey(e.target.value)}
+            style={{ padding: '4px 8px', minWidth: '200px' }}
+          />
+          <button
+            onClick={async () => {
+              try {
+                const result = await (window as any).electron.debug.startWooriAutomation(
+                  wooriProxy || undefined,
+                  wooriGeminiKey || undefined
+                );
+                if (!result?.success) {
+                  console.error('Woori automation failed:', result?.error);
+                  alert(`Woori automation failed${result?.error ? `: ${result.error}` : ''}`);
+                } else {
+                  console.log('Woori automation result:', result);
+                  alert('Woori automation completed successfully. Check console for AI analysis details.');
+                }
+              } catch (e: any) {
+                console.error('Woori automation error:', e);
+                alert(`Woori automation error: ${e?.message || e}`);
+              }
+            }}
+            style={{ padding: '4px 10px', cursor: 'pointer' }}
+          >
+            Start Woori
+          </button>
+          <button
+            onClick={() => {
+              setShowDebugForm(false);
+              setDebugId('');
+              setDebugPw('');
+              setWooriProxy('');
+              setWooriGeminiKey('');
+            }}
+            style={{ padding: '4px 10px', cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }

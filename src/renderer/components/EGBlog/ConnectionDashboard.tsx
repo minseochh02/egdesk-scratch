@@ -15,7 +15,10 @@ import {
   faFileAlt,
   faCog,
   faExternalLinkAlt,
-  faArrowLeft
+  faArrowLeft,
+  faImage,
+  faComments,
+  faSettings
 } from '../../utils/fontAwesomeIcons';
 import naverBlogIcon from '../../../../assets/naverblog.svg';
 import tistoryIcon from '../../../../assets/tistory.svg';
@@ -76,6 +79,7 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'testing'>('connected');
   const [lastTested, setLastTested] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'posts' | 'media' | 'comments' | 'settings'>('overview');
   const [stats, setStats] = useState({
     totalPosts: 0,
     publishedPosts: 0,
@@ -105,16 +109,8 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
     }
   };
 
-  const handleTestConnection = async () => {
-    try {
-      setConnectionStatus('testing');
-      await onTestConnection?.(connection);
-      setConnectionStatus('connected');
-      setLastTested(new Date().toISOString());
-    } catch (err) {
-      setConnectionStatus('disconnected');
-      console.error('Connection test failed:', err);
-    }
+  const handleVisitBlog = () => {
+    window.open(connection.url, '_blank', 'noopener,noreferrer');
   };
 
   const handleEdit = () => {
@@ -207,21 +203,122 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
     }
   };
 
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: faChartBar },
+    { id: 'posts', label: 'Posts', icon: faFileAlt },
+    { id: 'media', label: 'Media', icon: faImage },
+    { id: 'comments', label: 'Comments', icon: faComments },
+    { id: 'settings', label: 'Settings', icon: faCog }
+  ];
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return (
+          <div className="eg-blog-connection-dashboard-tab-content">
+            <h4>Connection Overview</h4>
+            <p>Welcome to your {getConnectionTypeName(connection)} dashboard. Here you can manage your blog content, media, and settings.</p>
+            
+            <div className="eg-blog-connection-dashboard-connection-details-grid">
+              <div className="eg-blog-connection-dashboard-detail-item">
+                <FontAwesomeIcon icon={faGlobe} />
+                <div className="eg-blog-connection-dashboard-detail-content">
+                  <span className="eg-blog-connection-dashboard-detail-label">URL</span>
+                  <span className="eg-blog-connection-dashboard-detail-value">
+                    <a href={connection.url} target="_blank" rel="noopener noreferrer">
+                      {connection.url}
+                      <FontAwesomeIcon icon={faExternalLinkAlt} />
+                    </a>
+                  </span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-detail-item">
+                <FontAwesomeIcon icon={faUser} />
+                <div className="eg-blog-connection-dashboard-detail-content">
+                  <span className="eg-blog-connection-dashboard-detail-label">Username</span>
+                  <span className="eg-blog-connection-dashboard-detail-value">{connection.username}</span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-detail-item">
+                <FontAwesomeIcon icon={faCalendarAlt} />
+                <div className="eg-blog-connection-dashboard-detail-content">
+                  <span className="eg-blog-connection-dashboard-detail-label">Created</span>
+                  <span className="eg-blog-connection-dashboard-detail-value">{formatDate(connection.createdAt)}</span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-detail-item">
+                <FontAwesomeIcon icon={faCalendarAlt} />
+                <div className="eg-blog-connection-dashboard-detail-content">
+                  <span className="eg-blog-connection-dashboard-detail-label">Last Updated</span>
+                  <span className="eg-blog-connection-dashboard-detail-value">{formatDate(connection.updatedAt)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      case 'posts':
+        return (
+          <div className="eg-blog-connection-dashboard-tab-content">
+            <h4>Blog Posts</h4>
+            <p>Manage your blog posts and content.</p>
+            <div className="eg-blog-connection-dashboard-placeholder">
+              <FontAwesomeIcon icon={faFileAlt} />
+              <p>Post management interface coming soon...</p>
+            </div>
+          </div>
+        );
+      case 'media':
+        return (
+          <div className="eg-blog-connection-dashboard-tab-content">
+            <h4>Media Library</h4>
+            <p>Upload and manage your media files.</p>
+            <div className="eg-blog-connection-dashboard-placeholder">
+              <FontAwesomeIcon icon={faImage} />
+              <p>Media management interface coming soon...</p>
+            </div>
+          </div>
+        );
+      case 'comments':
+        return (
+          <div className="eg-blog-connection-dashboard-tab-content">
+            <h4>Comments</h4>
+            <p>Moderate and manage comments on your blog.</p>
+            <div className="eg-blog-connection-dashboard-placeholder">
+              <FontAwesomeIcon icon={faComments} />
+              <p>Comment management interface coming soon...</p>
+            </div>
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="eg-blog-connection-dashboard-tab-content">
+            <h4>Settings</h4>
+            <p>Configure your blog connection settings.</p>
+            <div className="eg-blog-connection-dashboard-placeholder">
+              <FontAwesomeIcon icon={faCog} />
+              <p>Settings interface coming soon...</p>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="connection-dashboard">
+    <div className="eg-blog-connection-dashboard">
       {/* Header Section */}
-      <div className="dashboard-header">
-        <div className="header-actions">
+      <div className="eg-blog-connection-dashboard-header">
+        <div className="eg-blog-connection-dashboard-header-actions">
           {onBack && (
-            <button className="return-btn" onClick={onBack}>
+            <button className="eg-blog-connection-dashboard-return-btn" onClick={onBack} title="Back to Connections">
               <FontAwesomeIcon icon={faArrowLeft} />
-              <span>Back to Connections</span>
             </button>
           )}
         </div>
-        <div className="connection-info-header">
+        <div className="eg-blog-connection-dashboard-connection-info-header">
           <div 
-            className="connection-icon-large"
+            className="eg-blog-connection-dashboard-connection-icon-large"
             style={{ background: getConnectionGradient(connection) }}
           >
             {typeof getConnectionIcon(connection) === 'string' || getConnectionIcon(connection) === naverBlogIcon || getConnectionIcon(connection) === tistoryIcon ? (
@@ -230,16 +327,16 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
               <FontAwesomeIcon icon={getConnectionIcon(connection)} />
             )}
           </div>
-          <div className="connection-title">
+          <div className="eg-blog-connection-dashboard-connection-title">
             <h2>{connection.name}</h2>
-            <p className="connection-type">{getConnectionTypeName(connection)}</p>
-            <div className="connection-status">
-              <span className={`status-indicator ${getStatusColor()}`}>
+            <p className="eg-blog-connection-dashboard-connection-type">{getConnectionTypeName(connection)}</p>
+            <div className="eg-blog-connection-dashboard-connection-status">
+              <span className={`eg-blog-connection-dashboard-status-indicator eg-blog-connection-dashboard-status-indicator-${getStatusColor()}`}>
                 <FontAwesomeIcon icon={getStatusIcon()} />
                 {connectionStatus === 'testing' ? 'Testing...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
               </span>
               {lastTested && (
-                <span className="last-tested">
+                <span className="eg-blog-connection-dashboard-last-tested">
                   Last tested: {formatDate(lastTested)}
                 </span>
               )}
@@ -247,140 +344,122 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           </div>
         </div>
         
-        <div className="dashboard-actions">
+        <div className="eg-blog-connection-dashboard-actions">
           <button
-            className="action-btn test-btn"
-            onClick={handleTestConnection}
-            disabled={connectionStatus === 'testing'}
-            title="Test Connection"
+            className="eg-blog-connection-dashboard-action-btn eg-blog-connection-dashboard-visit-btn"
+            onClick={handleVisitBlog}
+            title="Visit Blog"
           >
-            <FontAwesomeIcon icon={faCheckCircle} />
-            Test
+            <FontAwesomeIcon icon={faExternalLinkAlt} />
+            Visit
           </button>
           <button
-            className="action-btn edit-btn"
+            className="eg-blog-connection-dashboard-action-btn eg-blog-connection-dashboard-edit-btn"
             onClick={handleEdit}
             title="Edit Connection"
           >
             <FontAwesomeIcon icon={faEdit} />
-            Edit
           </button>
           <button
-            className="action-btn delete-btn"
+            className="eg-blog-connection-dashboard-action-btn eg-blog-connection-dashboard-delete-btn"
             onClick={handleDelete}
             title="Delete Connection"
           >
             <FontAwesomeIcon icon={faTrash} />
-            Delete
           </button>
         </div>
       </div>
 
-      {/* Connection Details Section */}
-      <div className="dashboard-section">
-        <h3>Connection Details</h3>
-        <div className="connection-details-grid">
-          <div className="detail-item">
-            <FontAwesomeIcon icon={faGlobe} />
-            <div className="detail-content">
-              <span className="detail-label">URL</span>
-              <span className="detail-value">
-                <a href={connection.url} target="_blank" rel="noopener noreferrer">
-                  {connection.url}
-                  <FontAwesomeIcon icon={faExternalLinkAlt} />
-                </a>
-              </span>
-            </div>
+      {/* Main Content Area */}
+      <div className="eg-blog-connection-dashboard-main">
+        {/* Left Content - Tabs */}
+        <div className="eg-blog-connection-dashboard-content">
+          <div className="eg-blog-connection-dashboard-tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`eg-blog-connection-dashboard-tab ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id as any)}
+              >
+                <FontAwesomeIcon icon={tab.icon} />
+                <span>{tab.label}</span>
+              </button>
+            ))}
           </div>
-          <div className="detail-item">
-            <FontAwesomeIcon icon={faUser} />
-            <div className="detail-content">
-              <span className="detail-label">Username</span>
-              <span className="detail-value">{connection.username}</span>
-            </div>
-          </div>
-          <div className="detail-item">
-            <FontAwesomeIcon icon={faCalendarAlt} />
-            <div className="detail-content">
-              <span className="detail-label">Created</span>
-              <span className="detail-value">{formatDate(connection.createdAt)}</span>
-            </div>
-          </div>
-          <div className="detail-item">
-            <FontAwesomeIcon icon={faCalendarAlt} />
-            <div className="detail-content">
-              <span className="detail-label">Last Updated</span>
-              <span className="detail-value">{formatDate(connection.updatedAt)}</span>
-            </div>
+          
+          <div className="eg-blog-connection-dashboard-tab-panel">
+            {renderTabContent()}
           </div>
         </div>
-      </div>
 
-      {/* Statistics Section */}
-      <div className="dashboard-section">
-        <h3>Blog Statistics</h3>
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon">
-              <FontAwesomeIcon icon={faFileAlt} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">{stats.totalPosts}</span>
-              <span className="stat-label">Total Posts</span>
+        {/* Right Sidebar - Stats */}
+        <div className="eg-blog-connection-dashboard-sidebar">
+          <div className="eg-blog-connection-dashboard-stats-card">
+            <h3>Blog Statistics</h3>
+            <div className="eg-blog-connection-dashboard-stats-grid">
+              <div className="eg-blog-connection-dashboard-stat-card">
+                <div className="eg-blog-connection-dashboard-stat-icon">
+                  <FontAwesomeIcon icon={faFileAlt} />
+                </div>
+                <div className="eg-blog-connection-dashboard-stat-content">
+                  <span className="eg-blog-connection-dashboard-stat-value">{stats.totalPosts}</span>
+                  <span className="eg-blog-connection-dashboard-stat-label">Total Posts</span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-stat-card">
+                <div className="eg-blog-connection-dashboard-stat-icon eg-blog-connection-dashboard-stat-icon-success">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                </div>
+                <div className="eg-blog-connection-dashboard-stat-content">
+                  <span className="eg-blog-connection-dashboard-stat-value">{stats.publishedPosts}</span>
+                  <span className="eg-blog-connection-dashboard-stat-label">Published</span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-stat-card">
+                <div className="eg-blog-connection-dashboard-stat-icon eg-blog-connection-dashboard-stat-icon-warning">
+                  <FontAwesomeIcon icon={faEdit} />
+                </div>
+                <div className="eg-blog-connection-dashboard-stat-content">
+                  <span className="eg-blog-connection-dashboard-stat-value">{stats.draftPosts}</span>
+                  <span className="eg-blog-connection-dashboard-stat-label">Drafts</span>
+                </div>
+              </div>
+              <div className="eg-blog-connection-dashboard-stat-card">
+                <div className="eg-blog-connection-dashboard-stat-icon">
+                  <FontAwesomeIcon icon={faChartBar} />
+                </div>
+                <div className="eg-blog-connection-dashboard-stat-content">
+                  <span className="eg-blog-connection-dashboard-stat-value">
+                    {stats.lastPostDate ? formatDate(stats.lastPostDate) : 'N/A'}
+                  </span>
+                  <span className="eg-blog-connection-dashboard-stat-label">Last Post</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon success">
-              <FontAwesomeIcon icon={faCheckCircle} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">{stats.publishedPosts}</span>
-              <span className="stat-label">Published</span>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon warning">
-              <FontAwesomeIcon icon={faEdit} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">{stats.draftPosts}</span>
-              <span className="stat-label">Drafts</span>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">
-              <FontAwesomeIcon icon={faChartBar} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">
-                {stats.lastPostDate ? formatDate(stats.lastPostDate) : 'N/A'}
-              </span>
-              <span className="stat-label">Last Post</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Quick Actions Section */}
-      <div className="dashboard-section">
-        <h3>Quick Actions</h3>
-        <div className="quick-actions">
-          <button className="quick-action-btn">
-            <FontAwesomeIcon icon={faFileAlt} />
-            <span>View Posts</span>
-          </button>
-          <button className="quick-action-btn">
-            <FontAwesomeIcon icon={faEdit} />
-            <span>Create Post</span>
-          </button>
-          <button className="quick-action-btn">
-            <FontAwesomeIcon icon={faCog} />
-            <span>Settings</span>
-          </button>
-          <button className="quick-action-btn" onClick={onRefresh}>
-            <FontAwesomeIcon icon={faRefresh} />
-            <span>Refresh</span>
-          </button>
+          {/* Quick Actions */}
+          <div className="eg-blog-connection-dashboard-quick-actions-card">
+            <h3>Quick Actions</h3>
+            <div className="eg-blog-connection-dashboard-quick-actions">
+              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('posts')}>
+                <FontAwesomeIcon icon={faFileAlt} />
+                <span>View Posts</span>
+              </button>
+              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('media')}>
+                <FontAwesomeIcon icon={faImage} />
+                <span>Media Library</span>
+              </button>
+              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('settings')}>
+                <FontAwesomeIcon icon={faCog} />
+                <span>Settings</span>
+              </button>
+              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={onRefresh}>
+                <FontAwesomeIcon icon={faRefresh} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

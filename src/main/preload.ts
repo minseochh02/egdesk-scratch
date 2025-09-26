@@ -907,6 +907,10 @@ const electronHandler = {
     generateAndUpload: (params: BlogUploadParams) =>
       ipcRenderer.invoke('blog-generate-and-upload', params),
   } as BlogGenerationAPI,
+  debug: {
+    startAutomation: (id?: string, pw?: string, proxy?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy }),
+    startWooriAutomation: (proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { proxy, geminiApiKey }),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

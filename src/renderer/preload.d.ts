@@ -270,6 +270,16 @@ export interface IElectronAPI {
     revertToConversation: (targetConversationId: string) => Promise<{ success: boolean; summary?: any; error?: string }>;
     cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
+  debug: {
+    startAutomation(id?: string, pw?: string, proxy?: string): Promise<{ success: boolean; error?: string }>;
+    startWooriAutomation(proxy?: string, geminiApiKey?: string): Promise<{ 
+      success: boolean; 
+      error?: string; 
+      boxes?: any; 
+      clickedPoint?: any; 
+      screenshotPath?: string; 
+    }>;
+  };
 }
 
 declare global {
