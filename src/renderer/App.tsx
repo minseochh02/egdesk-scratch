@@ -38,6 +38,8 @@ function NavigationBar() {
   const [debugId, setDebugId] = useState('');
   const [debugPw, setDebugPw] = useState('');
   const [debugProxy, setDebugProxy] = useState('');
+  const [wooriId, setWooriId] = useState('');
+  const [wooriPassword, setWooriPassword] = useState('');
   const [wooriProxy, setWooriProxy] = useState('');
   const [wooriGeminiKey, setWooriGeminiKey] = useState('');
 
@@ -159,6 +161,20 @@ function NavigationBar() {
           {!isNarrow && <span style={{ color: '#ddd' }}>Woori Spot:</span>}
           <input
             type="text"
+            placeholder="ID"
+            value={wooriId}
+            onChange={(e) => setWooriId(e.target.value)}
+            style={{ padding: '4px 8px', minWidth: '120px' }}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={wooriPassword}
+            onChange={(e) => setWooriPassword(e.target.value)}
+            style={{ padding: '4px 8px', minWidth: '120px' }}
+          />
+          <input
+            type="text"
             placeholder="Proxy (optional)"
             value={wooriProxy}
             onChange={(e) => setWooriProxy(e.target.value)}
@@ -175,6 +191,8 @@ function NavigationBar() {
             onClick={async () => {
               try {
                 const result = await (window as any).electron.debug.startWooriAutomation(
+                  wooriId || undefined,
+                  wooriPassword || undefined,
                   wooriProxy || undefined,
                   wooriGeminiKey || undefined
                 );
@@ -199,6 +217,8 @@ function NavigationBar() {
               setShowDebugForm(false);
               setDebugId('');
               setDebugPw('');
+              setWooriId('');
+              setWooriPassword('');
               setWooriProxy('');
               setWooriGeminiKey('');
             }}

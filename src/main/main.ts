@@ -78,9 +78,9 @@ const createWindow = async () => {
         const { runAutomation } = require('./automator');
         return await runAutomation(creds?.id, creds?.pw, creds?.proxy);
       });
-      ipcMain.handle('start-woori-automation', async (_event, opts?: { proxy?: string; geminiApiKey?: string }) => {
-        const { runWooriAutomation } = require('./bank-automator');
-        return await runWooriAutomation(undefined, undefined, opts?.proxy, opts?.geminiApiKey);
+      ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string; geminiApiKey?: string }) => {
+        const { runShinhanAutomation } = require('./bank-automator');
+        return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy, opts?.geminiApiKey);
       });
     } catch (error) {
       console.error('❌ Failed to initialize Automation:', error);

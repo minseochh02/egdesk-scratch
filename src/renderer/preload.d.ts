@@ -272,7 +272,7 @@ export interface IElectronAPI {
   };
   debug: {
     startAutomation(id?: string, pw?: string, proxy?: string): Promise<{ success: boolean; error?: string }>;
-    startWooriAutomation(proxy?: string, geminiApiKey?: string): Promise<{ 
+    startWooriAutomation(id?: string, proxy?: string, geminiApiKey?: string): Promise<{ 
       success: boolean; 
       error?: string; 
       boxes?: any; 
