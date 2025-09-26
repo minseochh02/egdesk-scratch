@@ -382,6 +382,12 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
         if (match) {
           char = match[1].toLowerCase();
         }
+      } else if (label.match(/^[a-z]\s*\/\s*[ㅏ-ㅣ]/i)) {
+        // Format: "a / ㅏ key" -> extract "a"
+        const match = label.match(/^([a-z])/i);
+        if (match) {
+          char = match[1].toLowerCase();
+        }
       } else if (label.toLowerCase().includes('enter')) {
         char = 'enter';
       } else if (label.toLowerCase().includes('shift')) {
@@ -405,12 +411,12 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
     
     console.log('[AUTOMATOR] Available characters:', Object.keys(charMap));
     
-    // Click on the first 5 characters to test accuracy
-    const textToDebug = text.toLowerCase().substring(0, 5);
-    console.log(`[AUTOMATOR] Clicking on first 5 characters: "${textToDebug}"`);
+    // Click on all characters in the text
+    const textToType = text.toLowerCase();
+    console.log(`[AUTOMATOR] Clicking on all characters: "${textToType}"`);
     
-    for (let i = 0; i < textToDebug.length; i++) {
-      const char = textToDebug[i];
+    for (let i = 0; i < textToType.length; i++) {
+      const char = textToType[i];
       if (charMap[char]) {
         const keyData = charMap[char];
         console.log(`[AUTOMATOR] Clicking '${char}' at position (${keyData.position.x}, ${keyData.position.y})`);
@@ -473,12 +479,13 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
   }
 }
 
-async function processSegmentationResults(segmentationResults, screenshotPath, elementBoxes = null, page = null) {
+async function processSegmentationResults(segmentationResults, screenshotPath, elementBoxes = null, page = null, textToType = 'hello') {
   try {
     console.log('[AUTOMATOR] Processing segmentation results...');
     console.log('[AUTOMATOR] Found', segmentationResults.length, 'objects in the image');
     
     // If we have element boxes, calculate keyboard key positions
+    console.log('[AUTOMATOR] Element boxes received:', elementBoxes);
     if (elementBoxes && elementBoxes.targetImage) {
       console.log('[AUTOMATOR] Calculating keyboard key positions...');
       console.log('[AUTOMATOR] Target image bounds:', elementBoxes.targetImage);
@@ -554,10 +561,10 @@ async function processSegmentationResults(segmentationResults, screenshotPath, e
         console.log(`[AUTOMATOR] ${keyLabel}: (${keyData.position.x}, ${keyData.position.y})`);
       });
       
-      // Try to click "hello" using the keyboard coordinates
+      // Try to type the specified text using the keyboard coordinates
       if (keyboardKeys && Object.keys(keyboardKeys).length > 0) {
-        console.log('\n[AUTOMATOR] ===== TYPING "HELLO" =====');
-        await typeTextWithKeyboard(keyboardKeys, 'hello', page);
+        console.log(`\n[AUTOMATOR] ===== TYPING "${textToType.toUpperCase()}" =====`);
+        await typeTextWithKeyboard(keyboardKeys, textToType, page);
       }
       
       return { success: true, processed: segmentationResults.length, keyboardKeys };
@@ -571,14 +578,32 @@ async function processSegmentationResults(segmentationResults, screenshotPath, e
         });
       });
       
-      const buttons = segmentationResults.filter(obj => obj.label === 'button');
-      const numbers = segmentationResults.filter(obj => obj.label === 'number');
-      const characters = segmentationResults.filter(obj => obj.label === 'character');
+      const buttons = segmentationResults.filter(obj => obj.label && obj.label.toLowerCase().includes('button'));
+      const numbers = segmentationResults.filter(obj => obj.label && obj.label.toLowerCase().includes('number'));
+      const characters = segmentationResults.filter(obj => obj.label && (obj.label.toLowerCase().includes('key') || obj.label.match(/[a-z]\s*\/\s*[ㅏ-ㅣ]/i)));
       
       console.log('[AUTOMATOR] Summary:');
       console.log('[AUTOMATOR] - Buttons found:', buttons.length);
       console.log('[AUTOMATOR] - Numbers found:', numbers.length);
       console.log('[AUTOMATOR] - Characters found:', characters.length);
+      
+      // Try to type using the characters found in fallback mode
+      if (characters.length > 0 && page) {
+        console.log(`\n[AUTOMATOR] ===== FALLBACK TYPING "${textToType.toUpperCase()}" =====`);
+        // Create a simple keyboard mapping from the characters
+        const fallbackKeyboardKeys = {};
+        characters.forEach((char, index) => {
+          const keyLabel = `char_${index}`;
+          fallbackKeyboardKeys[keyLabel] = {
+            position: { x: 0, y: 0 }, // Will be calculated from box_2d
+            bounds: { x: 0, y: 0, width: 0, height: 0 },
+            label: char.label,
+            mask: char.mask,
+            aiBox: char.box_2d
+          };
+        });
+        await typeTextWithKeyboard(fallbackKeyboardKeys, textToType, page);
+      }
       
       return { success: true, processed: segmentationResults.length };
     }
