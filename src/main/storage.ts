@@ -412,6 +412,36 @@ ipcMain.handle('store-clear', async () => {
   }
 });
 
+/**
+ * Clear all WordPress-related configuration from Electron store
+ */
+ipcMain.handle('wordpress-clear-config', async () => {
+  try {
+    // Clear WordPress connections
+    store.set('wordpressConnections', []);
+    
+    // Clear sync history
+    store.set('syncHistory', []);
+    
+    // Reset user preferences to defaults (keeping non-WordPress settings)
+    const currentPrefs = store.get('userPreferences', {});
+    store.set('userPreferences', {
+      ...currentPrefs,
+      defaultSyncPath: '',
+      autoSync: false
+    });
+    
+    console.log('✅ WordPress configuration cleared from Electron store');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Failed to clear WordPress configuration:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
 // SSL Analysis Storage IPC handlers
 ipcMain.handle('ssl-analysis-save', async (event, analysis) => {
   try {

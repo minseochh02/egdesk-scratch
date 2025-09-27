@@ -23,6 +23,7 @@ import SiteStatusChecker from './SiteStatusChecker';
 import PostsTab from './components/PostsTab';
 import MediaTab from './components/MediaTab';
 import CommentsTab from './components/CommentsTab';
+import SettingsTab from './components/SettingsTab';
 import './ConnectionDashboard.css';
 
 interface WordPressConnection {
@@ -291,14 +292,13 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
         );
       case 'settings':
         return (
-          <div className="eg-blog-connection-dashboard-tab-content">
-            <h4>Settings</h4>
-            <p>Configure your blog connection settings.</p>
-            <div className="eg-blog-connection-dashboard-placeholder">
-              <FontAwesomeIcon icon={faCog} />
-              <p>Settings interface coming soon...</p>
-            </div>
-          </div>
+          <SettingsTab
+            connectionId={connection.id}
+            connectionName={connection.name}
+            connectionType={getConnectionTypeName(connection)}
+            onStatsUpdate={handleRefreshStats}
+            onConnectionDeleted={onBack}
+          />
         );
       default:
         return null;
