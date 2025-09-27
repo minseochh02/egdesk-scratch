@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as mime from 'mime-types';
 import { getSQLiteManager } from '../sqlite/manager';
-import { WordPressPost, WordPressMedia, SyncOperation, SyncFileDetail } from '../sqlite/wordpress-sqlite-manager';
+import { WordPressPost, WordPressMedia, SyncOperation, SyncFileDetail } from '../sqlite/wordpress';
 
 export interface WordPressConnection {
   id?: string;
@@ -57,6 +57,7 @@ export class WordPressHandler {
   public registerHandlers(): void {
     this.registerConnectionHandlers();
     this.registerSyncHandlers();
+    this.registerSiteStatusHandlers();
   }
 
   /**
@@ -340,7 +341,7 @@ export class WordPressHandler {
           ping_status: post.ping_status || 'open',
           template: post.template || '',
           format: post.format || 'standard',
-          meta: post.meta ? JSON.stringify(post.meta) : null,
+          meta: post.meta ? JSON.stringify(post.meta) : undefined,
           date: post.date || null,
           date_gmt: post.date_gmt || null,
           modified: post.modified || null,
@@ -499,7 +500,7 @@ export class WordPressHandler {
           height: mediaItem.media_details?.height || 0,
           wordpress_site_id: siteId,
           synced_at: new Date().toISOString(),
-          local_data: null // We don't download the actual file data in this implementation
+          local_data: undefined // We don't download the actual file data in this implementation
         };
 
         this.getSQLiteManager().saveMedia(wordpressMedia);
@@ -960,7 +961,7 @@ export class WordPressHandler {
         };
 
         this.getSQLiteManager().savePost(post);
-        return { success: true, size: post.content.length };
+        return { success: true, size: post.content?.length || 0 };
       } catch (error) {
         console.error('Error saving post to SQLite:', error);
         return {
@@ -1326,6 +1327,83 @@ export class WordPressHandler {
     });
   }
 
+  /**
+   * Register WordPress site status checker handlers
+   */
+  private registerSiteStatusHandlers(): void {
+    // Check WordPress site status
+    ipcMain.handle('wp-check-site-status', async (event, url: string) => {
+      try {
+        console.log('🔍 Main process checking site status for:', url);
+        
+        // Create a proper URL
+        const siteUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
+        
+        // Use node-fetch or built-in fetch (Node.js 18+) with redirect following
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for redirects
+        
+        const response = await fetch(siteUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'EGDesk-SiteChecker/1.0',
+          },
+          signal: controller.signal,
+          redirect: 'follow', // Follow redirects automatically
+        });
+        
+        clearTimeout(timeoutId);
+        
+        console.log('🌐 Final URL after redirects:', response.url);
+        console.log('📊 Response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const responseText = await response.text();
+        console.log('📄 Response text length:', responseText.length);
+        console.log('📄 First 500 characters:', responseText.substring(0, 500));
+        
+        // Check for hosting expiration message with multiple patterns
+        const hostingExpiredPatterns = [
+          /<h1[^>]*class="utility__title"[^>]*>사용하고 있는 호스팅 서비스 이용 기간이 만료되었습니다\.<\/h1>/i,
+          /사용하고 있는 호스팅 서비스 이용 기간이 만료되었습니다/i,
+          /호스팅 서비스 이용 기간이 만료/i,
+          /serviceExpire/i,
+          /expiration\.html/i
+        ];
+        
+        const matchedPatterns = hostingExpiredPatterns
+          .map((pattern, index) => ({ pattern, index, matched: pattern.test(responseText) }))
+          .filter(p => p.matched);
+        
+        const isHostingExpired = matchedPatterns.length > 0;
+        
+        console.log('🔍 Pattern matching results:');
+        matchedPatterns.forEach(p => console.log(`  Pattern ${p.index}: ${p.pattern} - MATCHED`));
+        console.log('🔍 Hosting expiration check result:', isHostingExpired);
+        
+        return {
+          success: true,
+          status: isHostingExpired ? 'offline' : 'online',
+          responseTime: Date.now() - Date.now(), // This will be calculated properly in the renderer
+          error: isHostingExpired ? 'Hosting service period has expired' : undefined,
+          content: responseText.substring(0, 1000), // First 1000 chars for debugging
+        };
+        
+      } catch (error) {
+        console.log('❌ Main process site check error:', error);
+        return {
+          success: false,
+          status: 'offline',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    console.log('✅ WordPress site status checker IPC handlers registered');
+  }
 
   /**
    * Upload media to WordPress using multipart/form-data

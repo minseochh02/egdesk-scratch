@@ -3,15 +3,15 @@ import type { AIServiceAPI } from '../main/preload';
 export interface IElectronAPI {
   ipcRenderer: {
     sendMessage(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
+      channel: 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       ...args: unknown[]
     ): void;
     on(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
+      channel: 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       func: (...args: unknown[]) => void,
     ): (() => void) | undefined;
     once(
-      channel: 'ipc-example' | 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
+      channel: 'sync-completed' | 'navigate-to-synced-folder' | 'ai-stream-event',
       func: (...args: unknown[]) => void,
     ): void;
   };
@@ -192,6 +192,21 @@ export interface IElectronAPI {
     success: boolean;
     error?: string;
   }>;
+  clearAllData(): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  clearSiteData(siteId: string): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  checkSite(url: string): Promise<{
+    success: boolean;
+    status?: 'online' | 'offline';
+    responseTime?: number;
+    error?: string;
+    content?: string;
+  }>;
 };
   sync: {
     saveHistory(
@@ -326,14 +341,15 @@ export interface IElectronAPI {
       screenshotPath?: string; 
     }>;
   };
-  siteStatus: {
-    checkSite(url: string): Promise<{
-      success: boolean;
-      status?: 'online' | 'offline';
-      responseTime?: number;
-      error?: string;
-      content?: string;
-    }>;
+  scheduledPosts: {
+    create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+    get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    getByConnection: (connectionId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    getAll: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    update: (id: string, updates: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+    delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+    toggle: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+    getTopics: (scheduledPostId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   };
 }
 

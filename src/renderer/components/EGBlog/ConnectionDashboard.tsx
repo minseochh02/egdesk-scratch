@@ -24,6 +24,7 @@ import PostsTab from './components/PostsTab';
 import MediaTab from './components/MediaTab';
 import CommentsTab from './components/CommentsTab';
 import SettingsTab from './components/SettingsTab';
+import ScheduledPostsTab from './components/ScheduledPostsTab';
 import './ConnectionDashboard.css';
 
 interface WordPressConnection {
@@ -253,15 +254,12 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
     switch (activeTab) {
       case 'scheduled':
         return (
-          <div className="eg-blog-connection-dashboard-tab-content">
-            <h4>Scheduled Tasks</h4>
-            <p>Manage your scheduled blog posts and automated tasks for {getConnectionTypeName(connection)}.</p>
-            
-            <div className="eg-blog-connection-dashboard-placeholder">
-              <FontAwesomeIcon icon={faCalendarAlt} />
-              <p>Scheduled tasks interface coming soon...</p>
-            </div>
-          </div>
+          <ScheduledPostsTab
+            connectionId={connection.id}
+            connectionName={connection.name}
+            connectionType={getConnectionTypeName(connection)}
+            onStatsUpdate={handleRefreshStats}
+          />
         );
       case 'posts':
         return (
@@ -440,33 +438,6 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
                   <span className="eg-blog-connection-dashboard-stat-label">Last Post</span>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="eg-blog-connection-dashboard-quick-actions-card">
-            <h3>Quick Actions</h3>
-            <div className="eg-blog-connection-dashboard-quick-actions">
-              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('scheduled')}>
-                <FontAwesomeIcon icon={faCalendarAlt} />
-                <span>Scheduled Tasks</span>
-              </button>
-              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('posts')}>
-                <FontAwesomeIcon icon={faFileAlt} />
-                <span>View Posts</span>
-              </button>
-              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('media')}>
-                <FontAwesomeIcon icon={faImage} />
-                <span>Media Library</span>
-              </button>
-              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={() => setActiveTab('settings')}>
-                <FontAwesomeIcon icon={faCog} />
-                <span>Settings</span>
-              </button>
-              <button className="eg-blog-connection-dashboard-quick-action-btn" onClick={onRefresh}>
-                <FontAwesomeIcon icon={faRefresh} />
-                <span>Refresh</span>
-              </button>
             </div>
           </div>
         </div>

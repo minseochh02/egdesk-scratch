@@ -31,7 +31,7 @@ import type {
 } from '../../../../main/types/ai-types';
 import { AIEventType } from '../../../../main/types/ai-types';
 import type { AIKey } from '../../AIKeysManager/types';
-import { BackupManager } from '../../BackupManager/BackupManager';
+import { BackupManager } from '../BackupManager/BackupManager';
 import './AIChat.css';
 
 interface AIChatProps {

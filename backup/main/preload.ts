@@ -1,10 +1,18 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import type { WriteFileToolParams, WriteFileResult } from './tools/write-file';
+// Define local types for file operations
+export interface WriteFileToolParams {
+  filePath: string;
+  content: string;
+}
+
+export interface WriteFileResult {
+  success: boolean;
+  error?: string;
+}
 
 export type Channels =
-  | 'ipc-example'
   | 'sync-completed'
   | 'navigate-to-synced-folder'
   | 'ai-stream-event';
@@ -652,7 +660,7 @@ const electronHandler = {
     writeFileWithParams: (params: WriteFileToolParams) =>
       ipcRenderer.invoke('fs-write-file', params),
     writeFileSimple: (filePath: string, content: string) =>
-      ipcRenderer.invoke('fs-write-file-simple', filePath, content),
+      ipcRenderer.invoke('fs-write-file', filePath, content),
   } as FileSystemAPI,
   wordpress: {
     saveConnection: (connection: WordPressConnection) =>

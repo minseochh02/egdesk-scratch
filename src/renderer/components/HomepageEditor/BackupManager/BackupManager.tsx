@@ -16,8 +16,8 @@ import {
   faFolder,
   faFile,
   faSpinner
-} from '../../utils/fontAwesomeIcons';
-import { BackupService, BackupInfo, BackupStats, RevertResult, RevertSummary } from '../../services/backup-service';
+} from '../../../utils/fontAwesomeIcons';
+import { BackupService, BackupInfo, BackupStats, RevertResult, RevertSummary } from '../../../services/backup-service';
 import './BackupManager.css';
 
 interface BackupManagerProps {

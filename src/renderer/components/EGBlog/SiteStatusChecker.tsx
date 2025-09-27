@@ -45,7 +45,7 @@ const SiteStatusChecker: React.FC<SiteStatusCheckerProps> = ({
       
       // Use main process proxy to bypass CORS
       console.log('📡 Calling main process to check site...');
-      const result = await (window.electron as any).siteStatus.checkSite(url);
+      const result = await window.electron.wordpress.checkSite(url);
       
       const responseTime = Date.now() - startTime;
       console.log('✅ Main process check completed. Response time:', responseTime + 'ms');
