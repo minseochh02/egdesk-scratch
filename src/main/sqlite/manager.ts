@@ -201,6 +201,209 @@ export class SQLiteManager {
   }
 
   /**
+   * WordPress delegation methods
+   */
+  
+  /**
+   * Get posts by site ID
+   */
+  public getPostsBySite(siteId: string, limit: number = 100, offset: number = 0) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getPostsBySite(siteId, limit, offset);
+  }
+
+  /**
+   * Get a specific post by ID and site
+   */
+  public getPostById(postId: number, siteId: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getPostById(postId, siteId);
+  }
+
+  /**
+   * Save a WordPress post
+   */
+  public savePost(post: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.savePost(post);
+  }
+
+  /**
+   * Get media by site ID
+   */
+  public getMediaBySite(siteId: string, limit: number = 100, offset: number = 0) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getMediaBySite(siteId, limit, offset);
+  }
+
+  public saveComment(comment: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.saveComment(comment);
+  }
+
+  public getCommentsBySite(siteId: string, limit: number = 100, offset: number = 0) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getCommentsBySite(siteId, limit, offset);
+  }
+
+  public getCommentsByPost(postId: number, siteId: string, limit: number = 100, offset: number = 0) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getCommentsByPost(postId, siteId, limit, offset);
+  }
+
+  public getCommentById(commentId: number, siteId: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getCommentById(commentId, siteId);
+  }
+
+  public updateCommentStatus(commentId: number, siteId: string, status: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.updateCommentStatus(commentId, siteId, status);
+  }
+
+  public deleteComment(commentId: number, siteId: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.deleteComment(commentId, siteId);
+  }
+
+  /**
+   * Save WordPress media
+   */
+  public saveMedia(media: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.saveMedia(media);
+  }
+
+  /**
+   * Create a sync operation
+   */
+  public createSyncOperation(operation: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.createSyncOperation(operation);
+  }
+
+  /**
+   * Update a sync operation
+   */
+  public updateSyncOperation(operationId: number, updates: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.updateSyncOperation(operationId, updates);
+  }
+
+  /**
+   * Get sync operations by site
+   */
+  public getSyncOperationsBySite(siteId: string, limit: number = 50) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getSyncOperationsBySite(siteId, limit);
+  }
+
+  /**
+   * Get sync statistics for a site
+   */
+  public getSyncStats(siteId: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getSyncStats(siteId);
+  }
+
+  /**
+   * Add sync file detail
+   */
+  public addSyncFileDetail(fileDetail: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.addSyncFileDetail(fileDetail);
+  }
+
+  /**
+   * Update sync file detail
+   */
+  public updateSyncFileDetail(fileDetailId: number, status: string, errorMessage?: string) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.updateSyncFileDetail(fileDetailId, status, errorMessage);
+  }
+
+  /**
+   * Get sync file details by operation ID
+   */
+  public getSyncFileDetails(operationId: number) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.getSyncFileDetails(operationId);
+  }
+
+  /**
+   * Export data to files
+   */
+  public async exportToFiles(exportOptions: any) {
+    this.ensureInitialized();
+    if (!this.wordpressManager) {
+      throw new Error('WordPress manager not available');
+    }
+    return this.wordpressManager.exportToFiles(exportOptions);
+  }
+
+  /**
+   * Get the conversations database instance (for AI chat)
+   */
+  public getDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.conversationsDb!;
+  }
+
+  /**
    * Get the task manager instance
    */
   public getTaskManager(): SQLiteTaskManager {
