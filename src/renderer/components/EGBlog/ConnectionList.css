@@ -5,25 +5,25 @@
   min-height: 100vh;
 }
 
-.connection-header {
+.connection-list-header {
   margin-bottom: 32px;
   text-align: center;
 }
 
-.connection-header h2 {
+.connection-list-header h2 {
   font-size: 28px;
   font-weight: 700;
   color: #1a1a1a;
   margin-bottom: 8px;
 }
 
-.connection-header p {
+.connection-list-header p {
   font-size: 16px;
   color: #6b7280;
 }
 
 /* Loading State */
-.loading-state {
+.connection-list-loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -32,13 +32,13 @@
   text-align: center;
 }
 
-.loading-state .spinner {
+.connection-list-loading-state .connection-list-spinner {
   width: 40px;
   height: 40px;
   border: 4px solid #e5e7eb;
   border-top: 4px solid #667eea;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: connection-list-spin 1s linear infinite;
   margin-bottom: 16px;
 }
 
@@ -47,14 +47,14 @@
   100% { transform: rotate(360deg); }
 }
 
-.loading-state p {
+.connection-list-loading-state p {
   font-size: 16px;
   color: #6b7280;
   margin: 0;
 }
 
 /* Error State */
-.error-state {
+.connection-list-error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -63,26 +63,26 @@
   text-align: center;
 }
 
-.error-state svg {
+.connection-list-error-state svg {
   font-size: 48px;
   color: #ef4444;
   margin-bottom: 16px;
 }
 
-.error-state h3 {
+.connection-list-error-state h3 {
   font-size: 20px;
   font-weight: 600;
   color: #1a1a1a;
   margin-bottom: 8px;
 }
 
-.error-state p {
+.connection-list-error-state p {
   font-size: 16px;
   color: #6b7280;
   margin-bottom: 24px;
 }
 
-.retry-btn {
+.connection-list-retry-btn {
   padding: 12px 24px;
   background: #667eea;
   color: white;
@@ -94,13 +94,13 @@
   transition: all 0.2s ease;
 }
 
-.retry-btn:hover {
+.connection-list-retry-btn:hover {
   background: #5a6fd8;
   transform: translateY(-1px);
 }
 
 /* Empty State */
-.empty-state {
+.connection-list-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -109,20 +109,20 @@
   text-align: center;
 }
 
-.empty-state svg {
+.connection-list-empty-state svg {
   font-size: 64px;
   color: #9ca3af;
   margin-bottom: 24px;
 }
 
-.empty-state h3 {
+.connection-list-empty-state h3 {
   font-size: 24px;
   font-weight: 600;
   color: #1a1a1a;
   margin-bottom: 12px;
 }
 
-.empty-state p {
+.connection-list-empty-state p {
   font-size: 16px;
   color: #6b7280;
   margin-bottom: 8px;
@@ -130,7 +130,7 @@
 }
 
 /* Connections Grid */
-.connections-grid {
+.connection-list-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 24px;
@@ -139,7 +139,7 @@
 }
 
 /* Connection Card */
-.connection-card {
+.connection-list-card {
   background: white !important;
   border: 2px solid #e5e7eb;
   border-radius: 16px;
@@ -150,7 +150,7 @@
   overflow: hidden;
 }
 
-.connection-card::before {
+.connection-list-card::before {
   content: '';
   position: absolute;
   top: 0;
@@ -162,24 +162,24 @@
   transition: transform 0.3s ease;
 }
 
-.connection-card:hover::before {
+.connection-list-card:hover::before {
   transform: scaleX(1);
 }
 
-.connection-card:hover {
+.connection-list-card:hover {
   border-color: #667eea;
   transform: translateY(-4px);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
 }
 
-.connection-card-header {
+.connection-list-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
 }
 
-.connection-card-header-left {
+.connection-list-card-header-left {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -217,16 +217,16 @@
   filter: brightness(0) invert(1);
 }
 
-.connection-status {
+.connection-list-status {
   display: flex;
   align-items: center;
 }
 
-.status-indicator {
+.connection-list-status-indicator {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
@@ -234,23 +234,27 @@
   letter-spacing: 0.5px;
 }
 
-.status-indicator.success {
+.connection-list-status-indicator svg {
+  color: white !important;
+}
+
+.connection-list-status-indicator-success {
   background: #d1fae5;
   color: #065f46;
 }
 
-.status-indicator.error {
+.connection-list-status-indicator-error {
   background: #fef2f2;
   color: #dc2626;
 }
 
-.status-indicator.warning {
+.connection-list-status-indicator-warning {
   background: #fef3c7;
   color: #d97706;
 }
 
 /* Connection Info */
-.connection-info h3 {
+.connection-list-info h3 {
   font-size: 20px;
   font-weight: 700;
   color: #1a1a1a !important;
@@ -264,14 +268,14 @@
   font-weight: 500;
 }
 
-.connection-details {
+.connection-list-details {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 20px;
 }
 
-.detail-item {
+.connection-list-detail-item {
   display: flex;
   align-items: center;
   font-size: 14px;
@@ -283,14 +287,14 @@
   margin: 0 !important;
 }
 
-.detail-item svg {
+.connection-list-detail-item svg {
   width: 16px;
   height: 16px;
   color: #6b7280;
   flex-shrink: 0;
 }
 
-.detail-text {
+.connection-list-detail-text {
   display: flex;
   align-items: center;
   flex: 1;
@@ -302,7 +306,7 @@
   margin: 0 !important;
 }
 
-.detail-label {
+.connection-list-detail-label {
   font-weight: 600;
   color: #374151;
   text-decoration: underline;
@@ -316,12 +320,12 @@
   margin: 0 !important;
 }
 
-.detail-item:hover .detail-label {
+.connection-list-detail-item:hover .connection-list-detail-label {
   text-decoration-color: #667eea;
   text-decoration-thickness: 2px;
 }
 
-.detail-value {
+.connection-list-detail-value {
   color: #6b7280;
   word-break: break-all;
   font-weight: 500;
@@ -335,7 +339,7 @@
 }
 
 /* Ensure proper contrast for connection cards */
-.connection-card .detail-value {
+.connection-list-card .connection-list-detail-value {
   color: #374151 !important;
   font-weight: 500;
   background: none !important;
@@ -344,7 +348,7 @@
   padding: 0 !important;
 }
 
-.connection-card .detail-label {
+.connection-list-card .connection-list-detail-label {
   color: #1f2937 !important;
   font-weight: 600;
   text-decoration-color: #e5e7eb !important;
@@ -354,18 +358,18 @@
   padding: 0 !important;
 }
 
-.connection-card .detail-item:hover .detail-label {
+.connection-list-card .connection-list-detail-item:hover .connection-list-detail-label {
   text-decoration-color: #667eea !important;
 }
 
-.connection-card .detail-item {
+.connection-list-card .connection-list-detail-item {
   background: none !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
 }
 
-.connection-card .detail-text {
+.connection-list-card .connection-list-detail-text {
   background: none !important;
   border: none !important;
   box-shadow: none !important;
@@ -373,29 +377,29 @@
 }
 
 /* Override any inherited platform card styles */
-.connection-card {
+.connection-list-card {
   background: white !important;
   color: #1a1a1a !important;
 }
 
-.connection-card * {
+.connection-list-card * {
   color: inherit !important;
 }
 
-.connection-card .detail-value {
+.connection-list-card .connection-list-detail-value {
   color: #374151 !important;
 }
 
-.connection-card .detail-label {
+.connection-list-card .connection-list-detail-label {
   color: #1f2937 !important;
 }
 
-.connection-card h3 {
+.connection-list-card h3 {
   color: #1a1a1a !important;
 }
 
 /* Connection Actions */
-.connection-actions {
+.connection-list-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
@@ -403,7 +407,7 @@
   border-top: 1px solid #e5e7eb;
 }
 
-.action-btn {
+.connection-list-action-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -418,54 +422,54 @@
   letter-spacing: 0.5px;
 }
 
-.action-btn svg {
+.connection-list-action-btn svg {
   width: 12px;
   height: 12px;
 }
 
-.view-btn {
+.connection-list-view-btn {
   background: #f0f9ff;
   color: #0369a1;
 }
 
-.view-btn:hover {
+.connection-list-view-btn:hover {
   background: #e0f2fe;
   transform: translateY(-1px);
 }
 
-.test-btn {
+.connection-list-test-btn {
   background: #d1fae5;
   color: #065f46;
 }
 
-.test-btn:hover {
+.connection-list-test-btn:hover {
   background: #a7f3d0;
   transform: translateY(-1px);
 }
 
-.edit-btn {
+.connection-list-edit-btn {
   background: #dbeafe;
   color: #1e40af;
 }
 
-.edit-btn:hover {
+.connection-list-edit-btn:hover {
   background: #bfdbfe;
   transform: translateY(-1px);
 }
 
-.delete-btn {
+.connection-list-delete-btn {
   background: #fef2f2;
   color: #dc2626;
 }
 
-.delete-btn:hover {
+.connection-list-delete-btn:hover {
   background: #fecaca;
   transform: translateY(-1px);
 }
 
 /* Responsive Design */
 @media (max-width: 1024px) {
-  .connections-grid {
+  .connection-list-grid {
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 20px;
   }
@@ -476,21 +480,21 @@
     padding: 16px;
   }
   
-  .connections-grid {
+  .connection-list-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
   
-  .connection-card {
+  .connection-list-card {
     padding: 20px;
   }
   
-  .connection-actions {
+  .connection-list-actions {
     flex-wrap: wrap;
     gap: 6px;
   }
   
-  .action-btn {
+  .connection-list-action-btn {
     flex: 1;
     min-width: 80px;
     justify-content: center;
@@ -498,30 +502,111 @@
 }
 
 @media (max-width: 480px) {
-  .connection-header h2 {
+  .connection-list-header h2 {
     font-size: 24px;
   }
   
-  .connection-card {
+  .connection-list-card {
     padding: 16px;
   }
   
-  .connection-info h3 {
+  .connection-list-info h3 {
     font-size: 18px;
   }
   
-  .detail-item {
+  .connection-list-detail-item {
     font-size: 13px;
     gap: 6px;
   }
   
-  .detail-label {
+  .connection-list-detail-label {
     min-width: 30px;
     text-underline-offset: 3px;
   }
   
-  .detail-value {
+  .connection-list-detail-value {
     margin-left: 8px;
     font-size: 12px;
   }
+}
+
+/* Connection Card Status */
+.connection-list-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.connection-list-status-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.connection-list-status-indicator-success {
+  background-color: #10b981;
+  color: white;
+}
+
+.connection-list-status-indicator-error {
+  background-color: #ef4444;
+  color: white;
+}
+
+.connection-list-status-indicator-warning {
+  background-color: #f59e0b;
+  color: white;
+}
+
+.connection-list-status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.connection-list-spinning {
+  animation: connection-list-spin 1s linear infinite;
+}
+
+@keyframes connection-list-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Site Status Section */
+.connection-list-site-status-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.connection-list-status-checker {
+  font-size: 12px;
+}
+
+.connection-list-status-checker .eg-blog-site-status-checker-main {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.connection-list-status-checker .eg-blog-site-status-checker-indicator {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.connection-list-status-checker .eg-blog-site-status-checker-text {
+  font-size: 11px;
+}
+
+.connection-list-status-checker .eg-blog-site-status-checker-refresh-btn {
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  font-size: 10px;
 }

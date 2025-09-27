@@ -146,7 +146,53 @@ export interface IElectronAPI {
       totalSize?: number;
       error?: string;
     }>;
-  };
+    fetchPosts(connectionId: string, options?: any): Promise<{
+      success: boolean;
+      posts?: any[];
+      total?: number;
+      error?: string;
+    }>;
+  fetchAllPosts(connectionId: string, options?: any): Promise<{
+    success: boolean;
+    totalPosts?: number;
+    error?: string;
+  }>;
+  fetchMedia(connectionId: string, options?: any): Promise<{
+    success: boolean;
+    media?: any[];
+    total?: number;
+    error?: string;
+  }>;
+  fetchAllMedia(connectionId: string, options?: any): Promise<{
+    success: boolean;
+    totalMedia?: number;
+    error?: string;
+  }>;
+  fetchComments(connectionId: string, options?: any): Promise<{
+    success: boolean;
+    comments?: any[];
+    total?: number;
+    error?: string;
+  }>;
+  fetchAllComments(connectionId: string, options?: any): Promise<{
+    success: boolean;
+    totalComments?: number;
+    error?: string;
+  }>;
+  getComments(connectionId: string, limit?: number, offset?: number): Promise<{
+    success: boolean;
+    comments?: any[];
+    error?: string;
+  }>;
+  updateCommentStatus(connectionId: string, commentId: number, status: string): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  deleteComment(connectionId: string, commentId: number): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+};
   sync: {
     saveHistory(
       syncData: any,
@@ -278,6 +324,15 @@ export interface IElectronAPI {
       boxes?: any; 
       clickedPoint?: any; 
       screenshotPath?: string; 
+    }>;
+  };
+  siteStatus: {
+    checkSite(url: string): Promise<{
+      success: boolean;
+      status?: 'online' | 'offline';
+      responseTime?: number;
+      error?: string;
+      content?: string;
     }>;
   };
 }

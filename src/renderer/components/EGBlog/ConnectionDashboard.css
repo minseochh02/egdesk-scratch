@@ -378,7 +378,6 @@
   background-color: #f8f9fa;
   border-radius: 8px;
   border: 1px solid #e1e8ed;
-  padding: 1.5rem;
   min-height: 400px;
 }
 
@@ -435,7 +434,48 @@
   padding: 1.5rem;
 }
 
-.eg-blog-connection-dashboard-stats-card h3,
+.eg-blog-connection-dashboard-stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.eg-blog-connection-dashboard-stats-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.eg-blog-connection-dashboard-refresh-stats-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.eg-blog-connection-dashboard-refresh-stats-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+.eg-blog-connection-dashboard-refresh-stats-btn:disabled {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
 .eg-blog-connection-dashboard-quick-actions-card h3 {
   margin: 0 0 1rem 0;
   font-size: 1.1rem;
@@ -852,6 +892,5 @@
   
   .eg-blog-connection-dashboard-tab-panel {
     min-height: 300px;
-    padding: 1rem;
   }
 }

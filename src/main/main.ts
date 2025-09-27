@@ -209,6 +209,77 @@ const createWindow = async () => {
     console.error('❌ Failed to initialize components:', error);
   }
 
+  // Register site status checker IPC handlers
+  ipcMain.handle('check-site-status', async (event, url: string) => {
+    try {
+      console.log('🔍 Main process checking site status for:', url);
+      
+      // Create a proper URL
+      const siteUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
+      
+      // Use node-fetch or built-in fetch (Node.js 18+) with redirect following
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for redirects
+      
+      const response = await fetch(siteUrl.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'EGDesk-SiteChecker/1.0',
+        },
+        signal: controller.signal,
+        redirect: 'follow', // Follow redirects automatically
+      });
+      
+      clearTimeout(timeoutId);
+      
+      console.log('🌐 Final URL after redirects:', response.url);
+      console.log('📊 Response status:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const responseText = await response.text();
+      console.log('📄 Response text length:', responseText.length);
+      console.log('📄 First 500 characters:', responseText.substring(0, 500));
+      
+      // Check for hosting expiration message with multiple patterns
+      const hostingExpiredPatterns = [
+        /<h1[^>]*class="utility__title"[^>]*>사용하고 있는 호스팅 서비스 이용 기간이 만료되었습니다\.<\/h1>/i,
+        /사용하고 있는 호스팅 서비스 이용 기간이 만료되었습니다/i,
+        /호스팅 서비스 이용 기간이 만료/i,
+        /serviceExpire/i,
+        /expiration\.html/i
+      ];
+      
+      const matchedPatterns = hostingExpiredPatterns
+        .map((pattern, index) => ({ pattern, index, matched: pattern.test(responseText) }))
+        .filter(p => p.matched);
+      
+      const isHostingExpired = matchedPatterns.length > 0;
+      
+      console.log('🔍 Pattern matching results:');
+      matchedPatterns.forEach(p => console.log(`  Pattern ${p.index}: ${p.pattern} - MATCHED`));
+      console.log('🔍 Hosting expiration check result:', isHostingExpired);
+      
+      return {
+        success: true,
+        status: isHostingExpired ? 'offline' : 'online',
+        responseTime: Date.now() - Date.now(), // This will be calculated properly in the renderer
+        error: isHostingExpired ? 'Hosting service period has expired' : undefined,
+        content: responseText.substring(0, 1000), // First 1000 chars for debugging
+      };
+      
+    } catch (error) {
+      console.log('❌ Main process site check error:', error);
+      return {
+        success: false,
+        status: 'offline',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   // Register blog generation IPC handlers
   // registerBlogGenerationHandlers(); // TODO: Implement blog generation handlers
 

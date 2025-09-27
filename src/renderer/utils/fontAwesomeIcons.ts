@@ -35,6 +35,9 @@ export {
 // Status icons
 export {
   faSpinner,
+  faCircleCheck,
+  faCircleXmark,
+  faTriangleExclamation,
   faExclamationTriangle,
   faInfoCircle,
   faCheckCircle,
@@ -109,7 +112,6 @@ export {
   faShieldAlt,
   faLock,
   faUnlock,
-  faKey,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Development and technical icons
@@ -121,26 +123,18 @@ export {
   faHammer,
   faToolbox,
   faDatabase,
-  faServer,
 } from '@fortawesome/free-solid-svg-icons';
 
-// Additional icons used in the application
+// Additional utility icons
 export {
-  faFolderOpen,
-  faSync,
-  faCheckCircle,
-  faTimesCircle,
-  faFileAlt,
   faChartBar,
   faExternalLinkAlt,
   faQuestion,
   faRefresh,
   faDownload,
-  faEye,
   faMagic,
   faUpload,
   faCopy,
-  faUser,
   faSave,
   faHistory,
 } from '@fortawesome/free-solid-svg-icons';
@@ -150,7 +144,7 @@ export {
   faWordpress,
 } from '@fortawesome/free-brands-svg-icons';
 
-// Homepage Editor specific icons
+// Homepage Editor specific icons (with aliases)
 export {
   faArrowLeft as faUndo,
   faArrowRight as faRedo,

@@ -244,6 +244,52 @@ export interface WordPressAPI {
     totalSize?: number;
     error?: string;
   }>;
+  fetchPosts: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    posts?: any[];
+    total?: number;
+    error?: string;
+  }>;
+  fetchAllPosts: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    totalPosts?: number;
+    error?: string;
+  }>;
+  fetchMedia: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    media?: any[];
+    total?: number;
+    error?: string;
+  }>;
+  fetchAllMedia: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    totalMedia?: number;
+    error?: string;
+  }>;
+  fetchComments: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    comments?: any[];
+    total?: number;
+    error?: string;
+  }>;
+  fetchAllComments: (connectionId: string, options?: any) => Promise<{
+    success: boolean;
+    totalComments?: number;
+    error?: string;
+  }>;
+  getComments: (connectionId: string, limit?: number, offset?: number) => Promise<{
+    success: boolean;
+    comments?: any[];
+    error?: string;
+  }>;
+  updateCommentStatus: (connectionId: string, commentId: number, status: string) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  deleteComment: (connectionId: string, commentId: number) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 export interface SyncAPI {
@@ -701,6 +747,24 @@ const electronHandler = {
       ipcRenderer.invoke('wp-sync-get-file-details', operationId),
     exportToFiles: (exportOptions: any) =>
       ipcRenderer.invoke('wp-sync-export-to-files', exportOptions),
+    fetchPosts: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-posts', connectionId, options),
+    fetchAllPosts: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-all-posts', connectionId, options),
+    fetchMedia: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-media', connectionId, options),
+    fetchAllMedia: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-all-media', connectionId, options),
+    fetchComments: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-comments', connectionId, options),
+    fetchAllComments: (connectionId: string, options?: any) =>
+      ipcRenderer.invoke('wp-fetch-all-comments', connectionId, options),
+    getComments: (connectionId: string, limit?: number, offset?: number) =>
+      ipcRenderer.invoke('wp-get-comments', connectionId, limit, offset),
+    updateCommentStatus: (connectionId: string, commentId: number, status: string) =>
+      ipcRenderer.invoke('wp-update-comment-status', connectionId, commentId, status),
+    deleteComment: (connectionId: string, commentId: number) =>
+      ipcRenderer.invoke('wp-delete-comment', connectionId, commentId),
   } as WordPressAPI,
   sync: {
     saveHistory: (syncData: any) =>
@@ -907,6 +971,10 @@ const electronHandler = {
     generateAndUpload: (params: BlogUploadParams) =>
       ipcRenderer.invoke('blog-generate-and-upload', params),
   } as BlogGenerationAPI,
+  siteStatus: {
+    checkSite: (url: string) =>
+      ipcRenderer.invoke('check-site-status', url),
+  },
   debug: {
     startAutomation: (id?: string, pw?: string, proxy?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy }),
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),

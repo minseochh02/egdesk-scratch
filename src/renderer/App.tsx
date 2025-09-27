@@ -63,27 +63,27 @@ function NavigationBar() {
           <FontAwesomeIcon icon={faHome} />
           {!isNarrow && <span>홈</span>}
         </Link>
-        {/* Legacy BlogManager navigation - replaced by Blog Connector */}
-        {/* <Link
-          to="/blog-manager"
-          className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          {!isNarrow && <span>EG Bloging</span>}
-        </Link> */}
-        <Link
-          to="/blog-connector"
-          className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          {!isNarrow && <span>EG Bloging</span>}
-        </Link>
         <Link
           to="/homepage-editor"
           className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faCog} />
           {!isNarrow && <span>EG Coding</span>}
+        </Link>
+        {/* Legacy BlogManager navigation - replaced by Blog Connector */}
+        {/* <Link
+          to="/blog-manager"
+          className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          {!isNarrow && <span>EG Blogging</span>}
+        </Link> */}
+        <Link
+          to="/blog-connector"
+          className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          {!isNarrow && <span>EG Blogging</span>}
         </Link>
         <Link
           to="/ssl-analyzer"

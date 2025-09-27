@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faWordpress, faTrash, faEdit, faGlobe, faUser, faKey, faCalendarAlt, faCheckCircle, faExclamationTriangle, faFileAlt, faEye, faArrowLeft, faArrowRight } from '../../utils/fontAwesomeIcons';
+import { faWordpress, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faArrowRight, faSpinner, faCircleCheck, faCircleXmark, faTriangleExclamation } from '../../utils/fontAwesomeIcons';
 import naverBlogIcon from '../../../../assets/naverblog.svg';
 import tistoryIcon from '../../../../assets/tistory.svg';
+import SiteStatusChecker from './SiteStatusChecker';
 import './ConnectionList.css';
 
 interface WordPressConnection {
@@ -52,6 +53,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
   const [connections, setConnections] = useState<BlogConnection[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [siteStatuses, setSiteStatuses] = useState<Record<string, 'checking' | 'online' | 'offline' | 'error'>>({});
 
   useEffect(() => {
     loadConnections();
@@ -108,11 +110,25 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
       
       setConnections(allConnections);
       setError(null);
+      
+      // Initialize site statuses as checking
+      const initialStatuses: Record<string, 'checking' | 'online' | 'offline' | 'error'> = {};
+      allConnections.forEach(conn => {
+        initialStatuses[conn.id] = 'checking';
+      });
+      setSiteStatuses(initialStatuses);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleStatusChange = (connectionId: string, status: 'checking' | 'online' | 'offline' | 'error') => {
+    setSiteStatuses(prev => ({
+      ...prev,
+      [connectionId]: status
+    }));
   };
 
   const handleDelete = async (connectionId: string) => {
@@ -164,7 +180,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
     }
   };
 
-  const getConnectionIcon = (connection: BlogConnection) => {
+  const getConnectionIcon = (connection: BlogConnection): any => {
     if (connection.type === 'wordpress') {
       return faWordpress;
     } else if (connection.type === 'naver') {
@@ -173,6 +189,15 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
       return tistoryIcon;
     }
     return faGlobe;
+  };
+
+  const getConnectionIconSrc = (connection: BlogConnection): string | null => {
+    if (connection.type === 'naver') {
+      return naverBlogIcon;
+    } else if (connection.type === 'tistory') {
+      return tistoryIcon;
+    }
+    return null;
   };
 
   const getConnectionColor = (connection: BlogConnection) => {
@@ -219,16 +244,55 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
   };
 
   const getStatusColor = (connection: BlogConnection) => {
-    // You can implement actual connection testing logic here
-    // For now, return a default status
-    return 'success';
+    const status = siteStatuses[connection.id] || 'checking';
+    switch (status) {
+      case 'online':
+        return 'success';
+      case 'offline':
+        return 'error';
+      case 'error':
+        return 'error';
+      case 'checking':
+      default:
+        return 'warning';
+    }
+  };
+
+  const getStatusIcon = (connection: BlogConnection) => {
+    const status = siteStatuses[connection.id] || 'checking';
+    switch (status) {
+      case 'online':
+        return faCircleCheck;
+      case 'offline':
+        return faCircleXmark;
+      case 'error':
+        return faTriangleExclamation;
+      case 'checking':
+      default:
+        return faSpinner;
+    }
+  };
+
+  const getStatusText = (connection: BlogConnection) => {
+    const status = siteStatuses[connection.id] || 'checking';
+    switch (status) {
+      case 'online':
+        return 'Online';
+      case 'offline':
+        return 'Offline';
+      case 'error':
+        return 'Error';
+      case 'checking':
+      default:
+        return 'Checking...';
+    }
   };
 
   if (loading) {
     return (
       <div className="connection-list">
-        <div className="loading-state">
-          <div className="spinner"></div>
+        <div className="connection-list-loading-state">
+          <div className="connection-list-spinner"></div>
           <p>Loading connections...</p>
         </div>
       </div>
@@ -238,11 +302,11 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
   if (error) {
     return (
       <div className="connection-list">
-        <div className="error-state">
+        <div className="connection-list-error-state">
           <FontAwesomeIcon icon={faExclamationTriangle} />
           <h3>Error Loading Connections</h3>
           <p>{error}</p>
-          <button onClick={loadConnections} className="retry-btn">
+          <button onClick={loadConnections} className="connection-list-retry-btn">
             Try Again
           </button>
         </div>
@@ -253,7 +317,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
   if (connections.length === 0) {
     return (
       <div className="connection-list">
-        <div className="empty-state">
+        <div className="connection-list-empty-state">
           <FontAwesomeIcon icon={faGlobe} />
           <h3>No Blogs Yet</h3>
           <p>You haven't connected any blog platforms yet.</p>
@@ -265,72 +329,85 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
 
   return (
     <div className="connection-list">
-      <div className="connection-header">
-        <div className="header-actions">
+      <div className="connection-list-header">
+        <div className="connection-list-header-actions">
           {onBack && (
-            <button className="return-btn" onClick={onBack}>
+            <button className="connection-list-return-btn" onClick={onBack}>
               <FontAwesomeIcon icon={faArrowRight} />
               <span>Back to Platform Selection</span>
             </button>
           )}
         </div>
-        <div className="header-content">
+        <div className="connection-list-header-content">
           <h2>My Blogs</h2>
         </div>
       </div>
 
-      <div className="connections-grid">
+      <div className="connection-list-grid">
         {connections.map((connection) => (
           <div 
             key={connection.id} 
-            className="connection-card"
+            className="connection-list-card"
             onClick={() => onView?.(connection)}
             style={{ cursor: 'pointer' }}
           >
-            <div className="connection-card-header">
-              <div className="connection-card-header-left">
+            <div className="connection-list-card-header">
+              <div className="connection-list-card-header-left">
               <div 
                 className="connection-list-icon"
                 style={{ background: getConnectionColor(connection) }}
               >
-                {typeof getConnectionIcon(connection) === 'string' || getConnectionIcon(connection) === naverBlogIcon || getConnectionIcon(connection) === tistoryIcon ? (
-                  <img src={getConnectionIcon(connection)} alt={`${getConnectionTypeName(connection)} icon`} />
+                {getConnectionIconSrc(connection) ? (
+                  <img src={getConnectionIconSrc(connection)!} alt={`${getConnectionTypeName(connection)} icon`} />
                 ) : (
                   <FontAwesomeIcon icon={getConnectionIcon(connection)} />
                 )}
               </div>
               <h3>{connection.name}</h3>
               </div>
-              <div className="connection-status">
-                <span className={`status-indicator ${getStatusColor(connection)}`}>
-                  <FontAwesomeIcon icon={faCheckCircle} />
+              <div className="connection-list-status">
+                <span className={`connection-list-status-indicator connection-list-status-indicator-${getStatusColor(connection)}`}>
+                  <FontAwesomeIcon 
+                    icon={getStatusIcon(connection)} 
+                    className={siteStatuses[connection.id] === 'checking' ? 'connection-list-spinning' : ''}
+                  />
                 </span>
+                <span className="connection-list-status-text">{getStatusText(connection)}</span>
               </div>
             </div>
 
-            <div className="connection-info">
-              <div className="connection-details">
-                <div className="detail-item">
+            <div className="connection-list-info">
+              <div className="connection-list-details">
+                <div className="connection-list-detail-item">
                   <FontAwesomeIcon icon={faGlobe} />
-                  <div className="detail-text">
-                    <span className="detail-label">URL:</span>
-                    <span className="detail-value">{connection.url}</span>
+                  <div className="connection-list-detail-text">
+                    <span className="connection-list-detail-label">URL:</span>
+                    <span className="connection-list-detail-value">{connection.url}</span>
                   </div>
                 </div>
-                <div className="detail-item">
+                <div className="connection-list-detail-item">
                   <FontAwesomeIcon icon={faUser} />
-                  <div className="detail-text">
-                    <span className="detail-label">User:</span>
-                    <span className="detail-value">{connection.username}</span>
+                  <div className="connection-list-detail-text">
+                    <span className="connection-list-detail-label">User:</span>
+                    <span className="connection-list-detail-value">{connection.username}</span>
                   </div>
                 </div>
-                <div className="detail-item">
+                <div className="connection-list-detail-item">
                   <FontAwesomeIcon icon={faCalendarAlt} />
-                  <div className="detail-text">
-                    <span className="detail-label">Created:</span>
-                    <span className="detail-value">{formatDate(connection.createdAt)}</span>
+                  <div className="connection-list-detail-text">
+                    <span className="connection-list-detail-label">Created:</span>
+                    <span className="connection-list-detail-value">{formatDate(connection.createdAt)}</span>
                   </div>
                 </div>
+              </div>
+              
+              {/* Site Status Checker */}
+              <div className="connection-list-site-status-section">
+                <SiteStatusChecker
+                  url={connection.url}
+                  onStatusChange={(status) => handleStatusChange(connection.id, status)}
+                  className="connection-list-status-checker"
+                />
               </div>
             </div>
           </div>

@@ -55,6 +55,25 @@ export interface WordPressMedia {
   local_data?: Buffer;
 }
 
+export interface WordPressComment {
+  id: number;
+  post_id: number;
+  parent?: number;
+  author_name?: string;
+  author_email?: string;
+  author_url?: string;
+  author_ip?: string;
+  content: string;
+  status?: string;
+  type?: string;
+  karma?: number;
+  date?: string;
+  date_gmt?: string;
+  link?: string;
+  wordpress_site_id: string;
+  synced_at?: string;
+}
+
 export interface SyncOperation {
   id?: number;
   site_id: string;
@@ -204,6 +223,102 @@ export class WordPressDatabaseManager {
     `);
 
     return stmt.all(siteId, limit, offset) as WordPressMedia[];
+  }
+
+  /**
+   * Save a WordPress comment to the database
+   */
+  saveComment(comment: WordPressComment): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO wordpress_comments (
+        id, post_id, parent, author_name, author_email, author_url, author_ip,
+        content, status, type, karma, date, date_gmt, link, wordpress_site_id, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      comment.id,
+      comment.post_id,
+      comment.parent || 0,
+      comment.author_name || null,
+      comment.author_email || null,
+      comment.author_url || null,
+      comment.author_ip || null,
+      comment.content,
+      comment.status || 'hold',
+      comment.type || 'comment',
+      comment.karma || 0,
+      comment.date || null,
+      comment.date_gmt || null,
+      comment.link || null,
+      comment.wordpress_site_id,
+      comment.synced_at || new Date().toISOString()
+    );
+  }
+
+  /**
+   * Get comments by site ID
+   */
+  getCommentsBySite(siteId: string, limit: number = 100, offset: number = 0): WordPressComment[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM wordpress_comments 
+      WHERE wordpress_site_id = ? 
+      ORDER BY synced_at DESC 
+      LIMIT ? OFFSET ?
+    `);
+
+    return stmt.all(siteId, limit, offset) as WordPressComment[];
+  }
+
+  /**
+   * Get comments by post ID
+   */
+  getCommentsByPost(postId: number, siteId: string, limit: number = 100, offset: number = 0): WordPressComment[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM wordpress_comments 
+      WHERE post_id = ? AND wordpress_site_id = ? 
+      ORDER BY date DESC 
+      LIMIT ? OFFSET ?
+    `);
+
+    return stmt.all(postId, siteId, limit, offset) as WordPressComment[];
+  }
+
+  /**
+   * Get a specific comment by ID and site
+   */
+  getCommentById(commentId: number, siteId: string): WordPressComment | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM wordpress_comments 
+      WHERE id = ? AND wordpress_site_id = ?
+    `);
+
+    return stmt.get(commentId, siteId) as WordPressComment || null;
+  }
+
+  /**
+   * Update comment status
+   */
+  updateCommentStatus(commentId: number, siteId: string, status: string): void {
+    const stmt = this.db.prepare(`
+      UPDATE wordpress_comments 
+      SET status = ?, synced_at = ? 
+      WHERE id = ? AND wordpress_site_id = ?
+    `);
+
+    stmt.run(status, new Date().toISOString(), commentId, siteId);
+  }
+
+  /**
+   * Delete a comment
+   */
+  deleteComment(commentId: number, siteId: string): void {
+    const stmt = this.db.prepare(`
+      DELETE FROM wordpress_comments 
+      WHERE id = ? AND wordpress_site_id = ?
+    `);
+
+    stmt.run(commentId, siteId);
   }
 
   /**

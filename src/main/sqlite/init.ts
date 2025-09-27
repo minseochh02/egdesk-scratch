@@ -319,6 +319,28 @@ export function initializeWordPressDatabaseSchema(db: Database.Database): void {
     )
   `);
 
+  // Create wordpress_comments table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wordpress_comments (
+      id INTEGER PRIMARY KEY,
+      post_id INTEGER NOT NULL,
+      parent INTEGER DEFAULT 0,
+      author_name TEXT,
+      author_email TEXT,
+      author_url TEXT,
+      author_ip TEXT,
+      content TEXT NOT NULL,
+      status TEXT DEFAULT 'hold',
+      type TEXT DEFAULT 'comment',
+      karma INTEGER DEFAULT 0,
+      date DATETIME,
+      date_gmt DATETIME,
+      link TEXT,
+      wordpress_site_id TEXT NOT NULL,
+      synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Create sync_operations table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sync_operations (

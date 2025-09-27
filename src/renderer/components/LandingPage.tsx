@@ -38,11 +38,11 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/wordpress-sites" className="action-card scheduler-card">
+            <Link to="/blog-connector" className="action-card scheduler-card">
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCalendarAlt} />
               </div>
-              <h3 className="card-title">EG Bloging</h3>
+              <h3 className="card-title">EG Blogging</h3>
               <p className="card-description">
                 AI 도움으로 블로그 콘텐츠를 계획하고 일정을 잡으세요. 자동 포스팅과 콘텐츠 관리를 설정하세요.
               </p>

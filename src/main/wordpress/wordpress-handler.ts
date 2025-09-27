@@ -203,6 +203,673 @@ export class WordPressHandler {
 
 
   /**
+   * Fetch posts from WordPress REST API and save to SQLite
+   */
+  async fetchPostsFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    page?: number;
+    status?: string;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    posts?: any[];
+    total?: number;
+    error?: string;
+  }> {
+    try {
+      const {
+        perPage = 100,
+        page = 1,
+        status = 'publish',
+        after,
+        before
+      } = options;
+
+      console.log(`🔄 Fetching posts from WordPress: ${connection.url}`);
+      
+      const baseUrl = connection.url.replace(/\/$/, '');
+      const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        per_page: perPage.toString(),
+        page: page.toString(),
+        status: status,
+        ...(after && { after }),
+        ...(before && { before })
+      });
+
+      const fullUrl = `${endpoint}?${queryParams.toString()}`;
+      console.log(`📡 Fetching from: ${fullUrl}`);
+
+      const auth = Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+      
+      const requestOptions = {
+        hostname: new URL(fullUrl).hostname,
+        port: new URL(fullUrl).port || 443,
+        path: new URL(fullUrl).pathname + new URL(fullUrl).search,
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'User-Agent': 'EGDesk-WordPress-Sync/1.0',
+          'Accept': 'application/json'
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(requestOptions, (res) => {
+          let responseData = '';
+
+          res.on('data', (chunk) => {
+            responseData += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                const posts = JSON.parse(responseData);
+                const total = parseInt(res.headers['x-wp-total'] as string) || posts.length;
+                const totalPages = parseInt(res.headers['x-wp-totalpages'] as string) || 1;
+
+                console.log(`✅ Successfully fetched ${posts.length} posts (page ${page}/${totalPages}, total: ${total})`);
+
+                // Save posts to SQLite
+                this.savePostsToSQLite(posts, connection.id!);
+
+                resolve({
+                  success: true,
+                  posts,
+                  total
+                });
+              } else {
+                console.error(`❌ WordPress API Error: ${res.statusCode}`);
+                console.error(`📄 Response:`, responseData);
+                reject(new Error(`WordPress API request failed: ${res.statusCode} - ${responseData}`));
+              }
+            } catch (error: any) {
+              console.error(`❌ Failed to parse WordPress response:`, error.message);
+              console.error(`📄 Raw response:`, responseData);
+              reject(new Error(`Failed to parse WordPress response: ${error.message}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error(`❌ WordPress API request error:`, error.message);
+          reject(new Error(`WordPress API request error: ${error.message}`));
+        });
+
+        req.setTimeout(30000, () => {
+          req.destroy();
+          reject(new Error('WordPress API request timeout'));
+        });
+
+        req.end();
+      });
+    } catch (error) {
+      console.error('Error fetching posts from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Save fetched posts to SQLite
+   */
+  private savePostsToSQLite(posts: any[], siteId: string): void {
+    try {
+      console.log(`💾 Saving ${posts.length} posts to SQLite for site ${siteId}`);
+      
+      for (const post of posts) {
+        const wordpressPost: WordPressPost = {
+          id: post.id,
+          title: post.title?.rendered || post.title || 'Untitled',
+          content: post.content?.rendered || post.content || '',
+          excerpt: post.excerpt?.rendered || post.excerpt || '',
+          slug: post.slug || '',
+          status: post.status || 'publish',
+          type: post.type || 'post',
+          author: post.author || 1,
+          featured_media: post.featured_media || 0,
+          parent: post.parent || 0,
+          menu_order: post.menu_order || 0,
+          comment_status: post.comment_status || 'open',
+          ping_status: post.ping_status || 'open',
+          template: post.template || '',
+          format: post.format || 'standard',
+          meta: post.meta ? JSON.stringify(post.meta) : null,
+          date: post.date || null,
+          date_gmt: post.date_gmt || null,
+          modified: post.modified || null,
+          modified_gmt: post.modified_gmt || null,
+          link: post.link || null,
+          guid: post.guid?.rendered || post.guid || null,
+          wordpress_site_id: siteId,
+          synced_at: new Date().toISOString(),
+          local_content: post.content?.rendered || post.content || '',
+          export_format: 'wordpress'
+        };
+
+        this.getSQLiteManager().savePost(wordpressPost);
+      }
+
+      console.log(`✅ Successfully saved ${posts.length} posts to SQLite`);
+    } catch (error) {
+      console.error('Error saving posts to SQLite:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch media from WordPress REST API and save to SQLite
+   */
+  async fetchMediaFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    page?: number;
+    mimeType?: string;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    media?: any[];
+    total?: number;
+    error?: string;
+  }> {
+    try {
+      const {
+        perPage = 100,
+        page = 1,
+        mimeType,
+        after,
+        before
+      } = options;
+
+      console.log(`🔄 Fetching media from WordPress: ${connection.url}`);
+      
+      const baseUrl = connection.url.replace(/\/$/, '');
+      const endpoint = `${baseUrl}/wp-json/wp/v2/media`;
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        per_page: perPage.toString(),
+        page: page.toString(),
+        ...(mimeType && { media_type: mimeType }),
+        ...(after && { after }),
+        ...(before && { before })
+      });
+
+      const fullUrl = `${endpoint}?${queryParams.toString()}`;
+      console.log(`📡 Fetching media from: ${fullUrl}`);
+
+      const auth = Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+      
+      const requestOptions = {
+        hostname: new URL(fullUrl).hostname,
+        port: new URL(fullUrl).port || 443,
+        path: new URL(fullUrl).pathname + new URL(fullUrl).search,
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'User-Agent': 'EGDesk-WordPress-Sync/1.0',
+          'Accept': 'application/json'
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(requestOptions, (res) => {
+          let responseData = '';
+
+          res.on('data', (chunk) => {
+            responseData += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                const media = JSON.parse(responseData);
+                const total = parseInt(res.headers['x-wp-total'] as string) || media.length;
+                const totalPages = parseInt(res.headers['x-wp-totalpages'] as string) || 1;
+
+                console.log(`✅ Successfully fetched ${media.length} media items (page ${page}/${totalPages}, total: ${total})`);
+
+                // Save media to SQLite
+                this.saveMediaToSQLite(media, connection.id!);
+
+                resolve({
+                  success: true,
+                  media,
+                  total
+                });
+              } else {
+                console.error(`❌ WordPress Media API Error: ${res.statusCode}`);
+                console.error(`📄 Response:`, responseData);
+                reject(new Error(`WordPress Media API request failed: ${res.statusCode} - ${responseData}`));
+              }
+            } catch (error: any) {
+              console.error(`❌ Failed to parse WordPress media response:`, error.message);
+              console.error(`📄 Raw response:`, responseData);
+              reject(new Error(`Failed to parse WordPress media response: ${error.message}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error(`❌ WordPress Media API request error:`, error.message);
+          reject(new Error(`WordPress Media API request error: ${error.message}`));
+        });
+
+        req.setTimeout(30000, () => {
+          req.destroy();
+          reject(new Error('WordPress Media API request timeout'));
+        });
+
+        req.end();
+      });
+    } catch (error) {
+      console.error('Error fetching media from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Save fetched media to SQLite
+   */
+  private saveMediaToSQLite(media: any[], siteId: string): void {
+    try {
+      console.log(`💾 Saving ${media.length} media items to SQLite for site ${siteId}`);
+      
+      for (const mediaItem of media) {
+        const wordpressMedia: WordPressMedia = {
+          id: mediaItem.id,
+          title: mediaItem.title?.rendered || mediaItem.title || '',
+          description: mediaItem.description?.rendered || mediaItem.description || '',
+          caption: mediaItem.caption?.rendered || mediaItem.caption || '',
+          alt_text: mediaItem.alt_text || '',
+          source_url: mediaItem.source_url || mediaItem.guid?.rendered || '',
+          mime_type: mediaItem.mime_type || 'image/jpeg',
+          file_name: mediaItem.slug || path.basename(mediaItem.source_url || ''),
+          file_size: mediaItem.media_details?.filesize || 0,
+          width: mediaItem.media_details?.width || 0,
+          height: mediaItem.media_details?.height || 0,
+          wordpress_site_id: siteId,
+          synced_at: new Date().toISOString(),
+          local_data: null // We don't download the actual file data in this implementation
+        };
+
+        this.getSQLiteManager().saveMedia(wordpressMedia);
+      }
+
+      console.log(`✅ Successfully saved ${media.length} media items to SQLite`);
+    } catch (error) {
+      console.error('Error saving media to SQLite:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch comments from WordPress REST API and save to SQLite
+   */
+  async fetchCommentsFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    page?: number;
+    status?: string;
+    post?: number;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    comments?: any[];
+    total?: number;
+    error?: string;
+  }> {
+    try {
+      const {
+        perPage = 100,
+        page = 1,
+        status,
+        post,
+        after,
+        before
+      } = options;
+
+      console.log(`🔄 Fetching comments from WordPress: ${connection.url}`);
+      
+      const baseUrl = connection.url.replace(/\/$/, '');
+      const endpoint = `${baseUrl}/wp-json/wp/v2/comments`;
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        per_page: perPage.toString(),
+        page: page.toString(),
+        ...(status && { status }),
+        ...(post && { post: post.toString() }),
+        ...(after && { after }),
+        ...(before && { before })
+      });
+
+      const fullUrl = `${endpoint}?${queryParams.toString()}`;
+      console.log(`📡 Fetching comments from: ${fullUrl}`);
+
+      const auth = Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+      
+      const requestOptions = {
+        hostname: new URL(fullUrl).hostname,
+        port: new URL(fullUrl).port || 443,
+        path: new URL(fullUrl).pathname + new URL(fullUrl).search,
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'User-Agent': 'EGDesk-WordPress-Sync/1.0',
+          'Accept': 'application/json'
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(requestOptions, (res) => {
+          let responseData = '';
+
+          res.on('data', (chunk) => {
+            responseData += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                const comments = JSON.parse(responseData);
+                const total = parseInt(res.headers['x-wp-total'] as string) || comments.length;
+                const totalPages = parseInt(res.headers['x-wp-totalpages'] as string) || 1;
+
+                console.log(`✅ Successfully fetched ${comments.length} comments (page ${page}/${totalPages}, total: ${total})`);
+
+                // Save comments to SQLite
+                this.saveCommentsToSQLite(comments, connection.id!);
+
+                resolve({
+                  success: true,
+                  comments,
+                  total
+                });
+              } else {
+                console.error(`❌ WordPress Comments API Error: ${res.statusCode}`);
+                console.error(`📄 Response:`, responseData);
+                reject(new Error(`WordPress Comments API request failed: ${res.statusCode} - ${responseData}`));
+              }
+            } catch (error: any) {
+              console.error(`❌ Failed to parse WordPress comments response:`, error.message);
+              console.error(`📄 Raw response:`, responseData);
+              reject(new Error(`Failed to parse WordPress comments response: ${error.message}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error(`❌ WordPress Comments API request error:`, error.message);
+          reject(new Error(`WordPress Comments API request error: ${error.message}`));
+        });
+
+        req.setTimeout(30000, () => {
+          req.destroy();
+          reject(new Error('WordPress Comments API request timeout'));
+        });
+
+        req.end();
+      });
+    } catch (error) {
+      console.error('Error fetching comments from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Save fetched comments to SQLite
+   */
+  private saveCommentsToSQLite(comments: any[], siteId: string): void {
+    try {
+      console.log(`💾 Saving ${comments.length} comments to SQLite for site ${siteId}`);
+      
+      for (const comment of comments) {
+        const wordpressComment: any = {
+          id: comment.id,
+          post_id: comment.post,
+          parent: comment.parent || 0,
+          author_name: comment.author_name || '',
+          author_email: comment.author_email || '',
+          author_url: comment.author_url || '',
+          author_ip: comment.author_ip || '',
+          content: comment.content?.rendered || comment.content || '',
+          status: comment.status || 'hold',
+          type: comment.type || 'comment',
+          karma: comment.karma || 0,
+          date: comment.date || null,
+          date_gmt: comment.date_gmt || null,
+          link: comment.link || '',
+          wordpress_site_id: siteId,
+          synced_at: new Date().toISOString()
+        };
+
+        this.getSQLiteManager().saveComment(wordpressComment);
+      }
+
+      console.log(`✅ Successfully saved ${comments.length} comments to SQLite`);
+    } catch (error) {
+      console.error('Error saving comments to SQLite:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch all comments from WordPress (with pagination)
+   */
+  async fetchAllCommentsFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    status?: string;
+    post?: number;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    totalComments?: number;
+    error?: string;
+  }> {
+    try {
+      const { perPage = 100, status, post, after, before } = options;
+      
+      console.log(`🔄 Fetching all comments from WordPress: ${connection.url}`);
+      
+      let allComments: any[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        console.log(`📄 Fetching comments page ${currentPage}/${totalPages}`);
+        
+        const result = await this.fetchCommentsFromWordPress(connection, {
+          perPage,
+          page: currentPage,
+          status,
+          post,
+          after,
+          before
+        });
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: result.error
+          };
+        }
+
+        allComments = allComments.concat(result.comments || []);
+        totalPages = Math.ceil((result.total || 0) / perPage);
+        hasMorePages = currentPage < totalPages;
+        currentPage++;
+
+        // Add a small delay to avoid overwhelming the server
+        if (hasMorePages) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log(`✅ Successfully fetched all ${allComments.length} comments from WordPress`);
+      
+      return {
+        success: true,
+        totalComments: allComments.length
+      };
+    } catch (error) {
+      console.error('Error fetching all comments from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Fetch all media from WordPress (with pagination)
+   */
+  async fetchAllMediaFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    mimeType?: string;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    totalMedia?: number;
+    error?: string;
+  }> {
+    try {
+      const { perPage = 100, mimeType, after, before } = options;
+      
+      console.log(`🔄 Fetching all media from WordPress: ${connection.url}`);
+      
+      let allMedia: any[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        console.log(`📄 Fetching media page ${currentPage}/${totalPages}`);
+        
+        const result = await this.fetchMediaFromWordPress(connection, {
+          perPage,
+          page: currentPage,
+          mimeType,
+          after,
+          before
+        });
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: result.error
+          };
+        }
+
+        allMedia = allMedia.concat(result.media || []);
+        totalPages = Math.ceil((result.total || 0) / perPage);
+        hasMorePages = currentPage < totalPages;
+        currentPage++;
+
+        // Add a small delay to avoid overwhelming the server
+        if (hasMorePages) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log(`✅ Successfully fetched all ${allMedia.length} media items from WordPress`);
+      
+      return {
+        success: true,
+        totalMedia: allMedia.length
+      };
+    } catch (error) {
+      console.error('Error fetching all media from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Fetch all posts from WordPress (with pagination)
+   */
+  async fetchAllPostsFromWordPress(connection: WordPressConnection, options: {
+    perPage?: number;
+    status?: string;
+    after?: string;
+    before?: string;
+  } = {}): Promise<{
+    success: boolean;
+    totalPosts?: number;
+    error?: string;
+  }> {
+    try {
+      const { perPage = 100, status = 'publish', after, before } = options;
+      
+      console.log(`🔄 Fetching all posts from WordPress: ${connection.url}`);
+      
+      let allPosts: any[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        console.log(`📄 Fetching page ${currentPage}/${totalPages}`);
+        
+        const result = await this.fetchPostsFromWordPress(connection, {
+          perPage,
+          page: currentPage,
+          status,
+          after,
+          before
+        });
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: result.error
+          };
+        }
+
+        allPosts = allPosts.concat(result.posts || []);
+        totalPages = Math.ceil((result.total || 0) / perPage);
+        hasMorePages = currentPage < totalPages;
+        currentPage++;
+
+        // Add a small delay to avoid overwhelming the server
+        if (hasMorePages) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log(`✅ Successfully fetched all ${allPosts.length} posts from WordPress`);
+      
+      return {
+        success: true,
+        totalPosts: allPosts.length
+      };
+    } catch (error) {
+      console.error('Error fetching all posts from WordPress:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
    * Register WordPress sync file operations handlers
    */
   private registerSyncHandlers(): void {
@@ -455,12 +1122,204 @@ export class WordPressHandler {
       try {
         const result = await this.getSQLiteManager().exportToFiles(exportOptions);
         return result;
-                    } catch (error) {
+      } catch (error) {
         console.error('Error exporting to files:', error);
         return {
-                        success: false,
+          success: false,
           exportedFiles: [],
           totalSize: 0,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch posts from WordPress REST API
+    ipcMain.handle('wp-fetch-posts', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchPostsFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching posts from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch all posts from WordPress (with pagination)
+    ipcMain.handle('wp-fetch-all-posts', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchAllPostsFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching all posts from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch media from WordPress REST API
+    ipcMain.handle('wp-fetch-media', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchMediaFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching media from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch all media from WordPress (with pagination)
+    ipcMain.handle('wp-fetch-all-media', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchAllMediaFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching all media from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch comments from WordPress REST API
+    ipcMain.handle('wp-fetch-comments', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchCommentsFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching comments from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Fetch all comments from WordPress (with pagination)
+    ipcMain.handle('wp-fetch-all-comments', async (event, connectionId, options = {}) => {
+      try {
+        // Get connection details
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+          return {
+            success: false,
+            error: 'Connection not found'
+          };
+        }
+
+        const result = await this.fetchAllCommentsFromWordPress(connection, options);
+        return result;
+      } catch (error) {
+        console.error('Error fetching all comments from WordPress:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get comments by site
+    ipcMain.handle('wp-get-comments', async (event, connectionId, limit = 100, offset = 0) => {
+      try {
+        const comments = this.getSQLiteManager().getCommentsBySite(connectionId, limit, offset);
+        return { success: true, comments };
+      } catch (error) {
+        console.error('Error getting comments from SQLite:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Update comment status
+    ipcMain.handle('wp-update-comment-status', async (event, connectionId, commentId, status) => {
+      try {
+        this.getSQLiteManager().updateCommentStatus(commentId, connectionId, status);
+        return { success: true };
+      } catch (error) {
+        console.error('Error updating comment status:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete comment
+    ipcMain.handle('wp-delete-comment', async (event, connectionId, commentId) => {
+      try {
+        this.getSQLiteManager().deleteComment(commentId, connectionId);
+        return { success: true };
+      } catch (error) {
+        console.error('Error deleting comment:', error);
+        return {
+          success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
         };
       }
