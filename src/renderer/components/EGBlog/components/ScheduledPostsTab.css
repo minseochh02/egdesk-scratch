@@ -1,0 +1,488 @@
+/* Scheduled Posts Tab Styles - Scheduler Creator */
+.scheduled-posts-tab {
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  min-height: 600px;
+}
+
+/* Messages */
+.scheduled-posts-message {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+  animation: slideDown 0.3s ease-out;
+}
+
+.scheduled-posts-message-success {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb);
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.scheduled-posts-message-error {
+  background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.scheduled-posts-message-info {
+  background: linear-gradient(135deg, #d1ecf1, #bee5eb);
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header */
+.scheduled-posts-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.scheduled-posts-title h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.scheduled-posts-title p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 0.95rem;
+}
+
+/* Form */
+.scheduled-posts-content {
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  overflow: hidden;
+}
+
+.scheduled-posts-form {
+  padding: 2rem;
+}
+
+/* Sections */
+.scheduled-posts-section {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.scheduled-posts-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 1rem;
+}
+
+.scheduled-posts-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.5rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.scheduled-posts-section-title svg {
+  color: #3498db;
+  font-size: 1rem;
+}
+
+/* Form Fields */
+.scheduled-posts-field {
+  margin-bottom: 1.5rem;
+}
+
+.scheduled-posts-field label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.scheduled-posts-field input,
+.scheduled-posts-field textarea,
+.scheduled-posts-field select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background-color: #f8f9fa;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.scheduled-posts-field input:focus,
+.scheduled-posts-field textarea:focus,
+.scheduled-posts-field select:focus {
+  outline: none;
+  border-color: #3498db;
+  background-color: white;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.scheduled-posts-field textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.5;
+}
+
+
+/* DateTime Row */
+.scheduled-posts-datetime-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Day Selector */
+.scheduled-posts-day-selector {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background-color: #f8f9fa;
+  color: #495057;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.scheduled-posts-day-selector:focus {
+  outline: none;
+  border-color: #3498db;
+  background-color: white;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.scheduled-posts-day-selector:hover {
+  border-color: #3498db;
+  background-color: white;
+}
+
+/* Frequency Row */
+.scheduled-posts-frequency-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.scheduled-posts-frequency-type {
+  flex: 1;
+  min-width: 120px;
+}
+
+.scheduled-posts-custom-frequency {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #f8f9fa;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.scheduled-posts-frequency-value {
+  width: 80px;
+  padding: 0.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.scheduled-posts-custom-frequency span {
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+
+/* Topic Input */
+.scheduled-posts-topic-input {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.scheduled-posts-topic-name {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background-color: #f8f9fa;
+  transition: all 0.3s ease;
+}
+
+.scheduled-posts-topic-name:focus {
+  outline: none;
+  border-color: #3498db;
+  background-color: white;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.scheduled-posts-add-topic-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #27ae60, #229954);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.scheduled-posts-add-topic-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
+  background: linear-gradient(135deg, #229954, #1e8449);
+}
+
+.scheduled-posts-add-topic-btn svg {
+  font-size: 0.9rem;
+}
+
+/* Topics List */
+.scheduled-posts-topics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.scheduled-posts-topic-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.scheduled-posts-topic-item:hover {
+  border-color: #3498db;
+  background-color: #f0f8ff;
+}
+
+.scheduled-posts-topic-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.scheduled-posts-topic-name {
+  font-weight: 500;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.scheduled-posts-remove-topic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.scheduled-posts-remove-topic-btn:hover {
+  background-color: #c0392b;
+  transform: scale(1.05);
+}
+
+.scheduled-posts-remove-topic-btn svg {
+  font-size: 0.8rem;
+}
+
+/* Preview */
+.scheduled-posts-preview {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.scheduled-posts-preview-item {
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #495057;
+}
+
+.scheduled-posts-preview-item:last-child {
+  margin-bottom: 0;
+}
+
+.scheduled-posts-preview-item strong {
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+/* Actions */
+.scheduled-posts-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.scheduled-posts-submit-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+  min-width: 200px;
+  justify-content: center;
+}
+
+.scheduled-posts-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+  background: linear-gradient(135deg, #2980b9, #1f618d);
+}
+
+.scheduled-posts-submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.scheduled-posts-submit-btn svg {
+  font-size: 1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .scheduled-posts-tab {
+    padding: 1rem;
+  }
+
+  .scheduled-posts-form {
+    padding: 1.5rem;
+  }
+
+
+  .scheduled-posts-datetime-row {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduled-posts-frequency-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .scheduled-posts-custom-frequency {
+    justify-content: center;
+  }
+
+  .scheduled-posts-topic-input {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .scheduled-posts-topic-name {
+    width: 100%;
+  }
+
+  .scheduled-posts-add-topic-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .scheduled-posts-submit-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .scheduled-posts-tab {
+    padding: 0.75rem;
+  }
+
+  .scheduled-posts-form {
+    padding: 1rem;
+  }
+
+  .scheduled-posts-section {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+  }
+
+  .scheduled-posts-field {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Animation for form interactions */
+.scheduled-posts-field input:focus,
+.scheduled-posts-field textarea:focus,
+.scheduled-posts-field select:focus {
+  animation: focusGlow 0.3s ease-out;
+}
+
+@keyframes focusGlow {
+  from {
+    box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.1);
+  }
+  to {
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+  }
+}
+
+/* Loading state for submit button */
+.scheduled-posts-submit-btn:disabled svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,14 +1,38 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import type { WriteFileToolParams, WriteFileResult } from './tools/write-file';
 
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+/**
+ * File operation parameters for writing files
+ */
+export interface WriteFileToolParams {
+  filePath: string;
+  content: string;
+}
+
+/**
+ * Result of file write operations
+ */
+export interface WriteFileResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * IPC communication channels
+ */
 export type Channels =
-  | 'ipc-example'
   | 'sync-completed'
   | 'navigate-to-synced-folder'
   | 'ai-stream-event';
 
+/**
+ * File system item information
+ */
 export interface FileSystemItem {
   name: string;
   type: 'folder' | 'file';
@@ -19,6 +43,9 @@ export interface FileSystemItem {
   isSymlink: boolean;
 }
 
+/**
+ * Detailed file information
+ */
 export interface FileInfo {
   size: number;
   created: Date;
@@ -30,18 +57,27 @@ export interface FileInfo {
   permissions: number;
 }
 
+/**
+ * System directory information
+ */
 export interface SystemDirectory {
   name: string;
   path: string;
   icon: string;
 }
 
+/**
+ * Parameters for reading files with options
+ */
 export interface ReadFileParams {
   absolute_path: string;
   offset?: number;
   limit?: number;
 }
 
+/**
+ * Result of file read operations
+ */
 export interface ReadFileResult {
   success: boolean;
   content?: string;
@@ -53,6 +89,9 @@ export interface ReadFileResult {
   fileSize?: number;
 }
 
+/**
+ * Basic file information result
+ */
 export interface FileInfoResult {
   exists: boolean;
   size?: number;
@@ -61,6 +100,13 @@ export interface FileInfoResult {
   error?: string;
 }
 
+// ============================================================================
+// API INTERFACES
+// ============================================================================
+
+/**
+ * File system operations API
+ */
 export interface FileSystemAPI {
   readDirectory: (
     path: string,
@@ -94,6 +140,9 @@ export interface FileSystemAPI {
   writeFileSimple: (filePath: string, content: string) => Promise<WriteFileResult>;
 }
 
+/**
+ * WordPress connection configuration
+ */
 export interface WordPressConnection {
   id?: string;
   url: string;
@@ -108,6 +157,9 @@ export interface WordPressConnection {
   updatedAt?: string;
 }
 
+/**
+ * User application preferences
+ */
 export interface UserPreferences {
   theme: 'light' | 'dark';
   language: 'ko' | 'en';
@@ -115,6 +167,9 @@ export interface UserPreferences {
   autoSync: boolean;
 }
 
+/**
+ * Synchronization record for tracking sync operations
+ */
 export interface SyncRecord {
   id: string;
   connectionId: string;
@@ -131,6 +186,9 @@ export interface SyncRecord {
   updatedAt?: string;
 }
 
+/**
+ * Individual file sync detail information
+ */
 export interface SyncFileDetail {
   path: string;
   name: string;
@@ -142,7 +200,11 @@ export interface SyncFileDetail {
   error?: string;
 }
 
+/**
+ * WordPress API for managing connections and content synchronization
+ */
 export interface WordPressAPI {
+  // Connection management
   saveConnection: (connection: WordPressConnection) => Promise<{
     success: boolean;
     connections?: WordPressConnection[];
@@ -166,25 +228,8 @@ export interface WordPressAPI {
     connection?: WordPressConnection;
     error?: string;
   }>;
-  notifySyncCompletion: (
-    syncData: any,
-  ) => Promise<{ success: boolean; error?: string }>;
-  navigateToSyncedFolder: (navigationData: {
-    syncPath: string;
-    connectionName: string;
-  }) => Promise<{ success: boolean; error?: string }>;
-  syncCreateFolders: (
-    basePath: string,
-  ) => Promise<{ success: boolean; error?: string }>;
-  syncSavePost: (
-    filePath: string,
-    content: string,
-  ) => Promise<{ success: boolean; size?: number; error?: string }>;
-  syncDownloadMedia: (
-    mediaUrl: string,
-    filePath: string,
-  ) => Promise<{ success: boolean; size?: number; error?: string }>;
-  // SQLite-based sync handlers
+  
+  // SQLite-based sync operations
   createSyncOperation: (operationData: any) => Promise<{
     success: boolean;
     operationId?: string;
@@ -214,11 +259,6 @@ export interface WordPressAPI {
     media?: any[];
     error?: string;
   }>;
-  getSyncOperations: (siteId: string, limit?: number) => Promise<{
-    success: boolean;
-    operations?: any[];
-    error?: string;
-  }>;
   getSyncStats: (siteId: string) => Promise<{
     success: boolean;
     stats?: any;
@@ -244,6 +284,8 @@ export interface WordPressAPI {
     totalSize?: number;
     error?: string;
   }>;
+  
+  // WordPress REST API operations
   fetchPosts: (connectionId: string, options?: any) => Promise<{
     success: boolean;
     posts?: any[];
@@ -298,8 +340,32 @@ export interface WordPressAPI {
     success: boolean;
     error?: string;
   }>;
+  checkSite: (url: string) => Promise<{
+    success: boolean;
+    status?: 'online' | 'offline';
+    responseTime?: number;
+    error?: string;
+    content?: string;
+  }>;
 }
 
+/**
+ * Scheduled posts management API
+ */
+export interface ScheduledPostsAPI {
+  create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getByConnection: (connectionId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getAll: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  update: (id: string, updates: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+  toggle: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+  getTopics: (scheduledPostId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+}
+
+/**
+ * Synchronization operations API
+ */
 export interface SyncAPI {
   saveHistory: (
     syncData: any,
@@ -334,6 +400,9 @@ export interface SyncAPI {
   }>;
 }
 
+/**
+ * User preferences management API
+ */
 export interface PreferencesAPI {
   get: () => Promise<{
     success: boolean;
@@ -345,6 +414,9 @@ export interface PreferencesAPI {
   ) => Promise<{ success: boolean; error?: string }>;
 }
 
+/**
+ * Application store operations API
+ */
 export interface StoreAPI {
   get: (key: string) => Promise<any>;
   set: (key: string, value: any) => Promise<void>;
@@ -357,6 +429,9 @@ export interface StoreAPI {
   }>;
 }
 
+/**
+ * SSL analysis management API
+ */
 export interface SSLAnalysisAPI {
   save(analysis: any): Promise<{ success: boolean; analysis?: any; error?: string }>;
   getAll(filter?: any): Promise<{ success: boolean; analyses?: any[]; error?: string }>;
@@ -368,6 +443,9 @@ export interface SSLAnalysisAPI {
   clearAll(): Promise<{ success: boolean; error?: string }>;
 }
 
+/**
+ * PHP runtime information
+ */
 export interface PHPInfo {
   version: string;
   path: string;
@@ -376,6 +454,9 @@ export interface PHPInfo {
   error?: string;
 }
 
+/**
+ * WordPress server management API
+ */
 interface WordPressServerAPI {
   analyzeFolder: (
     folderPath: string,
@@ -407,6 +488,9 @@ interface WordPressServerAPI {
   }>;
 }
 
+/**
+ * Folder analysis information
+ */
 export interface FolderInfo {
   path: string;
   exists: boolean;
@@ -424,6 +508,9 @@ export interface FolderInfo {
   phpVersion?: string;
 }
 
+/**
+ * Server status information
+ */
 export interface ServerStatus {
   isRunning: boolean;
   port: number;
@@ -433,44 +520,11 @@ export interface ServerStatus {
   error?: string;
 }
 
-export interface ScheduledTask {
-  id: string;
-  name: string;
-  description?: string;
-  command: string;
-  schedule: string; // cron expression or interval
-  enabled: boolean;
-  lastRun?: Date | null;
-  nextRun?: Date | null;
-  runCount: number;
-  successCount: number;
-  failureCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-  workingDirectory?: string;
-  environment?: Record<string, string>;
-  outputFile?: string;
-  errorFile?: string;
-  metadata?: Record<string, any>; // For storing task-specific data like topics, WordPress settings, etc.
-  frequencyDays?: number;
-  frequencyHours?: number;
-  frequencyMinutes?: number;
-  topicSelectionMode?: 'least-used' | 'random' | 'round-robin';
-}
 
-export interface TaskExecution {
-  id: string;
-  taskId: string;
-  startTime: Date;
-  endTime?: Date;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
-  exitCode?: number;
-  output?: string;
-  error?: string;
-  pid?: number;
-  createdAt: Date;
-}
 
+/**
+ * Script execution result
+ */
 export interface ScriptExecutionResult {
   success: boolean;
   exitCode: number | null;
@@ -479,6 +533,9 @@ export interface ScriptExecutionResult {
   error?: string;
 }
 
+/**
+ * Script execution API
+ */
 export interface ScriptExecutionAPI {
   executeNodeScript: (
     scriptPath: string,
@@ -487,6 +544,9 @@ export interface ScriptExecutionAPI {
   ) => Promise<ScriptExecutionResult>;
 }
 
+/**
+ * AI service management API
+ */
 export interface AIServiceAPI {
   configure: (config: any) => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
@@ -506,12 +566,18 @@ export interface AIServiceAPI {
   };
 }
 
+/**
+ * Project context management API
+ */
 export interface ProjectContextAPI {
   updateContext: (context: any) => Promise<boolean>;
   getCurrentProject: () => Promise<any>;
   getContext: () => Promise<any>;
 }
 
+/**
+ * AI chat data management API
+ */
 export interface AIChatDataAPI {
   // Conversation operations
   getConversations: (options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
@@ -540,6 +606,9 @@ export interface AIChatDataAPI {
   clearAllData: () => Promise<{ success: boolean; error?: string }>;
 }
 
+/**
+ * Backup management API
+ */
 export interface BackupAPI {
   getAvailableBackups: () => Promise<{ success: boolean; backups?: any[]; error?: string }>;
   getBackupStats: () => Promise<{ success: boolean; stats?: any; error?: string }>;
@@ -548,12 +617,18 @@ export interface BackupAPI {
   cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
 }
 
+/**
+ * Blog topic information
+ */
 export interface BlogTopic {
   topic: string;
   lastUsed: string;
   count: number;
 }
 
+/**
+ * AI service configuration
+ */
 export interface AISettings {
   apiKey: string;
   provider: string;
@@ -566,18 +641,27 @@ export interface AISettings {
   imageAspectRatio: string;
 }
 
+/**
+ * WordPress connection settings
+ */
 export interface WordPressSettings {
   url: string;
   username: string;
   password: string;
 }
 
+/**
+ * Blog generation parameters
+ */
 export interface BlogGenerationParams {
   topics: BlogTopic[];
   topicSelectionMode: 'round-robin' | 'random' | 'least-used';
   aiSettings: AISettings;
 }
 
+/**
+ * Blog upload parameters
+ */
 export interface BlogUploadParams {
   topics: BlogTopic[];
   topicSelectionMode: 'round-robin' | 'random' | 'least-used';
@@ -585,6 +669,9 @@ export interface BlogUploadParams {
   aiSettings: AISettings;
 }
 
+/**
+ * Blog generation result
+ */
 export interface BlogGenerationResult {
   success: boolean;
   data?: {
@@ -603,6 +690,9 @@ export interface BlogGenerationResult {
   error?: string;
 }
 
+/**
+ * Blog upload result
+ */
 export interface BlogUploadResult {
   success: boolean;
   data?: {
@@ -614,53 +704,27 @@ export interface BlogUploadResult {
   error?: string;
 }
 
+/**
+ * Blog generation API
+ */
 export interface BlogGenerationAPI {
   generateContent: (params: BlogGenerationParams) => Promise<BlogGenerationResult>;
   generateAndUpload: (params: BlogUploadParams) => Promise<BlogUploadResult>;
 }
 
 
-export interface SchedulerAPI {
-  createTask: (
-    taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>,
-  ) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
-  updateTask: (
-    taskId: string,
-    updates: Partial<ScheduledTask>,
-  ) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
-  deleteTask: (taskId: string) => Promise<{ success: boolean; error?: string }>;
-  getTask: (
-    taskId: string,
-  ) => Promise<{ success: boolean; task?: ScheduledTask; error?: string }>;
-  getAllTasks: () => Promise<{
-    success: boolean;
-    tasks?: ScheduledTask[];
-    error?: string;
-  }>;
-  getExecutions: (taskId?: string) => Promise<{
-    success: boolean;
-    executions?: TaskExecution[];
-    error?: string;
-  }>;
-  runTaskNow: (taskId: string) => Promise<{ success: boolean; error?: string }>;
-  stopTask: (taskId: string) => Promise<{ success: boolean; error?: string }>;
-  getSystemInfo: () => Promise<{
-    success: boolean;
-    systemInfo?: any;
-    error?: string;
-  }>;
-  getTaskMetadata: (taskId: string) => Promise<{
-    success: boolean;
-    metadata?: Record<string, any>;
-    error?: string;
-  }>;
-  updateTaskMetadata: (taskId: string, metadata: Record<string, any>) => Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-}
 
+// ============================================================================
+// ELECTRON HANDLER IMPLEMENTATION
+// ============================================================================
+
+/**
+ * Main Electron API handler that exposes functionality to the renderer process
+ */
 const electronHandler = {
+  // ========================================================================
+  // CORE ELECTRON FUNCTIONALITY
+  // ========================================================================
   ipcRenderer: {
     sendMessage: (channel: Channels, ...args: unknown[]) => {
       ipcRenderer.send(channel, ...args);
@@ -686,6 +750,14 @@ const electronHandler = {
   platform: process.platform,
   arch: process.arch,
   isPackaged: process.env.NODE_ENV === 'production',
+  
+  // ========================================================================
+  // FILE SYSTEM OPERATIONS
+  // ========================================================================
+  
+  /**
+   * File system management API
+   */
   fileSystem: {
     readDirectory: (path: string) =>
       ipcRenderer.invoke('fs-read-directory', path),
@@ -710,8 +782,16 @@ const electronHandler = {
     writeFileWithParams: (params: WriteFileToolParams) =>
       ipcRenderer.invoke('fs-write-file', params),
     writeFileSimple: (filePath: string, content: string) =>
-      ipcRenderer.invoke('fs-write-file-simple', filePath, content),
+      ipcRenderer.invoke('fs-write-file', filePath, content),
   } as FileSystemAPI,
+  
+  // ========================================================================
+  // WORDPRESS MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * WordPress connection and content management API
+   */
   wordpress: {
     saveConnection: (connection: WordPressConnection) =>
       ipcRenderer.invoke('wp-save-connection', connection),
@@ -779,7 +859,35 @@ const electronHandler = {
       ipcRenderer.invoke('wp-delete-comment', connectionId, commentId),
     clearAllData: () => ipcRenderer.invoke('sqlite-wordpress-clear-all'),
     clearSiteData: (siteId: string) => ipcRenderer.invoke('sqlite-wordpress-clear-site', siteId),
+    checkSite: (url: string) =>
+      ipcRenderer.invoke('wp-check-site-status', url),
   } as WordPressAPI,
+  
+  // ========================================================================
+  // SCHEDULED POSTS MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Scheduled posts management API
+   */
+  scheduledPosts: {
+    create: (data: any) => ipcRenderer.invoke('sqlite-scheduled-posts-create', data),
+    get: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get', id),
+    getByConnection: (connectionId: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get-by-connection', connectionId),
+    getAll: () => ipcRenderer.invoke('sqlite-scheduled-posts-get-all'),
+    update: (id: string, updates: any) => ipcRenderer.invoke('sqlite-scheduled-posts-update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-delete', id),
+    toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('sqlite-scheduled-posts-toggle', id, enabled),
+    getTopics: (scheduledPostId: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get-topics', scheduledPostId),
+  } as ScheduledPostsAPI,
+  
+  // ========================================================================
+  // SYNCHRONIZATION MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Synchronization operations API
+   */
   sync: {
     saveHistory: (syncData: any) =>
       ipcRenderer.invoke('sync-save-history', syncData),
@@ -794,12 +902,24 @@ const electronHandler = {
     clearHistory: (connectionId?: string) =>
       ipcRenderer.invoke('sync-clear-history', connectionId),
   } as SyncAPI,
+  
+  // ========================================================================
+  // USER PREFERENCES & STORAGE
+  // ========================================================================
+  
+  /**
+   * User preferences management API
+   */
   preferences: {
     get: () => ipcRenderer.invoke('prefs-get'),
     set: (preferences: UserPreferences) =>
       ipcRenderer.invoke('prefs-set', preferences),
     getStoreInfo: () => ipcRenderer.invoke('debug-get-store-info'),
   } as PreferencesAPI,
+  
+  /**
+   * Application store operations API
+   */
   store: {
     get: (key: string) => ipcRenderer.invoke('store-get', key),
     set: (key: string, value: any) =>
@@ -809,6 +929,14 @@ const electronHandler = {
     clear: () => ipcRenderer.invoke('store-clear'),
     clearWordPressConfig: () => ipcRenderer.invoke('wordpress-clear-config'),
   } as StoreAPI,
+  
+  // ========================================================================
+  // SSL ANALYSIS
+  // ========================================================================
+  
+  /**
+   * SSL analysis management API
+   */
   sslAnalysis: {
     save: (analysis: any) => ipcRenderer.invoke('ssl-analysis-save', analysis),
     getAll: (filter?: any) => ipcRenderer.invoke('ssl-analysis-get-all', filter),
@@ -819,6 +947,14 @@ const electronHandler = {
     search: (query: string) => ipcRenderer.invoke('ssl-analysis-search', query),
     clearAll: () => ipcRenderer.invoke('ssl-analysis-clear-all'),
   } as SSLAnalysisAPI,
+  
+  // ========================================================================
+  // WORDPRESS SERVER MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * WordPress server management API
+   */
   wordpressServer: {
     analyzeFolder: (folderPath: string) =>
       ipcRenderer.invoke('wp-server-analyze-folder', folderPath),
@@ -829,6 +965,14 @@ const electronHandler = {
     pickFolder: () => ipcRenderer.invoke('wp-server-pick-folder'),
     getPHPInfo: () => ipcRenderer.invoke('wp-server-php-info'),
   } as WordPressServerAPI,
+  
+  // ========================================================================
+  // BROWSER WINDOW MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Browser window management API
+   */
   browserWindow: {
     createWindow: (options: any) =>
       ipcRenderer.invoke('browser-window-create', options),
@@ -871,6 +1015,10 @@ const electronHandler = {
         ipcRenderer.removeListener('browser-window-closed', listener);
     },
   },
+  
+  /**
+   * Main window management API
+   */
   mainWindow: {
     getBounds: () => ipcRenderer.invoke('main-window-get-bounds'),
     setBounds: (bounds: any) =>
@@ -881,29 +1029,19 @@ const electronHandler = {
       ipcRenderer.invoke('main-window-set-position', x, y),
     getWorkArea: () => ipcRenderer.invoke('screen-get-work-area'),
   },
-  scheduler: {
-    createTask: (
-      taskData: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'>,
-    ) => ipcRenderer.invoke('scheduler-create-task', taskData),
-    updateTask: (taskId: string, updates: Partial<ScheduledTask>) =>
-      ipcRenderer.invoke('scheduler-update-task', taskId, updates),
-    deleteTask: (taskId: string) =>
-      ipcRenderer.invoke('scheduler-delete-task', taskId),
-    getTask: (taskId: string) =>
-      ipcRenderer.invoke('scheduler-get-task', taskId),
-    getAllTasks: () => ipcRenderer.invoke('scheduler-get-all-tasks'),
-    getExecutions: (taskId?: string) =>
-      ipcRenderer.invoke('scheduler-get-executions', taskId),
-    runTaskNow: (taskId: string) =>
-      ipcRenderer.invoke('scheduler-run-task-now', taskId),
-    stopTask: (taskId: string) =>
-      ipcRenderer.invoke('scheduler-stop-task', taskId),
-    getSystemInfo: () => ipcRenderer.invoke('scheduler-get-system-info'),
-    getTaskMetadata: (taskId: string) =>
-      ipcRenderer.invoke('scheduler-get-task-metadata', taskId),
-    updateTaskMetadata: (taskId: string, metadata: Record<string, any>) =>
-      ipcRenderer.invoke('scheduler-update-task-metadata', taskId, metadata),
-  } as SchedulerAPI,
+  
+  // ========================================================================
+  // TASK SCHEDULER
+  // ========================================================================
+  
+  
+  // ========================================================================
+  // SCRIPT EXECUTION
+  // ========================================================================
+  
+  /**
+   * Script execution API
+   */
   scriptExecution: {
     executeNodeScript: (
       scriptPath: string,
@@ -911,6 +1049,14 @@ const electronHandler = {
       environment?: Record<string, string>
     ) => ipcRenderer.invoke('execute-node-script', scriptPath, args, environment),
   } as ScriptExecutionAPI,
+  
+  // ========================================================================
+  // AI SERVICES
+  // ========================================================================
+  
+  /**
+   * AI service management API
+   */
   aiService: {
     configure: (config: any) => ipcRenderer.invoke('ai-configure', config),
     isConfigured: () => ipcRenderer.invoke('ai-is-configured'),
@@ -933,11 +1079,19 @@ const electronHandler = {
       isConfigured: () => ipcRenderer.invoke('simple-ai-is-configured'),
     },
   } as AIServiceAPI,
+  
+  /**
+   * Project context management API
+   */
   projectContext: {
     updateContext: (context: any) => ipcRenderer.invoke('project-context-update', context),
     getCurrentProject: () => ipcRenderer.invoke('project-context-get-current'),
     getContext: () => ipcRenderer.invoke('project-context-get'),
   } as ProjectContextAPI,
+  
+  /**
+   * AI chat data management API
+   */
   aiChatData: {
     // Conversation operations
     getConversations: (options?: any) => ipcRenderer.invoke('ai-chat-get-conversations', options),
@@ -965,6 +1119,10 @@ const electronHandler = {
     cleanupOldData: (daysToKeep?: number) => ipcRenderer.invoke('ai-chat-cleanup-old-data', daysToKeep),
     clearAllData: () => ipcRenderer.invoke('ai-chat-clear-all-data'),
   } as AIChatDataAPI,
+  
+  /**
+   * Backup management API
+   */
   backup: {
     getAvailableBackups: () => ipcRenderer.invoke('backup-get-available'),
     getBackupStats: () => ipcRenderer.invoke('backup-get-stats'),
@@ -972,6 +1130,10 @@ const electronHandler = {
     revertToConversation: (targetConversationId: string) => ipcRenderer.invoke('backup-revert-to-conversation', targetConversationId),
     cleanupOldBackups: (keepCount?: number) => ipcRenderer.invoke('backup-cleanup-old', keepCount),
   } as BackupAPI,
+  
+  /**
+   * Photo management API
+   */
   photos: {
     insertIntoProject: (sourceFilePath: string, projectRootPath: string, destinationFileName?: string) =>
       ipcRenderer.invoke('photo-insert-into-project', sourceFilePath, projectRootPath, destinationFileName),
@@ -980,22 +1142,43 @@ const electronHandler = {
     removeFromProject: (absoluteFilePath: string) =>
       ipcRenderer.invoke('photo-remove-from-project', absoluteFilePath),
   },
+  
+  /**
+   * Blog generation API
+   */
   blogGeneration: {
     generateContent: (params: BlogGenerationParams) =>
       ipcRenderer.invoke('blog-generate-content', params),
     generateAndUpload: (params: BlogUploadParams) =>
       ipcRenderer.invoke('blog-generate-and-upload', params),
   } as BlogGenerationAPI,
-  siteStatus: {
-    checkSite: (url: string) =>
-      ipcRenderer.invoke('check-site-status', url),
-  },
+  
+  // ========================================================================
+  // UTILITY SERVICES
+  // ========================================================================
+  
+  
+  /**
+   * Debug and automation API
+   */
   debug: {
     startAutomation: (id?: string, pw?: string, proxy?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy }),
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
   },
 };
 
+// ============================================================================
+// EXPOSE API TO RENDERER PROCESS
+// ============================================================================
+
+/**
+ * Expose the Electron API to the renderer process through contextBridge
+ * This provides secure access to main process functionality from the renderer
+ */
 contextBridge.exposeInMainWorld('electron', electronHandler);
 
+/**
+ * Type definition for the Electron handler
+ * Used for TypeScript type checking in the renderer process
+ */
 export type ElectronHandler = typeof electronHandler;

@@ -1,12 +1,4 @@
 // Global type declarations for Electron API
-
-declare global {
-  interface Window {
-    electronAPI: {
-      openHTMLReport: (htmlContent: string, websiteUrl: string) => void;
-      // Add other Electron API methods here as needed
-    };
-  }
-}
+// Note: The main electron API types are defined in preload.d.ts
 
 export {};

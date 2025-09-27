@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
 import { WordPressDatabaseManager } from './wordpress';
+import { SQLiteScheduledPostsManager } from './scheduled-posts';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 
 /**
@@ -28,6 +29,7 @@ export class SQLiteManager {
   // Managers
   private taskManager: SQLiteTaskManager | null = null;
   private wordpressManager: WordPressDatabaseManager | null = null;
+  private scheduledPostsManager: SQLiteScheduledPostsManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -61,6 +63,7 @@ export class SQLiteManager {
       this.wordpressDb = result.wordpressDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
+      this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -426,12 +429,24 @@ export class SQLiteManager {
   }
 
   /**
+   * Get the scheduled posts manager instance
+   */
+  public getScheduledPostsManager(): SQLiteScheduledPostsManager {
+    this.ensureInitialized();
+    if (!this.scheduledPostsManager) {
+      throw new Error('Scheduled posts manager not initialized');
+    }
+    return this.scheduledPostsManager;
+  }
+
+  /**
    * Register all IPC handlers
    */
   public registerIPCHandlers(): void {
     this.registerStatusHandlers();
     this.registerTaskHandlers();
     this.registerWordPressHandlers();
+    this.registerScheduledPostsHandlers();
   }
 
   /**
@@ -772,6 +787,115 @@ export class SQLiteManager {
       try {
         this.wordpressManager!.clearWordPressDataForSite(siteId);
         return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register scheduled posts handlers
+   */
+  private registerScheduledPostsHandlers(): void {
+    // Create scheduled post
+    ipcMain.handle('sqlite-scheduled-posts-create', async (event, data) => {
+      try {
+        const scheduledPost = this.scheduledPostsManager!.createScheduledPost(data);
+        return { success: true, data: scheduledPost };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get scheduled post by ID
+    ipcMain.handle('sqlite-scheduled-posts-get', async (event, id) => {
+      try {
+        const scheduledPost = this.scheduledPostsManager!.getScheduledPost(id);
+        return { success: true, data: scheduledPost };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get scheduled posts by connection
+    ipcMain.handle('sqlite-scheduled-posts-get-by-connection', async (event, connectionId) => {
+      try {
+        const scheduledPosts = this.scheduledPostsManager!.getScheduledPostsByConnection(connectionId);
+        return { success: true, data: scheduledPosts };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get all scheduled posts
+    ipcMain.handle('sqlite-scheduled-posts-get-all', async (event) => {
+      try {
+        const scheduledPosts = this.scheduledPostsManager!.getAllScheduledPosts();
+        return { success: true, data: scheduledPosts };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Update scheduled post
+    ipcMain.handle('sqlite-scheduled-posts-update', async (event, id, updates) => {
+      try {
+        const scheduledPost = this.scheduledPostsManager!.updateScheduledPost(id, updates);
+        return { success: true, data: scheduledPost };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete scheduled post
+    ipcMain.handle('sqlite-scheduled-posts-delete', async (event, id) => {
+      try {
+        const success = this.scheduledPostsManager!.deleteScheduledPost(id);
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Toggle scheduled post enabled/disabled
+    ipcMain.handle('sqlite-scheduled-posts-toggle', async (event, id, enabled) => {
+      try {
+        const success = this.scheduledPostsManager!.toggleScheduledPost(id, enabled);
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get scheduled post topics
+    ipcMain.handle('sqlite-scheduled-posts-get-topics', async (event, scheduledPostId) => {
+      try {
+        const topics = this.scheduledPostsManager!.getScheduledPostTopics(scheduledPostId);
+        return { success: true, data: topics };
       } catch (error) {
         return {
           success: false,

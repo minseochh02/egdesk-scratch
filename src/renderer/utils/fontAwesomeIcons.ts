@@ -28,8 +28,12 @@ export {
   faKey,
   faBuilding,
   faCalendarAlt,
+  faCalendarDay,
+  faCalendarWeek,
+  faCalendarMonth,
   faRocket,
   faCode,
+  faRepeat,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Status icons
@@ -137,6 +141,7 @@ export {
   faCopy,
   faSave,
   faHistory,
+  faTag,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Brand icons

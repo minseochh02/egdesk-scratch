@@ -82,6 +82,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeConversationsDatabaseSchema(conversationsDb);
     initializeTaskSchema(taskDb);
     initializeWordPressDatabaseSchema(wordpressDb);
+    initializeScheduledPostsDatabaseSchema(wordpressDb); // Use wordpress DB for scheduled posts
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
@@ -392,5 +393,64 @@ export function initializeWordPressDatabaseSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sync_operations_status ON sync_operations(status);
     CREATE INDEX IF NOT EXISTS idx_sync_file_details_operation_id ON sync_file_details(sync_operation_id);
     CREATE INDEX IF NOT EXISTS idx_sync_file_details_status ON sync_file_details(status);
+  `);
+}
+
+/**
+ * Initialize scheduled posts database schema
+ */
+export function initializeScheduledPostsDatabaseSchema(db: Database.Database): void {
+  // Create scheduled_posts table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      connection_id TEXT NOT NULL,
+      connection_name TEXT NOT NULL,
+      connection_type TEXT NOT NULL,
+      scheduled_time TEXT NOT NULL, -- HH:MM format
+      frequency_type TEXT NOT NULL CHECK (frequency_type IN ('daily', 'weekly', 'monthly', 'custom')),
+      frequency_value INTEGER DEFAULT 1,
+      weekly_day INTEGER, -- 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      monthly_day INTEGER, -- 1-31
+      enabled BOOLEAN DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_run DATETIME,
+      next_run DATETIME,
+      run_count INTEGER DEFAULT 0,
+      success_count INTEGER DEFAULT 0,
+      failure_count INTEGER DEFAULT 0
+    )
+  `);
+
+  // Create scheduled_post_topics table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_post_topics (
+      id TEXT PRIMARY KEY,
+      scheduled_post_id TEXT NOT NULL,
+      topic_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (scheduled_post_id) REFERENCES scheduled_posts(id) ON DELETE CASCADE,
+      UNIQUE(scheduled_post_id, topic_name)
+    )
+  `);
+
+  // Create indexes for better performance
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_connection_id ON scheduled_posts(connection_id);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_enabled ON scheduled_posts(enabled);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_next_run ON scheduled_posts(next_run);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_frequency_type ON scheduled_posts(frequency_type);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_post_topics_post_id ON scheduled_post_topics(scheduled_post_id);
+  `);
+
+  // Create trigger for updated_at timestamp
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS update_scheduled_posts_timestamp 
+    AFTER UPDATE ON scheduled_posts
+    BEGIN
+      UPDATE scheduled_posts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    END
   `);
 }
