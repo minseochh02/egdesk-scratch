@@ -290,6 +290,14 @@ export interface WordPressAPI {
     success: boolean;
     error?: string;
   }>;
+  clearAllData: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  clearSiteData: (siteId: string) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 export interface SyncAPI {
@@ -343,6 +351,10 @@ export interface StoreAPI {
   delete: (key: string) => Promise<void>;
   has: (key: string) => Promise<boolean>;
   clear: () => Promise<void>;
+  clearWordPressConfig: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 export interface SSLAnalysisAPI {
@@ -765,6 +777,8 @@ const electronHandler = {
       ipcRenderer.invoke('wp-update-comment-status', connectionId, commentId, status),
     deleteComment: (connectionId: string, commentId: number) =>
       ipcRenderer.invoke('wp-delete-comment', connectionId, commentId),
+    clearAllData: () => ipcRenderer.invoke('sqlite-wordpress-clear-all'),
+    clearSiteData: (siteId: string) => ipcRenderer.invoke('sqlite-wordpress-clear-site', siteId),
   } as WordPressAPI,
   sync: {
     saveHistory: (syncData: any) =>
@@ -793,6 +807,7 @@ const electronHandler = {
     delete: (key: string) => ipcRenderer.invoke('store-delete', key),
     has: (key: string) => ipcRenderer.invoke('store-has', key),
     clear: () => ipcRenderer.invoke('store-clear'),
+    clearWordPressConfig: () => ipcRenderer.invoke('wordpress-clear-config'),
   } as StoreAPI,
   sslAnalysis: {
     save: (analysis: any) => ipcRenderer.invoke('ssl-analysis-save', analysis),

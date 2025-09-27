@@ -480,6 +480,54 @@ export class WordPressDatabaseManager {
   }
 
   /**
+   * Clear all WordPress data from SQLite database
+   */
+  clearAllWordPressData(): void {
+    try {
+      // Clear all WordPress-related tables
+      this.db.exec('DELETE FROM wordpress_posts');
+      this.db.exec('DELETE FROM wordpress_media');
+      this.db.exec('DELETE FROM wordpress_comments');
+      this.db.exec('DELETE FROM sync_operations');
+      this.db.exec('DELETE FROM sync_file_details');
+      
+      // Reset auto-increment counters
+      this.db.exec('DELETE FROM sqlite_sequence WHERE name IN ("wordpress_posts", "wordpress_media", "wordpress_comments", "sync_operations", "sync_file_details")');
+      
+      console.log('✅ All WordPress data cleared from SQLite database');
+    } catch (error) {
+      console.error('❌ Failed to clear WordPress data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear WordPress data for a specific site/connection
+   */
+  clearWordPressDataForSite(siteId: string): void {
+    try {
+      // Clear data for specific site
+      this.db.exec('DELETE FROM wordpress_posts WHERE wordpress_site_id = ?', [siteId]);
+      this.db.exec('DELETE FROM wordpress_media WHERE wordpress_site_id = ?', [siteId]);
+      this.db.exec('DELETE FROM wordpress_comments WHERE wordpress_site_id = ?', [siteId]);
+      this.db.exec('DELETE FROM sync_operations WHERE site_id = ?', [siteId]);
+      
+      // Clear sync file details for operations of this site
+      this.db.exec(`
+        DELETE FROM sync_file_details 
+        WHERE sync_operation_id IN (
+          SELECT id FROM sync_operations WHERE site_id = ?
+        )
+      `, [siteId]);
+      
+      console.log(`✅ WordPress data cleared for site: ${siteId}`);
+    } catch (error) {
+      console.error(`❌ Failed to clear WordPress data for site ${siteId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Export data to files (placeholder for future implementation)
    */
   async exportToFiles(exportOptions: any): Promise<{

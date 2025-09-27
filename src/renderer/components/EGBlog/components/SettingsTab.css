@@ -1,0 +1,719 @@
+/* Settings Tab Styles */
+:root {
+  --eg-blog-primary: #667eea;
+  --eg-blog-primary-dark: #5a67d8;
+  --eg-blog-bg-primary: #ffffff;
+  --eg-blog-bg-secondary: #f8fafc;
+  --eg-blog-bg-hover: #f1f5f9;
+  --eg-blog-text-primary: #1e293b;
+  --eg-blog-text-secondary: #64748b;
+  --eg-blog-border-color: #e2e8f0;
+}
+
+.eg-blog-settings-tab {
+  max-width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.eg-blog-settings-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-header p {
+  margin: 0;
+  color: var(--eg-blog-text-secondary);
+  font-size: 14px;
+}
+
+.eg-blog-settings-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.eg-blog-settings-message-success {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.eg-blog-settings-message-error {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.eg-blog-settings-message-info {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.eg-blog-settings-navigation {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--eg-blog-border-color);
+  background: var(--eg-blog-bg-secondary);
+  color: var(--eg-blog-text-secondary);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.eg-blog-settings-nav-btn:hover {
+  background: var(--eg-blog-bg-hover);
+  color: var(--eg-blog-text-primary);
+  border-color: var(--eg-blog-primary);
+}
+
+.eg-blog-settings-nav-btn.active {
+  background: var(--eg-blog-primary);
+  color: white;
+  border-color: var(--eg-blog-primary);
+}
+
+.eg-blog-settings-content {
+  min-height: 400px;
+}
+
+.eg-blog-settings-section {
+  background: var(--eg-blog-bg-secondary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.eg-blog-settings-section-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-section-header h4 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-section-header p {
+  margin: 0;
+  color: var(--eg-blog-text-secondary);
+  font-size: 14px;
+}
+
+/* Preferences Form */
+.eg-blog-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eg-blog-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eg-blog-settings-field label {
+  font-weight: 500;
+  color: var(--eg-blog-text-primary);
+  font-size: 14px;
+}
+
+.eg-blog-settings-field input,
+.eg-blog-settings-field select {
+  padding: 12px 16px;
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  background: var(--eg-blog-bg-primary);
+  color: var(--eg-blog-text-primary);
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.eg-blog-settings-field input:focus,
+.eg-blog-settings-field select:focus {
+  outline: none;
+  border-color: var(--eg-blog-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.eg-blog-settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--eg-blog-primary);
+}
+
+.eg-blog-settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Buttons */
+.eg-blog-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.eg-blog-settings-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.eg-blog-settings-btn-primary {
+  background: var(--eg-blog-primary);
+  color: white;
+  border-color: var(--eg-blog-primary);
+}
+
+.eg-blog-settings-btn-primary:hover:not(:disabled) {
+  background: var(--eg-blog-primary-dark);
+  border-color: var(--eg-blog-primary-dark);
+}
+
+.eg-blog-settings-btn-secondary {
+  background: var(--eg-blog-bg-secondary);
+  color: var(--eg-blog-text-primary);
+  border-color: var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-btn-secondary:hover:not(:disabled) {
+  background: var(--eg-blog-bg-hover);
+  border-color: var(--eg-blog-primary);
+}
+
+.eg-blog-settings-btn-danger {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.eg-blog-settings-btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.eg-blog-settings-btn-success {
+  background: #059669;
+  color: white;
+  border-color: #059669;
+}
+
+.eg-blog-settings-btn-success:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+}
+
+.eg-blog-settings-btn-small {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+/* Store Data Management */
+.eg-blog-settings-store-info {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.eg-blog-settings-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-info-item:last-child {
+  border-bottom: none;
+}
+
+.eg-blog-settings-info-label {
+  font-weight: 500;
+  color: var(--eg-blog-text-secondary);
+}
+
+.eg-blog-settings-info-value {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-info-value.success {
+  color: #059669;
+}
+
+.eg-blog-settings-info-value.error {
+  color: #dc2626;
+}
+
+.eg-blog-settings-store-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eg-blog-settings-store-keys h5 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-store-key {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.eg-blog-settings-key-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--eg-blog-bg-secondary);
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-key-name {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-key-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.eg-blog-settings-key-content {
+  padding: 16px;
+}
+
+.eg-blog-settings-value-display {
+  background: var(--eg-blog-bg-secondary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--eg-blog-text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.eg-blog-settings-value-editor {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 6px;
+  background: var(--eg-blog-bg-primary);
+  color: var(--eg-blog-text-primary);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.eg-blog-settings-value-editor:focus {
+  outline: none;
+  border-color: var(--eg-blog-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.eg-blog-settings-add-key {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.eg-blog-settings-add-key h6 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-add-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eg-blog-settings-input,
+.eg-blog-settings-textarea {
+  padding: 12px;
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 6px;
+  background: var(--eg-blog-bg-secondary);
+  color: var(--eg-blog-text-primary);
+  font-size: 14px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.eg-blog-settings-input:focus,
+.eg-blog-settings-textarea:focus {
+  outline: none;
+  border-color: var(--eg-blog-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.eg-blog-settings-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Debug Tools */
+.eg-blog-settings-debug-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.eg-blog-settings-debug-tool {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.eg-blog-settings-debug-tool h5 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.eg-blog-settings-debug-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eg-blog-settings-debug-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+  font-size: 14px;
+}
+
+.eg-blog-settings-debug-info-item:last-child {
+  border-bottom: none;
+}
+
+.eg-blog-settings-debug-info-item.error {
+  color: #dc2626;
+}
+
+.eg-blog-settings-debug-info-item strong {
+  color: var(--eg-blog-text-primary);
+}
+
+/* WordPress Connection Styles */
+.eg-blog-settings-connection {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.eg-blog-settings-connection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eg-blog-border-color);
+}
+
+.eg-blog-settings-connection-header h5 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-connection-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.eg-blog-settings-connection-content {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.eg-blog-settings-connection-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eg-blog-settings-connection-date {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--eg-blog-text-secondary);
+  font-style: italic;
+}
+
+.eg-blog-settings-connection-editor {
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.eg-blog-settings-connection-editor h6 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-connection-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eg-blog-settings-connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eg-blog-settings-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--eg-blog-text-secondary);
+}
+
+.eg-blog-settings-empty-state svg {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.eg-blog-settings-empty-state p {
+  margin: 4px 0;
+}
+
+.eg-blog-settings-connection-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: var(--eg-blog-bg-primary);
+  border: 1px solid var(--eg-blog-border-color);
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.2s ease;
+}
+
+.eg-blog-settings-connection-card:hover {
+  border-color: var(--eg-blog-primary);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+}
+
+.eg-blog-settings-connection-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.eg-blog-settings-connection-info h6 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--eg-blog-text-primary);
+}
+
+.eg-blog-settings-connection-url {
+  margin: 4px 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--eg-blog-text-secondary);
+  word-break: break-all;
+}
+
+.eg-blog-settings-connection-username {
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--eg-blog-text-secondary);
+}
+
+.eg-blog-settings-connection-sync-path {
+  margin: 4px 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--eg-blog-text-secondary);
+  word-break: break-all;
+}
+
+.eg-blog-settings-connection-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--eg-blog-text-secondary);
+}
+
+.eg-blog-settings-connection-stats span {
+  padding: 2px 8px;
+  background: var(--eg-blog-bg-secondary);
+  border-radius: 4px;
+}
+
+.eg-blog-settings-connection-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  
+  .eg-blog-settings-navigation {
+    flex-direction: column;
+  }
+  
+  .eg-blog-settings-nav-btn {
+    justify-content: center;
+  }
+  
+  .eg-blog-settings-actions {
+    flex-direction: column;
+  }
+  
+  .eg-blog-settings-debug-actions {
+    flex-direction: column;
+  }
+  
+  .eg-blog-settings-connection-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  
+  .eg-blog-settings-connection-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Delete Button Styles */
+.eg-blog-settings-delete-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--eg-blog-border-color);
+  display: flex;
+  justify-content: center;
+}
+
+.eg-blog-settings-delete-btn {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  border: none;
+  padding: 16px 32px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+.eg-blog-settings-delete-btn:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+}
+
+.eg-blog-settings-delete-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.eg-blog-settings-delete-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.3);
+}
+
+.eg-blog-settings-delete-btn svg {
+  font-size: 18px;
+}
+

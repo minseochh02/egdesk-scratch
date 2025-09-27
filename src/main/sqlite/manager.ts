@@ -753,6 +753,32 @@ export class SQLiteManager {
         };
       }
     });
+
+    // Clear all WordPress data
+    ipcMain.handle('sqlite-wordpress-clear-all', async () => {
+      try {
+        this.wordpressManager!.clearAllWordPressData();
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Clear WordPress data for specific site
+    ipcMain.handle('sqlite-wordpress-clear-site', async (event, siteId) => {
+      try {
+        this.wordpressManager!.clearWordPressDataForSite(siteId);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
   }
 }
 
