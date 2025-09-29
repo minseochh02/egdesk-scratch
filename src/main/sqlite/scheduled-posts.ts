@@ -387,6 +387,67 @@ export class SQLiteScheduledPostsManager {
   }
 
   /**
+   * Update scheduled post statistics after execution
+   */
+  updateScheduledPostStats(id: string, success: boolean): void {
+    try {
+      const now = new Date().toISOString();
+      
+      if (success) {
+        // Update success count and last run time
+        const updateStmt = this.db.prepare(`
+          UPDATE scheduled_posts 
+          SET run_count = run_count + 1,
+              success_count = success_count + 1,
+              last_run = ?,
+              updated_at = ?
+          WHERE id = ?
+        `);
+        
+        updateStmt.run(now, now, id);
+      } else {
+        // Update failure count and last run time
+        const updateStmt = this.db.prepare(`
+          UPDATE scheduled_posts 
+          SET run_count = run_count + 1,
+              failure_count = failure_count + 1,
+              last_run = ?,
+              updated_at = ?
+          WHERE id = ?
+        `);
+        
+        updateStmt.run(now, now, id);
+      }
+    } catch (error) {
+      console.error('Failed to update scheduled post stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update next run time for a scheduled post
+   */
+  updateScheduledPostNextRun(id: string, nextRun: Date): void {
+    try {
+      const now = new Date().toISOString();
+      const nextRunStr = nextRun.toISOString();
+      
+      const updateStmt = this.db.prepare(`
+        UPDATE scheduled_posts 
+        SET next_run = ?,
+            updated_at = ?
+        WHERE id = ?
+      `);
+      
+      updateStmt.run(nextRunStr, now, id);
+      console.log(`Updated next run time for post ${id}: ${nextRunStr}`);
+    } catch (error) {
+      console.error('Failed to update scheduled post next run time:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generate a unique ID
    */
   private generateId(): string {

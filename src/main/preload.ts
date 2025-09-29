@@ -361,6 +361,8 @@ export interface ScheduledPostsAPI {
   delete: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggle: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
   getTopics: (scheduledPostId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  runNow: (id: string) => Promise<{ success: boolean; error?: string }>;
+  getExecutionHistory: (id: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
 }
 
 /**
@@ -879,6 +881,8 @@ const electronHandler = {
     delete: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-delete', id),
     toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('sqlite-scheduled-posts-toggle', id, enabled),
     getTopics: (scheduledPostId: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get-topics', scheduledPostId),
+    runNow: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-run-now', id),
+    getExecutionHistory: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get-execution-history', id),
   } as ScheduledPostsAPI,
   
   // ========================================================================

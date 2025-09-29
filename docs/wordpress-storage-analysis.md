@@ -17,7 +17,7 @@ The EGDesk application currently has **two separate storage systems** for WordPr
 **Data Stored:**
 - `wordpressConnections[]` - WordPress site connections, credentials, metadata
 - `scheduledTasks[]` - Blog posting schedules and task configurations
-- `taskExecutions[]` - Execution history for scheduled tasks
+- `taskExecutions[]` - Execution history for scheduled
 - `userPreferences` - App settings and preferences
 
 **Usage:**
@@ -134,7 +134,7 @@ sqlite3 "/Users/minseocha/Library/Application Support/EGDesk/wordpress-sync/word
 
 1. **User connects to WordPress site** → Data saved to Electron Store
 2. **User schedules blog posts** → Tasks saved to Electron Store  
-3. **Scheduled tasks execute** → Results logged to Electron Store
+3. **Scheduled execute** → Results logged to Electron Store
 4. **SQLite database** → Remains completely unused
 
 ## Decision Factors

@@ -8,6 +8,7 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
+
 /* Header Section */
 .eg-blog-connection-dashboard-header {
   display: flex;
@@ -319,7 +320,7 @@
 /* Main Content Area */
 .eg-blog-connection-dashboard-main {
   display: grid;
-  grid-template-columns: 1fr 350px;
+  grid-template-columns: 1fr;
   gap: 2rem;
   margin-top: 2rem;
 }
@@ -329,6 +330,8 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Tabs */
@@ -339,11 +342,13 @@
   padding: 0.5rem;
   border: 1px solid #e1e8ed;
   overflow-x: auto;
+  width: 100%;
 }
 
 .eg-blog-connection-dashboard-tab {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
   background: transparent;
@@ -355,7 +360,8 @@
   cursor: pointer;
   transition: all 0.3s ease;
   white-space: nowrap;
-  min-width: fit-content;
+  flex: 1;
+  min-width: 0;
 }
 
 .eg-blog-connection-dashboard-tab:hover {
@@ -379,6 +385,8 @@
   border-radius: 8px;
   border: 1px solid #e1e8ed;
   min-height: 400px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .eg-blog-connection-dashboard-tab-content h4 {
@@ -676,6 +684,7 @@
     grid-template-columns: 1fr 300px;
     gap: 1.5rem;
   }
+  
 }
 
 @media (max-width: 768px) {
@@ -744,7 +753,7 @@
   
   .eg-blog-connection-dashboard-tab {
     flex: 1;
-    min-width: 120px;
+    min-width: 0;
     justify-content: center;
   }
   
@@ -816,8 +825,10 @@
   }
   
   .eg-blog-connection-dashboard-tab {
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
     font-size: 0.8rem;
+    flex: 1;
+    min-width: 0;
   }
   
   .eg-blog-connection-dashboard-tab-panel {

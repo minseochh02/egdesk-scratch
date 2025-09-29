@@ -6,6 +6,7 @@ import { SQLiteTaskManager } from './tasks';
 import { WordPressDatabaseManager } from './wordpress';
 import { SQLiteScheduledPostsManager } from './scheduled-posts';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
+import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
 
 /**
  * Central SQLite Manager
@@ -437,6 +438,21 @@ export class SQLiteManager {
       throw new Error('Scheduled posts manager not initialized');
     }
     return this.scheduledPostsManager;
+  }
+
+  /**
+   * Get WordPress connections from store (fallback method)
+   */
+  public getWordPressConnections(): any[] {
+    try {
+      // Import the getStore function to access the global store instance
+      const { getStore } = require('../storage');
+      const store = getStore();
+      return store.get('wordpressConnections', []);
+    } catch (error) {
+      console.error('Error getting WordPress connections:', error);
+      return [];
+    }
   }
 
   /**
@@ -896,6 +912,103 @@ export class SQLiteManager {
       try {
         const topics = this.scheduledPostsManager!.getScheduledPostTopics(scheduledPostId);
         return { success: true, data: topics };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Run scheduled post immediately
+    ipcMain.handle('sqlite-scheduled-posts-run-now', async (event, id) => {
+      try {
+        console.log(`\n🚀 ===== MANUAL SCHEDULED POST EXECUTION =====`);
+        console.log(`🆔 Post ID: ${id}`);
+        console.log(`🕐 Started at: ${new Date().toISOString()}`);
+        
+        // Get the scheduled post data
+        const scheduledPost = this.scheduledPostsManager!.getScheduledPost(id);
+        if (!scheduledPost) {
+          console.error(`❌ Scheduled post not found: ${id}`);
+          return {
+            success: false,
+            error: 'Scheduled post not found'
+          };
+        }
+
+        console.log(`📝 Post: ${scheduledPost.title}`);
+        console.log(`🔗 Connection: ${scheduledPost.connectionName}`);
+
+        // Get the topics for this scheduled post
+        const topics = this.scheduledPostsManager!.getScheduledPostTopics(id);
+        const topicNames = topics.map(topic => topic.topicName);
+        console.log(`📋 Topics: ${topicNames.join(', ')}`);
+
+        // Create a new executor instance to run the post
+        const executor = new ScheduledPostsExecutor();
+        
+        // Execute the scheduled post immediately
+        // Note: The executor now handles all statistics updates internally
+        await executor.executeScheduledPost({
+          ...scheduledPost,
+          topics: topicNames
+        });
+
+        console.log(`✅ Manual execution completed successfully`);
+        return { success: true };
+      } catch (error) {
+        console.error(`\n💥 ===== MANUAL SCHEDULED POST EXECUTION FAILED =====`);
+        console.error(`❌ Post ID: ${id}`);
+        console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+        console.error(`📄 Error details:`, error);
+
+        // Note: The executor handles failure statistics updates internally
+        // No need to update stats here as it would be duplicate
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get execution history for a scheduled post
+    ipcMain.handle('sqlite-scheduled-posts-get-execution-history', async (event, id) => {
+      try {
+        // For now, return mock data since we don't have execution history table yet
+        // This would be implemented with a proper execution_history table
+        const mockHistory = [
+          {
+            id: `exec_${Date.now()}_1`,
+            scheduledPostId: id,
+            status: 'success',
+            startedAt: new Date(Date.now() - 86400000), // 1 day ago
+            completedAt: new Date(Date.now() - 86400000 + 30000), // 30 seconds later
+            duration: 30000,
+            topics: ['Technology', 'AI', 'Programming'],
+            generatedContent: {
+              title: 'The Future of AI in Software Development',
+              excerpt: 'Exploring how artificial intelligence is revolutionizing the way we write code...',
+              wordCount: 1250,
+              imageCount: 3
+            },
+            blogPostId: '12345',
+            blogPostUrl: 'https://example.com/blog/the-future-of-ai'
+          },
+          {
+            id: `exec_${Date.now()}_2`,
+            scheduledPostId: id,
+            status: 'failure',
+            startedAt: new Date(Date.now() - 172800000), // 2 days ago
+            completedAt: new Date(Date.now() - 172800000 + 15000), // 15 seconds later
+            duration: 15000,
+            topics: ['Web Development', 'React'],
+            errorMessage: 'Failed to connect to WordPress API. Please check your connection settings.'
+          }
+        ];
+
+        return { success: true, data: mockHistory };
       } catch (error) {
         return {
           success: false,

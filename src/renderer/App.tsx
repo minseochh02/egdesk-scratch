@@ -5,30 +5,23 @@ import {
   Route,
   Link,
   useLocation,
-  useNavigate,
   Navigate,
 } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faGlobe,
   faRobot,
-  faList,
   faHome,
-  faLock,
   faShieldAlt,
   faCog,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
-// import BlogManager from './components/BlogManager/BlogManager'; // Legacy component - replaced by EGBlogging
-// import WordPressConnector from './components/BlogManager/WordPressConnector'; // Legacy component - replaced by EGBlogging
-// import WordPressSitesList from './components/BlogManager/WordPressSitesList'; // Legacy component - replaced by EGBlogging
 import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
-import URLFileViewerPage from './components/URLFileViewerPage';
+import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
-// import { BlogConnector } from './components/EGBlog'; // Legacy component - replaced by EGBlogging
 import './App.css';
 
 function NavigationBar() {
@@ -299,26 +292,6 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/index.html" element={<LandingPage />} />
             <Route path="/viewer" element={<URLFileViewerPage />} />
-            {/* Legacy BlogManager route - replaced by EGBlogging */}
-            {/* <Route 
-              path="/blog-manager" 
-              element={
-                <ErrorBoundary>
-                  <BlogManager />
-                </ErrorBoundary>
-              } 
-            /> */}
-            {/* Legacy WordPressConnector route - replaced by EGBlogging */}
-            {/* <Route path="/wordpress" element={<WordPressConnector />} /> */}
-            {/* Legacy WordPressSitesList route - replaced by EGBlogging */}
-            {/* <Route 
-              path="/wordpress-sites" 
-              element={
-                <ErrorBoundary>
-                  <WordPressSitesList />
-                </ErrorBoundary>
-              } 
-            /> */}
             <Route 
               path="/blog-connector" 
               element={
@@ -327,7 +300,6 @@ export default function App() {
                 </ErrorBoundary>
               } 
             />
-            {/* Legacy BlogConnector route - replaced by EGBlogging above */}
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />

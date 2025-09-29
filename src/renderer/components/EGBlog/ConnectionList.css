@@ -8,6 +8,49 @@
 .connection-list-header {
   margin-bottom: 32px;
   text-align: center;
+  position: relative;
+}
+
+.connection-list-header-actions {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.connection-list-return-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.connection-list-return-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.connection-list-return-btn svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(180deg);
+}
+
+.connection-list-header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .connection-list-header h2 {

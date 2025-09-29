@@ -350,6 +350,8 @@ export interface IElectronAPI {
     delete: (id: string) => Promise<{ success: boolean; error?: string }>;
     toggle: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
     getTopics: (scheduledPostId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    runNow: (id: string) => Promise<{ success: boolean; error?: string }>;
+    getExecutionHistory: (id: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   };
 }
 
