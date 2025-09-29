@@ -1334,8 +1334,6 @@ export class WordPressHandler {
     // Check WordPress site status
     ipcMain.handle('wp-check-site-status', async (event, url: string) => {
       try {
-        console.log('🔍 Main process checking site status for:', url);
-        
         // Create a proper URL
         const siteUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
         
@@ -1354,16 +1352,11 @@ export class WordPressHandler {
         
         clearTimeout(timeoutId);
         
-        console.log('🌐 Final URL after redirects:', response.url);
-        console.log('📊 Response status:', response.status, response.statusText);
-        
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
         const responseText = await response.text();
-        console.log('📄 Response text length:', responseText.length);
-        console.log('📄 First 500 characters:', responseText.substring(0, 500));
         
         // Check for hosting expiration message with multiple patterns
         const hostingExpiredPatterns = [
@@ -1379,10 +1372,6 @@ export class WordPressHandler {
           .filter(p => p.matched);
         
         const isHostingExpired = matchedPatterns.length > 0;
-        
-        console.log('🔍 Pattern matching results:');
-        matchedPatterns.forEach(p => console.log(`  Pattern ${p.index}: ${p.pattern} - MATCHED`));
-        console.log('🔍 Hosting expiration check result:', isHostingExpired);
         
         return {
           success: true,

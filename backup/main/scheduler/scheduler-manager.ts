@@ -851,7 +851,7 @@ export class SchedulerManager {
   }
 
   public destroy(): void {
-    // Stop all scheduled tasks
+    // Stop all scheduled
     this.scheduledJobs.forEach((job, taskId) => {
       this.unscheduleTask(taskId);
     });

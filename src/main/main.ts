@@ -23,6 +23,7 @@ import { getSQLiteManager } from './sqlite/manager';
 import { aiChatDataService } from './ai-code/ai-chat-data-service';
 import { registerFileSystemHandlers } from './fs';
 import { backupHandler } from './codespace/backup-handler';
+import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
 
@@ -36,6 +37,7 @@ class AppUpdater {
 
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
+let scheduledPostsExecutor: ScheduledPostsExecutor;
 
 
 if (process.env.NODE_ENV === 'production') {
@@ -194,6 +196,10 @@ const createWindow = async () => {
     // Initialize Browser controller with the main window
     browserController = new BrowserController(mainWindow);
 
+    // Initialize Scheduled Posts Executor
+    scheduledPostsExecutor = new ScheduledPostsExecutor();
+    await scheduledPostsExecutor.start();
+
     console.log('✅ All components initialized successfully');
   } catch (error) {
     console.error('❌ Failed to initialize components:', error);
@@ -272,7 +278,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   // Cleanup WordPress handler resources
   if (wordpressHandler) {
     wordpressHandler.cleanup();
@@ -286,6 +292,11 @@ app.on('before-quit', () => {
   // Cleanup browser controller resources
   if (browserController) {
     browserController.cleanup();
+  }
+
+  // Cleanup scheduled posts executor
+  if (scheduledPostsExecutor) {
+    await scheduledPostsExecutor.cleanup();
   }
 
   // Cleanup central SQLite manager

@@ -120,11 +120,21 @@ export default async function generateOutline(topic: string) {
 
   async function generateUUIDforImages(parsedContent: ParsedContent) {
     const { v4: uuidv4 } = await import('uuid');
+    
+    // Ensure markers and images arrays are initialized
+    if (!parsedContent.markers) {
+      parsedContent.markers = [];
+    }
+    if (!parsedContent.images) {
+      parsedContent.images = [];
+    }
+    
     // find all [IMAGE:description:placement] markers in the content and generate a UUID for each one
     const imageMarkers = parsedContent.content.match(/\[IMAGE:([^:]+):([^\]]+)\]/g);
     if (!imageMarkers) {
       return parsedContent;
     }
+    
     imageMarkers.forEach((marker: string) => {
       const uuid = uuidv4();
       parsedContent.markers.push({
@@ -132,7 +142,7 @@ export default async function generateOutline(topic: string) {
         placement: marker.split(':')[2],
         uuid: uuid,
       });
-      parsedContent.images?.push({
+      parsedContent.images.push({
         uuid: uuid,
         description: marker.split(':')[1],
         altText: null,

@@ -82,7 +82,10 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
     totalPosts: 0,
     publishedPosts: 0,
     draftPosts: 0,
-    lastPostDate: null as string | null
+    lastPostDate: null as string | null,
+    totalMedia: 0,
+    totalComments: 0,
+    totalScheduled: 0
   });
 
   useEffect(() => {
@@ -99,7 +102,10 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           totalPosts: 0,
           publishedPosts: 0,
           draftPosts: 0,
-          lastPostDate: null
+          lastPostDate: null,
+          totalMedia: 0,
+          totalComments: 0,
+          totalScheduled: 0
         });
         return;
       }
@@ -134,11 +140,26 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           });
         }
         
+        // Get media count
+        const mediaResult = await window.electron.wordpress.getMedia(connection.id, 1000, 0);
+        const totalMedia = mediaResult.success && mediaResult.media ? mediaResult.media.length : 0;
+        
+        // Get comments count
+        const commentsResult = await window.electron.wordpress.getComments(connection.id, 1000, 0);
+        const totalComments = commentsResult.success && commentsResult.comments ? commentsResult.comments.length : 0;
+        
+        // Get scheduled count
+        const scheduledResult = await window.electron.scheduledPosts.getByConnection(connection.id);
+        const totalScheduled = scheduledResult.success && scheduledResult.data ? scheduledResult.data.length : 0;
+        
         setStats({
           totalPosts: syncStats.totalPosts || 0,
           publishedPosts,
           draftPosts,
-          lastPostDate
+          lastPostDate,
+          totalMedia,
+          totalComments,
+          totalScheduled
         });
         
         console.log(`📊 Loaded stats for ${connection.name}:`, {
@@ -153,7 +174,10 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           totalPosts: 0,
           publishedPosts: 0,
           draftPosts: 0,
-          lastPostDate: null
+          lastPostDate: null,
+          totalMedia: 0,
+          totalComments: 0,
+          totalScheduled: 0
         });
       }
     } catch (err) {
@@ -162,7 +186,10 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
         totalPosts: 0,
         publishedPosts: 0,
         draftPosts: 0,
-        lastPostDate: null
+        lastPostDate: null,
+        totalMedia: 0,
+        totalComments: 0,
+        totalScheduled: 0
       });
     } finally {
       setIsLoading(false);
@@ -243,10 +270,10 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
 
 
   const tabs = [
-    { id: 'scheduled', label: 'Scheduled Tasks', icon: faCalendarAlt },
-    { id: 'posts', label: 'Posts', icon: faFileAlt },
-    { id: 'media', label: 'Media', icon: faImage },
-    { id: 'comments', label: 'Comments', icon: faComments },
+    { id: 'scheduled', label: `Scheduled (${stats.totalScheduled})`, icon: faCalendarAlt },
+    { id: 'posts', label: `Posts (${stats.totalPosts})`, icon: faFileAlt },
+    { id: 'media', label: `Media (${stats.totalMedia})`, icon: faImage },
+    { id: 'comments', label: `Comments (${stats.totalComments})`, icon: faComments },
     { id: 'settings', label: 'Settings', icon: faCog }
   ];
 
@@ -379,68 +406,6 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           </div>
         </div>
 
-        {/* Right Sidebar - Stats */}
-        <div className="eg-blog-connection-dashboard-sidebar">
-          <div className="eg-blog-connection-dashboard-stats-card">
-            <div className="eg-blog-connection-dashboard-stats-header">
-              <h3>Blog Statistics</h3>
-              <button 
-                className="eg-blog-connection-dashboard-refresh-stats-btn"
-                onClick={handleRefreshStats}
-                disabled={isLoading}
-                title="Refresh statistics"
-              >
-                <FontAwesomeIcon icon={faRefresh} spin={isLoading} />
-              </button>
-            </div>
-            <div className="eg-blog-connection-dashboard-stats-grid">
-              <div className="eg-blog-connection-dashboard-stat-card">
-                <div className="eg-blog-connection-dashboard-stat-icon">
-                  <FontAwesomeIcon icon={faFileAlt} />
-                </div>
-                <div className="eg-blog-connection-dashboard-stat-content">
-                  <span className="eg-blog-connection-dashboard-stat-value">
-                    {isLoading ? '...' : stats.totalPosts}
-                  </span>
-                  <span className="eg-blog-connection-dashboard-stat-label">Total Posts</span>
-                </div>
-              </div>
-              <div className="eg-blog-connection-dashboard-stat-card">
-                <div className="eg-blog-connection-dashboard-stat-icon eg-blog-connection-dashboard-stat-icon-success">
-                  <FontAwesomeIcon icon={faCheckCircle} />
-                </div>
-                <div className="eg-blog-connection-dashboard-stat-content">
-                  <span className="eg-blog-connection-dashboard-stat-value">
-                    {isLoading ? '...' : stats.publishedPosts}
-                  </span>
-                  <span className="eg-blog-connection-dashboard-stat-label">Published</span>
-                </div>
-              </div>
-              <div className="eg-blog-connection-dashboard-stat-card">
-                <div className="eg-blog-connection-dashboard-stat-icon eg-blog-connection-dashboard-stat-icon-warning">
-                  <FontAwesomeIcon icon={faFileAlt} />
-                </div>
-                <div className="eg-blog-connection-dashboard-stat-content">
-                  <span className="eg-blog-connection-dashboard-stat-value">
-                    {isLoading ? '...' : stats.draftPosts}
-                  </span>
-                  <span className="eg-blog-connection-dashboard-stat-label">Drafts</span>
-                </div>
-              </div>
-              <div className="eg-blog-connection-dashboard-stat-card">
-                <div className="eg-blog-connection-dashboard-stat-icon">
-                  <FontAwesomeIcon icon={faChartBar} />
-                </div>
-                <div className="eg-blog-connection-dashboard-stat-content">
-                  <span className="eg-blog-connection-dashboard-stat-value">
-                    {isLoading ? '...' : (stats.lastPostDate ? formatDate(stats.lastPostDate) : 'N/A')}
-                  </span>
-                  <span className="eg-blog-connection-dashboard-stat-label">Last Post</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
