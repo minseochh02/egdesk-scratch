@@ -968,6 +968,7 @@ const electronHandler = {
     getServerStatus: () => ipcRenderer.invoke('wp-server-status'),
     pickFolder: () => ipcRenderer.invoke('wp-server-pick-folder'),
     getPHPInfo: () => ipcRenderer.invoke('wp-server-php-info'),
+    debugPHP: () => ipcRenderer.invoke('wp-server-debug-php'),
   } as WordPressServerAPI,
   
   // ========================================================================
