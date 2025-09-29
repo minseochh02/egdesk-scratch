@@ -932,6 +932,7 @@ const electronHandler = {
     has: (key: string) => ipcRenderer.invoke('store-has', key),
     clear: () => ipcRenderer.invoke('store-clear'),
     clearWordPressConfig: () => ipcRenderer.invoke('wordpress-clear-config'),
+    migrateTasksToSQLite: () => ipcRenderer.invoke('sqlite-migrate-tasks-from-store'),
   } as StoreAPI,
   
   // ========================================================================

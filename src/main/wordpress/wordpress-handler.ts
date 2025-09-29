@@ -233,13 +233,20 @@ export class WordPressHandler {
       const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;
       
       // Build query parameters
+      const includeAllStatuses = status === 'any' || status === 'all';
       const queryParams = new URLSearchParams({
         per_page: perPage.toString(),
         page: page.toString(),
-        status: status,
+        orderby: 'date',
+        order: 'desc',
+        sticky: 'false',
+        ...(includeAllStatuses ? { context: 'edit' } : { status: status }),
         ...(after && { after }),
         ...(before && { before })
       });
+
+      // Add cache-busting parameter to avoid stale cached responses
+      queryParams.set('_egdesk_ts', Date.now().toString());
 
       const fullUrl = `${endpoint}?${queryParams.toString()}`;
       console.log(`📡 Fetching from: ${fullUrl}`);

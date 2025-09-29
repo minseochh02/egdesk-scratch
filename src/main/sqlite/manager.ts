@@ -517,6 +517,114 @@ export class SQLiteManager {
         };
       }
     });
+
+    // Migrate tasks from Electron Store to SQLite (testing utility)
+    ipcMain.handle('sqlite-migrate-tasks-from-store', async () => {
+      try {
+        this.ensureInitialized();
+        const { getStore } = require('../storage');
+        const store = getStore();
+        const scheduledTasks = store.get('scheduledTasks', []) as any[];
+        const taskExecutions = store.get('taskExecutions', []) as any[];
+
+        if (!this.taskManager) {
+          throw new Error('Task manager not initialized');
+        }
+
+        let migratedTasks = 0;
+        let migratedExecutions = 0;
+
+        for (const legacyTask of scheduledTasks) {
+          try {
+            const taskId = legacyTask.id || legacyTask.taskId || legacyTask.uuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const now = new Date();
+            const scheduledTask = {
+              id: taskId,
+              name: legacyTask.name || legacyTask.title || 'Legacy Task',
+              description: legacyTask.description || undefined,
+              command: legacyTask.command || legacyTask.script || 'blog:generate-and-upload',
+              schedule: legacyTask.schedule || legacyTask.cron || 'custom',
+              enabled: legacyTask.enabled !== false,
+              aiKeyId: legacyTask.aiKeyId || legacyTask.ai_key_id || legacyTask.selectedKeyId || null,
+              environment: legacyTask.environment || legacyTask.env || undefined,
+              metadata: {
+                ...(legacyTask.metadata || {}),
+                source: 'electron-store',
+                migratedAt: now.toISOString(),
+              },
+              createdAt: legacyTask.createdAt ? new Date(legacyTask.createdAt) : now,
+              updatedAt: legacyTask.updatedAt ? new Date(legacyTask.updatedAt) : now,
+              lastRun: legacyTask.lastRun ? new Date(legacyTask.lastRun) : undefined,
+              nextRun: legacyTask.nextRun ? new Date(legacyTask.nextRun) : undefined,
+              runCount: legacyTask.runCount || 0,
+              successCount: legacyTask.successCount || 0,
+              failureCount: legacyTask.failureCount || 0,
+              frequencyDays: legacyTask.frequencyDays || legacyTask.frequency_days || 1,
+              frequencyHours: legacyTask.frequencyHours || legacyTask.frequency_hours || 0,
+              frequencyMinutes: legacyTask.frequencyMinutes || legacyTask.frequency_minutes || 0,
+              topicSelectionMode: legacyTask.topicSelectionMode || legacyTask.topic_selection_mode || 'least-used',
+            };
+
+            // Upsert behavior: if task exists, update; else create
+            const existing = this.taskManager.getTask(taskId);
+            if (existing) {
+              this.taskManager.updateTask(taskId, {
+                ...scheduledTask,
+                metadata: scheduledTask.metadata,
+              } as any);
+            } else {
+              this.taskManager.createTask(scheduledTask as any);
+              // mark legacy metadata
+              try {
+                this.taskDb!.prepare('UPDATE tasks SET legacy_id = ?, source = ? WHERE id = ?').run(legacyTask.id || null, 'electron-store', taskId);
+              } catch {}
+            }
+            migratedTasks++;
+
+            // Migrate related executions
+            const relatedExecutions = (taskExecutions || []).filter((ex: any) => (ex.taskId || ex.task_id) === legacyTask.id);
+            for (const ex of relatedExecutions) {
+              const execId = ex.id || `${taskId}-${ex.startTime || ex.start_time || Date.now()}`;
+              const execution = {
+                id: execId,
+                taskId,
+                startTime: new Date(ex.startTime || ex.start_time || new Date().toISOString()),
+                endTime: ex.endTime ? new Date(ex.endTime) : ex.end_time ? new Date(ex.end_time) : undefined,
+                status: ex.status || (ex.error ? 'failed' : 'completed'),
+                output: ex.output || undefined,
+                exitCode: typeof ex.exitCode === 'number' ? ex.exitCode : undefined,
+                error: ex.error || undefined,
+                createdAt: ex.createdAt ? new Date(ex.createdAt) : new Date(),
+              };
+
+              const existingEx = this.taskManager.getExecution(execId);
+              if (existingEx) {
+                this.taskManager.updateExecution(execId, execution as any);
+              } else {
+                this.taskManager.createExecution(execution as any);
+                try {
+                  this.taskDb!.prepare('UPDATE task_executions SET legacy_id = ? WHERE id = ?').run(ex.id || null, execId);
+                } catch {}
+              }
+              migratedExecutions++;
+            }
+          } catch (err) {
+            console.warn('Task migration skipped due to error:', err);
+          }
+        }
+
+        return {
+          success: true,
+          migratedTasks,
+          migratedExecutions,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
   }
 
   /**

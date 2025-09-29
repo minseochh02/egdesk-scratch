@@ -33,10 +33,10 @@ export class SQLiteTaskManager {
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
         id, name, description, command, schedule, enabled,
-        environment, metadata, created_at, updated_at,
+        ai_key_id, environment, metadata, created_at, updated_at,
         last_run, next_run, run_count, success_count, failure_count,
         frequency_days, frequency_hours, frequency_minutes, topic_selection_mode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -46,6 +46,7 @@ export class SQLiteTaskManager {
       task.command,
       task.schedule,
       task.enabled ? 1 : 0,
+      (task as any).aiKeyId || null,
       task.environment ? JSON.stringify(task.environment) : null,
       task.metadata ? JSON.stringify(task.metadata) : null,
       task.createdAt.toISOString(),
@@ -76,7 +77,7 @@ export class SQLiteTaskManager {
     const stmt = this.db.prepare(`
       UPDATE tasks SET
         name = ?, description = ?, command = ?, schedule = ?, enabled = ?,
-        environment = ?, metadata = ?, updated_at = ?, last_run = ?, next_run = ?,
+        ai_key_id = ?, environment = ?, metadata = ?, updated_at = ?, last_run = ?, next_run = ?,
         run_count = ?, success_count = ?, failure_count = ?,
         frequency_days = ?, frequency_hours = ?, frequency_minutes = ?,
         topic_selection_mode = ?
@@ -89,6 +90,7 @@ export class SQLiteTaskManager {
       updatedTask.command,
       updatedTask.schedule,
       updatedTask.enabled ? 1 : 0,
+      (updates as any).aiKeyId ?? (existingTask as any).aiKeyId ?? null,
       updatedTask.environment ? JSON.stringify(updatedTask.environment) : null,
       updatedTask.metadata ? JSON.stringify(updatedTask.metadata) : null,
       updatedTask.updatedAt.toISOString(),

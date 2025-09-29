@@ -311,9 +311,26 @@ export default async function createPost(blogContentWithImages: ParsedContent): 
     const featuredImage = blogContentWithImages.images?.find((image: Image) => image.placement === 'featured');
     const featuredMediaId = featuredImage?.wordpress?.id ? Number(featuredImage.wordpress.id) : undefined;
 
+    // Replace image markers in content using uploaded WordPress media
+    let contentWithImages = blogContentWithImages.content;
+    try {
+        const markers = (blogContentWithImages as any).markers as ImageMarker[] | undefined;
+        const images = blogContentWithImages.images as Image[] | undefined;
+        if (markers && markers.length > 0 && images && images.length > 0) {
+            console.log(`🔄 Replacing image markers in final content before WordPress post...`);
+            contentWithImages = replaceImageMarkersByUuid(
+              blogContentWithImages.content,
+              markers,
+              images
+            );
+        }
+    } catch (e) {
+        console.warn('⚠️ Failed to replace image markers, posting raw content:', e);
+    }
+
     const payload = {
         title: blogContentWithImages.title,
-        content: blogContentWithImages.content,
+        content: contentWithImages,
         status: 'publish',
         excerpt: blogContentWithImages.excerpt,
         ...(featuredMediaId && { featured_media: featuredMediaId }),

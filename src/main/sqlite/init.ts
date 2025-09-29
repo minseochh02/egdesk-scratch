@@ -182,6 +182,7 @@ export function initializeTaskSchema(db: Database.Database): void {
       command TEXT NOT NULL,
       schedule TEXT NOT NULL,
       enabled BOOLEAN DEFAULT 1,
+      ai_key_id TEXT, -- References Electron Store key id
       environment TEXT, -- JSON string
       metadata TEXT, -- JSON string
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -198,6 +199,24 @@ export function initializeTaskSchema(db: Database.Database): void {
     )
   `);
 
+  // Backward-compatible schema upgrades for tasks
+  try {
+    // Track legacy origin and IDs for migrated records
+    db.exec(`ALTER TABLE tasks ADD COLUMN legacy_id TEXT`);
+  } catch (e) {
+    // Column exists
+  }
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN source TEXT DEFAULT 'sqlite'`);
+  } catch (e) {
+    // Column exists
+  }
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN ai_key_id TEXT`);
+  } catch (e) {
+    // Column exists
+  }
+
   // Create task_executions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_executions (
@@ -213,6 +232,13 @@ export function initializeTaskSchema(db: Database.Database): void {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     )
   `);
+
+  // Backward-compatible schema upgrades for task_executions
+  try {
+    db.exec(`ALTER TABLE task_executions ADD COLUMN legacy_id TEXT`);
+  } catch (e) {
+    // Column exists
+  }
 
   // Create topics table (merged with task_topics)
   db.exec(`
@@ -236,6 +262,7 @@ export function initializeTaskSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_enabled ON tasks(enabled);
     CREATE INDEX IF NOT EXISTS idx_tasks_next_run ON tasks(next_run);
     CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+    CREATE INDEX IF NOT EXISTS idx_tasks_ai_key_id ON tasks(ai_key_id);
     CREATE INDEX IF NOT EXISTS idx_task_executions_task_id ON task_executions(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_executions_start_time ON task_executions(start_time);
     CREATE INDEX IF NOT EXISTS idx_task_executions_status ON task_executions(status);
@@ -408,6 +435,7 @@ export function initializeScheduledPostsDatabaseSchema(db: Database.Database): v
       connection_id TEXT NOT NULL,
       connection_name TEXT NOT NULL,
       connection_type TEXT NOT NULL,
+      ai_key_id TEXT,
       scheduled_time TEXT NOT NULL, -- HH:MM format
       frequency_type TEXT NOT NULL CHECK (frequency_type IN ('daily', 'weekly', 'monthly', 'custom')),
       frequency_value INTEGER DEFAULT 1,
@@ -424,6 +452,13 @@ export function initializeScheduledPostsDatabaseSchema(db: Database.Database): v
     )
   `);
 
+  // Backward-compatible schema upgrades for scheduled_posts
+  try {
+    db.exec(`ALTER TABLE scheduled_posts ADD COLUMN ai_key_id TEXT`);
+  } catch (e) {
+    // Column exists or cannot be added; ignore if already present
+  }
+
   // Create scheduled_post_topics table
   db.exec(`
     CREATE TABLE IF NOT EXISTS scheduled_post_topics (
@@ -439,6 +474,7 @@ export function initializeScheduledPostsDatabaseSchema(db: Database.Database): v
   // Create indexes for better performance
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_connection_id ON scheduled_posts(connection_id);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_ai_key_id ON scheduled_posts(ai_key_id);
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_enabled ON scheduled_posts(enabled);
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_next_run ON scheduled_posts(next_run);
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_frequency_type ON scheduled_posts(frequency_type);

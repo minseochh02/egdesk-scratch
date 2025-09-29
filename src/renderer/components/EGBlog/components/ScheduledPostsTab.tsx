@@ -43,6 +43,7 @@ interface ScheduledPostForm {
   frequencyValue: number;
   weeklyDay: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   monthlyDay: number; // 1-31
+  aiKeyId?: string | null;
 }
 
 interface SavedScheduledPost {
@@ -51,6 +52,7 @@ interface SavedScheduledPost {
   connectionId: string;
   connectionName: string;
   connectionType: string;
+  aiKeyId?: string | null;
   scheduledTime: string;
   frequencyType: 'daily' | 'weekly' | 'monthly' | 'custom';
   frequencyValue: number;
@@ -88,7 +90,8 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
     frequencyType: 'weekly',
     frequencyValue: 1,
     weeklyDay: 1, // Monday
-    monthlyDay: 1
+    monthlyDay: 1,
+    aiKeyId: null
   });
 
   const [newTopic, setNewTopic] = useState({ name: '' });
@@ -114,6 +117,64 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
   // State for immediate execution
   const [runningTasks, setRunningTasks] = useState<Set<string>>(new Set());
   
+  // Active AI key info
+  const [activeAIKeyInfo, setActiveAIKeyInfo] = useState<{
+    providerId: string;
+    providerName: string;
+    keyMasked: string;
+    id?: string;
+  } | null>(null);
+
+  // List of available Google/Gemini keys (active only, like AIChat)
+  const [googleKeys, setGoogleKeys] = useState<Array<{ id: string; name: string; masked: string }>>([]);
+
+  const maskKey = (key?: string) => {
+    if (!key || typeof key !== 'string') return '';
+    const visible = 4;
+    if (key.length <= visible * 2) return key[0] + '***' + key[key.length - 1];
+    return `${key.slice(0, visible)}...${key.slice(-visible)}`;
+  };
+
+  const findBestAIKey = (keys: any[]) => {
+    if (!Array.isArray(keys)) return null;
+    const google = keys.find(
+      (k) => k?.isActive && k?.providerId === 'google' && k?.fields?.apiKey,
+    );
+    if (google) return google;
+    return keys.find((k) => k?.isActive && k?.fields?.apiKey) || null;
+  };
+
+  const refreshActiveAIKeyInfo = async () => {
+    try {
+      const keys = await window.electron.store.get('ai-keys');
+      const selected = findBestAIKey(keys || []);
+      const googleActive = (Array.isArray(keys) ? keys : [])
+        .filter((k: any) => k?.providerId === 'google' && k?.isActive)
+        .map((k: any) => ({ id: k.id, name: k.name || 'Unnamed Key', masked: maskKey(k.fields?.apiKey) }));
+      setGoogleKeys(googleActive);
+      if (!selected) {
+        setActiveAIKeyInfo(null);
+        return;
+      }
+      const providerName =
+        selected.providerId === 'google'
+          ? 'Google AI'
+          : selected.providerId === 'openai'
+          ? 'OpenAI'
+          : selected.providerId === 'anthropic'
+          ? 'Anthropic'
+          : selected.providerId || 'Custom';
+      setActiveAIKeyInfo({
+        providerId: selected.providerId,
+        providerName,
+        keyMasked: maskKey(selected.fields?.apiKey),
+        id: selected.id,
+      });
+    } catch (e) {
+      setActiveAIKeyInfo(null);
+    }
+  };
+
   // State for history modal
   const [showHistory, setShowHistory] = useState(false);
   const [selectedScheduleForHistory, setSelectedScheduleForHistory] = useState<SavedScheduledPost | null>(null);
@@ -150,6 +211,7 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
   // Load saved schedules on component mount
   useEffect(() => {
     fetchSavedSchedules();
+    refreshActiveAIKeyInfo();
   }, [connectionId]);
 
   const handleInputChange = (field: keyof ScheduledPostForm, value: any) => {
@@ -226,7 +288,8 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
       frequencyType: schedule.frequencyType,
       frequencyValue: schedule.frequencyValue,
       weeklyDay: schedule.weeklyDay || 1,
-      monthlyDay: schedule.monthlyDay || 1
+      monthlyDay: schedule.monthlyDay || 1,
+      aiKeyId: schedule.aiKeyId || null
     });
     setNewTopic({ name: '' });
   };
@@ -274,6 +337,7 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
         connectionId,
         connectionName,
         connectionType,
+        aiKeyId: formData.aiKeyId || activeAIKeyInfo?.id || null,
         scheduledTime: formData.scheduledTime,
         frequencyType: formData.frequencyType,
         frequencyValue: formData.frequencyValue,
@@ -662,6 +726,23 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
               Recurring Schedule
             </h4>
 
+            {/* AI Key Selection */}
+            <div className="eg-blog-scheduled-posts-field">
+              <label htmlFor="ai-key">AI API Key</label>
+              <div className="eg-blog-scheduled-posts-ai-key-row">
+                <select
+                  id="ai-key"
+                  value={formData.aiKeyId || activeAIKeyInfo?.id || ''}
+                  onChange={(e) => handleInputChange('aiKeyId', e.target.value || null)}
+                >
+                  <option value="">Auto-select active key</option>
+                  {googleKeys.map(k => (
+                    <option key={k.id} value={k.id}>{k.name} — {k.masked}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="eg-blog-scheduled-posts-datetime-row">
               <div className="eg-blog-scheduled-posts-field">
                 <label htmlFor="scheduled-time">Time</label>
@@ -755,6 +836,9 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
                 <strong>Name:</strong> {formData.title || 'Untitled Scheduler'}
               </div>
               <div className="eg-blog-scheduled-posts-preview-item">
+                <strong>AI Key:</strong> {activeAIKeyInfo ? `${activeAIKeyInfo.providerName} — ${activeAIKeyInfo.keyMasked}` : 'Not selected'}
+              </div>
+              <div className="eg-blog-scheduled-posts-preview-item">
                 <strong>Topics:</strong> {formData.topics.length > 0 ? formData.topics.map(topic => topic.name).join(', ') : 'No topics added'}
               </div>
               <div className="eg-blog-scheduled-posts-preview-item">
@@ -785,11 +869,16 @@ const ScheduledPostsTab: React.FC<ScheduledPostsTabProps> = ({
               <div className="eg-blog-scheduled-posts-header-info">
                 <h3>Scheduled Posts</h3>
                 <p>Manage scheduled posts for {connectionName} ({connectionType})</p>
+                {activeAIKeyInfo && (
+                  <p className="eg-blog-scheduled-posts-active-ai-key" title="Active AI provider and key">
+                    <FontAwesomeIcon icon={faInfoCircle} /> Active AI: <strong>{activeAIKeyInfo.providerName}</strong> — Key {activeAIKeyInfo.keyMasked}
+                  </p>
+                )}
               </div>
               <div className="eg-blog-scheduled-posts-header-actions">
                 <button
                   className="eg-blog-scheduled-posts-refresh-btn"
-                  onClick={fetchSavedSchedules}
+                  onClick={async () => { await fetchSavedSchedules(); await refreshActiveAIKeyInfo(); }}
                   disabled={isLoadingSchedules}
                   title="Refresh schedules"
                 >

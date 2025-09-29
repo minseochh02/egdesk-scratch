@@ -664,7 +664,33 @@ ipcMain.handle('photo-insert-into-project', async (event, sourceFilePath: string
   }
 });
 
-// Buffer-based photo insertion: write provided bytes into project root
+// Helper: create a simple backup conversation for a photo write
+async function createPhotoBackup(projectRootPath: string, destinationPath: string): Promise<void> {
+  try {
+    const path = require('path');
+    const fs = require('fs/promises');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupDir = path.join(projectRootPath, '.backup', `conversation-${ts}-uploads-backup`);
+    const rel = path.relative(projectRootPath, destinationPath);
+    const backupTarget = path.join(backupDir, rel);
+    const backupTargetDir = path.dirname(backupTarget);
+    await fs.mkdir(backupTargetDir, { recursive: true });
+
+    // If destination exists, copy its current contents as backup; otherwise, create .init marker
+    const exists = await fs.access(destinationPath).then(() => true).catch(() => false);
+    if (exists) {
+      const content = await fs.readFile(destinationPath);
+      await fs.writeFile(backupTarget, content);
+    } else {
+      await fs.writeFile(backupTarget + '.init', '');
+    }
+  } catch (e) {
+    // Best-effort backup; ignore failures
+    console.warn('Photo backup failed:', e);
+  }
+}
+
+// Buffer-based photo insertion: write provided bytes into project root (with backup)
 ipcMain.handle('photo-insert-into-project-buffer', async (event, fileBytes: ArrayBuffer, projectRootPath: string, destinationFileName: string) => {
   try {
     if (!fileBytes || !projectRootPath || !destinationFileName) {
@@ -675,6 +701,8 @@ ipcMain.handle('photo-insert-into-project-buffer', async (event, fileBytes: Arra
     const destPath = path.join(projectRootPath, destinationFileName);
     const dir = path.dirname(destPath);
     await fs.mkdir(dir, { recursive: true });
+    // Create best-effort backup before overwriting/creating
+    await createPhotoBackup(projectRootPath, destPath);
     const nodeBuffer = Buffer.from(fileBytes as any);
     await fs.writeFile(destPath, nodeBuffer);
     return { success: true, destinationPath: destPath };
