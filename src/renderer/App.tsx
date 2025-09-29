@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MemoryRouter as Router,
+  HashRouter as Router,
   Routes,
   Route,
   Link,
@@ -280,10 +280,8 @@ function RouteWindowBoundsManager() {
 }
 
 export default function App() {
-  // Sync initial route from window.location for deep-link support in preview windows
-  const initialPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.search) : '/';
   return (
-    <Router initialEntries={[initialPath]} initialIndex={0}>
+    <Router>
       <RouteWindowBoundsManager />
       <div className="app-container">
         <NavigationBar />
