@@ -1,10 +1,13 @@
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { URLFileViewer } from './URLFileViewer';
 
 const URLFileViewerPage: React.FC = () => {
+  const location = useLocation();
   const { filesToOpen } = useMemo(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
+      // With HashRouter, query params are available via react-router's location.search
+      const params = new URLSearchParams(location.search || '');
       const viewer = params.get('viewer');
       const filesParam = params.get('files');
       if (viewer === 'url' && filesParam) {
@@ -16,7 +19,7 @@ const URLFileViewerPage: React.FC = () => {
       // ignore
     }
     return { filesToOpen: [] as string[] };
-  }, []);
+  }, [location.search]);
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
