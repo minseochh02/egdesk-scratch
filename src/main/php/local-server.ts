@@ -342,6 +342,23 @@ export class LocalServerManager {
       }
     });
 
+    // Debug PHP detection
+    ipcMain.handle('wp-server-debug-php', async (event) => {
+      try {
+        if (!this.phpManager) {
+          this.phpManager = PHPManager.getInstance();
+        }
+        
+        await this.phpManager.debugPHPDetection();
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
     // Pick WordPress folder
     ipcMain.handle('wp-server-pick-folder', async (event) => {
       try {

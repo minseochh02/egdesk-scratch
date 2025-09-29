@@ -36,37 +36,43 @@ export class PHPManager {
     try {
       console.log('🔍 Initializing PHP Manager...');
 
-      // First, try to find bundled PHP
-      console.log('Looking for bundled PHP...');
-      const bundledPHP = await this.findBundledPHP();
-      if (bundledPHP) {
-        console.log(`✅ Found bundled PHP: ${bundledPHP}`);
-        this.bundledPHPPath = bundledPHP;
-        this.phpInfo = await this.getPHPVersionInfo(bundledPHP, true);
-        return this.phpInfo;
-      }
-      console.log('❌ No bundled PHP found');
-
-      // Fallback to system PHP
+      // First, try to find system PHP (prioritize system over bundled)
       console.log('Looking for system PHP...');
       const systemPHP = await this.findSystemPHP();
       if (systemPHP) {
         console.log(`✅ Found system PHP: ${systemPHP}`);
         this.systemPHPPath = systemPHP;
         this.phpInfo = await this.getPHPVersionInfo(systemPHP, false);
-        return this.phpInfo;
+        if (this.phpInfo.isAvailable) {
+          return this.phpInfo;
+        }
+        console.log('⚠️ System PHP found but not working, trying bundled...');
       }
-      console.log('❌ No system PHP found');
+      console.log('❌ No working system PHP found');
+
+      // Fallback to bundled PHP
+      console.log('Looking for bundled PHP...');
+      const bundledPHP = await this.findBundledPHP();
+      if (bundledPHP) {
+        console.log(`✅ Found bundled PHP: ${bundledPHP}`);
+        this.bundledPHPPath = bundledPHP;
+        this.phpInfo = await this.getPHPVersionInfo(bundledPHP, true);
+        if (this.phpInfo.isAvailable) {
+          return this.phpInfo;
+        }
+        console.log('⚠️ Bundled PHP found but not working');
+      }
+      console.log('❌ No working bundled PHP found');
 
       // No PHP found
-      console.log('❌ No PHP installation found anywhere');
+      console.log('❌ No working PHP installation found anywhere');
       this.phpInfo = {
         version: 'Not found',
         path: '',
         isBundled: false,
         isAvailable: false,
         error:
-          'No PHP installation found. Please install PHP or run "npm run php:download" to download bundled PHP.',
+          'No working PHP installation found. Please install PHP or run "npm run php:download" to download bundled PHP.',
       };
       return this.phpInfo;
     } catch (error) {
@@ -271,6 +277,11 @@ export class PHPManager {
         path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.3.0', 'php.exe'),
         path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.2.0', 'php.exe'),
         path.join(systemDrive, 'laragon', 'bin', 'php', 'php8.1.0', 'php.exe'),
+        // More XAMPP/WAMP variations
+        path.join(systemDrive, 'xampp', 'php', 'php8.3.0', 'php.exe'),
+        path.join(systemDrive, 'xampp', 'php', 'php8.2.0', 'php.exe'),
+        path.join(systemDrive, 'wamp64', 'bin', 'php', 'php8.2.0', 'php.exe'),
+        path.join(systemDrive, 'wamp64', 'bin', 'php', 'php8.1.0', 'php.exe'),
       );
     } else if (platform === 'darwin') {
       possiblePaths.push(
@@ -295,7 +306,14 @@ export class PHPManager {
 
     // Try to find PHP in PATH first (most reliable)
     try {
-      const phpPath = execSync('which php', { encoding: 'utf8' }).trim();
+      let phpPath: string;
+      if (platform === 'win32') {
+        // Use 'where' command on Windows
+        phpPath = execSync('where php', { encoding: 'utf8' }).trim().split('\n')[0];
+      } else {
+        phpPath = execSync('which php', { encoding: 'utf8' }).trim();
+      }
+      
       if (phpPath && fs.existsSync(phpPath)) {
         console.log(`✅ Found PHP in PATH: ${phpPath}`);
         return phpPath;
@@ -308,13 +326,18 @@ export class PHPManager {
     for (const phpPath of possiblePaths) {
       try {
         if (fs.existsSync(phpPath)) {
-          // Test if it's executable
-          execSync(`"${phpPath}" -v`, { stdio: 'pipe' });
-          console.log(`✅ Found PHP at: ${phpPath}`);
+          // Test if it's executable with better error handling
+          const result = execSync(`"${phpPath}" -v`, { 
+            stdio: 'pipe',
+            timeout: 5000, // 5 second timeout
+            cwd: path.dirname(phpPath) // Run from PHP directory for DLL lookup
+          });
+          console.log(`✅ Found working PHP at: ${phpPath}`);
           return phpPath;
         }
       } catch (error) {
-        // Continue to next path
+        // Continue to next path, but log the error for debugging
+        console.log(`⚠️ PHP at ${phpPath} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
 
@@ -330,7 +353,18 @@ export class PHPManager {
     isBundled: boolean,
   ): Promise<PHPInfo> {
     try {
-      const versionOutput = execSync(`"${phpPath}" -v`, { encoding: 'utf8' });
+      // On Windows, run from the PHP directory to help with DLL lookup
+      const options: any = { 
+        encoding: 'utf8',
+        timeout: 10000, // 10 second timeout
+        stdio: 'pipe'
+      };
+      
+      if (os.platform() === 'win32') {
+        options.cwd = path.dirname(phpPath);
+      }
+      
+      const versionOutput = execSync(`"${phpPath}" -v`, options);
       const version = versionOutput.split('\n')[0] || 'Unknown version';
 
       return {
@@ -340,12 +374,15 @@ export class PHPManager {
         isAvailable: true,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.log(`❌ PHP version check failed for ${phpPath}: ${errorMessage}`);
+      
       return {
         version: 'Error',
         path: phpPath,
         isBundled,
         isAvailable: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
       };
     }
   }
@@ -376,7 +413,10 @@ export class PHPManager {
     // Windows-specific configuration
     if (platform === 'win32') {
       // Use development configuration for better compatibility
-      args.push('-c', path.join(path.dirname(phpPath), 'php.ini-development'));
+      const phpIniPath = path.join(path.dirname(phpPath), 'php.ini-development');
+      if (fs.existsSync(phpIniPath)) {
+        args.push('-c', phpIniPath);
+      }
     }
 
     // Use a clean environment; let PHP's built-in server set per-request variables
@@ -385,9 +425,12 @@ export class PHPManager {
       DOCUMENT_ROOT: documentRoot,
     };
 
+    // On Windows, set cwd to PHP directory for DLL lookup, otherwise use document root
+    const spawnCwd = platform === 'win32' ? path.dirname(phpPath) : documentRoot;
+
     return spawn(phpPath, args, {
       env,
-      cwd: documentRoot,
+      cwd: spawnCwd,
     });
   }
 
@@ -448,5 +491,36 @@ export class PHPManager {
     // This would be used during the build process
     // Implementation depends on your build system
     console.log('PHP binaries should be downloaded during build process');
+  }
+
+  /**
+   * Debug method to test PHP detection
+   */
+  public async debugPHPDetection(): Promise<void> {
+    console.log('🔍 Debugging PHP detection...');
+    console.log(`Platform: ${os.platform()}`);
+    console.log(`Architecture: ${os.arch()}`);
+    
+    // Test system PHP
+    console.log('\n--- Testing System PHP ---');
+    const systemPHP = await this.findSystemPHP();
+    if (systemPHP) {
+      console.log(`✅ System PHP found: ${systemPHP}`);
+      const systemInfo = await this.getPHPVersionInfo(systemPHP, false);
+      console.log(`System PHP info:`, systemInfo);
+    } else {
+      console.log('❌ No system PHP found');
+    }
+    
+    // Test bundled PHP
+    console.log('\n--- Testing Bundled PHP ---');
+    const bundledPHP = await this.findBundledPHP();
+    if (bundledPHP) {
+      console.log(`✅ Bundled PHP found: ${bundledPHP}`);
+      const bundledInfo = await this.getPHPVersionInfo(bundledPHP, true);
+      console.log(`Bundled PHP info:`, bundledInfo);
+    } else {
+      console.log('❌ No bundled PHP found');
+    }
   }
 }
