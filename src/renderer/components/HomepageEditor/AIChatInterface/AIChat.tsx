@@ -1302,7 +1302,16 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         }
         // Prefer buffer-based insert to avoid sandboxed path issues
         const arrayBuffer = await file.arrayBuffer();
-        const result = await (window as any).electron.photos.insertIntoProjectFromBuffer(arrayBuffer, currentProject.path, file.name);
+        // Generate a date-timestamped filename while preserving extension
+        const originalName = file.name || 'image';
+        const lastDot = originalName.lastIndexOf('.');
+        const extension = lastDot >= 0 ? originalName.slice(lastDot).toLowerCase() : '';
+        const now = new Date();
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const pad3 = (n: number) => String(n).padStart(3, '0');
+        const timestamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}-${pad2(now.getSeconds())}-${pad3(now.getMilliseconds())}`;
+        const destinationFileName = `img_${timestamp}${extension}`;
+        const result = await (window as any).electron.photos.insertIntoProjectFromBuffer(arrayBuffer, currentProject.path, destinationFileName);
         // Create an object URL from the dropped file bytes for immediate preview
         const blob = new Blob([arrayBuffer], { type: (file as any).type || 'application/octet-stream' });
         const objectUrl = URL.createObjectURL(blob);
