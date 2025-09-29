@@ -729,19 +729,14 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       // Deep-link preview window into URLFileViewer via query params (HashRouter-friendly)
       const filesEncoded = encodeURIComponent(filesParam.join('|'));
       const href = window.location.href;
-      // Ensure we end up with index.html#/viewer?... which works in packaged Windows builds
-      let baseIndex = href;
-      const hashIndex = href.indexOf('#');
-      if (hashIndex >= 0) {
-        baseIndex = href.substring(0, hashIndex);
+      // Ensure we end up with file:///.../index.html#/viewer?... which works in packaged Windows builds
+      let baseNoHash = href.split('#')[0];
+      // If the base doesn't end with index.html, append it
+      if (!/index\.html$/i.test(baseNoHash)) {
+        if (!baseNoHash.endsWith('/')) baseNoHash += '/';
+        baseNoHash += 'index.html';
       }
-      // Drop any trailing path after index.html for safety
-      const idx = baseIndex.lastIndexOf('/');
-      if (idx >= 0) {
-        baseIndex = baseIndex.substring(0, idx + 1);
-      }
-      // Compose final URL against index.html with hash route
-      const appViewerUrl = `${baseIndex}#/viewer?viewer=url&files=${filesEncoded}`;
+      const appViewerUrl = `${baseNoHash}#/viewer?viewer=url&files=${filesEncoded}`;
       const electronAny = (window as any).electron;
       setCurrentPreviewUrl(appViewerUrl);
       if (previewWindowId != null) {
@@ -1312,8 +1307,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         const blob = new Blob([arrayBuffer], { type: (file as any).type || 'application/octet-stream' });
         const objectUrl = URL.createObjectURL(blob);
         if (result?.success) {
-          setUploadPreviews((prev) => ([{ previewUrl: objectUrl, filePath: result.destinationPath }, ...prev].slice(0, 6)));
-          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `📷 Photo inserted: ${result.destinationPath}`, imageUrl: objectUrl } as any], timestamp: new Date() }]);
+          const normalizedPath = String(result.destinationPath || '').replace(/\\\\/g, '/');
+          setUploadPreviews((prev) => ([{ previewUrl: objectUrl, filePath: normalizedPath }, ...prev].slice(0, 6)));
+          setMessages(prev => [...prev, { role: 'model', parts: [{ text: `📷 Photo inserted: ${normalizedPath}`, imageUrl: objectUrl } as any], timestamp: new Date() }]);
         } else {
           setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Failed to insert photo: ${result?.error || 'Unknown error'}` }], timestamp: new Date() }]);
         }

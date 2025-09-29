@@ -126,7 +126,7 @@ const PostsTab: React.FC<PostsTabProps> = ({
     try {
       const result = await window.electron.wordpress.fetchPosts(connectionId, {
         perPage: 100,
-        status: 'publish'
+        status: 'any'
       });
 
       if (result.success) {
@@ -158,7 +158,7 @@ const PostsTab: React.FC<PostsTabProps> = ({
     try {
       const result = await window.electron.wordpress.fetchAllPosts(connectionId, {
         perPage: 100,
-        status: 'publish'
+        status: 'any'
       });
 
       if (result.success) {

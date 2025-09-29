@@ -237,7 +237,7 @@ export class ScheduledPostsExecutor {
 
       // Step 2: Set up environment variables
       console.log(`\n⚙️ Step 2: Setting up environment variables...`);
-      this.setupEnvironmentVariables(connection);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null);
       console.log(`✅ Environment variables configured`);
 
       // Step 3: Select topic for blog generation
@@ -333,7 +333,7 @@ export class ScheduledPostsExecutor {
   /**
    * Set up environment variables for AI and WordPress
    */
-  private setupEnvironmentVariables(connection: any): void {
+  private setupEnvironmentVariables(connection: any, aiKeyId?: string | null): void {
     try {
       // Set WordPress environment variables
       process.env.WORDPRESS_URL = connection.url;
@@ -345,22 +345,46 @@ export class ScheduledPostsExecutor {
       if (aiKeys.length === 0) {
         throw new Error('No AI API keys found. Please configure AI keys in the AI Keys Manager.');
       }
-      
-      // Find the first active AI key (preferably Gemini)
-      const activeKey = this.findBestAIKey(aiKeys);
-      if (!activeKey) {
-        throw new Error('No active AI API keys found. Please activate an AI key in the AI Keys Manager.');
+
+      // If a specific key ID is provided, try to use that first
+      let selectedKey: any | null = null;
+      if (aiKeyId) {
+        selectedKey = aiKeys.find((k: any) => k.id === aiKeyId);
+        if (!selectedKey) {
+          console.warn(`⚠️ AI key with id ${aiKeyId} not found. Falling back to active key selection.`);
+        } else if (!selectedKey.fields?.apiKey) {
+          console.warn(`⚠️ AI key ${aiKeyId} has no apiKey. Falling back to active key selection.`);
+          selectedKey = null;
+        } else {
+          const masked = String(selectedKey.fields.apiKey || '')
+            .replace(/^(....).*(....)$/s, '$1...$2');
+          console.log(`🔑 Selected AI key by id: ${selectedKey.name} (${selectedKey.providerId}) — ${masked}`);
+        }
       }
-      
+
+      // Fall back to best active key if none explicitly selected
+      if (!selectedKey) {
+        selectedKey = this.findBestAIKey(aiKeys);
+        if (selectedKey) {
+          const masked = String(selectedKey.fields?.apiKey || '')
+            .replace(/^(....).*(....)$/s, '$1...$2');
+          console.log(`🔄 Fallback to active AI key: ${selectedKey.name} (${selectedKey.providerId}) — ${masked}`);
+        }
+      }
+
+      if (!selectedKey) {
+        throw new Error('No usable AI API key found. Please configure/activate an AI key.');
+      }
+
       // Set AI environment variables based on the selected key
-      this.setupAIEnvironmentVariables(activeKey);
+      this.setupAIEnvironmentVariables(selectedKey);
       
       console.log(`⚙️ WordPress URL: ${connection.url}`);
       console.log(`⚙️ WordPress Username: ${connection.username}`);
       console.log(`⚙️ AI Provider: ${process.env.AI_PROVIDER}`);
       console.log(`⚙️ AI Model: ${process.env.AI_MODEL}`);
       console.log(`⚙️ Image Generation: ${process.env.IMAGE_GENERATION_ENABLED}`);
-      console.log(`🔑 Using AI Key: ${activeKey.name} (${activeKey.providerId})`);
+      console.log(`🔑 Using AI Key: ${selectedKey.name} (${selectedKey.providerId})`);
     } catch (error) {
       console.error(`❌ Error setting up environment variables:`, error);
       throw error;

@@ -163,7 +163,13 @@ export class WordPressDatabaseManager {
     const stmt = this.db.prepare(`
       SELECT * FROM wordpress_posts 
       WHERE wordpress_site_id = ? 
-      ORDER BY synced_at DESC 
+      ORDER BY 
+        CASE 
+          WHEN modified IS NOT NULL AND modified <> '' THEN datetime(modified)
+          WHEN date IS NOT NULL AND date <> '' THEN datetime(date)
+          ELSE datetime(synced_at)
+        END DESC,
+        id DESC
       LIMIT ? OFFSET ?
     `);
 

@@ -6,6 +6,7 @@ export interface ScheduledPost {
   connectionId: string;
   connectionName: string;
   connectionType: string;
+  aiKeyId?: string | null;
   scheduledTime: string; // HH:MM format
   frequencyType: 'daily' | 'weekly' | 'monthly' | 'custom';
   frequencyValue: number;
@@ -33,6 +34,7 @@ export interface CreateScheduledPostData {
   connectionId: string;
   connectionName: string;
   connectionType: string;
+  aiKeyId?: string | null;
   scheduledTime: string;
   frequencyType: 'daily' | 'weekly' | 'monthly' | 'custom';
   frequencyValue: number;
@@ -64,9 +66,9 @@ export class SQLiteScheduledPostsManager {
     const stmt = this.db.prepare(`
       INSERT INTO scheduled_posts (
         id, title, connection_id, connection_name, connection_type,
-        scheduled_time, frequency_type, frequency_value, weekly_day, monthly_day,
+        ai_key_id, scheduled_time, frequency_type, frequency_value, weekly_day, monthly_day,
         enabled, created_at, updated_at, run_count, success_count, failure_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -75,6 +77,7 @@ export class SQLiteScheduledPostsManager {
       data.connectionId,
       data.connectionName,
       data.connectionType,
+      data.aiKeyId || null,
       data.scheduledTime,
       data.frequencyType,
       data.frequencyValue,
@@ -181,13 +184,14 @@ export class SQLiteScheduledPostsManager {
     // Update scheduled post
     const stmt = this.db.prepare(`
       UPDATE scheduled_posts 
-      SET title = ?, scheduled_time = ?, frequency_type = ?, frequency_value = ?, 
+      SET title = ?, ai_key_id = ?, scheduled_time = ?, frequency_type = ?, frequency_value = ?, 
           weekly_day = ?, monthly_day = ?, updated_at = ?
       WHERE id = ?
     `);
 
     stmt.run(
       updates.title || existing.title,
+      (updates as any).aiKeyId ?? existing.aiKeyId ?? null,
       updates.scheduledTime || existing.scheduledTime,
       updates.frequencyType || existing.frequencyType,
       updates.frequencyValue || existing.frequencyValue,
@@ -370,6 +374,7 @@ export class SQLiteScheduledPostsManager {
       connectionId: row.connection_id,
       connectionName: row.connection_name,
       connectionType: row.connection_type,
+      aiKeyId: row.ai_key_id ?? null,
       scheduledTime: row.scheduled_time,
       frequencyType: row.frequency_type,
       frequencyValue: row.frequency_value,
