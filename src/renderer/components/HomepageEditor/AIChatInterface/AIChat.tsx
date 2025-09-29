@@ -726,9 +726,22 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       const filesParam = (filesToOpen && filesToOpen.length > 0)
         ? filesToOpen
         : fallbackCandidates;
-      // Deep-link preview window into URLFileViewer via query params
+      // Deep-link preview window into URLFileViewer via query params (HashRouter-friendly)
       const filesEncoded = encodeURIComponent(filesParam.join('|'));
-      const appViewerUrl = `${window.location.origin}/viewer?viewer=url&files=${filesEncoded}`;
+      const href = window.location.href;
+      // Ensure we end up with index.html#/viewer?... which works in packaged Windows builds
+      let baseIndex = href;
+      const hashIndex = href.indexOf('#');
+      if (hashIndex >= 0) {
+        baseIndex = href.substring(0, hashIndex);
+      }
+      // Drop any trailing path after index.html for safety
+      const idx = baseIndex.lastIndexOf('/');
+      if (idx >= 0) {
+        baseIndex = baseIndex.substring(0, idx + 1);
+      }
+      // Compose final URL against index.html with hash route
+      const appViewerUrl = `${baseIndex}#/viewer?viewer=url&files=${filesEncoded}`;
       const electronAny = (window as any).electron;
       setCurrentPreviewUrl(appViewerUrl);
       if (previewWindowId != null) {
