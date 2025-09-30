@@ -859,6 +859,8 @@ const electronHandler = {
       ipcRenderer.invoke('wp-update-comment-status', connectionId, commentId, status),
     deleteComment: (connectionId: string, commentId: number) =>
       ipcRenderer.invoke('wp-delete-comment', connectionId, commentId),
+    deletePost: (connectionId: string, postId: number) =>
+      ipcRenderer.invoke('wp-delete-post', connectionId, postId),
     clearAllData: () => ipcRenderer.invoke('sqlite-wordpress-clear-all'),
     clearSiteData: (siteId: string) => ipcRenderer.invoke('sqlite-wordpress-clear-site', siteId),
     checkSite: (url: string) =>

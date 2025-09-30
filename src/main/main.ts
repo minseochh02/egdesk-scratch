@@ -24,6 +24,7 @@ import { aiChatDataService } from './ai-code/ai-chat-data-service';
 import { registerFileSystemHandlers } from './fs';
 import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
+import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
 
@@ -198,6 +199,7 @@ const createWindow = async () => {
 
     // Initialize Scheduled Posts Executor
     scheduledPostsExecutor = new ScheduledPostsExecutor();
+    setScheduledPostsExecutor(scheduledPostsExecutor);
     await scheduledPostsExecutor.start();
 
     console.log('✅ All components initialized successfully');
