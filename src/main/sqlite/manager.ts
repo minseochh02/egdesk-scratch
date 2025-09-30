@@ -7,6 +7,7 @@ import { WordPressDatabaseManager } from './wordpress';
 import { SQLiteScheduledPostsManager } from './scheduled-posts';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
+import { restartScheduledPostsExecutor } from '../scheduler/executor-instance';
 
 /**
  * Central SQLite Manager
@@ -928,6 +929,7 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-scheduled-posts-create', async (event, data) => {
       try {
         const scheduledPost = this.scheduledPostsManager!.createScheduledPost(data);
+        await restartScheduledPostsExecutor();
         return { success: true, data: scheduledPost };
       } catch (error) {
         return {
@@ -980,6 +982,8 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-scheduled-posts-update', async (event, id, updates) => {
       try {
         const scheduledPost = this.scheduledPostsManager!.updateScheduledPost(id, updates);
+        // Restart scheduler to apply timing/enablement changes immediately
+        await restartScheduledPostsExecutor();
         return { success: true, data: scheduledPost };
       } catch (error) {
         return {
@@ -993,6 +997,7 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-scheduled-posts-delete', async (event, id) => {
       try {
         const success = this.scheduledPostsManager!.deleteScheduledPost(id);
+        await restartScheduledPostsExecutor();
         return { success };
       } catch (error) {
         return {
@@ -1006,6 +1011,7 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-scheduled-posts-toggle', async (event, id, enabled) => {
       try {
         const success = this.scheduledPostsManager!.toggleScheduledPost(id, enabled);
+        await restartScheduledPostsExecutor();
         return { success };
       } catch (error) {
         return {

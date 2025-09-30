@@ -189,6 +189,18 @@ export class WordPressDatabaseManager {
   }
 
   /**
+   * Delete a WordPress post by ID and site
+   */
+  deletePost(postId: number, siteId: string): void {
+    const stmt = this.db.prepare(`
+      DELETE FROM wordpress_posts 
+      WHERE id = ? AND wordpress_site_id = ?
+    `);
+
+    stmt.run(postId, siteId);
+  }
+
+  /**
    * Save WordPress media to the database
    */
   saveMedia(media: WordPressMedia): void {

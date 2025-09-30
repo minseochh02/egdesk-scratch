@@ -224,6 +224,12 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           setMessages(prev => [...prev, { role: 'model', parts: [{ text: `✅ Reverted last change for conversation ${String(targetConversationId).slice(0,8)}.` }], timestamp: new Date() }]);
           // Refresh localhost windows to reflect file changes
           await refreshBrowser();
+          try {
+            // Clear AI in-memory conversation context so it doesn't assume reverted changes still exist
+            await (window as any).electron.ai.clearHistory();
+            // Also clear UI message history to reflect reset
+            setMessages([]);
+          } catch {}
         } else {
           setMessages(prev => [...prev, { role: 'model', parts: [{ text: `❌ Revert failed: ${result?.error || 'Unknown error'}` }], timestamp: new Date() }]);
         }
@@ -317,9 +323,6 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setCurrentProject(context.currentProject);
       // Send project context to main process (always send, even if null)
       window.electron.projectContext.updateContext(context);
-      // Don't auto-load conversations - let user choose
-      // const projectPath = context.currentProject?.path;
-      // loadConversationsForProject(projectPath);
     });
 
     // Also send initial project context immediately on component mount
@@ -327,9 +330,6 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     if (initialContext.currentProject) {
       window.electron.projectContext.updateContext(initialContext);
       setCurrentProject(initialContext.currentProject);
-      // Don't auto-load conversations - start with blank state
-      // loadConversationsForProject(initialContext.currentProject.path);
-      
       // Note: initial preview opening is handled by the project change effect below
     }
     
@@ -761,168 +761,6 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     }
   };
   
-
-
-
-
-
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading || !isConfigured) return;
-
-    const userMessage: ConversationMessage = {
-      role: 'user',
-      parts: [{ text: inputMessage.trim() }],
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    const messageToSend = inputMessage.trim();
-    setInputMessage('');
-    setIsLoading(true);
-    setIsConversationActive(true);
-
-    try {
-      console.log('🎯 Starting conversation with:', messageToSend);
-      setStreamingEvents([]);
-      setToolCalls([]);
-
-      // Use the same stream handling as autonomous conversation but with simpler settings
-      let responseText = '';
-      let currentMessage = '';
-      
-      console.log('🌐 Route debug (chat mode):', {
-        currentUrl: currentPreviewUrl || null,
-        currentPath: getCurrentPathFromPreview(),
-        projectPath: currentProject?.path || null,
-      });
-      for await (const event of AIService.streamConversation(messageToSend, {
-        autoExecuteTools: true, // Enable tool execution
-        maxTurns: 1, // Single turn conversation
-        timeoutMs: 30000, // 30 seconds timeout
-        context: {
-          currentProject: currentProject?.name,
-          projectPath: currentProject?.path,
-          currentUrl: currentPreviewUrl || null,
-          currentPath: getCurrentPathFromPreview()
-        }
-      })) {
-        console.log('🎉 Received stream event in handleSendMessage:', event.type, event);
-        setStreamingEvents(prev => [...prev, event]);
-        
-        switch (event.type) {
-          case AIEventType.Content:
-            const contentEvent = event as any;
-            const newContent = contentEvent.content || contentEvent.data || '';
-            if (newContent) {
-              responseText += newContent;
-              currentMessage += newContent;
-              
-              // Update the last message with streaming content
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMessage = updated[updated.length - 1];
-                if (lastMessage && lastMessage.role === 'model' && !lastMessage.toolCallId) {
-                  updated[updated.length - 1] = {
-                    ...lastMessage,
-                    parts: [{ text: currentMessage }]
-                  };
-                } else {
-                  // Add new message if none exists
-                  updated.push({
-                    role: 'model',
-                    parts: [{ text: currentMessage }],
-                    timestamp: new Date()
-                  });
-                }
-                return updated;
-              });
-            }
-            break;
-
-          case AIEventType.ToolCallRequest:
-            const toolCallEvent = event as any;
-            const toolCall = toolCallEvent.toolCall;
-            
-            // Add a natural message for tool execution
-            const toolMessage = getToolExecutionMessage(toolCall.name, toolCall.arguments);
-            setMessages(prev => [...prev, {
-              role: 'model' as const,
-              parts: [{ text: toolMessage }],
-              timestamp: new Date(),
-              toolCallId: toolCall.id,
-              toolStatus: 'executing'
-            }]);
-            
-            setToolCalls(prev => [...prev, {
-              ...toolCallEvent.toolCall,
-              status: 'executing'
-            }]);
-            break;
-
-          case AIEventType.ToolCallResponse:
-            const toolResponseEvent = event as any;
-            const response = toolResponseEvent.response;
-            
-            // Update the tool message with completion status
-            setMessages(prev => prev.map(msg => {
-              if (msg.toolCallId === response.id) {
-                const statusText = response.success ? 'success!' : 'failed!';
-                const statusIcon = response.success ? '✅' : '❌';
-                const originalText = msg.parts[0]?.text || '';
-                const toolName = getToolNameFromMessage(originalText);
-                
-                return {
-                  ...msg,
-                  parts: [{ text: `${originalText}\n${toolName}: ${statusIcon} ${statusText}` }],
-                  toolStatus: response.success ? 'completed' : 'failed'
-                };
-              }
-              return msg;
-            }));
-            
-            setToolCalls(prev => prev.map(call => 
-              call.id === toolResponseEvent.response.id 
-                ? { ...call, status: toolResponseEvent.response.success ? 'completed' : 'failed', result: toolResponseEvent.response }
-                : call
-            ));
-
-            // Auto-switch to URL File Viewer when tool call completes, pass files if available
-            if (response.success && currentProject?.path) {
-              const filesFromArtifacts = extractFilePathsFromToolArtifacts(response, toolResponseEvent);
-              setTimeout(() => {
-                openHostedWebsiteFiles(filesFromArtifacts);
-              }, 500); // Small delay to let the UI update
-            }
-            break;
-
-          case AIEventType.Finished:
-            console.log('🏁 Conversation completed');
-            // Restart server and refresh browser to pick up file changes
-            await refreshBrowser();
-            break;
-
-          case AIEventType.Error:
-            const errorEvent = event as any;
-            throw new Error(errorEvent.error.message);
-
-          default:
-            console.log('🔍 Unhandled event type in handleSendMessage:', (event as any).type, event);
-            break;
-        }
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setMessages(prev => [...prev, {
-        role: 'model',
-        parts: [{ text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
-        timestamp: new Date()
-      }]);
-    } finally {
-      setIsLoading(false);
-      setIsConversationActive(false);
-    }
-  };
-
   /**
    * Handle sending message in autonomous mode
    */
@@ -963,20 +801,39 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       // Start autonomous conversation
       console.log('📞 Calling AIService.streamConversation...');
       
+      // Build attached files context from uploaded images
+      const attachedFiles = uploadPreviews.map(entry => ({
+        filePath: entry.filePath
+      }));
+      
       console.log('🌐 Route debug (autonomous mode):', {
         currentUrl: currentPreviewUrl || null,
         currentPath: getCurrentPathFromPreview(),
         projectPath: currentProject?.path || null,
+        attachedFiles: attachedFiles.length,
+        attachedFilePaths: attachedFiles.map(f => f.filePath)
+      });
+      
+      console.log('📎 Context with attached files:', {
+        currentProject: currentProject?.name,
+        projectPath: currentProject?.path,
+        currentUrl: currentPreviewUrl || null,
+        currentPath: getCurrentPathFromPreview(),
+        attachedFiles: attachedFiles.map(f => f.filePath)
       });
       for await (const event of AIService.streamConversation(message, {
         autoExecuteTools: true,
         maxTurns: 10, // Increased from 5 to allow more complex conversations
         timeoutMs: 300000, // 5 minutes - increased from 1 minute
         context: {
+          // Project context
           currentProject: currentProject?.name,
           projectPath: currentProject?.path,
+          // Navigation context
           currentUrl: currentPreviewUrl || null,
-          currentPath: getCurrentPathFromPreview()
+          currentPath: getCurrentPathFromPreview(),
+          // Attached files context - uploaded images with their file paths
+          attachedFiles: attachedFiles // Array of { filePath: string }
         }
       })) {
         console.log('🎉 Received stream event in AIChat:', event.type, event);
@@ -1174,7 +1031,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       setMessages(prev => [...prev, {
         role: 'model' as const,
         parts: [{ 
-          text: `❌ **Autonomous Conversation Error**\n\n${error instanceof Error ? error.message : 'Unknown error in autonomous conversation'}\n\n💡 *Try switching to Chat Mode (💬) for simple conversations, or check your connection and try again.*` 
+          text: `❌ **Autonomous Conversation Error**\n\n${error instanceof Error ? error.message : 'Unknown error in autonomous conversation'}\n\n💡 *Check your connection and try again.*` 
         }],
         timestamp: new Date()
       }]);
@@ -1302,15 +1159,8 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
         }
         // Prefer buffer-based insert to avoid sandboxed path issues
         const arrayBuffer = await file.arrayBuffer();
-        // Generate a date-timestamped filename while preserving extension
-        const originalName = file.name || 'image';
-        const lastDot = originalName.lastIndexOf('.');
-        const extension = lastDot >= 0 ? originalName.slice(lastDot).toLowerCase() : '';
-        const now = new Date();
-        const pad2 = (n: number) => String(n).padStart(2, '0');
-        const pad3 = (n: number) => String(n).padStart(3, '0');
-        const timestamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}-${pad2(now.getSeconds())}-${pad3(now.getMilliseconds())}`;
-        const destinationFileName = `img_${timestamp}${extension}`;
+        // Use original filename
+        const destinationFileName = file.name || 'image';
         const result = await (window as any).electron.photos.insertIntoProjectFromBuffer(arrayBuffer, currentProject.path, destinationFileName);
         // Create an object URL from the dropped file bytes for immediate preview
         const blob = new Blob([arrayBuffer], { type: (file as any).type || 'application/octet-stream' });
@@ -1494,7 +1344,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           {messages.length === 0 ? (
             <div className="welcome-message">
               <p>👋 Welcome to the AI Assistant!</p>
-              <p>💬 <strong>Start a new conversation</strong> by typing your message below.</p>
+              <p>🤖 <strong>Start a new conversation</strong> by typing your message below.</p>
               <p>📚 Use the <strong>History</strong> button to view past conversations.</p>
               {!isConfigured && (
                 <p className="config-hint">⚠️ Configure your Google AI key first to begin chatting.</p>
@@ -1574,7 +1424,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
           disabled={!inputMessage.trim() || isLoading || !isConfigured}
           className="send-btn"
         >
-          {isLoading ? 'Sending...' : 'Send'}
+          {isLoading ? 'Sending...' : `Send${uploadPreviews.length > 0 ? ` (${uploadPreviews.length} file${uploadPreviews.length > 1 ? 's' : ''})` : ''}`}
         </button>
       </div>
 
@@ -1582,8 +1432,13 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       <BackupManager
         isVisible={showBackupManager}
         onClose={() => setShowBackupManager(false)}
-        onBackupReverted={() => {
-          // Optionally refresh conversations or show a notification
+        onBackupReverted={async () => {
+          // Clear AI in-memory conversation context after revert via Backup Manager
+          try {
+            await (window as any).electron.ai.clearHistory();
+            setMessages([]);
+          } catch {}
+          // Refresh conversations list
           loadConversations();
         }}
       />

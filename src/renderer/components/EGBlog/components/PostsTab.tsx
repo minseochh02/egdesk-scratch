@@ -189,9 +189,39 @@ const PostsTab: React.FC<PostsTabProps> = ({
     console.log('Edit post:', post);
   };
 
-  const handleDeletePost = (post: WordPressPost) => {
-    // TODO: Implement delete functionality
-    console.log('Delete post:', post);
+  const handleDeletePost = async (post: WordPressPost) => {
+    if (!window.electron?.wordpress) {
+      setFetchError('WordPress API not available');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this post permanently?\n\n` +
+      `Title: ${post.title || 'Untitled'}\n` +
+      `This will attempt to delete it from WordPress and remove it locally.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsFetching(true);
+      const result = await (window.electron.wordpress as any).deletePost(connectionId, post.id);
+      if (result?.success) {
+        // Optimistically update UI
+        setPosts(prev => prev.filter(p => p.id !== post.id));
+        setTotalPosts(prev => Math.max(0, prev - 1));
+        // Reload from SQLite to stay in sync
+        await loadPosts();
+        onStatsUpdate?.();
+      } else {
+        const msg = result?.error || 'Failed to delete post';
+        setFetchError(msg);
+      }
+    } catch (err) {
+      console.error('Error deleting post:', err);
+      setFetchError('Failed to delete post');
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const togglePostExpansion = (postId: number) => {

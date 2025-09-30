@@ -78,7 +78,7 @@ export class AutonomousGeminiClient implements AIClientService {
       const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
       
       this.model = this.genAI.getGenerativeModel({
-        model: config.model || 'gemini-1.5-flash-latest',
+        model: config.model || 'gemini-2.5-flash',
         generationConfig: {
           temperature: config.temperature || 0.7,
           topP: config.topP || 0.8,
@@ -236,7 +236,12 @@ export class AutonomousGeminiClient implements AIClientService {
         // Prefix the user message with a concise route hint if available
         console.log('🔍 Using route hint when available to provide current path/url context');
         const routeHint = this.buildRouteHint();
-        const contextualMessage = routeHint ? `${routeHint}\n\n${currentMessage}` : currentMessage;
+        let contextualMessage = routeHint ? `${routeHint}\n\n${currentMessage}` : currentMessage;
+
+        // if image files are in the context, add them to the message
+        if (this.conversationState.context?.attachedFiles) {
+          contextualMessage = `${contextualMessage}\n\nAttached files: ${this.conversationState.context.attachedFiles.map(f => f.filePath).join(', ')}`;
+        }
 
         // Send message to Gemini with tools
         const result = await this.model!.generateContent({
@@ -689,6 +694,7 @@ export class AutonomousGeminiClient implements AIClientService {
 
   getAvailableModels(): string[] {
     return [
+      'gemini-2.5-flash',
       'gemini-1.5-flash-latest',
       'gemini-1.5-pro-latest',
       'gemini-1.0-pro'

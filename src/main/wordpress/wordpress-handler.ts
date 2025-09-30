@@ -1332,6 +1332,58 @@ export class WordPressHandler {
         };
       }
     });
+
+    // Delete a WordPress post (remote via REST API) and remove from SQLite
+    ipcMain.handle('wp-delete-post', async (event, connectionId, postId: number) => {
+      try {
+        const connections = this.store.get('wordpressConnections', []) as any[];
+        const connection = connections.find(conn => conn.id === connectionId);
+        if (!connection) {
+          return { success: false, error: 'Connection not found' };
+        }
+
+        let remoteOk = false;
+        try {
+          const baseUrl = connection.url.replace(/\/$/, '');
+          const endpoint = `${baseUrl}/wp-json/wp/v2/posts/${postId}?force=true`;
+          const auth = Buffer.from(`${connection.username}:${connection.password || ''}`).toString('base64');
+          const resp = await fetch(endpoint, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Basic ${auth}`,
+              'Accept': 'application/json'
+            }
+          });
+          remoteOk = resp.ok;
+          if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            console.warn('WP delete post failed:', resp.status, text);
+          }
+        } catch (e) {
+          console.warn('WP delete post error:', e);
+        }
+
+        // Remove from local SQLite regardless to reflect UI action
+        this.getSQLiteManager().getWordPressManager().deletePost(postId, connectionId);
+
+        // Optionally update posts_count in store
+        try {
+          if (typeof connection.posts_count === 'number') {
+            connection.posts_count = Math.max(0, (connection.posts_count || 0) - 1);
+            const updated = connections.map(c => c.id === connectionId ? { ...connection, updatedAt: new Date().toISOString() } : c);
+            this.store.set('wordpressConnections', updated);
+          }
+        } catch {}
+
+        return { success: true, remoteDeleted: remoteOk };
+      } catch (error) {
+        console.error('Error deleting WordPress post:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
   }
 
   /**

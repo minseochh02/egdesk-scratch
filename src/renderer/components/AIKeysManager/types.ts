@@ -127,6 +127,7 @@ export const AI_PROVIDERS: AIProvider[] = [
       },
     ],
     models: [
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest and most advanced model' },
       { id: 'gemini-1.5-flash-latest', name: 'Gemini 1.5 Flash', description: 'Fast and efficient model' },
       { id: 'gemini-1.5-pro-latest', name: 'Gemini 1.5 Pro', description: 'Most capable Gemini model' },
       { id: 'gemini-1.0-pro', name: 'Gemini 1.0 Pro', description: 'Previous generation Gemini model' },

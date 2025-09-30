@@ -46,13 +46,6 @@ export class ScheduledPostsExecutor {
       return;
     }
 
-    // Check for any running tasks first
-    const hasRunningTasks = await this.checkForRunningTasks();
-    if (hasRunningTasks) {
-      console.log('Scheduled tasks are already running, skipping start');
-      return;
-    }
-
     this.isRunning = true;
     console.log('Starting scheduled posts executor service...');
     
@@ -215,6 +208,15 @@ export class ScheduledPostsExecutor {
    */
   public async executeScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    try {
+      // Ensure topics are loaded for scheduled (cron) executions
+      if (!post.topics || post.topics.length === 0) {
+        const topics = await this.sqliteManager.getScheduledPostsManager().getScheduledPostTopics(post.id);
+        post.topics = Array.isArray(topics) ? topics.map((t: any) => t.topicName) : [];
+      }
+    } catch (loadTopicsError) {
+      console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
+    }
     console.log(`\n🚀 ===== STARTING SCHEDULED POST EXECUTION =====`);
     console.log(`📝 Post: ${post.title}`);
     console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
