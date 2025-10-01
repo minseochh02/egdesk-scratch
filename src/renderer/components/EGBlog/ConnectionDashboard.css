@@ -835,3 +835,61 @@
     min-height: 300px;
   }
 }
+
+/* Unsupported Tab Content */
+.eg-blog-connection-dashboard-unsupported-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 2rem;
+}
+
+.eg-blog-connection-dashboard-unsupported-content {
+  text-align: center;
+  max-width: 500px;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 12px;
+  border: 1px solid #e1e8ed;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.eg-blog-connection-dashboard-unsupported-content svg {
+  font-size: 3rem;
+  color: #6c757d;
+  margin-bottom: 1rem;
+}
+
+.eg-blog-connection-dashboard-unsupported-content h3 {
+  color: #495057;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.eg-blog-connection-dashboard-unsupported-content p {
+  color: #6c757d;
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.eg-blog-connection-dashboard-unsupported-content p:last-child {
+  margin-bottom: 0;
+  font-weight: 500;
+  color: #495057;
+}
+
+@media (max-width: 768px) {
+  .eg-blog-connection-dashboard-unsupported-content {
+    padding: 1.5rem;
+  }
+  
+  .eg-blog-connection-dashboard-unsupported-content svg {
+    font-size: 2.5rem;
+  }
+  
+  .eg-blog-connection-dashboard-unsupported-content h3 {
+    font-size: 1.25rem;
+  }
+}

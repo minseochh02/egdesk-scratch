@@ -58,15 +58,25 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       setIsLoading(true);
       setMessage(null);
 
-      // Load current connection by ID
-      if (window.electron?.wordpress) {
+      // Load current connection by ID based on connection type
+      let connection = null;
+      
+      if (connectionType === 'WordPress' && window.electron?.wordpress) {
         const connectionsResult = await window.electron.wordpress.getConnections();
         if (connectionsResult.success && connectionsResult.connections) {
-          const connection = connectionsResult.connections.find(conn => conn.id === connectionId);
-          setCurrentConnection(connection || null);
+          connection = connectionsResult.connections.find(conn => conn.id === connectionId);
         }
+      } else if (connectionType === 'Naver Blog' && window.electron?.naver) {
+        const connectionsResult = await window.electron.naver.getConnections();
+        if (connectionsResult.success && connectionsResult.connections) {
+          connection = connectionsResult.connections.find(conn => conn.id === connectionId);
+        }
+      } else if (connectionType === 'Tistory' && window.electron?.tistory) {
+        // Add Tistory support when available
+        console.log('Tistory connection loading not yet implemented');
       }
-
+      
+      setCurrentConnection(connection);
 
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -79,11 +89,18 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const updateConnection = async (updates: Partial<WordPressConnection>) => {
     try {
-      if (!window.electron?.wordpress) {
-        throw new Error('WordPress API not available');
+      let result;
+      
+      if (connectionType === 'WordPress' && window.electron?.wordpress) {
+        result = await window.electron.wordpress.updateConnection(connectionId, updates);
+      } else if (connectionType === 'Naver Blog' && window.electron?.naver) {
+        result = await window.electron.naver.updateConnection(connectionId, updates);
+      } else if (connectionType === 'Tistory' && window.electron?.tistory) {
+        // Add Tistory support when available
+        throw new Error('Tistory connection updates not yet implemented');
+      } else {
+        throw new Error(`${connectionType} API not available`);
       }
-
-      const result = await window.electron.wordpress.updateConnection(connectionId, updates);
       
       if (result.success && result.connection) {
         setCurrentConnection(result.connection);
@@ -104,14 +121,20 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const deleteConnection = async () => {
-    if (!window.confirm(
-      'Are you sure you want to delete this connection?\n\n' +
-      'This will:\n' +
-      '• Delete the connection settings\n' +
-      '• Remove all synced posts, media, and comments for this connection\n' +
-      '• Clear sync history for this connection\n\n' +
-      'This action cannot be undone!'
-    )) {
+    const confirmMessage = connectionType === 'WordPress' 
+      ? 'Are you sure you want to delete this connection?\n\n' +
+        'This will:\n' +
+        '• Delete the connection settings\n' +
+        '• Remove all synced posts, media, and comments for this connection\n' +
+        '• Clear sync history for this connection\n\n' +
+        'This action cannot be undone!'
+      : 'Are you sure you want to delete this connection?\n\n' +
+        'This will:\n' +
+        '• Delete the connection settings\n' +
+        '• Remove all scheduled posts for this connection\n\n' +
+        'This action cannot be undone!';
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -119,19 +142,27 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       setIsLoading(true);
       setMessage({ type: 'info', text: 'Deleting connection and clearing data...' });
 
-      if (!window.electron?.wordpress) {
-        throw new Error('WordPress API not available');
-      }
+      let result;
 
-      // Step 1: Clear WordPress data for this specific connection
-      const clearResult = await window.electron.wordpress.clearSiteData(connectionId);
-      if (!clearResult.success) {
-        console.warn('Failed to clear site data:', clearResult.error);
-        // Continue with deletion even if data clearing fails
-      }
+      if (connectionType === 'WordPress' && window.electron?.wordpress) {
+        // Step 1: Clear WordPress data for this specific connection
+        const clearResult = await window.electron.wordpress.clearSiteData(connectionId);
+        if (!clearResult.success) {
+          console.warn('Failed to clear site data:', clearResult.error);
+          // Continue with deletion even if data clearing fails
+        }
 
-      // Step 2: Delete the connection
-      const result = await window.electron.wordpress.deleteConnection(connectionId);
+        // Step 2: Delete the connection
+        result = await window.electron.wordpress.deleteConnection(connectionId);
+      } else if (connectionType === 'Naver Blog' && window.electron?.naver) {
+        // For Naver, we only need to delete the connection
+        result = await window.electron.naver.deleteConnection(connectionId);
+      } else if (connectionType === 'Tistory' && window.electron?.tistory) {
+        // Add Tistory support when available
+        throw new Error('Tistory connection deletion not yet implemented');
+      } else {
+        throw new Error(`${connectionType} API not available`);
+      }
       
       if (result.success) {
         setCurrentConnection(null);

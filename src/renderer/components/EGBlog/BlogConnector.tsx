@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faWordpress, faGlobe, faCheck, faArrowRight, faPlus, faFileAlt } from '../../utils/fontAwesomeIcons';
 import WordPressConnectionForm from './WordPressConnectionForm';
+import NaverConnectionForm from './NaverConnectionForm';
 import ConnectionList from './ConnectionList';
 import naverBlogIcon from '../../../../assets/naverblog.svg';
 import tistoryIcon from '../../../../assets/tistory.svg';
@@ -26,6 +27,7 @@ interface BlogConnectorProps {
 const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('');
   const [showWordPressForm, setShowWordPressForm] = useState<boolean>(false);
+  const [showNaverForm, setShowNaverForm] = useState<boolean>(false);
   const [showConnectionList, setShowConnectionList] = useState<boolean>(false);
 
   const platforms: BlogPlatform[] = [
@@ -43,13 +45,13 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
     {
       id: 'naver-blog',
       name: 'Naver Blog',
-      description: '',
+      description: 'Connect to your Naver Blog with AI-powered automation',
       icon: naverBlogIcon,
       color: '#03c75a',
       gradient: 'linear-gradient(135deg, #03c75a 0%, #02a54f 100%)',
-      isAvailable: false,
-      features: [],
-      status: 'coming-soon'
+      isAvailable: true,
+      features: ['AI Image Generation', 'Automated Posting', 'Content Management'],
+      status: 'available'
     },
     {
       id: 'tistory',
@@ -68,6 +70,8 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
     setSelectedPlatform(platformId);
     if (platformId === 'wordpress') {
       setShowWordPressForm(true);
+    } else if (platformId === 'naver-blog') {
+      setShowNaverForm(true);
     }
   };
 
@@ -83,8 +87,21 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
     setSelectedPlatform('');
   };
 
+  const handleNaverConnect = async (formData: any) => {
+    // Connection is already saved to store in the form component
+    console.log('Naver Blog connection completed:', formData);
+    
+    // Show success message (you could replace this with a toast notification)
+    alert(`Successfully connected to Naver Blog: ${formData.name}`);
+    
+    // Reset state on success
+    setShowNaverForm(false);
+    setSelectedPlatform('');
+  };
+
   const handleBackFromForm = () => {
     setShowWordPressForm(false);
+    setShowNaverForm(false);
     setSelectedPlatform('');
   };
 
@@ -119,6 +136,16 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
       <WordPressConnectionForm
         onBack={handleBackFromForm}
         onConnect={handleWordPressConnect}
+      />
+    );
+  }
+
+  // Show Naver form if selected
+  if (showNaverForm) {
+    return (
+      <NaverConnectionForm
+        onBack={handleBackFromForm}
+        onConnect={handleNaverConnect}
       />
     );
   }

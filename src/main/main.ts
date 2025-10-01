@@ -16,6 +16,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { autonomousGeminiClient } from './ai-code/gemini-autonomous-client';
 import { WordPressHandler } from './wordpress/wordpress-handler';
+import { NaverHandler } from './naver/naver-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
@@ -27,6 +28,7 @@ import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
 let wordpressHandler: WordPressHandler;
+let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
 
 class AppUpdater {
@@ -98,21 +100,23 @@ const createWindow = async () => {
 
           // Set the API key as environment variable
           process.env.GEMINI_API_KEY = egdeskKey.fields.apiKey;
-          console.log(`🔑 Using "egdesk" API key for Naver Blog automation with image generation`);
+          console.log(`🔑 Using "egdesk" API key for Naver Blog automation`);
 
-          const { runNaverBlogWithImage } = require('./naver-blog-with-image');
-          return await runNaverBlogWithImage(
-            opts?.id,
-            opts?.password,
-            opts?.proxy,
-            opts?.title,
-            opts?.content,
-            opts?.tags,
-            opts?.includeDogImage ?? true,
-            opts?.dogImagePrompt
+          const { runNaverBlogAutomation } = require('./naver/browser-controller');
+          return await runNaverBlogAutomation(
+            {
+              username: opts?.id || '',
+              password: opts?.password || '',
+              proxyUrl: opts?.proxy
+            },
+            {
+              title: opts?.title || 'Test Title',
+              content: opts?.content || 'Test Content',
+              tags: opts?.tags || '#test'
+            }
           );
         } catch (error) {
-          console.error('❌ Naver Blog with image automation failed:', error);
+          console.error('❌ Naver Blog automation failed:', error);
           return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
@@ -211,6 +215,10 @@ const createWindow = async () => {
     wordpressHandler = new WordPressHandler(store, mainWindow);
     await wordpressHandler.initialize();
     wordpressHandler.registerHandlers();
+
+    // Initialize Naver handler with the store
+    naverHandler = new NaverHandler(store);
+    naverHandler.registerHandlers();
 
     // Initialize SQLite manager and register IPC handlers
     try {
