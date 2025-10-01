@@ -5,12 +5,15 @@
   flex-direction: column;
   flex: 1; /* occupy available vertical space */
   min-height: 0;
-  height: auto;
+  height: 100%;
   max-height: none; /* allow parent to control */
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #fff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden; /* prevent horizontal overflow; inner panes handle scrolling */
 }
 
 .ai-chat-header {
@@ -19,6 +22,9 @@
   border-bottom: 1px solid #e0e0e0;
   background: #f8f9fa;
   border-radius: 8px 8px 0 0;
+  position: sticky; /* keep header visible while messages scroll */
+  top: 0;
+  z-index: 5;
 }
 
 .header-top {
@@ -83,12 +89,14 @@
 .messages-container {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden; /* avoid horizontal scroll; wrap content */
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 200px;
   max-height: none;
+  min-width: 0; /* allow flex children to shrink properly */
 }
 
 .empty-state {
