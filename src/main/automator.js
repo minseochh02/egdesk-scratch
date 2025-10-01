@@ -17,7 +17,7 @@ function buildProxyOption(proxyUrl) {
   }
 }
 
-async function runAutomation(username, password, proxyUrl) {
+async function runAutomation(username, password, proxyUrl, title, content, tags) {
   const proxy = buildProxyOption(proxyUrl);
   try {
     // Try to use system Chrome first
@@ -69,15 +69,91 @@ async function runAutomation(username, password, proxyUrl) {
             const hasMainFrame = await newPage.locator('#mainFrame').count();
             const pageOrFrame = hasMainFrame ? mainFrameLocator : newPage;
 
-            // Draft popup cancel
+            // Draft popup handling - click confirm to continue with existing draft
             try {
-              console.log('[DEBUG] Attempt to cancel draft popup');
+              console.log('[DEBUG] Checking for draft popup...');
+              const confirmBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[2]');
               const cancelBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[1]');
-              if (await cancelBtn.count()) {
+              
+              if (await confirmBtn.count() > 0) {
+                console.log('[DEBUG] Draft popup found - clicking confirm to continue with existing draft');
+                await confirmBtn.click({ timeout: 3000 }).catch(() => {});
+                await newPage.waitForTimeout(1000); // Wait for popup to close
+                console.log('[DEBUG] Draft popup confirmed - continuing with existing draft');
+              } else if (await cancelBtn.count() > 0) {
+                console.log('[DEBUG] Draft popup found but confirm button not available - clicking cancel');
                 await cancelBtn.click({ timeout: 3000 }).catch(() => {});
+                await newPage.waitForTimeout(1000); // Wait for popup to close
                 console.log('[DEBUG] Draft popup cancelled');
+              } else {
+                console.log('[DEBUG] No draft popup found - proceeding normally');
               }
-            } catch {}
+            } catch (error) {
+              console.log('[DEBUG] Error handling draft popup:', error.message);
+            }
+
+            // Handle Naver Blog confirmation popup with comprehensive wait
+            try {
+              console.log('[DEBUG] Waiting for and checking Naver Blog confirmation popup...');
+              
+              // Wait a bit for any popups to appear
+              await newPage.waitForTimeout(2000);
+              
+              // Check for various popup types
+              const popupSelectors = [
+                '.se-popup-alert-confirm',
+                '.se-popup-alert', 
+                '.se-popup',
+                '[data-group="popupLayer"]',
+                '.se-popup-dim'
+              ];
+              
+              let popupFound = false;
+              
+              for (const selector of popupSelectors) {
+                const popup = pageOrFrame.locator(selector);
+                if (await popup.count() > 0) {
+                  console.log(`[DEBUG] Found popup with selector: ${selector}`);
+                  popupFound = true;
+                  
+                  // Wait for popup to be fully visible
+                  try {
+                    await popup.waitFor({ state: 'visible', timeout: 3000 });
+                    console.log('[DEBUG] Popup is visible - looking for buttons...');
+                    
+                    // Wait a bit more for buttons to be ready
+                    await newPage.waitForTimeout(1000);
+                    
+                    // Try to find and click any button in the popup
+                    const buttons = pageOrFrame.locator(`${selector} button, ${selector} .btn, ${selector} [role="button"]`);
+                    if (await buttons.count() > 0) {
+                      console.log('[DEBUG] Clicking popup button');
+                      await buttons.first().click({ timeout: 3000 }).catch(() => {});
+                      await newPage.waitForTimeout(1000);
+                      console.log('[DEBUG] Popup handled successfully');
+                      break;
+                    } else {
+                      // Try pressing Escape key as fallback
+                      console.log('[DEBUG] No button found, trying Escape key');
+                      await newPage.keyboard.press('Escape');
+                      await newPage.waitForTimeout(1000);
+                      break;
+                    }
+                  } catch (waitError) {
+                    console.log('[DEBUG] Popup not fully visible, trying Escape key');
+                    await newPage.keyboard.press('Escape');
+                    await newPage.waitForTimeout(1000);
+                    break;
+                  }
+                }
+              }
+              
+              if (!popupFound) {
+                console.log('[DEBUG] No popup found - proceeding normally');
+              }
+            } catch (error) {
+              console.log('[DEBUG] Error handling confirmation popup:', error.message);
+            }
 
             // Right side popup close
             try {
@@ -165,7 +241,13 @@ async function runAutomation(username, password, proxyUrl) {
               const titleField = pageOrFrame.locator(title_field_xpath);
               if (await titleField.count()) {
                 await titleField.click({ timeout: 10000 });
-                await newPage.keyboard.type('EGDesk Test Title');
+                // Clear existing content first
+                await newPage.keyboard.press('Control+a');
+                await newPage.waitForTimeout(200);
+                // Type the new title
+                const titleToUse = title || 'EGDesk Test Title';
+                await newPage.keyboard.type(titleToUse);
+                console.log(`[DEBUG] Title filled: ${titleToUse}`);
               }
             } catch (e) {
               console.warn('[DEBUG] Title fill failed:', e);
@@ -177,9 +259,18 @@ async function runAutomation(username, password, proxyUrl) {
               const contentField = pageOrFrame.locator(content_field_xpath);
               if (await contentField.count()) {
                 await contentField.click({ timeout: 20000 });
-                await newPage.keyboard.type('EGDesk Test Content');
+                // Clear existing content first
+                await newPage.keyboard.press('Control+a');
+                await newPage.waitForTimeout(200);
+                // Type the new content
+                const contentToUse = content || 'EGDesk Test Content';
+                await newPage.keyboard.type(contentToUse);
                 await newPage.keyboard.press('Enter');
-                await newPage.keyboard.type('#egdesk #playwright');
+                // Add tags if provided
+                const tagsToUse = tags || '#egdesk #playwright';
+                await newPage.keyboard.type(tagsToUse);
+                console.log(`[DEBUG] Content filled: ${contentToUse}`);
+                console.log(`[DEBUG] Tags added: ${tagsToUse}`);
               }
             } catch (e) {
               console.warn('[DEBUG] Content fill failed:', e);
@@ -194,13 +285,26 @@ async function runAutomation(username, password, proxyUrl) {
               }
             } catch {}
 
-            // Publish (optional; keep commented to avoid accidental publishing)
+            // Publish the blog post
             try {
-              console.log('[DEBUG] Clicking publish');
-              const publishBtn = pageOrFrame.locator(publish_button_xpath);
+              console.log('[DEBUG] Clicking publish button');
+              const publishBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[1]/div/div[3]/div[2]/div/div/div/div[8]/div/button');
               if (await publishBtn.count()) {
+                console.log('[DEBUG] Publish button found, clicking...');
                 await publishBtn.click({ timeout: 10000 });
-                await newPage.waitForTimeout(2000);
+                await newPage.waitForTimeout(3000);
+                console.log('[DEBUG] Publish button clicked successfully');
+              } else {
+                console.log('[DEBUG] Publish button not found, trying alternative selector');
+                // Try alternative publish button selector
+                const altPublishBtn = pageOrFrame.locator(publish_button_xpath);
+                if (await altPublishBtn.count()) {
+                  await altPublishBtn.click({ timeout: 10000 });
+                  await newPage.waitForTimeout(3000);
+                  console.log('[DEBUG] Alternative publish button clicked');
+                } else {
+                  console.log('[DEBUG] No publish button found');
+                }
               }
             } catch (e) {
               console.warn('[DEBUG] Publish click failed:', e);
@@ -267,14 +371,63 @@ async function runAutomation(username, password, proxyUrl) {
               const mainFrameLocator = newPage.frameLocator('#mainFrame');
               const pageOrFrame = hasMainFrame ? mainFrameLocator : newPage;
 
-              // Draft popup cancel
+              // Draft popup handling - click confirm to continue with existing draft
               try {
-                console.log('[DEBUG] [fallback] Attempt to cancel draft popup');
+                console.log('[DEBUG] [fallback] Checking for draft popup...');
+                const confirmBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[2]');
                 const cancelBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[1]');
-                if (await cancelBtn.count()) {
+                
+                if (await confirmBtn.count() > 0) {
+                  console.log('[DEBUG] [fallback] Draft popup found - clicking confirm to continue with existing draft');
+                  await confirmBtn.click({ timeout: 3000 }).catch(() => {});
+                  await newPage.waitForTimeout(1000);
+                  console.log('[DEBUG] [fallback] Draft popup confirmed - continuing with existing draft');
+                } else if (await cancelBtn.count() > 0) {
+                  console.log('[DEBUG] [fallback] Draft popup found but confirm button not available - clicking cancel');
                   await cancelBtn.click({ timeout: 3000 }).catch(() => {});
+                  await newPage.waitForTimeout(1000);
+                  console.log('[DEBUG] [fallback] Draft popup cancelled');
+                } else {
+                  console.log('[DEBUG] [fallback] No draft popup found - proceeding normally');
                 }
-              } catch {}
+              } catch (error) {
+                console.log('[DEBUG] [fallback] Error handling draft popup:', error.message);
+              }
+
+              // Handle Naver Blog confirmation popup with wait (fallback)
+              try {
+                console.log('[DEBUG] [fallback] Waiting for and checking Naver Blog confirmation popup...');
+                
+                // Wait for popup to appear (up to 5 seconds)
+                const confirmPopup = pageOrFrame.locator('.se-popup-alert-confirm, .se-popup-alert');
+                const confirmButton = pageOrFrame.locator('.se-popup-alert-confirm button, .se-popup-alert button');
+                
+                // Wait for popup to appear
+                try {
+                  await confirmPopup.waitFor({ state: 'visible', timeout: 5000 });
+                  console.log('[DEBUG] [fallback] Naver Blog confirmation popup appeared - looking for buttons...');
+                  
+                  // Wait a bit more for buttons to be ready
+                  await newPage.waitForTimeout(500);
+                  
+                  // Try to find and click the confirm/OK button
+                  if (await confirmButton.count() > 0) {
+                    console.log('[DEBUG] [fallback] Clicking confirmation popup button');
+                    await confirmButton.first().click({ timeout: 3000 }).catch(() => {});
+                    await newPage.waitForTimeout(1000);
+                    console.log('[DEBUG] [fallback] Confirmation popup handled');
+                  } else {
+                    // Try pressing Escape key as fallback
+                    console.log('[DEBUG] [fallback] No button found, trying Escape key');
+                    await newPage.keyboard.press('Escape');
+                    await newPage.waitForTimeout(1000);
+                  }
+                } catch (waitError) {
+                  console.log('[DEBUG] [fallback] No confirmation popup appeared within timeout - proceeding normally');
+                }
+              } catch (error) {
+                console.log('[DEBUG] [fallback] Error handling confirmation popup:', error.message);
+              }
 
               // Right side popup close
               try {
@@ -335,17 +488,60 @@ async function runAutomation(username, password, proxyUrl) {
                 const explicitClose = pageOrFrame.locator(help_panel_close_xpath);
                 if (await explicitClose.count()) await explicitClose.click({ timeout: 2000 }).catch(() => {});
               } catch {}
+              
+              // Publish the blog post (fallback)
+              try {
+                console.log('[DEBUG] [fallback] Clicking publish button');
+                const publishBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[1]/div/div[3]/div[2]/div/div/div/div[8]/div/button');
+                if (await publishBtn.count()) {
+                  console.log('[DEBUG] [fallback] Publish button found, clicking...');
+                  await publishBtn.click({ timeout: 10000 });
+                  await newPage.waitForTimeout(3000);
+                  console.log('[DEBUG] [fallback] Publish button clicked successfully');
+                } else {
+                  console.log('[DEBUG] [fallback] Publish button not found, trying alternative selector');
+                  // Try alternative publish button selector
+                  const altPublishBtn = pageOrFrame.locator(publish_button_xpath);
+                  if (await altPublishBtn.count()) {
+                    await altPublishBtn.click({ timeout: 10000 });
+                    await newPage.waitForTimeout(3000);
+                    console.log('[DEBUG] [fallback] Alternative publish button clicked');
+                  } else {
+                    console.log('[DEBUG] [fallback] No publish button found');
+                  }
+                }
+              } catch (e) {
+                console.warn('[DEBUG] [fallback] Publish click failed:', e);
+              }
               try {
                 const titleField = pageOrFrame.locator(title_field_xpath);
-                if (await titleField.count()) { await titleField.click({ timeout: 10000 }); await newPage.keyboard.type('EGDesk Test Title'); }
+                if (await titleField.count()) { 
+                  await titleField.click({ timeout: 10000 }); 
+                  // Clear existing content first
+                  await newPage.keyboard.press('Control+a');
+                  await newPage.waitForTimeout(200);
+                  // Type the new title
+                  const titleToUse = title || 'EGDesk Test Title';
+                  await newPage.keyboard.type(titleToUse);
+                  console.log(`[DEBUG] [fallback] Title filled: ${titleToUse}`);
+                }
               } catch {}
               try {
                 const contentField = pageOrFrame.locator(content_field_xpath);
                 if (await contentField.count()) {
                   await contentField.click({ timeout: 20000 });
-                  await newPage.keyboard.type('EGDesk Test Content');
+                  // Clear existing content first
+                  await newPage.keyboard.press('Control+a');
+                  await newPage.waitForTimeout(200);
+                  // Type the new content
+                  const contentToUse = content || 'EGDesk Test Content';
+                  await newPage.keyboard.type(contentToUse);
                   await newPage.keyboard.press('Enter');
-                  await newPage.keyboard.type('#egdesk #playwright');
+                  // Add tags if provided
+                  const tagsToUse = tags || '#egdesk #playwright';
+                  await newPage.keyboard.type(tagsToUse);
+                  console.log(`[DEBUG] [fallback] Content filled: ${contentToUse}`);
+                  console.log(`[DEBUG] [fallback] Tags added: ${tagsToUse}`);
                 }
               } catch {}
             } catch (scriptErr) {
