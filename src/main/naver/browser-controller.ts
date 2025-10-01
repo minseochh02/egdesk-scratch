@@ -239,15 +239,306 @@ async function handlePopups(pageOrFrame: any, newPage: Page): Promise<void> {
 
 
 /**
+ * Ensure clipboard permissions are granted (dialog + context grant)
+ */
+async function handleClipboardPermission(newPage: Page, context: BrowserContext): Promise<void> {
+  try {
+    console.log('[NAVER] Setting up clipboard permission handler...');
+    newPage.on('dialog', async dialog => {
+      const msg = dialog.message().toLowerCase();
+      if (msg.includes('clipboard') || msg.includes('wants to') || msg.includes('see text and images')) {
+        console.log('[NAVER] Clipboard permission dialog detected, accepting...');
+        await dialog.accept();
+      } else {
+        await dialog.dismiss();
+      }
+    });
+    try {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://blog.naver.com' });
+      console.log('[NAVER] Clipboard permissions granted via context');
+    } catch (permErr) {
+      console.log('[NAVER] Context permission grant failed:', permErr instanceof Error ? permErr.message : 'Unknown error');
+    }
+    // Probe clipboard to trigger permission prompt if needed
+    try {
+      await newPage.waitForTimeout(1000);
+      await newPage.evaluate(async () => {
+        try {
+          await navigator.clipboard.read();
+        } catch {}
+      });
+    } catch {}
+  } catch (error) {
+    console.log('[NAVER] Error setting up clipboard permissions:', error instanceof Error ? error.message : 'Unknown error');
+  }
+}
+
+
+/**
+ * Add image to blog post using clipboard paste
+ * @param targetField - The original content field we typed content into
+ */
+async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string, targetField?: any): Promise<boolean> {
+  try {
+    console.log('[NAVER] Adding image to blog post...');
+    
+    // Copy image to clipboard using Playwright
+    const { copyImageToClipboardWithPlaywright } = require('../ai-blog/generate-dog-image');
+    const clipboardSuccess = await copyImageToClipboardWithPlaywright(imagePath, newPage);
+    
+    if (!clipboardSuccess) {
+      console.warn('[NAVER] Failed to copy image to clipboard');
+      return false;
+    }
+    
+    console.log('[NAVER] Clipboard copy successful, attempting to paste...');
+    
+    // Phase 1: Click on image content area for positioning (like working code)
+    const imageContentAreas = [
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[1]/div[3]', // Your suggested area
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[1]', // Parent area
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]', // Grandparent area
+      '[contenteditable="true"]', // Any contenteditable area
+      '.se-text-paragraph', // Text paragraph areas
+      'div[role="textbox"]' // Textbox role areas
+    ];
+    
+    let clickedArea = false;
+    for (const areaSelector of imageContentAreas) {
+      console.log(`[NAVER] Trying image content area: ${areaSelector}`);
+      const imageContentArea = pageOrFrame.locator(areaSelector);
+      const imageAreaCount = await imageContentArea.count();
+      console.log(`[NAVER] Found ${imageAreaCount} element(s) with selector: ${areaSelector}`);
+      
+      if (imageAreaCount > 0) {
+        const target = imageContentArea.first();
+        try {
+          await target.scrollIntoViewIfNeeded();
+        } catch {}
+        await target.click({ timeout: 5000 });
+        console.log(`[NAVER] Clicked on image content area: ${areaSelector}`);
+        clickedArea = true;
+        break;
+      }
+    }
+    
+    if (!clickedArea) {
+      console.log('[NAVER] No image content area found, using targetField or body');
+      if (targetField) {
+        await targetField.click();
+      } else {
+        await newPage.click('body');
+      }
+    }
+    
+    await newPage.waitForTimeout(500);
+    
+    // Phase 2: Try multiple paste methods - use targetField for right-click like working code
+    console.log('[NAVER] Method 1: Using Control+v');
+    await newPage.keyboard.press('Control+v');
+    await newPage.waitForTimeout(2000);
+    
+    // Check if image was pasted by looking for img tags
+    let imgCount = await newPage.locator('img').count();
+    console.log(`[NAVER] Found ${imgCount} images on page after paste attempt`);
+    
+    if (imgCount === 0) {
+      console.log('[NAVER] Method 1 failed, trying Method 2: Right-click paste on targetField');
+      // Right-click on original targetField like working code does
+      if (targetField) {
+        await targetField.click({ button: 'right' });
+      } else {
+        await pageOrFrame.locator('[contenteditable="true"]').first().click({ button: 'right' });
+      }
+      await newPage.waitForTimeout(500);
+      await newPage.keyboard.press('v'); // Paste from context menu
+      await newPage.waitForTimeout(2000);
+      
+      imgCount = await newPage.locator('img').count();
+      console.log(`[NAVER] Found ${imgCount} images after right-click paste`);
+      
+      if (imgCount === 0) {
+        console.log('[NAVER] Method 2 failed, trying Method 3: Focus targetField and paste');
+        try {
+          console.log('[NAVER] Method 3a: Focus targetField and paste with keyboard');
+          if (targetField) {
+            await targetField.focus();
+          } else {
+            await pageOrFrame.locator('[contenteditable="true"]').first().focus();
+          }
+          await newPage.waitForTimeout(200);
+          await newPage.keyboard.press('Control+v');
+          await newPage.waitForTimeout(2000);
+          
+          imgCount = await newPage.locator('img').count();
+          console.log(`[NAVER] Found ${imgCount} images after focus paste`);
+          
+          if (imgCount === 0) {
+            console.log('[NAVER] Method 3b: Try pasting with Shift+Insert');
+            await newPage.keyboard.press('Shift+Insert');
+            await newPage.waitForTimeout(2000);
+            
+            imgCount = await newPage.locator('img').count();
+            console.log(`[NAVER] Found ${imgCount} images after Shift+Insert paste`);
+            
+            if (imgCount === 0) {
+              console.log('[NAVER] Method 3c: Try pasting with Cmd+V (Mac)');
+              await newPage.keyboard.press('Meta+v');
+              await newPage.waitForTimeout(2000);
+              
+              imgCount = await newPage.locator('img').count();
+              console.log(`[NAVER] Found ${imgCount} images after Cmd+V paste`);
+            }
+          }
+        } catch (altPasteError) {
+          console.log('[NAVER] Alternative paste methods failed:', altPasteError instanceof Error ? altPasteError.message : 'Unknown error');
+        }
+      }
+    }
+    
+    // Final check for images
+    const finalImgCount = await newPage.locator('img').count();
+    if (finalImgCount > 0) {
+      console.log('[NAVER] Image pasted successfully!');
+      return true;
+    } else {
+      console.warn('[NAVER] All paste methods failed - no images found on page');
+      return false;
+    }
+  } catch (error) {
+    console.error('[NAVER] Error adding image to blog:', error);
+    return false;
+  }
+}
+
+/**
+ * Process content and handle image placeholders
+ */
+async function processContentWithImages(pageOrFrame: any, newPage: Page, content: BlogContent, imagePath?: string, targetField?: any): Promise<void> {
+  try {
+    console.log('[NAVER] Processing content with image placeholders...');
+    
+    // Regex to find [IMAGE:...] placeholders
+    const imagePlaceholderRegex = /\[IMAGE:([^\]]+)\]/g;
+    const contentText = content.content;
+    
+    // Find all image placeholders
+    const imageMatches = Array.from(contentText.matchAll(imagePlaceholderRegex));
+    console.log(`[NAVER] Found ${imageMatches.length} image placeholders in content`);
+    
+    if (imageMatches.length === 0) {
+      // No image placeholders, just type the content normally
+      console.log('[NAVER] No image placeholders found, typing content normally');
+      await newPage.keyboard.type(contentText);
+      await newPage.keyboard.press('Enter');
+      return;
+    }
+    
+    // Split content by image placeholders
+    let lastIndex = 0;
+    const contentParts: string[] = [];
+    const imagePlaceholders: string[] = [];
+    
+    for (const match of imageMatches) {
+      const placeholder = match[0]; // Full match like [IMAGE:description:header]
+      const description = match[1]; // Just the description part
+      const startIndex = match.index!;
+      
+      // Add text before the placeholder
+      if (startIndex > lastIndex) {
+        contentParts.push(contentText.substring(lastIndex, startIndex));
+      }
+      
+      // Add the placeholder info
+      imagePlaceholders.push(description);
+      contentParts.push(''); // Placeholder for image
+      
+      lastIndex = startIndex + placeholder.length;
+    }
+    
+    // Add remaining text after last placeholder
+    if (lastIndex < contentText.length) {
+      contentParts.push(contentText.substring(lastIndex));
+    }
+    
+    console.log(`[NAVER] Split content into ${contentParts.length} parts with ${imagePlaceholders.length} image placeholders`);
+    
+    // Process each part
+    let imageIndex = 0; // Track image index separately
+    for (let i = 0; i < contentParts.length; i++) {
+      const part = contentParts[i];
+      
+      if (part !== '') {
+        // Type the text content
+        console.log(`[NAVER] Typing content part ${i + 1}: "${part.substring(0, 50)}..."`);
+        await newPage.keyboard.type(part);
+        
+        // Add line break if not the last part
+        if (i < contentParts.length - 1) {
+          await newPage.keyboard.press('Enter');
+        }
+      } else {
+        // This is an image placeholder position
+        if (imageIndex < imagePlaceholders.length) {
+          const imageDescription = imagePlaceholders[imageIndex];
+          console.log(`[NAVER] Processing image placeholder ${imageIndex + 1}: "${imageDescription}"`);
+          
+          // Wait for content to be stable before pasting image
+          await newPage.waitForTimeout(500);
+          
+          if (imagePath) {
+            console.log('[NAVER] Attempting to paste image...');
+            const imageSuccess = await addImageToBlog(pageOrFrame, newPage, imagePath, targetField);
+            if (imageSuccess) {
+              await newPage.keyboard.press('Enter');
+              await newPage.keyboard.type(`Image: ${imageDescription} 🤖`);
+              await newPage.keyboard.press('Enter');
+              console.log(`[NAVER] Image pasted successfully for placeholder: ${imageDescription}`);
+            } else {
+              await newPage.keyboard.type(`[Image: ${imageDescription} - Paste Failed] `);
+              console.log(`[NAVER] Image paste failed for placeholder: ${imageDescription}`);
+            }
+          } else {
+            // No image path provided, just add placeholder text
+            await newPage.keyboard.type(`[Image: ${imageDescription}] `);
+            console.log(`[NAVER] No image path provided, added placeholder text for: ${imageDescription}`);
+          }
+          
+          // Increment image index for next placeholder
+          imageIndex++;
+        }
+      }
+    }
+    
+    // Add final line break
+    await newPage.keyboard.press('Enter');
+    console.log('[NAVER] Content processing completed');
+    
+  } catch (error) {
+    console.error('[NAVER] Error processing content with images:', error);
+    // Fallback: just type the content normally
+    await newPage.keyboard.type(content.content);
+    await newPage.keyboard.press('Enter');
+  }
+}
+
+/**
  * Fill blog post content (title, content, tags)
  */
-async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogContent): Promise<void> {
+async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogContent, imagePath?: string): Promise<void> {
   try {
     console.log('[NAVER] Filling blog content...');
     
-    // XPath selectors
+    // XPath selectors - using same as working code
     const title_field_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[1]/div[1]/div/div/p/span[2]';
-    const content_field_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p';
+    
+    // Try multiple content field selectors to find the right one (from working code)
+    const content_field_selectors = [
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p[1]', // First paragraph
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p', // Any paragraph
+      '.se-text-paragraph', // Class-based selector
+      '[contenteditable="true"]' // Contenteditable elements
+    ];
 
     // Fill title
     try {
@@ -264,18 +555,41 @@ async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogCon
       console.warn('[NAVER] Title fill failed:', e);
     }
 
-    // Fill content
+    // Fill content - try multiple selectors like working code
     try {
       console.log('[NAVER] Filling content');
-      const contentField = pageOrFrame.locator(content_field_xpath);
-      if (await contentField.count()) {
-        await contentField.click({ timeout: 20000 });
+      
+      // Try multiple selectors to find the right content field
+      let targetField = null;
+      let usedSelector = '';
+      
+      for (const selector of content_field_selectors) {
+        console.log(`[NAVER] Trying selector: ${selector}`);
+        const field = pageOrFrame.locator(selector);
+        const count = await field.count();
+        console.log(`[NAVER] Found ${count} element(s) with selector: ${selector}`);
+        
+        if (count > 0) {
+          targetField = field.first(); // Use .first() like working code
+          usedSelector = selector;
+          console.log(`[NAVER] Using selector: ${selector}`);
+          break;
+        }
+      }
+      
+      if (targetField) {
+        await targetField.click({ timeout: 20000 });
         await newPage.keyboard.press('Control+a');
         await newPage.waitForTimeout(200);
-        await newPage.keyboard.type(content.content);
-        await newPage.keyboard.press('Enter');
+        
+        // Process content and handle image placeholders
+        await processContentWithImages(pageOrFrame, newPage, content, imagePath, targetField);
+        
+        // Add tags
         await newPage.keyboard.type(content.tags);
         console.log('[NAVER] Content and tags filled successfully');
+      } else {
+        console.warn('[NAVER] No suitable content field found with any selector');
       }
     } catch (e) {
       console.warn('[NAVER] Content fill failed:', e);
@@ -360,7 +674,7 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
           }
         }
       } catch (waitError) {
-        console.log(`[NAVER] Initial publish button not found with selector: ${selector} - ${waitError.message}`);
+        console.log(`[NAVER] Initial publish button not found with selector: ${selector} - ${waitError instanceof Error ? waitError.message : 'Unknown error'}`);
       }
     }
     
@@ -396,7 +710,7 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
             }
           }
         } catch (waitError) {
-          console.log(`[NAVER] Final publish button not found with selector: ${selector} - ${waitError.message}`);
+          console.log(`[NAVER] Final publish button not found with selector: ${selector} - ${waitError instanceof Error ? waitError.message : 'Unknown error'}`);
         }
       }
     } else {
@@ -430,7 +744,7 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
             }
           }
         } catch (waitError) {
-          console.log(`[NAVER] Direct final publish button not found with selector: ${selector} - ${waitError.message}`);
+          console.log(`[NAVER] Direct final publish button not found with selector: ${selector} - ${waitError instanceof Error ? waitError.message : 'Unknown error'}`);
         }
       }
     }
@@ -468,7 +782,8 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
  */
 export async function runNaverBlogAutomation(
   settings: NaverBlogSettings,
-  content: BlogContent
+  content: BlogContent,
+  imagePath?: string
 ): Promise<BrowserControllerResult> {
   let browser: Browser | null = null;
   
@@ -496,11 +811,14 @@ export async function runNaverBlogAutomation(
     const mainFrameLocator = newPage.frameLocator('#mainFrame');
     const pageOrFrame = hasMainFrame ? mainFrameLocator : newPage;
     
+    // Ensure clipboard permissions before any paste operations
+    await handleClipboardPermission(newPage, context);
+
     // Handle popups
     await handlePopups(pageOrFrame, newPage);
     
     // Fill blog content
-    await fillBlogContent(pageOrFrame, newPage, content);
+    await fillBlogContent(pageOrFrame, newPage, content, imagePath);
     
     // Publish blog post
     const publishSuccess = await publishBlogPost(pageOrFrame, newPage);
@@ -509,7 +827,7 @@ export async function runNaverBlogAutomation(
       console.log('[NAVER] Naver Blog automation completed successfully');
       return {
         success: true,
-        imageGenerated: false
+        imageGenerated: !!imagePath
       };
     } else {
       throw new Error('Failed to publish blog post');
