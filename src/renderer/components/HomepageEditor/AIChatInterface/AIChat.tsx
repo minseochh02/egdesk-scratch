@@ -671,16 +671,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       }
       const { x, y, width, height } = work.workArea;
 
-      // Left 30% for chat, respect updated main window minWidth (400)
-      let chatWidth = Math.max(400, Math.floor(width * 0.3));
+      // Left 30% for chat
+      let chatWidth = Math.floor(width * 0.3);
       let previewWidth = width - chatWidth; // 70%
-
-      // Ensure preview has a reasonable minimum width
-      const minPreview = 500;
-      if (previewWidth < minPreview) {
-        previewWidth = minPreview;
-        chatWidth = Math.max(800, width - previewWidth);
-      }
 
       // Resize/move main window (chat) to left 30%
       await electronAny.mainWindow.setBounds({ x, y, width: chatWidth, height });
