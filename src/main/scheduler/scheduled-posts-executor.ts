@@ -207,6 +207,20 @@ export class ScheduledPostsExecutor {
    * Execute a scheduled post with full blog generation and upload
    */
   public async executeScheduledPost(post: any): Promise<void> {
+    // Route to appropriate execution method based on connection type
+    if (post.connectionType === 'wordpress') {
+      await this.executeWordPressScheduledPost(post);
+    } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
+      await this.executeNaverScheduledPost(post);
+    } else {
+      throw new Error(`Unsupported connection type: ${post.connectionType}`);
+    }
+  }
+
+  /**
+   * Execute a WordPress scheduled post
+   */
+  private async executeWordPressScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
     try {
       // Ensure topics are loaded for scheduled (cron) executions
@@ -217,7 +231,7 @@ export class ScheduledPostsExecutor {
     } catch (loadTopicsError) {
       console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
     }
-    console.log(`\n🚀 ===== STARTING SCHEDULED POST EXECUTION =====`);
+    console.log(`\n🚀 ===== STARTING WORDPRESS SCHEDULED POST EXECUTION =====`);
     console.log(`📝 Post: ${post.title}`);
     console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
     console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
@@ -229,17 +243,17 @@ export class ScheduledPostsExecutor {
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
     
     try {
-      // Step 1: Get WordPress connection details
-      console.log(`\n🔍 Step 1: Getting WordPress connection details...`);
-      const connection = await this.getWordPressConnection(post.connectionId, post.connectionName);
+      // Step 1: Get connection details
+      console.log(`\n🔍 Step 1: Getting connection details...`);
+      const connection = await this.getConnection(post.connectionId, post.connectionName, post.connectionType);
       if (!connection) {
-        throw new Error(`WordPress connection not found: ${post.connectionName}`);
+        throw new Error(`${post.connectionType} connection not found: ${post.connectionName}`);
       }
-      console.log(`✅ Connection found: ${connection.url}`);
+      console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
 
       // Step 2: Set up environment variables
       console.log(`\n⚙️ Step 2: Setting up environment variables...`);
-      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
       console.log(`✅ Environment variables configured`);
 
       // Step 3: Select topic for blog generation
@@ -247,9 +261,9 @@ export class ScheduledPostsExecutor {
       const selectedTopic = this.selectTopicForGeneration(post.topics);
       console.log(`✅ Selected topic: ${selectedTopic}`);
 
-      // Step 4: Generate blog content
+      // Step 4: Generate blog content with images (WordPress supports images)
       console.log(`\n🤖 Step 4: Generating blog content...`);
-      const blogContent = await this.generateBlogContent(selectedTopic);
+      const blogContent = await this.generateBlogContentWithImages(selectedTopic);
       console.log(`✅ Blog content generated successfully`);
       console.log(`📄 Title: ${blogContent.title}`);
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
@@ -277,7 +291,7 @@ export class ScheduledPostsExecutor {
       }
 
       const executionTime = Date.now() - startTime;
-      console.log(`\n🎉 ===== SCHEDULED POST EXECUTION COMPLETED =====`);
+      console.log(`\n🎉 ===== WORDPRESS SCHEDULED POST EXECUTION COMPLETED =====`);
       console.log(`✅ Post "${post.title}" executed successfully`);
       console.log(`🔗 Published at: ${postUrl}`);
       console.log(`⏱️ Execution time: ${executionTime}ms`);
@@ -285,7 +299,7 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
-      console.error(`\n💥 ===== SCHEDULED POST EXECUTION FAILED =====`);
+      console.error(`\n💥 ===== WORDPRESS SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
@@ -304,43 +318,162 @@ export class ScheduledPostsExecutor {
   }
 
   /**
-   * Get WordPress connection details from storage
+   * Execute a Naver Blog scheduled post
    */
-  private async getWordPressConnection(connectionId: string, connectionName: string): Promise<any> {
+  private async executeNaverScheduledPost(post: any): Promise<void> {
+    const startTime = Date.now();
     try {
-      // Try to get from SQLite first
-      const connections = this.sqliteManager.getWordPressConnections();
-      let connection = connections.find(conn => conn.id === connectionId || conn.name === connectionName);
-      
+      // Ensure topics are loaded for scheduled (cron) executions
+      if (!post.topics || post.topics.length === 0) {
+        const topics = await this.sqliteManager.getScheduledPostsManager().getScheduledPostTopics(post.id);
+        post.topics = Array.isArray(topics) ? topics.map((t: any) => t.topicName) : [];
+      }
+    } catch (loadTopicsError) {
+      console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
+    }
+    console.log(`\n🚀 ===== STARTING NAVER BLOG SCHEDULED POST EXECUTION =====`);
+    console.log(`📝 Post: ${post.title}`);
+    console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+    console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
+    console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
+    console.log(`🔄 Frequency: ${post.frequencyType} (${post.frequencyValue})`);
+    console.log(`📊 Run Count: ${post.runCount || 0}`);
+    console.log(`✅ Success Count: ${post.successCount || 0}`);
+    console.log(`❌ Failure Count: ${post.failureCount || 0}`);
+    console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    try {
+      // Step 1: Get connection details
+      console.log(`\n🔍 Step 1: Getting connection details...`);
+      const connection = await this.getConnection(post.connectionId, post.connectionName, post.connectionType);
       if (!connection) {
-        // Fallback to store if not found in SQLite
+        throw new Error(`${post.connectionType} connection not found: ${post.connectionName}`);
+      }
+      console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
+
+      // Step 2: Set up environment variables
+      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
+      console.log(`✅ Environment variables configured`);
+
+      // Step 3: Select topic for blog generation
+      console.log(`\n📝 Step 3: Selecting topic for blog generation...`);
+      const selectedTopic = this.selectTopicForGeneration(post.topics);
+      console.log(`✅ Selected topic: ${selectedTopic}`);
+
+      // Step 4: Generate blog content without images (Naver doesn't support images in automation)
+      console.log(`\n🤖 Step 4: Generating blog content...`);
+      const blogContent = await this.generateBlogContentWithoutImages(selectedTopic);
+      console.log(`✅ Blog content generated successfully`);
+      console.log(`📄 Title: ${blogContent.title}`);
+      console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
+      console.log(`🖼️ Images: 0 (Naver Blog - no image support)`);
+
+      // Step 5: Upload to Naver Blog
+      console.log(`\n📤 Step 5: Uploading to Naver Blog...`);
+      const postUrl = await this.uploadToNaverBlog(blogContent, connection);
+      console.log(`✅ Successfully uploaded to Naver Blog`);
+      console.log(`🔗 Post URL: ${postUrl}`);
+
+      // Step 6: Update run statistics
+      console.log(`\n📊 Step 6: Updating run statistics...`);
+      await this.updateRunStatistics(post.id, true, postUrl);
+      console.log(`✅ Run statistics updated`);
+
+      // Step 7: Calculate next run time
+      console.log(`\n⏰ Step 7: Calculating next run time...`);
+      const nextRun = this.calculateNextRunTime(post);
+      if (nextRun) {
+        await this.updateNextRunTime(post.id, nextRun);
+        console.log(`✅ Next run scheduled for: ${nextRun}`);
+      } else {
+        console.log(`⚠️ No next run time calculated (post may be disabled or completed)`);
+      }
+
+      const executionTime = Date.now() - startTime;
+      console.log(`\n🎉 ===== NAVER BLOG SCHEDULED POST EXECUTION COMPLETED =====`);
+      console.log(`✅ Post "${post.title}" executed successfully`);
+      console.log(`🔗 Published at: ${postUrl}`);
+      console.log(`⏱️ Execution time: ${executionTime}ms`);
+      console.log(`🕐 Completed at: ${new Date().toISOString()}`);
+      
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`\n💥 ===== NAVER BLOG SCHEDULED POST EXECUTION FAILED =====`);
+      console.error(`❌ Post "${post.title}" failed to execute`);
+      console.error(`⏱️ Execution time: ${executionTime}ms`);
+      console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+      console.error(`📄 Error details:`, error);
+      
+      // Update failure statistics
+      try {
+        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        console.log(`📊 Failure statistics updated`);
+      } catch (updateError) {
+        console.error(`❌ Failed to update failure statistics:`, updateError);
+      }
+      
+      throw error; // Re-throw to be caught by the caller
+    }
+  }
+
+  /**
+   * Get connection details from storage based on connection type
+   */
+  private async getConnection(connectionId: string, connectionName: string, connectionType: string): Promise<any> {
+    try {
+      console.log(`🔍 Getting connection: ID=${connectionId}, Name=${connectionName}, Type="${connectionType}"`);
+      let connection: any = null;
+      
+      if (connectionType === 'wordpress') {
+        // Try to get from SQLite first
+        const connections = this.sqliteManager.getWordPressConnections();
+        connection = connections.find(conn => conn.id === connectionId || conn.name === connectionName);
+        
+        if (!connection) {
+          // Fallback to store if not found in SQLite
+          const { getStore } = require('../storage');
+          const store = getStore();
+          const storeConnections = store.get('wordpressConnections', []);
+          connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
+        }
+      } else if (connectionType === 'naver' || connectionType === 'Naver Blog') {
+        // Get Naver connections from store
         const { getStore } = require('../storage');
         const store = getStore();
-        const storeConnections = store.get('wordpressConnections', []);
+        const storeConnections = store.get('naverConnections', []);
+        console.log(`🔍 Looking for Naver connection: ID=${connectionId}, Name=${connectionName}`);
+        console.log(`🔍 Available Naver connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
       }
       
       if (!connection) {
-        throw new Error(`WordPress connection not found: ${connectionName} (ID: ${connectionId})`);
+        throw new Error(`${connectionType} connection not found: ${connectionName} (ID: ${connectionId})`);
       }
       
-      console.log(`🔍 Found connection: ${connection.name} (${connection.url})`);
+      console.log(`🔍 Found ${connectionType} connection: ${connection.name}`);
       return connection;
     } catch (error) {
-      console.error(`❌ Error getting WordPress connection:`, error);
+      console.error(`❌ Error getting ${connectionType} connection:`, error);
       throw error;
     }
   }
 
   /**
-   * Set up environment variables for AI and WordPress
+   * Set up environment variables for AI and platform-specific settings
    */
-  private setupEnvironmentVariables(connection: any, aiKeyId?: string | null): void {
+  private setupEnvironmentVariables(connection: any, aiKeyId?: string | null, connectionType?: string): void {
     try {
-      // Set WordPress environment variables
-      process.env.WORDPRESS_URL = connection.url;
-      process.env.WORDPRESS_USERNAME = connection.username;
-      process.env.WORDPRESS_PASSWORD = connection.password;
+      // Set platform-specific environment variables
+      if (connectionType === 'wordpress') {
+        process.env.WORDPRESS_URL = connection.url;
+        process.env.WORDPRESS_USERNAME = connection.username;
+        process.env.WORDPRESS_PASSWORD = connection.password;
+      } else if (connectionType === 'naver' || connectionType === 'Naver Blog') {
+        // Naver doesn't need environment variables for the browser controller
+        // The credentials are passed directly to the browser controller
+        console.log(`⚙️ Naver connection: ${connection.name}`);
+      }
       
       // Get AI API keys from electron store
       const aiKeys = this.getAIApiKeys();
@@ -542,11 +675,11 @@ export class ScheduledPostsExecutor {
   }
 
   /**
-   * Generate blog content using AI
+   * Generate blog content with images (for WordPress)
    */
-  private async generateBlogContent(topic: string): Promise<any> {
+  private async generateBlogContentWithImages(topic: string): Promise<any> {
     try {
-      console.log(`🤖 Starting AI blog generation for topic: ${topic}`);
+      console.log(`🤖 Starting AI blog generation with images for topic: ${topic}`);
       
       // Import the blog generation functions
       const generateOutline = require('../ai-blog/generate-outline').default;
@@ -564,7 +697,33 @@ export class ScheduledPostsExecutor {
       
       return blogContentWithImages;
     } catch (error) {
-      console.error(`❌ Error generating blog content:`, error);
+      console.error(`❌ Error generating blog content with images:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate blog content without images (for Naver Blog)
+   */
+  private async generateBlogContentWithoutImages(topic: string): Promise<any> {
+    try {
+      console.log(`🤖 Starting AI blog generation without images for topic: ${topic}`);
+      
+      // Import only the blog outline generation function
+      const generateOutline = require('../ai-blog/generate-outline').default;
+      
+      // Generate blog outline only (no images)
+      console.log(`📝 Generating blog outline...`);
+      const outline = await generateOutline(topic);
+      console.log(`✅ Blog outline generated`);
+      
+      // Return the outline without processing images
+      return {
+        ...outline,
+        images: [] // Explicitly set empty images array
+      };
+    } catch (error) {
+      console.error(`❌ Error generating blog content without images:`, error);
       throw error;
     }
   }
@@ -586,6 +745,42 @@ export class ScheduledPostsExecutor {
       return postUrl;
     } catch (error) {
       console.error(`❌ Error uploading to WordPress:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload blog content to Naver Blog
+   */
+  private async uploadToNaverBlog(blogContent: any, connection: any): Promise<string> {
+    try {
+      console.log(`📤 Starting Naver Blog upload...`);
+      
+      // Import the Naver upload function
+      const { runNaverBlogAutomation } = require('../naver/browser-controller');
+      
+      // Upload to Naver Blog
+      const result = await runNaverBlogAutomation(
+        {
+          username: connection.username,
+          password: connection.password,
+          proxyUrl: connection.proxyUrl
+        },
+        {
+          title: blogContent.title,
+          content: blogContent.content,
+          tags: `#ai #blog #naver`
+        }
+      );
+      
+      if (!result.success) {
+        throw new Error(`Naver Blog upload failed: ${result.error || 'Unknown error'}`);
+      }
+      
+      console.log(`✅ Naver Blog upload completed successfully`);
+      return 'https://blog.naver.com'; // Naver doesn't return specific post URLs
+    } catch (error) {
+      console.error(`❌ Error uploading to Naver Blog:`, error);
       throw error;
     }
   }

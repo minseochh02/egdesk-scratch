@@ -1,6 +1,6 @@
 // IPC handlers for Naver Blog automation with AI-generated images
 import { ipcMain } from 'electron';
-import { runNaverBlogWithImage } from './naver-blog-with-image';
+import { runNaverBlogAutomation } from './naver/browser-controller';
 
 /**
  * Register Naver Blog automation IPC handlers
@@ -54,24 +54,25 @@ export function registerNaverBlogHandlers(): void {
         dogImagePrompt
       } = params;
 
-      console.log('🚀 Starting Naver Blog automation with AI-generated dog image...');
+      console.log('🚀 Starting Naver Blog automation...');
       
-      const result = await runNaverBlogWithImage(
-        username,
-        password,
-        proxyUrl,
-        title,
-        content,
-        tags,
-        includeDogImage,
-        dogImagePrompt
+      const result = await runNaverBlogAutomation(
+        {
+          username,
+          password,
+          proxyUrl
+        },
+        {
+          title: title || 'Test Title',
+          content: content || 'Test Content',
+          tags: tags || '#test'
+        }
       );
 
       return {
         success: result.success,
         imageGenerated: result.imageGenerated,
-        error: result.error,
-        fallback: result.fallback
+        error: result.error
       };
     } catch (error) {
       console.error('Error running Naver Blog automation:', error);

@@ -20,7 +20,6 @@ interface WordPressConnection {
 interface NaverConnection {
   id: string;
   name: string;
-  url: string;
   username: string;
   password: string;
   createdAt: string;
@@ -78,17 +77,17 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
         console.warn('Failed to load WordPress connections:', err);
       }
       
-      // Load Naver connections (placeholder - you'll need to implement this)
+      // Load Naver connections
       try {
-        // TODO: Implement Naver connections loading
-        // const naverResult = await window.electron.naver.getConnections();
-        // if (naverResult.success && naverResult.connections) {
-        //   const naverConnections = naverResult.connections.map(conn => ({
-        //     ...conn,
-        //     type: 'naver' as const
-        //   }));
-        //   allConnections.push(...naverConnections);
-        // }
+        const naverResult = await window.electron.naver.getConnections();
+        if (naverResult.success && naverResult.connections) {
+          const naverConnections = naverResult.connections.map(conn => ({
+            ...conn,
+            url: 'https://blog.naver.com', // Default Naver Blog URL
+            type: 'naver' as const
+          }));
+          allConnections.push(...naverConnections);
+        }
       } catch (err) {
         console.warn('Failed to load Naver connections:', err);
       }
@@ -144,10 +143,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
       if (connection.type === 'wordpress') {
         result = await window.electron.wordpress.deleteConnection(connectionId);
       } else if (connection.type === 'naver') {
-        // TODO: Implement Naver connection deletion
-        // result = await window.electron.naver.deleteConnection(connectionId);
-        alert('Naver connection deletion not yet implemented');
-        return;
+        result = await window.electron.naver.deleteConnection(connectionId);
       } else if (connection.type === 'tistory') {
         // TODO: Implement Tistory connection deletion
         // result = await window.electron.tistory.deleteConnection(connectionId);
@@ -231,6 +227,13 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
       return 'Tistory';
     }
     return 'Unknown';
+  };
+
+  const getDisplayUrl = (connection: BlogConnection) => {
+    if (connection.type === 'naver') {
+      return `blog.naver.com/${connection.username}`;
+    }
+    return connection.url;
   };
 
   const formatDate = (dateString: string) => {
@@ -382,7 +385,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
                   <FontAwesomeIcon icon={faGlobe} />
                   <div className="connection-list-detail-text">
                     <span className="connection-list-detail-label">URL:</span>
-                    <span className="connection-list-detail-value">{connection.url}</span>
+                    <span className="connection-list-detail-value">{getDisplayUrl(connection)}</span>
                   </div>
                 </div>
                 <div className="connection-list-detail-item">
@@ -404,7 +407,7 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
               {/* Site Status Checker */}
               <div className="connection-list-site-status-section">
                 <SiteStatusChecker
-                  url={connection.url}
+                  url={getDisplayUrl(connection)}
                   onStatusChange={(status) => handleStatusChange(connection.id, status)}
                   className="connection-list-status-checker"
                 />

@@ -50,7 +50,7 @@ function selectLeastUsedTopic(topics: any[]) {
 /**
  * Generate and upload blog content
  */
-ipcMain.handle('generate-and-upload-blog', async (event, params: {
+ipcMain.handle('generate-and-upload-wordpress-blog', async (event, params: {
   taskId: string;
   topics?: any[];
   topicSelectionMode?: string;
@@ -299,7 +299,7 @@ function replaceImageMarkersByUuid(content: string, markers: ImageMarker[], imag
 
 
 
-export default async function createPost(blogContentWithImages: ParsedContent): Promise<string> {
+export async function createPost(blogContentWithImages: ParsedContent): Promise<string> {
     const WORDPRESS_URL = process.env.WORDPRESS_URL;
     const WORDPRESS_USERNAME = process.env.WORDPRESS_USERNAME;
     const WORDPRESS_PASSWORD = process.env.WORDPRESS_PASSWORD;

@@ -158,6 +158,18 @@ export interface WordPressConnection {
 }
 
 /**
+ * Naver Blog connection configuration
+ */
+export interface NaverConnection {
+  id?: string;
+  name: string;
+  username: string;
+  password: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
  * User application preferences
  */
 export interface UserPreferences {
@@ -346,6 +358,41 @@ export interface WordPressAPI {
     responseTime?: number;
     error?: string;
     content?: string;
+  }>;
+}
+
+/**
+ * Naver Blog API for managing connections
+ */
+export interface NaverAPI {
+  // Connection management
+  saveConnection: (connection: NaverConnection) => Promise<{
+    success: boolean;
+    connections?: NaverConnection[];
+    error?: string;
+  }>;
+  getConnections: () => Promise<{
+    success: boolean;
+    connections?: NaverConnection[];
+    error?: string;
+  }>;
+  deleteConnection: (connectionId: string) => Promise<{
+    success: boolean;
+    connections?: NaverConnection[];
+    error?: string;
+  }>;
+  updateConnection: (
+    connectionId: string,
+    updates: Partial<NaverConnection>,
+  ) => Promise<{
+    success: boolean;
+    connection?: NaverConnection;
+    error?: string;
+  }>;
+  testConnection: (connection: NaverConnection) => Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
   }>;
 }
 
@@ -866,6 +913,27 @@ const electronHandler = {
     checkSite: (url: string) =>
       ipcRenderer.invoke('wp-check-site-status', url),
   } as WordPressAPI,
+  
+  // ========================================================================
+  // NAVER BLOG MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Naver Blog connection management API
+   */
+  naver: {
+    saveConnection: (connection: NaverConnection) =>
+      ipcRenderer.invoke('naver-save-connection', connection),
+    getConnections: () => ipcRenderer.invoke('naver-get-connections'),
+    deleteConnection: (connectionId: string) =>
+      ipcRenderer.invoke('naver-delete-connection', connectionId),
+    updateConnection: (
+      connectionId: string,
+      updates: Partial<NaverConnection>,
+    ) => ipcRenderer.invoke('naver-update-connection', connectionId, updates),
+    testConnection: (connection: NaverConnection) =>
+      ipcRenderer.invoke('naver-test-connection', connection),
+  } as NaverAPI,
   
   // ========================================================================
   // SCHEDULED POSTS MANAGEMENT

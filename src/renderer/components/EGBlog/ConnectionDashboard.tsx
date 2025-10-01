@@ -96,89 +96,124 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
     try {
       setIsLoading(true);
       
-      if (!window.electron?.wordpress) {
-        console.warn('WordPress API not available');
-        setStats({
-          totalPosts: 0,
-          publishedPosts: 0,
-          draftPosts: 0,
-          lastPostDate: null,
-          totalMedia: 0,
-          totalComments: 0,
-          totalScheduled: 0
-        });
-        return;
-      }
+      // Initialize default stats
+      const defaultStats = {
+        totalPosts: 0,
+        publishedPosts: 0,
+        draftPosts: 0,
+        lastPostDate: null as string | null,
+        totalMedia: 0,
+        totalComments: 0,
+        totalScheduled: 0
+      };
 
-      // Get sync statistics from SQLite
-      const statsResult = await window.electron.wordpress.getSyncStats(connection.id);
-      
-      if (statsResult.success && statsResult.stats) {
-        const syncStats = statsResult.stats;
-        
-        // Get detailed post counts by status
-        const postsResult = await window.electron.wordpress.getPosts(connection.id, 1000, 0);
-        
-        let publishedPosts = 0;
-        let draftPosts = 0;
-        let lastPostDate: string | null = null;
-        
-        if (postsResult.success && postsResult.posts) {
-          // Count posts by status
-          postsResult.posts.forEach((post: any) => {
-            if (post.status === 'publish') {
-              publishedPosts++;
-            } else if (post.status === 'draft') {
-              draftPosts++;
-            }
-            
-            // Find the most recent post date
-            const postDate = post.modified || post.date;
-            if (postDate && (!lastPostDate || new Date(postDate) > new Date(lastPostDate))) {
-              lastPostDate = postDate;
-            }
-          });
+      // Handle different connection types
+      if (connection.type === 'wordpress') {
+        if (!window.electron?.wordpress) {
+          console.warn('WordPress API not available');
+          setStats(defaultStats);
+          return;
         }
+
+        // Get sync statistics from SQLite
+        const statsResult = await window.electron.wordpress.getSyncStats(connection.id);
         
-        // Get media count
-        const mediaResult = await window.electron.wordpress.getMedia(connection.id, 1000, 0);
-        const totalMedia = mediaResult.success && mediaResult.media ? mediaResult.media.length : 0;
+        if (statsResult.success && statsResult.stats) {
+          const syncStats = statsResult.stats;
+          
+          // Get detailed post counts by status
+          const postsResult = await window.electron.wordpress.getPosts(connection.id, 1000, 0);
+          
+          let publishedPosts = 0;
+          let draftPosts = 0;
+          let lastPostDate: string | null = null;
+          
+          if (postsResult.success && postsResult.posts) {
+            // Count posts by status
+            postsResult.posts.forEach((post: any) => {
+              if (post.status === 'publish') {
+                publishedPosts++;
+              } else if (post.status === 'draft') {
+                draftPosts++;
+              }
+              
+              // Find the most recent post date
+              const postDate = post.modified || post.date;
+              if (postDate && (!lastPostDate || new Date(postDate) > new Date(lastPostDate))) {
+                lastPostDate = postDate;
+              }
+            });
+          }
+          
+          // Get media count
+          const mediaResult = await window.electron.wordpress.getMedia(connection.id, 1000, 0);
+          const totalMedia = mediaResult.success && mediaResult.media ? mediaResult.media.length : 0;
+          
+          // Get comments count
+          const commentsResult = await window.electron.wordpress.getComments(connection.id, 1000, 0);
+          const totalComments = commentsResult.success && commentsResult.comments ? commentsResult.comments.length : 0;
+          
+          // Get scheduled count
+          const scheduledResult = await window.electron.scheduledPosts.getByConnection(connection.id);
+          const totalScheduled = scheduledResult.success && scheduledResult.data ? scheduledResult.data.length : 0;
+          
+          setStats({
+            totalPosts: syncStats.totalPosts || 0,
+            publishedPosts,
+            draftPosts,
+            lastPostDate,
+            totalMedia,
+            totalComments,
+            totalScheduled
+          });
+          
+          console.log(`📊 Loaded WordPress stats for ${connection.name}:`, {
+            totalPosts: syncStats.totalPosts,
+            publishedPosts,
+            draftPosts,
+            lastPostDate
+          });
+        } else {
+          console.warn('Failed to load WordPress sync stats:', statsResult.error);
+          setStats(defaultStats);
+        }
+      } else if (connection.type === 'naver') {
+        // Naver connections don't have the same data management APIs as WordPress
+        // For now, we'll show basic stats and focus on scheduled posts
+        console.log(`📊 Loading Naver stats for ${connection.name}`);
         
-        // Get comments count
-        const commentsResult = await window.electron.wordpress.getComments(connection.id, 1000, 0);
-        const totalComments = commentsResult.success && commentsResult.comments ? commentsResult.comments.length : 0;
-        
-        // Get scheduled count
+        // Get scheduled count (this should work for both WordPress and Naver)
         const scheduledResult = await window.electron.scheduledPosts.getByConnection(connection.id);
         const totalScheduled = scheduledResult.success && scheduledResult.data ? scheduledResult.data.length : 0;
         
         setStats({
-          totalPosts: syncStats.totalPosts || 0,
-          publishedPosts,
-          draftPosts,
-          lastPostDate,
-          totalMedia,
-          totalComments,
+          ...defaultStats,
+          totalScheduled,
+          // For Naver, we don't have post/media/comment counts from the API
+          // These would need to be implemented if Naver provides such APIs
+        });
+        
+        console.log(`📊 Loaded Naver stats for ${connection.name}:`, {
+          totalScheduled
+        });
+      } else if (connection.type === 'tistory') {
+        // Tistory connections - similar to Naver for now
+        console.log(`📊 Loading Tistory stats for ${connection.name}`);
+        
+        const scheduledResult = await window.electron.scheduledPosts.getByConnection(connection.id);
+        const totalScheduled = scheduledResult.success && scheduledResult.data ? scheduledResult.data.length : 0;
+        
+        setStats({
+          ...defaultStats,
           totalScheduled
         });
         
-        console.log(`📊 Loaded stats for ${connection.name}:`, {
-          totalPosts: syncStats.totalPosts,
-          publishedPosts,
-          draftPosts,
-          lastPostDate
+        console.log(`📊 Loaded Tistory stats for ${connection.name}:`, {
+          totalScheduled
         });
       } else {
-        console.warn('Failed to load sync stats:', statsResult.error);
-        setStats({
-          totalPosts: 0,
-          publishedPosts: 0,
-          draftPosts: 0,
-          lastPostDate: null,
-          totalMedia: 0,
-          totalComments: 0,
-          totalScheduled: 0
-        });
+        console.warn(`Unknown connection type: ${(connection as any).type}`);
+        setStats(defaultStats);
       }
     } catch (err) {
       console.error('Failed to load connection stats:', err);
@@ -289,32 +324,74 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
           />
         );
       case 'posts':
-        return (
-          <PostsTab
-            connectionId={connection.id}
-            connectionName={connection.name}
-            connectionType={getConnectionTypeName(connection)}
-            onStatsUpdate={handleRefreshStats}
-          />
-        );
+        // Only show posts tab for WordPress connections
+        if (connection.type === 'wordpress') {
+          return (
+            <PostsTab
+              connectionId={connection.id}
+              connectionName={connection.name}
+              connectionType={getConnectionTypeName(connection)}
+              onStatsUpdate={handleRefreshStats}
+            />
+          );
+        } else {
+          return (
+            <div className="eg-blog-connection-dashboard-unsupported-tab">
+              <div className="eg-blog-connection-dashboard-unsupported-content">
+                <FontAwesomeIcon icon={faFileAlt} />
+                <h3>Posts Management</h3>
+                <p>Posts management is currently only available for WordPress connections.</p>
+                <p>For {getConnectionTypeName(connection)} connections, you can manage scheduled posts using the Scheduled tab.</p>
+              </div>
+            </div>
+          );
+        }
       case 'media':
-        return (
-          <MediaTab
-            connectionId={connection.id}
-            connectionName={connection.name}
-            connectionType={getConnectionTypeName(connection)}
-            onStatsUpdate={handleRefreshStats}
-          />
-        );
+        // Only show media tab for WordPress connections
+        if (connection.type === 'wordpress') {
+          return (
+            <MediaTab
+              connectionId={connection.id}
+              connectionName={connection.name}
+              connectionType={getConnectionTypeName(connection)}
+              onStatsUpdate={handleRefreshStats}
+            />
+          );
+        } else {
+          return (
+            <div className="eg-blog-connection-dashboard-unsupported-tab">
+              <div className="eg-blog-connection-dashboard-unsupported-content">
+                <FontAwesomeIcon icon={faImage} />
+                <h3>Media Management</h3>
+                <p>Media management is currently only available for WordPress connections.</p>
+                <p>For {getConnectionTypeName(connection)} connections, media is handled automatically during post creation.</p>
+              </div>
+            </div>
+          );
+        }
       case 'comments':
-        return (
-          <CommentsTab
-            connectionId={connection.id}
-            connectionName={connection.name}
-            connectionType={getConnectionTypeName(connection)}
-            onStatsUpdate={handleRefreshStats}
-          />
-        );
+        // Only show comments tab for WordPress connections
+        if (connection.type === 'wordpress') {
+          return (
+            <CommentsTab
+              connectionId={connection.id}
+              connectionName={connection.name}
+              connectionType={getConnectionTypeName(connection)}
+              onStatsUpdate={handleRefreshStats}
+            />
+          );
+        } else {
+          return (
+            <div className="eg-blog-connection-dashboard-unsupported-tab">
+              <div className="eg-blog-connection-dashboard-unsupported-content">
+                <FontAwesomeIcon icon={faComments} />
+                <h3>Comments Management</h3>
+                <p>Comments management is currently only available for WordPress connections.</p>
+                <p>For {getConnectionTypeName(connection)} connections, comments are managed through the platform's native interface.</p>
+              </div>
+            </div>
+          );
+        }
       case 'settings':
         return (
           <SettingsTab
