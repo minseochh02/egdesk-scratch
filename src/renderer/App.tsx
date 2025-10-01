@@ -35,6 +35,14 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [wooriPassword, setWooriPassword] = useState('');
   const [wooriProxy, setWooriProxy] = useState('');
   const [wooriGeminiKey, setWooriGeminiKey] = useState('');
+  const [naverWithImageId, setNaverWithImageId] = useState('');
+  const [naverWithImagePassword, setNaverWithImagePassword] = useState('');
+  const [naverWithImageProxy, setNaverWithImageProxy] = useState('');
+  const [naverWithImageTitle, setNaverWithImageTitle] = useState('AI-Generated Dog Image Blog Post');
+  const [naverWithImageContent, setNaverWithImageContent] = useState('This post features an AI-generated dog image created using Gemini AI! The image was automatically generated and pasted into the blog editor.');
+  const [naverWithImageTags, setNaverWithImageTags] = useState('#ai #dog #egdesk #automation');
+  const [naverWithImagePrompt, setNaverWithImagePrompt] = useState('A cute golden retriever puppy playing in a sunny garden, high quality, photorealistic, professional photography style');
+  const [includeDogImage, setIncludeDogImage] = useState(true);
 
   if (!isOpen) return null;
 
@@ -232,6 +240,117 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               }}
             >
               Start Woori Bank Automation
+            </button>
+          </div>
+
+          {/* Naver Blog with AI Image Section */}
+          <div>
+            <h3 style={{ color: '#FF6B35', marginBottom: '10px' }}>🐕 Naver Blog with AI-Generated Dog Image</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Naver ID"
+                value={naverWithImageId}
+                onChange={(e) => setNaverWithImageId(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <input
+                type="password"
+                placeholder="Naver Password"
+                value={naverWithImagePassword}
+                onChange={(e) => setNaverWithImagePassword(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+            </div>
+            <input
+              type="text"
+              placeholder="Proxy (optional) - e.g. http://user:pass@host:port"
+              value={naverWithImageProxy}
+              onChange={(e) => setNaverWithImageProxy(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', width: '100%', marginBottom: '10px' }}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Blog Title"
+                value={naverWithImageTitle}
+                onChange={(e) => setNaverWithImageTitle(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <input
+                type="text"
+                placeholder="Tags"
+                value={naverWithImageTags}
+                onChange={(e) => setNaverWithImageTags(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="includeDogImage"
+                  checked={includeDogImage}
+                  onChange={(e) => setIncludeDogImage(e.target.checked)}
+                  style={{ transform: 'scale(1.2)' }}
+                />
+                <label htmlFor="includeDogImage" style={{ color: '#fff', fontSize: '14px' }}>
+                  Include Dog Image
+                </label>
+              </div>
+            </div>
+            <textarea
+              placeholder="Blog Content"
+              value={naverWithImageContent}
+              onChange={(e) => setNaverWithImageContent(e.target.value)}
+              rows={3}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', width: '100%', marginBottom: '10px', resize: 'vertical' }}
+            />
+            <textarea
+              placeholder="Dog Image Prompt (customize the AI-generated dog image)"
+              value={naverWithImagePrompt}
+              onChange={(e) => setNaverWithImagePrompt(e.target.value)}
+              rows={2}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', width: '100%', marginBottom: '10px', resize: 'vertical' }}
+            />
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> This feature uses the "egdesk" API key from your AI Keys Manager. Make sure you have a Google/Gemini API key configured with the name "egdesk".
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const result = await (window as any).electron.debug.startNaverBlogWithImage(
+                    naverWithImageId || undefined,
+                    naverWithImagePassword || undefined,
+                    naverWithImageProxy || undefined,
+                    naverWithImageTitle || undefined,
+                    naverWithImageContent || undefined,
+                    naverWithImageTags || undefined,
+                    includeDogImage,
+                    naverWithImagePrompt || undefined
+                  );
+                  if (!result?.success) {
+                    console.error('Naver Blog with image automation failed:', result?.error);
+                    alert(`Naver Blog with image automation failed${result?.error ? `: ${result.error}` : ''}`);
+                  } else {
+                    console.log('Naver Blog with image automation completed successfully');
+                    const imageStatus = result.imageGenerated ? ' (with AI-generated dog image)' : ' (no image generated)';
+                    alert(`Naver Blog with image automation completed successfully${imageStatus}!`);
+                  }
+                } catch (e: any) {
+                  console.error('Naver Blog with image automation error:', e);
+                  alert(`Naver Blog with image automation error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#FF6B35',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              🐕 Start Naver Blog with AI Dog Image
             </button>
           </div>
         </div>

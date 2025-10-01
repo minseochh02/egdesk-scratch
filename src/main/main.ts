@@ -25,6 +25,7 @@ import { registerFileSystemHandlers } from './fs';
 import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
+import { registerNaverBlogHandlers } from './naver-blog-handlers';
 let wordpressHandler: WordPressHandler;
 let localServerManager: LocalServerManager;
 
@@ -82,6 +83,38 @@ const createWindow = async () => {
       ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string; geminiApiKey?: string }) => {
         const { runShinhanAutomation } = require('./bank-automator');
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy, opts?.geminiApiKey);
+      });
+      ipcMain.handle('start-naver-blog-with-image', async (_event, opts?: { id?: string; password?: string; proxy?: string; title?: string; content?: string; tags?: string; includeDogImage?: boolean; dogImagePrompt?: string }) => {
+        try {
+          // Get the "egdesk" API key from store
+          const { getStore } = require('./storage');
+          const store = getStore();
+          const aiKeys = store.get('ai-keys', []);
+          const egdeskKey = aiKeys.find((key: any) => key.name === 'egdesk' && key.providerId === 'google' && key.fields?.apiKey);
+          
+          if (!egdeskKey) {
+            throw new Error('No "egdesk" API key found. Please configure a Google/Gemini API key with the name "egdesk" in the AI Keys Manager.');
+          }
+
+          // Set the API key as environment variable
+          process.env.GEMINI_API_KEY = egdeskKey.fields.apiKey;
+          console.log(`🔑 Using "egdesk" API key for Naver Blog automation with image generation`);
+
+          const { runNaverBlogWithImage } = require('./naver-blog-with-image');
+          return await runNaverBlogWithImage(
+            opts?.id,
+            opts?.password,
+            opts?.proxy,
+            opts?.title,
+            opts?.content,
+            opts?.tags,
+            opts?.includeDogImage ?? true,
+            opts?.dogImagePrompt
+          );
+        } catch (error) {
+          console.error('❌ Naver Blog with image automation failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
       });
     } catch (error) {
       console.error('❌ Failed to initialize Automation:', error);
@@ -207,8 +240,11 @@ const createWindow = async () => {
     console.error('❌ Failed to initialize components:', error);
   }
 
-  // Register blog generation IPC handlers
-  // registerBlogGenerationHandlers(); // TODO: Implement blog generation handlers
+    // Register blog generation IPC handlers
+    // registerBlogGenerationHandlers(); // TODO: Implement blog generation handlers
+    
+    // Register Naver Blog automation handlers
+    registerNaverBlogHandlers();
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');
