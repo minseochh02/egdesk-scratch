@@ -1170,7 +1170,7 @@ const electronHandler = {
    * Debug and automation API
    */
   debug: {
-    startAutomation: (id?: string, pw?: string, proxy?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy }),
+    startAutomation: (id?: string, pw?: string, proxy?: string, title?: string, content?: string, tags?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy, title, content, tags }),
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
   },
 };

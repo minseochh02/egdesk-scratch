@@ -332,7 +332,7 @@ export interface IElectronAPI {
     cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   debug: {
-    startAutomation(id?: string, pw?: string, proxy?: string): Promise<{ success: boolean; error?: string }>;
+    startAutomation(id?: string, pw?: string, proxy?: string, title?: string, content?: string, tags?: string): Promise<{ success: boolean; error?: string }>;
     startWooriAutomation(id?: string, proxy?: string, geminiApiKey?: string): Promise<{ 
       success: boolean; 
       error?: string; 

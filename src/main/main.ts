@@ -75,9 +75,9 @@ const createWindow = async () => {
     console.log('✅ Electron Store initialized successfully');
 
     try {
-      ipcMain.handle('start-automation', async (_event, creds?: { id?: string; pw?: string; proxy?: string }) => {
+      ipcMain.handle('start-automation', async (_event, creds?: { id?: string; pw?: string; proxy?: string; title?: string; content?: string; tags?: string }) => {
         const { runAutomation } = require('./automator');
-        return await runAutomation(creds?.id, creds?.pw, creds?.proxy);
+        return await runAutomation(creds?.id, creds?.pw, creds?.proxy, creds?.title, creds?.content, creds?.tags);
       });
       ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string; geminiApiKey?: string }) => {
         const { runShinhanAutomation } = require('./bank-automator');
