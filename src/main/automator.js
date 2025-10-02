@@ -2,6 +2,7 @@
 const { chromium } = require('playwright');
 const { clipboard } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 function buildProxyOption(proxyUrl) {
   try {
@@ -235,45 +236,114 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
               console.warn('[DEBUG] First image click failed:', e);
             }
 
-            // Fill title
+            // Load JSON and inject via SmartEditor API (preferred)
             try {
-              console.log('[DEBUG] Filling title');
-              const titleField = pageOrFrame.locator(title_field_xpath);
-              if (await titleField.count()) {
-                await titleField.click({ timeout: 10000 });
-                // Clear existing content first
-                await newPage.keyboard.press('Control+a');
-                await newPage.waitForTimeout(200);
-                // Type the new title
-                const titleToUse = title || 'EGDesk Test Title';
-                await newPage.keyboard.type(titleToUse);
-                console.log(`[DEBUG] Title filled: ${titleToUse}`);
-              }
-            } catch (e) {
-              console.warn('[DEBUG] Title fill failed:', e);
-            }
+              console.log('[DEBUG] Waiting for editor to fully load');
+              
+              // 1. Wait for mainFrame to load
+              await newPage.waitForSelector('#mainFrame', { timeout: 15000 });
+              const frame = newPage.frameLocator('#mainFrame');
+              
+              // 2. Wait for editor content area
+              await frame.locator('.se-content').waitFor({ timeout: 10000 });
+              console.log('[DEBUG] Editor loaded successfully');
+              
+              // 3. Read document JSON from disk
+              const docJsonPath = path.resolve('/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/complete-naver-se-document-data.json');
+              const raw = fs.readFileSync(docJsonPath, 'utf-8');
+              const parsed = JSON.parse(raw);
+              console.log('[DEBUG] Loaded document JSON for injection');
 
-            // Fill content
-            try {
-              console.log('[DEBUG] Filling content');
-              const contentField = pageOrFrame.locator(content_field_xpath);
-              if (await contentField.count()) {
-                await contentField.click({ timeout: 20000 });
-                // Clear existing content first
-                await newPage.keyboard.press('Control+a');
-                await newPage.waitForTimeout(200);
-                // Type the new content
-                const contentToUse = content || 'EGDesk Test Content';
-                await newPage.keyboard.type(contentToUse);
-                await newPage.keyboard.press('Enter');
-                // Add tags if provided
-                const tagsToUse = tags || '#egdesk #playwright';
-                await newPage.keyboard.type(tagsToUse);
-                console.log(`[DEBUG] Content filled: ${contentToUse}`);
-                console.log(`[DEBUG] Tags added: ${tagsToUse}`);
-              }
+              // 4. Inject into SmartEditor via internal API (append components)
+              const injected = await frame.evaluate(async (incoming) => {
+                try {
+                  // Wait helper
+                  const waitFor = (ms) => new Promise(r => setTimeout(r, ms));
+                  
+                  // Find editor dynamically
+                  const editors = (window.SmartEditor && window.SmartEditor._editors) || {};
+                  const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
+                  const editor = editorKey ? editors[editorKey] : null;
+                  if (!editor) {
+                    console.warn('[DEBUG] SmartEditor editor not found');
+                    return { ok: false, reason: 'no_editor' };
+                  }
+                  const docService = editor._documentService || editor.documentService;
+                  if (!docService) {
+                    console.warn('[DEBUG] SmartEditor documentService not found');
+                    return { ok: false, reason: 'no_doc_service' };
+                  }
+                  
+                  const getData = () => {
+                    try { return typeof docService.getDocumentData === 'function' ? docService.getDocumentData() : (docService._documentData || null); } catch { return null; }
+                  };
+                  let current = getData();
+                  if (!current || !current.document) {
+                    // If document not ready, light wait and retry a few times
+                    let retries = 5;
+                    while (retries-- > 0 && (!current || !current.document)) {
+                      await waitFor(300);
+                      current = getData();
+                    }
+                  }
+                  if (!current || !current.document) {
+                    console.warn('[DEBUG] SmartEditor document data not ready');
+                    return { ok: false, reason: 'no_document' };
+                  }
+                  
+                  const incomingDoc = incoming && (incoming.document || incoming);
+                  if (!incomingDoc || !Array.isArray(incomingDoc.components)) {
+                    console.warn('[DEBUG] Incoming JSON missing document.components');
+                    return { ok: false, reason: 'bad_incoming' };
+                  }
+                  if (!Array.isArray(current.document.components)) current.document.components = [];
+                  
+                  // Append incoming components to current
+                  current.document.components.push(...incomingDoc.components);
+                  
+                  // Apply update
+                  if (typeof docService.setDocumentData === 'function') {
+                    docService.setDocumentData(current);
+                  } else {
+                    docService._documentData = current;
+                  }
+                  if (docService._notifyChanged) docService._notifyChanged();
+                  return { ok: true };
+                } catch (err) {
+                  console.warn('[DEBUG] Error during SmartEditor injection:', err);
+                  return { ok: false, reason: String(err && err.message || err) };
+                }
+              }, parsed);
+              console.log('[DEBUG] SmartEditor document data injected (append mode):', injected);
+              console.log('[DEBUG] SmartEditor document data injected');
+              
             } catch (e) {
-              console.warn('[DEBUG] Content fill failed:', e);
+              console.warn('[DEBUG] Editor API method failed, trying fallback:', e);
+              
+              // Fallback: use inline HTML insertion when API injection fails
+              try {
+                console.log('[DEBUG] Using inline HTML insertion fallback');
+                const titleToUse = title || 'EGDesk Test Title';
+                const contentToUse = content || 'EGDesk Test Content';
+                const tagsToUse = tags || '#egdesk #playwright';
+                const htmlWithInlineStyles = `
+                  <div style="margin: 20px; padding: 10px; background: #f0f0f0;">
+                    <h2 style=\"color: #333; font-size: 24px; margin-bottom: 15px;\">${titleToUse}</h2>
+                    <p style=\"line-height: 1.6; font-size: 16px; margin-bottom: 10px;\">${contentToUse}</p>
+                    <p style=\"color: #666; font-style: italic;\">${tagsToUse}</p>
+                  </div>
+                `;
+                await frame.evaluate((html) => {
+                  const canvas = document.querySelector('.se-canvas') || 
+                                  document.querySelector('[contenteditable="true"]') ||
+                                  document.querySelector('.se-content');
+                  if (canvas) {
+                    canvas.innerHTML += html;
+                    canvas.dispatchEvent(new Event('input', { bubbles: true }));
+                    canvas.dispatchEvent(new Event('change', { bubbles: true }));
+                  }
+                }, htmlWithInlineStyles);
+              } catch (contentErr) {}
             }
 
             // Ensure help panel is closed via explicit XPath before publishing
@@ -513,37 +583,103 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
               } catch (e) {
                 console.warn('[DEBUG] [fallback] Publish click failed:', e);
               }
+              // Load JSON and inject via SmartEditor API (fallback preferred)
               try {
-                const titleField = pageOrFrame.locator(title_field_xpath);
-                if (await titleField.count()) { 
-                  await titleField.click({ timeout: 10000 }); 
-                  // Clear existing content first
-                  await newPage.keyboard.press('Control+a');
-                  await newPage.waitForTimeout(200);
-                  // Type the new title
+                console.log('[DEBUG] [fallback] Waiting for editor to fully load');
+                
+                // 1. Wait for mainFrame to load
+                await newPage.waitForSelector('#mainFrame', { timeout: 15000 });
+                const frame = newPage.frameLocator('#mainFrame');
+                
+                // 2. Wait for editor content area
+                await frame.locator('.se-content').waitFor({ timeout: 10000 });
+                console.log('[DEBUG] [fallback] Editor loaded successfully');
+                
+                // 3. Read document JSON from disk
+                const docJsonPath = path.resolve('/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/complete-naver-se-document-data.json');
+                const raw = fs.readFileSync(docJsonPath, 'utf-8');
+                const parsed = JSON.parse(raw);
+                console.log('[DEBUG] [fallback] Loaded document JSON for injection');
+
+                // 4. Inject into SmartEditor via internal API (append components)
+                const injected = await frame.evaluate(async (incoming) => {
+                  try {
+                    const waitFor = (ms) => new Promise(r => setTimeout(r, ms));
+                    const editors = (window.SmartEditor && window.SmartEditor._editors) || {};
+                    const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
+                    const editor = editorKey ? editors[editorKey] : null;
+                    if (!editor) {
+                      console.warn('[DEBUG] [fallback] SmartEditor editor not found');
+                      return { ok: false, reason: 'no_editor' };
+                    }
+                    const docService = editor._documentService || editor.documentService;
+                    if (!docService) {
+                      console.warn('[DEBUG] [fallback] SmartEditor documentService not found');
+                      return { ok: false, reason: 'no_doc_service' };
+                    }
+                    const getData = () => {
+                      try { return typeof docService.getDocumentData === 'function' ? docService.getDocumentData() : (docService._documentData || null); } catch { return null; }
+                    };
+                    let current = getData();
+                    if (!current || !current.document) {
+                      let retries = 5;
+                      while (retries-- > 0 && (!current || !current.document)) {
+                        await waitFor(300);
+                        current = getData();
+                      }
+                    }
+                    if (!current || !current.document) {
+                      console.warn('[DEBUG] [fallback] SmartEditor document data not ready');
+                      return { ok: false, reason: 'no_document' };
+                    }
+                    const incomingDoc = incoming && (incoming.document || incoming);
+                    if (!incomingDoc || !Array.isArray(incomingDoc.components)) {
+                      console.warn('[DEBUG] [fallback] Incoming JSON missing document.components');
+                      return { ok: false, reason: 'bad_incoming' };
+                    }
+                    if (!Array.isArray(current.document.components)) current.document.components = [];
+                    current.document.components.push(...incomingDoc.components);
+                    if (typeof docService.setDocumentData === 'function') {
+                      docService.setDocumentData(current);
+                    } else {
+                      docService._documentData = current;
+                    }
+                    if (docService._notifyChanged) docService._notifyChanged();
+                    return { ok: true };
+                  } catch (err) {
+                    console.warn('[DEBUG] [fallback] Error during SmartEditor injection:', err);
+                    return { ok: false, reason: String(err && err.message || err) };
+                  }
+                }, parsed);
+                console.log('[DEBUG] [fallback] SmartEditor document data injected (append mode):', injected);
+                
+              } catch (e) {
+                console.warn('[DEBUG] [fallback] Editor API method failed, trying fallback:', e);
+                
+                // Final fallback: inline HTML insertion
+                try {
                   const titleToUse = title || 'EGDesk Test Title';
-                  await newPage.keyboard.type(titleToUse);
-                  console.log(`[DEBUG] [fallback] Title filled: ${titleToUse}`);
-                }
-              } catch {}
-              try {
-                const contentField = pageOrFrame.locator(content_field_xpath);
-                if (await contentField.count()) {
-                  await contentField.click({ timeout: 20000 });
-                  // Clear existing content first
-                  await newPage.keyboard.press('Control+a');
-                  await newPage.waitForTimeout(200);
-                  // Type the new content
                   const contentToUse = content || 'EGDesk Test Content';
-                  await newPage.keyboard.type(contentToUse);
-                  await newPage.keyboard.press('Enter');
-                  // Add tags if provided
                   const tagsToUse = tags || '#egdesk #playwright';
-                  await newPage.keyboard.type(tagsToUse);
-                  console.log(`[DEBUG] [fallback] Content filled: ${contentToUse}`);
-                  console.log(`[DEBUG] [fallback] Tags added: ${tagsToUse}`);
-                }
-              } catch {}
+                  const htmlWithInlineStyles = `
+                    <div style=\"margin: 20px; padding: 10px; background: #f0f0f0;\">
+                      <h2 style=\"color: #333; font-size: 24px; margin-bottom: 15px;\">${titleToUse}</h2>
+                      <p style=\"line-height: 1.6; font-size: 16px; margin-bottom: 10px;\">${contentToUse}</p>
+                      <p style=\"color: #666; font-style: italic;\">${tagsToUse}</p>
+                    </div>
+                  `;
+                  await frame.evaluate((html) => {
+                    const canvas = document.querySelector('.se-canvas') || 
+                                    document.querySelector('[contenteditable="true"]') ||
+                                    document.querySelector('.se-content');
+                    if (canvas) {
+                      canvas.innerHTML += html;
+                      canvas.dispatchEvent(new Event('input', { bubbles: true }));
+                      canvas.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                  }, htmlWithInlineStyles);
+                } catch {}
+              }
             } catch (scriptErr) {
               console.warn('[DEBUG] [fallback] Error running translated Playwright steps:', scriptErr);
             }
