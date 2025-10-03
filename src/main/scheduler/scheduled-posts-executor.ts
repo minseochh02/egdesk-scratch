@@ -371,8 +371,8 @@ export class ScheduledPostsExecutor {
 
       // Step 5: Upload to Naver Blog
       console.log(`\n📤 Step 5: Uploading to Naver Blog...`);
-      const imagePath = blogContent.images?.[0]?.filePath; // Get first image path
-      const postUrl = await this.uploadToNaverBlog(blogContent, connection, imagePath);
+      const imagePaths = blogContent.images?.map((img: any) => img.filePath).filter(Boolean) || []; // Get all image paths
+      const postUrl = await this.uploadToNaverBlog(blogContent, connection, imagePaths);
       console.log(`✅ Successfully uploaded to Naver Blog`);
       console.log(`🔗 Post URL: ${postUrl}`);
 
@@ -942,9 +942,10 @@ export class ScheduledPostsExecutor {
   /**
    * Upload blog content to Naver Blog
    */
-  private async uploadToNaverBlog(blogContent: any, connection: any, imagePath?: string): Promise<string> {
+  private async uploadToNaverBlog(blogContent: any, connection: any, imagePaths?: string[]): Promise<string> {
     try {
       console.log(`📤 Starting Naver Blog upload...`);
+      console.log(`🖼️ Image paths: ${imagePaths?.length || 0} images`);
       
       // Import the Naver upload function
       const { runNaverBlogAutomation } = require('../naver/browser-controller');
@@ -961,7 +962,7 @@ export class ScheduledPostsExecutor {
           content: blogContent.content,
           tags: `#ai #blog #naver`
         },
-        imagePath // Pass imagePath to browser-controller
+        imagePaths // Pass all image paths to browser-controller
       );
       
       if (!result.success) {

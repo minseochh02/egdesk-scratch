@@ -43,6 +43,11 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [naverWithImageTags, setNaverWithImageTags] = useState('#ai #dog #egdesk #automation');
   const [naverWithImagePrompt, setNaverWithImagePrompt] = useState('A cute golden retriever puppy playing in a sunny garden, high quality, photorealistic, professional photography style');
   const [includeDogImage, setIncludeDogImage] = useState(true);
+  const [naverClientId, setNaverClientId] = useState('');
+  const [naverClientSecret, setNaverClientSecret] = useState('');
+  const [naverLoginStatus, setNaverLoginStatus] = useState('');
+  const [chromeLaunchStatus, setChromeLaunchStatus] = useState('');
+  const [pasteTestStatus, setPasteTestStatus] = useState('');
 
   if (!isOpen) return null;
 
@@ -352,6 +357,226 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             >
               🐕 Start Naver Blog with AI Dog Image
             </button>
+          </div>
+
+          {/* Naver OAuth Login Section */}
+          <div>
+            <h3 style={{ color: '#03c75a', marginBottom: '10px' }}>🔐 Naver OAuth Login (API)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Naver Client ID"
+                value={naverClientId}
+                onChange={(e) => setNaverClientId(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <input
+                type="password"
+                placeholder="Naver Client Secret"
+                value={naverClientSecret}
+                onChange={(e) => setNaverClientSecret(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+            </div>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> Get your Client ID and Secret from <a href="https://developers.naver.com" target="_blank" rel="noopener noreferrer" style={{ color: '#03c75a' }}>Naver Developer Center</a>. 
+              Set callback URL to: <code style={{ backgroundColor: '#333', padding: '2px 4px', borderRadius: '2px' }}>http://localhost:1212/auth/naver/callback</code>
+            </div>
+            {naverLoginStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: naverLoginStatus.includes('Success') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: naverLoginStatus.includes('Success') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${naverLoginStatus.includes('Success') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {naverLoginStatus}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={async () => {
+                  if (!naverClientId || !naverClientSecret) {
+                    alert('Please enter both Client ID and Client Secret');
+                    return;
+                  }
+                  try {
+                    setNaverLoginStatus('Starting Naver OAuth login...');
+                    const result = await (window as any).electron.debug.startNaverOAuthLogin(
+                      naverClientId,
+                      naverClientSecret
+                    );
+                    if (result?.success) {
+                      setNaverLoginStatus(`Success! User: ${result.userInfo?.name || 'Unknown'} (${result.userInfo?.email || 'No email'})`);
+                    } else {
+                      setNaverLoginStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setNaverLoginStatus(`Error: ${e?.message || e}`);
+                    console.error('Naver OAuth login error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#03c75a',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1
+                }}
+              >
+                🔐 Start Naver OAuth Login
+              </button>
+              <button
+                onClick={() => setNaverLoginStatus('')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Chrome Launch Section */}
+          <div>
+            <h3 style={{ color: '#4285f4', marginBottom: '10px' }}>🌐 Launch Chrome for Testing</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> This will launch Chrome and navigate to Naver Blog write page for manual testing and debugging.
+            </div>
+            {chromeLaunchStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: chromeLaunchStatus.includes('Success') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: chromeLaunchStatus.includes('Success') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${chromeLaunchStatus.includes('Success') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {chromeLaunchStatus}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    setChromeLaunchStatus('Launching Chrome...');
+                    const result = await (window as any).electron.debug.launchChrome();
+                    if (result?.success) {
+                      setChromeLaunchStatus('Success! Chrome launched and navigated to Naver Blog write page.');
+                    } else {
+                      setChromeLaunchStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setChromeLaunchStatus(`Error: ${e?.message || e}`);
+                    console.error('Chrome launch error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#4285f4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1
+                }}
+              >
+                🌐 Launch Chrome for Testing
+              </button>
+              <button
+                onClick={() => setChromeLaunchStatus('')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Paste Component Test Section */}
+          <div>
+            <h3 style={{ color: '#FF9800', marginBottom: '10px' }}>🧪 Test Paste Component</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> This will test the paste component functionality on Naver Blog. It will check if left/right clicks work, if context menus appear, and if paste options are available. Check the console for detailed results.
+            </div>
+            {pasteTestStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: pasteTestStatus.includes('Success') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: pasteTestStatus.includes('Success') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${pasteTestStatus.includes('Success') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {pasteTestStatus}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    setPasteTestStatus('Starting paste component test...');
+                    const result = await (window as any).electron.debug.testPasteComponent();
+                    if (result?.success) {
+                      setPasteTestStatus(`Success! ${result.message} Check console for detailed results.`);
+                      console.log('Paste test details:', result.details);
+                    } else {
+                      setPasteTestStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setPasteTestStatus(`Error: ${e?.message || e}`);
+                    console.error('Paste component test error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#FF9800',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1
+                }}
+              >
+                🧪 Test Paste Component
+              </button>
+              <button
+                onClick={() => setPasteTestStatus('')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
           </div>
         </div>
       </div>
