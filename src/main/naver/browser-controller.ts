@@ -935,6 +935,28 @@ export function testUserHtmlParsing() {
 }
 
 /**
+ * Test function to verify image pasting functionality
+ */
+export function testImagePastingWithContent() {
+  const testContent: BlogContent = {
+    title: 'Test Image Pasting',
+    content: 'This is a test with an image placeholder: [IMAGE:test-image] and some more text after.',
+    tags: '#test #image #pasting'
+  };
+  
+  console.log('Testing image pasting with content placeholders...');
+  console.log('Content:', testContent.content);
+  console.log('Image placeholder found:', testContent.content.includes('[IMAGE:'));
+  
+  // Test the image placeholder regex
+  const imagePlaceholderRegex = /\[IMAGE:([^\]]+)\]/g;
+  const imageMatches = Array.from(testContent.content.matchAll(imagePlaceholderRegex));
+  console.log(`Found ${imageMatches.length} image placeholders:`, imageMatches.map(m => m[1]));
+  
+  return testContent;
+}
+
+/**
  * Build proxy configuration from URL
  */
 function buildProxyOption(proxyUrl?: string) {
@@ -1188,6 +1210,54 @@ async function handleClipboardPermission(newPage: Page, context: BrowserContext)
 
 
 /**
+ * Find and click the text editor using the same selectors as the working fallback method
+ */
+async function findAndClickTextEditor(pageOrFrame: any, newPage: Page): Promise<any> {
+  try {
+    console.log('[NAVER] Finding text editor using working selectors...');
+    
+    // Use the same selectors as the working fallback method
+    const content_field_selectors = [
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p[1]', // First paragraph
+      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p', // Any paragraph
+      '.se-text-paragraph', // Class-based selector
+      '[contenteditable="true"]' // Contenteditable elements
+    ];
+    
+    // Try multiple selectors to find the right content field
+    let targetField = null;
+    let usedSelector = '';
+    
+    for (const selector of content_field_selectors) {
+      console.log(`[NAVER] Trying text editor selector: ${selector}`);
+      const field = pageOrFrame.locator(selector);
+      const count = await field.count();
+      console.log(`[NAVER] Found ${count} element(s) with selector: ${selector}`);
+      
+      if (count > 0) {
+        targetField = field.first();
+        usedSelector = selector;
+        console.log(`[NAVER] Using text editor selector: ${selector}`);
+        break;
+      }
+    }
+    
+    if (targetField) {
+      console.log('[NAVER] Clicking on text editor...');
+      await targetField.click({ timeout: 20000 });
+      console.log('[NAVER] Text editor clicked successfully');
+      return targetField;
+    } else {
+      console.warn('[NAVER] No suitable text editor found with any selector');
+      return null;
+    }
+  } catch (error) {
+    console.error('[NAVER] Error finding text editor:', error);
+    return null;
+  }
+}
+
+/**
  * Add image to blog post using clipboard paste
  * @param targetField - The original content field we typed content into
  */
@@ -1206,34 +1276,26 @@ async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string
     
     console.log('[NAVER] Clipboard copy successful, attempting to paste...');
     
-    // Phase 1: Click on the main content area
-    console.log('[NAVER] Clicking on main content area...');
-    const contentArea = pageOrFrame.locator('.se-content.__se-scroll-target');
-    const contentAreaCount = await contentArea.count();
-    console.log(`[NAVER] Found ${contentAreaCount} content area(s)`);
+    // Phase 1: Find and click the text editor using the same method as working fallback
+    console.log('[NAVER] Finding and clicking text editor...');
+    let actualTargetField = targetField;
     
-    if (contentAreaCount > 0) {
-      try {
-        await contentArea.first().click({ timeout: 10000 });
-        console.log('[NAVER] Clicked on main content area');
-      } catch (error) {
-        console.log('[NAVER] Failed to click content area, trying alternative approach');
-        // Fallback: try to focus on the area
-        await contentArea.first().focus();
-        console.log('[NAVER] Focused on main content area');
-      }
+    if (!actualTargetField) {
+      actualTargetField = await findAndClickTextEditor(pageOrFrame, newPage);
     } else {
-      console.log('[NAVER] No content area found, using targetField or body');
-      if (targetField) {
-        await targetField.click();
-      } else {
-        await newPage.click('body');
-      }
+      console.log('[NAVER] Using provided targetField');
+      await actualTargetField.click({ timeout: 10000 });
+    }
+    
+    if (!actualTargetField) {
+      console.warn('[NAVER] Could not find text editor, trying fallback approach');
+      // Fallback: try to click on body
+      await newPage.click('body');
     }
     
     await newPage.waitForTimeout(500);
     
-    // Phase 2: Try multiple paste methods - use targetField for right-click like working code
+    // Phase 2: Try multiple paste methods - use actualTargetField for right-click like working code
     console.log('[NAVER] Method 1: Using Control+v');
     await newPage.keyboard.press('Control+v');
     await newPage.waitForTimeout(2000);
@@ -1244,9 +1306,9 @@ async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string
     
     if (imgCount === 0) {
       console.log('[NAVER] Method 1 failed, trying Method 2: Right-click paste on targetField');
-      // Right-click on original targetField like working code does
-      if (targetField) {
-        await targetField.click({ button: 'right' });
+      // Right-click on actualTargetField like working code does
+      if (actualTargetField) {
+        await actualTargetField.click({ button: 'right' });
       } else {
         await pageOrFrame.locator('[contenteditable="true"]').first().click({ button: 'right' });
       }
@@ -1261,8 +1323,8 @@ async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string
         console.log('[NAVER] Method 2 failed, trying Method 3: Focus targetField and paste');
         try {
           console.log('[NAVER] Method 3a: Focus targetField and paste with keyboard');
-          if (targetField) {
-            await targetField.focus();
+          if (actualTargetField) {
+            await actualTargetField.focus();
           } else {
             await pageOrFrame.locator('[contenteditable="true"]').first().focus();
           }
@@ -1618,6 +1680,9 @@ async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogCon
       await frame.locator('.se-content').waitFor({ timeout: 10000 });
       console.log('[NAVER] SmartEditor loaded successfully');
       
+      // Find the target field for image pasting (same as fallback method)
+      const targetField = await findAndClickTextEditor(pageOrFrame, newPage);
+      
       // Test SmartEditor availability first (access via iframe)
       const smartEditorTest = await newPage.evaluate(() => {
         try {
@@ -1681,6 +1746,13 @@ async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogCon
       if (!smartEditorTest.available) {
         console.warn('[NAVER] SmartEditor not available, falling back to keyboard typing');
         await fillBlogContentFallback(pageOrFrame, newPage, content, imagePaths?.[0]);
+        return;
+      }
+      
+      // If we have image placeholders and SmartEditor is available, process them with the target field
+      if (content.content.includes('[IMAGE:') && imagePaths && imagePaths.length > 0) {
+        console.log('[NAVER] Processing content with image placeholders using target field...');
+        await processContentWithImages(pageOrFrame, newPage, content, imagePaths[0], targetField);
         return;
       }
 
@@ -1846,14 +1918,20 @@ async function fillBlogContentFallback(pageOrFrame: any, newPage: Page, content:
         await newPage.keyboard.press('Control+a');
         await newPage.waitForTimeout(200);
         
-        // Process content without image placeholders for debug
-        console.log('[NAVER] DEBUG: Processing content without image placeholders');
-        await newPage.keyboard.type(content.content);
-        await newPage.keyboard.press('Enter');
-        
-        // Add tags
-        await newPage.keyboard.type(content.tags);
-        console.log('[NAVER] Content and tags filled successfully');
+        // Check if content has image placeholders
+        if (content.content.includes('[IMAGE:') && imagePath) {
+          console.log('[NAVER] Processing content with image placeholders in fallback mode');
+          await processContentWithImages(pageOrFrame, newPage, content, imagePath, targetField);
+        } else {
+          // Process content without image placeholders
+          console.log('[NAVER] Processing content without image placeholders');
+          await newPage.keyboard.type(content.content);
+          await newPage.keyboard.press('Enter');
+          
+          // Add tags
+          await newPage.keyboard.type(content.tags);
+          console.log('[NAVER] Content and tags filled successfully');
+        }
       } else {
         console.warn('[NAVER] No suitable content field found with any selector');
       }
