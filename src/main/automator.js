@@ -254,14 +254,87 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
               const parsed = JSON.parse(raw);
               console.log('[DEBUG] Loaded document JSON for injection');
 
-              // 4. Inject into SmartEditor via internal API (append components)
-              const injected = await frame.evaluate(async (incoming) => {
+              // 4. Test SmartEditor availability first (access via iframe)
+              const smartEditorTest = await newPage.evaluate(() => {
+                try {
+                  console.log('[DEBUG] Testing SmartEditor availability via iframe...');
+                  
+                  // Access the iframe
+                  const iframe = document.querySelector('#mainFrame');
+                  if (!iframe) {
+                    console.log('[DEBUG] No iframe found');
+                    return { available: false, reason: 'no_iframe' };
+                  }
+                  
+                  const iframeWindow = iframe.contentWindow;
+                  if (!iframeWindow) {
+                    console.log('[DEBUG] Cannot access iframe contentWindow');
+                    return { available: false, reason: 'no_iframe_window' };
+                  }
+                  
+                  console.log('[DEBUG] SmartEditor:', iframeWindow.SmartEditor);
+                  console.log('[DEBUG] SmartEditor._editors:', iframeWindow.SmartEditor?._editors);
+                  
+                  if (!iframeWindow.SmartEditor || !iframeWindow.SmartEditor._editors) {
+                    return { available: false, reason: 'no_smarteditor' };
+                  }
+                  
+                  // Get the editor instance
+                  const editor = iframeWindow.SmartEditor._editors['blogpc001'];
+                  console.log('[DEBUG] Editor:', editor);
+                  
+                  if (!editor) {
+                    console.log('[DEBUG] Available editor keys:', Object.keys(iframeWindow.SmartEditor._editors));
+                    return { available: false, reason: 'no_editor' };
+                  }
+                  
+                  // Get document service
+                  const docService = editor._documentService;
+                  console.log('[DEBUG] Document Service:', docService);
+                  
+                  if (!docService) {
+                    return { available: false, reason: 'no_docService' };
+                  }
+                  
+                  // Get document data
+                  const documentData = docService.getDocumentData();
+                  console.log('[DEBUG] Document Data:', documentData);
+                  
+                  return { 
+                    available: true, 
+                    editor: !!editor, 
+                    docService: !!docService, 
+                    documentData: !!documentData,
+                    editorKeys: Object.keys(iframeWindow.SmartEditor._editors)
+                  };
+                } catch (err) {
+                  console.error('[DEBUG] SmartEditor test error:', err);
+                  return { available: false, reason: err.message };
+                }
+              });
+              console.log('[DEBUG] SmartEditor test result:', smartEditorTest);
+
+              // 5. Inject into SmartEditor via internal API (append components via iframe)
+              const injected = await newPage.evaluate(async (incoming) => {
                 try {
                   // Wait helper
                   const waitFor = (ms) => new Promise(r => setTimeout(r, ms));
                   
+                  // Access the iframe
+                  const iframe = document.querySelector('#mainFrame');
+                  if (!iframe) {
+                    console.warn('[DEBUG] No iframe found');
+                    return { ok: false, reason: 'no_iframe' };
+                  }
+                  
+                  const iframeWindow = iframe.contentWindow;
+                  if (!iframeWindow) {
+                    console.warn('[DEBUG] Cannot access iframe contentWindow');
+                    return { ok: false, reason: 'no_iframe_window' };
+                  }
+                  
                   // Find editor dynamically
-                  const editors = (window.SmartEditor && window.SmartEditor._editors) || {};
+                  const editors = (iframeWindow.SmartEditor && iframeWindow.SmartEditor._editors) || {};
                   const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
                   const editor = editorKey ? editors[editorKey] : null;
                   if (!editor) {
@@ -601,11 +674,85 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
                 const parsed = JSON.parse(raw);
                 console.log('[DEBUG] [fallback] Loaded document JSON for injection');
 
-                // 4. Inject into SmartEditor via internal API (append components)
-                const injected = await frame.evaluate(async (incoming) => {
+                // 4. Test SmartEditor availability first (fallback via iframe)
+                const smartEditorTest = await newPage.evaluate(() => {
+                  try {
+                    console.log('[DEBUG] [fallback] Testing SmartEditor availability via iframe...');
+                    
+                    // Access the iframe
+                    const iframe = document.querySelector('#mainFrame');
+                    if (!iframe) {
+                      console.log('[DEBUG] [fallback] No iframe found');
+                      return { available: false, reason: 'no_iframe' };
+                    }
+                    
+                    const iframeWindow = iframe.contentWindow;
+                    if (!iframeWindow) {
+                      console.log('[DEBUG] [fallback] Cannot access iframe contentWindow');
+                      return { available: false, reason: 'no_iframe_window' };
+                    }
+                    
+                    console.log('[DEBUG] [fallback] SmartEditor:', iframeWindow.SmartEditor);
+                    console.log('[DEBUG] [fallback] SmartEditor._editors:', iframeWindow.SmartEditor?._editors);
+                    
+                    if (!iframeWindow.SmartEditor || !iframeWindow.SmartEditor._editors) {
+                      return { available: false, reason: 'no_smarteditor' };
+                    }
+                    
+                    // Get the editor instance
+                    const editor = iframeWindow.SmartEditor._editors['blogpc001'];
+                    console.log('[DEBUG] [fallback] Editor:', editor);
+                    
+                    if (!editor) {
+                      console.log('[DEBUG] [fallback] Available editor keys:', Object.keys(iframeWindow.SmartEditor._editors));
+                      return { available: false, reason: 'no_editor' };
+                    }
+                    
+                    // Get document service
+                    const docService = editor._documentService;
+                    console.log('[DEBUG] [fallback] Document Service:', docService);
+                    
+                    if (!docService) {
+                      return { available: false, reason: 'no_docService' };
+                    }
+                    
+                    // Get document data
+                    const documentData = docService.getDocumentData();
+                    console.log('[DEBUG] [fallback] Document Data:', documentData);
+                    
+                    return { 
+                      available: true, 
+                      editor: !!editor, 
+                      docService: !!docService, 
+                      documentData: !!documentData,
+                      editorKeys: Object.keys(iframeWindow.SmartEditor._editors)
+                    };
+                  } catch (err) {
+                    console.error('[DEBUG] [fallback] SmartEditor test error:', err);
+                    return { available: false, reason: err.message };
+                  }
+                });
+                console.log('[DEBUG] [fallback] SmartEditor test result:', smartEditorTest);
+
+                // 5. Inject into SmartEditor via internal API (append components via iframe)
+                const injected = await newPage.evaluate(async (incoming) => {
                   try {
                     const waitFor = (ms) => new Promise(r => setTimeout(r, ms));
-                    const editors = (window.SmartEditor && window.SmartEditor._editors) || {};
+                    
+                    // Access the iframe
+                    const iframe = document.querySelector('#mainFrame');
+                    if (!iframe) {
+                      console.warn('[DEBUG] [fallback] No iframe found');
+                      return { ok: false, reason: 'no_iframe' };
+                    }
+                    
+                    const iframeWindow = iframe.contentWindow;
+                    if (!iframeWindow) {
+                      console.warn('[DEBUG] [fallback] Cannot access iframe contentWindow');
+                      return { ok: false, reason: 'no_iframe_window' };
+                    }
+                    
+                    const editors = (iframeWindow.SmartEditor && iframeWindow.SmartEditor._editors) || {};
                     const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
                     const editor = editorKey ? editors[editorKey] : null;
                     if (!editor) {
@@ -678,7 +825,7 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
                       canvas.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                   }, htmlWithInlineStyles);
-                } catch {}
+              } catch {}
               }
             } catch (scriptErr) {
               console.warn('[DEBUG] [fallback] Error running translated Playwright steps:', scriptErr);

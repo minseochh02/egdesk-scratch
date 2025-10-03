@@ -120,6 +120,208 @@ const createWindow = async () => {
           return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
+      ipcMain.handle('launch-chrome', async () => {
+        try {
+          const { chromium } = require('playwright');
+          const browser = await chromium.launch({ 
+            headless: false,
+            channel: 'chrome'
+          });
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          await page.goto('https://blog.naver.com/GoBlogWrite.naver');
+          console.log('🌐 Chrome launched and navigated to Naver Blog write page');
+          return { success: true };
+        } catch (error) {
+          console.error('❌ Chrome launch failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+      ipcMain.handle('test-paste-component', async () => {
+        try {
+          const { chromium } = require('playwright');
+          const browser = await chromium.launch({ 
+            headless: false,
+            channel: 'chrome'
+          });
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          
+          console.log('🧪 Starting paste component test...');
+          
+          // Navigate to Naver Blog write page
+          await page.goto('https://blog.naver.com/GoBlogWrite.naver');
+          await page.waitForTimeout(3000);
+          
+          // Wait for login if needed
+          const currentUrl = page.url();
+          if (currentUrl.includes('nid.naver.com')) {
+            console.log('🔐 Login required, waiting for manual login...');
+            console.log('Please log in manually and close any popups. The test will continue automatically...');
+            await page.waitForURL('**/GoBlogWrite.naver**', { timeout: 120000 }); // 2 minutes
+            console.log('✅ Login completed, proceeding with test...');
+          }
+          
+          // Wait a bit for any popups to be closed
+          console.log('⏳ Waiting for any popups to be closed...');
+          await page.waitForTimeout(3000);
+          
+          // Wait for the editor to load with multiple possible selectors
+          console.log('⏳ Waiting for editor to load...');
+          try {
+            // Try multiple selectors for the editor
+            await page.waitForSelector('.se-content.__se-scroll-target', { timeout: 15000 });
+            console.log('✅ Editor loaded with .se-content.__se-scroll-target');
+          } catch (error) {
+            console.log('❌ .se-content.__se-scroll-target not found, trying alternative selectors...');
+            
+            try {
+              // Try other possible selectors
+              await page.waitForSelector('[contenteditable="true"]', { timeout: 10000 });
+              console.log('✅ Editor found with [contenteditable="true"]');
+            } catch (error2) {
+              console.log('❌ [contenteditable="true"] not found, trying iframe...');
+              
+              try {
+                // Try iframe
+                await page.waitForSelector('iframe', { timeout: 10000 });
+                console.log('✅ Iframe found, editor might be inside iframe');
+              } catch (error3) {
+                console.log('❌ No editor found with any selector. Current URL:', page.url());
+                console.log('Please check if you need to close any popups or if the page structure has changed.');
+                return { 
+                  success: false, 
+                  error: 'No editor found. Please check if popups need to be closed or if page structure has changed.',
+                  details: { currentUrl: page.url() }
+                };
+              }
+            }
+          }
+          
+          console.log('✅ Editor loaded, starting paste test...');
+          
+          // Test 1: Use the specific XPath you provided
+          console.log('🔍 Looking for content area using your XPath...');
+          const contentArea = page.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p');
+          const contentAreaCount = await contentArea.count();
+          console.log(`📝 Found ${contentAreaCount} element(s) with XPath`);
+          
+          if (contentAreaCount > 0) {
+            // Test 1: Use the old method - first click, then right-click
+            console.log('🖱️ Testing old method: first click, then right-click...');
+            try {
+              // First click on the targetField (or body if no targetField)
+              if (contentArea) {
+                await contentArea.first().click({ timeout: 5000 });
+                console.log('✅ First click successful');
+              } else {
+                await page.click('body');
+                console.log('✅ Clicked on body as fallback');
+              }
+              
+              // Wait a bit
+              await page.waitForTimeout(500);
+              
+              // Then right-click on the targetField
+              if (contentArea) {
+                await contentArea.first().click({ button: 'right', timeout: 5000 });
+                console.log('✅ Right click successful');
+              }
+              
+              // Wait a bit to see if context menu appears
+              await page.waitForTimeout(1000);
+              
+              // Check if context menu is visible
+              const contextMenu = page.locator('[role="menu"], .context-menu, .se-context-menu');
+              const contextMenuCount = await contextMenu.count();
+              console.log(`📋 Found ${contextMenuCount} context menu(s)`);
+              
+              if (contextMenuCount > 0) {
+                console.log('✅ Context menu appeared!');
+                // Try to find paste option
+                const pasteOption = page.locator('text=Paste, text=붙여넣기, [data-action="paste"]');
+                const pasteOptionCount = await pasteOption.count();
+                console.log(`📋 Found ${pasteOptionCount} paste option(s)`);
+                
+                if (pasteOptionCount > 0) {
+                  console.log('✅ Paste option found in context menu!');
+                } else {
+                  console.log('❌ No paste option found in context menu');
+                }
+              } else {
+                console.log('❌ No context menu appeared');
+              }
+            } catch (error) {
+              console.log('❌ Old method failed:', error instanceof Error ? error.message : 'Unknown error');
+            }
+            
+            // Test 4: Try typing to see if we can focus
+            console.log('⌨️ Testing keyboard input...');
+            try {
+              await contentArea.first().focus();
+              await page.keyboard.type('Test content for paste component debugging');
+              console.log('✅ Keyboard input successful');
+            } catch (error) {
+              console.log('❌ Keyboard input failed:', error);
+            }
+            
+            // Test 5: Check for other possible content areas
+            console.log('🔍 Checking for other content areas...');
+            const otherContentAreas = [
+              '[contenteditable="true"]',
+              '.se-text-paragraph',
+              '.se-component',
+              '.se-module',
+              'iframe'
+            ];
+            
+            for (const selector of otherContentAreas) {
+              const elements = page.locator(selector);
+              const count = await elements.count();
+              if (count > 0) {
+                console.log(`📝 Found ${count} element(s) with selector: ${selector}`);
+              }
+            }
+            
+            // Test 6: Check for iframes
+            console.log('🖼️ Checking for iframes...');
+            const iframes = page.locator('iframe');
+            const iframeCount = await iframes.count();
+            console.log(`🖼️ Found ${iframeCount} iframe(s)`);
+            
+            if (iframeCount > 0) {
+              for (let i = 0; i < iframeCount; i++) {
+                const iframe = iframes.nth(i);
+                const src = await iframe.getAttribute('src');
+                const id = await iframe.getAttribute('id');
+                console.log(`🖼️ Iframe ${i + 1}: id="${id}", src="${src}"`);
+              }
+            }
+            
+          } else {
+            console.log('❌ No content area found');
+          }
+          
+          // Keep browser open for manual inspection
+          console.log('🔍 Browser kept open for manual inspection. Close manually when done.');
+          
+          return { 
+            success: true, 
+            message: 'Paste component test completed. Check console for detailed results.',
+            details: {
+              contentAreaCount,
+              currentUrl: page.url(),
+              timestamp: new Date().toISOString()
+            }
+          };
+        } catch (error) {
+          console.error('❌ Paste component test failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
     } catch (error) {
       console.error('❌ Failed to initialize Automation:', error);
     }

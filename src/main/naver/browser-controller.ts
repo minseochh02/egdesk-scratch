@@ -2,6 +2,14 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { clipboard } from 'electron';
 import path from 'path';
+// We'll use a simple UUID generator instead of importing uuid
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export interface NaverBlogSettings {
   username: string;
@@ -19,6 +27,911 @@ export interface BrowserControllerResult {
   success: boolean;
   error?: string;
   imageGenerated?: boolean;
+}
+
+/**
+ * Convert HTML content to SmartEditor JSON format
+ */
+function convertHtmlToSmartEditorJson(title: string, htmlContent: string, tags: string, imagePath?: string): any {
+  const documentId = generateUUID();
+  
+  // Process content for images first
+  const { content: processedContent, imagePlaceholders } = processContentWithImagesForJson(htmlContent, imagePath);
+  
+  // Create the base document structure
+  const document = {
+    version: "2.8.10",
+    theme: "default",
+    language: "ko-KR",
+    id: documentId,
+    di: {
+      dif: false,
+      dio: [
+        {
+          dis: "N",
+          dia: {
+            t: 0,
+            p: 0,
+            st: 715,
+            sk: 51
+          }
+        }
+      ]
+    },
+    components: [] as any[]
+  };
+
+  // Add title component
+  const titleComponent = {
+    id: `SE-${generateUUID()}`,
+    layout: "default",
+    title: [
+      {
+        id: `SE-${generateUUID()}`,
+        nodes: [
+          {
+            id: `SE-${generateUUID()}`,
+            value: title,
+            "@ctype": "textNode"
+          }
+        ],
+        "@ctype": "paragraph"
+      }
+    ],
+    subTitle: null,
+    align: "left",
+    "@ctype": "documentTitle"
+  };
+  document.components.push(titleComponent);
+
+  // Parse HTML content and convert to SmartEditor components
+  const contentComponents = parseHtmlToComponents(processedContent);
+  
+  // Replace image component markers with actual image components
+  const finalComponents = contentComponents.map((component: any) => {
+    if (component.value && Array.isArray(component.value)) {
+      component.value = component.value.map((paragraph: any) => {
+        if (paragraph.nodes && Array.isArray(paragraph.nodes)) {
+          paragraph.nodes = paragraph.nodes.map((node: any) => {
+            if (node.value && typeof node.value === 'string') {
+              // Check if this node contains an image component marker
+              const imageMarkerMatch = node.value.match(/\[IMAGE_COMPONENT_(\d+)\]/);
+              if (imageMarkerMatch) {
+                const imageIndex = parseInt(imageMarkerMatch[1]);
+                if (imagePlaceholders[imageIndex]) {
+                  // Return the image component instead of text
+                  return imagePlaceholders[imageIndex];
+                }
+              }
+            }
+            return node;
+          });
+        }
+        return paragraph;
+      });
+    }
+    return component;
+  });
+  
+  document.components.push(...finalComponents);
+
+  // Add tags as a text component
+  if (tags) {
+    const tagsComponent = {
+      id: `SE-${generateUUID()}`,
+      layout: "default",
+      value: [
+        {
+          id: `SE-${generateUUID()}`,
+          nodes: [
+            {
+              id: `SE-${generateUUID()}`,
+              value: tags,
+              style: {
+                fontColor: "#666666",
+                bold: false,
+                italic: true,
+                underline: false,
+                strikeThrough: false,
+                "@ctype": "nodeStyle"
+              },
+              "@ctype": "textNode"
+            }
+          ],
+          style: {
+            textAlign: "left",
+            "@ctype": "paragraphStyle"
+          },
+          "@ctype": "paragraph"
+        }
+      ],
+      "@ctype": "text"
+    };
+    document.components.push(tagsComponent);
+  }
+
+  return { document };
+}
+
+/**
+ * Convert HTML content to SmartEditor JSON format with real image components
+ */
+function convertHtmlToSmartEditorJsonWithImages(title: string, htmlContent: string, tags: string, imageComponents: any[]): any {
+  const documentId = generateUUID();
+  
+  // Create the base document structure
+  const document = {
+    version: "2.8.10",
+    theme: "default",
+    language: "ko-KR",
+    id: documentId,
+    di: {
+      dif: false,
+      dio: [
+        {
+          dis: "N",
+          dia: {
+            t: 0,
+            p: 0,
+            st: 715,
+            sk: 51
+          }
+        }
+      ]
+    },
+    components: [] as any[]
+  };
+
+  // Add title component
+  const titleComponent = {
+    id: `SE-${generateUUID()}`,
+    layout: "default",
+    title: [
+      {
+        id: `SE-${generateUUID()}`,
+        nodes: [
+          {
+            id: `SE-${generateUUID()}`,
+            value: title,
+            "@ctype": "textNode"
+          }
+        ],
+        "@ctype": "paragraph"
+      }
+    ],
+    subTitle: null,
+    align: "left",
+    "@ctype": "documentTitle"
+  };
+  document.components.push(titleComponent);
+
+  // Parse HTML content and convert to SmartEditor components
+  const contentComponents = parseHtmlToComponents(htmlContent);
+  
+  // Replace image component markers with actual image components
+  const finalComponents = contentComponents.map((component: any) => {
+    if (component.value && Array.isArray(component.value)) {
+      component.value = component.value.map((paragraph: any) => {
+        if (paragraph.nodes && Array.isArray(paragraph.nodes)) {
+          paragraph.nodes = paragraph.nodes.map((node: any) => {
+            if (node.value && typeof node.value === 'string') {
+              // Check if this node contains an image component marker
+              const imageMarkerMatch = node.value.match(/\[IMAGE_COMPONENT_(\d+)\]/);
+              if (imageMarkerMatch) {
+                const imageIndex = parseInt(imageMarkerMatch[1]);
+                if (imageComponents[imageIndex]) {
+                  // Return the real image component instead of text
+                  return imageComponents[imageIndex];
+                }
+              }
+            }
+            return node;
+          });
+        }
+        return paragraph;
+      });
+    }
+    return component;
+  });
+  
+  document.components.push(...finalComponents);
+
+  // Add tags as a text component
+  if (tags) {
+    const tagsComponent = {
+      id: `SE-${generateUUID()}`,
+      layout: "default",
+      value: [
+        {
+          id: `SE-${generateUUID()}`,
+          nodes: [
+            {
+              id: `SE-${generateUUID()}`,
+              value: tags,
+              style: {
+                fontColor: "#666666",
+                bold: false,
+                italic: true,
+                underline: false,
+                strikeThrough: false,
+                "@ctype": "nodeStyle"
+              },
+              "@ctype": "textNode"
+            }
+          ],
+          style: {
+            textAlign: "left",
+            "@ctype": "paragraphStyle"
+          },
+          "@ctype": "paragraph"
+        }
+      ],
+      "@ctype": "text"
+    };
+    document.components.push(tagsComponent);
+  }
+
+  return { document };
+}
+
+/**
+ * Parse HTML content and convert to SmartEditor components
+ */
+function parseHtmlToComponents(htmlContent: string): any[] {
+  const components: any[] = [];
+  
+  // Enhanced HTML parser - handle block elements and line breaks
+  const blockElements = ['<h1>', '<h2>', '<h3>', '<h4>', '<h5>', '<h6>', '<p>', '<div>', '<ul>', '<ol>', '<li>'];
+  const lineBreakElements = ['<br>', '<br/>', '<br />'];
+  
+  // First, normalize line breaks and handle <br> tags
+  let normalizedContent = htmlContent;
+  
+  // Replace <br> tags with line break markers
+  lineBreakElements.forEach(brTag => {
+    normalizedContent = normalizedContent.replace(new RegExp(brTag, 'gi'), '\n');
+  });
+  
+  // Handle multiple consecutive line breaks (paragraph breaks)
+  normalizedContent = normalizedContent.replace(/\n\s*\n/g, '\n\n');
+  
+  // Split content by block elements and process each part
+  let remainingContent = normalizedContent;
+  let componentIndex = 0;
+  
+  while (remainingContent.length > 0) {
+    // Find the next block element
+    let nextBlockIndex = -1;
+    let nextBlockTag = '';
+    
+    for (const tag of blockElements) {
+      const index = remainingContent.indexOf(tag);
+      if (index !== -1 && (nextBlockIndex === -1 || index < nextBlockIndex)) {
+        nextBlockIndex = index;
+        nextBlockTag = tag;
+      }
+    }
+    
+    if (nextBlockIndex === -1) {
+      // No more block elements, process remaining text
+      if (remainingContent.trim()) {
+        const textComponents = createTextComponentsWithLineBreaks(remainingContent.trim());
+        components.push(...textComponents);
+      }
+      break;
+    }
+    
+    // Process text before the block element
+    if (nextBlockIndex > 0) {
+      const beforeText = remainingContent.substring(0, nextBlockIndex).trim();
+      if (beforeText) {
+        const textComponents = createTextComponentsWithLineBreaks(beforeText);
+        components.push(...textComponents);
+      }
+    }
+    
+    // Process the block element
+    const blockEndTag = nextBlockTag.replace('<', '</');
+    const blockEndIndex = remainingContent.indexOf(blockEndTag, nextBlockIndex);
+    
+    if (blockEndIndex !== -1) {
+      const blockContent = remainingContent.substring(nextBlockIndex + nextBlockTag.length, blockEndIndex);
+      const fullTag = remainingContent.substring(nextBlockIndex, blockEndIndex + blockEndTag.length);
+      const blockComponent = createBlockComponent(nextBlockTag, blockContent, fullTag);
+      if (blockComponent) {
+        components.push(blockComponent);
+      }
+      remainingContent = remainingContent.substring(blockEndIndex + blockEndTag.length);
+    } else {
+      // No closing tag found, treat as text
+      const textComponents = createTextComponentsWithLineBreaks(remainingContent.substring(nextBlockIndex));
+      components.push(...textComponents);
+      break;
+    }
+  }
+  
+  return components;
+}
+
+/**
+ * Create a text component from HTML content
+ */
+function createTextComponent(htmlContent: string): any | null {
+  if (!htmlContent.trim()) return null;
+  
+  // Parse inline styles and text
+  const nodes = parseInlineStyles(htmlContent);
+  
+  return {
+    id: `SE-${generateUUID()}`,
+    layout: "default",
+    value: [
+      {
+        id: `SE-${generateUUID()}`,
+        nodes: nodes,
+        style: {
+          textAlign: "left",
+          "@ctype": "paragraphStyle"
+        },
+        "@ctype": "paragraph"
+      }
+    ],
+    "@ctype": "text"
+  };
+}
+
+/**
+ * Create text components with proper line break handling
+ */
+function createTextComponentsWithLineBreaks(htmlContent: string): any[] {
+  if (!htmlContent.trim()) return [];
+  
+  const components: any[] = [];
+  
+  // Split by double line breaks (paragraph breaks)
+  const paragraphs = htmlContent.split(/\n\s*\n/);
+  
+  paragraphs.forEach(paragraph => {
+    if (paragraph.trim()) {
+      // Handle single line breaks within paragraphs
+      const lines = paragraph.split(/\n/);
+      
+      lines.forEach((line, lineIndex) => {
+        if (line.trim()) {
+          // Parse inline styles and text for this line
+          const nodes = parseInlineStyles(line.trim());
+          
+          if (nodes.length > 0) {
+            const component = {
+              id: `SE-${generateUUID()}`,
+              layout: "default",
+              value: [
+                {
+                  id: `SE-${generateUUID()}`,
+                  nodes: nodes,
+                  style: {
+                    textAlign: "left",
+                    "@ctype": "paragraphStyle"
+                  },
+                  "@ctype": "paragraph"
+                }
+              ],
+              "@ctype": "text"
+            };
+            
+            components.push(component);
+            console.log(`[NAVER] DEBUG: Created text component for line: "${line.trim().substring(0, 50)}..."`);
+          }
+        }
+      });
+    }
+  });
+  
+  return components;
+}
+
+/**
+ * Create a block component (heading, list, etc.) from HTML content
+ */
+function createBlockComponent(tag: string, content: string, fullTag?: string): any | null {
+  if (!content.trim()) return null;
+  
+  const nodes = parseInlineStyles(content);
+  
+  // Parse inline styles from the full tag if provided
+  let inlineStyles: any = {};
+  if (fullTag) {
+    const styleMatch = fullTag.match(/style="([^"]*)"/);
+    if (styleMatch) {
+      inlineStyles = parseInlineStyleString(styleMatch[1]);
+    }
+  }
+  
+  // Determine component type based on tag
+  let componentType = "text";
+  let textAlign = "left";
+  let paragraphStyle: any = {
+    textAlign: textAlign,
+    "@ctype": "paragraphStyle"
+  };
+  
+  if (tag.startsWith('<h')) {
+    componentType = "text";
+    textAlign = "left";
+    
+    // For headings, make the text bold and potentially larger
+    if (nodes.length > 0 && nodes[0].style) {
+      nodes[0].style.bold = true;
+      // SmartEditor handles heading sizes through different mechanisms
+    }
+  } else if (tag === '<ul>' || tag === '<ol>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply list-specific styles from inline styles
+    if (inlineStyles.color) {
+      console.log(`[NAVER] DEBUG: Applying color ${inlineStyles.color} to list content`);
+      // Apply color to all text nodes
+      nodes.forEach(node => {
+        if (node.style) {
+          node.style.fontColor = inlineStyles.color;
+        }
+      });
+    }
+    
+    // Apply line height if specified
+    if (inlineStyles.lineHeight) {
+      console.log(`[NAVER] DEBUG: Applying line-height ${inlineStyles.lineHeight} to list`);
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    
+    // Apply margin-left as indentation (convert to appropriate SmartEditor format)
+    if (inlineStyles.marginLeft) {
+      const marginValue = parseInt(inlineStyles.marginLeft);
+      console.log(`[NAVER] DEBUG: Applying margin-left ${marginValue}px to list`);
+      if (marginValue > 0) {
+        // Add indentation spaces based on margin
+        const indentSpaces = ' '.repeat(Math.min(marginValue / 10, 10)); // Max 10 spaces
+        if (nodes.length > 0 && nodes[0].value) {
+          nodes[0].value = indentSpaces + nodes[0].value;
+        }
+      }
+    }
+    
+    // Apply font-family if specified
+    if (inlineStyles.fontFamily) {
+      console.log(`[NAVER] DEBUG: Applying font-family ${inlineStyles.fontFamily} to list`);
+      // Note: SmartEditor may not support custom font families, but we can log it
+    }
+    
+    // For lists, we'll add bullet points or numbers as text
+    // and apply list-like formatting
+    if (nodes.length > 0) {
+      // Add bullet point or number prefix
+      const listPrefix = tag === '<ul>' ? '• ' : '1. ';
+      if (nodes[0].value) {
+        nodes[0].value = listPrefix + nodes[0].value;
+      }
+    }
+  } else if (tag === '<li>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply list item styles
+    if (inlineStyles.color) {
+      nodes.forEach(node => {
+        if (node.style) {
+          node.style.fontColor = inlineStyles.color;
+        }
+      });
+    }
+    
+    // For list items, add appropriate indentation and bullet/number
+    if (nodes.length > 0) {
+      // Add bullet point prefix for list items
+      if (nodes[0].value) {
+        nodes[0].value = '• ' + nodes[0].value;
+      }
+    }
+  } else if (tag === '<p>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply paragraph-specific styles
+    if (inlineStyles.color) {
+      console.log(`[NAVER] DEBUG: Applying color ${inlineStyles.color} to paragraph`);
+      nodes.forEach(node => {
+        if (node.style) {
+          node.style.fontColor = inlineStyles.color;
+        }
+      });
+    }
+    
+    if (inlineStyles.lineHeight) {
+      console.log(`[NAVER] DEBUG: Applying line-height ${inlineStyles.lineHeight} to paragraph`);
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    
+    if (inlineStyles.textAlign) {
+      console.log(`[NAVER] DEBUG: Applying text-align ${inlineStyles.textAlign} to paragraph`);
+      paragraphStyle.textAlign = inlineStyles.textAlign;
+    }
+  }
+  
+  return {
+    id: `SE-${generateUUID()}`,
+    layout: "default",
+    value: [
+      {
+        id: `SE-${generateUUID()}`,
+        nodes: nodes,
+        style: paragraphStyle,
+        "@ctype": "paragraph"
+      }
+    ],
+    "@ctype": componentType
+  };
+}
+
+/**
+ * Parse inline styles and create text nodes
+ */
+function parseInlineStyles(htmlContent: string): any[] {
+  const nodes: any[] = [];
+  
+  // Enhanced inline style parser that handles both simple tags and inline styles
+  let remainingContent = htmlContent;
+  
+  while (remainingContent.length > 0) {
+    // Look for any HTML tag (including inline styles)
+    const tagMatch = remainingContent.match(/<(\w+)(?:\s+[^>]*)?>(.*?)<\/\1>/);
+    
+    if (!tagMatch) {
+      // No more HTML tags, add remaining text
+      if (remainingContent.trim()) {
+        nodes.push(createTextNode(remainingContent.trim()));
+      }
+      break;
+    }
+    
+    const fullTag = tagMatch[0];
+    const tagName = tagMatch[1];
+    const tagContent = tagMatch[2];
+    const tagIndex = remainingContent.indexOf(fullTag);
+    
+    // Add text before the tag
+    if (tagIndex > 0) {
+      const beforeText = remainingContent.substring(0, tagIndex).trim();
+      if (beforeText) {
+        nodes.push(createTextNode(beforeText));
+      }
+    }
+    
+    // Parse the tag for inline styles
+    const styleMatch = fullTag.match(/style="([^"]*)"/);
+    let inlineStyles: any = {};
+    
+    if (styleMatch) {
+      inlineStyles = parseInlineStyleString(styleMatch[1]);
+    }
+    
+    // Check if the tag content contains nested HTML tags
+    if (tagContent.includes('<') && tagContent.includes('>')) {
+      // Recursively parse nested content
+      console.log(`[NAVER] DEBUG: Found nested HTML in ${tagName} tag: "${tagContent.substring(0, 100)}..."`);
+      const nestedNodes = parseInlineStyles(tagContent);
+      // Apply the current tag's styling to all nested nodes
+      nestedNodes.forEach(nestedNode => {
+        if (nestedNode.style) {
+          // Apply tag-based styling
+          if (tagName === 'strong' || tagName === 'b') {
+            nestedNode.style.bold = true;
+            console.log(`[NAVER] DEBUG: Applied bold styling to nested content: "${nestedNode.value}"`);
+          } else if (tagName === 'em' || tagName === 'i') {
+            nestedNode.style.italic = true;
+            console.log(`[NAVER] DEBUG: Applied italic styling to nested content: "${nestedNode.value}"`);
+          } else if (tagName === 'u') {
+            nestedNode.style.underline = true;
+            console.log(`[NAVER] DEBUG: Applied underline styling to nested content: "${nestedNode.value}"`);
+          }
+          
+          // Apply inline styles (override tag-based styles)
+          if (inlineStyles.bold !== undefined) nestedNode.style.bold = inlineStyles.bold;
+          if (inlineStyles.italic !== undefined) nestedNode.style.italic = inlineStyles.italic;
+          if (inlineStyles.underline !== undefined) nestedNode.style.underline = inlineStyles.underline;
+          if (inlineStyles.strikeThrough !== undefined) nestedNode.style.strikeThrough = inlineStyles.strikeThrough;
+          if (inlineStyles.fontColor) nestedNode.style.fontColor = inlineStyles.fontColor;
+          if (inlineStyles.backgroundColor) nestedNode.style.backgroundColor = inlineStyles.backgroundColor;
+          if (inlineStyles.fontSize) nestedNode.style.fontSize = inlineStyles.fontSize;
+        }
+      });
+      nodes.push(...nestedNodes);
+    } else {
+      // Add the styled text
+      if (tagName === 'strong' || tagName === 'b') {
+        console.log(`[NAVER] DEBUG: Creating bold text node: "${tagContent}"`);
+      } else if (tagName === 'em' || tagName === 'i') {
+        console.log(`[NAVER] DEBUG: Creating italic text node: "${tagContent}"`);
+      } else if (tagName === 'u') {
+        console.log(`[NAVER] DEBUG: Creating underline text node: "${tagContent}"`);
+      }
+      nodes.push(createTextNode(tagContent, tagName, inlineStyles));
+    }
+    
+    // Update remaining content
+    remainingContent = remainingContent.substring(tagIndex + fullTag.length);
+  }
+  
+  return nodes;
+}
+
+/**
+ * Parse inline style string into style object
+ */
+function parseInlineStyleString(styleString: string): any {
+  const styles: any = {};
+  
+  if (!styleString) return styles;
+  
+  // Split by semicolon and parse each style
+  const stylePairs = styleString.split(';');
+  
+  for (const pair of stylePairs) {
+    const [property, value] = pair.split(':').map(s => s.trim());
+    if (property && value) {
+      switch (property) {
+        case 'font-weight':
+          if (value === 'bold' || parseInt(value) >= 700) {
+            styles.bold = true;
+          }
+          break;
+        case 'font-style':
+          if (value === 'italic') {
+            styles.italic = true;
+          }
+          break;
+        case 'text-decoration':
+          if (value.includes('underline')) {
+            styles.underline = true;
+          }
+          if (value.includes('line-through')) {
+            styles.strikeThrough = true;
+          }
+          break;
+        case 'color':
+          styles.color = value;
+          styles.fontColor = value; // Also set fontColor for compatibility
+          break;
+        case 'background-color':
+          styles.backgroundColor = value;
+          break;
+        case 'font-size':
+          // Convert font size to a reasonable scale
+          const fontSize = parseInt(value);
+          if (fontSize > 20) {
+            styles.fontSize = 'large';
+          } else if (fontSize < 12) {
+            styles.fontSize = 'small';
+          }
+          break;
+        case 'line-height':
+          styles.lineHeight = value;
+          break;
+        case 'margin-left':
+          styles.marginLeft = value;
+          break;
+        case 'margin-right':
+          styles.marginRight = value;
+          break;
+        case 'margin-top':
+          styles.marginTop = value;
+          break;
+        case 'margin-bottom':
+          styles.marginBottom = value;
+          break;
+        case 'font-family':
+          styles.fontFamily = value;
+          break;
+        case 'text-align':
+          styles.textAlign = value;
+          break;
+        case 'list-style-type':
+          styles.listStyleType = value;
+          break;
+      }
+    }
+  }
+  
+  return styles;
+}
+
+/**
+ * Create a text node with optional styling
+ */
+function createTextNode(text: string, tagName?: string, inlineStyles?: any): any {
+  const node: any = {
+    id: `SE-${generateUUID()}`,
+    value: text,
+    style: {
+      bold: false,
+      italic: false,
+      underline: false,
+      strikeThrough: false,
+      "@ctype": "nodeStyle"
+    },
+    "@ctype": "textNode"
+  };
+  
+  // Apply tag-based styling
+  if (tagName === 'strong' || tagName === 'b') {
+    node.style.bold = true;
+  } else if (tagName === 'em' || tagName === 'i') {
+    node.style.italic = true;
+  } else if (tagName === 'u') {
+    node.style.underline = true;
+  } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'h4' || tagName === 'h5' || tagName === 'h6') {
+    node.style.bold = true;
+    // Headings are typically larger, but SmartEditor handles this differently
+  }
+  
+  // Apply inline styles (override tag-based styles)
+  if (inlineStyles) {
+    if (inlineStyles.bold !== undefined) node.style.bold = inlineStyles.bold;
+    if (inlineStyles.italic !== undefined) node.style.italic = inlineStyles.italic;
+    if (inlineStyles.underline !== undefined) node.style.underline = inlineStyles.underline;
+    if (inlineStyles.strikeThrough !== undefined) node.style.strikeThrough = inlineStyles.strikeThrough;
+    if (inlineStyles.fontColor) node.style.fontColor = inlineStyles.fontColor;
+    if (inlineStyles.backgroundColor) node.style.backgroundColor = inlineStyles.backgroundColor;
+    if (inlineStyles.fontSize) node.style.fontSize = inlineStyles.fontSize;
+  }
+  
+  return node;
+}
+
+/**
+ * Test function to verify HTML parsing (for debugging)
+ */
+function testHtmlParsing() {
+  const testHtml = '<h2 style="font-family: Arial, sans-serif; color: #2c3e50;">Test Heading</h2><p style="color: #333;">Test paragraph with <strong>bold</strong> text.</p>';
+  const result = convertHtmlToSmartEditorJson('Test Title', testHtml, '#test #ai');
+  console.log('Test HTML parsing result:', JSON.stringify(result, null, 2));
+}
+
+/**
+ * Test function to verify nested HTML parsing (for debugging)
+ */
+function testNestedHtmlParsing() {
+  const testHtml = '<ul style="font-family: Arial, sans-serif; font-size: 16px; line-height: 1.6; list-style-type: disc; margin-left: 20px;"><strong>Machine Learning (ML)</strong>: This is perhaps the most widely recognized subset of AI.</ul>';
+  const result = convertHtmlToSmartEditorJson('Test Title', testHtml, '#test #ai');
+  console.log('Test nested HTML parsing result:', JSON.stringify(result, null, 2));
+}
+
+/**
+ * Test function to verify all HTML formatting (strong, em, ul, li) with CSS styles
+ */
+export function testAllHtmlFormatting() {
+  const testHtml = `
+<h2>AI Technologies Overview</h2>
+<p>Here are the key <strong>AI technologies</strong> you should know about:</p>
+<ul style="list-style-type: disc; margin-left: 25px; font-family: Arial, sans-serif; line-height: 1.6; color: #555;">
+  <li><strong>Machine Learning (ML)</strong>: This is perhaps the most <em>widely recognized</em> subset of AI.</li>
+  <li><strong>Natural Language Processing (NLP)</strong>: NLP focuses on the interaction between computers and human language.</li>
+  <li><strong>Computer Vision</strong>: This field enables machines to <em>interpret and understand</em> visual information.</li>
+</ul>
+<p>These technologies work together to create <em>intelligent systems</em> that can <strong>learn and adapt</strong>.</p>
+`;
+  
+  console.log('Testing all HTML formatting with CSS styles (strong, em, ul, li, h2, color, line-height, margin)...');
+  const result = convertHtmlToSmartEditorJson('AI Technologies', testHtml, '#ai #ml #nlp');
+  
+  // Check if formatting is applied correctly
+  const components = result.document.components;
+  components.forEach((component: any, index: number) => {
+    if (component['@ctype'] === 'text' && component.value) {
+      console.log(`\nComponent ${index}:`);
+      component.value.forEach((paragraph: any) => {
+        if (paragraph.nodes) {
+          paragraph.nodes.forEach((node: any) => {
+            if (node['@ctype'] === 'textNode') {
+              console.log(`  Text: "${node.value}"`);
+              console.log(`  Bold: ${node.style?.bold || false}`);
+              console.log(`  Italic: ${node.style?.italic || false}`);
+              console.log(`  Underline: ${node.style?.underline || false}`);
+              console.log(`  Font Color: ${node.style?.fontColor || 'default'}`);
+            }
+          });
+        }
+        console.log(`  Paragraph Line Height: ${paragraph.style?.lineHeight || 'default'}`);
+      });
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Test function to verify line break and spacing handling
+ */
+export function testLineBreakHandling() {
+  const testHtml = `
+<h2>Line Break Testing</h2>
+<p>This is the first paragraph with some text.</p>
+<p>This is the second paragraph with <strong>bold text</strong> and <em>italic text</em>.</p>
+<p>This paragraph has a line break<br>in the middle of it.</p>
+<p>This paragraph has multiple<br><br>line breaks for spacing.</p>
+<ul style="color: #333; line-height: 1.5;">
+  <li>First list item</li>
+  <li>Second list item with <strong>bold</strong> text</li>
+  <li>Third list item with<br>line break</li>
+</ul>
+<p>Final paragraph after the list.</p>
+`;
+  
+  console.log('Testing line break and spacing handling...');
+  const result = convertHtmlToSmartEditorJson('Line Break Test', testHtml, '#test #spacing');
+  
+  // Check if line breaks are handled correctly
+  const components = result.document.components;
+  console.log(`\nTotal components created: ${components.length}`);
+  
+  components.forEach((component: any, index: number) => {
+    if (component['@ctype'] === 'text' && component.value) {
+      console.log(`\nComponent ${index}:`);
+      component.value.forEach((paragraph: any, pIndex: number) => {
+        console.log(`  Paragraph ${pIndex}:`);
+        if (paragraph.nodes) {
+          paragraph.nodes.forEach((node: any) => {
+            if (node['@ctype'] === 'textNode') {
+              console.log(`    Text: "${node.value}"`);
+              console.log(`    Bold: ${node.style?.bold || false}`);
+              console.log(`    Italic: ${node.style?.italic || false}`);
+              console.log(`    Font Color: ${node.style?.fontColor || 'default'}`);
+            }
+          });
+        }
+        console.log(`    Line Height: ${paragraph.style?.lineHeight || 'default'}`);
+      });
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Test function to verify the specific HTML content from the user
+ */
+export function testUserHtmlParsing() {
+  const testHtml = `
+<ul style="font-family: Arial, sans-serif; font-size: 16px; line-height: 1.6; list-style-type: disc; margin-left: 20px;">
+  <strong>Machine Learning (ML)</strong>: This is perhaps the most <em>widely recognized</em> subset of AI. ML involves training algorithms on vast amounts of data to enable them to learn patterns and make predictions or decisions without being explicitly programmed for every scenario. Think of recommendation engines on streaming platforms or fraud detection systems.
+  <strong>Natural Language Processing (NLP)</strong>: NLP focuses on the interaction between computers and human language. It allows machines to <em>read and understand</em> text.
+</ul>
+`;
+  
+  console.log('Testing HTML parsing with user content (including <em> and <ul> tags)...');
+  const result = convertHtmlToSmartEditorJson('AI Article', testHtml, '#ai #machinelearning');
+  
+  // Check if formatting is applied correctly
+  const components = result.document.components;
+  components.forEach((component: any, index: number) => {
+    if (component['@ctype'] === 'text' && component.value) {
+      console.log(`\nComponent ${index}:`);
+      component.value.forEach((paragraph: any) => {
+        if (paragraph.nodes) {
+          paragraph.nodes.forEach((node: any) => {
+            if (node['@ctype'] === 'textNode') {
+              console.log(`  Text: "${node.value}"`);
+              console.log(`  Bold: ${node.style?.bold || false}`);
+              console.log(`  Italic: ${node.style?.italic || false}`);
+              console.log(`  Underline: ${node.style?.underline || false}`);
+            }
+          });
+        }
+      });
+    }
+  });
+  
+  return result;
 }
 
 /**
@@ -293,37 +1206,24 @@ async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string
     
     console.log('[NAVER] Clipboard copy successful, attempting to paste...');
     
-    // Phase 1: Click on image content area for positioning (like working code)
-    const imageContentAreas = [
-      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[1]/div[3]', // Your suggested area
-      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[1]', // Parent area
-      'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]', // Grandparent area
-      '[contenteditable="true"]', // Any contenteditable area
-      '.se-text-paragraph', // Text paragraph areas
-      'div[role="textbox"]' // Textbox role areas
-    ];
+    // Phase 1: Click on the main content area
+    console.log('[NAVER] Clicking on main content area...');
+    const contentArea = pageOrFrame.locator('.se-content.__se-scroll-target');
+    const contentAreaCount = await contentArea.count();
+    console.log(`[NAVER] Found ${contentAreaCount} content area(s)`);
     
-    let clickedArea = false;
-    for (const areaSelector of imageContentAreas) {
-      console.log(`[NAVER] Trying image content area: ${areaSelector}`);
-      const imageContentArea = pageOrFrame.locator(areaSelector);
-      const imageAreaCount = await imageContentArea.count();
-      console.log(`[NAVER] Found ${imageAreaCount} element(s) with selector: ${areaSelector}`);
-      
-      if (imageAreaCount > 0) {
-        const target = imageContentArea.first();
-        try {
-          await target.scrollIntoViewIfNeeded();
-        } catch {}
-        await target.click({ timeout: 5000 });
-        console.log(`[NAVER] Clicked on image content area: ${areaSelector}`);
-        clickedArea = true;
-        break;
+    if (contentAreaCount > 0) {
+      try {
+        await contentArea.first().click({ timeout: 10000 });
+        console.log('[NAVER] Clicked on main content area');
+      } catch (error) {
+        console.log('[NAVER] Failed to click content area, trying alternative approach');
+        // Fallback: try to focus on the area
+        await contentArea.first().focus();
+        console.log('[NAVER] Focused on main content area');
       }
-    }
-    
-    if (!clickedArea) {
-      console.log('[NAVER] No image content area found, using targetField or body');
+    } else {
+      console.log('[NAVER] No content area found, using targetField or body');
       if (targetField) {
         await targetField.click();
       } else {
@@ -523,11 +1423,375 @@ async function processContentWithImages(pageOrFrame: any, newPage: Page, content
 }
 
 /**
- * Fill blog post content (title, content, tags)
+ * Process content and handle image placeholders for SmartEditor JSON
  */
-async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogContent, imagePath?: string): Promise<void> {
+function processContentWithImagesForJson(htmlContent: string, imagePath?: string): { content: string, imagePlaceholders: any[] } {
   try {
-    console.log('[NAVER] Filling blog content...');
+    console.log('[NAVER] Processing content with image placeholders for JSON...');
+    
+    // Regex to find [IMAGE:...] placeholders
+    const imagePlaceholderRegex = /\[IMAGE:([^\]]+)\]/g;
+    const imageMatches = Array.from(htmlContent.matchAll(imagePlaceholderRegex));
+    console.log(`[NAVER] Found ${imageMatches.length} image placeholders in content`);
+    
+    if (imageMatches.length === 0) {
+      return { content: htmlContent, imagePlaceholders: [] };
+    }
+    
+    // For now, replace image placeholders with text descriptions
+    // In a full implementation, you would:
+    // 1. Paste the image into SmartEditor
+    // 2. Extract the image JSON from SmartEditor
+    // 3. Replace the placeholder with the image component
+    let processedContent = htmlContent;
+    const imagePlaceholders: any[] = [];
+    
+    for (const match of imageMatches) {
+      const placeholder = match[0]; // Full match like [IMAGE:description:header]
+      const description = match[1]; // Just the description part
+      
+      // Create a placeholder image component for now
+      const imageComponent = {
+        id: `SE-${generateUUID()}`,
+        layout: "default",
+        src: imagePath || "placeholder",
+        internalResource: true,
+        represent: true,
+        path: imagePath || "placeholder",
+        domain: "https://blogfiles.pstatic.net",
+        fileSize: 0,
+        width: 800,
+        widthPercentage: 0,
+        height: 600,
+        originalWidth: 800,
+        originalHeight: 600,
+        fileName: "placeholder.png",
+        caption: description,
+        format: "normal",
+        displayFormat: "normal",
+        imageLoaded: true,
+        contentMode: "fit",
+        origin: {
+          srcFrom: "local",
+          "@ctype": "imageOrigin"
+        },
+        ai: false,
+        "@ctype": "image"
+      };
+      
+      imagePlaceholders.push(imageComponent);
+      
+      // Replace placeholder with a marker that we'll handle later
+      processedContent = processedContent.replace(placeholder, `[IMAGE_COMPONENT_${imagePlaceholders.length - 1}]`);
+    }
+    
+    return { content: processedContent, imagePlaceholders };
+  } catch (error) {
+    console.error('[NAVER] Error processing content with images for JSON:', error);
+    return { content: htmlContent, imagePlaceholders: [] };
+  }
+}
+
+/**
+ * Advanced image handling: Paste image and extract JSON from SmartEditor
+ * This function would be called during the actual blog posting process
+ */
+async function handleImagePlaceholdersWithSmartEditor(
+  pageOrFrame: any, 
+  newPage: Page, 
+  htmlContent: string, 
+  imagePaths?: string[]
+): Promise<{ processedContent: string, imageComponents: any[] }> {
+  try {
+    console.log('[NAVER] Handling image placeholders with SmartEditor...');
+    
+    // Find image placeholders
+    const imagePlaceholderRegex = /\[IMAGE:([^\]]+)\]/g;
+    const imageMatches = Array.from(htmlContent.matchAll(imagePlaceholderRegex));
+    
+    if (imageMatches.length === 0) {
+      return { processedContent: htmlContent, imageComponents: [] };
+    }
+    
+    let processedContent = htmlContent;
+    const imageComponents: any[] = [];
+    
+    for (let i = 0; i < imageMatches.length; i++) {
+      const match = imageMatches[i];
+      const placeholder = match[0];
+      const description = match[1];
+      
+      console.log(`[NAVER] Processing image placeholder ${i + 1}: ${description}`);
+      
+      // Get the corresponding image path for this placeholder
+      const imagePath = imagePaths && imagePaths[i] ? imagePaths[i] : undefined;
+      
+      if (imagePath) {
+        try {
+          // 1. Paste the image into SmartEditor
+          const imageSuccess = await addImageToBlog(pageOrFrame, newPage, imagePath);
+          
+          if (imageSuccess) {
+            // 2. Wait for image to be processed
+            await newPage.waitForTimeout(2000);
+            
+            // 3. Extract the image JSON from SmartEditor
+            const imageJson = await newPage.evaluate(() => {
+              try {
+                // Access the iframe
+                const iframe = document.querySelector('#mainFrame');
+                if (!iframe) return null;
+                
+                const iframeWindow = (iframe as HTMLIFrameElement).contentWindow;
+                if (!iframeWindow) return null;
+                
+                // Get the editor and document data
+                const editors = ((iframeWindow as any).SmartEditor && (iframeWindow as any).SmartEditor._editors) || {};
+                const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
+                const editor = editorKey ? editors[editorKey] : null;
+                
+                if (!editor) return null;
+                
+                const docService = editor._documentService || editor.documentService;
+                if (!docService) return null;
+                
+                const documentData = docService.getDocumentData();
+                if (!documentData || !documentData.document || !documentData.document.components) return null;
+                
+                // Find the most recent image component
+                const imageComponents = documentData.document.components.filter((comp: any) => comp['@ctype'] === 'image');
+                return imageComponents[imageComponents.length - 1] || null;
+              } catch (err) {
+                console.error('[NAVER] Error extracting image JSON:', err);
+                return null;
+              }
+            });
+            
+            if (imageJson) {
+              console.log(`[NAVER] Successfully extracted image JSON for placeholder: ${description}`);
+              imageComponents.push(imageJson);
+              
+              // Replace placeholder with marker
+              processedContent = processedContent.replace(placeholder, `[IMAGE_COMPONENT_${imageComponents.length - 1}]`);
+            } else {
+              console.warn(`[NAVER] Failed to extract image JSON for placeholder: ${description}`);
+              // Fallback to text description
+              processedContent = processedContent.replace(placeholder, `[Image: ${description}]`);
+            }
+          } else {
+            console.warn(`[NAVER] Failed to paste image for placeholder: ${description}`);
+            processedContent = processedContent.replace(placeholder, `[Image: ${description} - Paste Failed]`);
+          }
+        } catch (error) {
+          console.error(`[NAVER] Error handling image placeholder ${i + 1}:`, error);
+          processedContent = processedContent.replace(placeholder, `[Image: ${description} - Error]`);
+        }
+      } else {
+        // No image path provided
+        processedContent = processedContent.replace(placeholder, `[Image: ${description}]`);
+      }
+    }
+    
+    return { processedContent, imageComponents };
+  } catch (error) {
+    console.error('[NAVER] Error handling image placeholders with SmartEditor:', error);
+    return { processedContent: htmlContent, imageComponents: [] };
+  }
+}
+
+/**
+ * Fill blog post content using SmartEditor JSON API
+ */
+async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogContent, imagePaths?: string[]): Promise<void> {
+  try {
+    console.log('[NAVER] Filling blog content using SmartEditor JSON API...');
+    
+    // Wait for editor to fully load first
+    try {
+      console.log('[NAVER] Waiting for SmartEditor to load...');
+      
+      // Wait for mainFrame to load
+      await newPage.waitForSelector('#mainFrame', { timeout: 15000 });
+      const frame = newPage.frameLocator('#mainFrame');
+      
+      // Wait for editor content area
+      await frame.locator('.se-content').waitFor({ timeout: 10000 });
+      console.log('[NAVER] SmartEditor loaded successfully');
+      
+      // Test SmartEditor availability first (access via iframe)
+      const smartEditorTest = await newPage.evaluate(() => {
+        try {
+          console.log('[NAVER] Testing SmartEditor availability via iframe...');
+          
+          // Access the iframe
+          const iframe = document.querySelector('#mainFrame');
+          if (!iframe) {
+            console.log('[NAVER] No iframe found');
+            return { available: false, reason: 'no_iframe' };
+          }
+          
+          const iframeWindow = (iframe as HTMLIFrameElement).contentWindow;
+          if (!iframeWindow) {
+            console.log('[NAVER] Cannot access iframe contentWindow');
+            return { available: false, reason: 'no_iframe_window' };
+          }
+          
+          console.log('[NAVER] SmartEditor:', (iframeWindow as any).SmartEditor);
+          console.log('[NAVER] SmartEditor._editors:', (iframeWindow as any).SmartEditor?._editors);
+          
+          if (!(iframeWindow as any).SmartEditor || !(iframeWindow as any).SmartEditor._editors) {
+            return { available: false, reason: 'no_smarteditor' };
+          }
+          
+          // Get the editor instance
+          const editor = (iframeWindow as any).SmartEditor._editors['blogpc001'];
+          console.log('[NAVER] Editor:', editor);
+          
+          if (!editor) {
+            console.log('[NAVER] Available editor keys:', Object.keys((iframeWindow as any).SmartEditor._editors));
+            return { available: false, reason: 'no_editor' };
+          }
+          
+          // Get document service
+          const docService = editor._documentService;
+          console.log('[NAVER] Document Service:', docService);
+          
+          if (!docService) {
+            return { available: false, reason: 'no_docService' };
+          }
+          
+          // Get document data
+          const documentData = docService.getDocumentData();
+          console.log('[NAVER] Document Data:', documentData);
+          
+          return { 
+            available: true, 
+            editor: !!editor, 
+            docService: !!docService, 
+            documentData: !!documentData,
+            editorKeys: Object.keys((iframeWindow as any).SmartEditor._editors)
+          };
+        } catch (err) {
+          console.error('[NAVER] SmartEditor test error:', err);
+          return { available: false, reason: err instanceof Error ? err.message : String(err) };
+        }
+      });
+      console.log('[NAVER] SmartEditor test result:', smartEditorTest);
+
+      if (!smartEditorTest.available) {
+        console.warn('[NAVER] SmartEditor not available, falling back to keyboard typing');
+        await fillBlogContentFallback(pageOrFrame, newPage, content, imagePaths?.[0]);
+        return;
+      }
+
+      // Step 1: Skip image pasting for debug purposes
+      let imageComponents: any[] = [];
+      console.log('[NAVER] DEBUG: Skipping image pasting - only doing content pasting');
+
+      // Step 2: Now create the complete SmartEditor JSON without images
+      console.log('[NAVER] Step 2: Creating complete SmartEditor JSON without images...');
+      console.log('[NAVER] DEBUG: Processing HTML content:', content.content.substring(0, 200) + '...');
+      const smartEditorJson = convertHtmlToSmartEditorJson(content.title, content.content, content.tags);
+      console.log('[NAVER] Converted content to SmartEditor JSON format');
+      
+      // Debug: Log the parsed components to verify bold formatting
+      console.log('[NAVER] DEBUG: Checking parsed components for bold formatting...');
+      smartEditorJson.document.components.forEach((component: any, index: number) => {
+        if (component['@ctype'] === 'text' && component.value) {
+          console.log(`[NAVER] DEBUG: Component ${index} (text):`);
+          component.value.forEach((paragraph: any) => {
+            if (paragraph.nodes) {
+              paragraph.nodes.forEach((node: any) => {
+                if (node['@ctype'] === 'textNode') {
+                  const isBold = node.style?.bold || false;
+                  const isItalic = node.style?.italic || false;
+                  const text = node.value;
+                  if (text.includes('Machine Learning') || text.includes('Natural Language') || text.includes('em>') || text.includes('italic')) {
+                    console.log(`[NAVER] DEBUG: Found "${text}" - Bold: ${isBold}, Italic: ${isItalic}`);
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Step 3: Inject the complete JSON into SmartEditor
+      console.log('[NAVER] Step 3: Injecting complete JSON into SmartEditor...');
+      const injected = await newPage.evaluate(async (incoming) => {
+        try {
+          // Wait helper
+          const waitFor = (ms: number) => new Promise(r => setTimeout(r, ms));
+          
+          // Access the iframe
+          const iframe = document.querySelector('#mainFrame');
+          if (!iframe) {
+            console.warn('[NAVER] No iframe found');
+            return { ok: false, reason: 'no_iframe' };
+          }
+          
+          const iframeWindow = (iframe as HTMLIFrameElement).contentWindow;
+          if (!iframeWindow) {
+            console.warn('[NAVER] Cannot access iframe contentWindow');
+            return { ok: false, reason: 'no_iframe_window' };
+          }
+          
+          // Find editor dynamically
+          const editors = ((iframeWindow as any).SmartEditor && (iframeWindow as any).SmartEditor._editors) || {};
+          const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
+          const editor = editorKey ? editors[editorKey] : null;
+          if (!editor) {
+            console.warn('[NAVER] SmartEditor editor not found');
+            return { ok: false, reason: 'no_editor' };
+          }
+          const docService = editor._documentService || editor.documentService;
+          if (!docService) {
+            console.warn('[NAVER] SmartEditor documentService not found');
+            return { ok: false, reason: 'no_doc_service' };
+          }
+          
+          // Replace the entire document with our content
+          if (typeof docService.setDocumentData === 'function') {
+            docService.setDocumentData(incoming);
+          } else {
+            docService._documentData = incoming;
+          }
+          if (docService._notifyChanged) docService._notifyChanged();
+          
+          console.log('[NAVER] SmartEditor document data replaced successfully');
+          return { ok: true };
+        } catch (err) {
+          console.warn('[NAVER] Error during SmartEditor injection:', err);
+          return { ok: false, reason: String(err instanceof Error ? err.message : err) };
+        }
+      }, smartEditorJson);
+      
+      console.log('[NAVER] SmartEditor document data injected result:', injected);
+      
+      if (injected.ok) {
+        console.log('[NAVER] Blog content filled successfully using SmartEditor JSON API (debug mode - no images)');
+      } else {
+        console.warn('[NAVER] SmartEditor injection failed, falling back to keyboard typing');
+        await fillBlogContentFallback(pageOrFrame, newPage, content);
+      }
+      
+    } catch (e) {
+      console.warn('[NAVER] SmartEditor API method failed, trying fallback:', e);
+      await fillBlogContentFallback(pageOrFrame, newPage, content);
+    }
+    
+    console.log('[NAVER] Blog content filling completed');
+  } catch (error) {
+    console.error('[NAVER] Error filling blog content:', error);
+  }
+}
+
+/**
+ * Fill blog post content using keyboard typing (fallback method)
+ */
+async function fillBlogContentFallback(pageOrFrame: any, newPage: Page, content: BlogContent, imagePath?: string): Promise<void> {
+  try {
+    console.log('[NAVER] Using fallback keyboard typing method...');
     
     // XPath selectors - using same as working code
     const title_field_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[1]/div[1]/div/div/p/span[2]';
@@ -582,8 +1846,10 @@ async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogCon
         await newPage.keyboard.press('Control+a');
         await newPage.waitForTimeout(200);
         
-        // Process content and handle image placeholders
-        await processContentWithImages(pageOrFrame, newPage, content, imagePath, targetField);
+        // Process content without image placeholders for debug
+        console.log('[NAVER] DEBUG: Processing content without image placeholders');
+        await newPage.keyboard.type(content.content);
+        await newPage.keyboard.press('Enter');
         
         // Add tags
         await newPage.keyboard.type(content.tags);
@@ -595,9 +1861,9 @@ async function fillBlogContent(pageOrFrame: any, newPage: Page, content: BlogCon
       console.warn('[NAVER] Content fill failed:', e);
     }
     
-    console.log('[NAVER] Blog content filling completed');
+    console.log('[NAVER] Fallback blog content filling completed');
   } catch (error) {
-    console.error('[NAVER] Error filling blog content:', error);
+    console.error('[NAVER] Error in fallback blog content filling:', error);
   }
 }
 
@@ -783,7 +2049,7 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
 export async function runNaverBlogAutomation(
   settings: NaverBlogSettings,
   content: BlogContent,
-  imagePath?: string
+  imagePaths?: string[]
 ): Promise<BrowserControllerResult> {
   let browser: Browser | null = null;
   
@@ -818,7 +2084,7 @@ export async function runNaverBlogAutomation(
     await handlePopups(pageOrFrame, newPage);
     
     // Fill blog content
-    await fillBlogContent(pageOrFrame, newPage, content, imagePath);
+    await fillBlogContent(pageOrFrame, newPage, content, imagePaths);
     
     // Publish blog post
     const publishSuccess = await publishBlogPost(pageOrFrame, newPage);
@@ -827,7 +2093,7 @@ export async function runNaverBlogAutomation(
       console.log('[NAVER] Naver Blog automation completed successfully');
       return {
         success: true,
-        imageGenerated: !!imagePath
+        imageGenerated: !!(imagePaths && imagePaths.length > 0)
       };
     } else {
       throw new Error('Failed to publish blog post');
