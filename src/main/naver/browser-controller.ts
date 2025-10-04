@@ -525,9 +525,12 @@ async function replaceMarkersWithPastedImages(pageOrFrame: any, newPage: Page, c
         try {
           console.log(`[NAVER] Found XPath for marker: ${markerXPath}`);
           const markerLocator = newPage.frameLocator('#mainFrame').locator(`xpath=${markerXPath}`);
-          console.log('[NAVER] Attempting to double-click the marker to select it...');
+          console.log('[NAVER] Attempting to triple-click the marker to select entire text block...');
+          // Triple-click: double-click + single click to select entire paragraph
           await markerLocator.dblclick({ timeout: 5000 });
-          console.log('[NAVER] Double-click successful.');
+          await newPage.waitForTimeout(100); // Small delay between clicks
+          await markerLocator.click({ timeout: 5000 });
+          console.log('[NAVER] Triple-click successful - entire text block should be selected.');
           pasted = await addImageToBlog(pageOrFrame, newPage, imagePath, undefined, { skipFocus: true });
         } catch (e) {
           console.warn(`[NAVER] Failed to click marker XPath, falling back. Error: ${e instanceof Error ? e.message : 'Unknown'}`);
