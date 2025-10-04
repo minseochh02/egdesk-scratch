@@ -1,6 +1,8 @@
 import { ParsedContent, Image, ImageMarker } from '../ai-blog';
 import generateStructuredBlogContent from '../ai-blog/generate-outline';
 import generateImages from '../ai-blog/generate-images';
+import path from 'path';
+import fs from 'fs';
 import { getSQLiteManager } from '../sqlite/manager';
 import { SQLiteTaskManager } from '../sqlite/tasks';
 import generateOutline from '../ai-blog/generate-outline';
@@ -151,6 +153,24 @@ ipcMain.handle('generate-and-upload-naver-blog', async (event, params: {
 
     console.log('\n📝 Uploading to Naver Blog...');
     
+    // Collect local images from output/generated-images to replace markers
+    const generatedImagesDir = path.join(process.cwd(), 'output', 'generated-images');
+    let localImagePaths: string[] = [];
+    try {
+      if (fs.existsSync(generatedImagesDir)) {
+        const files = fs.readdirSync(generatedImagesDir);
+        localImagePaths = files
+          .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f))
+          .sort()
+          .map(f => path.join(generatedImagesDir, f));
+        console.log(`🖼️  Found ${localImagePaths.length} local images for marker replacement`);
+      } else {
+        console.log(`🖼️  Images directory not found: ${generatedImagesDir}`);
+      }
+    } catch (e) {
+      console.log('🖼️  Error reading generated images directory:', e instanceof Error ? e.message : 'Unknown error');
+    }
+
     // Use the new Naver Blog browser controller
     const uploadResult = await runNaverBlogAutomation(
       {
@@ -162,7 +182,8 @@ ipcMain.handle('generate-and-upload-naver-blog', async (event, params: {
         title,
         content,
         tags
-      }
+      },
+      localImagePaths
     );
 
     if (!uploadResult.success) {
