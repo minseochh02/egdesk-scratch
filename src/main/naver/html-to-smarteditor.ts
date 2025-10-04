@@ -243,61 +243,131 @@ export function convertHtmlToSmartEditorJsonWithImages(title: string, htmlConten
 export function parseHtmlToComponents(htmlContent: string): any[] {
   const components: any[] = [];
 
-  const blockElements = ['<h1>', '<h2>', '<h3>', '<h4>', '<h5>', '<h6>', '<p>', '<div>', '<ul>', '<ol>', '<li>'];
-  const lineBreakElements = ['<br>', '<br/>', '<br />'];
+  // Handle line breaks first
+  let normalizedContent = htmlContent
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\n\s*\n/g, '\n\n');
 
-  let normalizedContent = htmlContent;
+  // Parse the HTML using a more sophisticated approach
+  const parsedComponents = parseHtmlRecursively(normalizedContent);
+  components.push(...parsedComponents);
 
-  lineBreakElements.forEach(brTag => {
-    normalizedContent = normalizedContent.replace(new RegExp(brTag, 'gi'), '\n');
-  });
+  return components;
+}
 
-  normalizedContent = normalizedContent.replace(/\n\s*\n/g, '\n\n');
+/**
+ * Recursively parse HTML content to handle nested structures
+ */
+function parseHtmlRecursively(htmlContent: string, parentContext?: { listType?: string; fontColor?: string; backgroundColor?: string; lineHeight?: string }): any[] {
+  const components: any[] = [];
+  
+  if (!htmlContent.trim()) return components;
 
-  let remainingContent = normalizedContent;
-
-  while (remainingContent.length > 0) {
-    let nextBlockIndex = -1;
-    let nextBlockTag = '';
-
-    for (const tag of blockElements) {
-      const index = remainingContent.indexOf(tag);
-      if (index !== -1 && (nextBlockIndex === -1 || index < nextBlockIndex)) {
-        nextBlockIndex = index;
-        nextBlockTag = tag;
-      }
-    }
-
-    if (nextBlockIndex === -1) {
-      if (remainingContent.trim()) {
-        const textComponents = createTextComponentsWithLineBreaks(remainingContent.trim());
-        components.push(...textComponents);
-      }
-      break;
-    }
-
-    if (nextBlockIndex > 0) {
-      const beforeText = remainingContent.substring(0, nextBlockIndex).trim();
-      if (beforeText) {
-        const textComponents = createTextComponentsWithLineBreaks(beforeText);
-        components.push(...textComponents);
-      }
-    }
-
-    const blockEndTag = nextBlockTag.replace('<', '</');
-    const blockEndIndex = remainingContent.indexOf(blockEndTag, nextBlockIndex);
-
-    if (blockEndIndex !== -1) {
-      const blockContent = remainingContent.substring(nextBlockIndex + nextBlockTag.length, blockEndIndex);
-      const fullTag = remainingContent.substring(nextBlockIndex, blockEndIndex + blockEndTag.length);
-      const blockComponent = createBlockComponent(nextBlockTag, blockContent, fullTag);
-      if (blockComponent) components.push(blockComponent);
-      remainingContent = remainingContent.substring(blockEndIndex + blockEndTag.length);
-    } else {
-      const textComponents = createTextComponentsWithLineBreaks(remainingContent.substring(nextBlockIndex));
+  // Find the first opening tag
+  const tagMatch = htmlContent.match(/<(\w+)(?:\s+[^>]*)?>/);
+  
+  if (!tagMatch) {
+    // No more tags, treat as plain text
+    if (htmlContent.trim()) {
+      const textComponents = createTextComponentsWithLineBreaks(htmlContent.trim());
       components.push(...textComponents);
-      break;
     }
+    return components;
+  }
+
+  const fullOpeningTag = tagMatch[0];
+  const tagName = tagMatch[1];
+  const tagIndex = htmlContent.indexOf(fullOpeningTag);
+  
+  // Handle text before the tag
+  if (tagIndex > 0) {
+    const beforeText = htmlContent.substring(0, tagIndex).trim();
+    if (beforeText) {
+      const textComponents = createTextComponentsWithLineBreaks(beforeText);
+      components.push(...textComponents);
+    }
+  }
+
+  // Find the matching closing tag
+  const closingTag = `</${tagName}>`;
+  const closingTagIndex = htmlContent.indexOf(closingTag, tagIndex);
+  
+  if (closingTagIndex === -1) {
+    // No closing tag found, treat as plain text
+    const textComponents = createTextComponentsWithLineBreaks(htmlContent.substring(tagIndex));
+    components.push(...textComponents);
+    return components;
+  }
+
+  // Extract content between tags
+  const contentStart = tagIndex + fullOpeningTag.length;
+  const content = htmlContent.substring(contentStart, closingTagIndex);
+  const fullTag = htmlContent.substring(tagIndex, closingTagIndex + closingTag.length);
+
+  // Handle different tag types
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'ul', 'ol', 'li'].includes(tagName)) {
+    // Block elements
+    let newContext = parentContext;
+    
+    // Extract styles from the current element
+    let elementStyles: any = {};
+    if (fullTag) {
+      const styleMatch = fullTag.match(/style="([^"]*)"/);
+      if (styleMatch) {
+        elementStyles = parseInlineStyleString(styleMatch[1]);
+      }
+    }
+    
+    // Update context for list elements and inherit styles
+    if (tagName === 'ul') {
+      newContext = { 
+        ...parentContext, 
+        listType: 'bullet',
+        fontColor: elementStyles.color || parentContext?.fontColor,
+        backgroundColor: elementStyles.backgroundColor || parentContext?.backgroundColor,
+        lineHeight: elementStyles.lineHeight || parentContext?.lineHeight
+      };
+    } else if (tagName === 'ol') {
+      newContext = { 
+        ...parentContext, 
+        listType: 'decimal',
+        fontColor: elementStyles.color || parentContext?.fontColor,
+        backgroundColor: elementStyles.backgroundColor || parentContext?.backgroundColor,
+        lineHeight: elementStyles.lineHeight || parentContext?.lineHeight
+      };
+    } else if (tagName === 'div') {
+      newContext = { 
+        ...parentContext,
+        fontColor: elementStyles.color || parentContext?.fontColor,
+        backgroundColor: elementStyles.backgroundColor || parentContext?.backgroundColor,
+        lineHeight: elementStyles.lineHeight || parentContext?.lineHeight
+      };
+    }
+    
+    // For list items, create individual components with proper styling
+    if (tagName === 'li') {
+      const listItemComponent = createBlockComponentWithContext(`<${tagName}>`, content, fullTag, newContext);
+      if (listItemComponent) {
+        components.push(listItemComponent);
+      }
+    } else {
+      // For other block elements, parse nested content with updated context
+      if (content.trim()) {
+        const nestedComponents = parseHtmlRecursively(content, newContext);
+        components.push(...nestedComponents);
+      }
+    }
+  } else {
+    // Inline elements - parse recursively
+    const inlineComponents = parseHtmlRecursively(content, parentContext);
+    components.push(...inlineComponents);
+  }
+
+  // Continue parsing after the closing tag
+  const remainingContent = htmlContent.substring(closingTagIndex + closingTag.length);
+  if (remainingContent.trim()) {
+    const remainingComponents = parseHtmlRecursively(remainingContent, parentContext);
+    components.push(...remainingComponents);
   }
 
   return components;
@@ -366,6 +436,166 @@ export function createTextComponentsWithLineBreaks(htmlContent: string): any[] {
 }
 
 /**
+ * Create a block component with context awareness for proper list handling
+ */
+function createBlockComponentWithContext(tag: string, content: string, fullTag?: string, parentContext?: { listType?: string; fontColor?: string; backgroundColor?: string; lineHeight?: string }): any | null {
+  if (!content.trim()) return null;
+
+  const nodes = parseInlineStyles(content);
+
+  let inlineStyles: any = {};
+  if (fullTag) {
+    const styleMatch = fullTag.match(/style="([^"]*)"/);
+    if (styleMatch) {
+      inlineStyles = parseInlineStyleString(styleMatch[1]);
+    }
+  }
+
+  let componentType = "text";
+  let textAlign = "left";
+  let paragraphStyle: any = { textAlign: textAlign, "@ctype": "paragraphStyle" };
+
+  if (tag.startsWith('<h')) {
+    componentType = "text";
+    textAlign = "left";
+    if (nodes.length > 0 && nodes[0].style) {
+      nodes[0].style.bold = true;
+    }
+  } else if (tag === '<ul>' || tag === '<ol>') {
+    componentType = "text";
+    textAlign = "left";
+
+    // Apply inline styles to text nodes
+    if (inlineStyles.color) {
+      nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
+    }
+    if (inlineStyles.lineHeight) {
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+
+    // Create proper list structure
+    const listType = tag === '<ul>' ? 'bullet' : 'decimal';
+    paragraphStyle.list = {
+      type: listType,
+      level: 0,
+      "@ctype": "paragraphListStyle"
+    };
+
+    // Handle margin/indentation
+    if (inlineStyles.marginLeft) {
+      const marginValue = parseInt(inlineStyles.marginLeft);
+      if (marginValue > 0) {
+        const indentSpaces = ' '.repeat(Math.min(marginValue / 10, 10));
+        if (nodes.length > 0 && nodes[0].value) {
+          nodes[0].value = indentSpaces + nodes[0].value;
+        }
+      }
+    }
+  } else if (tag === '<li>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply inline styles to text nodes
+    if (inlineStyles.color) {
+      nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+
+    // Apply parent context styles (inherited from ul/ol/div)
+    if (parentContext?.fontColor) {
+      nodes.forEach(node => { 
+        if (node.style) {
+          node.style.fontColor = parentContext.fontColor;
+        } else {
+          node.style = { fontColor: parentContext.fontColor, "@ctype": "nodeStyle" };
+        }
+      });
+    }
+    if (parentContext?.backgroundColor) {
+      nodes.forEach(node => { 
+        if (node.style) {
+          node.style.backgroundColor = parentContext.backgroundColor;
+        } else {
+          node.style = { backgroundColor: parentContext.backgroundColor, "@ctype": "nodeStyle" };
+        }
+      });
+      paragraphStyle.backgroundColor = parentContext.backgroundColor;
+    }
+    if (parentContext?.lineHeight) {
+      paragraphStyle.lineHeight = parentContext.lineHeight;
+    }
+
+    // Use parent context to determine list type
+    const listType = parentContext?.listType || 'bullet';
+    paragraphStyle.list = {
+      type: listType,
+      level: 0,
+      "@ctype": "paragraphListStyle"
+    };
+  } else if (tag === '<p>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply inline styles to text nodes
+    if (inlineStyles.color) {
+      nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
+    }
+    if (inlineStyles.lineHeight) {
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    if (inlineStyles.textAlign) {
+      paragraphStyle.textAlign = inlineStyles.textAlign;
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+  } else if (tag === '<div>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply inline styles to text nodes
+    if (inlineStyles.color) {
+      nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
+    }
+    if (inlineStyles.lineHeight) {
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    if (inlineStyles.textAlign) {
+      paragraphStyle.textAlign = inlineStyles.textAlign;
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+  }
+
+  return {
+    id: `SE-${generateUUID()}`,
+    layout: "default",
+    value: [
+      { id: `SE-${generateUUID()}`, nodes: nodes, style: paragraphStyle, "@ctype": "paragraph" }
+    ],
+    "@ctype": componentType
+  };
+}
+
+/**
  * Create a block component (heading, list, etc.) from HTML content
  */
 export function createBlockComponent(tag: string, content: string, fullTag?: string): any | null {
@@ -395,12 +625,29 @@ export function createBlockComponent(tag: string, content: string, fullTag?: str
     componentType = "text";
     textAlign = "left";
 
+    // Apply inline styles to text nodes
     if (inlineStyles.color) {
       nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
     }
     if (inlineStyles.lineHeight) {
       paragraphStyle.lineHeight = inlineStyles.lineHeight;
     }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+
+    // Create proper list structure
+    const listType = tag === '<ul>' ? 'bullet' : 'decimal';
+    paragraphStyle.list = {
+      type: listType,
+      level: 0,
+      "@ctype": "paragraphListStyle"
+    };
+
+    // Handle margin/indentation
     if (inlineStyles.marginLeft) {
       const marginValue = parseInt(inlineStyles.marginLeft);
       if (marginValue > 0) {
@@ -410,30 +657,73 @@ export function createBlockComponent(tag: string, content: string, fullTag?: str
         }
       }
     }
-    if (nodes.length > 0) {
-      const listPrefix = tag === '<ul>' ? '• ' : '1. ';
-      if (nodes[0].value) nodes[0].value = listPrefix + nodes[0].value;
-    }
+
+    // Remove manual list prefixes since we're using proper list structure
+    // The SmartEditor will handle the bullet/numbering automatically
   } else if (tag === '<li>') {
     componentType = "text";
     textAlign = "left";
+    
+    // Apply inline styles to text nodes
     if (inlineStyles.color) {
       nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
     }
-    if (nodes.length > 0 && nodes[0].value) {
-      nodes[0].value = '• ' + nodes[0].value;
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
     }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+
+    // For list items, we need to determine the list type from context
+    // This is a simplified approach - in a more complex parser, we'd track parent context
+    const listType = inlineStyles.listStyleType === 'decimal' || inlineStyles.listStyleType === 'decimal-leading-zero' ? 'decimal' : 'bullet';
+    paragraphStyle.list = {
+      type: listType,
+      level: 0,
+      "@ctype": "paragraphListStyle"
+    };
+
+    // Remove manual bullet prefix since we're using proper list structure
   } else if (tag === '<p>') {
     componentType = "text";
     textAlign = "left";
+    
+    // Apply inline styles to text nodes
     if (inlineStyles.color) {
       nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
     }
     if (inlineStyles.lineHeight) {
       paragraphStyle.lineHeight = inlineStyles.lineHeight;
     }
     if (inlineStyles.textAlign) {
       paragraphStyle.textAlign = inlineStyles.textAlign;
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
+    }
+  } else if (tag === '<div>') {
+    componentType = "text";
+    textAlign = "left";
+    
+    // Apply inline styles to text nodes
+    if (inlineStyles.color) {
+      nodes.forEach(node => { if (node.style) node.style.fontColor = inlineStyles.color; });
+    }
+    if (inlineStyles.backgroundColor) {
+      nodes.forEach(node => { if (node.style) node.style.backgroundColor = inlineStyles.backgroundColor; });
+    }
+    if (inlineStyles.lineHeight) {
+      paragraphStyle.lineHeight = inlineStyles.lineHeight;
+    }
+    if (inlineStyles.textAlign) {
+      paragraphStyle.textAlign = inlineStyles.textAlign;
+    }
+    if (inlineStyles.backgroundColor) {
+      paragraphStyle.backgroundColor = inlineStyles.backgroundColor;
     }
   }
 
