@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { analyzeImageSegmentation } = require('./ai-vision/test');
 
+// Simple debug visualization without external dependencies
+
 // ============================================================================
 // CONSTANTS AND CONFIGURATION
 // ============================================================================
@@ -32,6 +34,383 @@ const CONFIG = {
     KEYBOARD_RETURN: 300
   },
 };
+
+// ============================================================================
+// DEBUG FUNCTIONS
+// ============================================================================
+
+/**
+ * Creates a simple HTML debug visualization with AI-detected objects
+ * @param {string} originalImagePath - Path to the original image
+ * @param {Array} aiSegmentation - AI segmentation results with masks
+ * @param {string} outputPath - Path to save the debug HTML file
+ * @param {Object} keyboardBox - Keyboard element bounding box {x, y, width, height}
+ * @returns {Promise<string|null>} Path to the created debug HTML file
+ */
+async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, outputPath, keyboardBox = null) {
+  try {
+    console.log('[DEBUG] Creating HTML debug visualization...');
+    
+    if (!aiSegmentation || aiSegmentation.length === 0) {
+      console.warn('[DEBUG] No AI segmentation data provided');
+      return null;
+    }
+
+    // Convert image to base64 for embedding
+    const imageBuffer = fs.readFileSync(originalImagePath);
+    const base64Image = imageBuffer.toString('base64');
+    const imageExtension = path.extname(originalImagePath).substring(1);
+    
+    // We'll let JavaScript in the HTML get the actual image dimensions
+    // This is more reliable than trying to parse image headers
+    
+    // Log keyboard position info
+    if (keyboardBox) {
+      console.log('[DEBUG] Keyboard position on screen:', keyboardBox);
+    } else {
+      console.log('[DEBUG] No keyboard position provided, using (0,0)');
+      keyboardBox = { x: 0, y: 0, width: 1000, height: 600 };
+    }
+    
+    // Create HTML with overlays
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Keyboard Detection Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { position: relative; display: inline-block; }
+        .original-image { 
+            width: auto; 
+            height: auto; 
+            max-width: 100%; 
+            display: block;
+        }
+        .overlay { position: absolute; border: 3px solid; opacity: 0.7; }
+        .overlay-label { 
+            position: absolute; 
+            top: -20px; 
+            left: 0; 
+            background: rgba(0,0,0,0.8); 
+            color: white; 
+            padding: 2px 6px; 
+            font-size: 12px; 
+            border-radius: 3px;
+        }
+        .info-panel { 
+            margin-top: 20px; 
+            padding: 15px; 
+            background: #f5f5f5; 
+            border-radius: 5px; 
+        }
+        .object-info { 
+            margin: 5px 0; 
+            padding: 5px; 
+            background: white; 
+            border-radius: 3px; 
+        }
+        .debug-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: #e8f4f8;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h2>AI Keyboard Detection Debug Visualization</h2>
+    <div class="container">
+        <img id="keyboardImage" src="data:image/${imageExtension};base64,${base64Image}" class="original-image" alt="Original Keyboard" onload="createOverlays()">
+        <div id="overlayContainer"></div>
+    </div>
+    
+    <div class="debug-info">
+        <strong>Debug Info:</strong><br>
+        <span id="imageDimensions">Loading image dimensions...</span><br>
+        <span id="coordinateInfo">Waiting for image load...</span>
+    </div>
+    
+    <div class="info-panel">
+        <h3>Detection Summary</h3>
+        <p><strong>Total Objects Detected:</strong> ${aiSegmentation.length}</p>
+        <p><strong>Original Image:</strong> ${path.basename(originalImagePath)}</p>
+        
+        <h4>Detected Objects:</h4>
+        <div id="objectList">
+          <p>Loading object details...</p>
+        </div>
+    </div>
+    
+    <script>
+        // AI segmentation data
+        const aiSegmentation = ${JSON.stringify(aiSegmentation)};
+        
+        // Keyboard position on screen
+        const keyboardBox = ${JSON.stringify(keyboardBox)};
+        
+        // Color palette
+        const colors = [
+            { r: 255, g: 0, b: 0 },     // Red
+            { r: 0, g: 255, b: 0 },     // Green
+            { r: 0, g: 0, b: 255 },     // Blue
+            { r: 255, g: 255, b: 0 },   // Yellow
+            { r: 255, g: 0, b: 255 },   // Magenta
+            { r: 0, g: 255, b: 255 },   // Cyan
+            { r: 255, g: 128, b: 0 },   // Orange
+            { r: 128, g: 0, b: 255 },   // Purple
+            { r: 255, g: 192, b: 203 }, // Pink
+            { r: 0, g: 128, b: 0 },     // Dark Green
+        ];
+        
+        function getColorForIndex(index) {
+            return colors[index % colors.length];
+        }
+        
+        function createOverlays() {
+            const img = document.getElementById('keyboardImage');
+            const container = document.getElementById('overlayContainer');
+            const dimensionsSpan = document.getElementById('imageDimensions');
+            const coordinateSpan = document.getElementById('coordinateInfo');
+            
+            // Get both natural and displayed dimensions
+            const naturalWidth = img.naturalWidth;
+            const naturalHeight = img.naturalHeight;
+            const displayedWidth = img.offsetWidth;
+            const displayedHeight = img.offsetHeight;
+            
+            // Calculate scaling factors
+            const scaleX = displayedWidth / naturalWidth;
+            const scaleY = displayedHeight / naturalHeight;
+            
+            // Update debug info
+            dimensionsSpan.innerHTML = \`
+                Natural dimensions: \${naturalWidth} × \${naturalHeight} pixels<br>
+                Displayed dimensions: \${displayedWidth} × \${displayedHeight} pixels<br>
+                Scale factors: \${scaleX.toFixed(3)} × \${scaleY.toFixed(3)}<br>
+                Keyboard screen position: (\${keyboardBox.x}, \${keyboardBox.y}) size: \${keyboardBox.width} × \${keyboardBox.height}
+            \`;
+            
+            console.log('Natural dimensions:', naturalWidth, '×', naturalHeight);
+            console.log('Displayed dimensions:', displayedWidth, '×', displayedHeight);
+            console.log('Scale factors:', scaleX, '×', scaleY);
+            
+            // Clear existing overlays
+            container.innerHTML = '';
+            
+            // Create overlays for each detected object
+            aiSegmentation.forEach((obj, index) => {
+                if (!obj.box_2d) return;
+                
+                const [ymin, xmin, ymax, xmax] = obj.box_2d;
+                
+                // Scale coordinates from 0-1000 range to natural image dimensions
+                const naturalXmin = (xmin / 1000) * naturalWidth;
+                const naturalYmin = (ymin / 1000) * naturalHeight;
+                const naturalXmax = (xmax / 1000) * naturalWidth;
+                const naturalYmax = (ymax / 1000) * naturalHeight;
+                
+                // Scale to displayed dimensions
+                const displayedXmin = naturalXmin * scaleX;
+                const displayedYmin = naturalYmin * scaleY;
+                const displayedXmax = naturalXmax * scaleX;
+                const displayedYmax = naturalYmax * scaleY;
+                
+                // Add keyboard screen position offset
+                const finalXmin = displayedXmin + keyboardBox.x;
+                const finalYmin = displayedYmin + keyboardBox.y;
+                const finalXmax = displayedXmax + keyboardBox.x;
+                const finalYmax = displayedYmax + keyboardBox.y;
+                
+                const color = getColorForIndex(index);
+                const colorHex = \`rgb(\${color.r}, \${color.g}, \${color.b})\`;
+                
+                // Create overlay element
+                const overlay = document.createElement('div');
+                overlay.className = 'overlay';
+                overlay.style.cssText = \`
+                    left: \${finalXmin}px;
+                    top: \${finalYmin}px;
+                    width: \${finalXmax - finalXmin}px;
+                    height: \${finalYmax - finalYmin}px;
+                    border-color: \${colorHex};
+                \`;
+                
+                // Create label
+                const label = document.createElement('div');
+                label.className = 'overlay-label';
+                label.style.color = colorHex;
+                label.textContent = obj.label || \`Object \${index + 1}\`;
+                overlay.appendChild(label);
+                
+                container.appendChild(overlay);
+                
+                console.log(\`Object \${index + 1} (\${obj.label || 'unknown'}):\`);
+                console.log(\`  Raw coords: (\${xmin}, \${ymin}) to (\${xmax}, \${ymax})\`);
+                console.log(\`  Natural coords: (\${naturalXmin.toFixed(1)}, \${naturalYmin.toFixed(1)}) to (\${naturalXmax.toFixed(1)}, \${naturalYmax.toFixed(1)})\`);
+                console.log(\`  Displayed coords: (\${displayedXmin.toFixed(1)}, \${displayedYmin.toFixed(1)}) to (\${displayedXmax.toFixed(1)}, \${displayedYmax.toFixed(1)})\`);
+                console.log(\`  Final coords (with keyboard offset): (\${finalXmin.toFixed(1)}, \${finalYmin.toFixed(1)}) to (\${finalXmax.toFixed(1)}, \${finalYmax.toFixed(1)})\`);
+            });
+            
+            // Update coordinate info
+            coordinateSpan.textContent = \`Created \${aiSegmentation.length} overlays with proper scaling\`;
+            
+            // Update object list
+            updateObjectList();
+        }
+        
+        function updateObjectList() {
+            const objectList = document.getElementById('objectList');
+            const img = document.getElementById('keyboardImage');
+            
+            const naturalWidth = img.naturalWidth;
+            const naturalHeight = img.naturalHeight;
+            const displayedWidth = img.offsetWidth;
+            const displayedHeight = img.offsetHeight;
+            const scaleX = displayedWidth / naturalWidth;
+            const scaleY = displayedHeight / naturalHeight;
+            
+            const objectListHTML = aiSegmentation.map((obj, index) => {
+                if (!obj.box_2d) return '';
+                const [ymin, xmin, ymax, xmax] = obj.box_2d;
+                
+                // Scale coordinates from 0-1000 range to natural image dimensions
+                const naturalXmin = (xmin / 1000) * naturalWidth;
+                const naturalYmin = (ymin / 1000) * naturalHeight;
+                const naturalXmax = (xmax / 1000) * naturalWidth;
+                const naturalYmax = (ymax / 1000) * naturalHeight;
+                
+                // Scale to displayed dimensions
+                const displayedXmin = naturalXmin * scaleX;
+                const displayedYmin = naturalYmin * scaleY;
+                const displayedXmax = naturalXmax * scaleX;
+                const displayedYmax = naturalYmax * scaleY;
+                
+                // Add keyboard screen position offset
+                const finalXmin = displayedXmin + keyboardBox.x;
+                const finalYmin = displayedYmin + keyboardBox.y;
+                const finalXmax = displayedXmax + keyboardBox.x;
+                const finalYmax = displayedYmax + keyboardBox.y;
+                
+                const color = getColorForIndex(index);
+                return \`
+                    <div class="object-info">
+                        <strong>\${obj.label || \`Object \${index + 1}\`}</strong><br>
+                        <span style="color: rgb(\${color.r}, \${color.g}, \${color.b});">●</span>
+                        Raw AI coords: (\${xmin}, \${ymin}) to (\${xmax}, \${ymax})<br>
+                        Natural coords: (\${naturalXmin.toFixed(1)}, \${naturalYmin.toFixed(1)}) to (\${naturalXmax.toFixed(1)}, \${naturalYmax.toFixed(1)})<br>
+                        Displayed coords: (\${displayedXmin.toFixed(1)}, \${displayedYmin.toFixed(1)}) to (\${displayedXmax.toFixed(1)}, \${displayedYmax.toFixed(1)})<br>
+                        Final coords: (\${finalXmin.toFixed(1)}, \${finalYmin.toFixed(1)}) to (\${finalXmax.toFixed(1)}, \${finalYmax.toFixed(1)})<br>
+                        Size: \${(finalXmax - finalXmin).toFixed(1)} × \${(finalYmax - finalYmin).toFixed(1)} pixels<br>
+                        Confidence: \${obj.confidence || 'N/A'}
+                    </div>
+                \`;
+            }).join('');
+            
+            objectList.innerHTML = objectListHTML;
+        }
+        
+        // Fallback in case image is already loaded
+        if (document.readyState === 'complete') {
+            createOverlays();
+        }
+    </script>
+</body>
+</html>
+    `;
+
+    // Write HTML file
+    fs.writeFileSync(outputPath, html);
+    
+    console.log(`[DEBUG] HTML debug visualization saved: ${outputPath}`);
+    return outputPath;
+    
+  } catch (error) {
+    console.error('[DEBUG] Failed to create HTML debug visualization:', error);
+    return null;
+  }
+}
+
+/**
+ * Generates a distinct color for each object index
+ * @param {number} index - Object index
+ * @returns {Object} RGB color object
+ */
+function getColorForIndex(index) {
+  const colors = [
+    { r: 255, g: 0, b: 0 },     // Red
+    { r: 0, g: 255, b: 0 },     // Green
+    { r: 0, g: 0, b: 255 },     // Blue
+    { r: 255, g: 255, b: 0 },   // Yellow
+    { r: 255, g: 0, b: 255 },   // Magenta
+    { r: 0, g: 255, b: 255 },   // Cyan
+    { r: 255, g: 128, b: 0 },   // Orange
+    { r: 128, g: 0, b: 255 },   // Purple
+    { r: 255, g: 192, b: 203 }, // Pink
+    { r: 0, g: 128, b: 0 },     // Dark Green
+  ];
+  
+  return colors[index % colors.length];
+}
+
+/**
+ * Creates a detailed debug report with HTML visualization and AI analysis data
+ * @param {string} imagePath - Path to the original image
+ * @param {Array} aiSegmentation - AI segmentation results
+ * @param {string} outputDir - Output directory for debug files
+ * @param {Object} keyboardBox - Keyboard element bounding box {x, y, width, height}
+ * @returns {Promise<Object>} Debug report object
+ */
+async function createDebugReport(imagePath, aiSegmentation, outputDir, keyboardBox = null) {
+  try {
+    console.log('[DEBUG] Creating comprehensive debug report...');
+    
+    const timestamp = generateTimestamp();
+    const debugHtmlPath = path.join(outputDir, `debug-visualization-${timestamp}.html`);
+    const reportPath = path.join(outputDir, `debug-report-${timestamp}.json`);
+    
+    // Create HTML debug visualization
+    const debugHtml = await createDebugHTMLVisualization(imagePath, aiSegmentation, debugHtmlPath, keyboardBox);
+    
+    // Create detailed report
+    const report = {
+      timestamp: new Date().toISOString(),
+      originalImage: imagePath,
+      debugHtml: debugHtml,
+      aiSegmentation: aiSegmentation,
+      objectCount: aiSegmentation ? aiSegmentation.length : 0,
+      objects: aiSegmentation ? aiSegmentation.map((obj, index) => ({
+        index: index + 1,
+        label: obj.label || 'unknown',
+        box_2d: obj.box_2d,
+        hasMask: !!obj.mask,
+        confidence: obj.confidence || 'unknown'
+      })) : []
+    };
+    
+    // Save report to file
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    
+    console.log(`[DEBUG] Debug report saved: ${reportPath}`);
+    console.log(`[DEBUG] Debug HTML visualization: ${debugHtml}`);
+    console.log(`[DEBUG] Found ${report.objectCount} objects in the image`);
+    
+    return {
+      success: true,
+      debugHtml: debugHtml,
+      reportPath: reportPath,
+      objectCount: report.objectCount
+    };
+    
+  } catch (error) {
+    console.error('[DEBUG] Failed to create debug report:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -779,6 +1158,22 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
         // Analyze with AI
         const keyboardKeys = await analyzeKeyboardWithAI(screenshotPath, geminiApiKey, keyboardBox);
         
+        // Create debug report with AI analysis
+        if (geminiApiKey) {
+          try {
+            const aiSegmentation = await analyzeImageSegmentation(screenshotPath, geminiApiKey);
+            if (aiSegmentation && aiSegmentation.length > 0) {
+              const debugResult = await createDebugReport(screenshotPath, aiSegmentation, outputDir, keyboardBox);
+              if (debugResult.success) {
+                console.log(`[SHINHAN] Debug report created: ${debugResult.reportPath}`);
+                console.log(`[SHINHAN] Debug HTML visualization: ${debugResult.debugHtml}`);
+              }
+            }
+          } catch (debugError) {
+            console.warn('[SHINHAN] Failed to create debug report:', debugError);
+          }
+        }
+        
         if (Object.keys(keyboardKeys).length > 0) {
           // Analyze shift keyboard
           const shiftKeyboardKeys = await analyzeShiftKeyboard(page, keyboardKeys, keyboardBox, geminiApiKey);
@@ -801,56 +1196,58 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
           console.log('[SHINHAN] Found shift key:', shiftKey ? `"${shiftKey.label}" at (${shiftKey.position.x}, ${shiftKey.position.y})` : 'NOT FOUND');
           
           if (shiftKey) {
-            const typer = new KeyboardTyper(page);
+            // const typer = new KeyboardTyper(page);
             
-            // Take screenshot of shift key area for debugging
-            console.log('[SHINHAN] Taking screenshot of shift key area...');
-            try {
-              const shiftTimestamp = generateTimestamp();
-              const shiftScreenshotPath = path.join(process.cwd(), 'output', `shift-key-area-${shiftTimestamp}.png`);
+            // // Take screenshot of shift key area for debugging
+            // console.log('[SHINHAN] Taking screenshot of shift key area...');
+            // try {
+            //   const shiftTimestamp = generateTimestamp();
+            //   const shiftScreenshotPath = path.join(process.cwd(), 'output', `shift-key-area-${shiftTimestamp}.png`);
               
-              // Ensure shift key is in viewport before screenshot
-              const updatedBounds = await ensureElementInViewport(page, shiftKey.bounds);
+            //   // Ensure shift key is in viewport before screenshot
+            //   const updatedBounds = await ensureElementInViewport(page, shiftKey.bounds);
               
-              await page.screenshot({
-                path: shiftScreenshotPath,
-                clip: {
-                  x: Math.max(0, updatedBounds.x),
-                  y: Math.max(0, updatedBounds.y),
-                  width: updatedBounds.width,
-                  height: updatedBounds.height
-                }
-              });
+            //   await page.screenshot({
+            //     path: shiftScreenshotPath,
+            //     clip: {
+            //       x: Math.max(0, updatedBounds.x),
+            //       y: Math.max(0, updatedBounds.y),
+            //       width: updatedBounds.width,
+            //       height: updatedBounds.height
+            //     }
+            //   });
               
-              console.log('[SHINHAN] Shift key area screenshot saved:', shiftScreenshotPath);
-              console.log('[SHINHAN] Shift key bounds used:', updatedBounds);
-            } catch (error) {
-              console.warn('[SHINHAN] Failed to take shift key area screenshot:', error);
-            }
+            //   console.log('[SHINHAN] Shift key area screenshot saved:', shiftScreenshotPath);
+            //   console.log('[SHINHAN] Shift key bounds used:', updatedBounds);
+            // } catch (error) {
+            //   console.warn('[SHINHAN] Failed to take shift key area screenshot:', error);
+            // }
             
-            // Press shift key to analyze shift layout
-            const shiftSuccess = await typer.handleShiftKey(shiftKey, 'press');
-            if (shiftSuccess) {
-              await page.waitForTimeout(CONFIG.DELAYS.KEYBOARD_RETURN);
-              console.log('[SHINHAN] Shift key pressed successfully to analyze shift layout');
+            // // Press shift key to analyze shift layout
+            // const shiftSuccess = await typer.handleShiftKey(shiftKey, 'press');
+            // if (shiftSuccess) {
+            //   await page.waitForTimeout(CONFIG.DELAYS.KEYBOARD_RETURN);
+            //   console.log('[SHINHAN] Shift key pressed successfully to analyze shift layout');
               
-              // Take screenshot of shift key after clicking
-              console.log('[SHINHAN] Taking post-shift screenshot...');
-              await typer.takeKeyScreenshot('shift', 0, shiftKey, 'after');
-              await typer.takeKeyboardWithKeyHighlight('shift', 0, shiftKey, 'after');
-            } else {
-              console.warn('[SHINHAN] Failed to press shift key, continuing without shift...');
-            }
+            //   // Take screenshot of shift key after clicking
+            //   console.log('[SHINHAN] Taking post-shift screenshot...');
+            //   await typer.takeKeyScreenshot('shift', 0, shiftKey, 'after');
+            //   await typer.takeKeyboardWithKeyHighlight('shift', 0, shiftKey, 'after');
+            // } else {
+            //   console.warn('[SHINHAN] Failed to press shift key, continuing without shift...');
+            // }
+            console.log('[SHINHAN] Shift key found but logic commented out - not proceeding with shift operations');
           } else {
             console.warn('[SHINHAN] No shift key found in keyboard mapping, continuing without shift...');
           }
           
-          // Complete keyboard mapping and typing
-          const finalKeyboardKeys = { ...keyboardKeys, ...shiftKeyboardKeys };
-          console.log('[SHINHAN] Final keyboard mapping ready with', Object.keys(finalKeyboardKeys).length, 'keys');
+          // // Complete keyboard mapping and typing
+          // const finalKeyboardKeys = { ...keyboardKeys, ...shiftKeyboardKeys };
+          // console.log('[SHINHAN] Final keyboard mapping ready with', Object.keys(finalKeyboardKeys).length, 'keys');
           
-          const typer = new KeyboardTyper(page);
-          await typer.typeText(finalKeyboardKeys, password);
+          // const typer = new KeyboardTyper(page);
+          // await typer.typeText(finalKeyboardKeys, password);
+          console.log('[SHINHAN] Keyboard typing logic commented out - not proceeding with password typing');
         }
       }
     } catch (error) {
@@ -886,4 +1283,8 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
   }
 }
 
-module.exports = { runShinhanAutomation };
+module.exports = { 
+  runShinhanAutomation,
+  createDebugHTMLVisualization,
+  createDebugReport
+};
