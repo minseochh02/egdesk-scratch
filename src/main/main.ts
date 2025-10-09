@@ -377,6 +377,105 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize File System handlers:', error);
     }
 
+    // Initialize PHP Server handlers
+    try {
+      const { SimplePHPServerTest } = require('./api-server-test');
+      let phpServerTest: any = null;
+
+      ipcMain.handle('php-server-start', async (_event, port?: number) => {
+        try {
+          if (!phpServerTest) {
+            phpServerTest = new SimplePHPServerTest(port || 8080);
+          }
+          const success = await phpServerTest.startServer();
+          if (success) {
+            const localIP = await phpServerTest.getLocalIP();
+            return { 
+              success: true, 
+              port: port || 8080,
+              localIP,
+              url: `http://${localIP}:${port || 8080}`,
+              helloUrl: `http://${localIP}:${port || 8080}/hello.php`
+            };
+          } else {
+            return { success: false, error: 'Failed to start PHP server' };
+          }
+        } catch (error) {
+          console.error('❌ PHP server start failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+
+      ipcMain.handle('php-server-stop', async () => {
+        try {
+          if (phpServerTest) {
+            phpServerTest.stopServer();
+            phpServerTest = null;
+            return { success: true };
+          }
+          return { success: false, error: 'No server running' };
+        } catch (error) {
+          console.error('❌ PHP server stop failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+
+      ipcMain.handle('php-server-status', async () => {
+        try {
+          if (phpServerTest) {
+            const localIP = await phpServerTest.getLocalIP();
+            return { 
+              success: true, 
+              isRunning: true,
+              port: phpServerTest.port,
+              localIP,
+              url: `http://${localIP}:${phpServerTest.port}`,
+              helloUrl: `http://${localIP}:${phpServerTest.port}/hello.php`
+            };
+          }
+          return { success: true, isRunning: false };
+        } catch (error) {
+          console.error('❌ PHP server status check failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+
+      ipcMain.handle('php-server-test-hello', async () => {
+        try {
+          if (phpServerTest) {
+            const success = await phpServerTest.testHelloEndpoint();
+            return { success, message: success ? 'Hello endpoint working' : 'Hello endpoint failed' };
+          }
+          return { success: false, error: 'No server running' };
+        } catch (error) {
+          console.error('❌ PHP server hello test failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+
+      ipcMain.handle('php-server-get-local-ip', async () => {
+        try {
+          const os = require('os');
+          const interfaces = os.networkInterfaces();
+          for (let iface of Object.values(interfaces) as any[]) {
+            for (let alias of iface) {
+              if (alias.family === 'IPv4' && !alias.internal) {
+                return { success: true, ip: alias.address };
+              }
+            }
+          }
+          return { success: true, ip: 'localhost' };
+        } catch (error) {
+          console.error('❌ Get local IP failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
+
+      console.log('✅ PHP Server handlers initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize PHP Server handlers:', error);
+    }
+
   } catch (error) {
     console.error('❌ CRITICAL: Failed to initialize Electron Store:', error);
   }

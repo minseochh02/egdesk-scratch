@@ -2,6 +2,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 const { analyzeImageSegmentation } = require('./ai-vision/test');
+const { createDebugHTMLVisualization: extCreateDebugHTMLVisualization, createDebugReport: extCreateDebugReport } = require('./debug/visualization');
 
 // Simple debug visualization without external dependencies
 
@@ -12,10 +13,16 @@ const { analyzeImageSegmentation } = require('./ai-vision/test');
 const CONFIG = {
   TARGET_URL: 'https://www.shinhan.com/hpe/index.jsp#252400000000',
   UNDESIRED_HOSTNAMES: ['wooribank.com', 'www.wooribank.com'],
+  HEADLESS: false, // Set to true for production/headless mode
+  CHROME_PROFILE: null, // Set to Chrome profile path, e.g., '/Users/username/Library/Application Support/Google/Chrome/Default'
   XPATHS: {
     ID_INPUT: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/input',
     PASSWORD_INPUT: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/div/input[1]',
-    KEYBOARD: '/html/body/div[6]/div[1]'
+    KEYBOARD: '/html/body/div[6]/div[1]',
+    SECURITY_POPUP: '//div[@id="wq_uuid_28" and contains(@class, "layerContent")]',
+    SECURITY_POPUP_CLOSE: '//a[@id="no_install" and contains(@class, "btnTyGray02")]',
+    SECURITY_POPUP_ALT: '//div[contains(@class, "layerContent") and contains(., "보안프로그램")]',
+    SECURITY_POPUP_CLOSE_ALT: '//a[contains(text(), "설치하지 않음")]'
   },
   TIMEOUTS: {
     ELEMENT_WAIT: 10000,
@@ -36,7 +43,7 @@ const CONFIG = {
 };
 
 // ============================================================================
-// DEBUG FUNCTIONS
+// DEBUG FUNCTIONS (moved to ./debug/visualization)
 // ============================================================================
 
 /**
@@ -79,8 +86,19 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
 <head>
     <title>AI Keyboard Detection Debug</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { position: relative; display: inline-block; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f0f0f0;
+            position: relative;
+        }
+        .container { 
+            position: absolute; 
+            display: inline-block; 
+            left: ${keyboardBox.x}px; 
+            top: ${keyboardBox.y}px; 
+            z-index: 1000;
+        }
         .original-image { 
             width: auto; 
             height: auto; 
@@ -121,6 +139,7 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
 </head>
 <body>
     <h2>AI Keyboard Detection Debug Visualization</h2>
+    <p><strong>Keyboard positioned at Shinhan website coordinates:</strong> (${keyboardBox.x}, ${keyboardBox.y})</p>
     <div class="container">
         <img id="keyboardImage" src="data:image/${imageExtension};base64,${base64Image}" class="original-image" alt="Original Keyboard" onload="createOverlays()">
         <div id="overlayContainer"></div>
@@ -136,6 +155,7 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
         <h3>Detection Summary</h3>
         <p><strong>Total Objects Detected:</strong> ${aiSegmentation.length}</p>
         <p><strong>Original Image:</strong> ${path.basename(originalImagePath)}</p>
+        <p><strong>Note:</strong> The image container is positioned at the exact Shinhan website keyboard coordinates (${keyboardBox.x}, ${keyboardBox.y}). Overlays are positioned relative to this image container.</p>
         
         <h4>Detected Objects:</h4>
         <div id="objectList">
@@ -189,7 +209,8 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
                 Natural dimensions: \${naturalWidth} × \${naturalHeight} pixels<br>
                 Displayed dimensions: \${displayedWidth} × \${displayedHeight} pixels<br>
                 Scale factors: \${scaleX.toFixed(3)} × \${scaleY.toFixed(3)}<br>
-                Keyboard screen position: (\${keyboardBox.x}, \${keyboardBox.y}) size: \${keyboardBox.width} × \${keyboardBox.height}
+                Image container positioned at: (\${keyboardBox.x}, \${keyboardBox.y}) size: \${keyboardBox.width} × \${keyboardBox.height}<br>
+                <strong>Note: Image is positioned at the exact Shinhan website keyboard coordinates</strong>
             \`;
             
             console.log('Natural dimensions:', naturalWidth, '×', naturalHeight);
@@ -217,11 +238,11 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
                 const displayedXmax = naturalXmax * scaleX;
                 const displayedYmax = naturalYmax * scaleY;
                 
-                // Add keyboard screen position offset
-                const finalXmin = displayedXmin + keyboardBox.x;
-                const finalYmin = displayedYmin + keyboardBox.y;
-                const finalXmax = displayedXmax + keyboardBox.x;
-                const finalYmax = displayedYmax + keyboardBox.y;
+                // Overlays are positioned relative to the image container, which is positioned at keyboard screen coordinates
+                const finalXmin = displayedXmin;
+                const finalYmin = displayedYmin;
+                const finalXmax = displayedXmax;
+                const finalYmax = displayedYmax;
                 
                 const color = getColorForIndex(index);
                 const colorHex = \`rgb(\${color.r}, \${color.g}, \${color.b})\`;
@@ -250,7 +271,7 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
                 console.log(\`  Raw coords: (\${xmin}, \${ymin}) to (\${xmax}, \${ymax})\`);
                 console.log(\`  Natural coords: (\${naturalXmin.toFixed(1)}, \${naturalYmin.toFixed(1)}) to (\${naturalXmax.toFixed(1)}, \${naturalYmax.toFixed(1)})\`);
                 console.log(\`  Displayed coords: (\${displayedXmin.toFixed(1)}, \${displayedYmin.toFixed(1)}) to (\${displayedXmax.toFixed(1)}, \${displayedYmax.toFixed(1)})\`);
-                console.log(\`  Final coords (with keyboard offset): (\${finalXmin.toFixed(1)}, \${finalYmin.toFixed(1)}) to (\${finalXmax.toFixed(1)}, \${finalYmax.toFixed(1)})\`);
+                console.log(\`  Final coords (relative to image container at screen pos \${keyboardBox.x},\${keyboardBox.y}): (\${finalXmin.toFixed(1)}, \${finalYmin.toFixed(1)}) to (\${finalXmax.toFixed(1)}, \${finalYmax.toFixed(1)})\`);
             });
             
             // Update coordinate info
@@ -287,11 +308,11 @@ async function createDebugHTMLVisualization(originalImagePath, aiSegmentation, o
                 const displayedXmax = naturalXmax * scaleX;
                 const displayedYmax = naturalYmax * scaleY;
                 
-                // Add keyboard screen position offset
-                const finalXmin = displayedXmin + keyboardBox.x;
-                const finalYmin = displayedYmin + keyboardBox.y;
-                const finalXmax = displayedXmax + keyboardBox.x;
-                const finalYmax = displayedYmax + keyboardBox.y;
+                // Overlays are positioned relative to the image container, which is positioned at keyboard screen coordinates
+                const finalXmin = displayedXmin;
+                const finalYmin = displayedYmin;
+                const finalXmax = displayedXmax;
+                const finalYmax = displayedYmax;
                 
                 const color = getColorForIndex(index);
                 return \`
@@ -415,6 +436,38 @@ async function createDebugReport(imagePath, aiSegmentation, outputDir, keyboardB
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+/**
+ * Gets the default Chrome profile path for the current OS
+ * @returns {string|null} Chrome profile path or null if not found
+ */
+function getDefaultChromeProfilePath() {
+  const os = require('os');
+  const platform = os.platform();
+  
+  let profilePath = null;
+  
+  switch (platform) {
+    case 'darwin': // macOS
+      profilePath = path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'Default');
+      break;
+    case 'win32': // Windows
+      profilePath = path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default');
+      break;
+    case 'linux': // Linux
+      profilePath = path.join(os.homedir(), '.config', 'google-chrome', 'Default');
+      break;
+  }
+  
+  // Check if profile directory exists
+  if (profilePath && fs.existsSync(profilePath)) {
+    console.log('[SHINHAN] Found Chrome profile at:', profilePath);
+    return profilePath;
+  }
+  
+  console.log('[SHINHAN] Chrome profile not found at expected location');
+  return null;
+}
 
 /**
  * Builds proxy configuration from URL string
@@ -844,19 +897,249 @@ async function setupBrowserContext(context, targetUrl, page) {
  * @returns {Promise<Object>} Browser and context objects
  */
 async function createBrowser(proxy) {
-  const browser = await chromium.launch({
-    headless: false,
-    channel: 'chrome',
-    proxy
-  });
+  // Check if we should use a persistent context (Chrome profile)
+  const profilePath = CONFIG.CHROME_PROFILE || getDefaultChromeProfilePath();
   
-  const context = await browser.newContext({
-    locale: 'ko-KR',
-    // Set a larger viewport to accommodate the keyboard
-    viewport: { width: 1280, height: 1024 }
-  });
-  
-  return { browser, context };
+  if (profilePath) {
+    console.log('[SHINHAN] Using Chrome profile with persistent context:', profilePath);
+    
+    // Use launchPersistentContext for Chrome profile support
+    const context = await chromium.launchPersistentContext(profilePath, {
+      headless: CONFIG.HEADLESS,
+      channel: 'chrome',
+      proxy,
+      locale: 'ko-KR',
+      // Set a larger viewport to accommodate the keyboard
+      viewport: { width: 1280, height: 1024 }
+    });
+    
+    // For persistent context, we don't get a separate browser object
+    // Return the context as both browser and context for compatibility
+    return { browser: context, context: context };
+  } else {
+    console.log('[SHINHAN] Using temporary Chrome profile (no persistent data)');
+    
+    // Use regular launch for temporary profile
+    const browser = await chromium.launch({
+      headless: CONFIG.HEADLESS,
+      channel: 'chrome',
+      proxy
+    });
+    
+    const context = await browser.newContext({
+      locale: 'ko-KR',
+      // Set a larger viewport to accommodate the keyboard
+      viewport: { width: 1280, height: 1024 }
+    });
+    
+    return { browser, context };
+  }
+}
+
+// ============================================================================
+// SECURITY POPUP HANDLING
+// ============================================================================
+
+/**
+ * Handles security program installation popup
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<boolean>} Success status
+ */
+async function handleSecurityPopup(page) {
+  try {
+    console.log('[SHINHAN] Checking for security program installation popup...');
+    
+    // Wait up to 10 seconds for the popup to appear using proper wait conditions
+    console.log('[SHINHAN] Waiting up to 10 seconds for security popup to load...');
+    
+    let popupLocator = null;
+    let popupExists = false;
+    let iframe = null;
+    
+    // First, wait a bit for the page to fully load
+    await page.waitForTimeout(3000);
+    
+    // Check for security popup iframe first
+    console.log('[SHINHAN] Looking for security popup iframe...');
+    try {
+      // Wait for iframe with security popup
+      const iframeLocator = page.locator('//iframe[contains(@title, "보안프로그램") or contains(@src, "popup.jsp")]');
+      await iframeLocator.waitFor({ state: 'visible', timeout: 7000 });
+      iframe = await iframeLocator.contentFrame();
+      console.log('[SHINHAN] Security popup iframe found, switching context...');
+      
+      // Debug: Check iframe content
+      const iframeTitle = await iframeLocator.getAttribute('title');
+      const iframeSrc = await iframeLocator.getAttribute('src');
+      console.log(`[SHINHAN] Iframe title: ${iframeTitle}`);
+      console.log(`[SHINHAN] Iframe src: ${iframeSrc}`);
+    } catch (iframeError) {
+      console.log('[SHINHAN] No security popup iframe found, checking main page...');
+      
+      // Debug: Check what iframes are available
+      const allIframes = await page.locator('//iframe').count();
+      console.log(`[SHINHAN] Debug: Found ${allIframes} iframes on the page`);
+    }
+    
+    // Try to find popup in iframe or main page
+    if (iframe) {
+      // Look for popup inside iframe
+      try {
+        popupLocator = iframe.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP}`);
+        await popupLocator.waitFor({ state: 'visible', timeout: 3000 });
+        popupExists = true;
+        console.log('[SHINHAN] Security popup found in iframe');
+      } catch (iframePopupError) {
+        console.log('[SHINHAN] Popup not found in iframe, trying alternative selectors...');
+        try {
+          popupLocator = iframe.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP_ALT}`);
+          await popupLocator.waitFor({ state: 'visible', timeout: 2000 });
+          popupExists = true;
+          console.log('[SHINHAN] Alternative security popup found in iframe');
+        } catch (altIframeError) {
+          console.log('[SHINHAN] No popup found in iframe either');
+        }
+      }
+    } else {
+      // Try to find popup in main page
+      try {
+        popupLocator = page.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP}`);
+        await popupLocator.waitFor({ state: 'visible', timeout: 5000 });
+        popupExists = true;
+        console.log('[SHINHAN] Primary security popup detected in main page');
+      } catch (primaryError) {
+        console.log('[SHINHAN] Primary popup selector not found, trying alternative...');
+        
+        try {
+          popupLocator = page.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP_ALT}`);
+          await popupLocator.waitFor({ state: 'visible', timeout: 3000 });
+          popupExists = true;
+          console.log('[SHINHAN] Alternative security popup detected in main page');
+        } catch (altError) {
+          console.log('[SHINHAN] No security popup detected in main page');
+        }
+      }
+    }
+    
+    if (!popupExists) {
+      console.log('[SHINHAN] No security popup detected after checking iframe and main page');
+      return true;
+    }
+    
+    if (!popupExists) {
+      console.log('[SHINHAN] No security popup detected');
+      return true;
+    }
+    
+    console.log('[SHINHAN] Security popup detected, attempting to close...');
+    
+    // Determine which context to use (iframe or main page)
+    const context = iframe || page;
+    console.log(`[SHINHAN] Using ${iframe ? 'iframe' : 'main page'} context for popup interaction`);
+    
+    // Check if popup is visible, if not try to make it visible
+    const isVisible = await popupLocator.isVisible();
+    if (!isVisible) {
+      console.log('[SHINHAN] Popup is hidden, trying to make it visible...');
+      // Try clicking on the context to trigger the popup
+      await context.click('body', { position: { x: 100, y: 100 } });
+      await page.waitForTimeout(1000);
+    }
+    
+    // Wait for the popup to be visible (with shorter timeout)
+    try {
+      await popupLocator.waitFor({ state: 'visible', timeout: 3000 });
+    } catch (visibilityError) {
+      console.log('[SHINHAN] Popup still not visible, proceeding with close attempt anyway...');
+    }
+    
+    // Try primary close button selector first (in the correct context)
+    let closeButtonLocator = context.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP_CLOSE}`);
+    let closeButtonExists = await closeButtonLocator.count() > 0;
+    
+    // If primary close button doesn't work, try alternative
+    if (!closeButtonExists) {
+      console.log('[SHINHAN] Primary close button not found, trying alternative...');
+      closeButtonLocator = context.locator(`xpath=${CONFIG.XPATHS.SECURITY_POPUP_CLOSE_ALT}`);
+      closeButtonExists = await closeButtonLocator.count() > 0;
+    }
+    
+    if (closeButtonExists) {
+      console.log('[SHINHAN] Found "Don\'t install" button, clicking...');
+      try {
+        // Try to click even if not visible
+        await closeButtonLocator.click({ timeout: CONFIG.TIMEOUTS.CLICK, force: true });
+        await page.waitForTimeout(1000); // Wait for popup to close
+        console.log('[SHINHAN] Security popup closed successfully');
+        return true;
+      } catch (clickError) {
+        console.log('[SHINHAN] Failed to click close button, trying alternative methods...');
+        // Try JavaScript click as fallback
+        try {
+          await closeButtonLocator.evaluate(button => button.click());
+          await page.waitForTimeout(1000);
+          console.log('[SHINHAN] Security popup closed with JavaScript click');
+          return true;
+        } catch (jsClickError) {
+          console.log('[SHINHAN] JavaScript click also failed, trying other methods...');
+        }
+      }
+    } else {
+      console.log('[SHINHAN] "Don\'t install" button not found, trying alternative methods...');
+      
+      // Try to find any close button within the popup (using correct context)
+      const anyCloseButton = popupLocator.locator('//a[contains(text(), "설치하지 않음") or contains(@class, "btnTyGray02") or contains(@id, "no_install")]');
+      const anyCloseExists = await anyCloseButton.count() > 0;
+      
+      if (anyCloseExists) {
+        console.log('[SHINHAN] Found close button within popup, clicking...');
+        try {
+          await anyCloseButton.click({ force: true });
+          await page.waitForTimeout(1000);
+          console.log('[SHINHAN] Security popup closed with popup-internal button');
+          return true;
+        } catch (internalClickError) {
+          console.log('[SHINHAN] Failed to click internal close button, trying JavaScript...');
+          try {
+            await anyCloseButton.evaluate(button => button.click());
+            await page.waitForTimeout(1000);
+            console.log('[SHINHAN] Security popup closed with JavaScript internal click');
+            return true;
+          } catch (jsInternalError) {
+            console.log('[SHINHAN] JavaScript internal click also failed...');
+          }
+        }
+      }
+      
+      // Try pressing Escape key as alternative
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      
+      // Check if popup is still visible
+      const stillVisible = await popupLocator.isVisible();
+      if (!stillVisible) {
+        console.log('[SHINHAN] Security popup closed with Escape key');
+        return true;
+      }
+      
+      // Try clicking outside the popup as last resort
+      console.log('[SHINHAN] Trying to click outside popup to close it...');
+      await page.click('body', { position: { x: 10, y: 10 } });
+      await page.waitForTimeout(1000);
+      
+      const finalCheck = await popupLocator.isVisible();
+      if (!finalCheck) {
+        console.log('[SHINHAN] Security popup closed by clicking outside');
+        return true;
+      }
+      
+      console.warn('[SHINHAN] Could not close security popup, continuing anyway...');
+      return false;
+    }
+  } catch (error) {
+    console.warn('[SHINHAN] Failed to handle security popup:', error);
+    return false;
+  }
 }
 
 // ============================================================================
@@ -1127,6 +1410,13 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
     await page.goto(CONFIG.TARGET_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(CONFIG.TIMEOUTS.PAGE_LOAD);
     
+    // Handle security program installation popup first
+    console.log('[SHINHAN] Checking for security popup before proceeding...');
+    await handleSecurityPopup(page);
+    
+    // Wait a bit more for any remaining popups to settle
+    await page.waitForTimeout(2000);
+    
     // Fill input fields
     await fillInputField(page, CONFIG.XPATHS.ID_INPUT, id, 'Sinhan ID');
     await fillInputField(page, CONFIG.XPATHS.PASSWORD_INPUT, password, 'Sinhan Password');
@@ -1163,7 +1453,7 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
           try {
             const aiSegmentation = await analyzeImageSegmentation(screenshotPath, geminiApiKey);
             if (aiSegmentation && aiSegmentation.length > 0) {
-              const debugResult = await createDebugReport(screenshotPath, aiSegmentation, outputDir, keyboardBox);
+              const debugResult = await extCreateDebugReport(screenshotPath, aiSegmentation, outputDir, keyboardBox);
               if (debugResult.success) {
                 console.log(`[SHINHAN] Debug report created: ${debugResult.reportPath}`);
                 console.log(`[SHINHAN] Debug HTML visualization: ${debugResult.debugHtml}`);
@@ -1270,6 +1560,10 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
       
       await page.goto(CONFIG.TARGET_URL, { waitUntil: 'domcontentloaded' });
       
+      // Handle security popup in fallback mode too
+      await handleSecurityPopup(page);
+      await page.waitForTimeout(2000);
+      
       // Try to fill ID field in fallback mode
       await fillInputField(page, CONFIG.XPATHS.ID_INPUT, id, 'Sinhan ID [FALLBACK]');
       
@@ -1280,11 +1574,25 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
         error: String(fallbackError && fallbackError.message ? fallbackError.message : fallbackError) 
       };
     }
+  } finally {
+    // Keep browser open for debugging - comment out cleanup
+    // if (browser) {
+    //   try {
+    //     // Check if it's a persistent context (which has close method) or regular browser
+    //     if (typeof browser.close === 'function') {
+    //       await browser.close();
+    //       console.log('[SHINHAN] Browser closed successfully');
+    //     }
+    //   } catch (cleanupError) {
+    //     console.warn('[SHINHAN] Failed to close browser:', cleanupError);
+    //   }
+    // }
+    console.log('[SHINHAN] Browser kept open for debugging');
   }
 }
 
 module.exports = { 
   runShinhanAutomation,
-  createDebugHTMLVisualization,
-  createDebugReport
+  createDebugHTMLVisualization: extCreateDebugHTMLVisualization,
+  createDebugReport: extCreateDebugReport
 };

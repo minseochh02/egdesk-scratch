@@ -31,3 +31,5 @@ npm-debug.log.*
 # Output directory for generated content
 output/
 scripts/php-bundle/
+
+client_secret_862784563181-30ua334k8egt3ufiivo273ldmbi9pqbb.apps.googleusercontent.com.json
