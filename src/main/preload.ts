@@ -1254,6 +1254,7 @@ const electronHandler = {
     getServerStatus: () => ipcRenderer.invoke('php-server-status'),
     testHelloEndpoint: () => ipcRenderer.invoke('php-server-test-hello'),
     getLocalIP: () => ipcRenderer.invoke('php-server-get-local-ip'),
+    gmailEndpoint: () => ipcRenderer.invoke('php-server-gmail-endpoint'),
   },
 
   /**

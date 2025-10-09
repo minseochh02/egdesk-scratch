@@ -589,10 +589,10 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
           {/* PHP Server Section */}
           <div>
-            <h3 style={{ color: '#9C27B0', marginBottom: '10px' }}>🚀 PHP Server</h3>
-            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
-              <strong>ℹ️ Note:</strong> Start a PHP server with a /hello endpoint. The server will be accessible on your local network.
-            </div>
+              <h3 style={{ color: '#9C27B0', marginBottom: '10px' }}>🚀 PHP Server</h3>
+              <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+                <strong>ℹ️ Note:</strong> Start a PHP server with /hello and /gmail endpoints. The /gmail endpoint calls the Electron app to fetch Gmail messages. Access from any device on your network!
+              </div>
             {phpServerStatus && (
               <div style={{ 
                 marginBottom: '10px', 
@@ -702,6 +702,39 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 }}
               >
                 🧪 Test Hello
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setPhpServerStatus('Testing Gmail endpoint...');
+                    const result = await (window as any).electron.phpServer.gmailEndpoint();
+                    if (result?.success) {
+                      setPhpServerStatus(`Gmail endpoint: ${result.message} (${result.data?.count || 0} messages)`);
+                      console.log('Gmail endpoint result:', result);
+                    } else {
+                      setPhpServerStatus(`Gmail endpoint failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setPhpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('Gmail endpoint test error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#EA4335',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                📧 Test Gmail
               </button>
               <button
                 type="button"

@@ -28,9 +28,11 @@ import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
 import { getGoogleAuthHandler } from './google-auth-handler';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
+let electronApiServer: any = null;
 
 class AppUpdater {
   constructor() {
@@ -472,6 +474,26 @@ const createWindow = async () => {
         }
       });
 
+      ipcMain.handle('php-server-gmail-endpoint', async () => {
+        try {
+          if (phpServerTest) {
+            const result = await phpServerTest.handleGmailRequest();
+            return result;
+          } else {
+            return { 
+              success: false, 
+              error: 'PHP server not running. Please start the server first.' 
+            };
+          }
+        } catch (error) {
+          console.error('❌ Gmail endpoint error:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
       console.log('✅ PHP Server handlers initialized');
     } catch (error) {
       console.error('❌ Failed to initialize PHP Server handlers:', error);
@@ -565,6 +587,107 @@ const createWindow = async () => {
       console.log('✅ Google Auth and Gmail handlers initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Google Auth handlers:', error);
+    }
+
+    // ========================================================================
+    // ELECTRON HTTP API SERVER (for PHP to access Gmail)
+    // ========================================================================
+    try {
+      const googleAuthHandler = getGoogleAuthHandler();
+      
+      electronApiServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url || '', `http://localhost:3333`);
+        const pathname = url.pathname;
+
+        // Set CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Content-Type', 'application/json');
+
+        // Handle preflight requests
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        // Only handle /api/gmail endpoint
+        if (pathname !== '/api/gmail') {
+          res.writeHead(404);
+          res.end(JSON.stringify({
+            success: false,
+            error: 'Not Found',
+            message: 'Only /api/gmail endpoint is available',
+            available_endpoints: ['/api/gmail'],
+            timestamp: new Date().toISOString()
+          }));
+          return;
+        }
+
+        try {
+          console.log('📧 HTTP request to Gmail API from PHP');
+          
+          // Check if user is signed in
+          if (!googleAuthHandler.isSignedIn()) {
+            res.writeHead(401);
+            res.end(JSON.stringify({
+              success: false,
+              error: 'User not authenticated',
+              message: 'Please sign in with Google in the Electron app first',
+              timestamp: new Date().toISOString()
+            }));
+            return;
+          }
+
+          // Fetch Gmail messages
+          const result = await googleAuthHandler.listMessages(10);
+          
+          if (result.success) {
+            const response = {
+              success: true,
+              message: 'Gmail messages fetched successfully',
+              data: {
+                messages: result.messages,
+                totalMessages: result.resultSizeEstimate,
+                count: result.messages?.length || 0
+              },
+              timestamp: new Date().toISOString()
+            };
+            res.writeHead(200);
+            res.end(JSON.stringify(response, null, 2));
+          } else {
+            res.writeHead(500);
+            res.end(JSON.stringify({
+              success: false,
+              error: result.error || 'Failed to fetch Gmail messages',
+              timestamp: new Date().toISOString()
+            }));
+          }
+        } catch (error: any) {
+          console.error('❌ Gmail API HTTP endpoint error:', error);
+          res.writeHead(500);
+          res.end(JSON.stringify({
+            success: false,
+            error: error.message || 'Internal server error',
+            timestamp: new Date().toISOString()
+          }));
+        }
+      });
+
+      // Start the API server on port 3333 (accessible only from localhost for security)
+      electronApiServer.listen(3333, 'localhost', () => {
+        console.log('✅ Electron HTTP API server started');
+        console.log('📧 Gmail API endpoint: http://localhost:3333/api/gmail');
+        console.log('🔒 Only accessible from localhost (PHP server can call it)');
+      });
+
+      electronApiServer.on('error', (error: any) => {
+        console.error('❌ Electron API server error:', error);
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to initialize Electron HTTP API server:', error);
     }
 
   } catch (error) {
@@ -740,6 +863,13 @@ app.on('before-quit', async () => {
   // Cleanup central SQLite manager
   const sqliteManager = getSQLiteManager();
   sqliteManager.cleanup();
+
+  // Cleanup Electron HTTP API server
+  if (electronApiServer) {
+    console.log('🛑 Closing Electron HTTP API server...');
+    electronApiServer.close();
+    electronApiServer = null;
+  }
 });
 
 app

@@ -1,6 +1,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getGoogleAuthHandler } from './google-auth-handler';
 
 /**
  * Simple PHP Server Test
@@ -10,6 +11,7 @@ export class SimplePHPServerTest {
   private phpServer: ChildProcess | null = null;
   private port: number = 8080;
   private publicDir: string = './public';
+  private googleAuthHandler = getGoogleAuthHandler();
 
   constructor(port: number = 8080) {
     this.port = port;
@@ -73,6 +75,113 @@ echo json_encode($response, JSON_PRETTY_PRINT);
 
     fs.writeFileSync(path.join(this.publicDir, 'hello.php'), helloPhpContent);
     console.log(`✅ Created ${this.publicDir}/hello.php`);
+
+    // Create gmail.php endpoint that calls Electron app's HTTP API
+    const gmailPhpContent = `<?php
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// Function to call Electron app's HTTP API for Gmail
+function callElectronGmailAPI() {
+    $electronUrl = 'http://localhost:3333/api/gmail';
+    
+    // Create stream context with timeout
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => 10,
+            'header' => 'Content-Type: application/json',
+            'ignore_errors' => true
+        ]
+    ]);
+    
+    $result = @file_get_contents($electronUrl, false, $context);
+    
+    if ($result === false) {
+        return [
+            'success' => false,
+            'error' => 'Cannot connect to Electron app',
+            'message' => 'Please ensure the Electron app is running and you are signed in with Google',
+            'electron_url' => $electronUrl,
+            'timestamp' => date('Y-m-d H:i:s')
+        ];
+    }
+    
+    $data = json_decode($result, true);
+    if ($data === null) {
+        return [
+            'success' => false,
+            'error' => 'Invalid response from Electron app',
+            'raw_response' => substr($result, 0, 200),
+            'timestamp' => date('Y-m-d H:i:s')
+        ];
+    }
+    
+    return $data;
+}
+
+// Call the Electron app's Gmail API
+$response = callElectronGmailAPI();
+
+echo json_encode($response, JSON_PRETTY_PRINT);
+?>`;
+
+    fs.writeFileSync(path.join(this.publicDir, 'gmail.php'), gmailPhpContent);
+    console.log(`✅ Created ${this.publicDir}/gmail.php`);
+  }
+
+  /**
+   * Handle Gmail API requests
+   */
+  public async handleGmailRequest(): Promise<any> {
+    try {
+      console.log('📧 Handling Gmail API request...');
+      
+      // Check if user is signed in
+      if (!this.googleAuthHandler.isSignedIn()) {
+        return {
+          success: false,
+          error: 'User not authenticated. Please sign in with Google first.',
+          message: 'Use the Electron app to sign in with Google before accessing Gmail API'
+        };
+      }
+
+      // Fetch 10 Gmail messages
+      const result = await this.googleAuthHandler.listMessages(10);
+      
+      if (result.success) {
+        return {
+          success: true,
+          message: 'Gmail messages fetched successfully',
+          data: {
+            messages: result.messages,
+            totalMessages: result.resultSizeEstimate,
+            count: result.messages?.length || 0
+          },
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || 'Failed to fetch Gmail messages',
+          timestamp: new Date().toISOString()
+        };
+      }
+    } catch (error: any) {
+      console.error('❌ Gmail API request error:', error);
+      return {
+        success: false,
+        error: error.message || 'Unknown error occurred',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**
@@ -119,6 +228,7 @@ echo json_encode($response, JSON_PRETTY_PRINT);
       console.log(`✅ PHP server started successfully!`);
       console.log(`🌐 Server URL: http://localhost:${this.port}`);
       console.log(`🔗 Hello endpoint: http://localhost:${this.port}/hello.php`);
+      console.log(`📧 Gmail endpoint: http://localhost:${this.port}/gmail.php (calls Electron app)`);
 
       return true;
     } catch (error) {
