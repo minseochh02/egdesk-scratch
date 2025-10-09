@@ -263,11 +263,11 @@ export class GoogleAuthHandler {
   }
 
   /**
-   * List Gmail messages
+   * List Gmail messages with full content
    */
   async listMessages(maxResults: number = 10): Promise<any> {
     try {
-      console.log('📧 Listing Gmail messages...');
+      console.log('📧 Listing Gmail messages with content...');
       console.log('📧 OAuth2Client exists?', !!this.oauth2Client);
       console.log('📧 Has access token?', !!this.oauth2Client?.credentials?.access_token);
       
@@ -277,11 +277,44 @@ export class GoogleAuthHandler {
         maxResults,
       });
 
-      console.log('📧 Successfully fetched messages:', response.data.messages?.length || 0);
+      console.log('📧 Successfully fetched message IDs:', response.data.messages?.length || 0);
+
+      // If no messages, return empty array
+      if (!response.data.messages || response.data.messages.length === 0) {
+        return {
+          success: true,
+          messages: [],
+          resultSizeEstimate: response.data.resultSizeEstimate,
+        };
+      }
+
+      // Fetch full message details for each message
+      const messagePromises = response.data.messages.map(async (message) => {
+        try {
+          const messageResponse = await gmail.users.messages.get({
+            userId: 'me',
+            id: message.id!,
+            format: 'full',
+          });
+          // Extract readable content from the message
+          return this.extractMessageContent(messageResponse.data);
+        } catch (error: any) {
+          console.error(`❌ Failed to fetch message ${message.id}:`, error.message);
+          return {
+            id: message.id,
+            error: error.message || 'Failed to fetch message content',
+          };
+        }
+      });
+
+      // Wait for all messages to be fetched
+      const messages = await Promise.all(messagePromises);
+
+      console.log('📧 Successfully fetched full message content for:', messages.length);
 
       return {
         success: true,
-        messages: response.data.messages || [],
+        messages: messages,
         resultSizeEstimate: response.data.resultSizeEstimate,
       };
     } catch (error: any) {
@@ -291,6 +324,141 @@ export class GoogleAuthHandler {
         code: error.code,
         status: error.status,
       });
+      return {
+        success: false,
+        error: error.message || 'Failed to list Gmail messages',
+      };
+    }
+  }
+
+  /**
+   * Extract readable content from Gmail message
+   */
+  private extractMessageContent(message: any): any {
+    try {
+      const headers = message.payload?.headers || [];
+      const getHeader = (name: string) => 
+        headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+      const subject = getHeader('Subject');
+      const from = getHeader('From');
+      const to = getHeader('To');
+      const date = getHeader('Date');
+      const snippet = message.snippet || '';
+
+      // Extract body content
+      let bodyText = '';
+      let bodyHtml = '';
+
+      const extractBody = (part: any) => {
+        if (part.mimeType === 'text/plain' && part.body?.data) {
+          bodyText = Buffer.from(part.body.data, 'base64').toString('utf-8');
+        } else if (part.mimeType === 'text/html' && part.body?.data) {
+          bodyHtml = Buffer.from(part.body.data, 'base64').toString('utf-8');
+        } else if (part.parts) {
+          part.parts.forEach(extractBody);
+        }
+      };
+
+      if (message.payload) {
+        extractBody(message.payload);
+      }
+
+      return {
+        id: message.id,
+        threadId: message.threadId,
+        subject,
+        from,
+        to,
+        date,
+        snippet,
+        bodyText: bodyText || snippet,
+        bodyHtml,
+        labels: message.labelIds || [],
+        sizeEstimate: message.sizeEstimate,
+        historyId: message.historyId,
+        internalDate: message.internalDate,
+      };
+    } catch (error: any) {
+      console.error('❌ Error extracting message content:', error);
+      return {
+        id: message.id,
+        error: 'Failed to extract message content',
+        snippet: message.snippet || '',
+      };
+    }
+  }
+
+  /**
+   * List Gmail messages with just basic info (faster than full content)
+   */
+  async listMessagesBasic(maxResults: number = 10): Promise<any> {
+    try {
+      console.log('📧 Listing Gmail messages (basic info)...');
+      
+      const gmail = this.getGmailClient();
+      const response = await gmail.users.messages.list({
+        userId: 'me',
+        maxResults,
+      });
+
+      console.log('📧 Successfully fetched message IDs:', response.data.messages?.length || 0);
+
+      // If no messages, return empty array
+      if (!response.data.messages || response.data.messages.length === 0) {
+        return {
+          success: true,
+          messages: [],
+          resultSizeEstimate: response.data.resultSizeEstimate,
+        };
+      }
+
+      // Fetch basic message details (metadata only, no body content)
+      const messagePromises = response.data.messages.map(async (message) => {
+        try {
+          const messageResponse = await gmail.users.messages.get({
+            userId: 'me',
+            id: message.id!,
+            format: 'metadata',
+            metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+          });
+          
+          const headers = messageResponse.data.payload?.headers || [];
+          const getHeader = (name: string) => 
+            headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+          return {
+            id: message.id,
+            threadId: messageResponse.data.threadId,
+            subject: getHeader('Subject'),
+            from: getHeader('From'),
+            to: getHeader('To'),
+            date: getHeader('Date'),
+            snippet: messageResponse.data.snippet || '',
+            labels: messageResponse.data.labelIds || [],
+            sizeEstimate: messageResponse.data.sizeEstimate,
+          };
+        } catch (error: any) {
+          console.error(`❌ Failed to fetch message ${message.id}:`, error.message);
+          return {
+            id: message.id,
+            error: error.message || 'Failed to fetch message content',
+          };
+        }
+      });
+
+      // Wait for all messages to be fetched
+      const messages = await Promise.all(messagePromises);
+
+      console.log('📧 Successfully fetched basic message info for:', messages.length);
+
+      return {
+        success: true,
+        messages: messages,
+        resultSizeEstimate: response.data.resultSizeEstimate,
+      };
+    } catch (error: any) {
+      console.error('❌ Gmail list messages error:', error);
       return {
         success: false,
         error: error.message || 'Failed to list Gmail messages',

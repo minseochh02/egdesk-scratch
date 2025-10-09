@@ -56,6 +56,9 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [emailTo, setEmailTo] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const [tunnelStatus, setTunnelStatus] = useState('');
+  const [tunnelUrl, setTunnelUrl] = useState('');
+  const [isTunnelRunning, setIsTunnelRunning] = useState(false);
 
   if (!isOpen) return null;
 
@@ -742,6 +745,178 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   e.preventDefault();
                   e.stopPropagation();
                   setPhpServerStatus('');
+                }}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Local Tunnel Section */}
+          <div>
+            <h3 style={{ color: '#00BCD4', marginBottom: '10px' }}>🌐 Create Local Tunnel</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> Create a public tunnel to your local server. This allows access from any device on the internet using a public URL. No signup required!
+            </div>
+            {tunnelStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: tunnelStatus.includes('Success') || tunnelStatus.includes('Running') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: tunnelStatus.includes('Success') || tunnelStatus.includes('Running') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${tunnelStatus.includes('Success') || tunnelStatus.includes('Running') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {tunnelStatus}
+              </div>
+            )}
+            {tunnelUrl && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '12px', 
+                backgroundColor: '#0a2a0a', 
+                borderRadius: '4px', 
+                fontSize: '14px', 
+                color: '#4CAF50',
+                border: '1px solid #4CAF50',
+                wordBreak: 'break-all'
+              }}>
+                <strong>🌐 Public URL:</strong> <a href={tunnelUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#4CAF50', textDecoration: 'underline' }}>{tunnelUrl}</a>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setTunnelStatus('Starting tunnel...');
+                    const result = await (window as any).electron.tunnel.start(8080);
+                    if (result?.success) {
+                      setTunnelStatus(`Success! Tunnel created`);
+                      setTunnelUrl(result.url);
+                      setIsTunnelRunning(true);
+                    } else {
+                      setTunnelStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                      setTunnelUrl('');
+                      setIsTunnelRunning(false);
+                    }
+                  } catch (e: any) {
+                    setTunnelStatus(`Error: ${e?.message || e}`);
+                    setTunnelUrl('');
+                    setIsTunnelRunning(false);
+                    console.error('Tunnel start error:', e);
+                  }
+                }}
+                disabled={isTunnelRunning}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: isTunnelRunning ? '#666' : '#00BCD4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: isTunnelRunning ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                {isTunnelRunning ? '🔄 Creating...' : '🌐 Create Tunnel'}
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setTunnelStatus('Stopping tunnel...');
+                    const result = await (window as any).electron.tunnel.stop();
+                    if (result?.success) {
+                      setTunnelStatus('Tunnel stopped successfully');
+                      setTunnelUrl('');
+                      setIsTunnelRunning(false);
+                    } else {
+                      setTunnelStatus(`Failed to stop: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setTunnelStatus(`Error: ${e?.message || e}`);
+                    console.error('Tunnel stop error:', e);
+                  }
+                }}
+                disabled={!isTunnelRunning}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: !isTunnelRunning ? '#666' : '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: !isTunnelRunning ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🛑 Stop Tunnel
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setTunnelStatus('Checking tunnel status...');
+                    const result = await (window as any).electron.tunnel.status();
+                    if (result?.success) {
+                      if (result.isRunning) {
+                        setTunnelStatus(`Tunnel is running`);
+                        setTunnelUrl(result.url || '');
+                        setIsTunnelRunning(true);
+                      } else {
+                        setTunnelStatus(`Tunnel is not running`);
+                        setTunnelUrl('');
+                        setIsTunnelRunning(false);
+                      }
+                    } else {
+                      setTunnelStatus(`Status check failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setTunnelStatus(`Error: ${e?.message || e}`);
+                    console.error('Tunnel status error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#FF9800',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🔍 Check Status
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTunnelStatus('');
+                  setTunnelUrl('');
+                  setIsTunnelRunning(false);
                 }}
                 style={{
                   padding: '10px 15px',

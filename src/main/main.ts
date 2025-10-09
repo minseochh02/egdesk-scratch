@@ -33,6 +33,8 @@ let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
+let tunnelProcess: any = null;
+let tunnelUrl: string | null = null;
 
 class AppUpdater {
   constructor() {
@@ -558,6 +560,19 @@ const createWindow = async () => {
         }
       });
 
+      ipcMain.handle('gmail-list-messages-basic', async (_event, maxResults?: number) => {
+        try {
+          const result = await googleAuthHandler.listMessagesBasic(maxResults);
+          return result;
+        } catch (error) {
+          console.error('❌ Gmail list messages basic failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
       ipcMain.handle('gmail-get-message', async (_event, messageId: string) => {
         try {
           const result = await googleAuthHandler.getMessage(messageId);
@@ -688,6 +703,136 @@ const createWindow = async () => {
 
     } catch (error) {
       console.error('❌ Failed to initialize Electron HTTP API server:', error);
+    }
+
+    // ========================================================================
+    // LOCAL TUNNEL HANDLERS
+    // ========================================================================
+    try {
+
+      ipcMain.handle('tunnel-start', async (_event, port: number = 8080) => {
+        try {
+          if (tunnelProcess) {
+            return { 
+              success: false, 
+              error: 'Tunnel already running',
+              url: tunnelUrl 
+            };
+          }
+
+          console.log(`🌐 Starting localtunnel for port ${port}...`);
+          
+          // Spawn localtunnel process
+          const { spawn } = require('child_process');
+          tunnelProcess = spawn('lt', ['--port', port.toString(), '--print-requests'], {
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+
+          return new Promise((resolve) => {
+            let output = '';
+            
+            tunnelProcess.stdout.on('data', (data: Buffer) => {
+              output += data.toString();
+              console.log('Tunnel output:', data.toString());
+              
+              // Look for the URL in the output
+              const urlMatch = output.match(/your url is: (https:\/\/[^\s]+)/);
+              if (urlMatch) {
+                tunnelUrl = urlMatch[1];
+                console.log(`✅ Tunnel started: ${tunnelUrl}`);
+                resolve({ 
+                  success: true, 
+                  url: tunnelUrl,
+                  message: 'Tunnel created successfully'
+                });
+              }
+            });
+
+            tunnelProcess.stderr.on('data', (data: Buffer) => {
+              console.error('Tunnel error:', data.toString());
+            });
+
+            tunnelProcess.on('close', (code: number) => {
+              console.log(`Tunnel process closed with code ${code}`);
+              tunnelProcess = null;
+              tunnelUrl = null;
+            });
+
+            tunnelProcess.on('error', (error: any) => {
+              console.error('Tunnel process error:', error);
+              tunnelProcess = null;
+              tunnelUrl = null;
+              resolve({ 
+                success: false, 
+                error: error.message || 'Failed to start tunnel'
+              });
+            });
+
+            // Timeout after 10 seconds
+            setTimeout(() => {
+              if (!tunnelUrl) {
+                resolve({ 
+                  success: false, 
+                  error: 'Tunnel startup timeout'
+                });
+              }
+            }, 10000);
+          });
+        } catch (error) {
+          console.error('❌ Tunnel start failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('tunnel-stop', async () => {
+        try {
+          if (tunnelProcess) {
+            console.log('🛑 Stopping tunnel...');
+            tunnelProcess.kill();
+            tunnelProcess = null;
+            const url = tunnelUrl;
+            tunnelUrl = null;
+            return { 
+              success: true, 
+              message: 'Tunnel stopped',
+              url: url 
+            };
+          }
+          return { 
+            success: false, 
+            error: 'No tunnel running' 
+          };
+        } catch (error) {
+          console.error('❌ Tunnel stop failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('tunnel-status', async () => {
+        try {
+          return { 
+            success: true, 
+            isRunning: !!tunnelProcess,
+            url: tunnelUrl 
+          };
+        } catch (error) {
+          console.error('❌ Tunnel status check failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      console.log('✅ Local tunnel handlers initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize local tunnel handlers:', error);
     }
 
   } catch (error) {
@@ -869,6 +1014,13 @@ app.on('before-quit', async () => {
     console.log('🛑 Closing Electron HTTP API server...');
     electronApiServer.close();
     electronApiServer = null;
+  }
+
+  // Cleanup tunnel process
+  if (tunnelProcess) {
+    console.log('🛑 Stopping tunnel process...');
+    tunnelProcess.kill();
+    tunnelProcess = null;
   }
 });
 

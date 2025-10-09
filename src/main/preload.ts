@@ -1271,8 +1271,18 @@ const electronHandler = {
    */
   gmail: {
     listMessages: (maxResults?: number) => ipcRenderer.invoke('gmail-list-messages', maxResults),
+    listMessagesBasic: (maxResults?: number) => ipcRenderer.invoke('gmail-list-messages-basic', maxResults),
     getMessage: (messageId: string) => ipcRenderer.invoke('gmail-get-message', messageId),
     sendEmail: (to: string, subject: string, body: string) => ipcRenderer.invoke('gmail-send-email', to, subject, body),
+  },
+
+  // ========================================================================
+  // LOCAL TUNNEL FUNCTIONALITY
+  // ========================================================================
+  tunnel: {
+    start: (port?: number) => ipcRenderer.invoke('tunnel-start', port),
+    stop: () => ipcRenderer.invoke('tunnel-stop'),
+    status: () => ipcRenderer.invoke('tunnel-status'),
   },
 };
 
