@@ -48,6 +48,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [naverLoginStatus, setNaverLoginStatus] = useState('');
   const [chromeLaunchStatus, setChromeLaunchStatus] = useState('');
   const [pasteTestStatus, setPasteTestStatus] = useState('');
+  const [phpServerStatus, setPhpServerStatus] = useState('');
 
   if (!isOpen) return null;
 
@@ -564,6 +565,144 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </button>
               <button
                 onClick={() => setPasteTestStatus('')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* PHP Server Section */}
+          <div>
+            <h3 style={{ color: '#9C27B0', marginBottom: '10px' }}>🚀 PHP Server</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> Start a PHP server with a /hello endpoint. The server will be accessible on your local network.
+            </div>
+            {phpServerStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: phpServerStatus.includes('Success') || phpServerStatus.includes('Running') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: phpServerStatus.includes('Success') || phpServerStatus.includes('Running') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${phpServerStatus.includes('Success') || phpServerStatus.includes('Running') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {phpServerStatus}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setPhpServerStatus('Starting PHP server...');
+                    const result = await (window as any).electron.phpServer.startServer(8080);
+                    if (result?.success) {
+                      setPhpServerStatus(`Success! Server running at ${result.url}\nHello endpoint: ${result.helloUrl}\nLocal IP: ${result.localIP}`);
+                    } else {
+                      setPhpServerStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setPhpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('PHP server start error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#9C27B0',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🚀 Start Server
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setPhpServerStatus('Stopping PHP server...');
+                    const result = await (window as any).electron.phpServer.stopServer();
+                    if (result?.success) {
+                      setPhpServerStatus('Server stopped successfully');
+                    } else {
+                      setPhpServerStatus(`Failed to stop: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setPhpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('PHP server stop error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🛑 Stop Server
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setPhpServerStatus('Testing hello endpoint...');
+                    const result = await (window as any).electron.phpServer.testHelloEndpoint();
+                    if (result?.success) {
+                      setPhpServerStatus(`Hello endpoint test: ${result.message}`);
+                    } else {
+                      setPhpServerStatus(`Hello test failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setPhpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('PHP server test error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#FF9800',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🧪 Test Hello
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setPhpServerStatus('');
+                }}
                 style={{
                   padding: '10px 15px',
                   backgroundColor: '#666',

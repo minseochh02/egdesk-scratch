@@ -1244,6 +1244,17 @@ const electronHandler = {
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
   },
+
+  /**
+   * PHP Server API
+   */
+  phpServer: {
+    startServer: (port?: number) => ipcRenderer.invoke('php-server-start', port),
+    stopServer: () => ipcRenderer.invoke('php-server-stop'),
+    getServerStatus: () => ipcRenderer.invoke('php-server-status'),
+    testHelloEndpoint: () => ipcRenderer.invoke('php-server-test-hello'),
+    getLocalIP: () => ipcRenderer.invoke('php-server-get-local-ip'),
+  },
 };
 
 // ============================================================================
