@@ -49,6 +49,13 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [chromeLaunchStatus, setChromeLaunchStatus] = useState('');
   const [pasteTestStatus, setPasteTestStatus] = useState('');
   const [phpServerStatus, setPhpServerStatus] = useState('');
+  const [googleAuthStatus, setGoogleAuthStatus] = useState('');
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [gmailStatus, setGmailStatus] = useState('');
+  const [gmailMessages, setGmailMessages] = useState<any[]>([]);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
 
   if (!isOpen) return null;
 
@@ -717,6 +724,298 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </button>
             </div>
           </div>
+
+          {/* Google OAuth Sign-In Section */}
+          <div>
+            <h3 style={{ color: '#4285f4', marginBottom: '10px' }}>🔐 Google OAuth Sign-In (with Gmail)</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> Sign in with your Google account to access Gmail API. This includes permissions to read, send, and manage your Gmail messages. Uses OAuth2 credentials from the root folder.
+            </div>
+            {googleAuthStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: googleAuthStatus.includes('Success') || googleAuthStatus.includes('signed in') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: googleAuthStatus.includes('Success') || googleAuthStatus.includes('signed in') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${googleAuthStatus.includes('Success') || googleAuthStatus.includes('signed in') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {googleAuthStatus}
+              </div>
+            )}
+            {googleUser && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '12px', 
+                backgroundColor: '#1a3a1a', 
+                borderRadius: '4px', 
+                fontSize: '13px', 
+                color: '#4CAF50',
+                border: '1px solid #4CAF50',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                {googleUser.picture && (
+                  <img 
+                    src={googleUser.picture} 
+                    alt="Profile" 
+                    style={{ 
+                      width: '40px', 
+                      height: '40px', 
+                      borderRadius: '50%',
+                      border: '2px solid #4CAF50'
+                    }} 
+                  />
+                )}
+                <div>
+                  <div style={{ fontWeight: 'bold' }}>{googleUser.name}</div>
+                  <div style={{ fontSize: '11px', opacity: 0.8 }}>{googleUser.email}</div>
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    setGoogleAuthStatus('Starting Google OAuth sign-in...');
+                    const result = await (window as any).electron.googleAuth.signIn();
+                    if (result?.success && result.user) {
+                      setGoogleUser(result.user);
+                      setGoogleAuthStatus(`Success! Signed in as ${result.user.name}`);
+                      console.log('Google tokens:', result.tokens);
+                    } else {
+                      setGoogleAuthStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                      setGoogleUser(null);
+                    }
+                  } catch (e: any) {
+                    setGoogleAuthStatus(`Error: ${e?.message || e}`);
+                    setGoogleUser(null);
+                    console.error('Google OAuth sign-in error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#4285f4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1
+                }}
+              >
+                🔐 Sign in with Google
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setGoogleAuthStatus('Signing out...');
+                    const result = await (window as any).electron.googleAuth.signOut();
+                    if (result?.success) {
+                      setGoogleAuthStatus('Successfully signed out');
+                      setGoogleUser(null);
+                    } else {
+                      setGoogleAuthStatus(`Sign out failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setGoogleAuthStatus(`Error: ${e?.message || e}`);
+                    console.error('Google OAuth sign-out error:', e);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Sign Out
+              </button>
+              <button
+                onClick={() => {
+                  setGoogleAuthStatus('');
+                  setGoogleUser(null);
+                }}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Gmail Section */}
+          {googleUser && (
+            <div>
+              <h3 style={{ color: '#EA4335', marginBottom: '10px' }}>📧 Gmail API</h3>
+              <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+                <strong>ℹ️ Note:</strong> Access your Gmail messages and send emails. You must be signed in with Google to use these features.
+              </div>
+              {gmailStatus && (
+                <div style={{ 
+                  marginBottom: '10px', 
+                  padding: '8px', 
+                  backgroundColor: gmailStatus.includes('Success') || gmailStatus.includes('sent') ? '#1a3a1a' : '#3a1a1a', 
+                  borderRadius: '4px', 
+                  fontSize: '12px', 
+                  color: gmailStatus.includes('Success') || gmailStatus.includes('sent') ? '#4CAF50' : '#f44336',
+                  border: `1px solid ${gmailStatus.includes('Success') || gmailStatus.includes('sent') ? '#4CAF50' : '#f44336'}`
+                }}>
+                  {gmailStatus}
+                </div>
+              )}
+
+              {/* List Messages Section */}
+              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+                <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '10px', fontSize: '14px' }}>📬 Recent Messages</h4>
+                <button
+                  onClick={async () => {
+                    try {
+                      setGmailStatus('Fetching recent messages...');
+                      const result = await (window as any).electron.gmail.listMessages(10);
+                      if (result?.success) {
+                        setGmailMessages(result.messages || []);
+                        setGmailStatus(`Success! Found ${result.messages?.length || 0} messages (Total: ${result.resultSizeEstimate || 0})`);
+                      } else {
+                        setGmailStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                        setGmailMessages([]);
+                      }
+                    } catch (e: any) {
+                      setGmailStatus(`Error: ${e?.message || e}`);
+                      setGmailMessages([]);
+                      console.error('Gmail list messages error:', e);
+                    }
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#EA4335',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '12px'
+                  }}
+                >
+                  📬 Fetch Recent Messages
+                </button>
+                {gmailMessages.length > 0 && (
+                  <div style={{ marginTop: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {gmailMessages.map((msg, idx) => (
+                      <div key={msg.id || idx} style={{ 
+                        padding: '6px', 
+                        backgroundColor: '#1a1a1a', 
+                        borderRadius: '3px', 
+                        marginBottom: '5px',
+                        fontSize: '11px',
+                        color: '#ccc'
+                      }}>
+                        ID: {msg.id} | Thread: {msg.threadId}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Send Email Section */}
+              <div style={{ padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+                <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '10px', fontSize: '14px' }}>📤 Send Email</h4>
+                <input
+                  type="email"
+                  placeholder="To (email address)"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff', width: '100%', marginBottom: '8px' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Subject"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff', width: '100%', marginBottom: '8px' }}
+                />
+                <textarea
+                  placeholder="Email body"
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  rows={4}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff', width: '100%', marginBottom: '8px', resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!emailTo || !emailSubject || !emailBody) {
+                        setGmailStatus('Please fill in all email fields');
+                        return;
+                      }
+                      try {
+                        setGmailStatus('Sending email...');
+                        const result = await (window as any).electron.gmail.sendEmail(emailTo, emailSubject, emailBody);
+                        if (result?.success) {
+                          setGmailStatus(`Success! Email sent. Message ID: ${result.messageId}`);
+                          // Clear form
+                          setEmailTo('');
+                          setEmailSubject('');
+                          setEmailBody('');
+                        } else {
+                          setGmailStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                        }
+                      } catch (e: any) {
+                        setGmailStatus(`Error: ${e?.message || e}`);
+                        console.error('Gmail send email error:', e);
+                      }
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#34A853',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '12px',
+                      flex: 1
+                    }}
+                  >
+                    📤 Send Email
+                  </button>
+                  <button
+                    onClick={() => {
+                      setGmailStatus('');
+                      setGmailMessages([]);
+                      setEmailTo('');
+                      setEmailSubject('');
+                      setEmailBody('');
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#666',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '12px'
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
