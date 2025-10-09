@@ -27,6 +27,7 @@ import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
+import { getGoogleAuthHandler } from './google-auth-handler';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
@@ -474,6 +475,96 @@ const createWindow = async () => {
       console.log('✅ PHP Server handlers initialized');
     } catch (error) {
       console.error('❌ Failed to initialize PHP Server handlers:', error);
+    }
+
+    // ========================================================================
+    // GOOGLE AUTH HANDLERS
+    // ========================================================================
+    try {
+      const googleAuthHandler = getGoogleAuthHandler();
+
+      ipcMain.handle('google-auth-sign-in', async () => {
+        try {
+          const result = await googleAuthHandler.signIn();
+          return result;
+        } catch (error) {
+          console.error('❌ Google sign-in failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('google-auth-sign-out', async () => {
+        try {
+          const result = await googleAuthHandler.signOut();
+          return result;
+        } catch (error) {
+          console.error('❌ Google sign-out failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('google-auth-is-signed-in', async () => {
+        try {
+          const isSignedIn = googleAuthHandler.isSignedIn();
+          return { success: true, isSignedIn };
+        } catch (error) {
+          console.error('❌ Google auth check failed:', error);
+          return { 
+            success: false, 
+            isSignedIn: false,
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('gmail-list-messages', async (_event, maxResults?: number) => {
+        try {
+          const result = await googleAuthHandler.listMessages(maxResults);
+          return result;
+        } catch (error) {
+          console.error('❌ Gmail list messages failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('gmail-get-message', async (_event, messageId: string) => {
+        try {
+          const result = await googleAuthHandler.getMessage(messageId);
+          return result;
+        } catch (error) {
+          console.error('❌ Gmail get message failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('gmail-send-email', async (_event, to: string, subject: string, body: string) => {
+        try {
+          const result = await googleAuthHandler.sendEmail(to, subject, body);
+          return result;
+        } catch (error) {
+          console.error('❌ Gmail send email failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      console.log('✅ Google Auth and Gmail handlers initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Google Auth handlers:', error);
     }
 
   } catch (error) {
