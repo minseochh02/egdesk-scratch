@@ -33,6 +33,7 @@ import { registerNaverBlogHandlers } from './naver-blog-handlers';
 import { getGoogleAuthHandler } from './mcp/google-auth-handler';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail-mcp-handler';
+import { getMCPServerManager } from './mcp/mcp-server-manager';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
@@ -837,6 +838,10 @@ const createWindow = async () => {
     
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();
+    
+    // Register MCP Server Manager handlers
+    const mcpServerManager = getMCPServerManager();
+    mcpServerManager.registerIPCHandlers();
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');
