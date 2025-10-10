@@ -13,6 +13,27 @@ interface DomainUser {
   lastLoginTime?: string;
 }
 
+interface GmailMessage {
+  id: string;
+  subject: string;
+  from: string;
+  to: string;
+  date: string;
+  snippet: string;
+  isRead: boolean;
+  isImportant: boolean;
+  labels: string[];
+  threadId: string;
+}
+
+interface GmailStats {
+  totalMessages: number;
+  unreadMessages: number;
+  importantMessages: number;
+  sentMessages: number;
+  recentActivity: number;
+}
+
 interface GmailConnection {
   id: string;
   name: string;
@@ -38,6 +59,10 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedUser, setSelectedUser] = useState<DomainUser | null>(null);
+  const [userMessages, setUserMessages] = useState<GmailMessage[]>([]);
+  const [userStats, setUserStats] = useState<GmailStats | null>(null);
+  const [loadingUserData, setLoadingUserData] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'users' | 'gmail'>('users');
 
   useEffect(() => {
     loadDomainUsers();
@@ -68,8 +93,51 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
     onRefresh?.();
   };
 
-  const handleUserClick = (user: DomainUser) => {
+  const handleUserClick = async (user: DomainUser) => {
     setSelectedUser(user);
+    setViewMode('gmail');
+    await loadUserGmailData(user.email);
+  };
+
+  const loadUserGmailData = async (userEmail: string) => {
+    try {
+      setLoadingUserData(true);
+      setError(null);
+      
+      // Fetch user's Gmail messages and stats
+      const [messagesResult, statsResult] = await Promise.all([
+        (window.electron as any).gmailMCP.fetchUserMessages(connection.id, userEmail, { maxResults: 50 }),
+        (window.electron as any).gmailMCP.fetchUserStats(connection.id, userEmail)
+      ]);
+
+      if (!messagesResult.success) {
+        throw new Error(messagesResult.error || 'Failed to fetch user messages');
+      }
+
+      if (!statsResult.success) {
+        throw new Error(statsResult.error || 'Failed to fetch user stats');
+      }
+
+      setUserMessages(messagesResult.messages || []);
+      setUserStats(statsResult.stats || {
+        totalMessages: 0,
+        unreadMessages: 0,
+        importantMessages: 0,
+        sentMessages: 0,
+        recentActivity: 0
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load user Gmail data');
+    } finally {
+      setLoadingUserData(false);
+    }
+  };
+
+  const handleBackToUsers = () => {
+    setViewMode('users');
+    setSelectedUser(null);
+    setUserMessages([]);
+    setUserStats(null);
   };
 
   const filteredUsers = users.filter(user => {
@@ -162,19 +230,24 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
       {/* Header */}
       <div className="gmail-dashboard-header">
         <div className="gmail-dashboard-header-left">
-          {onBack && (
+          {viewMode === 'gmail' ? (
+            <button className="gmail-dashboard-back-btn" onClick={handleBackToUsers}>
+              <FontAwesomeIcon icon={faArrowRight} />
+              <span>Back to Users</span>
+            </button>
+          ) : onBack ? (
             <button className="gmail-dashboard-back-btn" onClick={onBack}>
               <FontAwesomeIcon icon={faArrowRight} />
               <span>Back to MCP Tools</span>
             </button>
-          )}
+          ) : null}
           <div className="gmail-dashboard-title">
             <div className="gmail-dashboard-icon">
-              <FontAwesomeIcon icon={faUsers} />
+              <FontAwesomeIcon icon={viewMode === 'gmail' ? faEnvelope : faUsers} />
             </div>
             <div>
-              <h2>Domain Users Dashboard</h2>
-              <p>quus.cloud domain users</p>
+              <h2>{viewMode === 'gmail' ? `${selectedUser?.displayName || selectedUser?.name}'s Gmail` : 'Domain Users Dashboard'}</h2>
+              <p>{viewMode === 'gmail' ? selectedUser?.email : 'quus.cloud domain users'}</p>
             </div>
           </div>
         </div>
@@ -198,42 +271,85 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
 
       {/* Stats Cards */}
       <div className="gmail-dashboard-stats">
-        <div className="gmail-dashboard-stat-card">
-          <div className="gmail-dashboard-stat-icon">
-            <FontAwesomeIcon icon={faUsers} />
-          </div>
-          <div className="gmail-dashboard-stat-content">
-            <div className="gmail-dashboard-stat-number">{users.length}</div>
-            <div className="gmail-dashboard-stat-label">Total Users</div>
-          </div>
-        </div>
-        <div className="gmail-dashboard-stat-card">
-          <div className="gmail-dashboard-stat-icon">
-            <FontAwesomeIcon icon={faKey} />
-          </div>
-          <div className="gmail-dashboard-stat-content">
-            <div className="gmail-dashboard-stat-number">{users.filter(u => u.isAdmin).length}</div>
-            <div className="gmail-dashboard-stat-label">Admins</div>
-          </div>
-        </div>
-        <div className="gmail-dashboard-stat-card">
-          <div className="gmail-dashboard-stat-icon">
-            <FontAwesomeIcon icon={faUser} />
-          </div>
-          <div className="gmail-dashboard-stat-content">
-            <div className="gmail-dashboard-stat-number">{users.filter(u => !u.isSuspended).length}</div>
-            <div className="gmail-dashboard-stat-label">Active</div>
-          </div>
-        </div>
-        <div className="gmail-dashboard-stat-card">
-          <div className="gmail-dashboard-stat-icon">
-            <FontAwesomeIcon icon={faTimes} />
-          </div>
-          <div className="gmail-dashboard-stat-content">
-            <div className="gmail-dashboard-stat-number">{users.filter(u => u.isSuspended).length}</div>
-            <div className="gmail-dashboard-stat-label">Suspended</div>
-          </div>
-        </div>
+        {viewMode === 'users' ? (
+          <>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faUsers} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{users.length}</div>
+                <div className="gmail-dashboard-stat-label">Total Users</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faKey} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{users.filter(u => u.isAdmin).length}</div>
+                <div className="gmail-dashboard-stat-label">Admins</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faUser} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{users.filter(u => !u.isSuspended).length}</div>
+                <div className="gmail-dashboard-stat-label">Active</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faTimes} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{users.filter(u => u.isSuspended).length}</div>
+                <div className="gmail-dashboard-stat-label">Suspended</div>
+              </div>
+            </div>
+          </>
+        ) : userStats ? (
+          <>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faEnvelope} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{userStats.totalMessages}</div>
+                <div className="gmail-dashboard-stat-label">Total Messages</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faEnvelope} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{userStats.unreadMessages}</div>
+                <div className="gmail-dashboard-stat-label">Unread</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faTriangleExclamation} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{userStats.importantMessages}</div>
+                <div className="gmail-dashboard-stat-label">Important</div>
+              </div>
+            </div>
+            <div className="gmail-dashboard-stat-card">
+              <div className="gmail-dashboard-stat-icon">
+                <FontAwesomeIcon icon={faEnvelope} />
+              </div>
+              <div className="gmail-dashboard-stat-content">
+                <div className="gmail-dashboard-stat-number">{userStats.sentMessages}</div>
+                <div className="gmail-dashboard-stat-label">Sent</div>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* Search and Filter */}
@@ -261,51 +377,99 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
         </div>
       </div>
 
-      {/* Users List */}
+      {/* Content Area */}
       <div className="gmail-dashboard-messages">
-        {filteredUsers.length === 0 ? (
-          <div className="gmail-dashboard-empty">
-            <FontAwesomeIcon icon={faUsers} />
-            <h3>No Users Found</h3>
-            <p>Try adjusting your search or filter criteria.</p>
-          </div>
+        {viewMode === 'users' ? (
+          // Users List
+          filteredUsers.length === 0 ? (
+            <div className="gmail-dashboard-empty">
+              <FontAwesomeIcon icon={faUsers} />
+              <h3>No Users Found</h3>
+              <p>Try adjusting your search or filter criteria.</p>
+            </div>
+          ) : (
+            <div className="gmail-dashboard-messages-list">
+              {filteredUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className={`gmail-dashboard-message ${user.isAdmin ? 'admin' : ''} ${user.isSuspended ? 'suspended' : ''}`}
+                  onClick={() => handleUserClick(user)}
+                >
+                  <div className="gmail-dashboard-message-header">
+                    <div className="gmail-dashboard-message-from">
+                      <FontAwesomeIcon icon={user.isAdmin ? faKey : faUser} />
+                      {user.displayName || user.name}
+                    </div>
+                    <div className="gmail-dashboard-message-date">
+                      {formatDate(user.lastLoginTime)}
+                    </div>
+                  </div>
+                  <div className="gmail-dashboard-message-subject">
+                    {user.email}
+                  </div>
+                  <div className="gmail-dashboard-message-snippet">
+                    {user.isAdmin ? 'Administrator' : 'User'} • {user.isSuspended ? 'Suspended' : 'Active'}
+                  </div>
+                  <div className="gmail-dashboard-message-labels">
+                    {user.isAdmin && (
+                      <span className="gmail-dashboard-message-label admin">Admin</span>
+                    )}
+                    {user.isSuspended && (
+                      <span className="gmail-dashboard-message-label suspended">Suspended</span>
+                    )}
+                    {!user.isSuspended && (
+                      <span className="gmail-dashboard-message-label active">Active</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : (
-          <div className="gmail-dashboard-messages-list">
-            {filteredUsers.map((user) => (
-              <div
-                key={user.id}
-                className={`gmail-dashboard-message ${user.isAdmin ? 'admin' : ''} ${user.isSuspended ? 'suspended' : ''}`}
-                onClick={() => handleUserClick(user)}
-              >
-                <div className="gmail-dashboard-message-header">
-                  <div className="gmail-dashboard-message-from">
-                    <FontAwesomeIcon icon={user.isAdmin ? faKey : faUser} />
-                    {user.displayName || user.name}
+          // Gmail Messages
+          loadingUserData ? (
+            <div className="gmail-dashboard-loading">
+              <div className="gmail-dashboard-spinner"></div>
+              <p>Loading Gmail data...</p>
+            </div>
+          ) : userMessages.length === 0 ? (
+            <div className="gmail-dashboard-empty">
+              <FontAwesomeIcon icon={faEnvelope} />
+              <h3>No Messages Found</h3>
+              <p>This user has no Gmail messages.</p>
+            </div>
+          ) : (
+            <div className="gmail-dashboard-messages-list">
+              {userMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`gmail-dashboard-message ${!message.isRead ? 'unread' : ''} ${message.isImportant ? 'important' : ''}`}
+                >
+                  <div className="gmail-dashboard-message-header">
+                    <div className="gmail-dashboard-message-from">
+                      {message.from}
+                    </div>
+                    <div className="gmail-dashboard-message-date">
+                      {formatDate(message.date)}
+                    </div>
                   </div>
-                  <div className="gmail-dashboard-message-date">
-                    {formatDate(user.lastLoginTime)}
+                  <div className="gmail-dashboard-message-subject">
+                    {message.subject}
+                  </div>
+                  <div className="gmail-dashboard-message-snippet">
+                    {message.snippet}
+                  </div>
+                  <div className="gmail-dashboard-message-labels">
+                    {message.labels.map((label, index) => (
+                      <span key={index} className="gmail-dashboard-message-label">
+                        {label}
+                      </span>
+                    ))}
                   </div>
                 </div>
-                <div className="gmail-dashboard-message-subject">
-                  {user.email}
-                </div>
-                <div className="gmail-dashboard-message-snippet">
-                  {user.isAdmin ? 'Administrator' : 'User'} • {user.isSuspended ? 'Suspended' : 'Active'}
-                </div>
-                <div className="gmail-dashboard-message-labels">
-                  {user.isAdmin && (
-                    <span className="gmail-dashboard-message-label admin">Admin</span>
-                  )}
-                  {user.isSuspended && (
-                    <span className="gmail-dashboard-message-label suspended">Suspended</span>
-                  )}
-                  {!user.isSuspended && (
-                    <span className="gmail-dashboard-message-label active">Active</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 

@@ -1317,6 +1317,8 @@ mcpConfig: {
  */
 gmailMCP: {
   fetchDomainUsers: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-fetch-domain-users', connectionId),
+  fetchUserMessages: (connectionId: string, userEmail: string, options?: any) => ipcRenderer.invoke('gmail-mcp-fetch-user-messages', connectionId, userEmail, options),
+  fetchUserStats: (connectionId: string, userEmail: string) => ipcRenderer.invoke('gmail-mcp-fetch-user-stats', connectionId, userEmail),
   fetchMessages: (connectionId: string, options?: any) => ipcRenderer.invoke('gmail-mcp-fetch-messages', connectionId, options),
   fetchStats: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-fetch-stats', connectionId),
   markAsRead: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-mark-as-read', connectionId, messageId),

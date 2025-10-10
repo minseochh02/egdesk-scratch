@@ -122,6 +122,179 @@ export class GmailMCPFetcher {
   }
 
   /**
+   * Create a new JWT client for impersonating a specific user
+   */
+  private createUserJWTClient(userEmail: string) {
+    const serviceAccountKey = this.connection.serviceAccountKey;
+    
+    return new google.auth.JWT({
+      email: serviceAccountKey.client_email,
+      key: serviceAccountKey.private_key,
+      scopes: [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send'
+      ],
+      subject: userEmail // Impersonate the specific user
+    });
+  }
+
+  /**
+   * Fetch Gmail messages for a specific user
+   */
+  async fetchUserMessages(userEmail: string, options: {
+    maxResults?: number;
+    query?: string;
+    labelIds?: string[];
+    includeSpamTrash?: boolean;
+  } = {}): Promise<GmailMessage[]> {
+    try {
+      console.log(`Fetching Gmail messages for user: ${userEmail}`);
+      
+      const userJWTClient = this.createUserJWTClient(userEmail);
+      await userJWTClient.authorize();
+      
+      const gmail = google.gmail({ version: 'v1' });
+      
+      const response = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        maxResults: options.maxResults || 50,
+        q: options.query || '',
+        labelIds: options.labelIds,
+        includeSpamTrash: options.includeSpamTrash || false
+      });
+
+      if (!response.data.messages) {
+        return [];
+      }
+
+      // Fetch detailed message data for each message ID
+      const messagePromises = response.data.messages.map(async (msg: any) => {
+        return this.getUserMessageDetails(userEmail, userJWTClient, msg.id);
+      });
+
+      const messages = await Promise.all(messagePromises);
+      return messages.filter(msg => msg !== null) as GmailMessage[];
+    } catch (error) {
+      console.error(`Error fetching Gmail messages for ${userEmail}:`, error);
+      throw new Error(`Failed to fetch Gmail messages for ${userEmail}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get detailed message information for a specific user
+   */
+  private async getUserMessageDetails(userEmail: string, userJWTClient: any, messageId: string): Promise<GmailMessage | null> {
+    try {
+      const gmail = google.gmail({ version: 'v1' });
+      
+      const response = await gmail.users.messages.get({
+        auth: userJWTClient,
+        userId: userEmail,
+        id: messageId,
+        format: 'full'
+      });
+
+      const message = response.data;
+      const headers = message.payload?.headers || [];
+      
+      const getHeader = (name: string) => {
+        const header = headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase());
+        return header ? header.value : '';
+      };
+
+      const labelIds = message.labelIds || [];
+
+      return {
+        id: message.id || '',
+        subject: getHeader('Subject') || '',
+        from: getHeader('From') || '',
+        to: getHeader('To') || '',
+        date: new Date(parseInt(message.internalDate || '0')).toISOString(),
+        snippet: message.snippet || '',
+        isRead: !labelIds.includes('UNREAD'),
+        isImportant: labelIds.includes('IMPORTANT'),
+        labels: labelIds,
+        threadId: message.threadId || ''
+      };
+    } catch (error) {
+      console.error(`Error getting message details for ${userEmail}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch Gmail statistics for a specific user
+   */
+  async fetchUserStats(userEmail: string): Promise<GmailStats> {
+    try {
+      console.log(`Fetching Gmail stats for user: ${userEmail}`);
+      
+      const userJWTClient = this.createUserJWTClient(userEmail);
+      await userJWTClient.authorize();
+      
+      const gmail = google.gmail({ version: 'v1' });
+      
+      // Get total messages
+      const totalResponse = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        maxResults: 1
+      });
+      const totalMessages = totalResponse.data.resultSizeEstimate || 0;
+
+      // Get unread messages
+      const unreadResponse = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        labelIds: ['UNREAD'],
+        maxResults: 1
+      });
+      const unreadMessages = unreadResponse.data.resultSizeEstimate || 0;
+
+      // Get important messages
+      const importantResponse = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        labelIds: ['IMPORTANT'],
+        maxResults: 1
+      });
+      const importantMessages = importantResponse.data.resultSizeEstimate || 0;
+
+      // Get sent messages
+      const sentResponse = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        labelIds: ['SENT'],
+        maxResults: 1
+      });
+      const sentMessages = sentResponse.data.resultSizeEstimate || 0;
+
+      // Get recent activity (messages from last 24 hours)
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const recentResponse = await gmail.users.messages.list({
+        auth: userJWTClient,
+        userId: userEmail,
+        q: `after:${Math.floor(yesterday.getTime() / 1000)}`,
+        maxResults: 1
+      });
+      const recentActivity = recentResponse.data.resultSizeEstimate || 0;
+
+      return {
+        totalMessages,
+        unreadMessages,
+        importantMessages,
+        sentMessages,
+        recentActivity
+      };
+    } catch (error) {
+      console.error(`Error fetching Gmail stats for ${userEmail}:`, error);
+      throw new Error(`Failed to fetch Gmail stats for ${userEmail}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Test connection to Google APIs
    */
   async testConnection(): Promise<boolean> {
