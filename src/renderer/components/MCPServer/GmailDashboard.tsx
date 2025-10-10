@@ -118,18 +118,70 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
         throw new Error(statsResult.error || 'Failed to fetch user stats');
       }
 
-      setUserMessages(messagesResult.messages || []);
-      setUserStats(statsResult.stats || {
+      const messages = messagesResult.messages || [];
+      const stats = statsResult.stats || {
         totalMessages: 0,
         unreadMessages: 0,
         importantMessages: 0,
         sentMessages: 0,
         recentActivity: 0
-      });
+      };
+
+      setUserMessages(messages);
+      setUserStats(stats);
+
+      // Save to SQLite database
+      try {
+        await saveUserDataToDatabase(userEmail, messages, stats);
+        console.log(`Successfully saved Gmail data for ${userEmail} to SQLite database`);
+      } catch (dbError) {
+        console.error('Error saving to database:', dbError);
+        // Don't throw error - just log it, as the main functionality still works
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load user Gmail data');
     } finally {
       setLoadingUserData(false);
+    }
+  };
+
+  const saveUserDataToDatabase = async (userEmail: string, messages: GmailMessage[], stats: GmailStats) => {
+    try {
+      // Save user messages to database
+      const messageRecords = messages.map(message => ({
+        id: message.id,
+        userEmail: userEmail,
+        subject: message.subject,
+        from: message.from,
+        to: message.to,
+        date: message.date,
+        snippet: message.snippet,
+        isRead: message.isRead,
+        isImportant: message.isImportant,
+        labels: JSON.stringify(message.labels),
+        threadId: message.threadId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }));
+
+      // Save user stats to database
+      const statsRecord = {
+        id: `stats-${userEmail}-${Date.now()}`,
+        userEmail: userEmail,
+        totalMessages: stats.totalMessages,
+        unreadMessages: stats.unreadMessages,
+        importantMessages: stats.importantMessages,
+        sentMessages: stats.sentMessages,
+        recentActivity: stats.recentActivity,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Call the database save API
+      await (window.electron as any).gmailMCP.saveUserDataToDatabase(userEmail, messageRecords, statsRecord);
+    } catch (error) {
+      console.error('Error saving user data to database:', error);
+      throw error;
     }
   };
 

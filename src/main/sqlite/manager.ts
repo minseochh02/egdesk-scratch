@@ -519,6 +519,28 @@ export class SQLiteManager {
       }
     });
 
+    // Get database paths
+    ipcMain.handle('sqlite-get-database-paths', async () => {
+      try {
+        const { getConversationsDatabasePath, getWordPressDatabasePath } = require('./init');
+        const { getTaskDatabasePath } = require('./init');
+        
+        return {
+          success: true,
+          paths: {
+            conversations: getConversationsDatabasePath(),
+            tasks: getTaskDatabasePath(),
+            wordpress: getWordPressDatabasePath()
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
     // Migrate tasks from Electron Store to SQLite (testing utility)
     ipcMain.handle('sqlite-migrate-tasks-from-store', async () => {
       try {
