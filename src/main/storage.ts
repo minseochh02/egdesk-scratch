@@ -33,6 +33,17 @@ export function initializeStore(): Promise<void> {
           // This will store summarized/derived project insights keyed by project id/path
           // Example shape (planned): { [projectId]: { lastAnalyzedAt, summary, features, risks, todos } }
           smartProjectContext: {},
+          // MCP Configuration: Store for Model Context Protocol server configurations
+          mcpConfiguration: {
+            servers: [],
+            connections: [],
+            settings: {
+              autoStart: false,
+              defaultPort: 8080,
+              enableLogging: true,
+              logLevel: 'info',
+            },
+          },
         },
       });
       resolve();
@@ -391,6 +402,203 @@ ipcMain.handle('store-delete', async (event, key: string) => {
   } catch (error) {
     console.error('Error deleting store value:', error);
     throw error;
+  }
+});
+
+// ========================================================================
+// MCP CONFIGURATION HANDLERS
+// ========================================================================
+
+/**
+ * Get MCP configuration
+ */
+ipcMain.handle('mcp-config-get', async () => {
+  try {
+    const config = store.get('mcpConfiguration');
+    return { success: true, config };
+  } catch (error) {
+    console.error('Error getting MCP configuration:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Update MCP configuration
+ */
+ipcMain.handle('mcp-config-set', async (event, config: any) => {
+  try {
+    store.set('mcpConfiguration', config);
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting MCP configuration:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Add MCP server
+ */
+ipcMain.handle('mcp-server-add', async (event, server: any) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    const newServer = {
+      id: `mcp-server-${Date.now()}`,
+      ...server,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    config.servers.push(newServer);
+    store.set('mcpConfiguration', config);
+    return { success: true, server: newServer };
+  } catch (error) {
+    console.error('Error adding MCP server:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Update MCP server
+ */
+ipcMain.handle('mcp-server-update', async (event, serverId: string, updates: any) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    const serverIndex = config.servers.findIndex((s: any) => s.id === serverId);
+    if (serverIndex === -1) {
+      return { success: false, error: 'Server not found' };
+    }
+    config.servers[serverIndex] = {
+      ...config.servers[serverIndex],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    store.set('mcpConfiguration', config);
+    return { success: true, server: config.servers[serverIndex] };
+  } catch (error) {
+    console.error('Error updating MCP server:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Remove MCP server
+ */
+ipcMain.handle('mcp-server-remove', async (event, serverId: string) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    config.servers = config.servers.filter((s: any) => s.id !== serverId);
+    store.set('mcpConfiguration', config);
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing MCP server:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Add MCP connection
+ */
+ipcMain.handle('mcp-connection-add', async (event, connection: any) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    const newConnection = {
+      id: `mcp-connection-${Date.now()}`,
+      ...connection,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    config.connections.push(newConnection);
+    store.set('mcpConfiguration', config);
+    return { success: true, connection: newConnection };
+  } catch (error) {
+    console.error('Error adding MCP connection:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Update MCP connection
+ */
+ipcMain.handle('mcp-connection-update', async (event, connectionId: string, updates: any) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    const connectionIndex = config.connections.findIndex((c: any) => c.id === connectionId);
+    if (connectionIndex === -1) {
+      return { success: false, error: 'Connection not found' };
+    }
+    config.connections[connectionIndex] = {
+      ...config.connections[connectionIndex],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    store.set('mcpConfiguration', config);
+    return { success: true, connection: config.connections[connectionIndex] };
+  } catch (error) {
+    console.error('Error updating MCP connection:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Remove MCP connection
+ */
+ipcMain.handle('mcp-connection-remove', async (event, connectionId: string) => {
+  try {
+    const config = store.get('mcpConfiguration');
+    config.connections = config.connections.filter((c: any) => c.id !== connectionId);
+    store.set('mcpConfiguration', config);
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing MCP connection:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get MCP servers
+ */
+ipcMain.handle('mcp-servers-get', async () => {
+  try {
+    const config = store.get('mcpConfiguration');
+    return { success: true, servers: config.servers };
+  } catch (error) {
+    console.error('Error getting MCP servers:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get MCP connections
+ */
+ipcMain.handle('mcp-connections-get', async () => {
+  try {
+    const config = store.get('mcpConfiguration');
+    return { success: true, connections: config.connections };
+  } catch (error) {
+    console.error('Error getting MCP connections:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Clear all MCP configuration
+ */
+ipcMain.handle('mcp-config-clear', async () => {
+  try {
+    const defaultConfig = {
+      servers: [],
+      connections: [],
+      settings: {
+        autoStart: false,
+        defaultPort: 8080,
+        enableLogging: true,
+        logLevel: 'info',
+      },
+    };
+    store.set('mcpConfiguration', defaultConfig);
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing MCP configuration:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
 

@@ -353,6 +353,45 @@ export interface IElectronAPI {
     runNow: (id: string) => Promise<{ success: boolean; error?: string }>;
     getExecutionHistory: (id: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   };
+  mcp: {
+    register: (name: string, password?: string) => Promise<{ 
+      success: boolean; 
+      status?: 'registered' | 'name_taken' | 'error'; 
+      message?: string; 
+      name?: string; 
+      ip?: string; 
+      timestamp?: string; 
+      id?: string; 
+      existing_record?: any; 
+    }>;
+    testConnection: () => Promise<{ success: boolean; connected?: boolean; error?: string }>;
+  };
+  env: {
+    checkConfig: () => Promise<{ 
+      success: boolean; 
+      hasSupabaseKey?: boolean; 
+      supabaseUrl?: string; 
+      message?: string; 
+      error?: string; 
+    }>;
+  };
+  mcpConfig: {
+    get: () => Promise<{ success: boolean; config?: any; error?: string }>;
+    set: (config: any) => Promise<{ success: boolean; error?: string }>;
+    clear: () => Promise<{ success: boolean; error?: string }>;
+    servers: {
+      get: () => Promise<{ success: boolean; servers?: any[]; error?: string }>;
+      add: (server: any) => Promise<{ success: boolean; server?: any; error?: string }>;
+      update: (serverId: string, updates: any) => Promise<{ success: boolean; server?: any; error?: string }>;
+      remove: (serverId: string) => Promise<{ success: boolean; error?: string }>;
+    };
+    connections: {
+      get: () => Promise<{ success: boolean; connections?: any[]; error?: string }>;
+      add: (connection: any) => Promise<{ success: boolean; connection?: any; error?: string }>;
+      update: (connectionId: string, updates: any) => Promise<{ success: boolean; connection?: any; error?: string }>;
+      remove: (connectionId: string) => Promise<{ success: boolean; error?: string }>;
+    };
+  };
 }
 
 declare global {

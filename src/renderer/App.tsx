@@ -22,6 +22,7 @@ import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
+import MCPServer from './components/MCPServer/MCPServer';
 import './App.css';
 
 function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -1384,6 +1385,7 @@ export default function App() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
+            <Route path="/mcp-server" element={<MCPServer />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

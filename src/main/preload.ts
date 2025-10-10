@@ -1276,13 +1276,49 @@ const electronHandler = {
     sendEmail: (to: string, subject: string, body: string) => ipcRenderer.invoke('gmail-send-email', to, subject, body),
   },
 
+  /**
+   * MCP Registration API
+   */
+  mcp: {
+    register: (name: string, password?: string) => ipcRenderer.invoke('mcp-register', name, password),
+    testConnection: () => ipcRenderer.invoke('mcp-test-connection'),
+  },
+
+  /**
+   * Environment Configuration API
+   */
+  env: {
+    checkConfig: () => ipcRenderer.invoke('env-check-config'),
+  },
+
+  /**
+   * MCP Configuration API
+   */
+  mcpConfig: {
+    get: () => ipcRenderer.invoke('mcp-config-get'),
+    set: (config: any) => ipcRenderer.invoke('mcp-config-set', config),
+    clear: () => ipcRenderer.invoke('mcp-config-clear'),
+    servers: {
+      get: () => ipcRenderer.invoke('mcp-servers-get'),
+      add: (server: any) => ipcRenderer.invoke('mcp-server-add', server),
+      update: (serverId: string, updates: any) => ipcRenderer.invoke('mcp-server-update', serverId, updates),
+      remove: (serverId: string) => ipcRenderer.invoke('mcp-server-remove', serverId),
+    },
+    connections: {
+      get: () => ipcRenderer.invoke('mcp-connections-get'),
+      add: (connection: any) => ipcRenderer.invoke('mcp-connection-add', connection),
+      update: (connectionId: string, updates: any) => ipcRenderer.invoke('mcp-connection-update', connectionId, updates),
+      remove: (connectionId: string) => ipcRenderer.invoke('mcp-connection-remove', connectionId),
+    },
+  },
+
   // ========================================================================
-  // LOCAL TUNNEL FUNCTIONALITY
+  // LOCAL TUNNEL FUNCTIONALITY (disabled)
   // ========================================================================
   tunnel: {
-    start: (port?: number) => ipcRenderer.invoke('tunnel-start', port),
-    stop: () => ipcRenderer.invoke('tunnel-stop'),
-    status: () => ipcRenderer.invoke('tunnel-status'),
+    start: async (_port?: number) => ({ success: false, error: 'Tunnel disabled' }),
+    stop: async () => ({ success: true, message: 'Tunnel disabled' }),
+    status: async () => ({ success: true, isRunning: false, url: null }),
   },
 };
 

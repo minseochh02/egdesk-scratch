@@ -7,6 +7,7 @@ import {
   faRocket,
   faCog,
   faShieldAlt,
+  faServer,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -65,6 +66,21 @@ const LandingPage: React.FC = () => {
                 <span className="feature-tag">SSL 분석</span>
                 <span className="feature-tag">보안 검사</span>
                 <span className="feature-tag">취약점 탐지</span>
+              </div>
+            </Link>
+
+            <Link to="/mcp-server" className="action-card mcp-card">
+              <div className="card-icon">
+                <FontAwesomeIcon icon={faServer} />
+              </div>
+              <h3 className="card-title">EG MCP Server</h3>
+              <p className="card-description">
+                MCP(Model Context Protocol) 서버를 등록하고 관리하여 AI 모델과의 연결을 설정하세요.
+              </p>
+              <div className="card-features">
+                <span className="feature-tag">서버 등록</span>
+                <span className="feature-tag">AI 연결</span>
+                <span className="feature-tag">프로토콜 관리</span>
               </div>
             </Link>
           </div>
