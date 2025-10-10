@@ -10,7 +10,7 @@ import { getGoogleAuthHandler } from './google-auth-handler';
 export class SimplePHPServerTest {
   private phpServer: ChildProcess | null = null;
   private port: number = 8080;
-  private publicDir: string = './public';
+  private publicDir: string = './public/mcp';
   private googleAuthHandler = getGoogleAuthHandler();
 
   constructor(port: number = 8080) {
@@ -43,98 +43,25 @@ export class SimplePHPServerTest {
   }
 
   /**
-   * Create public directory and hello.php file
+   * Check if public directory exists and contains required files
    */
-  private setupPublicDir(): void {
+  private checkPublicDir(): boolean {
     if (!fs.existsSync(this.publicDir)) {
-      fs.mkdirSync(this.publicDir, { recursive: true });
+      console.error(`❌ Public directory not found: ${this.publicDir}`);
+      return false;
     }
 
-    // Create hello.php endpoint
-    const helloPhpContent = `<?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-$response = [
-    'message' => 'Hello from PHP server!',
-    'timestamp' => date('Y-m-d H:i:s'),
-    'php_version' => phpversion(),
-    'method' => $_SERVER['REQUEST_METHOD'],
-    'path' => $_SERVER['REQUEST_URI']
-];
-
-echo json_encode($response, JSON_PRETTY_PRINT);
-?>`;
-
-    fs.writeFileSync(path.join(this.publicDir, 'hello.php'), helloPhpContent);
-    console.log(`✅ Created ${this.publicDir}/hello.php`);
-
-    // Create gmail.php endpoint that calls Electron app's HTTP API
-    const gmailPhpContent = `<?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// Function to call Electron app's HTTP API for Gmail
-function callElectronGmailAPI() {
-    $electronUrl = 'http://localhost:3333/api/gmail';
-    
-    // Create stream context with timeout
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'timeout' => 10,
-            'header' => 'Content-Type: application/json',
-            'ignore_errors' => true
-        ]
-    ]);
-    
-    $result = @file_get_contents($electronUrl, false, $context);
-    
-    if ($result === false) {
-        return [
-            'success' => false,
-            'error' => 'Cannot connect to Electron app',
-            'message' => 'Please ensure the Electron app is running and you are signed in with Google',
-            'electron_url' => $electronUrl,
-            'timestamp' => date('Y-m-d H:i:s')
-        ];
+    const requiredFiles = ['hello.php', 'gmail.php'];
+    for (const file of requiredFiles) {
+      const filePath = path.join(this.publicDir, file);
+      if (!fs.existsSync(filePath)) {
+        console.error(`❌ Required file not found: ${filePath}`);
+        return false;
+      }
     }
-    
-    $data = json_decode($result, true);
-    if ($data === null) {
-        return [
-            'success' => false,
-            'error' => 'Invalid response from Electron app',
-            'raw_response' => substr($result, 0, 200),
-            'timestamp' => date('Y-m-d H:i:s')
-        ];
-    }
-    
-    return $data;
-}
 
-// Call the Electron app's Gmail API
-$response = callElectronGmailAPI();
-
-echo json_encode($response, JSON_PRETTY_PRINT);
-?>`;
-
-    fs.writeFileSync(path.join(this.publicDir, 'gmail.php'), gmailPhpContent);
-    console.log(`✅ Created ${this.publicDir}/gmail.php`);
+    console.log(`✅ Public directory and required files found: ${this.publicDir}`);
+    return true;
   }
 
   /**
@@ -194,7 +121,9 @@ echo json_encode($response, JSON_PRETTY_PRINT);
         throw new Error('PHP executable not found');
       }
 
-      this.setupPublicDir();
+      if (!this.checkPublicDir()) {
+        throw new Error('Public directory or required files not found');
+      }
 
       console.log(`🚀 Starting PHP server on port ${this.port}...`);
 

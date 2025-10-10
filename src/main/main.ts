@@ -8,6 +8,9 @@
  * When running `npm run build` or `npm run build:main`, this file is compiled to
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
+import dotenv from 'dotenv';
+dotenv.config();
+
 import path from 'path';
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
@@ -27,14 +30,14 @@ import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
-import { getGoogleAuthHandler } from './google-auth-handler';
+import { getGoogleAuthHandler } from './mcp/google-auth-handler';
+import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/registration-service';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
-let tunnelProcess: any = null;
-let tunnelUrl: string | null = null;
+// Tunnel functionality removed
 
 class AppUpdater {
   constructor() {
@@ -384,7 +387,7 @@ const createWindow = async () => {
 
     // Initialize PHP Server handlers
     try {
-      const { SimplePHPServerTest } = require('./api-server-test');
+      const { SimplePHPServerTest } = require('./mcp/api-server-test');
       let phpServerTest: any = null;
 
       ipcMain.handle('php-server-start', async (_event, port?: number) => {
@@ -599,6 +602,51 @@ const createWindow = async () => {
         }
       });
 
+      // MCP Registration handlers
+      ipcMain.handle('mcp-register', async (_event, name: string, password?: string) => {
+        try {
+          console.log(`🔗 Registering MCP server: ${name}`);
+          const result = await registerEGDeskMCP(name, password);
+          return result;
+        } catch (error: any) {
+          console.error('❌ MCP registration error:', error);
+          return { 
+            success: false, 
+            status: 'error', 
+            message: error.message || 'Unknown error during MCP registration' 
+          };
+        }
+      });
+
+      ipcMain.handle('mcp-test-connection', async () => {
+        try {
+          console.log('🧪 Testing MCP connection...');
+          const result = await testEGDeskMCPConnection();
+          return { success: true, connected: result };
+        } catch (error: any) {
+          console.error('❌ MCP connection test error:', error);
+          return { success: false, connected: false, error: error.message };
+        }
+      });
+
+      // Simple environment check handler
+      ipcMain.handle('env-check-config', async () => {
+        try {
+          const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
+          const supabaseUrl = process.env.SUPABASE_URL || 'https://cbptgzaubhcclkmvkiua.supabase.co';
+          
+          return { 
+            success: true, 
+            hasSupabaseKey,
+            supabaseUrl,
+            message: hasSupabaseKey ? 'Supabase configured' : 'Supabase anon key not found in environment'
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to check environment config:', error);
+          return { success: false, error: error.message };
+        }
+      });
+
       console.log('✅ Google Auth and Gmail handlers initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Google Auth handlers:', error);
@@ -705,135 +753,7 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize Electron HTTP API server:', error);
     }
 
-    // ========================================================================
-    // LOCAL TUNNEL HANDLERS
-    // ========================================================================
-    try {
-
-      ipcMain.handle('tunnel-start', async (_event, port: number = 8080) => {
-        try {
-          if (tunnelProcess) {
-            return { 
-              success: false, 
-              error: 'Tunnel already running',
-              url: tunnelUrl 
-            };
-          }
-
-          console.log(`🌐 Starting localtunnel for port ${port}...`);
-          
-          // Spawn localtunnel process
-          const { spawn } = require('child_process');
-          tunnelProcess = spawn('lt', ['--port', port.toString(), '--print-requests'], {
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-
-          return new Promise((resolve) => {
-            let output = '';
-            
-            tunnelProcess.stdout.on('data', (data: Buffer) => {
-              output += data.toString();
-              console.log('Tunnel output:', data.toString());
-              
-              // Look for the URL in the output
-              const urlMatch = output.match(/your url is: (https:\/\/[^\s]+)/);
-              if (urlMatch) {
-                tunnelUrl = urlMatch[1];
-                console.log(`✅ Tunnel started: ${tunnelUrl}`);
-                resolve({ 
-                  success: true, 
-                  url: tunnelUrl,
-                  message: 'Tunnel created successfully'
-                });
-              }
-            });
-
-            tunnelProcess.stderr.on('data', (data: Buffer) => {
-              console.error('Tunnel error:', data.toString());
-            });
-
-            tunnelProcess.on('close', (code: number) => {
-              console.log(`Tunnel process closed with code ${code}`);
-              tunnelProcess = null;
-              tunnelUrl = null;
-            });
-
-            tunnelProcess.on('error', (error: any) => {
-              console.error('Tunnel process error:', error);
-              tunnelProcess = null;
-              tunnelUrl = null;
-              resolve({ 
-                success: false, 
-                error: error.message || 'Failed to start tunnel'
-              });
-            });
-
-            // Timeout after 10 seconds
-            setTimeout(() => {
-              if (!tunnelUrl) {
-                resolve({ 
-                  success: false, 
-                  error: 'Tunnel startup timeout'
-                });
-              }
-            }, 10000);
-          });
-        } catch (error) {
-          console.error('❌ Tunnel start failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('tunnel-stop', async () => {
-        try {
-          if (tunnelProcess) {
-            console.log('🛑 Stopping tunnel...');
-            tunnelProcess.kill();
-            tunnelProcess = null;
-            const url = tunnelUrl;
-            tunnelUrl = null;
-            return { 
-              success: true, 
-              message: 'Tunnel stopped',
-              url: url 
-            };
-          }
-          return { 
-            success: false, 
-            error: 'No tunnel running' 
-          };
-        } catch (error) {
-          console.error('❌ Tunnel stop failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('tunnel-status', async () => {
-        try {
-          return { 
-            success: true, 
-            isRunning: !!tunnelProcess,
-            url: tunnelUrl 
-          };
-        } catch (error) {
-          console.error('❌ Tunnel status check failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      console.log('✅ Local tunnel handlers initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize local tunnel handlers:', error);
-    }
+    // Local tunnel handlers removed
 
   } catch (error) {
     console.error('❌ CRITICAL: Failed to initialize Electron Store:', error);
@@ -1016,12 +936,7 @@ app.on('before-quit', async () => {
     electronApiServer = null;
   }
 
-  // Cleanup tunnel process
-  if (tunnelProcess) {
-    console.log('🛑 Stopping tunnel process...');
-    tunnelProcess.kill();
-    tunnelProcess = null;
-  }
+  // Tunnel cleanup removed
 });
 
 app
