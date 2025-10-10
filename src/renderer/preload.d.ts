@@ -396,6 +396,7 @@ export interface IElectronAPI {
     fetchDomainUsers: (connectionId: string) => Promise<{ success: boolean; users?: any[]; error?: string }>;
     fetchUserMessages: (connectionId: string, userEmail: string, options?: any) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
     fetchUserStats: (connectionId: string, userEmail: string) => Promise<{ success: boolean; stats?: any; error?: string }>;
+    saveUserDataToDatabase: (connectionId: string, userEmail: string, messageRecords: any[], statsRecord: any) => Promise<{ success: boolean; error?: string }>;
     fetchMessages: (connectionId: string, options?: any) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
     fetchStats: (connectionId: string) => Promise<{ success: boolean; stats?: any; error?: string }>;
     markAsRead: (connectionId: string, messageId: string) => Promise<{ success: boolean; error?: string }>;

@@ -3,6 +3,7 @@
 
 import { GmailMessage, GmailStats, GmailConnection } from '../types/gmail-types';
 import { google } from 'googleapis';
+import { GmailDatabase, GmailMessageRecord, GmailStatsRecord, DomainUserRecord } from '../database/gmail-database';
 
 export interface DomainUser {
   id: string;
@@ -19,9 +20,11 @@ export class GmailMCPFetcher {
   private jwtClient: any;
   private gmail: any;
   private directory: any;
+  private database: GmailDatabase;
 
   constructor(connection: GmailConnection) {
     this.connection = connection;
+    this.database = new GmailDatabase();
     this.initializeGoogleClient();
   }
 
@@ -114,6 +117,29 @@ export class GmailMCPFetcher {
       } while (pageToken);
 
       console.log(`Found ${users.length} users in quus.cloud domain`);
+
+      // Save users to database
+      try {
+        await this.database.initialize();
+        const userRecords: DomainUserRecord[] = users.map(user => ({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          displayName: user.displayName,
+          isAdmin: user.isAdmin,
+          isSuspended: user.isSuspended,
+          lastLoginTime: user.lastLoginTime,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
+        
+        await this.database.saveDomainUsers(userRecords);
+        console.log('Domain users saved to database');
+      } catch (dbError) {
+        console.error('Error saving users to database:', dbError);
+        // Continue execution even if database save fails
+      }
+
       return users;
     } catch (error) {
       console.error('Error fetching domain users:', error);
@@ -174,7 +200,35 @@ export class GmailMCPFetcher {
       });
 
       const messages = await Promise.all(messagePromises);
-      return messages.filter(msg => msg !== null) as GmailMessage[];
+      const validMessages = messages.filter(msg => msg !== null) as GmailMessage[];
+
+      // Save messages to database
+      try {
+        await this.database.initialize();
+        const messageRecords: GmailMessageRecord[] = validMessages.map(message => ({
+          id: message.id,
+          userEmail: userEmail,
+          subject: message.subject,
+          from: message.from,
+          to: message.to,
+          date: message.date,
+          snippet: message.snippet,
+          isRead: message.isRead,
+          isImportant: message.isImportant,
+          labels: JSON.stringify(message.labels),
+          threadId: message.threadId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
+        
+        await this.database.saveUserMessages(userEmail, messageRecords);
+        console.log(`Saved ${validMessages.length} messages to database for ${userEmail}`);
+      } catch (dbError) {
+        console.error('Error saving messages to database:', dbError);
+        // Continue execution even if database save fails
+      }
+
+      return validMessages;
     } catch (error) {
       console.error(`Error fetching Gmail messages for ${userEmail}:`, error);
       throw new Error(`Failed to fetch Gmail messages for ${userEmail}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -281,16 +335,65 @@ export class GmailMCPFetcher {
       });
       const recentActivity = recentResponse.data.resultSizeEstimate || 0;
 
-      return {
+      const stats: GmailStats = {
         totalMessages,
         unreadMessages,
         importantMessages,
         sentMessages,
         recentActivity
       };
+
+      // Save stats to database
+      try {
+        await this.database.initialize();
+        const statsRecord: GmailStatsRecord = {
+          id: `stats-${userEmail}-${Date.now()}`,
+          userEmail: userEmail,
+          totalMessages: stats.totalMessages,
+          unreadMessages: stats.unreadMessages,
+          importantMessages: stats.importantMessages,
+          sentMessages: stats.sentMessages,
+          recentActivity: stats.recentActivity,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        await this.database.saveUserStats(userEmail, statsRecord);
+        console.log(`Saved Gmail stats to database for ${userEmail}`);
+      } catch (dbError) {
+        console.error('Error saving stats to database:', dbError);
+        // Continue execution even if database save fails
+      }
+
+      return stats;
     } catch (error) {
       console.error(`Error fetching Gmail stats for ${userEmail}:`, error);
       throw new Error(`Failed to fetch Gmail stats for ${userEmail}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Save user data to SQLite database
+   */
+  async saveUserDataToDatabase(userEmail: string, messageRecords: GmailMessageRecord[], statsRecord: GmailStatsRecord): Promise<void> {
+    try {
+      console.log(`Saving Gmail data for ${userEmail} to SQLite database...`);
+      
+      await this.database.initialize();
+      
+      // Save messages
+      if (messageRecords.length > 0) {
+        await this.database.saveUserMessages(userEmail, messageRecords);
+        console.log(`Saved ${messageRecords.length} messages for ${userEmail}`);
+      }
+      
+      // Save stats
+      await this.database.saveUserStats(userEmail, statsRecord);
+      console.log(`Saved stats for ${userEmail}`);
+      
+    } catch (error) {
+      console.error(`Error saving data for ${userEmail}:`, error);
+      throw error;
     }
   }
 

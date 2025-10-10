@@ -281,6 +281,27 @@ export function registerGmailMCPHandlers() {
     }
   });
 
+  // Save user data to database
+  ipcMain.handle('gmail-mcp-save-user-data', async (event, connectionId: string, userEmail: string, messageRecords: any[], statsRecord: any) => {
+    try {
+      const connection = await getConnectionById(connectionId);
+      if (!connection) {
+        return { success: false, error: 'Connection not found' };
+      }
+
+      const fetcher = getFetcherInstance(connectionId, connection);
+      await fetcher.saveUserDataToDatabase(userEmail, messageRecords, statsRecord);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving user data to database:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
+    }
+  });
+
   // Test connection
   ipcMain.handle('gmail-mcp-test-connection', async (event, connectionId: string) => {
     try {

@@ -43,6 +43,15 @@ export function getDatabaseSize(dbPath: string): number {
     const wordpressDbPath = getWordPressDatabasePath();
     return new Database(wordpressDbPath);
   }
+
+  export function getTaskDatabasePath(): string {
+    return path.join(app.getPath('userData'), 'database', 'tasks.db');
+  }
+
+  export function getTaskDatabase(): Database.Database {
+    const taskDbPath = getTaskDatabasePath();
+    return new Database(taskDbPath);
+  }
   
 
 export interface DatabaseInitResult {
@@ -74,6 +83,13 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const conversationsDbPath = path.join(dataDir, 'conversations.db');
     const taskDbPath = path.join(dataDir, 'tasks.db');
     const wordpressDbPath = path.join(dataDir, 'wordpress.db');
+    
+    console.log('🔍 Database paths:');
+    console.log('  Data directory:', dataDir);
+    console.log('  Conversations DB:', conversationsDbPath);
+    console.log('  Task DB:', taskDbPath);
+    console.log('  WordPress DB:', wordpressDbPath);
+    
     const conversationsDb = new Database(conversationsDbPath);
     const taskDb = new Database(taskDbPath);
     const wordpressDb = new Database(wordpressDbPath);
@@ -166,6 +182,64 @@ export function initializeConversationsDatabaseSchema(db: Database.Database): vo
       UPDATE messages SET timestamp = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END
   `);
+
+  // Create Gmail-specific tables
+  // Create domain users table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS domain_users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      is_admin BOOLEAN DEFAULT 0,
+      is_suspended BOOLEAN DEFAULT 0,
+      last_login_time TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  // Create Gmail messages table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gmail_messages (
+      id TEXT PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      from_email TEXT NOT NULL,
+      to_email TEXT NOT NULL,
+      date TEXT NOT NULL,
+      snippet TEXT NOT NULL,
+      is_read BOOLEAN DEFAULT 0,
+      is_important BOOLEAN DEFAULT 0,
+      labels TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_email) REFERENCES domain_users (email)
+    )
+  `);
+
+  // Create Gmail stats table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gmail_stats (
+      id TEXT PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      total_messages INTEGER DEFAULT 0,
+      unread_messages INTEGER DEFAULT 0,
+      important_messages INTEGER DEFAULT 0,
+      sent_messages INTEGER DEFAULT 0,
+      recent_activity INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_email) REFERENCES domain_users (email)
+    )
+  `);
+
+  // Create indexes for Gmail tables
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_user_email ON gmail_messages (user_email)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_date ON gmail_messages (date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_stats_user_email ON gmail_stats (user_email)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON domain_users (email)`);
 }
 
 

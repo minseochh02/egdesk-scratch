@@ -1,0 +1,5 @@
+{
+  "conversationsDbPath": "/Users/minseocha/Library/Application Support/egdesk/database/conversations.db",
+  "taskDbPath": "/Users/minseocha/Library/Application Support/egdesk/database/tasks.db",
+  "wordpressDbPath": "/Users/minseocha/Library/Application Support/egdesk/database/wordpress.db"
+}
