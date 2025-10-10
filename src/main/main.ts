@@ -32,6 +32,7 @@ import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
 import { getGoogleAuthHandler } from './mcp/google-auth-handler';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/registration-service';
+import { registerGmailMCPHandlers } from './mcp/gmail-mcp-handler';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
@@ -833,6 +834,9 @@ const createWindow = async () => {
     
     // Register Naver Blog automation handlers
     registerNaverBlogHandlers();
+    
+    // Register Gmail MCP handlers
+    registerGmailMCPHandlers();
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');

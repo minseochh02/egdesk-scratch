@@ -1291,26 +1291,42 @@ const electronHandler = {
     checkConfig: () => ipcRenderer.invoke('env-check-config'),
   },
 
-  /**
-   * MCP Configuration API
-   */
-  mcpConfig: {
-    get: () => ipcRenderer.invoke('mcp-config-get'),
-    set: (config: any) => ipcRenderer.invoke('mcp-config-set', config),
-    clear: () => ipcRenderer.invoke('mcp-config-clear'),
-    servers: {
-      get: () => ipcRenderer.invoke('mcp-servers-get'),
-      add: (server: any) => ipcRenderer.invoke('mcp-server-add', server),
-      update: (serverId: string, updates: any) => ipcRenderer.invoke('mcp-server-update', serverId, updates),
-      remove: (serverId: string) => ipcRenderer.invoke('mcp-server-remove', serverId),
-    },
-    connections: {
-      get: () => ipcRenderer.invoke('mcp-connections-get'),
-      add: (connection: any) => ipcRenderer.invoke('mcp-connection-add', connection),
-      update: (connectionId: string, updates: any) => ipcRenderer.invoke('mcp-connection-update', connectionId, updates),
-      remove: (connectionId: string) => ipcRenderer.invoke('mcp-connection-remove', connectionId),
-    },
+/**
+ * MCP Configuration API
+ */
+mcpConfig: {
+  get: () => ipcRenderer.invoke('mcp-config-get'),
+  set: (config: any) => ipcRenderer.invoke('mcp-config-set', config),
+  clear: () => ipcRenderer.invoke('mcp-config-clear'),
+  servers: {
+    get: () => ipcRenderer.invoke('mcp-servers-get'),
+    add: (server: any) => ipcRenderer.invoke('mcp-server-add', server),
+    update: (serverId: string, updates: any) => ipcRenderer.invoke('mcp-server-update', serverId, updates),
+    remove: (serverId: string) => ipcRenderer.invoke('mcp-server-remove', serverId),
   },
+  connections: {
+    get: () => ipcRenderer.invoke('mcp-connections-get'),
+    add: (connection: any) => ipcRenderer.invoke('mcp-connection-add', connection),
+    update: (connectionId: string, updates: any) => ipcRenderer.invoke('mcp-connection-update', connectionId, updates),
+    remove: (connectionId: string) => ipcRenderer.invoke('mcp-connection-remove', connectionId),
+  },
+},
+
+/**
+ * Gmail MCP API
+ */
+gmailMCP: {
+  fetchDomainUsers: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-fetch-domain-users', connectionId),
+  fetchMessages: (connectionId: string, options?: any) => ipcRenderer.invoke('gmail-mcp-fetch-messages', connectionId, options),
+  fetchStats: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-fetch-stats', connectionId),
+  markAsRead: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-mark-as-read', connectionId, messageId),
+  deleteMessage: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-delete-message', connectionId, messageId),
+  sendReply: (connectionId: string, messageId: string, replyText: string) => ipcRenderer.invoke('gmail-mcp-send-reply', connectionId, messageId, replyText),
+  forwardMessage: (connectionId: string, messageId: string, toEmail: string) => ipcRenderer.invoke('gmail-mcp-forward-message', connectionId, messageId, toEmail),
+  searchMessages: (connectionId: string, query: string, maxResults?: number) => ipcRenderer.invoke('gmail-mcp-search-messages', connectionId, query, maxResults),
+  getMessage: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-get-message', connectionId, messageId),
+  testConnection: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-test-connection', connectionId),
+},
 
   // ========================================================================
   // LOCAL TUNNEL FUNCTIONALITY (disabled)
