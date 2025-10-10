@@ -501,10 +501,10 @@ ipcMain.handle('mcp-connection-add', async (event, connection: any) => {
   try {
     const config = store.get('mcpConfiguration');
     const newConnection = {
-      id: `mcp-connection-${Date.now()}`,
       ...connection,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      id: connection.id || `mcp-connection-${Date.now()}`,
+      createdAt: connection.createdAt || new Date().toISOString(),
+      updatedAt: connection.updatedAt || new Date().toISOString(),
     };
     config.connections.push(newConnection);
     store.set('mcpConfiguration', config);

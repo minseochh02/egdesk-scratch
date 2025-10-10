@@ -392,6 +392,18 @@ export interface IElectronAPI {
       remove: (connectionId: string) => Promise<{ success: boolean; error?: string }>;
     };
   };
+  gmailMCP: {
+    fetchDomainUsers: (connectionId: string) => Promise<{ success: boolean; users?: any[]; error?: string }>;
+    fetchMessages: (connectionId: string, options?: any) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
+    fetchStats: (connectionId: string) => Promise<{ success: boolean; stats?: any; error?: string }>;
+    markAsRead: (connectionId: string, messageId: string) => Promise<{ success: boolean; error?: string }>;
+    deleteMessage: (connectionId: string, messageId: string) => Promise<{ success: boolean; error?: string }>;
+    sendReply: (connectionId: string, messageId: string, replyText: string) => Promise<{ success: boolean; error?: string }>;
+    forwardMessage: (connectionId: string, messageId: string, toEmail: string) => Promise<{ success: boolean; error?: string }>;
+    searchMessages: (connectionId: string, query: string, maxResults?: number) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
+    getMessage: (connectionId: string, messageId: string) => Promise<{ success: boolean; message?: any; error?: string }>;
+    testConnection: (connectionId: string) => Promise<{ success: boolean; error?: string }>;
+  };
 }
 
 declare global {

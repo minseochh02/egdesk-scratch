@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEnvelope, faCheck, faArrowRight, faTrash, faEdit } from '../../utils/fontAwesomeIcons';
+import { faEnvelope, faCheck, faArrowRight, faTrash, faEdit, faList } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
+import ServerLists from './ServerLists';
 import './MCPServer.css';
 
 interface MCPTool {
@@ -31,6 +32,7 @@ interface GmailConnection {
 const MCPServer: React.FC<MCPServerProps> = () => {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [showGmailTool, setShowGmailTool] = useState<boolean>(false);
+  const [showServerLists, setShowServerLists] = useState<boolean>(false);
   const [gmailConnections, setGmailConnections] = useState<GmailConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
 
@@ -93,6 +95,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     setSelectedTool('');
   };
 
+  const handleBackFromServerLists = () => {
+    setShowServerLists(false);
+  };
+
+  const handleViewServerLists = () => {
+    setShowServerLists(true);
+  };
+
   const handleDeleteConnection = async (connectionId: string) => {
     if (!confirm('Are you sure you want to delete this Gmail connection?')) {
       return;
@@ -127,6 +137,17 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     );
   }
 
+  // Show Server Lists if selected
+  if (showServerLists) {
+    return (
+      <ServerLists
+        onBack={handleBackFromServerLists}
+        onEdit={handleEditConnection}
+        onDelete={handleDeleteConnection}
+      />
+    );
+  }
+
   return (
     <div className="mcp-server">
       {/* Hero Section */}
@@ -138,6 +159,15 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           </div>
           <h1>MCP Server Tools</h1>
           <p>Connect to external services through Model Context Protocol for enhanced AI-powered blogging workflows</p>
+          <div className="hero-actions">
+            <button 
+              className="hero-action-btn"
+              onClick={handleViewServerLists}
+            >
+              <FontAwesomeIcon icon={faList} />
+              <span>View All Connections</span>
+            </button>
+          </div>
         </div>
         
         <div className="hero-visual">

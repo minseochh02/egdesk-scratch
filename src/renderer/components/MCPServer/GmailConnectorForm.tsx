@@ -12,6 +12,7 @@ interface GmailConnectionData {
   id: string;
   name: string;
   email: string;
+  adminEmail: string;
   serviceAccountKey: any;
   createdAt: string;
   updatedAt: string;
@@ -25,6 +26,7 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [connectionName, setConnectionName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -106,6 +108,7 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
     setUploadedFile(null);
     setFileContent(null);
     setConnectionName('');
+    setAdminEmail('');
     setError('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -113,8 +116,15 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
   };
 
   const handleConnect = async () => {
-    if (!fileContent || !connectionName.trim()) {
-      setError('Please upload a valid service account key file and enter a connection name');
+    if (!fileContent || !connectionName.trim() || !adminEmail.trim()) {
+      setError('Please upload a valid service account key file, enter a connection name, and provide an admin email');
+      return;
+    }
+
+    // Validate admin email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(adminEmail.trim())) {
+      setError('Please enter a valid admin email address');
       return;
     }
 
@@ -126,6 +136,7 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
         id: `gmail-${Date.now()}`,
         name: connectionName.trim(),
         email: fileContent.client_email,
+        adminEmail: adminEmail.trim(),
         serviceAccountKey: fileContent,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -261,6 +272,20 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
               <small>This will help you identify this connection later</small>
             </div>
 
+            {/* Admin Email */}
+            <div className="form-group">
+              <label htmlFor="adminEmail">Admin Email (for Domain-Wide Delegation)</label>
+              <input
+                id="adminEmail"
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@quus.cloud"
+                disabled={!fileContent}
+              />
+              <small>Enter the email of a Super Admin user in your Google Workspace domain</small>
+            </div>
+
             {/* Service Account Info */}
             {fileContent && (
               <div className="service-account-info">
@@ -297,7 +322,7 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
               <button 
                 className="submit-btn"
                 onClick={handleConnect}
-                disabled={!fileContent || !connectionName.trim() || isLoading}
+                disabled={!fileContent || !connectionName.trim() || !adminEmail.trim() || isLoading}
               >
                 {isLoading ? (
                   <>
