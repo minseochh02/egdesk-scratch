@@ -71,6 +71,27 @@ export function registerGmailMCPHandlers() {
     }
   });
 
+  // Fetch Gmail messages for a specific user
+  ipcMain.handle('gmail-mcp-fetch-user-messages', async (event, connectionId: string, userEmail: string, options?: any) => {
+    try {
+      const connection = await getConnectionById(connectionId);
+      if (!connection) {
+        return { success: false, error: 'Connection not found' };
+      }
+
+      const fetcher = getFetcherInstance(connectionId, connection);
+      const messages = await fetcher.fetchUserMessages(userEmail, options);
+      
+      return { success: true, messages };
+    } catch (error) {
+      console.error('Error fetching user Gmail messages:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
+    }
+  });
+
   // Fetch Gmail messages
   ipcMain.handle('gmail-mcp-fetch-messages', async (event, connectionId: string, options?: any) => {
     try {
@@ -85,6 +106,27 @@ export function registerGmailMCPHandlers() {
       return { success: true, messages };
     } catch (error) {
       console.error('Error fetching Gmail messages:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
+    }
+  });
+
+  // Fetch Gmail statistics for a specific user
+  ipcMain.handle('gmail-mcp-fetch-user-stats', async (event, connectionId: string, userEmail: string) => {
+    try {
+      const connection = await getConnectionById(connectionId);
+      if (!connection) {
+        return { success: false, error: 'Connection not found' };
+      }
+
+      const fetcher = getFetcherInstance(connectionId, connection);
+      const stats = await fetcher.fetchUserStats(userEmail);
+      
+      return { success: true, stats };
+    } catch (error) {
+      console.error('Error fetching user Gmail stats:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
