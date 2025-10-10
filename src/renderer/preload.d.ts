@@ -407,6 +407,24 @@ export interface IElectronAPI {
     getMessage: (connectionId: string, messageId: string) => Promise<{ success: boolean; message?: any; error?: string }>;
     testConnection: (connectionId: string) => Promise<{ success: boolean; error?: string }>;
   };
+
+  mcpServer: {
+    getStatus: () => Promise<{ 
+      success: boolean; 
+      status?: {
+        isBuilt: boolean;
+        isConfigured: boolean;
+        serverPath: string | null;
+        configPath: string | null;
+        error: string | null;
+      };
+      error?: string;
+    }>;
+    build: () => Promise<{ success: boolean; error?: string }>;
+    configureClaude: () => Promise<{ success: boolean; error?: string }>;
+    unconfigureClaude: () => Promise<{ success: boolean; error?: string }>;
+    getInstructions: () => Promise<{ success: boolean; instructions?: string; error?: string }>;
+  };
 }
 
 declare global {

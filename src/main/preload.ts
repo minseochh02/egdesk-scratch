@@ -1331,6 +1331,17 @@ gmailMCP: {
   testConnection: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-test-connection', connectionId),
 },
 
+/**
+ * MCP Server Management API
+ */
+mcpServer: {
+  getStatus: () => ipcRenderer.invoke('mcp-server-get-status'),
+  build: () => ipcRenderer.invoke('mcp-server-build'),
+  configureClaude: () => ipcRenderer.invoke('mcp-server-configure-claude'),
+  unconfigureClaude: () => ipcRenderer.invoke('mcp-server-unconfigure-claude'),
+  getInstructions: () => ipcRenderer.invoke('mcp-server-get-instructions'),
+},
+
   // ========================================================================
   // LOCAL TUNNEL FUNCTIONALITY (disabled)
   // ========================================================================

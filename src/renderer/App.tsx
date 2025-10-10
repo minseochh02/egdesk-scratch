@@ -60,6 +60,28 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [tunnelStatus, setTunnelStatus] = useState('');
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [isTunnelRunning, setIsTunnelRunning] = useState(false);
+  const [mcpServerStatus, setMcpServerStatus] = useState('');
+  const [mcpIsBuilt, setMcpIsBuilt] = useState(false);
+  const [mcpIsConfigured, setMcpIsConfigured] = useState(false);
+
+  // Check MCP server status on mount
+  useEffect(() => {
+    if (isOpen) {
+      checkMcpStatus();
+    }
+  }, [isOpen]);
+
+  const checkMcpStatus = async () => {
+    try {
+      const result = await (window as any).electron.mcpServer.getStatus();
+      if (result?.success && result.status) {
+        setMcpIsBuilt(result.status.isBuilt);
+        setMcpIsConfigured(result.status.isConfigured);
+      }
+    } catch (e) {
+      console.error('Failed to check MCP status:', e);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -1225,6 +1247,199 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </div>
             </div>
           )}
+
+          {/* MCP Server for Claude Desktop Section */}
+          <div>
+            <h3 style={{ color: '#7C3AED', marginBottom: '10px' }}>🤖 MCP Server for Claude Desktop</h3>
+            <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '4px', fontSize: '12px', color: '#ccc' }}>
+              <strong>ℹ️ Note:</strong> Enable your Gmail data in Claude Desktop using the Model Context Protocol (MCP). Start the PHP server first, then enable this to allow Claude to access your Gmail database.
+            </div>
+            
+            {/* Status Display */}
+            <div style={{ 
+              marginBottom: '10px', 
+              padding: '10px', 
+              backgroundColor: '#2a2a2a', 
+              borderRadius: '4px',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#999' }}>Server Built:</span>
+                <span style={{ 
+                  fontSize: '12px', 
+                  fontWeight: 'bold',
+                  color: mcpIsBuilt ? '#4CAF50' : '#f44336' 
+                }}>
+                  {mcpIsBuilt ? '✓ Yes' : '✗ No'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#999' }}>Claude Configured:</span>
+                <span style={{ 
+                  fontSize: '12px', 
+                  fontWeight: 'bold',
+                  color: mcpIsConfigured ? '#4CAF50' : '#f44336' 
+                }}>
+                  {mcpIsConfigured ? '✓ Yes' : '✗ No'}
+                </span>
+              </div>
+            </div>
+
+            {mcpServerStatus && (
+              <div style={{ 
+                marginBottom: '10px', 
+                padding: '8px', 
+                backgroundColor: mcpServerStatus.includes('Success') || mcpServerStatus.includes('enabled') ? '#1a3a1a' : '#3a1a1a', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                color: mcpServerStatus.includes('Success') || mcpServerStatus.includes('enabled') ? '#4CAF50' : '#f44336',
+                border: `1px solid ${mcpServerStatus.includes('Success') || mcpServerStatus.includes('enabled') ? '#4CAF50' : '#f44336'}`
+              }}>
+                {mcpServerStatus}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setMcpServerStatus('Building and configuring MCP server...');
+                    
+                    // Build the server
+                    const buildResult = await (window as any).electron.mcpServer.build();
+                    if (!buildResult?.success) {
+                      throw new Error(`Build failed: ${buildResult?.error || 'Unknown error'}`);
+                    }
+                    
+                    // Configure Claude Desktop
+                    const configResult = await (window as any).electron.mcpServer.configureClaude();
+                    if (!configResult?.success) {
+                      throw new Error(`Configuration failed: ${configResult?.error || 'Unknown error'}`);
+                    }
+                    
+                    setMcpServerStatus('✓ Success! MCP server enabled in Claude Desktop. Please restart Claude Desktop to use it.');
+                    await checkMcpStatus();
+                  } catch (e: any) {
+                    setMcpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('MCP server enable error:', e);
+                  }
+                }}
+                disabled={mcpIsConfigured}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: mcpIsConfigured ? '#666' : '#7C3AED',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: mcpIsConfigured ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                {mcpIsConfigured ? '✓ Enabled' : '🤖 Enable in Claude'}
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setMcpServerStatus('Removing from Claude Desktop...');
+                    const result = await (window as any).electron.mcpServer.unconfigureClaude();
+                    if (result?.success) {
+                      setMcpServerStatus('✓ Removed from Claude Desktop. Restart Claude Desktop to apply.');
+                      await checkMcpStatus();
+                    } else {
+                      setMcpServerStatus(`Failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    setMcpServerStatus(`Error: ${e?.message || e}`);
+                    console.error('MCP server disable error:', e);
+                  }
+                }}
+                disabled={!mcpIsConfigured}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: !mcpIsConfigured ? '#666' : '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: !mcpIsConfigured ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🗑️ Disable
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  await checkMcpStatus();
+                  setMcpServerStatus('Status refreshed');
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#FF9800',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  flex: 1,
+                  minWidth: '120px'
+                }}
+              >
+                🔄 Refresh Status
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMcpServerStatus('');
+                }}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+
+            {/* Instructions */}
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '10px', 
+              backgroundColor: '#2a2a2a', 
+              borderRadius: '4px',
+              fontSize: '11px',
+              color: '#aaa'
+            }}>
+              <strong style={{ color: '#7C3AED' }}>How to use:</strong>
+              <ol style={{ margin: '5px 0 0 0', paddingLeft: '20px' }}>
+                <li>Start the PHP server above (🚀 Start Server)</li>
+                <li>Fetch some Gmail data using the Gmail Dashboard in MCP Server section</li>
+                <li>Click "Enable in Claude" button</li>
+                <li>Restart Claude Desktop application</li>
+                <li>Ask Claude: "List all Gmail users in the database"</li>
+              </ol>
+            </div>
+          </div>
         </div>
       </div>
     </div>
