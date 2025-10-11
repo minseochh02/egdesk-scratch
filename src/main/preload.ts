@@ -1257,24 +1257,7 @@ const electronHandler = {
     gmailEndpoint: () => ipcRenderer.invoke('php-server-gmail-endpoint'),
   },
 
-  /**
-   * Google Authentication API
-   */
-  googleAuth: {
-    signIn: () => ipcRenderer.invoke('google-auth-sign-in'),
-    signOut: () => ipcRenderer.invoke('google-auth-sign-out'),
-    isSignedIn: () => ipcRenderer.invoke('google-auth-is-signed-in'),
-  },
 
-  /**
-   * Gmail API
-   */
-  gmail: {
-    listMessages: (maxResults?: number) => ipcRenderer.invoke('gmail-list-messages', maxResults),
-    listMessagesBasic: (maxResults?: number) => ipcRenderer.invoke('gmail-list-messages-basic', maxResults),
-    getMessage: (messageId: string) => ipcRenderer.invoke('gmail-get-message', messageId),
-    sendEmail: (to: string, subject: string, body: string) => ipcRenderer.invoke('gmail-send-email', to, subject, body),
-  },
 
   /**
    * MCP Registration API

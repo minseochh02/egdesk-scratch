@@ -3,7 +3,7 @@
 
 import { GmailMessage, GmailStats, GmailConnection } from '../types/gmail-types';
 import { google } from 'googleapis';
-import { GmailDatabase, GmailMessageRecord, GmailStatsRecord, DomainUserRecord } from '../database/gmail-database';
+import { GmailDatabase, GmailMessageRecord, GmailStatsRecord, DomainUserRecord } from '../sqlite/gmails';
 
 export interface DomainUser {
   id: string;

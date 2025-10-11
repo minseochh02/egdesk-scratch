@@ -1,6 +1,6 @@
 // Gmail MCP Handler - IPC handlers for Gmail MCP operations
 import { ipcMain } from 'electron';
-import { GmailMCPFetcher } from './gmail-fetcher';
+import { GmailMCPFetcher } from './gmail-service';
 import { GmailConnection } from '../types/gmail-types';
 
 // Store active fetcher instances
