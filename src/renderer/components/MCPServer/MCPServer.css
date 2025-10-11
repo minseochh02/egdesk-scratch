@@ -78,6 +78,9 @@
 
 .hero-actions {
   margin-top: 24px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 /* Hero Visual */
@@ -569,6 +572,44 @@
   width: 24px;
   height: 24px;
   opacity: 0.8;
+}
+
+/* Hero Action Buttons */
+.hero-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 1;
+  min-width: 200px;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.hero-action-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.hero-action-btn:active {
+  transform: translateY(0);
+}
+
+.hero-action-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* Connect Button */

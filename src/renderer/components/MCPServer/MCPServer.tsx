@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEnvelope, faCheck, faArrowRight, faTrash, faEdit, faList } from '../../utils/fontAwesomeIcons';
+import { faEnvelope, faCheck, faArrowRight, faTrash, faEdit, faList, faServer } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
 import ServerLists from './ServerLists';
+import RunningServers from './RunningServers';
 import './MCPServer.css';
 
 interface MCPTool {
@@ -33,6 +34,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [showGmailTool, setShowGmailTool] = useState<boolean>(false);
   const [showServerLists, setShowServerLists] = useState<boolean>(false);
+  const [showRunningServers, setShowRunningServers] = useState<boolean>(false);
   const [gmailConnections, setGmailConnections] = useState<GmailConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
 
@@ -99,8 +101,16 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     setShowServerLists(false);
   };
 
+  const handleBackFromRunningServers = () => {
+    setShowRunningServers(false);
+  };
+
   const handleViewServerLists = () => {
     setShowServerLists(true);
+  };
+
+  const handleViewRunningServers = () => {
+    setShowRunningServers(true);
   };
 
   const handleDeleteConnection = async (connectionId: string) => {
@@ -122,7 +132,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   };
 
-  const handleEditConnection = (connection: GmailConnection) => {
+  const handleEditConnection = (connection: any) => {
     // For now, just show an alert - could implement edit functionality later
     alert(`Edit functionality for ${connection.name} will be implemented soon`);
   };
@@ -133,6 +143,31 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       <GmailConnectorForm
         onBack={handleBackFromTool}
         onConnect={handleGmailConnect}
+      />
+    );
+  }
+
+  // Show Running Servers if selected
+  if (showRunningServers) {
+    return (
+      <RunningServers
+        onBack={handleBackFromRunningServers}
+        onViewDetails={(server) => {
+          console.log('View server details:', server);
+          // Could implement server details view here
+        }}
+        onRestart={(serverId) => {
+          console.log('Restart server:', serverId);
+          // Implement restart logic here
+        }}
+        onStop={(serverId) => {
+          console.log('Stop server:', serverId);
+          // Implement stop logic here
+        }}
+        onStart={(serverId) => {
+          console.log('Start server:', serverId);
+          // Implement start logic here
+        }}
       />
     );
   }
@@ -166,6 +201,13 @@ const MCPServer: React.FC<MCPServerProps> = () => {
             >
               <FontAwesomeIcon icon={faList} />
               <span>View All Connections</span>
+            </button>
+            <button 
+              className="hero-action-btn"
+              onClick={handleViewRunningServers}
+            >
+              <FontAwesomeIcon icon={faServer} />
+              <span>Running Servers</span>
             </button>
           </div>
         </div>

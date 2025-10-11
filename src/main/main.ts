@@ -30,7 +30,6 @@ import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
-import { getGoogleAuthHandler } from './mcp/google-auth-handler';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/mcp-server-manager';
@@ -507,103 +506,9 @@ const createWindow = async () => {
     }
 
     // ========================================================================
-    // GOOGLE AUTH HANDLERS
+    // MCP REGISTRATION HANDLERS
     // ========================================================================
     try {
-      const googleAuthHandler = getGoogleAuthHandler();
-
-      ipcMain.handle('google-auth-sign-in', async () => {
-        try {
-          const result = await googleAuthHandler.signIn();
-          return result;
-        } catch (error) {
-          console.error('❌ Google sign-in failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('google-auth-sign-out', async () => {
-        try {
-          const result = await googleAuthHandler.signOut();
-          return result;
-        } catch (error) {
-          console.error('❌ Google sign-out failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('google-auth-is-signed-in', async () => {
-        try {
-          const isSignedIn = googleAuthHandler.isSignedIn();
-          return { success: true, isSignedIn };
-        } catch (error) {
-          console.error('❌ Google auth check failed:', error);
-          return { 
-            success: false, 
-            isSignedIn: false,
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('gmail-list-messages', async (_event, maxResults?: number) => {
-        try {
-          const result = await googleAuthHandler.listMessages(maxResults);
-          return result;
-        } catch (error) {
-          console.error('❌ Gmail list messages failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('gmail-list-messages-basic', async (_event, maxResults?: number) => {
-        try {
-          const result = await googleAuthHandler.listMessagesBasic(maxResults);
-          return result;
-        } catch (error) {
-          console.error('❌ Gmail list messages basic failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('gmail-get-message', async (_event, messageId: string) => {
-        try {
-          const result = await googleAuthHandler.getMessage(messageId);
-          return result;
-        } catch (error) {
-          console.error('❌ Gmail get message failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      ipcMain.handle('gmail-send-email', async (_event, to: string, subject: string, body: string) => {
-        try {
-          const result = await googleAuthHandler.sendEmail(to, subject, body);
-          return result;
-        } catch (error) {
-          console.error('❌ Gmail send email failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
       // MCP Registration handlers
       ipcMain.handle('mcp-register', async (_event, name: string, password?: string) => {
         try {
@@ -649,110 +554,9 @@ const createWindow = async () => {
         }
       });
 
-      console.log('✅ Google Auth and Gmail handlers initialized');
+      console.log('✅ MCP Registration handlers initialized');
     } catch (error) {
-      console.error('❌ Failed to initialize Google Auth handlers:', error);
-    }
-
-    // ========================================================================
-    // ELECTRON HTTP API SERVER (for PHP to access Gmail)
-    // ========================================================================
-    try {
-      const googleAuthHandler = getGoogleAuthHandler();
-      
-      electronApiServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-        const url = new URL(req.url || '', `http://localhost:3333`);
-        const pathname = url.pathname;
-
-        // Set CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.setHeader('Content-Type', 'application/json');
-
-        // Handle preflight requests
-        if (req.method === 'OPTIONS') {
-          res.writeHead(200);
-          res.end();
-          return;
-        }
-
-        // Only handle /api/gmail endpoint
-        if (pathname !== '/api/gmail') {
-          res.writeHead(404);
-          res.end(JSON.stringify({
-            success: false,
-            error: 'Not Found',
-            message: 'Only /api/gmail endpoint is available',
-            available_endpoints: ['/api/gmail'],
-            timestamp: new Date().toISOString()
-          }));
-          return;
-        }
-
-        try {
-          console.log('📧 HTTP request to Gmail API from PHP');
-          
-          // Check if user is signed in
-          if (!googleAuthHandler.isSignedIn()) {
-            res.writeHead(401);
-            res.end(JSON.stringify({
-              success: false,
-              error: 'User not authenticated',
-              message: 'Please sign in with Google in the Electron app first',
-              timestamp: new Date().toISOString()
-            }));
-            return;
-          }
-
-          // Fetch Gmail messages
-          const result = await googleAuthHandler.listMessages(10);
-          
-          if (result.success) {
-            const response = {
-              success: true,
-              message: 'Gmail messages fetched successfully',
-              data: {
-                messages: result.messages,
-                totalMessages: result.resultSizeEstimate,
-                count: result.messages?.length || 0
-              },
-              timestamp: new Date().toISOString()
-            };
-            res.writeHead(200);
-            res.end(JSON.stringify(response, null, 2));
-          } else {
-            res.writeHead(500);
-            res.end(JSON.stringify({
-              success: false,
-              error: result.error || 'Failed to fetch Gmail messages',
-              timestamp: new Date().toISOString()
-            }));
-          }
-        } catch (error: any) {
-          console.error('❌ Gmail API HTTP endpoint error:', error);
-          res.writeHead(500);
-          res.end(JSON.stringify({
-            success: false,
-            error: error.message || 'Internal server error',
-            timestamp: new Date().toISOString()
-          }));
-        }
-      });
-
-      // Start the API server on port 3333 (accessible only from localhost for security)
-      electronApiServer.listen(3333, 'localhost', () => {
-        console.log('✅ Electron HTTP API server started');
-        console.log('📧 Gmail API endpoint: http://localhost:3333/api/gmail');
-        console.log('🔒 Only accessible from localhost (PHP server can call it)');
-      });
-
-      electronApiServer.on('error', (error: any) => {
-        console.error('❌ Electron API server error:', error);
-      });
-
-    } catch (error) {
-      console.error('❌ Failed to initialize Electron HTTP API server:', error);
+      console.error('❌ Failed to initialize MCP Registration handlers:', error);
     }
 
     // Local tunnel handlers removed
