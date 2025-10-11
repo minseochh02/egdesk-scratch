@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEnvelope, faCheck, faArrowRight, faTrash, faEdit, faList, faServer } from '../../utils/fontAwesomeIcons';
+import { faEnvelope, faCheck, faArrowRight, faList, faServer } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
-import ServerLists from './ServerLists';
 import RunningServers from './RunningServers';
 import './MCPServer.css';
 
@@ -33,7 +32,6 @@ interface GmailConnection {
 const MCPServer: React.FC<MCPServerProps> = () => {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [showGmailTool, setShowGmailTool] = useState<boolean>(false);
-  const [showServerLists, setShowServerLists] = useState<boolean>(false);
   const [showRunningServers, setShowRunningServers] = useState<boolean>(false);
   const [gmailConnections, setGmailConnections] = useState<GmailConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
@@ -97,45 +95,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     setSelectedTool('');
   };
 
-  const handleBackFromServerLists = () => {
-    setShowServerLists(false);
-  };
-
   const handleBackFromRunningServers = () => {
     setShowRunningServers(false);
-  };
-
-  const handleViewServerLists = () => {
-    setShowServerLists(true);
   };
 
   const handleViewRunningServers = () => {
     setShowRunningServers(true);
   };
 
-  const handleDeleteConnection = async (connectionId: string) => {
-    if (!confirm('Are you sure you want to delete this Gmail connection?')) {
-      return;
-    }
-
-    try {
-      const result = await window.electron.mcpConfig.connections.remove(connectionId);
-      if (result.success) {
-        await loadGmailConnections();
-        alert('Gmail connection deleted successfully');
-      } else {
-        alert(`Failed to delete connection: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Error deleting Gmail connection:', error);
-      alert('Failed to delete Gmail connection');
-    }
-  };
-
-  const handleEditConnection = (connection: any) => {
-    // For now, just show an alert - could implement edit functionality later
-    alert(`Edit functionality for ${connection.name} will be implemented soon`);
-  };
 
   // Show Gmail tool if selected
   if (showGmailTool) {
@@ -172,17 +139,6 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     );
   }
 
-  // Show Server Lists if selected
-  if (showServerLists) {
-    return (
-      <ServerLists
-        onBack={handleBackFromServerLists}
-        onEdit={handleEditConnection}
-        onDelete={handleDeleteConnection}
-      />
-    );
-  }
-
   return (
     <div className="mcp-server">
       {/* Hero Section */}
@@ -197,17 +153,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           <div className="hero-actions">
             <button 
               className="hero-action-btn"
-              onClick={handleViewServerLists}
-            >
-              <FontAwesomeIcon icon={faList} />
-              <span>View All Connections</span>
-            </button>
-            <button 
-              className="hero-action-btn"
               onClick={handleViewRunningServers}
             >
               <FontAwesomeIcon icon={faServer} />
-              <span>Running Servers</span>
+              <span>Manage MCP Servers</span>
             </button>
           </div>
         </div>
@@ -291,28 +240,6 @@ const MCPServer: React.FC<MCPServerProps> = () => {
                             <div className="connection-date">
                               Connected {new Date(connection.createdAt).toLocaleDateString()}
                             </div>
-                          </div>
-                          <div className="connection-actions">
-                            <button
-                              className="action-btn edit-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditConnection(connection);
-                              }}
-                              title="Edit connection"
-                            >
-                              <FontAwesomeIcon icon={faEdit} />
-                            </button>
-                            <button
-                              className="action-btn delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteConnection(connection.id);
-                              }}
-                              title="Delete connection"
-                            >
-                              <FontAwesomeIcon icon={faTrash} />
-                            </button>
                           </div>
                         </div>
                       ))}

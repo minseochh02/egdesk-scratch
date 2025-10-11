@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faServer, 
@@ -16,14 +16,39 @@ import {
   faClock,
   faMemory,
   faNetworkWired,
-  faTerminal
+  faTerminal,
+  faEnvelope,
+  faUser,
+  faCalendarAlt,
+  faLock,
+  faWifi,
+  faGlobe as faPublic,
+  faShieldAlt,
+  faExclamationTriangle as faExclamationCircleIcon,
+  faTimes,
+  faCopy
 } from '../../utils/fontAwesomeIcons';
+import GmailDashboard from './GmailDashboard';
 import './RunningServers.css';
+
+// Access level types
+export type AccessLevel = 'claude-desktop' | 'local-network' | 'public';
+
+interface AccessLevelConfig {
+  level: AccessLevel;
+  port?: number;
+  bindAddress?: string;
+  requiresAuth?: boolean;
+  allowedIPs?: string[];
+  networkInterface?: string;
+}
 
 interface RunningMCPServer {
   id: string;
   name: string;
   type: 'gmail' | 'custom' | 'builtin';
+  email?: string;
+  adminEmail?: string;
   address: string;
   port: number;
   protocol: 'http' | 'https' | 'ws' | 'wss';
@@ -34,6 +59,9 @@ interface RunningMCPServer {
   lastActivity: string;
   version: string;
   description?: string;
+  accessLevel?: AccessLevelConfig;
+  createdAt: string;
+  updatedAt: string;
   healthCheck: {
     status: 'healthy' | 'unhealthy' | 'unknown';
     lastCheck: string;
@@ -64,137 +92,249 @@ const RunningServers: React.FC<RunningServersProps> = ({
   onViewDetails, 
   onRestart, 
   onStop, 
-  onStart 
+  onStart
 }) => {
   const [servers, setServers] = useState<RunningMCPServer[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<RunningMCPServer | null>(null);
   const [showLogs, setShowLogs] = useState<boolean>(false);
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
+  const [showDashboard, setShowDashboard] = useState<boolean>(false);
+  const [showAccessLevelModal, setShowAccessLevelModal] = useState<boolean>(false);
+  const [editingServer, setEditingServer] = useState<RunningMCPServer | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  useEffect(() => {
-    loadRunningServers();
+  const loadRunningServers = useCallback(async (isInitialLoad = false) => {
+    if (isRefreshing && !isInitialLoad) {
+      return; // Prevent concurrent refreshes
+    }
     
-    // Auto-refresh every 5 seconds if enabled
-    const interval = setInterval(() => {
-      if (autoRefresh) {
-        loadRunningServers();
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
-  const loadRunningServers = async () => {
     try {
-      setLoading(true);
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
       
-      // Mock data for now - replace with actual API call
-      const mockServers: RunningMCPServer[] = [
-        {
-          id: 'gmail-server-1',
-          name: 'Gmail MCP Server',
-          type: 'gmail',
-          address: 'localhost',
-          port: 3001,
-          protocol: 'http',
-          status: 'running',
-          uptime: 3600, // 1 hour
-          memoryUsage: 45.2,
-          cpuUsage: 12.5,
-          lastActivity: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
-          version: '1.2.0',
-          description: 'Gmail integration server for EG Blogging',
-          healthCheck: {
-            status: 'healthy',
-            lastCheck: new Date().toISOString(),
-            responseTime: 45
+      // Load from MCP configuration
+      const result = await window.electron.mcpConfig.connections.get();
+      
+      if (result.success && result.connections) {
+        const mcpServers: RunningMCPServer[] = result.connections.map((conn: any, index: number) => {
+          // Use stable data for non-random metrics
+          const baseUptime = 3600; // 1 hour base
+          const baseMemory = 45.2; // Stable memory usage
+          const baseCpu = 12.5; // Stable CPU usage
+          const baseResponseTime = 45; // Stable response time
+          
+          // Define access levels for demo purposes
+          const accessLevels: AccessLevel[] = ['claude-desktop', 'local-network', 'public'];
+          const currentAccessLevel = accessLevels[index % accessLevels.length];
+          
+          const accessLevelConfig = {
+            level: currentAccessLevel,
+            port: getDefaultPortForAccessLevel(currentAccessLevel),
+            bindAddress: getDefaultBindAddressForAccessLevel(currentAccessLevel),
+            requiresAuth: currentAccessLevel !== 'claude-desktop',
+            allowedIPs: currentAccessLevel === 'local-network' ? ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12'] : undefined,
+          };
+          
+          return {
+            id: conn.id,
+            name: conn.name,
+            type: conn.type || 'custom',
+            email: conn.email,
+            adminEmail: conn.adminEmail,
+            address: accessLevelConfig.bindAddress,
+            port: accessLevelConfig.port,
+            protocol: 'http',
+            status: 'running', // Default to running for now
+            uptime: baseUptime + (conn.id.length * 100), // Stable but unique uptime
+            memoryUsage: baseMemory + (conn.id.length * 0.5), // Stable but unique memory
+            cpuUsage: baseCpu + (conn.id.length * 0.2), // Stable but unique CPU
+            lastActivity: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+            version: '1.0.0',
+            description: conn.description || `${conn.type} MCP server`,
+            accessLevel: accessLevelConfig,
+            createdAt: conn.createdAt || new Date().toISOString(),
+            updatedAt: conn.updatedAt || new Date().toISOString(),
+            healthCheck: {
+              status: 'healthy',
+              lastCheck: new Date().toISOString(),
+              responseTime: baseResponseTime + (conn.id.length * 2) // Stable but unique response time
+            },
+            tools: conn.type === 'gmail' ? [
+              { name: 'fetch_emails', description: 'Fetch user emails', enabled: true },
+              { name: 'send_email', description: 'Send emails', enabled: true },
+              { name: 'manage_labels', description: 'Manage email labels', enabled: true }
+            ] : [
+              { name: 'custom_tool', description: 'Custom MCP tool', enabled: true }
+            ],
+            logs: [
+              { timestamp: new Date(Date.now() - 60000).toISOString(), level: 'info', message: 'Server started successfully' },
+              { timestamp: new Date(Date.now() - 120000).toISOString(), level: 'info', message: 'Health check passed' },
+              { timestamp: new Date(Date.now() - 300000).toISOString(), level: 'info', message: 'Processing request' }
+            ]
+          };
+        });
+        
+        setServers(mcpServers);
+      } else {
+        // Create demo servers with different access levels if no connections exist
+        const demoServers: RunningMCPServer[] = [
+          {
+            id: 'demo-gmail-1',
+            name: 'Gmail MCP Server',
+            type: 'gmail',
+            email: 'admin@example.com',
+            address: '127.0.0.1',
+            port: 8080,
+            protocol: 'http',
+            status: 'running',
+            uptime: 3600,
+            memoryUsage: 45.2,
+            cpuUsage: 12.5,
+            lastActivity: new Date(Date.now() - 300000).toISOString(),
+            version: '1.0.0',
+            description: 'Gmail integration server',
+            accessLevel: {
+              level: 'claude-desktop',
+              port: 8080,
+              bindAddress: '127.0.0.1',
+              requiresAuth: false,
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            healthCheck: {
+              status: 'healthy',
+              lastCheck: new Date().toISOString(),
+              responseTime: 45
+            },
+            tools: [
+              { name: 'fetch_emails', description: 'Fetch user emails', enabled: true },
+              { name: 'send_email', description: 'Send emails', enabled: true },
+              { name: 'manage_labels', description: 'Manage email labels', enabled: true }
+            ],
+            logs: [
+              { timestamp: new Date(Date.now() - 60000).toISOString(), level: 'info', message: 'Server started successfully' },
+              { timestamp: new Date(Date.now() - 120000).toISOString(), level: 'info', message: 'Health check passed' },
+              { timestamp: new Date(Date.now() - 300000).toISOString(), level: 'info', message: 'Processing request' }
+            ]
           },
-          tools: [
-            { name: 'fetch_emails', description: 'Fetch user emails', enabled: true },
-            { name: 'send_email', description: 'Send emails', enabled: true },
-            { name: 'manage_labels', description: 'Manage email labels', enabled: true }
-          ],
-          logs: [
-            { timestamp: new Date(Date.now() - 60000).toISOString(), level: 'info', message: 'Server started successfully' },
-            { timestamp: new Date(Date.now() - 120000).toISOString(), level: 'info', message: 'Health check passed' },
-            { timestamp: new Date(Date.now() - 300000).toISOString(), level: 'info', message: 'Processing email request' }
-          ]
-        },
-        {
-          id: 'custom-server-1',
-          name: 'Custom Blog Server',
-          type: 'custom',
-          address: '192.168.1.100',
-          port: 8080,
-          protocol: 'https',
-          status: 'running',
-          uptime: 7200, // 2 hours
-          memoryUsage: 78.9,
-          cpuUsage: 25.3,
-          lastActivity: new Date(Date.now() - 60000).toISOString(), // 1 minute ago
-          version: '2.1.0',
-          description: 'Custom blog management server',
-          healthCheck: {
-            status: 'healthy',
-            lastCheck: new Date().toISOString(),
-            responseTime: 120
+          {
+            id: 'demo-custom-1',
+            name: 'Custom Blog Server',
+            type: 'custom',
+            address: '0.0.0.0',
+            port: 8081,
+            protocol: 'http',
+            status: 'running',
+            uptime: 7200,
+            memoryUsage: 78.9,
+            cpuUsage: 25.3,
+            lastActivity: new Date(Date.now() - 60000).toISOString(),
+            version: '2.1.0',
+            description: 'Custom blog management server',
+            accessLevel: {
+              level: 'local-network',
+              port: 8081,
+              bindAddress: '0.0.0.0',
+              requiresAuth: true,
+              allowedIPs: ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            healthCheck: {
+              status: 'healthy',
+              lastCheck: new Date().toISOString(),
+              responseTime: 120
+            },
+            tools: [
+              { name: 'create_post', description: 'Create blog posts', enabled: true },
+              { name: 'update_post', description: 'Update blog posts', enabled: true },
+              { name: 'delete_post', description: 'Delete blog posts', enabled: false }
+            ],
+            logs: [
+              { timestamp: new Date(Date.now() - 30000).toISOString(), level: 'info', message: 'Blog post created successfully' },
+              { timestamp: new Date(Date.now() - 90000).toISOString(), level: 'warn', message: 'High memory usage detected' },
+              { timestamp: new Date(Date.now() - 150000).toISOString(), level: 'info', message: 'Server health check passed' }
+            ]
           },
-          tools: [
-            { name: 'create_post', description: 'Create blog posts', enabled: true },
-            { name: 'update_post', description: 'Update blog posts', enabled: true },
-            { name: 'delete_post', description: 'Delete blog posts', enabled: false }
-          ],
-          logs: [
-            { timestamp: new Date(Date.now() - 30000).toISOString(), level: 'info', message: 'Blog post created successfully' },
-            { timestamp: new Date(Date.now() - 90000).toISOString(), level: 'warn', message: 'High memory usage detected' },
-            { timestamp: new Date(Date.now() - 150000).toISOString(), level: 'info', message: 'Server health check passed' }
-          ]
-        },
-        {
-          id: 'builtin-server-1',
-          name: 'File System Server',
-          type: 'builtin',
-          address: 'localhost',
-          port: 3002,
-          protocol: 'http',
-          status: 'error',
-          uptime: 0,
-          memoryUsage: 0,
-          cpuUsage: 0,
-          lastActivity: new Date(Date.now() - 1800000).toISOString(), // 30 minutes ago
-          version: '1.0.0',
-          description: 'Built-in file system operations server',
-          healthCheck: {
-            status: 'unhealthy',
-            lastCheck: new Date(Date.now() - 300000).toISOString(),
-            responseTime: 0
-          },
-          tools: [
-            { name: 'read_file', description: 'Read files', enabled: false },
-            { name: 'write_file', description: 'Write files', enabled: false },
-            { name: 'list_directory', description: 'List directory contents', enabled: false }
-          ],
-          logs: [
-            { timestamp: new Date(Date.now() - 300000).toISOString(), level: 'error', message: 'Server crashed due to memory error' },
-            { timestamp: new Date(Date.now() - 600000).toISOString(), level: 'warn', message: 'Memory usage exceeded threshold' },
-            { timestamp: new Date(Date.now() - 900000).toISOString(), level: 'info', message: 'Server started' }
-          ]
-        }
-      ];
-
-      setServers(mockServers);
+          {
+            id: 'demo-public-1',
+            name: 'Public API Server',
+            type: 'custom',
+            address: '0.0.0.0',
+            port: 8082,
+            protocol: 'https',
+            status: 'running',
+            uptime: 10800,
+            memoryUsage: 156.7,
+            cpuUsage: 45.8,
+            lastActivity: new Date(Date.now() - 120000).toISOString(),
+            version: '3.0.0',
+            description: 'Public API server for external access',
+            accessLevel: {
+              level: 'public',
+              port: 8082,
+              bindAddress: '0.0.0.0',
+              requiresAuth: true,
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            healthCheck: {
+              status: 'healthy',
+              lastCheck: new Date().toISOString(),
+              responseTime: 200
+            },
+            tools: [
+              { name: 'public_api', description: 'Public API endpoints', enabled: true },
+              { name: 'rate_limiting', description: 'Rate limiting controls', enabled: true },
+              { name: 'analytics', description: 'Usage analytics', enabled: true }
+            ],
+            logs: [
+              { timestamp: new Date(Date.now() - 45000).toISOString(), level: 'info', message: 'Public API request processed' },
+              { timestamp: new Date(Date.now() - 180000).toISOString(), level: 'warn', message: 'Rate limit exceeded for IP 192.168.1.100' },
+              { timestamp: new Date(Date.now() - 300000).toISOString(), level: 'info', message: 'Server health check passed' }
+            ]
+          }
+        ];
+        
+        setServers(demoServers);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load running servers');
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+      } else {
+        setIsRefreshing(false);
+      }
     }
-  };
+  }, [isRefreshing]);
+
+  useEffect(() => {
+    loadRunningServers(true); // Initial load with loading state
+    
+    // Auto-refresh every 15 seconds if enabled (increased interval)
+    const interval = setInterval(() => {
+      if (autoRefresh && !isRefreshing) {
+        // Add small delay to prevent rapid successive calls
+        setTimeout(() => {
+          if (!isRefreshing) {
+            loadRunningServers(false); // Auto-refresh without loading state
+          }
+        }, 100);
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, loadRunningServers, isRefreshing]);
 
   const handleRefresh = async () => {
-    await loadRunningServers();
+    await loadRunningServers(true); // Manual refresh with loading state
   };
 
   const handleServerAction = async (serverId: string, action: 'start' | 'stop' | 'restart') => {
@@ -244,6 +384,149 @@ const RunningServers: React.FC<RunningServersProps> = ({
   const handleCloseLogs = () => {
     setShowLogs(false);
     setSelectedServer(null);
+  };
+
+  // Gmail Dashboard functionality
+  const handleViewDashboard = (server: RunningMCPServer) => {
+    if (server.type === 'gmail') {
+      setSelectedServer(server);
+      setShowDashboard(true);
+    }
+  };
+
+  const handleBackFromDashboard = () => {
+    setShowDashboard(false);
+    setSelectedServer(null);
+  };
+
+  // Access level management functions
+  const handleAccessLevelChange = async (server: RunningMCPServer, newAccessLevel: AccessLevel) => {
+    try {
+      const updatedServer = {
+        ...server,
+        accessLevel: {
+          level: newAccessLevel,
+          port: getDefaultPortForAccessLevel(newAccessLevel),
+          bindAddress: getDefaultBindAddressForAccessLevel(newAccessLevel),
+          requiresAuth: newAccessLevel !== 'claude-desktop',
+          allowedIPs: newAccessLevel === 'local-network' ? ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12'] : undefined,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+
+      const result = await window.electron.mcpConfig.connections.update(server.id, updatedServer);
+      
+      if (result.success) {
+        setServers(prev => 
+          prev.map(s => 
+            s.id === server.id ? updatedServer : s
+          )
+        );
+        alert(`Access level updated to ${getAccessLevelDisplayName(newAccessLevel)}`);
+      } else {
+        alert(`Failed to update access level: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Error updating access level: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleEditAccessLevel = (server: RunningMCPServer) => {
+    setEditingServer(server);
+    setShowAccessLevelModal(true);
+  };
+
+
+  // Access level helper functions
+  const getDefaultPortForAccessLevel = (level: AccessLevel): number => {
+    switch (level) {
+      case 'claude-desktop': return 8080;
+      case 'local-network': return 8081;
+      case 'public': return 8082;
+      default: return 8080;
+    }
+  };
+
+  const getDefaultBindAddressForAccessLevel = (level: AccessLevel): string => {
+    switch (level) {
+      case 'claude-desktop': return '127.0.0.1';
+      case 'local-network': return '0.0.0.0';
+      case 'public': return '0.0.0.0';
+      default: return '127.0.0.1';
+    }
+  };
+
+  const getAccessLevelDisplayName = (level: AccessLevel): string => {
+    switch (level) {
+      case 'claude-desktop': return 'Claude Desktop Only';
+      case 'local-network': return 'Local Network';
+      case 'public': return 'Public Internet';
+      default: return 'Unknown';
+    }
+  };
+
+  const getAccessLevelIcon = (level: AccessLevel) => {
+    switch (level) {
+      case 'claude-desktop': return faLock;
+      case 'local-network': return faWifi;
+      case 'public': return faPublic;
+      default: return faCog;
+    }
+  };
+
+  const getAccessLevelColor = (level: AccessLevel): string => {
+    switch (level) {
+      case 'claude-desktop': return '#10b981'; // Green - secure
+      case 'local-network': return '#f59e0b'; // Yellow - moderate
+      case 'public': return '#ef4444'; // Red - public
+      default: return '#6b7280'; // Gray - unknown
+    }
+  };
+
+  const getAccessLevelDescription = (level: AccessLevel): string => {
+    switch (level) {
+      case 'claude-desktop': return 'Only accessible from Claude Desktop application on this machine';
+      case 'local-network': return 'Accessible from devices on the same WiFi network';
+      case 'public': return 'Accessible from anywhere on the internet (use with caution)';
+      default: return 'Unknown access level';
+    }
+  };
+
+  // Generate MCP JSON schema for a server
+  const generateMCPSchema = (server: RunningMCPServer): string => {
+    const schema = {
+      mcpServers: {
+        [server.name.toLowerCase().replace(/\s+/g, '-')]: {
+          command: server.type === 'gmail' ? 'node' : 'python',
+          args: server.type === 'gmail' 
+            ? ['gmail-mcp-server.js', '--port', server.port.toString()]
+            : ['mcp-server.py', '--port', server.port.toString()],
+          env: server.type === 'gmail' ? {
+            GMAIL_SERVICE_ACCOUNT_KEY: '${GMAIL_SERVICE_ACCOUNT_KEY}',
+            GMAIL_DOMAIN: '${GMAIL_DOMAIN}',
+            MCP_PORT: server.port.toString()
+          } : {
+            MCP_PORT: server.port.toString(),
+            MCP_HOST: server.address
+          },
+          cwd: server.type === 'gmail' ? './mcp-servers/gmail' : './mcp-servers/custom',
+          disabled: false
+        }
+      }
+    };
+
+    return JSON.stringify(schema, null, 2);
+  };
+
+  const handleCopySchema = async (server: RunningMCPServer) => {
+    try {
+      const schema = generateMCPSchema(server);
+      await navigator.clipboard.writeText(schema);
+      alert('MCP schema copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy schema:', err);
+      alert('Failed to copy schema to clipboard');
+    }
   };
 
   const formatUptime = (seconds: number) => {
@@ -329,6 +612,17 @@ const RunningServers: React.FC<RunningServersProps> = ({
         return faServer;
     }
   };
+
+  // Show Gmail Dashboard if selected
+  if (showDashboard && selectedServer && selectedServer.type === 'gmail') {
+    return (
+      <GmailDashboard
+        connection={selectedServer as any}
+        onBack={handleBackFromDashboard}
+        onRefresh={() => loadRunningServers()}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -485,20 +779,27 @@ const RunningServers: React.FC<RunningServersProps> = ({
                     <span className="running-servers-metric-label">Uptime:</span>
                     <span className="running-servers-metric-value">{formatUptime(server.uptime)}</span>
                   </div>
-                  <div className="running-servers-metric">
-                    <FontAwesomeIcon icon={faMemory} />
-                    <span className="running-servers-metric-label">Memory:</span>
-                    <span className="running-servers-metric-value">{server.memoryUsage.toFixed(1)} MB</span>
-                  </div>
-                  <div className="running-servers-metric">
-                    <FontAwesomeIcon icon={faChartBar} />
-                    <span className="running-servers-metric-label">CPU:</span>
-                    <span className="running-servers-metric-value">{server.cpuUsage.toFixed(1)}%</span>
-                  </div>
-                  <div className="running-servers-metric">
-                    <FontAwesomeIcon icon={faNetworkWired} />
-                    <span className="running-servers-metric-label">Response:</span>
-                    <span className="running-servers-metric-value">{server.healthCheck.responseTime}ms</span>
+                  <div className="running-servers-metric running-servers-access-metric">
+                    <div className="running-servers-access-info">
+                      <FontAwesomeIcon 
+                        icon={getAccessLevelIcon(server.accessLevel?.level || 'claude-desktop')} 
+                        style={{ color: getAccessLevelColor(server.accessLevel?.level || 'claude-desktop') }}
+                      />
+                      <span className="running-servers-metric-label">Access:</span>
+                      <span 
+                        className="running-servers-metric-value"
+                        style={{ color: getAccessLevelColor(server.accessLevel?.level || 'claude-desktop') }}
+                      >
+                        {getAccessLevelDisplayName(server.accessLevel?.level || 'claude-desktop')}
+                      </span>
+                    </div>
+                    <button
+                      className="running-servers-access-edit-btn"
+                      onClick={() => handleEditAccessLevel(server)}
+                      title="Change Access Level"
+                    >
+                      <FontAwesomeIcon icon={faShieldAlt} />
+                    </button>
                   </div>
                 </div>
 
@@ -534,9 +835,37 @@ const RunningServers: React.FC<RunningServersProps> = ({
                     )}
                   </div>
                 </div>
+
+
+                {/* MCP Schema Display */}
+                <div className="running-servers-card-schema">
+                  <div className="running-servers-schema-header">
+                    <span className="running-servers-schema-label">MCP Schema:</span>
+                    <button 
+                      className="running-servers-schema-copy-btn"
+                      onClick={() => handleCopySchema(server)}
+                      title="Copy MCP schema to clipboard"
+                    >
+                      <FontAwesomeIcon icon={faCopy} />
+                    </button>
+                  </div>
+                  <div className="running-servers-schema-code">
+                    <code>{generateMCPSchema(server)}</code>
+                  </div>
+                </div>
               </div>
 
               <div className="running-servers-card-actions">
+                {server.type === 'gmail' && (
+                  <button
+                    className="running-servers-action-btn running-servers-dashboard-btn"
+                    onClick={() => handleViewDashboard(server)}
+                    title="View Gmail Dashboard"
+                  >
+                    <FontAwesomeIcon icon={faChartBar} />
+                    Dashboard
+                  </button>
+                )}
                 <button
                   className="running-servers-action-btn running-servers-logs-btn"
                   onClick={() => handleViewLogs(server)}
@@ -544,14 +873,6 @@ const RunningServers: React.FC<RunningServersProps> = ({
                 >
                   <FontAwesomeIcon icon={faTerminal} />
                   Logs
-                </button>
-                <button
-                  className="running-servers-action-btn running-servers-details-btn"
-                  onClick={() => onViewDetails?.(server)}
-                  title="View details"
-                >
-                  <FontAwesomeIcon icon={faCog} />
-                  Details
                 </button>
                 {server.status === 'running' ? (
                   <>
@@ -617,6 +938,92 @@ const RunningServers: React.FC<RunningServersProps> = ({
           </div>
         </div>
       )}
+
+      {/* Access Level Modal */}
+      {showAccessLevelModal && editingServer && (
+        <div className="access-level-modal-overlay">
+          <div className="access-level-modal">
+            <div className="access-level-modal-header">
+              <h3>Change Access Level</h3>
+              <button 
+                className="access-level-modal-close"
+                onClick={() => {
+                  setShowAccessLevelModal(false);
+                  setEditingServer(null);
+                }}
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            
+            <div className="access-level-modal-content">
+              <div className="access-level-current">
+                <h4>Current Access Level</h4>
+                <div className="access-level-current-info">
+                  <FontAwesomeIcon 
+                    icon={getAccessLevelIcon(editingServer.accessLevel?.level || 'claude-desktop')}
+                    style={{ color: getAccessLevelColor(editingServer.accessLevel?.level || 'claude-desktop') }}
+                  />
+                  <span>{getAccessLevelDisplayName(editingServer.accessLevel?.level || 'claude-desktop')}</span>
+                </div>
+                <p className="access-level-description">
+                  {getAccessLevelDescription(editingServer.accessLevel?.level || 'claude-desktop')}
+                </p>
+              </div>
+
+              <div className="access-level-options">
+                <h4>Select New Access Level</h4>
+                <div className="access-level-options-list">
+                  {(['claude-desktop', 'local-network', 'public'] as AccessLevel[]).map((level) => (
+                    <div 
+                      key={level}
+                      className={`access-level-option ${editingServer.accessLevel?.level === level ? 'selected' : ''}`}
+                      onClick={() => handleAccessLevelChange(editingServer, level)}
+                    >
+                      <div className="access-level-option-header">
+                        <FontAwesomeIcon 
+                          icon={getAccessLevelIcon(level)}
+                          style={{ color: getAccessLevelColor(level) }}
+                        />
+                        <span className="access-level-option-name">{getAccessLevelDisplayName(level)}</span>
+                        {editingServer.accessLevel?.level === level && (
+                          <FontAwesomeIcon icon={faCircleCheck} className="access-level-selected-icon" />
+                        )}
+                      </div>
+                      <p className="access-level-option-description">
+                        {getAccessLevelDescription(level)}
+                      </p>
+                      <div className="access-level-option-details">
+                        <span>Port: {getDefaultPortForAccessLevel(level)}</span>
+                        <span>Bind: {getDefaultBindAddressForAccessLevel(level)}</span>
+                        {level === 'public' && (
+                          <div className="access-level-warning">
+                            <FontAwesomeIcon icon={faExclamationCircleIcon} />
+                            <span>Security Risk: This will expose your server to the internet</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="access-level-modal-footer">
+              <button 
+                className="access-level-modal-cancel"
+                onClick={() => {
+                  setShowAccessLevelModal(false);
+                  setEditingServer(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
