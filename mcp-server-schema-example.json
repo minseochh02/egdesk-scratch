@@ -1,0 +1,314 @@
+{
+  "mcpConfiguration": {
+    "servers": [
+      {
+        "id": "php-server-1",
+        "name": "PHP MCP Server",
+        "type": "php",
+        "description": "HTTP-based MCP server for external access to Gmail data",
+        "version": "1.0.0",
+        "createdAt": "2024-01-15T10:30:00.000Z",
+        "updatedAt": "2024-01-15T10:30:00.000Z",
+        "config": {
+          "port": 8080,
+          "documentRoot": "/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/public",
+          "phpPath": "/usr/bin/php",
+          "endpoints": [
+            {
+              "path": "/hello.php",
+              "method": "GET",
+              "description": "Health check endpoint"
+            },
+            {
+              "path": "/gmail.php",
+              "method": "GET",
+              "description": "Gmail data via Electron app"
+            },
+            {
+              "path": "/gmail-api.php",
+              "method": "GET",
+              "description": "Direct database access"
+            }
+          ]
+        }
+      },
+      {
+        "id": "mcp-stdio-server-1",
+        "name": "Gmail MCP Server (Claude)",
+        "type": "stdio",
+        "description": "Stdio-based MCP server for Claude Desktop integration",
+        "version": "1.2.0",
+        "createdAt": "2024-01-15T09:00:00.000Z",
+        "updatedAt": "2024-01-15T10:30:00.000Z",
+        "config": {
+          "serverPath": "/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/dist-mcp/server.js",
+          "claudeConfigPath": "/Users/minseocha/Library/Application Support/Claude/claude_desktop_config.json",
+          "transport": "stdio"
+        }
+      }
+    ],
+    "connections": [
+      {
+        "id": "gmail-connection-1",
+        "name": "Gmail Admin Account",
+        "type": "gmail",
+        "email": "admin@quus.cloud",
+        "serviceAccountKey": {
+          "type": "service_account",
+          "project_id": "egdesk-project",
+          "private_key_id": "key-id",
+          "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+          "client_email": "gmail-service@egdesk-project.iam.gserviceaccount.com",
+          "client_id": "123456789",
+          "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+          "token_uri": "https://oauth2.googleapis.com/token",
+          "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+          "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/gmail-service%40egdesk-project.iam.gserviceaccount.com"
+        },
+        "createdAt": "2024-01-15T08:00:00.000Z",
+        "updatedAt": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "settings": {
+      "autoStart": false,
+      "defaultPort": 8080,
+      "enableLogging": true,
+      "logLevel": "info",
+      "healthCheckInterval": 30000,
+      "maxLogEntries": 1000
+    }
+  },
+  "runningServers": [
+    {
+      "id": "php-server-1",
+      "serverId": "php-server-1",
+      "name": "PHP MCP Server",
+      "type": "php",
+      "status": "running",
+      "address": "192.168.1.100",
+      "port": 8080,
+      "protocol": "http",
+      "url": "http://192.168.1.100:8080",
+      "processId": 12345,
+      "startedAt": "2024-01-15T10:30:00.000Z",
+      "uptime": 3600,
+      "memoryUsage": 45.2,
+      "cpuUsage": 12.5,
+      "lastActivity": "2024-01-15T11:30:00.000Z",
+      "version": "1.0.0",
+      "description": "HTTP-based MCP server for external access to Gmail data",
+      "healthCheck": {
+        "status": "healthy",
+        "lastCheck": "2024-01-15T11:30:00.000Z",
+        "responseTime": 45,
+        "endpoint": "http://192.168.1.100:8080/hello.php",
+        "checks": [
+          {
+            "endpoint": "/hello.php",
+            "status": "healthy",
+            "responseTime": 45,
+            "lastCheck": "2024-01-15T11:30:00.000Z"
+          },
+          {
+            "endpoint": "/gmail.php",
+            "status": "healthy",
+            "responseTime": 120,
+            "lastCheck": "2024-01-15T11:29:30.000Z"
+          },
+          {
+            "endpoint": "/gmail-api.php",
+            "status": "healthy",
+            "responseTime": 80,
+            "lastCheck": "2024-01-15T11:29:00.000Z"
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "gmail_data_access",
+          "description": "Access Gmail data via HTTP API",
+          "enabled": true,
+          "endpoint": "/gmail.php"
+        },
+        {
+          "name": "database_direct_access",
+          "description": "Direct database access for Gmail data",
+          "enabled": true,
+          "endpoint": "/gmail-api.php"
+        },
+        {
+          "name": "health_check",
+          "description": "Server health monitoring",
+          "enabled": true,
+          "endpoint": "/hello.php"
+        }
+      ],
+      "logs": [
+        {
+          "timestamp": "2024-01-15T11:30:00.000Z",
+          "level": "info",
+          "message": "Server started successfully",
+          "source": "php-server"
+        },
+        {
+          "timestamp": "2024-01-15T11:29:45.000Z",
+          "level": "info",
+          "message": "Health check passed",
+          "source": "health-check"
+        },
+        {
+          "timestamp": "2024-01-15T11:29:30.000Z",
+          "level": "info",
+          "message": "Gmail API request processed",
+          "source": "gmail-api"
+        },
+        {
+          "timestamp": "2024-01-15T11:29:00.000Z",
+          "level": "warn",
+          "message": "High memory usage detected: 45.2MB",
+          "source": "monitor"
+        }
+      ],
+      "metrics": {
+        "requestsPerMinute": 12,
+        "averageResponseTime": 82,
+        "errorRate": 0.02,
+        "activeConnections": 3,
+        "totalRequests": 1250
+      }
+    },
+    {
+      "id": "mcp-stdio-server-1",
+      "serverId": "mcp-stdio-server-1",
+      "name": "Gmail MCP Server (Claude)",
+      "type": "stdio",
+      "status": "configured",
+      "address": "localhost",
+      "port": null,
+      "protocol": "stdio",
+      "url": null,
+      "processId": null,
+      "startedAt": null,
+      "uptime": 0,
+      "memoryUsage": 0,
+      "cpuUsage": 0,
+      "lastActivity": "2024-01-15T10:30:00.000Z",
+      "version": "1.2.0",
+      "description": "Stdio-based MCP server for Claude Desktop integration",
+      "healthCheck": {
+        "status": "configured",
+        "lastCheck": "2024-01-15T10:30:00.000Z",
+        "responseTime": 0,
+        "endpoint": null,
+        "checks": [
+          {
+            "endpoint": "claude-config",
+            "status": "configured",
+            "responseTime": 0,
+            "lastCheck": "2024-01-15T10:30:00.000Z"
+          },
+          {
+            "endpoint": "server-build",
+            "status": "built",
+            "responseTime": 0,
+            "lastCheck": "2024-01-15T10:30:00.000Z"
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "fetch_emails",
+          "description": "Fetch user emails from Gmail",
+          "enabled": true,
+          "endpoint": "stdio"
+        },
+        {
+          "name": "send_email",
+          "description": "Send emails via Gmail API",
+          "enabled": true,
+          "endpoint": "stdio"
+        },
+        {
+          "name": "manage_labels",
+          "description": "Manage Gmail labels",
+          "enabled": true,
+          "endpoint": "stdio"
+        }
+      ],
+      "logs": [
+        {
+          "timestamp": "2024-01-15T10:30:00.000Z",
+          "level": "info",
+          "message": "MCP server configured in Claude Desktop",
+          "source": "claude-config"
+        },
+        {
+          "timestamp": "2024-01-15T10:30:00.000Z",
+          "level": "info",
+          "message": "Server built successfully",
+          "source": "build"
+        }
+      ],
+      "metrics": {
+        "requestsPerMinute": 0,
+        "averageResponseTime": 0,
+        "errorRate": 0,
+        "activeConnections": 0,
+        "totalRequests": 0
+      }
+    }
+  ],
+  "serverProcesses": {
+    "php-server-1": {
+      "pid": 12345,
+      "startTime": "2024-01-15T10:30:00.000Z",
+      "command": "php",
+      "args": ["-S", "localhost:8080", "-t", "/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/public"],
+      "cwd": "/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/public",
+      "env": {
+        "DOCUMENT_ROOT": "/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/public"
+      },
+      "stdout": "Server started on http://localhost:8080",
+      "stderr": "",
+      "exitCode": null,
+      "signal": null
+    }
+  },
+  "healthChecks": {
+    "php-server-1": {
+      "lastCheck": "2024-01-15T11:30:00.000Z",
+      "interval": 30000,
+      "timeout": 5000,
+      "retries": 3,
+      "endpoints": [
+        {
+          "url": "http://192.168.1.100:8080/hello.php",
+          "method": "GET",
+          "expectedStatus": 200,
+          "expectedResponse": {
+            "message": "Hello from PHP server!"
+          },
+          "lastCheck": "2024-01-15T11:30:00.000Z",
+          "status": "healthy",
+          "responseTime": 45,
+          "error": null
+        }
+      ]
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "interval": 5000,
+    "metricsRetention": 86400,
+    "alertThresholds": {
+      "memoryUsage": 100,
+      "cpuUsage": 80,
+      "responseTime": 1000,
+      "errorRate": 0.1
+    },
+    "notifications": {
+      "enabled": true,
+      "channels": ["console", "ui"]
+    }
+  }
+}
