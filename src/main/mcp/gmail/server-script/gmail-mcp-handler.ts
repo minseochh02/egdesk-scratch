@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron';
 import { GmailMCPFetcher } from './gmail-service';
 import { GmailConnection } from '../../../types/gmail-types';
+import { getStore } from '../../../storage';
 
 // Store active fetcher instances
 const fetcherInstances = new Map<string, GmailMCPFetcher>();
@@ -9,12 +10,14 @@ const fetcherInstances = new Map<string, GmailMCPFetcher>();
 /**
  * Get or create a Gmail MCP fetcher instance for a connection
  */
-function getFetcherInstance(connectionId: string, connection?: GmailConnection): GmailMCPFetcher {
+async function getFetcherInstance(connectionId: string, connection?: GmailConnection): Promise<GmailMCPFetcher> {
   if (!fetcherInstances.has(connectionId)) {
     if (!connection) {
       throw new Error('Connection not found');
     }
     const fetcher = new GmailMCPFetcher(connection);
+    // Wait for initialization to complete
+    await fetcher.waitForInitialization();
     fetcherInstances.set(connectionId, fetcher);
   }
   return fetcherInstances.get(connectionId)!;
@@ -26,7 +29,6 @@ function getFetcherInstance(connectionId: string, connection?: GmailConnection):
 async function getConnectionById(connectionId: string): Promise<GmailConnection | null> {
   try {
     // Get the connection from MCP configuration store
-    const { getStore } = await import('../../../storage.js');
     const store = getStore();
     
     const config = store.get('mcpConfiguration', { connections: [] });
@@ -58,7 +60,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const users = await fetcher.fetchAllDomainUsers();
       
       return { success: true, users };
@@ -79,7 +81,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const messages = await fetcher.fetchUserMessages(userEmail, options);
       
       return { success: true, messages };
@@ -92,26 +94,26 @@ export function registerGmailMCPHandlers() {
     }
   });
 
-  // Fetch Gmail messages
-  ipcMain.handle('gmail-mcp-fetch-messages', async (event, connectionId: string, options?: any) => {
-    try {
-      const connection = await getConnectionById(connectionId);
-      if (!connection) {
-        return { success: false, error: 'Connection not found' };
-      }
+  // Fetch Gmail messages - DISABLED: Method not available in current GmailMCPFetcher
+  // ipcMain.handle('gmail-mcp-fetch-messages', async (event, connectionId: string, options?: any) => {
+  //   try {
+  //     const connection = await getConnectionById(connectionId);
+  //     if (!connection) {
+  //       return { success: false, error: 'Connection not found' };
+  //     }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
-      const messages = await fetcher.fetchMessages(options);
+  //     const fetcher = getFetcherInstance(connectionId, connection);
+  //     const messages = await fetcher.fetchMessages(options);
       
-      return { success: true, messages };
-    } catch (error) {
-      console.error('Error fetching Gmail messages:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      };
-    }
-  });
+  //     return { success: true, messages };
+  //   } catch (error) {
+  //     console.error('Error fetching Gmail messages:', error);
+  //     return { 
+  //       success: false, 
+  //       error: error instanceof Error ? error.message : 'Unknown error' 
+  //     };
+  //   }
+  // });
 
   // Fetch Gmail statistics for a specific user
   ipcMain.handle('gmail-mcp-fetch-user-stats', async (event, connectionId: string, userEmail: string) => {
@@ -121,7 +123,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const stats = await fetcher.fetchUserStats(userEmail);
       
       return { success: true, stats };
@@ -134,26 +136,26 @@ export function registerGmailMCPHandlers() {
     }
   });
 
-  // Fetch Gmail statistics
-  ipcMain.handle('gmail-mcp-fetch-stats', async (event, connectionId: string) => {
-    try {
-      const connection = await getConnectionById(connectionId);
-      if (!connection) {
-        return { success: false, error: 'Connection not found' };
-      }
+  // Fetch Gmail statistics - DISABLED: Method not available in current GmailMCPFetcher
+  // ipcMain.handle('gmail-mcp-fetch-stats', async (event, connectionId: string) => {
+  //   try {
+  //     const connection = await getConnectionById(connectionId);
+  //     if (!connection) {
+  //       return { success: false, error: 'Connection not found' };
+  //     }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
-      const stats = await fetcher.fetchStats();
+  //     const fetcher = getFetcherInstance(connectionId, connection);
+  //     const stats = await fetcher.fetchStats();
       
-      return { success: true, stats };
-    } catch (error) {
-      console.error('Error fetching Gmail stats:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      };
-    }
-  });
+  //     return { success: true, stats };
+  //   } catch (error) {
+  //     console.error('Error fetching Gmail stats:', error);
+  //     return { 
+  //       success: false, 
+  //       error: error instanceof Error ? error.message : 'Unknown error' 
+  //     };
+  //   }
+  // });
 
   // Mark message as read
   ipcMain.handle('gmail-mcp-mark-as-read', async (event, connectionId: string, messageId: string) => {
@@ -163,7 +165,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const success = await fetcher.markAsRead(messageId);
       
       return { success };
@@ -184,7 +186,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const success = await fetcher.deleteMessage(messageId);
       
       return { success };
@@ -205,7 +207,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const success = await fetcher.sendReply(messageId, replyText);
       
       return { success };
@@ -226,7 +228,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const success = await fetcher.forwardMessage(messageId, toEmail);
       
       return { success };
@@ -247,7 +249,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const messages = await fetcher.searchMessages(query, maxResults);
       
       return { success: true, messages };
@@ -268,7 +270,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const message = await fetcher.getMessage(messageId);
       
       return { success: true, message };
@@ -289,7 +291,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       await fetcher.saveUserDataToDatabase(userEmail, messageRecords, statsRecord);
       
       return { success: true };
@@ -310,7 +312,7 @@ export function registerGmailMCPHandlers() {
         return { success: false, error: 'Connection not found' };
       }
 
-      const fetcher = getFetcherInstance(connectionId, connection);
+      const fetcher = await getFetcherInstance(connectionId, connection);
       const isConnected = await fetcher.testConnection();
       
       return { success: isConnected };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEnvelope, faArrowRight, faSpinner, faCircleCheck, faCircleXmark, faTriangleExclamation, faChartBar, faUsers, faUser, faKey, faTimes, faSearch, faRefresh, faCalendarAlt } from '../../utils/fontAwesomeIcons';
+import { faEnvelope, faArrowRight, faSpinner, faCircleCheck, faCircleXmark, faTriangleExclamation, faChartBar, faUsers, faUser, faKey, faTimes, faSearch, faRefresh, faCalendarAlt, faDownload } from '../../utils/fontAwesomeIcons';
+import * as XLSX from 'xlsx';
 import './GmailDashboard.css';
 
 interface DomainUser {
@@ -91,6 +92,156 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
   const handleRefresh = async () => {
     await loadDomainUsers();
     onRefresh?.();
+  };
+
+  const handleExportToExcel = async () => {
+    try {
+      if (viewMode === 'users') {
+        // Export ALL users with their Gmail data
+        const workbook = XLSX.utils.book_new();
+        
+        // First, create a summary sheet with all users
+        const usersData = filteredUsers.map(user => ({
+          'Email': user.email,
+          'Name': user.name,
+          'Display Name': user.displayName,
+          'Role': user.isAdmin ? 'Administrator' : 'User',
+          'Status': user.isSuspended ? 'Suspended' : 'Active',
+          'Last Login': user.lastLoginTime ? new Date(user.lastLoginTime).toLocaleString() : 'Never',
+          'Admin': user.isAdmin ? 'Yes' : 'No',
+          'Suspended': user.isSuspended ? 'Yes' : 'No'
+        }));
+
+        const usersWorksheet = XLSX.utils.json_to_sheet(usersData);
+        const usersColumnWidths = [
+          { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, 
+          { wch: 12 }, { wch: 20 }, { wch: 8 }, { wch: 10 }
+        ];
+        usersWorksheet['!cols'] = usersColumnWidths;
+        XLSX.utils.book_append_sheet(workbook, usersWorksheet, 'All Users');
+
+        // Then, fetch Gmail data for each user and create individual tabs
+        for (const user of filteredUsers) {
+          try {
+            console.log(`Fetching Gmail data for ${user.email}...`);
+            
+            // Fetch user's Gmail messages
+            const messagesResult = await (window.electron as any).gmailMCP.fetchUserMessages(
+              connection.id, 
+              user.email, 
+              { maxResults: 100 } // Limit to 100 messages per user for performance
+            );
+
+            if (messagesResult.success && messagesResult.messages && messagesResult.messages.length > 0) {
+              const messagesData = messagesResult.messages.map((message: GmailMessage) => ({
+                'Message ID': message.id,
+                'Subject': message.subject,
+                'From': message.from,
+                'To': message.to,
+                'Date': message.date,
+                'Snippet': message.snippet,
+                'Is Read': message.isRead ? 'Yes' : 'No',
+                'Is Important': message.isImportant ? 'Yes' : 'No',
+                'Labels': message.labels.join(', '),
+                'Thread ID': message.threadId
+              }));
+
+              const messagesWorksheet = XLSX.utils.json_to_sheet(messagesData);
+              const messagesColumnWidths = [
+                { wch: 25 }, { wch: 40 }, { wch: 30 }, { wch: 30 }, 
+                { wch: 20 }, { wch: 50 }, { wch: 10 }, { wch: 12 }, 
+                { wch: 30 }, { wch: 25 }
+              ];
+              messagesWorksheet['!cols'] = messagesColumnWidths;
+
+              // Create safe sheet name (Excel has restrictions on sheet names)
+              const safeSheetName = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').substring(0, 31);
+              XLSX.utils.book_append_sheet(workbook, messagesWorksheet, safeSheetName);
+              
+              console.log(`Added ${messagesResult.messages.length} messages for ${user.email}`);
+            } else {
+              // Create empty sheet for users with no messages
+              const emptyData = [{
+                'Message ID': 'No messages found',
+                'Subject': '',
+                'From': '',
+                'To': '',
+                'Date': '',
+                'Snippet': '',
+                'Is Read': '',
+                'Is Important': '',
+                'Labels': '',
+                'Thread ID': ''
+              }];
+              const emptyWorksheet = XLSX.utils.json_to_sheet(emptyData);
+              const safeSheetName = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').substring(0, 31);
+              XLSX.utils.book_append_sheet(workbook, emptyWorksheet, safeSheetName);
+              
+              console.log(`No messages found for ${user.email}`);
+            }
+          } catch (error) {
+            console.error(`Error fetching Gmail data for ${user.email}:`, error);
+            // Create error sheet
+            const errorData = [{
+              'Message ID': 'Error loading messages',
+              'Subject': '',
+              'From': '',
+              'To': '',
+              'Date': '',
+              'Snippet': '',
+              'Is Read': '',
+              'Is Important': '',
+              'Labels': '',
+              'Thread ID': ''
+            }];
+            const errorWorksheet = XLSX.utils.json_to_sheet(errorData);
+            const safeSheetName = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').substring(0, 31);
+            XLSX.utils.book_append_sheet(workbook, errorWorksheet, safeSheetName);
+          }
+        }
+
+        // Generate Excel file and trigger download
+        const fileName = `all-users-gmail-data-${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        
+        console.log(`Exported Gmail data for ${filteredUsers.length} users to Excel`);
+      } else if (viewMode === 'gmail' && selectedUser && userMessages.length > 0) {
+        // Export single user's Gmail messages (existing functionality)
+        const excelData = userMessages.map(message => ({
+          'Message ID': message.id,
+          'Subject': message.subject,
+          'From': message.from,
+          'To': message.to,
+          'Date': message.date,
+          'Snippet': message.snippet,
+          'Is Read': message.isRead ? 'Yes' : 'No',
+          'Is Important': message.isImportant ? 'Yes' : 'No',
+          'Labels': message.labels.join(', '),
+          'Thread ID': message.threadId
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+        const columnWidths = [
+          { wch: 25 }, { wch: 40 }, { wch: 30 }, { wch: 30 }, 
+          { wch: 20 }, { wch: 50 }, { wch: 10 }, { wch: 12 }, 
+          { wch: 30 }, { wch: 25 }
+        ];
+        worksheet['!cols'] = columnWidths;
+
+        const sheetName = `${selectedUser.email.split('@')[0]}-messages`;
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+        const fileName = `gmail-messages-${selectedUser.email.split('@')[0]}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        
+        console.log(`Exported ${userMessages.length} Gmail messages to Excel`);
+      }
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export to Excel');
+    }
   };
 
   const handleUserClick = async (user: DomainUser) => {
@@ -427,6 +578,20 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
             <option value="suspended">Suspended</option>
           </select>
         </div>
+        <button 
+          className="gmail-dashboard-export-btn"
+          onClick={handleExportToExcel}
+          title={viewMode === 'users' ? 'Export all users with their Gmail messages to Excel' : 'Export Gmail messages to Excel'}
+          disabled={viewMode === 'gmail' && (!selectedUser || userMessages.length === 0)}
+        >
+          <FontAwesomeIcon icon={faDownload} />
+          <span>
+            {viewMode === 'users' 
+              ? 'Export All Gmail Data' 
+              : 'Export Messages'
+            }
+          </span>
+        </button>
       </div>
 
       {/* Content Area */}
