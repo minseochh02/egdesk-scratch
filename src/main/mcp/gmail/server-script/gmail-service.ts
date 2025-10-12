@@ -22,11 +22,21 @@ export class GmailMCPFetcher {
   private gmail: any;
   private directory: any;
   private database: GmailDatabase;
+  private initializationPromise: Promise<void> | null = null;
 
   constructor(connection: GmailConnection) {
     this.connection = connection;
     this.database = new GmailDatabase();
-    this.initializeGoogleClient();
+    this.initializationPromise = this.initializeGoogleClient();
+  }
+
+  /**
+   * Wait for Google client initialization to complete
+   */
+  async waitForInitialization(): Promise<void> {
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
   }
 
   private async initializeGoogleClient() {

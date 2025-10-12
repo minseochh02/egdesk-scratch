@@ -33,6 +33,19 @@ import {
 } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
+
+// Import GmailConnection type from GmailDashboard
+interface GmailConnection {
+  id: string;
+  name: string;
+  email: string;
+  adminEmail: string;
+  serviceAccountKey: any;
+  createdAt: string;
+  updatedAt: string;
+  type: 'gmail';
+  status: 'online' | 'offline' | 'error' | 'checking';
+}
 import './MCPServer.css';
 import './RunningServers.css';
 
@@ -687,6 +700,30 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     );
   }
 
+  const convertServerToConnection = (server: RunningMCPServer): GmailConnection => {
+    return {
+      id: server.id,
+      name: server.name,
+      email: server.email || '',
+      adminEmail: server.adminEmail || '',
+      serviceAccountKey: {}, // We'll need to get this from storage
+      createdAt: server.createdAt,
+      updatedAt: server.updatedAt,
+      type: 'gmail' as const,
+      status: server.status === 'running' ? 'online' : 'offline'
+    };
+  };
+
+  // Show Gmail dashboard if selected
+  if (showDashboard && selectedServer) {
+    return (
+      <GmailDashboard
+        connection={convertServerToConnection(selectedServer)}
+        onBack={() => setShowDashboard(false)}
+      />
+    );
+  }
+
 
   return (
     <div className="mcp-server">
@@ -756,7 +793,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
 
         {!loading && !error && (
           <div className="running-servers-grid">
-            {servers.map((server) => (
+            {servers.filter(server => server && server.id).map((server) => (
               <div key={server.id} className="running-servers-card">
                 <div className="running-servers-card-header">
                   <div className="mcp-server-info-container">
