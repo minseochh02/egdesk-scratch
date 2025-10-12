@@ -282,15 +282,186 @@
 }
 
 .running-servers-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 36px;
   color: white;
   flex-shrink: 0;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.running-servers-card-icon.gmail-icon {
+  background: linear-gradient(135deg, #ea4335 0%, #d33b2c 100%);
+  box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
+}
+
+/* MCP Server Info Container - Specific layout for icon + text */
+.mcp-server-info-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex: 1;
+}
+
+.mcp-server-icon-box {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  color: white;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.mcp-server-icon-box.gmail-icon-box {
+  background: linear-gradient(135deg, #ea4335 0%, #d33b2c 100%);
+  box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
+}
+
+.mcp-server-text-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-server-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.mcp-server-name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-server-name-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-server-name-edit-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  opacity: 0;
+  font-size: 12px;
+}
+
+.mcp-server-name-display:hover .mcp-server-name-edit-btn {
+  opacity: 1;
+}
+
+.mcp-server-name-edit-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.mcp-server-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.mcp-server-name-input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  background: white;
+  outline: none;
+}
+
+.mcp-server-name-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.mcp-server-name-edit-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.mcp-server-name-save-btn,
+.mcp-server-name-cancel-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.mcp-server-name-save-btn {
+  background: #10b981;
+  color: white;
+}
+
+.mcp-server-name-save-btn:hover {
+  background: #059669;
+}
+
+.mcp-server-name-cancel-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.mcp-server-name-cancel-btn:hover {
+  background: #dc2626;
+}
+
+.mcp-server-description {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.mcp-server-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mcp-server-type {
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mcp-server-version {
+  font-size: 12px;
+  color: #9ca3af;
 }
 
 .running-servers-card-info {
@@ -612,6 +783,17 @@
 }
 
 .running-servers-stop-btn:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+}
+
+.running-servers-delete-btn {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.running-servers-delete-btn:hover {
   background: #fee2e2;
   border-color: #dc2626;
 }
@@ -938,6 +1120,10 @@
   height: 32px;
 }
 
+.running-servers-access-edit-btn svg {
+  color: white !important;
+}
+
 .running-servers-access-edit-btn:hover {
   background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
   transform: translateY(-1px);
@@ -970,6 +1156,43 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 12px;
+}
+
+.running-servers-schema-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.running-servers-status-loading {
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.running-servers-status-error {
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.running-servers-status-configured {
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.running-servers-status-not-configured {
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .running-servers-schema-label {
@@ -998,6 +1221,51 @@
   background: linear-gradient(135deg, #059669 0%, #047857 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+.running-servers-schema-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.running-servers-schema-configure-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.running-servers-schema-configure-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+}
+
+.running-servers-schema-remove-btn {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.running-servers-schema-remove-btn:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
 .running-servers-schema-code {
