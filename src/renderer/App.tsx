@@ -30,6 +30,11 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [wooriPassword, setWooriPassword] = useState('');
   const [wooriProxy, setWooriProxy] = useState('');
   const [wooriGeminiKey, setWooriGeminiKey] = useState('');
+  const [chromeUrl, setChromeUrl] = useState('');
+  const [chromeProxy, setChromeProxy] = useState('');
+  const [openDevTools, setOpenDevTools] = useState(false);
+  const [runLighthouse, setRunLighthouse] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   if (!isOpen) return null;
 
@@ -143,6 +148,155 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               Start Woori Bank Automation
             </button>
           </div>
+
+          {/* Chrome URL Opener Section */}
+          <div>
+            <h3 style={{ color: '#4CAF50', marginBottom: '10px' }}>Chrome URL Opener</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="url"
+                placeholder="Enter URL to open in Chrome (e.g., https://example.com)"
+                value={chromeUrl}
+                onChange={(e) => setChromeUrl(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <input
+                type="text"
+                placeholder="Proxy (optional, e.g., http://proxy:port)"
+                value={chromeProxy}
+                onChange={(e) => setChromeProxy(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={openDevTools}
+                    onChange={(e) => setOpenDevTools(e.target.checked)}
+                    style={{ transform: 'scale(1.2)' }}
+                  />
+                  <span>Open DevTools</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={runLighthouse}
+                    onChange={(e) => setRunLighthouse(e.target.checked)}
+                    style={{ transform: 'scale(1.2)' }}
+                  />
+                  <span>Run Lighthouse</span>
+                </label>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (!chromeUrl.trim()) {
+                  alert('Please enter a URL');
+                  return;
+                }
+                
+                // Clear previous debug logs
+                setDebugLogs([]);
+                
+                // Add initial debug log
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+                
+                addDebugLog('Starting Chrome launch process...');
+                
+                try {
+                  addDebugLog('🚀 Launching Chrome with enhanced Lighthouse integration...');
+                  
+                  const result = await (window as any).electron.debug.launchChromeWithUrl(
+                    chromeUrl.trim(),
+                    chromeProxy.trim() || undefined,
+                    openDevTools,
+                    runLighthouse
+                  );
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ Chrome launch failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Chrome launch failed:', result?.error);
+                    alert(`Chrome launch failed${result?.error ? `: ${result.error}` : ''}`);
+                  } else {
+                    addDebugLog('✅ Chrome launched successfully');
+                    console.log('Chrome launched successfully:', result);
+                    
+                    const features = [];
+                    if (openDevTools) features.push('DevTools');
+                    if (runLighthouse) {
+                      features.push('Lighthouse (playwright-lighthouse)');
+                      addDebugLog('🔍 Lighthouse audit will run automatically using playwright-lighthouse');
+                      addDebugLog('📊 Reports will be saved to ./output/ directory');
+                      addDebugLog('⚠️ If Lighthouse fails, manual instructions will be provided');
+                    }
+                    
+                    const message = features.length > 0 
+                      ? `Chrome launched successfully with ${features.join(' and ')}!`
+                      : 'Chrome launched successfully!';
+                    
+                    addDebugLog(`🎉 ${message}`);
+                    alert(message);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Chrome launch error: ${e?.message || e}`);
+                  console.error('Chrome launch error:', e);
+                  alert(`Chrome launch error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Open URL in Chrome
+            </button>
+          </div>
+
+          {/* Debug Console Section */}
+          {debugLogs.length > 0 && (
+            <div>
+              <h3 style={{ color: '#FF9800', marginBottom: '10px' }}>Debug Console</h3>
+              <div style={{
+                backgroundColor: '#1a1a1a',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                padding: '10px',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                color: '#fff'
+              }}>
+                {debugLogs.map((log, index) => (
+                  <div key={index} style={{ marginBottom: '4px' }}>
+                    {log}
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setDebugLogs([])}
+                style={{
+                  marginTop: '8px',
+                  padding: '4px 8px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+              >
+                Clear Logs
+              </button>
+            </div>
+          )}
 
         </div>
       </div>
