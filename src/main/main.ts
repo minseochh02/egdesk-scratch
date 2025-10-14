@@ -146,6 +146,163 @@ const createWindow = async () => {
           return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
+      ipcMain.handle('crawl-website', async (event, { url, proxy, openDevTools }) => {
+        try {
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          const path = require('path');
+          
+          console.log('🕷️ Starting website crawler...');
+          
+          // Build proxy configuration if provided
+          const proxyConfig = proxy ? { server: proxy } : undefined;
+          
+          // Launch browser
+          const browser = await chromium.launch({ 
+            headless: false,
+            channel: 'chrome',
+            proxy: proxyConfig
+          });
+          
+          const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          });
+          
+          const page = await context.newPage();
+          
+          // Enable DevTools if requested
+          if (openDevTools) {
+            await page.pause();
+          }
+          
+          console.log(`🌐 Navigating to: ${url}`);
+          await page.goto(url, { waitUntil: 'networkidle' });
+          
+          // Wait a bit for dynamic content to load
+          await page.waitForTimeout(2000);
+          
+          // Extract all links
+          const links = await page.evaluate(() => {
+            const linkElements = document.querySelectorAll('a[href]');
+            const links = Array.from(linkElements).map(link => ({
+              href: link.getAttribute('href'),
+              text: link.textContent?.trim() || '',
+              title: link.getAttribute('title') || '',
+              target: link.getAttribute('target') || ''
+            }));
+            return links;
+          });
+          
+          // Extract forms
+          const forms = await page.evaluate(() => {
+            const formElements = document.querySelectorAll('form');
+            return Array.from(formElements).map(form => ({
+              action: form.getAttribute('action') || '',
+              method: form.getAttribute('method') || 'GET',
+              id: form.getAttribute('id') || '',
+              className: form.getAttribute('class') || ''
+            }));
+          });
+          
+          // Extract images
+          const images = await page.evaluate(() => {
+            const imgElements = document.querySelectorAll('img[src]');
+            return Array.from(imgElements).map(img => ({
+              src: img.getAttribute('src'),
+              alt: img.getAttribute('alt') || '',
+              title: img.getAttribute('title') || '',
+              width: img.getAttribute('width') || '',
+              height: img.getAttribute('height') || ''
+            }));
+          });
+          
+          // Categorize links
+          const baseUrl = new URL(url);
+          const internalLinks: any[] = [];
+          const externalLinks: any[] = [];
+          const relativeLinks: any[] = [];
+          
+          links.forEach((link: any) => {
+            if (!link.href) return;
+            
+            try {
+              if (link.href.startsWith('http://') || link.href.startsWith('https://')) {
+                const linkUrl = new URL(link.href);
+                if (linkUrl.hostname === baseUrl.hostname) {
+                  internalLinks.push(link);
+                } else {
+                  externalLinks.push(link);
+                }
+              } else if (link.href.startsWith('/') || link.href.startsWith('./') || link.href.startsWith('../')) {
+                relativeLinks.push(link);
+              } else if (link.href.startsWith('#')) {
+                // Skip anchor links
+              } else {
+                // Other relative links
+                relativeLinks.push(link);
+              }
+            } catch (e) {
+              // Invalid URL, skip
+              console.warn('Invalid URL:', link.href);
+            }
+          });
+          
+          // Calculate statistics
+          const stats = {
+            totalLinks: links.length,
+            internalLinks: internalLinks.length,
+            externalLinks: externalLinks.length,
+            relativeLinks: relativeLinks.length,
+            forms: forms.length,
+            images: images.length
+          };
+          
+          // Create output directory if it doesn't exist
+          const outputDir = path.join(process.cwd(), 'output');
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+          
+          // Save results to file
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const results = {
+            url,
+            timestamp: new Date().toISOString(),
+            stats,
+            links: {
+              all: links,
+              internal: internalLinks,
+              external: externalLinks,
+              relative: relativeLinks
+            },
+            forms,
+            images
+          };
+          
+          const filename = `crawler-results-${timestamp}.json`;
+          const filepath = path.join(outputDir, filename);
+          fs.writeFileSync(filepath, JSON.stringify(results, null, 2));
+          
+          console.log(`📊 Crawler completed: ${stats.totalLinks} links found`);
+          console.log(`💾 Results saved to: ${filepath}`);
+          
+          await browser.close();
+          
+          return {
+            success: true,
+            data: results,
+            filepath
+          };
+          
+        } catch (error) {
+          console.error('❌ Crawler failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+      
       ipcMain.handle('launch-chrome-with-url', async (event, { url, proxy, openDevTools, runLighthouse }) => {
         try {
           const { chromium } = require('playwright');
@@ -174,6 +331,7 @@ const createWindow = async () => {
             proxy: proxyOption,
             args: [
               `--remote-debugging-port=${debugPort}`,
+              '--lang=ko', // Set browser language
               ...(openDevTools ? ['--auto-open-devtools-for-tabs'] : []),
               ...(runLighthouse ? [
                 '--enable-features=Lighthouse',
@@ -182,7 +340,9 @@ const createWindow = async () => {
               ] : [])
             ]
           });
-          const context = await browser.newContext();
+          const context = await browser.newContext({
+            locale: 'ko-KR', // Set context locale
+          });
           const page = await context.newPage();
           
           // Validate URL before navigating
@@ -208,9 +368,15 @@ const createWindow = async () => {
                 
                 const { playAudit } = require('playwright-lighthouse');
                 
+                const reportName = `lighthouse-report-${Date.now()}`;
+                
                 await playAudit({
                   page: page,
                   port: debugPort,
+                  // Set Lighthouse report locale to Korean
+                  opts: {
+                    locale: 'ko',
+                  },
                   thresholds: {
                     performance: 50,
                     accessibility: 50,
@@ -223,13 +389,79 @@ const createWindow = async () => {
                       html: true,
                       json: true,
                     },
-                    name: `lighthouse-report-${Date.now()}`,
+                    name: reportName,
                     directory: './output/',
                   },
                 });
                 
                 console.log('🔍 [DEBUG] Lighthouse audit completed successfully');
                 console.log('🔍 [DEBUG] Reports saved to ./output/ directory');
+                
+                // Generate PDF with all sections expanded
+                try {
+                  console.log('📄 [DEBUG] Generating PDF with expanded sections...');
+                  
+                  // Load the generated HTML report
+                  const htmlReportPath = `file://${path.join(process.cwd(), 'output', `${reportName}.html`)}`;
+                  const pdfPage = await context.newPage();
+                  
+                  await pdfPage.goto(htmlReportPath);
+                  
+                  // Wait for the page to load completely
+                  await pdfPage.waitForLoadState('networkidle');
+                  await pdfPage.waitForTimeout(2000);
+                  
+                  // Expand all collapsible sections
+                  await pdfPage.evaluate(() => {
+                    // Expand all <details> elements
+                    document.querySelectorAll('details').forEach(detail => {
+                      detail.open = true;
+                    });
+                    
+                    // Expand any other collapsible elements (common Lighthouse patterns)
+                    document.querySelectorAll('[aria-expanded="false"]').forEach(element => {
+                      element.setAttribute('aria-expanded', 'true');
+                    });
+                    
+                    // Remove any collapsed classes
+                    document.querySelectorAll('.lh-collapsed, .collapsed').forEach(element => {
+                      element.classList.remove('lh-collapsed', 'collapsed');
+                    });
+                    
+                    // Show any hidden content
+                    document.querySelectorAll('[style*="display: none"]').forEach(element => {
+                      (element as HTMLElement).style.display = '';
+                    });
+                  });
+                  
+                  // Wait a bit for any animations to complete
+                  await pdfPage.waitForTimeout(1000);
+                  
+                  // Generate PDF
+                  const pdfPath = path.join(process.cwd(), 'output', `${reportName}.pdf`);
+                  await pdfPage.pdf({
+                    path: pdfPath,
+                    format: 'A4',
+                    printBackground: true,
+                    margin: {
+                      top: '20px',
+                      right: '20px',
+                      bottom: '20px',
+                      left: '20px'
+                    }
+                  });
+                  
+                  console.log('📄 [DEBUG] PDF generated successfully:', pdfPath);
+                  
+                  await pdfPage.close();
+                  
+                } catch (pdfError: any) {
+                  console.error('❌ [DEBUG] PDF generation failed:', pdfError);
+                  console.error('❌ [DEBUG] PDF Error details:', {
+                    message: pdfError?.message || 'Unknown error',
+                    stack: pdfError?.stack || 'No stack trace'
+                  });
+                }
                 
               } catch (lighthouseError: any) {
                 console.error('❌ [DEBUG] Lighthouse audit failed:', lighthouseError);

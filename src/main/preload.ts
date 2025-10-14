@@ -1243,6 +1243,7 @@ const electronHandler = {
     startNaverBlogWithImage: (id?: string, password?: string, proxy?: string, title?: string, content?: string, tags?: string, includeDogImage?: boolean, dogImagePrompt?: string) => ipcRenderer.invoke('start-naver-blog-with-image', { id, password, proxy, title, content, tags, includeDogImage, dogImagePrompt }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
+    crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
   },
 
