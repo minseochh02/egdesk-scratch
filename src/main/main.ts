@@ -758,6 +758,107 @@ const createWindow = async () => {
           const avgPWA = validScoresCount > 0 ? Math.round((totalPWA / validScoresCount) * 100) : 0;
           const overallAverage = validScoresCount > 0 ? Math.round(((totalPerformance + totalAccessibility + totalBestPractices + totalSEO + totalPWA) / (validScoresCount * 5)) * 100) : 0;
           
+          // Collect all recommendations and issues
+          const allRecommendations: any[] = [];
+          const issuesByCategory: { [key: string]: Set<string> } = {
+            performance: new Set(),
+            accessibility: new Set(),
+            'best-practices': new Set(),
+            seo: new Set(),
+            pwa: new Set()
+          };
+          
+          for (const jsonItem of allJsonData) {
+            const lhr = jsonItem.data?.lhr || jsonItem.data;
+            if (lhr?.audits) {
+              Object.entries(lhr.audits).forEach(([key, audit]: [string, any]) => {
+                if (audit.score !== null && audit.score < 1 && audit.score !== -1) {
+                  // This is a failed audit
+                  const category = Object.keys(lhr.categories || {}).find(cat => {
+                    const categoryAudits = lhr.categories[cat]?.auditRefs || [];
+                    return categoryAudits.some((ref: any) => ref.id === key);
+                  }) || 'other';
+                  
+                  const issue = {
+                    id: key,
+                    title: audit.title,
+                    description: audit.description,
+                    score: audit.score,
+                    displayValue: audit.displayValue,
+                    category,
+                    url: jsonItem.url
+                  };
+                  
+                  allRecommendations.push(issue);
+                  
+                  if (issuesByCategory[category]) {
+                    issuesByCategory[category].add(audit.title);
+                  }
+                }
+              });
+            }
+          }
+          
+          // Generate AI explanation for the issues
+          let aiExplanation = '';
+          try {
+            // Retrieve Google/Gemini API key from Electron Store
+            const { getStore } = require('./storage');
+            const store = getStore();
+            const aiKeys = store ? store.get('ai-keys', []) : [];
+            let googleKey: any = null;
+
+            if (Array.isArray(aiKeys)) {
+              // Prefer a key explicitly named 'egdesk' (case-insensitive) for debugging
+              const egdeskKey = aiKeys.find((k: any) => (k?.name || '').toLowerCase() === 'egdesk' && k?.providerId === 'google');
+              if (egdeskKey) {
+                googleKey = egdeskKey;
+                console.log('🔑 Using Google AI key named "egdesk" from store for debugging');
+              } else {
+                // Fallbacks: active Google key, then any Google key
+                googleKey = aiKeys.find((k: any) => k?.providerId === 'google' && k?.isActive) || aiKeys.find((k: any) => k?.providerId === 'google');
+              }
+            }
+
+            const geminiApiKey = googleKey?.fields?.apiKey || process.env.GEMINI_API_KEY || '';
+
+            if (geminiApiKey) {
+              // Build issues summary text
+              const issuesSummary = Object.entries(issuesByCategory)
+                .filter(([_, issues]) => (issues as Set<string>).size > 0)
+                .map(([category, issues]) => `${category}: ${Array.from(issues as Set<string>).join(', ')}`)
+                .join('\n');
+
+              const prompt = `당신은 SEO 전문가입니다. 웹사이트 분석 결과 발견된 다음 문제들을 SEO에 대해 전혀 모르는 일반 사용자가 이해할 수 있도록 쉽고 친절하게 설명해주세요:\n\n웹사이트 분석 점수:\n- 전체 평균: ${overallAverage}점\n- 성능: ${avgPerformance}점\n- 접근성: ${avgAccessibility}점\n- SEO: ${avgSEO}점\n\n발견된 주요 문제들:\n${issuesSummary}\n\n다음 형식으로 답변해주세요:\n1. 전체적인 상황 요약 (2-3문장)\n2. 각 카테고리별 문제점과 해결 방법을 쉽게 설명\n3. 우선순위가 높은 개선사항 3가지\n\n전문 용어는 피하고, 일반인도 이해할 수 있는 쉬운 말로 설명해주세요.`;
+
+              // Use Google Generative AI (Gemini 2.5 Flash)
+              const { GoogleGenerativeAI } = await import('@google/generative-ai');
+              const genAI = new GoogleGenerativeAI(geminiApiKey);
+              const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+              const result = await model.generateContent({
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [{ text: prompt }],
+                  },
+                ],
+              });
+
+              const response = result?.response;
+              const text = response ? await response.text() : '';
+              aiExplanation = text || '(AI 설명을 생성하지 못했습니다)';
+
+              console.log('✅ AI explanation generated successfully with Gemini 2.5 Flash');
+            } else {
+              console.warn('⚠️ Gemini API key not found in Electron Store or env, skipping AI explanation');
+              aiExplanation = '(AI 설명을 생성하려면 Google AI 키를 추가하거나 GEMINI_API_KEY 환경 변수를 설정하세요)';
+            }
+          } catch (aiError) {
+            console.error('Failed to generate AI explanation:', aiError);
+            aiExplanation = '(AI 설명 생성 중 오류가 발생했습니다)';
+          }
+          
           const getScoreColor = (score: number) => {
             if (score >= 90) return '#0cce6b';
             if (score >= 50) return '#ffa400';
@@ -888,7 +989,7 @@ const createWindow = async () => {
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf5 100%);
+      background: #f5f7fa; /* simplified solid background */
       page-break-after: always;
     }
     .cover-container {
@@ -896,25 +997,23 @@ const createWindow = async () => {
       text-align: center;
       background: white;
       padding: 60px;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      border-radius: 12px;
+      border: 1px solid #e0e0e0; /* replace shadow with border for print */
     }
     .cover-title { 
       color: #202124;
-      font-size: 48px;
+      font-size: 36px;
       margin-bottom: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
       padding: 10px 0;
     }
     .cover-subtitle {
       color: #5f6368;
-      font-size: 20px;
+      font-size: 18px;
+      margin-bottom: 40px;
     }
     .cover-logo {
-      font-size: 72px;
-      margin-bottom: 30px;
+      font-size: 48px; /* smaller for print */
+      margin-bottom: 20px;
     }
     .report-section {
       page-break-before: always;
@@ -926,7 +1025,7 @@ const createWindow = async () => {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       padding: 40px;
       min-height: 100vh;
-      background: #f8f9fa;
+      background: #f8f9fa; /* solid */
       page-break-after: always;
     }
     .summary-container {
@@ -935,71 +1034,70 @@ const createWindow = async () => {
       background: white;
       padding: 40px;
       border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border: 1px solid #e0e0e0; /* replace shadow */
     }
     .summary-title {
       color: #202124;
-      font-size: 32px;
-      margin-bottom: 30px;
+      font-size: 28px;
+      margin-bottom: 24px;
       text-align: center;
     }
     .overall-score-section {
       text-align: center;
-      margin-bottom: 40px;
+      margin-bottom: 32px;
     }
     .overall-score-card {
       display: inline-block;
-      padding: 40px 60px;
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      padding: 32px 48px;
+      background: #f5576c; /* solid instead of gradient */
       border-radius: 12px;
       color: white;
     }
     .overall-score-value {
-      font-size: 64px;
+      font-size: 56px;
       font-weight: bold;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
     .overall-score-label {
-      font-size: 18px;
-      opacity: 0.95;
+      font-size: 16px;
     }
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 15px;
-      margin-bottom: 40px;
+      gap: 12px;
+      margin-bottom: 32px;
     }
     .metric-card {
-      padding: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 16px;
+      background: #667eea; /* solid */
       border-radius: 8px;
       color: white;
       text-align: center;
     }
     .metric-value {
-      font-size: 36px;
+      font-size: 28px;
       font-weight: bold;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .metric-label {
-      font-size: 14px;
-      opacity: 0.9;
+      font-size: 13px;
     }
     .table-title {
       color: #202124;
-      font-size: 24px;
-      margin-bottom: 20px;
+      font-size: 20px;
+      margin-bottom: 16px;
     }
     .scores-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
     .scores-table th,
     .scores-table td {
-      padding: 12px;
+      padding: 10px;
       text-align: left;
       border-bottom: 1px solid #e0e0e0;
+      font-size: 13px;
     }
     .scores-table th {
       background: #f8f9fa;
@@ -1011,26 +1109,96 @@ const createWindow = async () => {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 14px;
+      font-size: 13px;
     }
     .score-badge {
       display: inline-block;
-      padding: 4px 12px;
-      border-radius: 12px;
+      padding: 3px 10px;
+      border-radius: 10px;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 12px;
       color: white;
     }
     .summary-footer {
       text-align: center;
-      padding-top: 20px;
+      padding-top: 16px;
       border-top: 1px solid #e0e0e0;
       color: #5f6368;
-      font-size: 14px;
+      font-size: 13px;
     }
     .summary-footer p {
-      margin: 5px 0;
+      margin: 4px 0;
     }
+    
+    /* AI Explanation Page Styles */
+    .ai-explanation-page {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      min-height: 100vh;
+      background: #e7f4ff; /* solid */
+      page-break-after: always;
+    }
+    .ai-explanation-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      border: 1px solid #e0e0e0;
+    }
+    .ai-title {
+      color: #202124;
+      font-size: 28px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .ai-content {
+      background: #f8f9fa;
+      padding: 24px;
+      border-radius: 8px;
+      margin-bottom: 32px;
+      border-left: 4px solid #667eea;
+    }
+    .ai-content p {
+      margin: 12px 0;
+      line-height: 1.6;
+      color: #202124;
+      font-size: 14px;
+    }
+    .ai-content p:first-child { margin-top: 0; }
+    .ai-content p:last-child { margin-bottom: 0; }
+    .top-issues { margin-top: 32px; }
+    .issues-title {
+      color: #202124;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    .issues-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .issue-category-card {
+      background: #f5f5f5; /* solid */
+      padding: 16px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    .issue-category-card h3 {
+      color: #202124;
+      font-size: 16px;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    .issue-category-card ul { list-style: none; padding: 0; margin: 0; }
+    .issue-category-card li {
+      padding: 6px 0;
+      color: #5f6368;
+      font-size: 13px;
+      border-bottom: 1px solid #ddd;
+    }
+    .issue-category-card li:last-child { border-bottom: none; }
+    .issue-category-card li.more-items { font-style: italic; color: #9e9e9e; }
   </style>
 </head>
 <body>
@@ -1109,6 +1277,42 @@ const createWindow = async () => {
       <div class="summary-footer">
         <p>총 ${urls.length}개 페이지 분석 완료</p>
         <p>성공: ${results.filter(r => r.success).length}개 | 실패: ${results.filter(r => !r.success).length}개</p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- AI Explanation Page -->
+  <div class="ai-explanation-page">
+    <div class="ai-explanation-container">
+      <h1 class="ai-title">🤖 AI가 설명하는 개선 방안</h1>
+      <div class="ai-content">
+        ${aiExplanation.split('\n').map(line => `<p>${line}</p>`).join('')}
+      </div>
+      
+      <div class="top-issues">
+        <h2 class="issues-title">주요 발견 사항</h2>
+        <div class="issues-grid">
+          ${Object.entries(issuesByCategory)
+            .filter(([_, issues]) => (issues as Set<string>).size > 0)
+            .map(([category, issues]) => {
+              const categoryNames: any = {
+                'performance': '⚡ 성능',
+                'accessibility': '♿ 접근성',
+                'best-practices': '✅ 모범 사례',
+                'seo': '🔍 SEO',
+                'pwa': '📱 PWA'
+              };
+              return `
+                <div class="issue-category-card">
+                  <h3>${categoryNames[category] || category}</h3>
+                  <ul>
+                    ${Array.from(issues as Set<string>).slice(0, 5).map(issue => `<li>${issue}</li>`).join('')}
+                    ${(issues as Set<string>).size > 5 ? `<li class="more-items">그 외 ${(issues as Set<string>).size - 5}개 항목...</li>` : ''}
+                  </ul>
+                </div>
+              `;
+            }).join('')}
+        </div>
       </div>
     </div>
   </div>
