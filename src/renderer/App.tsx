@@ -14,6 +14,7 @@ import {
   faHome,
   faShieldAlt,
   faCog,
+  faServer,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -24,6 +25,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
 import MCPServer from './components/MCPServer/MCPServer';
 import './App.css';
+import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 
 function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [wooriId, setWooriId] = useState('');
@@ -560,11 +562,25 @@ function NavigationBar({ showDebugModal, setShowDebugModal }: { showDebugModal: 
           {!isNarrow && <span>EG SSL-Checker</span>}
         </Link>
         <Link
+          to="/seo-analyzer"
+          className={`nav-link ${location.pathname === '/seo-analyzer' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          {!isNarrow && <span>EG SEO-Analyzer</span>}
+        </Link>
+        <Link
           to="/ai-keys"
           className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
         >
           <FontAwesomeIcon icon={faRobot} />
           {!isNarrow && <span>API 키 관리</span>}
+        </Link>
+        <Link
+          to="/mcp-server"
+          className={`nav-link ${location.pathname === '/mcp-server' ? 'active' : ''}`}
+        >
+          <FontAwesomeIcon icon={faServer} />
+          {!isNarrow && <span>EG MCP Server</span>}
         </Link>
         <button
           className="nav-link"
@@ -660,6 +676,7 @@ export default function App() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
+            <Route path="/seo-analyzer" element={<EGSEOAnalyzer />} />
             <Route path="/mcp-server" element={<MCPServer />} />
             
             {/* Fallback to home for unknown routes */}
