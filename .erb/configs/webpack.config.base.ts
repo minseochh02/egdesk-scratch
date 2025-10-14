@@ -13,6 +13,8 @@ const configuration: webpack.Configuration = {
     // Explicitly exclude heavy optional deps from bundling
     'playwright',
     'playwright-core',
+    'lighthouse',
+    'playwright-lighthouse',
   ],
 
   stats: 'errors-only',

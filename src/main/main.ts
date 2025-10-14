@@ -146,6 +146,118 @@ const createWindow = async () => {
           return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
+      ipcMain.handle('launch-chrome-with-url', async (event, { url, proxy, openDevTools, runLighthouse }) => {
+        try {
+          const { chromium } = require('playwright');
+          
+          // Build proxy option if provided
+          let proxyOption;
+          if (proxy) {
+            try {
+              const proxyUrl = new URL(proxy);
+              proxyOption = {
+                server: `${proxyUrl.protocol}//${proxyUrl.host}`,
+                username: proxyUrl.username || undefined,
+                password: proxyUrl.password || undefined,
+              };
+            } catch {
+              console.warn('Invalid proxy URL, ignoring proxy option');
+            }
+          }
+          
+          // Get a random port for remote debugging
+          const debugPort = Math.floor(Math.random() * 10000) + 9000;
+          
+          const browser = await chromium.launch({ 
+            headless: false,
+            channel: 'chrome',
+            proxy: proxyOption,
+            args: [
+              `--remote-debugging-port=${debugPort}`,
+              ...(openDevTools ? ['--auto-open-devtools-for-tabs'] : []),
+              ...(runLighthouse ? [
+                '--enable-features=Lighthouse',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor'
+              ] : [])
+            ]
+          });
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          
+          // Validate URL before navigating
+          try {
+            new URL(url);
+            await page.goto(url, { waitUntil: 'networkidle' });
+            console.log(`🌐 Chrome launched and navigated to: ${url}`);
+            
+            // Run Lighthouse if requested
+            if (runLighthouse) {
+              try {
+                console.log('🔍 [DEBUG] Starting Lighthouse audit process...');
+                console.log('🔍 [DEBUG] Current page URL:', await page.url());
+                console.log('🔍 [DEBUG] Debug port:', debugPort);
+                
+                // Wait for page to be fully loaded
+                console.log('🔍 [DEBUG] Waiting for page to load completely...');
+                await page.waitForLoadState('networkidle');
+                await page.waitForTimeout(2000);
+                
+                // Use playwright-lighthouse for proper integration
+                console.log('🔍 [DEBUG] Using playwright-lighthouse...');
+                
+                const { playAudit } = require('playwright-lighthouse');
+                
+                await playAudit({
+                  page: page,
+                  port: debugPort,
+                  thresholds: {
+                    performance: 50,
+                    accessibility: 50,
+                    'best-practices': 50,
+                    seo: 50,
+                    pwa: 50,
+                  },
+                  reports: {
+                    formats: {
+                      html: true,
+                      json: true,
+                    },
+                    name: `lighthouse-report-${Date.now()}`,
+                    directory: './output/',
+                  },
+                });
+                
+                console.log('🔍 [DEBUG] Lighthouse audit completed successfully');
+                console.log('🔍 [DEBUG] Reports saved to ./output/ directory');
+                
+              } catch (lighthouseError: any) {
+                console.error('❌ [DEBUG] Lighthouse audit failed:', lighthouseError);
+                console.error('❌ [DEBUG] Error details:', {
+                  message: lighthouseError?.message || 'Unknown error',
+                  stack: lighthouseError?.stack || 'No stack trace',
+                  name: lighthouseError?.name || 'Unknown error type'
+                });
+                
+                // Provide fallback instructions
+                console.log('🔍 [DEBUG] Manual Lighthouse access:');
+                console.log('🔍 [DEBUG] 1. Open Chrome DevTools (F12)');
+                console.log('🔍 [DEBUG] 2. Click on the "Lighthouse" tab');
+                console.log('🔍 [DEBUG] 3. Or navigate to: chrome://lighthouse/');
+                console.log('🔍 [DEBUG] 4. Enter the URL: ' + await page.url());
+              }
+            }
+            
+            return { success: true };
+          } catch (urlError) {
+            console.error('❌ Invalid URL provided:', urlError);
+            return { success: false, error: 'Invalid URL provided' };
+          }
+        } catch (error) {
+          console.error('❌ Chrome launch failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      });
       ipcMain.handle('test-paste-component', async () => {
         try {
           const { chromium } = require('playwright');
