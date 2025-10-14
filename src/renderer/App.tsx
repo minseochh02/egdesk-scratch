@@ -35,6 +35,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [openDevTools, setOpenDevTools] = useState(false);
   const [runLighthouse, setRunLighthouse] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [crawlerResults, setCrawlerResults] = useState<any>(null);
 
   if (!isOpen) return null;
 
@@ -229,6 +230,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                       features.push('Lighthouse (playwright-lighthouse)');
                       addDebugLog('🔍 Lighthouse audit will run automatically using playwright-lighthouse');
                       addDebugLog('📊 Reports will be saved to ./output/ directory');
+                      addDebugLog('📄 PDF with expanded sections will be generated automatically');
                       addDebugLog('⚠️ If Lighthouse fails, manual instructions will be provided');
                     }
                     
@@ -258,6 +260,206 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               Open URL in Chrome
             </button>
           </div>
+
+          {/* Web Crawler Section */}
+          <div>
+            <h3 style={{ color: '#9C27B0', marginBottom: '10px' }}>Web Crawler</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="url"
+                placeholder="Enter URL to crawl (e.g., https://example.com)"
+                value={chromeUrl}
+                onChange={(e) => setChromeUrl(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <input
+                type="text"
+                placeholder="Proxy (optional, e.g., http://proxy:port)"
+                value={chromeProxy}
+                onChange={(e) => setChromeProxy(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={openDevTools}
+                    onChange={(e) => setOpenDevTools(e.target.checked)}
+                    style={{ transform: 'scale(1.2)' }}
+                  />
+                  <span>Open DevTools</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={runLighthouse}
+                    onChange={(e) => setRunLighthouse(e.target.checked)}
+                    style={{ transform: 'scale(1.2)' }}
+                  />
+                  <span>Run Lighthouse</span>
+                </label>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (!chromeUrl.trim()) {
+                  alert('Please enter a URL');
+                  return;
+                }
+                
+                // Clear previous debug logs
+                setDebugLogs([]);
+                
+                // Add initial debug log
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+                
+                addDebugLog('Starting web crawler...');
+                
+                try {
+                  addDebugLog('🕷️ Launching Playwright crawler...');
+                  
+                  const result = await (window as any).electron.debug.crawlWebsite(
+                    chromeUrl.trim(),
+                    chromeProxy.trim() || undefined,
+                    openDevTools
+                  );
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ Crawler failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Crawler failed:', result?.error);
+                    alert(`Crawler failed${result?.error ? `: ${result.error}` : ''}`);
+                    setCrawlerResults(null);
+                  } else {
+                    addDebugLog('✅ Crawler completed successfully');
+                    console.log('Crawler result:', result);
+                    
+                    const stats = result.data?.stats || {};
+                    const message = `Crawler found ${stats.totalLinks || 0} links (${stats.internalLinks || 0} internal, ${stats.externalLinks || 0} external)`;
+                    
+                    addDebugLog(`📊 ${message}`);
+                    addDebugLog(`🔗 Internal links: ${stats.internalLinks || 0}`);
+                    addDebugLog(`🌐 External links: ${stats.externalLinks || 0}`);
+                    addDebugLog(`📄 Forms found: ${stats.forms || 0}`);
+                    addDebugLog(`🖼️ Images found: ${stats.images || 0}`);
+                    addDebugLog(`💾 Results saved to: ${result.filepath || 'N/A'}`);
+                    
+                    setCrawlerResults(result.data);
+                    alert(message);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Crawler error: ${e?.message || e}`);
+                  console.error('Crawler error:', e);
+                  alert(`Crawler error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#9C27B0',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Crawl Website
+            </button>
+          </div>
+
+          {/* Crawler Results Section */}
+          {crawlerResults && (
+            <div>
+              <h3 style={{ color: '#9C27B0', marginBottom: '10px' }}>Crawler Results</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#4CAF50', fontSize: '18px', fontWeight: 'bold' }}>{crawlerResults.stats?.totalLinks || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Total Links</div>
+                </div>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#2196F3', fontSize: '18px', fontWeight: 'bold' }}>{crawlerResults.stats?.internalLinks || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Internal</div>
+                </div>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#FF9800', fontSize: '18px', fontWeight: 'bold' }}>{crawlerResults.stats?.externalLinks || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>External</div>
+                </div>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#E91E63', fontSize: '16px', fontWeight: 'bold' }}>{crawlerResults.stats?.forms || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Forms</div>
+                </div>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#9C27B0', fontSize: '16px', fontWeight: 'bold' }}>{crawlerResults.stats?.images || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Images</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(crawlerResults, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `crawler-results-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Download JSON
+                </button>
+                <button
+                  onClick={() => setCrawlerResults(null)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Clear Results
+                </button>
+              </div>
+
+              {/* Links Preview */}
+              <div style={{ marginBottom: '15px' }}>
+                <h4 style={{ color: '#fff', marginBottom: '8px', fontSize: '14px' }}>Sample Links (first 10):</h4>
+                <div style={{
+                  backgroundColor: '#1a1a1a',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  padding: '10px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  fontSize: '12px'
+                }}>
+                  {crawlerResults.links?.all?.slice(0, 10).map((link: any, index: number) => (
+                    <div key={index} style={{ marginBottom: '8px', padding: '4px', backgroundColor: '#2a2a2a', borderRadius: '2px' }}>
+                      <div style={{ color: '#4CAF50', fontWeight: 'bold' }}>{link.href}</div>
+                      {link.text && <div style={{ color: '#fff', marginTop: '2px' }}>"{link.text}"</div>}
+                      {link.title && <div style={{ color: '#888', fontSize: '10px' }}>Title: {link.title}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (
