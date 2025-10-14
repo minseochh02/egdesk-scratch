@@ -490,6 +490,708 @@ const createWindow = async () => {
           return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
       });
+      ipcMain.handle('generate-lighthouse-reports', async (event, { urls, proxy }) => {
+        try {
+          const { chromium } = require('playwright');
+          const { playAudit } = require('playwright-lighthouse');
+          const fs = require('fs');
+          const path = require('path');
+          
+          console.log(`🔍 Starting batch Lighthouse generation for ${urls.length} URLs...`);
+          
+          // Build proxy option if provided
+          let proxyOption;
+          if (proxy) {
+            try {
+              const proxyUrl = new URL(proxy);
+              proxyOption = {
+                server: `${proxyUrl.protocol}//${proxyUrl.host}`,
+                username: proxyUrl.username || undefined,
+                password: proxyUrl.password || undefined,
+              };
+            } catch {
+              console.warn('Invalid proxy URL, ignoring proxy option');
+            }
+          }
+          
+          // Create output directory if it doesn't exist
+          const outputDir = path.join(process.cwd(), 'output');
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+          
+          const results = [];
+          const debugPort = Math.floor(Math.random() * 10000) + 9000;
+          
+          // Launch browser once for all audits
+          const browser = await chromium.launch({ 
+            headless: false,
+            channel: 'chrome',
+            proxy: proxyOption,
+            args: [
+              `--remote-debugging-port=${debugPort}`,
+              '--lang=ko',
+              '--enable-features=Lighthouse',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor'
+            ]
+          });
+          
+          const context = await browser.newContext({
+            locale: 'ko-KR',
+          });
+          
+          // Process each URL
+          for (let i = 0; i < urls.length; i++) {
+            const url = urls[i];
+            const urlResult: {
+              url: string;
+              success: boolean;
+              reportName: string | null;
+              error: string | null;
+              index: number;
+              total: number;
+            } = {
+              url,
+              success: false,
+              reportName: null,
+              error: null,
+              index: i + 1,
+              total: urls.length
+            };
+            
+            try {
+              console.log(`\n🔍 [${i + 1}/${urls.length}] Processing: ${url}`);
+              
+              // Send progress update to renderer
+              event.sender.send('lighthouse-progress', {
+                current: i + 1,
+                total: urls.length,
+                url,
+                status: 'processing'
+              });
+              
+              const page = await context.newPage();
+              
+              // Navigate to URL
+              await page.goto(url, { waitUntil: 'networkidle' });
+              console.log(`✅ Navigated to: ${url}`);
+              
+              // Wait for page to be fully loaded
+              await page.waitForLoadState('networkidle');
+              await page.waitForTimeout(2000);
+              
+              // Generate unique report name
+              const timestamp = Date.now();
+              const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+              const reportName = `lighthouse-${sanitizedUrl}-${timestamp}`;
+              
+              // Run Lighthouse audit
+              await playAudit({
+                page: page,
+                port: debugPort,
+                opts: {
+                  locale: 'ko',
+                },
+                thresholds: {
+                  performance: 50,
+                  accessibility: 50,
+                  'best-practices': 50,
+                  seo: 50,
+                  pwa: 50,
+                },
+                reports: {
+                  formats: {
+                    html: true,
+                    json: true,
+                  },
+                  name: reportName,
+                  directory: outputDir,
+                },
+              });
+              
+              console.log(`✅ Lighthouse audit completed for: ${url}`);
+              
+              // Generate PDF with expanded sections
+              try {
+                const htmlReportPath = `file://${path.join(outputDir, `${reportName}.html`)}`;
+                const pdfPage = await context.newPage();
+                
+                await pdfPage.goto(htmlReportPath);
+                await pdfPage.waitForLoadState('networkidle');
+                await pdfPage.waitForTimeout(2000);
+                
+                // Expand all sections
+                await pdfPage.evaluate(() => {
+                  document.querySelectorAll('details').forEach(detail => {
+                    detail.open = true;
+                  });
+                  document.querySelectorAll('[aria-expanded="false"]').forEach(element => {
+                    element.setAttribute('aria-expanded', 'true');
+                  });
+                  document.querySelectorAll('.lh-collapsed, .collapsed').forEach(element => {
+                    element.classList.remove('lh-collapsed', 'collapsed');
+                  });
+                });
+                
+                await pdfPage.waitForTimeout(1000);
+                
+                const pdfPath = path.join(outputDir, `${reportName}.pdf`);
+                await pdfPage.pdf({
+                  path: pdfPath,
+                  format: 'A4',
+                  printBackground: true,
+                  margin: {
+                    top: '20px',
+                    right: '20px',
+                    bottom: '20px',
+                    left: '20px'
+                  }
+                });
+                
+                console.log(`📄 PDF generated: ${pdfPath}`);
+                await pdfPage.close();
+                
+              } catch (pdfError) {
+                console.error('❌ PDF generation failed:', pdfError);
+              }
+              
+              urlResult.success = true;
+              urlResult.reportName = reportName;
+              
+              // Send success update
+              event.sender.send('lighthouse-progress', {
+                current: i + 1,
+                total: urls.length,
+                url,
+                status: 'completed',
+                reportName
+              });
+              
+              await page.close();
+              
+            } catch (error) {
+              console.error(`❌ Failed to process ${url}:`, error);
+              urlResult.error = error instanceof Error ? error.message : 'Unknown error';
+              
+              // Send error update
+              event.sender.send('lighthouse-progress', {
+                current: i + 1,
+                total: urls.length,
+                url,
+                status: 'failed',
+                error: urlResult.error
+              });
+            }
+            
+            results.push(urlResult);
+          }
+          
+          console.log(`\n✅ Batch Lighthouse generation completed: ${results.filter(r => r.success).length}/${urls.length} successful`);
+          
+          // Merge all JSON reports
+          const mergedJsonPath = path.join(outputDir, `merged-lighthouse-${Date.now()}.json`);
+          const allJsonData: any[] = [];
+          const successfulResults = results.filter(r => r.success && r.reportName);
+          
+          for (const result of successfulResults) {
+            try {
+              const jsonPath = path.join(outputDir, `${result.reportName}.json`);
+              if (fs.existsSync(jsonPath)) {
+                const jsonData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+                allJsonData.push({
+                  url: result.url,
+                  reportName: result.reportName,
+                  data: jsonData
+                });
+              }
+            } catch (err) {
+              console.error(`Failed to read JSON for ${result.url}:`, err);
+            }
+          }
+          
+          fs.writeFileSync(mergedJsonPath, JSON.stringify(allJsonData, null, 2));
+          console.log(`📄 Merged JSON saved: ${mergedJsonPath}`);
+          
+          // Create final score report
+          const finalReportPath = path.join(outputDir, `final-seo-report-${Date.now()}.html`);
+          const scores: any[] = [];
+          let totalPerformance = 0;
+          let totalAccessibility = 0;
+          let totalBestPractices = 0;
+          let totalSEO = 0;
+          let totalPWA = 0;
+          let validScoresCount = 0;
+          
+          for (const jsonItem of allJsonData) {
+            const lhr = jsonItem.data?.lhr || jsonItem.data;
+            if (lhr?.categories) {
+              const perf = lhr.categories.performance?.score || 0;
+              const a11y = lhr.categories.accessibility?.score || 0;
+              const bp = lhr.categories['best-practices']?.score || 0;
+              const seo = lhr.categories.seo?.score || 0;
+              const pwa = lhr.categories.pwa?.score || 0;
+              
+              scores.push({
+                url: jsonItem.url,
+                performance: Math.round(perf * 100),
+                accessibility: Math.round(a11y * 100),
+                bestPractices: Math.round(bp * 100),
+                seo: Math.round(seo * 100),
+                pwa: Math.round(pwa * 100),
+                average: Math.round(((perf + a11y + bp + seo + pwa) / 5) * 100)
+              });
+              
+              totalPerformance += perf;
+              totalAccessibility += a11y;
+              totalBestPractices += bp;
+              totalSEO += seo;
+              totalPWA += pwa;
+              validScoresCount++;
+            }
+          }
+          
+          const avgPerformance = validScoresCount > 0 ? Math.round((totalPerformance / validScoresCount) * 100) : 0;
+          const avgAccessibility = validScoresCount > 0 ? Math.round((totalAccessibility / validScoresCount) * 100) : 0;
+          const avgBestPractices = validScoresCount > 0 ? Math.round((totalBestPractices / validScoresCount) * 100) : 0;
+          const avgSEO = validScoresCount > 0 ? Math.round((totalSEO / validScoresCount) * 100) : 0;
+          const avgPWA = validScoresCount > 0 ? Math.round((totalPWA / validScoresCount) * 100) : 0;
+          const overallAverage = validScoresCount > 0 ? Math.round(((totalPerformance + totalAccessibility + totalBestPractices + totalSEO + totalPWA) / (validScoresCount * 5)) * 100) : 0;
+          
+          const getScoreColor = (score: number) => {
+            if (score >= 90) return '#0cce6b';
+            if (score >= 50) return '#ffa400';
+            return '#ff4e42';
+          };
+          
+          const finalReportHtml = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEO 최종 분석 보고서</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h1 { color: #202124; margin-bottom: 10px; font-size: 32px; }
+    .subtitle { color: #5f6368; margin-bottom: 40px; font-size: 16px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 40px; }
+    .summary-card { padding: 20px; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .summary-card .value { font-size: 48px; font-weight: bold; margin-bottom: 8px; }
+    .summary-card .label { font-size: 14px; opacity: 0.9; }
+    .overall-score { text-align: center; padding: 40px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; color: white; margin-bottom: 40px; }
+    .overall-score .score { font-size: 72px; font-weight: bold; margin-bottom: 10px; }
+    .overall-score .label { font-size: 20px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 16px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+    th { background: #f8f9fa; font-weight: 600; color: #202124; }
+    .score-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px; color: white; }
+    .url-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #5f6368; font-size: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 SEO 최종 분석 보고서</h1>
+    <div class="subtitle">생성일: ${new Date().toLocaleString('ko-KR')}</div>
+    
+    <div class="overall-score">
+      <div class="score">${overallAverage}</div>
+      <div class="label">전체 평균 점수</div>
+    </div>
+    
+    <div class="summary">
+      <div class="summary-card">
+        <div class="value">${avgPerformance}</div>
+        <div class="label">평균 성능</div>
+      </div>
+      <div class="summary-card">
+        <div class="value">${avgAccessibility}</div>
+        <div class="label">평균 접근성</div>
+      </div>
+      <div class="summary-card">
+        <div class="value">${avgBestPractices}</div>
+        <div class="label">평균 모범 사례</div>
+      </div>
+      <div class="summary-card">
+        <div class="value">${avgSEO}</div>
+        <div class="label">평균 SEO</div>
+      </div>
+      <div class="summary-card">
+        <div class="value">${avgPWA}</div>
+        <div class="label">평균 PWA</div>
+      </div>
+    </div>
+    
+    <h2 style="margin-bottom: 20px; color: #202124;">페이지별 상세 점수</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>URL</th>
+          <th>성능</th>
+          <th>접근성</th>
+          <th>모범 사례</th>
+          <th>SEO</th>
+          <th>PWA</th>
+          <th>평균</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${scores.map(s => `
+          <tr>
+            <td class="url-cell" title="${s.url}">${s.url}</td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.performance)}">${s.performance}</span></td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.accessibility)}">${s.accessibility}</span></td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.bestPractices)}">${s.bestPractices}</span></td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.seo)}">${s.seo}</span></td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.pwa)}">${s.pwa}</span></td>
+            <td><span class="score-badge" style="background-color: ${getScoreColor(s.average)}">${s.average}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    
+    <div class="footer">
+      <p>총 ${urls.length}개 페이지 분석 완료 (성공: ${results.filter(r => r.success).length}개, 실패: ${results.filter(r => !r.success).length}개)</p>
+      <p>상세 보고서는 개별 Lighthouse HTML 파일을 참조하세요.</p>
+    </div>
+  </div>
+</body>
+</html>
+          `;
+          
+          fs.writeFileSync(finalReportPath, finalReportHtml);
+          console.log(`📊 Final report saved: ${finalReportPath}`);
+          
+          // Simple approach: Create a single combined HTML with all reports and convert to one PDF
+          const mergedPdfPath = path.join(outputDir, `merged-lighthouse-${Date.now()}.pdf`);
+          try {
+            console.log('📄 Creating merged PDF with cover and all reports...');
+            
+            const pdfPage = await context.newPage();
+            
+            // Build combined HTML with cover + all reports
+            let combinedHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>EG SEO 분석 보고서</title>
+  <style>
+    .cover-page {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf5 100%);
+      page-break-after: always;
+    }
+    .cover-container {
+      max-width: 800px;
+      text-align: center;
+      background: white;
+      padding: 60px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    .cover-title { 
+      color: #202124;
+      font-size: 48px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      padding: 10px 0;
+    }
+    .cover-subtitle {
+      color: #5f6368;
+      font-size: 20px;
+    }
+    .cover-logo {
+      font-size: 72px;
+      margin-bottom: 30px;
+    }
+    .report-section {
+      page-break-before: always;
+      padding: 20px;
+    }
+    
+    /* Summary Page Styles */
+    .summary-page {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      min-height: 100vh;
+      background: #f8f9fa;
+      page-break-after: always;
+    }
+    .summary-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .summary-title {
+      color: #202124;
+      font-size: 32px;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    .overall-score-section {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .overall-score-card {
+      display: inline-block;
+      padding: 40px 60px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      border-radius: 12px;
+      color: white;
+    }
+    .overall-score-value {
+      font-size: 64px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .overall-score-label {
+      font-size: 18px;
+      opacity: 0.95;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 15px;
+      margin-bottom: 40px;
+    }
+    .metric-card {
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      color: white;
+      text-align: center;
+    }
+    .metric-value {
+      font-size: 36px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .metric-label {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .table-title {
+      color: #202124;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .scores-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    .scores-table th,
+    .scores-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .scores-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #202124;
+    }
+    .url-cell {
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .score-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      color: white;
+    }
+    .summary-footer {
+      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid #e0e0e0;
+      color: #5f6368;
+      font-size: 14px;
+    }
+    .summary-footer p {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- Cover Page -->
+  <div class="cover-page">
+    <div class="cover-container">
+      <div class="cover-logo">🔍</div>
+      <h1 class="cover-title">EG SEO 분석 보고서</h1>
+      <div class="cover-subtitle">생성일: ${new Date().toLocaleString('ko-KR')}</div>
+    </div>
+  </div>
+  
+  <!-- Summary Page -->
+  <div class="summary-page">
+    <div class="summary-container">
+      <h1 class="summary-title">📊 분석 요약</h1>
+      
+      <div class="overall-score-section">
+        <div class="overall-score-card">
+          <div class="overall-score-value">${overallAverage}</div>
+          <div class="overall-score-label">전체 평균 점수</div>
+        </div>
+      </div>
+      
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">${avgPerformance}</div>
+          <div class="metric-label">성능</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${avgAccessibility}</div>
+          <div class="metric-label">접근성</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${avgBestPractices}</div>
+          <div class="metric-label">모범 사례</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${avgSEO}</div>
+          <div class="metric-label">SEO</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${avgPWA}</div>
+          <div class="metric-label">PWA</div>
+        </div>
+      </div>
+      
+      <h2 class="table-title">페이지별 상세 점수</h2>
+      <table class="scores-table">
+        <thead>
+          <tr>
+            <th>URL</th>
+            <th>성능</th>
+            <th>접근성</th>
+            <th>모범 사례</th>
+            <th>SEO</th>
+            <th>PWA</th>
+            <th>평균</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${scores.map(s => `
+            <tr>
+              <td class="url-cell">${s.url}</td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.performance)}">${s.performance}</span></td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.accessibility)}">${s.accessibility}</span></td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.bestPractices)}">${s.bestPractices}</span></td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.seo)}">${s.seo}</span></td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.pwa)}">${s.pwa}</span></td>
+              <td><span class="score-badge" style="background-color: ${getScoreColor(s.average)}">${s.average}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div class="summary-footer">
+        <p>총 ${urls.length}개 페이지 분석 완료</p>
+        <p>성공: ${results.filter(r => r.success).length}개 | 실패: ${results.filter(r => !r.success).length}개</p>
+      </div>
+    </div>
+  </div>
+`;
+
+            // Add each report's HTML content
+            for (const result of successfulResults) {
+              if (result.reportName) {
+                const htmlPath = path.join(outputDir, `${result.reportName}.html`);
+                if (fs.existsSync(htmlPath)) {
+                  try {
+                    const reportHtml = fs.readFileSync(htmlPath, 'utf8');
+                    // Extract body content from the Lighthouse HTML
+                    const bodyMatch = reportHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                    if (bodyMatch) {
+                      combinedHtml += `
+  <div class="report-section">
+    ${bodyMatch[1]}
+  </div>
+`;
+                    }
+                  } catch (err) {
+                    console.error(`Failed to read HTML for ${result.reportName}:`, err);
+                  }
+                }
+              }
+            }
+            
+            combinedHtml += `
+</body>
+</html>
+            `;
+            
+            // Convert combined HTML to PDF
+            await pdfPage.setContent(combinedHtml, { waitUntil: 'networkidle' });
+            await pdfPage.waitForTimeout(2000);
+            
+            await pdfPage.pdf({
+              path: mergedPdfPath,
+              format: 'A4',
+              printBackground: true,
+              margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' }
+            });
+            
+            await pdfPage.close();
+            
+            console.log(`📄 Merged PDF saved: ${mergedPdfPath}`);
+          } catch (pdfMergeError) {
+            console.error('Failed to create merged PDF:', pdfMergeError);
+          }
+          
+          await browser.close();
+          
+          return {
+            success: true,
+            results,
+            summary: {
+              total: urls.length,
+              successful: results.filter(r => r.success).length,
+              failed: results.filter(r => !r.success).length
+            },
+            mergedJsonPath,
+            mergedPdfPath,
+            finalReportPath,
+            scores: {
+              overall: overallAverage,
+              performance: avgPerformance,
+              accessibility: avgAccessibility,
+              bestPractices: avgBestPractices,
+              seo: avgSEO,
+              pwa: avgPWA
+            }
+          };
+          
+        } catch (error) {
+          console.error('❌ Batch Lighthouse generation failed:', error);
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+      
       ipcMain.handle('test-paste-component', async () => {
         try {
           const { chromium } = require('playwright');

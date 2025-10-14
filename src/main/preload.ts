@@ -1244,6 +1244,7 @@ const electronHandler = {
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
     crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),
+    generateLighthouseReports: (urls: string[], proxy?: string) => ipcRenderer.invoke('generate-lighthouse-reports', { urls, proxy }),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
   },
 
