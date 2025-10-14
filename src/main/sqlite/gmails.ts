@@ -1,6 +1,6 @@
 // Gmail Database Manager - SQLite storage for Gmail data
 import Database from 'better-sqlite3';
-import { getSQLiteManager } from '../sqlite/manager';
+import { getSQLiteManager } from './manager';
 
 export interface GmailMessageRecord {
   id: string;
