@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { analyzeKeyboardAndType } = require('./ai-keyboard-analyzer');
 const { generateKeyboardVisualization } = require('./keyboard-visualization');
+const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('./bilingual-keyboard-parser');
 
 // Simple debug visualization without external dependencies
 
@@ -500,6 +501,112 @@ async function fillInputField(page, xpath, value, fieldName) {
     return false;
   }
 }
+
+// ============================================================================
+// PASSWORD TYPING WITH JSON
+// ============================================================================
+
+/**
+ * Types password using bilingual keyboard JSON
+ * @param {Object} keyboardJSON - Bilingual keyboard JSON structure
+ * @param {string} password - Password to type
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<Object>} Result with success status and details
+ */
+async function typePasswordWithJSON(keyboardJSON, password, page) {
+  try {
+    console.log('\n[SHINHAN] ===== TYPING PASSWORD WITH JSON =====');
+    console.log(`[SHINHAN] Password length: ${password.length} characters`);
+    console.log(`[SHINHAN] Available characters in JSON: ${Object.keys(keyboardJSON.characterMap).length}`);
+    
+    const results = {
+      success: true,
+      totalChars: password.length,
+      typedChars: 0,
+      failedChars: [],
+      details: []
+    };
+    
+    for (let i = 0; i < password.length; i++) {
+      const char = password[i];
+      const charLower = char.toLowerCase();
+      
+      // Try to find the character in the character map (case-insensitive)
+      const keyInfo = keyboardJSON.characterMap[char] || keyboardJSON.characterMap[charLower];
+      
+      if (!keyInfo) {
+        console.warn(`[SHINHAN] [${i + 1}/${password.length}] Character '${char}' not found in keyboard JSON`);
+        results.failedChars.push({ index: i, char, reason: 'not_found' });
+        results.details.push({
+          index: i,
+          char,
+          success: false,
+          reason: 'Character not found in keyboard mapping'
+        });
+        continue;
+      }
+      
+      console.log(`[SHINHAN] [${i + 1}/${password.length}] Clicking '${char}' (type: ${keyInfo.type}) at position (${keyInfo.position.x}, ${keyInfo.position.y})`);
+      
+      try {
+        // Move mouse to position
+        await page.mouse.move(keyInfo.position.x, keyInfo.position.y);
+        await page.waitForTimeout(CONFIG.DELAYS.MOUSE_MOVE);
+        
+        // Click
+        await page.mouse.click(keyInfo.position.x, keyInfo.position.y);
+        await page.waitForTimeout(CONFIG.DELAYS.CLICK);
+        
+        console.log(`[SHINHAN] Successfully clicked '${char}' at (${keyInfo.position.x}, ${keyInfo.position.y})`);
+        
+        results.typedChars++;
+        results.details.push({
+          index: i,
+          char,
+          success: true,
+          position: keyInfo.position,
+          keyLabel: keyInfo.label,
+          type: keyInfo.type
+        });
+        
+      } catch (clickError) {
+        console.error(`[SHINHAN] Failed to click '${char}':`, clickError.message);
+        results.failedChars.push({ index: i, char, reason: clickError.message });
+        results.details.push({
+          index: i,
+          char,
+          success: false,
+          reason: clickError.message
+        });
+      }
+    }
+    
+    // Summary
+    console.log('\n[SHINHAN] ===== PASSWORD TYPING SUMMARY =====');
+    console.log(`[SHINHAN] Total characters: ${results.totalChars}`);
+    console.log(`[SHINHAN] Successfully typed: ${results.typedChars}`);
+    console.log(`[SHINHAN] Failed: ${results.failedChars.length}`);
+    
+    if (results.failedChars.length > 0) {
+      console.warn('[SHINHAN] Failed characters:', results.failedChars.map(f => f.char).join(', '));
+      results.success = false;
+    }
+    
+    return results;
+    
+  } catch (error) {
+    console.error('[SHINHAN] Error typing password with JSON:', error);
+    return {
+      success: false,
+      error: error.message,
+      totalChars: password.length,
+      typedChars: 0,
+      failedChars: [],
+      details: []
+    };
+  }
+}
+
 // ============================================================================
 // MAIN AUTOMATION FUNCTION
 // ============================================================================
@@ -566,16 +673,17 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
         await keyboardLocator.screenshot({ path: screenshotPath });
         console.log('[SHINHAN] Screenshot saved to:', screenshotPath);
         
-        // Use AI to analyze the keyboard and type the password
+        // Use AI to analyze the keyboard (but don't type yet - we'll use JSON for typing)
         if (geminiApiKey && screenshotPath) {
           console.log('[SHINHAN] Starting AI keyboard analysis...');
           try {
+            // Pass null for password and page to only analyze, not type
             keyboardAnalysisResult = await analyzeKeyboardAndType(
               screenshotPath,
               geminiApiKey,
               keyboardBox,
-              password,
-              page
+              null,  // Don't pass password to prevent typing
+              null   // Don't pass page to prevent typing
             );
             
             if (keyboardAnalysisResult.success) {
@@ -598,26 +706,35 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
                 
                 console.log('[SHINHAN] HTML visualization saved to:', visualizationPath);
                 
-                // After creating the HTML, click on the shift key using calculated coordinates
+                // Build and export bilingual keyboard JSON
                 try {
-                  const entries = Object.entries(keyboardAnalysisResult.keyboardKeys || {});
-                  const shiftEntry = entries.find(([_, data]) => {
-                    const label = (data && data.label ? String(data.label) : '').toLowerCase();
-                    return label.includes('shift');
-                  });
-                  if (shiftEntry && shiftEntry[1] && shiftEntry[1].position) {
-                    const shiftPos = shiftEntry[1].position;
-                    const shiftBounds = shiftEntry[1].bounds;
-                    console.log('[SHINHAN] Clicking SHIFT at position:', shiftPos, 'bounds:', shiftBounds);
-                    await page.mouse.move(shiftPos.x, shiftPos.y);
-                    await page.waitForTimeout(CONFIG.DELAYS.MOUSE_MOVE);
-                    await page.mouse.click(shiftPos.x, shiftPos.y);
-                    await page.waitForTimeout(CONFIG.DELAYS.SHIFT_ACTIVATE);
+                  const keyboardJSON = buildBilingualKeyboardJSON(keyboardAnalysisResult.keyboardKeys);
+                  const jsonFilename = `keyboard-layout-${timestamp}.json`;
+                  const jsonPath = path.join(outputDir, jsonFilename);
+                  exportKeyboardJSON(keyboardAnalysisResult.keyboardKeys, jsonPath);
+                  
+                  console.log('[SHINHAN] Keyboard JSON exported to:', jsonPath);
+                  console.log('[SHINHAN] JSON contains', keyboardJSON.metadata.totalKeys, 'keys');
+                  console.log('[SHINHAN] Character map has', Object.keys(keyboardJSON.characterMap).length, 'characters');
+                  
+                  // Use JSON to type the password
+                  console.log('\n[SHINHAN] Using keyboard JSON to type password...');
+                  const typingResult = await typePasswordWithJSON(keyboardJSON, password, page);
+                  
+                  if (typingResult.success) {
+                    console.log('[SHINHAN] Successfully typed password using JSON!');
+                    console.log(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
                   } else {
-                    console.log('[SHINHAN] SHIFT key not found in AI-calculated keys');
+                    console.warn('[SHINHAN] Password typing completed with errors');
+                    console.warn(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
+                    console.warn('[SHINHAN] Failed characters:', typingResult.failedChars.map(f => `'${f.char}'`).join(', '));
                   }
-                } catch (shiftError) {
-                  console.warn('[SHINHAN] Failed to click SHIFT key:', shiftError);
+                  
+                  // Store typing result
+                  keyboardAnalysisResult.typingResult = typingResult;
+                  ``
+                } catch (jsonError) {
+                  console.warn('[SHINHAN] Failed to export keyboard JSON or type password:', jsonError);
                 }
               } catch (vizError) {
                 console.warn('[SHINHAN] Failed to generate HTML visualization:', vizError);
@@ -647,7 +764,7 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
   } finally {
     console.log('[SHINHAN] Keeping browser open for debugging... Press Ctrl+C to close');
     // Keep browser open indefinitely for debugging
-    await new Promise(() => {}); // Never resolves
+    return;
     // await browser.close();
   }
 }
