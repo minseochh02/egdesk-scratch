@@ -34,6 +34,7 @@ import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/server-s
 import { registerGmailMCPHandlers } from './mcp/gmail/server-script/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/server-script/mcp-server-manager';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { registerSEOHandlers } from './seo/seo-analyzer';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
