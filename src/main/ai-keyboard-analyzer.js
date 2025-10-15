@@ -55,8 +55,14 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
     const imageData = fs.readFileSync(imagePath);
     const base64Image = imageData.toString('base64');
     
-    // Use the same prompt as spatial-understanding project
-    const prompt = `Give the segmentation masks for ${targetItems}. Output a JSON list of segmentation masks where each entry contains the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", and the text label in the key "label". Use descriptive labels.`;
+    // Enhanced prompt to focus on keyboard keys and exclude logos/decorations
+    const prompt = `Find all keyboard keys in this image. Include letters, numbers, and special character keys (like Enter, Shift, symbols, etc.). 
+         EXCLUDE any logos, bank names, decorative text, or non-clickable elements. 
+         Only segment the actual clickable keyboard keys.
+         Output a JSON list of segmentation masks where each entry contains:
+         - "box_2d": the 2D bounding box [ymin, xmin, ymax, xmax]
+         - "mask": the segmentation mask
+         - "label": a descriptive label for the key (e.g., "key_letter_a", "key_number_1", "key_shift_left", etc.)`
 
     // Use the same configuration as spatial-understanding
     const config = {
@@ -83,7 +89,8 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
         }
       ],
       generationConfig: {
-        temperature: config.temperature
+        temperature: config.temperature,
+        maxOutputTokens: 65536
       }
     });
 
@@ -174,6 +181,66 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
 // ============================================================================
 
 /**
+ * Decodes base64 RLE mask and finds centroid (center of mass) for click position
+ * @param {string} maskBase64 - Base64 encoded RLE mask
+ * @param {Object} bounds - Bounding box {x, y, width, height}
+ * @param {Object} targetImageBox - Target image bounding box
+ * @returns {Object} Click position {x, y} or null if mask is invalid
+ */
+function calculateMaskCentroid(maskBase64, bounds, targetImageBox) {
+  try {
+    // Decode base64 mask
+    const maskBuffer = Buffer.from(maskBase64, 'base64');
+    
+    // RLE decode - mask is run-length encoded
+    const pixels = [];
+    for (let i = 0; i < maskBuffer.length; i += 2) {
+      const value = maskBuffer[i];
+      const count = i + 1 < maskBuffer.length ? maskBuffer[i + 1] : 1;
+      for (let j = 0; j < count; j++) {
+        pixels.push(value > 0 ? 1 : 0);
+      }
+    }
+    
+    // Calculate centroid of mask pixels
+    let sumX = 0, sumY = 0, totalPixels = 0;
+    const width = Math.round(bounds.width);
+    const height = Math.round(bounds.height);
+    
+    for (let i = 0; i < pixels.length && i < width * height; i++) {
+      if (pixels[i] === 1) {
+        const x = i % width;
+        const y = Math.floor(i / width);
+        sumX += x;
+        sumY += y;
+        totalPixels++;
+      }
+    }
+    
+    if (totalPixels === 0) {
+      // Fallback to box center if no valid pixels
+      return null;
+    }
+    
+    // Calculate centroid in relative coordinates
+    const centroidX = sumX / totalPixels;
+    const centroidY = sumY / totalPixels;
+    
+    // Convert to absolute page coordinates
+    const absoluteX = bounds.x + centroidX;
+    const absoluteY = bounds.y + centroidY;
+    
+    return {
+      x: Math.round(absoluteX),
+      y: Math.round(absoluteY)
+    };
+  } catch (error) {
+    console.warn('[AI-KEYBOARD] Failed to decode mask for centroid calculation:', error.message);
+    return null;
+  }
+}
+
+/**
  * Processes segmentation results to extract keyboard key positions
  * @param {SegmentationMask[]} segmentationResults - AI segmentation results
  * @param {Object} targetImageBox - Target image bounding box {x, y, width, height}
@@ -211,9 +278,28 @@ function processSegmentationResults(segmentationResults, targetImageBox) {
       const absoluteX = targetImageBox.x + relativeX;
       const absoluteY = targetImageBox.y + relativeY;
       
-      // Calculate center point for clicking
-      const centerX = absoluteX + (relativeWidth / 2);
-      const centerY = absoluteY + (relativeHeight / 2);
+      const bounds = {
+        x: Math.round(absoluteX),
+        y: Math.round(absoluteY),
+        width: Math.round(relativeWidth),
+        height: Math.round(relativeHeight)
+      };
+      
+      // Try to calculate centroid from mask for more accurate click position
+      let clickPosition = calculateMaskCentroid(obj.mask, bounds, targetImageBox);
+      
+      // Fallback to box center if mask centroid fails
+      if (!clickPosition) {
+        const centerX = absoluteX + (relativeWidth / 2);
+        const centerY = absoluteY + (relativeHeight / 2);
+        clickPosition = {
+          x: Math.round(centerX),
+          y: Math.round(centerY)
+        };
+        console.log(`[AI-KEYBOARD] Using box center for ${keyLabel} (mask centroid failed)`);
+      } else {
+        console.log(`[AI-KEYBOARD] Using mask centroid for ${keyLabel}`);
+      }
       
       keyboardKeys[keyLabel] = {
         // Normalized values (0-1) for percentage-based rendering like spatial-understanding
@@ -223,17 +309,9 @@ function processSegmentationResults(segmentationResults, targetImageBox) {
           width: normalizedWidth,
           height: normalizedHeight
         },
-        // Pixel values for clicking
-        position: {
-          x: Math.round(centerX),
-          y: Math.round(centerY)
-        },
-        bounds: {
-          x: Math.round(absoluteX),
-          y: Math.round(absoluteY),
-          width: Math.round(relativeWidth),
-          height: Math.round(relativeHeight)
-        },
+        // Pixel values for clicking - now uses mask centroid!
+        position: clickPosition,
+        bounds: bounds,
         label: obj.label,
         mask: obj.mask,
         aiBox: aiBox
@@ -423,10 +501,12 @@ async function analyzeKeyboardAndType(imagePath, apiKey, targetImageBox, textToT
       throw new Error(`Failed to process segmentation results: ${processResult.error}`);
     }
     
-    // Step 3: Type the specified text using the keyboard coordinates
-    if (processResult.keyboardKeys && Object.keys(processResult.keyboardKeys).length > 0) {
+    // Step 3: Type the specified text using the keyboard coordinates (only if textToType and page are provided)
+    if (textToType && page && processResult.keyboardKeys && Object.keys(processResult.keyboardKeys).length > 0) {
       console.log(`\n[AI-KEYBOARD] ===== TYPING "${textToType.toUpperCase()}" =====`);
       await typeTextWithKeyboard(processResult.keyboardKeys, textToType, page);
+    } else if (!textToType || !page) {
+      console.log('[AI-KEYBOARD] Skipping typing - only analyzing keyboard layout');
     }
     
     return {
@@ -452,6 +532,7 @@ module.exports = {
   analyzeImageSegmentation,
   processSegmentationResults,
   typeTextWithKeyboard,
-  analyzeKeyboardAndType
+  analyzeKeyboardAndType,
+  calculateMaskCentroid
 };
 
