@@ -1586,17 +1586,8 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize Automation:', error);
     }
 
-    // Initialize Autonomous Gemini AI Client with streaming and tool execution (handlers are auto-registered in constructor)
-    try {
-      // Force initialization of the singleton instance
-      const client = autonomousGeminiClient;
-      console.log('✅ Autonomous Gemini AI Client initialized');
-      // Note: autonomousGeminiClient auto-registers IPC handlers in constructor
-    } catch (error) {
-      console.error('❌ Failed to initialize Autonomous Gemini AI Client:', error);
-    }
-
-    // Initialize central SQLite manager
+    // Initialize central SQLite manager ONCE - all other services will use this singleton
+    let sqliteInitialized = false;
     try {
       const sqliteManager = getSQLiteManager();
       const sqliteInitResult = await sqliteManager.initialize();
@@ -1604,29 +1595,49 @@ const createWindow = async () => {
         console.warn('⚠️ SQLite initialization failed:', sqliteInitResult.error);
       } else {
         console.log('✅ SQLite Manager initialized');
+        sqliteInitialized = true;
       }
     } catch (error) {
       console.error('❌ Failed to initialize SQLite Manager:', error);
     }
 
-    // Initialize AI Chat Data Service (handlers are auto-registered in constructor)
+    // Initialize services in parallel (they all use the already-initialized SQLite singleton)
     try {
-      // Force initialization of the singleton instance
-      const dataService = aiChatDataService;
-      console.log('✅ AI Chat Data Service initialized');
-      // Note: aiChatDataService auto-registers IPC handlers in constructor
+      await Promise.all([
+        // Initialize Autonomous Gemini AI Client with streaming and tool execution
+        (async () => {
+          try {
+            const client = autonomousGeminiClient;
+            console.log('✅ Autonomous Gemini AI Client initialized');
+          } catch (error) {
+            console.error('❌ Failed to initialize Autonomous Gemini AI Client:', error);
+          }
+        })(),
+        
+        // Initialize AI Chat Data Service
+        (async () => {
+          try {
+            const dataService = aiChatDataService;
+            // Wait for its internal initialization
+            await (dataService as any).initializationPromise;
+            console.log('✅ AI Chat Data Service initialized');
+          } catch (error) {
+            console.error('❌ Failed to initialize AI Chat Data Service:', error);
+          }
+        })(),
+        
+        // Initialize Backup Handler
+        (async () => {
+          try {
+            const backupService = backupHandler;
+            console.log('✅ Backup Handler initialized');
+          } catch (error) {
+            console.error('❌ Failed to initialize Backup Handler:', error);
+          }
+        })()
+      ]);
     } catch (error) {
-      console.error('❌ Failed to initialize AI Chat Data Service:', error);
-    }
-
-    // Initialize Backup Handler (handlers are auto-registered in constructor)
-    try {
-      // Force initialization of the singleton instance
-      const backupService = backupHandler;
-      console.log('✅ Backup Handler initialized');
-      // Note: backupHandler auto-registers IPC handlers in constructor
-    } catch (error) {
-      console.error('❌ Failed to initialize Backup Handler:', error);
+      console.error('❌ Failed to initialize some services:', error);
     }
 
     // Initialize File System handlers
@@ -1637,124 +1648,6 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize File System handlers:', error);
     }
 
-    // Initialize PHP Server handlers
-    try {
-      const { SimplePHPServerTest } = require('./mcp/api-server-test');
-      let phpServerTest: any = null;
-
-      ipcMain.handle('php-server-start', async (_event, port?: number) => {
-        try {
-          if (!phpServerTest) {
-            phpServerTest = new SimplePHPServerTest(port || 8080);
-          }
-          const success = await phpServerTest.startServer();
-          if (success) {
-            const localIP = await phpServerTest.getLocalIP();
-            return { 
-              success: true, 
-              port: port || 8080,
-              localIP,
-              url: `http://${localIP}:${port || 8080}`,
-              helloUrl: `http://${localIP}:${port || 8080}/hello.php`
-            };
-          } else {
-            return { success: false, error: 'Failed to start PHP server' };
-          }
-        } catch (error) {
-          console.error('❌ PHP server start failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
-      });
-
-      ipcMain.handle('php-server-stop', async () => {
-        try {
-          if (phpServerTest) {
-            phpServerTest.stopServer();
-            phpServerTest = null;
-            return { success: true };
-          }
-          return { success: false, error: 'No server running' };
-        } catch (error) {
-          console.error('❌ PHP server stop failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
-      });
-
-      ipcMain.handle('php-server-status', async () => {
-        try {
-          if (phpServerTest) {
-            const localIP = await phpServerTest.getLocalIP();
-            return { 
-              success: true, 
-              isRunning: true,
-              port: phpServerTest.port,
-              localIP,
-              url: `http://${localIP}:${phpServerTest.port}`,
-              helloUrl: `http://${localIP}:${phpServerTest.port}/hello.php`
-            };
-          }
-          return { success: true, isRunning: false };
-        } catch (error) {
-          console.error('❌ PHP server status check failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
-      });
-
-      ipcMain.handle('php-server-test-hello', async () => {
-        try {
-          if (phpServerTest) {
-            const success = await phpServerTest.testHelloEndpoint();
-            return { success, message: success ? 'Hello endpoint working' : 'Hello endpoint failed' };
-          }
-          return { success: false, error: 'No server running' };
-        } catch (error) {
-          console.error('❌ PHP server hello test failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
-      });
-
-      ipcMain.handle('php-server-get-local-ip', async () => {
-        try {
-          const os = require('os');
-          const interfaces = os.networkInterfaces();
-          for (let iface of Object.values(interfaces) as any[]) {
-            for (let alias of iface) {
-              if (alias.family === 'IPv4' && !alias.internal) {
-                return { success: true, ip: alias.address };
-              }
-            }
-          }
-          return { success: true, ip: 'localhost' };
-        } catch (error) {
-          console.error('❌ Get local IP failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
-      });
-
-      ipcMain.handle('php-server-gmail-endpoint', async () => {
-        try {
-          if (phpServerTest) {
-            const result = await phpServerTest.handleGmailRequest();
-            return result;
-          } else {
-            return { 
-              success: false, 
-              error: 'PHP server not running. Please start the server first.' 
-            };
-          }
-        } catch (error) {
-          console.error('❌ Gmail endpoint error:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      console.log('✅ PHP Server handlers initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize PHP Server handlers:', error);
-    }
 
     // ========================================================================
     // MCP REGISTRATION HANDLERS
@@ -1857,14 +1750,13 @@ const createWindow = async () => {
     naverHandler = new NaverHandler(store);
     naverHandler.registerHandlers();
 
-    // Initialize SQLite manager and register IPC handlers
+    // Register SQLite IPC handlers (database already initialized earlier)
     try {
       const sqliteManager = getSQLiteManager();
-      await sqliteManager.initialize();
       sqliteManager.registerIPCHandlers();
-      console.log('✅ SQLite Manager initialized and IPC handlers registered successfully');
+      console.log('✅ SQLite Manager IPC handlers registered');
     } catch (error) {
-      console.error('❌ Failed to initialize SQLite Manager:', error);
+      console.error('❌ Failed to register SQLite IPC handlers:', error);
     }
 
     // Initialize Local Server Manager with the main window

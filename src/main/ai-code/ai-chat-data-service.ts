@@ -21,6 +21,7 @@ export class AIChatDataService {
 
   /**
    * Initialize database connection
+   * Note: Does NOT reinitialize the SQLite manager (uses existing singleton)
    */
   private async initializeDatabase(): Promise<void> {
     try {
@@ -28,12 +29,20 @@ export class AIChatDataService {
       if (!app.isReady()) {
         await app.whenReady();
       }
-      const result = await this.sqliteManager.initialize();
-      if (result.success) {
+      
+      // Check if SQLite manager is already initialized
+      if (this.sqliteManager.isAvailable()) {
         this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
-        console.log('✅ AI Chat Data Service initialized');
+        console.log('✅ SQLite database initialized for AI chat storage');
       } else {
-        console.error('❌ Failed to initialize AI Chat Data Service:', result.error);
+        // If not initialized yet, initialize it (only happens if this service is created first)
+        const result = await this.sqliteManager.initialize();
+        if (result.success) {
+          this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
+          console.log('✅ SQLite database initialized for AI chat storage');
+        } else {
+          console.error('❌ Failed to initialize AI Chat Data Service:', result.error);
+        }
       }
     } catch (error) {
       console.error('❌ Error initializing AI Chat Data Service:', error);
