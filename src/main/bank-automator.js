@@ -507,7 +507,63 @@ async function fillInputField(page, xpath, value, fieldName) {
 // ============================================================================
 
 /**
- * Types password using bilingual keyboard JSON
+ * Presses or unpresses the shift key
+ * @param {Object} page - Playwright page object
+ * @param {Object} shiftKey - Shift key info from keyboard JSON
+ * @param {boolean} activate - True to activate shift, false to deactivate
+ * @returns {Promise<boolean>} Success status
+ */
+async function toggleShiftKey(page, shiftKey, activate) {
+  try {
+    if (!shiftKey || !shiftKey.position) {
+      console.warn('[SHINHAN] Cannot toggle shift - shift key info missing');
+      return false;
+    }
+    
+    const action = activate ? 'Activating' : 'Deactivating';
+    console.log(`[SHINHAN] ${action} shift key at (${shiftKey.position.x}, ${shiftKey.position.y})`);
+    
+    // Move to shift key position
+    await page.mouse.move(shiftKey.position.x, shiftKey.position.y);
+    await page.waitForTimeout(CONFIG.DELAYS.MOUSE_MOVE);
+    
+    // Click shift key
+    await page.mouse.click(shiftKey.position.x, shiftKey.position.y);
+    
+    // Wait appropriate time based on action
+    const delay = activate ? CONFIG.DELAYS.SHIFT_ACTIVATE : CONFIG.DELAYS.SHIFT_DEACTIVATE;
+    await page.waitForTimeout(delay);
+    
+    console.log(`[SHINHAN] Shift ${activate ? 'activated' : 'deactivated'} successfully`);
+    return true;
+  } catch (error) {
+    console.error(`[SHINHAN] Failed to toggle shift key:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Presses the shift key (convenience wrapper)
+ * @param {Object} page - Playwright page object
+ * @param {Object} shiftKey - Shift key info from keyboard JSON
+ * @returns {Promise<boolean>} Success status
+ */
+async function pressShiftKey(page, shiftKey) {
+  return await toggleShiftKey(page, shiftKey, true);
+}
+
+/**
+ * Unpresses the shift key (convenience wrapper)
+ * @param {Object} page - Playwright page object
+ * @param {Object} shiftKey - Shift key info from keyboard JSON
+ * @returns {Promise<boolean>} Success status
+ */
+async function unpressShiftKey(page, shiftKey) {
+  return await toggleShiftKey(page, shiftKey, false);
+}
+
+/**
+ * Types password using bilingual keyboard JSON with shift support
  * @param {Object} keyboardJSON - Bilingual keyboard JSON structure
  * @param {string} password - Password to type
  * @param {Object} page - Playwright page object
@@ -518,21 +574,24 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
     console.log('\n[SHINHAN] ===== TYPING PASSWORD WITH JSON =====');
     console.log(`[SHINHAN] Password length: ${password.length} characters`);
     console.log(`[SHINHAN] Available characters in JSON: ${Object.keys(keyboardJSON.characterMap).length}`);
+    console.log(`[SHINHAN] Shift key available: ${keyboardJSON.shiftKey ? 'Yes' : 'No'}`);
     
     const results = {
       success: true,
       totalChars: password.length,
       typedChars: 0,
       failedChars: [],
+      shiftClicks: 0,
       details: []
     };
     
+    let shiftActive = false;
+    
     for (let i = 0; i < password.length; i++) {
       const char = password[i];
-      const charLower = char.toLowerCase();
       
-      // Try to find the character in the character map (case-insensitive)
-      const keyInfo = keyboardJSON.characterMap[char] || keyboardJSON.characterMap[charLower];
+      // Try to find the character in the character map (exact match first)
+      let keyInfo = keyboardJSON.characterMap[char];
       
       if (!keyInfo) {
         console.warn(`[SHINHAN] [${i + 1}/${password.length}] Character '${char}' not found in keyboard JSON`);
@@ -546,14 +605,36 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
         continue;
       }
       
-      console.log(`[SHINHAN] [${i + 1}/${password.length}] Clicking '${char}' (type: ${keyInfo.type}) at position (${keyInfo.position.x}, ${keyInfo.position.y})`);
+      const needsShift = keyInfo.requiresShift || false;
+      console.log(`[SHINHAN] [${i + 1}/${password.length}] Typing '${char}' (type: ${keyInfo.type}, requiresShift: ${needsShift})`);
       
       try {
-        // Move mouse to position
+        // Handle shift key state
+        if (needsShift && !shiftActive) {
+          // Need to activate shift
+          if (keyboardJSON.shiftKey) {
+            console.log(`[SHINHAN] Activating shift for '${char}'`);
+            const success = await pressShiftKey(page, keyboardJSON.shiftKey);
+            if (success) {
+              shiftActive = true;
+              results.shiftClicks++;
+            }
+          } else {
+            console.warn(`[SHINHAN] Shift required but shift key not found in JSON`);
+          }
+        } else if (!needsShift && shiftActive) {
+          // Need to deactivate shift
+          console.log(`[SHINHAN] Deactivating shift before '${char}'`);
+          const success = await unpressShiftKey(page, keyboardJSON.shiftKey);
+          if (success) {
+            shiftActive = false;
+            results.shiftClicks++;
+          }
+        }
+        
+        // Click the character key
         await page.mouse.move(keyInfo.position.x, keyInfo.position.y);
         await page.waitForTimeout(CONFIG.DELAYS.MOUSE_MOVE);
-        
-        // Click
         await page.mouse.click(keyInfo.position.x, keyInfo.position.y);
         await page.waitForTimeout(CONFIG.DELAYS.CLICK);
         
@@ -566,7 +647,8 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
           success: true,
           position: keyInfo.position,
           keyLabel: keyInfo.label,
-          type: keyInfo.type
+          type: keyInfo.type,
+          usedShift: needsShift
         });
         
       } catch (clickError) {
@@ -581,10 +663,20 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
       }
     }
     
+    // Deactivate shift if it's still active at the end
+    if (shiftActive && keyboardJSON.shiftKey) {
+      console.log('[SHINHAN] Deactivating shift at end of password');
+      const success = await unpressShiftKey(page, keyboardJSON.shiftKey);
+      if (success) {
+        results.shiftClicks++;
+      }
+    }
+    
     // Summary
     console.log('\n[SHINHAN] ===== PASSWORD TYPING SUMMARY =====');
     console.log(`[SHINHAN] Total characters: ${results.totalChars}`);
     console.log(`[SHINHAN] Successfully typed: ${results.typedChars}`);
+    console.log(`[SHINHAN] Shift clicks: ${results.shiftClicks}`);
     console.log(`[SHINHAN] Failed: ${results.failedChars.length}`);
     
     if (results.failedChars.length > 0) {
@@ -602,6 +694,7 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
       totalChars: password.length,
       typedChars: 0,
       failedChars: [],
+      shiftClicks: 0,
       details: []
     };
   }
@@ -678,12 +771,17 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
           console.log('[SHINHAN] Starting AI keyboard analysis...');
           try {
             // Pass null for password and page to only analyze, not type
+            // But pass page with options to enable shift keyboard capture
             keyboardAnalysisResult = await analyzeKeyboardAndType(
               screenshotPath,
               geminiApiKey,
               keyboardBox,
               null,  // Don't pass password to prevent typing
-              null   // Don't pass page to prevent typing
+              page,  // Pass page for shift keyboard capture
+              {      // Options for shift keyboard capture
+                keyboardXPath: CONFIG.XPATHS.KEYBOARD,
+                outputDir: outputDir
+              }
             );
             
             if (keyboardAnalysisResult.success) {
@@ -708,14 +806,49 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
                 
                 // Build and export bilingual keyboard JSON
                 try {
-                  const keyboardJSON = buildBilingualKeyboardJSON(keyboardAnalysisResult.keyboardKeys);
+                  // Process shifted keyboard if it was captured
+                  let shiftedKeyboardKeys = null;
+                  if (keyboardAnalysisResult.shiftedKeyboard && keyboardAnalysisResult.shiftedKeyboard.success) {
+                    console.log('[SHINHAN] Analyzing shifted keyboard screenshot...');
+                    const shiftedScreenshotPath = keyboardAnalysisResult.shiftedKeyboard.screenshotPath;
+                    
+                    // Analyze shifted keyboard with AI
+                    const shiftedAnalysisResult = await analyzeKeyboardAndType(
+                      shiftedScreenshotPath,
+                      geminiApiKey,
+                      keyboardBox,
+                      null,  // Don't type
+                      null,  // Don't pass page to avoid another shift capture
+                      {}     // Empty options
+                    );
+                    
+                    if (shiftedAnalysisResult.success) {
+                      shiftedKeyboardKeys = shiftedAnalysisResult.keyboardKeys;
+                      console.log('[SHINHAN] Shifted keyboard analyzed successfully');
+                      console.log('[SHINHAN] Shifted keyboard has', Object.keys(shiftedKeyboardKeys).length, 'keys');
+                    } else {
+                      console.warn('[SHINHAN] Failed to analyze shifted keyboard:', shiftedAnalysisResult.error);
+                    }
+                  }
+                  
+                  // Build keyboard JSON with both normal and shifted layouts
+                  const keyboardJSON = buildBilingualKeyboardJSON(
+                    keyboardAnalysisResult.keyboardKeys,
+                    shiftedKeyboardKeys
+                  );
+                  
                   const jsonFilename = `keyboard-layout-${timestamp}.json`;
                   const jsonPath = path.join(outputDir, jsonFilename);
-                  exportKeyboardJSON(keyboardAnalysisResult.keyboardKeys, jsonPath);
+                  exportKeyboardJSON(
+                    keyboardAnalysisResult.keyboardKeys,
+                    jsonPath,
+                    shiftedKeyboardKeys
+                  );
                   
                   console.log('[SHINHAN] Keyboard JSON exported to:', jsonPath);
                   console.log('[SHINHAN] JSON contains', keyboardJSON.metadata.totalKeys, 'keys');
                   console.log('[SHINHAN] Character map has', Object.keys(keyboardJSON.characterMap).length, 'characters');
+                  console.log('[SHINHAN] Shift required for', keyboardJSON.metadata.shiftRequiredKeys, 'characters');
                   
                   // Use JSON to type the password
                   console.log('\n[SHINHAN] Using keyboard JSON to type password...');
@@ -771,4 +904,8 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
 
 module.exports = { 
   runShinhanAutomation,
+  toggleShiftKey,
+  pressShiftKey,
+  unpressShiftKey,
+  typePasswordWithJSON
 };

@@ -311,22 +311,88 @@ function createBilingualCharacterMap(keyboardKeys, verbose = true) {
 }
 
 /**
+ * Determines if a character requires shift to be pressed
+ * @param {string} char - Character to check
+ * @param {string} label - Original key label
+ * @returns {boolean} True if shift is required
+ */
+function requiresShift(char, label) {
+  // Uppercase English letters always need shift
+  if (/[A-Z]/.test(char)) {
+    return true;
+  }
+  
+  // Common symbols that require shift on number keys
+  const shiftSymbols = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')'];
+  if (shiftSymbols.includes(char)) {
+    return true;
+  }
+  
+  // Symbols that typically require shift
+  const shiftOnlySymbols = ['_', '+', '{', '}', '|', ':', '"', '<', '>', '?', '~'];
+  if (shiftOnlySymbols.includes(char)) {
+    return true;
+  }
+  
+  // Check if the label indicates this is a shifted character
+  // Format: "1/!" means ! requires shift, or "a/A" means A requires shift
+  if (label) {
+    const shiftPatterns = [
+      // Format: "1 / !" or "a / A" (second character after /)
+      /\/\s*([^\/\s]+)\s*(?:key)?$/i,
+    ];
+    
+    for (const pattern of shiftPatterns) {
+      const match = label.match(pattern);
+      if (match && match[1]) {
+        const secondChar = match[1].trim();
+        // If our character matches the second part (after /), it needs shift
+        if (secondChar === char || secondChar.toLowerCase() === char.toLowerCase()) {
+          return true;
+        }
+      }
+    }
+  }
+  
+  // Default: no shift required
+  return false;
+}
+
+/**
  * Builds a JSON structure representing the keyboard layout with bilingual support
  * @param {Object} keyboardKeys - Processed keyboard key data
+ * @param {Object} shiftedKeyboardKeys - Optional: Processed keyboard key data when shift is pressed
  * @returns {Object} JSON structure with complete keyboard mapping
  */
-function buildBilingualKeyboardJSON(keyboardKeys) {
+function buildBilingualKeyboardJSON(keyboardKeys, shiftedKeyboardKeys = null) {
   const result = {
     metadata: {
       totalKeys: Object.keys(keyboardKeys).length,
       timestamp: new Date().toISOString(),
-      languages: ['en', 'ko']
+      languages: ['en', 'ko'],
+      hasShiftedLayout: !!shiftedKeyboardKeys
     },
     keys: [],
-    characterMap: {}
+    characterMap: {},
+    shiftKey: null
   };
 
-  // Process each key
+  // Find shift key position
+  const shiftKeyEntry = Object.entries(keyboardKeys).find(([keyLabel, keyData]) => {
+    const label = (keyData.label || '').toLowerCase();
+    return label.includes('shift');
+  });
+  
+  if (shiftKeyEntry) {
+    result.shiftKey = {
+      keyId: shiftKeyEntry[0],
+      label: shiftKeyEntry[1].label,
+      position: shiftKeyEntry[1].position,
+      bounds: shiftKeyEntry[1].bounds
+    };
+  }
+
+  // Process normal (unshifted) keyboard
   Object.entries(keyboardKeys).forEach(([keyLabel, keyData]) => {
     const label = keyData.label || '';
     const parsed = parseBilingualKeyLabel(label);
@@ -347,25 +413,62 @@ function buildBilingualKeyboardJSON(keyboardKeys) {
     
     result.keys.push(keyEntry);
     
-    // Add to character map (all languages)
+    // Add to character map (all languages) with shift tracking
     [...parsed.english, ...parsed.korean, ...parsed.special].forEach(char => {
       if (!result.characterMap[char]) {
+        const needsShift = requiresShift(char, label);
         result.characterMap[char] = {
           character: char,
           keyId: keyLabel,
           label: label,
           position: keyData.position,
+          requiresShift: needsShift,
           type: parsed.english.includes(char) ? 'english' : 
                 parsed.korean.includes(char) ? 'korean' : 'special'
         };
       }
     });
   });
+  
+  // Process shifted keyboard if available
+  if (shiftedKeyboardKeys) {
+    console.log('[BILINGUAL-PARSER] Processing shifted keyboard layout...');
+    
+    Object.entries(shiftedKeyboardKeys).forEach(([keyLabel, keyData]) => {
+      const label = keyData.label || '';
+      const parsed = parseBilingualKeyLabel(label);
+      
+      // Add shifted characters to character map
+      [...parsed.english, ...parsed.korean, ...parsed.special].forEach(char => {
+        if (!result.characterMap[char]) {
+          // This character only appears in shifted state
+          result.characterMap[char] = {
+            character: char,
+            keyId: keyLabel,
+            label: label,
+            position: keyData.position,
+            requiresShift: true,
+            type: parsed.english.includes(char) ? 'english' : 
+                  parsed.korean.includes(char) ? 'korean' : 'special'
+          };
+        } else {
+          // Character exists in both states, mark if it's different
+          const existing = result.characterMap[char];
+          if (existing.keyId === keyLabel && !existing.requiresShift) {
+            // Same key, but in shifted state - update to mark it needs shift
+            existing.requiresShift = true;
+            existing.shiftedLabel = label;
+          }
+        }
+      });
+    });
+  }
 
   // Add statistics
   result.metadata.englishKeys = Object.values(result.characterMap).filter(k => k.type === 'english').length;
   result.metadata.koreanKeys = Object.values(result.characterMap).filter(k => k.type === 'korean').length;
   result.metadata.specialKeys = Object.values(result.characterMap).filter(k => k.type === 'special').length;
+  result.metadata.shiftRequiredKeys = Object.values(result.characterMap).filter(k => k.requiresShift).length;
 
   return result;
 }
@@ -374,13 +477,22 @@ function buildBilingualKeyboardJSON(keyboardKeys) {
  * Exports the keyboard JSON to a file
  * @param {Object} keyboardKeys - Processed keyboard key data
  * @param {string} outputPath - Path to save JSON file
+ * @param {Object} shiftedKeyboardKeys - Optional: Processed keyboard key data when shift is pressed
  * @returns {string} Path to saved JSON file
  */
-function exportKeyboardJSON(keyboardKeys, outputPath) {
+function exportKeyboardJSON(keyboardKeys, outputPath, shiftedKeyboardKeys = null) {
   const fs = require('fs');
-  const json = buildBilingualKeyboardJSON(keyboardKeys);
+  const json = buildBilingualKeyboardJSON(keyboardKeys, shiftedKeyboardKeys);
   fs.writeFileSync(outputPath, JSON.stringify(json, null, 2), 'utf8');
   console.log(`[BILINGUAL-PARSER] Keyboard JSON exported to: ${outputPath}`);
+  
+  if (shiftedKeyboardKeys) {
+    console.log(`[BILINGUAL-PARSER] Included shifted keyboard layout with ${Object.keys(shiftedKeyboardKeys).length} keys`);
+  }
+  
+  console.log(`[BILINGUAL-PARSER] Total characters mapped: ${Object.keys(json.characterMap).length}`);
+  console.log(`[BILINGUAL-PARSER] Characters requiring shift: ${json.metadata.shiftRequiredKeys}`);
+  
   return outputPath;
 }
 
@@ -392,6 +504,7 @@ module.exports = {
   parseBilingualKeyLabel,
   createBilingualCharacterMap,
   buildBilingualKeyboardJSON,
-  exportKeyboardJSON
+  exportKeyboardJSON,
+  requiresShift
 };
 

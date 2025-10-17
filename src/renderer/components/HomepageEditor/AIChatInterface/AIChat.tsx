@@ -241,7 +241,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [currentConversationId]);
 
-  // Restart local PHP server and refresh localhost browser windows
+  // Refresh localhost browser windows
   const refreshBrowser = async () => {
     try {
       const electronAny = (window as any).electron;

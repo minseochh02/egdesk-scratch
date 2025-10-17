@@ -162,6 +162,14 @@
   background: linear-gradient(90deg, #5856d6, #007aff);
 }
 
+.seo-card:hover {
+  border-color: #007aff;
+}
+
+.seo-card:hover::before {
+  background: linear-gradient(90deg, #007aff, #34c759);
+}
+
 .card-icon {
   width: 80px;
   height: 80px;
@@ -188,6 +196,10 @@
 
 .mcp-card .card-icon {
   background: linear-gradient(135deg, #5856d6, #007aff);
+}
+
+.seo-card .card-icon {
+  background: linear-gradient(135deg, #007aff, #34c759);
 }
 
 .card-title {
@@ -237,6 +249,11 @@
 .mcp-card:hover .feature-tag {
   background: #e6e6ff;
   color: #5856d6;
+}
+
+.seo-card:hover .feature-tag {
+  background: #e6f3ff;
+  color: #007aff;
 }
 
 /* Additional Options */

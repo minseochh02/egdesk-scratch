@@ -49,8 +49,8 @@ export class ScheduledPostsExecutor {
     this.isRunning = true;
     console.log('Starting scheduled posts executor service...');
     
-    // Fetch and log all scheduled posts
-    await this.fetchAndLogScheduledPosts();
+    // Fetch and log all scheduled posts (reduced verbosity for faster startup)
+    await this.fetchAndLogScheduledPostsSummary();
     
     // Schedule all enabled posts
     await this.scheduleAllPosts();
@@ -62,53 +62,56 @@ export class ScheduledPostsExecutor {
   }
 
   /**
-   * Fetch scheduled posts from SQLite and console log them
+   * Fetch scheduled posts from SQLite and log a summary (reduced verbosity)
    */
-  private async fetchAndLogScheduledPosts(): Promise<void> {
+  private async fetchAndLogScheduledPostsSummary(): Promise<void> {
     try {
       const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
       const allScheduledPosts = await scheduledPostsManager.getAllScheduledPosts();
       
-      console.log('📋 Fetched scheduled posts from SQLite:');
-      console.log(`Total scheduled posts: ${allScheduledPosts.length}`);
-      
-      if (allScheduledPosts.length === 0) {
-        console.log('No scheduled posts found');
-        return;
-      }
-
-      allScheduledPosts.forEach((post, index) => {
-        console.log(`\n--- Scheduled Post ${index + 1} ---`);
-        console.log(`ID: ${post.id}`);
-        console.log(`Title: ${post.title}`);
-        console.log(`Connection: ${post.connectionName} (${post.connectionType})`);
-        console.log(`Scheduled Time: ${post.scheduledTime}`);
-        console.log(`Frequency: ${post.frequencyType} (${post.frequencyValue})`);
-        console.log(`Enabled: ${post.enabled}`);
-        console.log(`Last Run: ${post.lastRun || 'Never'}`);
-        console.log(`Next Run: ${post.nextRun || 'Not scheduled'}`);
-        console.log(`Run Count: ${post.runCount}`);
-        console.log(`Success Count: ${post.successCount}`);
-        console.log(`Failure Count: ${post.failureCount}`);
-        console.log(`Created: ${post.createdAt}`);
-        console.log(`Updated: ${post.updatedAt}`);
-      });
-
-      // Also fetch and log due posts specifically
+      const enabledCount = allScheduledPosts.filter(p => p.enabled).length;
       const duePosts = await scheduledPostsManager.getDueScheduledPosts();
-      console.log(`\n⏰ Due scheduled posts: ${duePosts.length}`);
       
-      if (duePosts.length > 0) {
-        duePosts.forEach((post, index) => {
-          console.log(`\n--- Due Post ${index + 1} ---`);
-          console.log(`Title: ${post.title}`);
-          console.log(`Next Run: ${post.nextRun}`);
-          console.log(`Connection: ${post.connectionName}`);
-        });
+      console.log(`📋 Scheduled posts: ${allScheduledPosts.length} total (${enabledCount} enabled, ${duePosts.length} due)`);
+      
+      // Only show details if in debug mode (set DEBUG_SCHEDULER env var)
+      if (process.env.DEBUG_SCHEDULER === 'true') {
+        this.fetchAndLogScheduledPostsDetailed(allScheduledPosts, duePosts);
       }
-
     } catch (error) {
       console.error('❌ Error fetching scheduled posts:', error);
+    }
+  }
+
+  /**
+   * Fetch scheduled posts from SQLite and console log them (detailed version for debugging)
+   */
+  private fetchAndLogScheduledPostsDetailed(allScheduledPosts: any[], duePosts: any[]): void {
+    console.log('\n📋 Detailed scheduled posts:');
+    
+    allScheduledPosts.forEach((post, index) => {
+      console.log(`\n--- Scheduled Post ${index + 1} ---`);
+      console.log(`ID: ${post.id}`);
+      console.log(`Title: ${post.title}`);
+      console.log(`Connection: ${post.connectionName} (${post.connectionType})`);
+      console.log(`Scheduled Time: ${post.scheduledTime}`);
+      console.log(`Frequency: ${post.frequencyType} (${post.frequencyValue})`);
+      console.log(`Enabled: ${post.enabled}`);
+      console.log(`Last Run: ${post.lastRun || 'Never'}`);
+      console.log(`Next Run: ${post.nextRun || 'Not scheduled'}`);
+      console.log(`Run Count: ${post.runCount}`);
+      console.log(`Success Count: ${post.successCount}`);
+      console.log(`Failure Count: ${post.failureCount}`);
+    });
+
+    if (duePosts.length > 0) {
+      console.log(`\n⏰ Due scheduled posts details:`);
+      duePosts.forEach((post, index) => {
+        console.log(`\n--- Due Post ${index + 1} ---`);
+        console.log(`Title: ${post.title}`);
+        console.log(`Next Run: ${post.nextRun}`);
+        console.log(`Connection: ${post.connectionName}`);
+      });
     }
   }
 
@@ -1091,8 +1094,10 @@ export class ScheduledPostsExecutor {
   private async checkAndUpdateSchedules(): Promise<void> {
     try {
       // This method will be called every minute to check for changes
-      // For now, just log that we're checking
-      console.log('🔍 Checking for schedule updates...');
+      // Only log in debug mode to reduce console noise
+      if (process.env.DEBUG_SCHEDULER === 'true') {
+        console.log('🔍 Checking for schedule updates...');
+      }
       
       // TODO: Implement logic to:
       // 1. Check for new scheduled posts

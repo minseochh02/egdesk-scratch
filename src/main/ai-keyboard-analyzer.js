@@ -177,6 +177,146 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
 }
 
 // ============================================================================
+// SHIFT KEY HANDLING
+// ============================================================================
+
+/**
+ * Finds the shift key from segmentation results
+ * @param {SegmentationMask[]} segmentationResults - AI segmentation results
+ * @param {Object} targetImageBox - Target image bounding box
+ * @returns {Object|null} Shift key position and bounds or null if not found
+ */
+function findShiftKey(segmentationResults, targetImageBox) {
+  try {
+    console.log('[AI-KEYBOARD] Searching for shift key...');
+    
+    // Look for shift key in segmentation results
+    const shiftKey = segmentationResults.find(obj => {
+      const label = (obj.label || '').toLowerCase();
+      return label.includes('shift');
+    });
+    
+    if (!shiftKey) {
+      console.warn('[AI-KEYBOARD] Shift key not found in segmentation results');
+      return null;
+    }
+    
+    console.log('[AI-KEYBOARD] Found shift key with label:', shiftKey.label);
+    
+    // Convert AI box to absolute coordinates
+    const aiBox = shiftKey.box_2d; // [ymin, xmin, ymax, xmax]
+    const [ymin, xmin, ymax, xmax] = aiBox;
+    const normalizedX = xmin / 1000;
+    const normalizedY = ymin / 1000;
+    const normalizedWidth = (xmax - xmin) / 1000;
+    const normalizedHeight = (ymax - ymin) / 1000;
+    
+    const relativeX = normalizedX * targetImageBox.width;
+    const relativeY = normalizedY * targetImageBox.height;
+    const relativeWidth = normalizedWidth * targetImageBox.width;
+    const relativeHeight = normalizedHeight * targetImageBox.height;
+    
+    const absoluteX = targetImageBox.x + relativeX;
+    const absoluteY = targetImageBox.y + relativeY;
+    
+    const bounds = {
+      x: Math.round(absoluteX),
+      y: Math.round(absoluteY),
+      width: Math.round(relativeWidth),
+      height: Math.round(relativeHeight)
+    };
+    
+    // Calculate center position for clicking
+    const centerX = absoluteX + (relativeWidth / 2);
+    const centerY = absoluteY + (relativeHeight / 2);
+    
+    return {
+      position: {
+        x: Math.round(centerX),
+        y: Math.round(centerY)
+      },
+      bounds: bounds,
+      label: shiftKey.label
+    };
+  } catch (error) {
+    console.error('[AI-KEYBOARD] Error finding shift key:', error);
+    return null;
+  }
+}
+
+/**
+ * Captures shifted keyboard state by clicking shift, taking screenshot, and unshifting
+ * @param {Object} page - Playwright page object
+ * @param {string} keyboardXPath - XPath to keyboard element
+ * @param {SegmentationMask[]} segmentationResults - AI segmentation results
+ * @param {Object} targetImageBox - Target image bounding box
+ * @param {string} outputDir - Directory to save screenshot
+ * @returns {Promise<Object>} Result with screenshot path and shift key info
+ */
+async function captureShiftedKeyboard(page, keyboardXPath, segmentationResults, targetImageBox, outputDir) {
+  try {
+    console.log('\n[AI-KEYBOARD] ===== CAPTURING SHIFTED KEYBOARD =====');
+    
+    // Find shift key
+    const shiftKey = findShiftKey(segmentationResults, targetImageBox);
+    
+    if (!shiftKey) {
+      console.warn('[AI-KEYBOARD] Cannot capture shifted keyboard - shift key not found');
+      return {
+        success: false,
+        error: 'Shift key not found',
+        screenshotPath: null
+      };
+    }
+    
+    console.log(`[AI-KEYBOARD] Shift key found at position (${shiftKey.position.x}, ${shiftKey.position.y})`);
+    
+    // Click shift to activate
+    console.log('[AI-KEYBOARD] Clicking shift key to activate...');
+    await page.mouse.move(shiftKey.position.x, shiftKey.position.y);
+    await page.waitForTimeout(100); // Small delay before clicking
+    await page.mouse.click(shiftKey.position.x, shiftKey.position.y);
+    await page.waitForTimeout(500); // Wait for keyboard to update
+    
+    console.log('[AI-KEYBOARD] Shift activated, taking screenshot...');
+    
+    // Take screenshot of shifted keyboard
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `keyboard-shifted-${timestamp}.png`;
+    const screenshotPath = path.join(outputDir, filename);
+    
+    const keyboardLocator = page.locator(`xpath=${keyboardXPath}`);
+    await keyboardLocator.screenshot({ path: screenshotPath });
+    
+    console.log('[AI-KEYBOARD] Shifted keyboard screenshot saved to:', screenshotPath);
+    
+    // Click shift again to deactivate
+    console.log('[AI-KEYBOARD] Clicking shift key to deactivate...');
+    await page.mouse.click(shiftKey.position.x, shiftKey.position.y);
+    await page.waitForTimeout(300); // Wait for keyboard to return to normal
+    
+    console.log('[AI-KEYBOARD] Shift deactivated, keyboard returned to normal state');
+    
+    return {
+      success: true,
+      screenshotPath: screenshotPath,
+      shiftKey: {
+        position: shiftKey.position,
+        bounds: shiftKey.bounds,
+        label: shiftKey.label
+      }
+    };
+  } catch (error) {
+    console.error('[AI-KEYBOARD] Error capturing shifted keyboard:', error);
+    return {
+      success: false,
+      error: error.message,
+      screenshotPath: null
+    };
+  }
+}
+
+// ============================================================================
 // KEYBOARD KEY PROCESSING
 // ============================================================================
 
@@ -485,23 +625,47 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
  * @param {Object} targetImageBox - Target image bounding box
  * @param {string} textToType - Text to type on keyboard
  * @param {Object} page - Playwright page object (optional)
+ * @param {Object} options - Additional options
+ * @param {string} options.keyboardXPath - XPath to keyboard element (for shift capture)
+ * @param {string} options.outputDir - Output directory for shifted keyboard screenshot
  * @returns {Promise<Object>} Analysis result
  */
-async function analyzeKeyboardAndType(imagePath, apiKey, targetImageBox, textToType = 'hello', page = null) {
+async function analyzeKeyboardAndType(imagePath, apiKey, targetImageBox, textToType = 'hello', page = null, options = {}) {
   try {
     console.log('[AI-KEYBOARD] Starting keyboard analysis and typing...');
     
     // Step 1: Analyze image with segmentation masks (detect all objects first)
     const segmentationResults = await analyzeImageSegmentation(imagePath, apiKey, 'all objects');
     
-    // Step 2: Process segmentation results to get keyboard key positions
+    // Step 2: Capture shifted keyboard if page and options are provided
+    let shiftedKeyboardResult = null;
+    if (page && options.keyboardXPath && options.outputDir) {
+      console.log('[AI-KEYBOARD] Capturing shifted keyboard state...');
+      shiftedKeyboardResult = await captureShiftedKeyboard(
+        page,
+        options.keyboardXPath,
+        segmentationResults,
+        targetImageBox,
+        options.outputDir
+      );
+      
+      if (shiftedKeyboardResult.success) {
+        console.log('[AI-KEYBOARD] Shifted keyboard captured successfully');
+      } else {
+        console.warn('[AI-KEYBOARD] Failed to capture shifted keyboard:', shiftedKeyboardResult.error);
+      }
+    } else {
+      console.log('[AI-KEYBOARD] Skipping shifted keyboard capture - missing page or options');
+    }
+    
+    // Step 3: Process segmentation results to get keyboard key positions
     const processResult = processSegmentationResults(segmentationResults, targetImageBox);
     
     if (!processResult.success) {
       throw new Error(`Failed to process segmentation results: ${processResult.error}`);
     }
     
-    // Step 3: Type the specified text using the keyboard coordinates (only if textToType and page are provided)
+    // Step 4: Type the specified text using the keyboard coordinates (only if textToType and page are provided)
     if (textToType && page && processResult.keyboardKeys && Object.keys(processResult.keyboardKeys).length > 0) {
       console.log(`\n[AI-KEYBOARD] ===== TYPING "${textToType.toUpperCase()}" =====`);
       await typeTextWithKeyboard(processResult.keyboardKeys, textToType, page);
@@ -513,7 +677,8 @@ async function analyzeKeyboardAndType(imagePath, apiKey, targetImageBox, textToT
       success: true,
       processed: processResult.processed,
       keyboardKeys: processResult.keyboardKeys,
-      segmentationResults: segmentationResults
+      segmentationResults: segmentationResults,
+      shiftedKeyboard: shiftedKeyboardResult
     };
   } catch (error) {
     console.error('[AI-KEYBOARD] Error in keyboard analysis and typing:', error);
@@ -533,6 +698,8 @@ module.exports = {
   processSegmentationResults,
   typeTextWithKeyboard,
   analyzeKeyboardAndType,
-  calculateMaskCentroid
+  calculateMaskCentroid,
+  findShiftKey,
+  captureShiftedKeyboard
 };
 

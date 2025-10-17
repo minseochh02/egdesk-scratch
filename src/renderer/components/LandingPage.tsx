@@ -8,6 +8,7 @@ import {
   faCog,
   faShieldAlt,
   faServer,
+  faGlobe,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -66,6 +67,21 @@ const LandingPage: React.FC = () => {
                 <span className="feature-tag">SSL 분석</span>
                 <span className="feature-tag">보안 검사</span>
                 <span className="feature-tag">취약점 탐지</span>
+              </div>
+            </Link>
+
+            <Link to="/seo-analyzer" className="action-card seo-card">
+              <div className="card-icon">
+                <FontAwesomeIcon icon={faGlobe} />
+              </div>
+              <h3 className="card-title">EG SEO-Analyzer</h3>
+              <p className="card-description">
+                웹사이트의 SEO 성능을 분석하고 검색 엔진 최적화를 위한 개선 방안을 제시하세요.
+              </p>
+              <div className="card-features">
+                <span className="feature-tag">SEO 분석</span>
+                <span className="feature-tag">키워드 최적화</span>
+                <span className="feature-tag">성능 개선</span>
               </div>
             </Link>
 
