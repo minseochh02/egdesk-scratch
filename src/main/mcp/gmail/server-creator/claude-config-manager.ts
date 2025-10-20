@@ -28,9 +28,21 @@ export class ClaudeConfigManager {
   private serverName: string = 'gmail-sqlite';
 
   constructor() {
-    // Claude Desktop config path (macOS)
+    // Claude Desktop config path varies by platform
     const homeDir = app.getPath('home');
-    this.claudeConfigPath = path.join(homeDir, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+    
+    if (process.platform === 'win32') {
+      // Windows: %APPDATA%\Claude\claude_desktop_config.json
+      this.claudeConfigPath = path.join(homeDir, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json');
+    } else if (process.platform === 'darwin') {
+      // macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+      this.claudeConfigPath = path.join(homeDir, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+    } else {
+      // Linux: ~/.config/Claude/claude_desktop_config.json
+      this.claudeConfigPath = path.join(homeDir, '.config', 'Claude', 'claude_desktop_config.json');
+    }
+    
+    console.log(`📁 Claude config path (${process.platform}):`, this.claudeConfigPath);
   }
 
   /**

@@ -61,6 +61,7 @@ const EGSEOAnalyzer: React.FC<EGSEOAnalyzerProps> = () => {
   const [lighthouseProgress, setLighthouseProgress] = useState<LighthouseProgress | null>(null);
   const [lighthouseResults, setLighthouseResults] = useState<LighthouseResult[]>([]);
   const [finalScores, setFinalScores] = useState<any>(null);
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
 
   const handleCrawl = async () => {
     if (!websiteUrl.trim()) {
@@ -180,6 +181,7 @@ const EGSEOAnalyzer: React.FC<EGSEOAnalyzerProps> = () => {
       console.log('✅ Lighthouse generation completed:', result);
       setLighthouseResults(result.results || []);
       setFinalScores(result.scores || null);
+      setPdfPath(result.mergedPdfPath || null);
       
       alert(
         `✅ EGDesk SEO 분석 보고서 생성 완료!\n\n` +
@@ -221,6 +223,21 @@ const EGSEOAnalyzer: React.FC<EGSEOAnalyzerProps> = () => {
       return new URL(href, base.origin).href;
     } catch {
       return href;
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!pdfPath) {
+      alert('PDF 파일이 생성되지 않았습니다.');
+      return;
+    }
+
+    try {
+      // Use Electron's shell to open the file location or download
+      await (window as any).electron.shell.openPath(pdfPath);
+    } catch (err) {
+      console.error('PDF download error:', err);
+      alert('PDF 파일을 열 수 없습니다. 파일 경로를 확인해주세요.');
     }
   };
 
@@ -324,7 +341,18 @@ const EGSEOAnalyzer: React.FC<EGSEOAnalyzerProps> = () => {
             {/* Final Scores Summary (EGDesk SEO 분석 보고서) */}
             {finalScores && (
               <div className="final-scores">
-                <h5>EGDesk SEO 분석 최종 점수 요약</h5>
+                <div className="final-scores-header">
+                  <h5>EGDesk SEO 분석 최종 점수 요약</h5>
+                  {pdfPath && (
+                    <button
+                      onClick={handleDownloadPdf}
+                      className="download-pdf-button"
+                      title="PDF 보고서 다운로드"
+                    >
+                      📄 PDF 다운로드
+                    </button>
+                  )}
+                </div>
                 <div className="scores-grid">
                   <div className="score-card overall">
                     <div className="score-value">{finalScores.overall}</div>

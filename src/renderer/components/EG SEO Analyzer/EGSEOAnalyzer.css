@@ -411,12 +411,47 @@
   color: white;
 }
 
+.final-scores-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
 .final-scores h5 {
   color: white;
-  margin: 0 0 1.5rem 0;
+  margin: 0;
   font-size: 1.2rem;
   font-weight: 600;
   text-align: center;
+  flex: 1;
+}
+
+.download-pdf-button {
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+}
+
+.download-pdf-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.download-pdf-button:active {
+  transform: translateY(0);
 }
 
 .scores-grid {
@@ -548,5 +583,19 @@
 
   .generate-lighthouse-button {
     width: 100%;
+  }
+
+  .final-scores-header {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .final-scores h5 {
+    text-align: center;
+  }
+
+  .download-pdf-button {
+    width: 100%;
+    margin-top: 0.5rem;
   }
 }

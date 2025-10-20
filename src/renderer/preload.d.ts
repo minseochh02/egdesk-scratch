@@ -365,11 +365,49 @@ export interface IElectronAPI {
       existing_record?: any; 
     }>;
     testConnection: () => Promise<{ success: boolean; connected?: boolean; error?: string }>;
+    registerTunnel: (name: string, password?: string) => Promise<{ 
+      success: boolean; 
+      status?: 'registered' | 'name_taken' | 'error'; 
+      message?: string; 
+      name?: string; 
+      ip?: string; 
+      timestamp?: string; 
+      id?: string; 
+      existing_record?: {
+        name: string;
+        ip: string;
+        registered_at: string;
+      }; 
+    }>;
+  };
+  tunnel: {
+    start: (serverName: string, localServerUrl?: string) => Promise<{ 
+      success: boolean; 
+      message?: string; 
+      error?: string; 
+    }>;
+    stop: (serverName: string) => Promise<{ 
+      success: boolean; 
+      message?: string; 
+      error?: string; 
+    }>;
+    status: (serverName: string) => Promise<{ 
+      success: boolean; 
+      isActive?: boolean; 
+      isConnected?: boolean; 
+      error?: string; 
+    }>;
+    list: () => Promise<{ 
+      success: boolean; 
+      tunnels?: string[]; 
+      error?: string; 
+    }>;
   };
   env: {
     checkConfig: () => Promise<{ 
       success: boolean; 
-      hasSupabaseKey?: boolean; 
+      hasSupabaseKey?: boolean;
+      supabaseAnonKey?: string | null;
       supabaseUrl?: string; 
       message?: string; 
       error?: string; 
@@ -425,6 +463,31 @@ export interface IElectronAPI {
     unconfigureClaude: () => Promise<{ success: boolean; error?: string }>;
     getInstructions: () => Promise<{ success: boolean; instructions?: string; error?: string }>;
   };
+
+  httpsServer: {
+    start: (options: { port: number; useHTTPS?: boolean; keyPath?: string; certPath?: string }) => Promise<{ 
+      success: boolean; 
+      error?: string; 
+      port?: number; 
+      protocol?: string;
+    }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+    status: () => Promise<{ 
+      success: boolean; 
+      isRunning: boolean; 
+      port: number | null; 
+      error?: string;
+    }>;
+    restart: (options: { port: number; useHTTPS?: boolean; keyPath?: string; certPath?: string }) => Promise<{ 
+      success: boolean; 
+      error?: string; 
+      port?: number; 
+      protocol?: string;
+    }>;
+    getNetworkInfo: () => Promise<{ localIP: string; interfaces: any[] }>;
+  };
+
+  invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 
 declare global {
