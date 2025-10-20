@@ -33,6 +33,8 @@ import { registerNaverBlogHandlers } from './naver-blog-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/server-script/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/server-script/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/server-script/mcp-server-manager';
+import { getLocalServerManager } from './mcp/gmail/server-creator/local-server-manager';
+import { registerServerName, startTunnel, stopTunnel, getTunnelStatus, getActiveTunnels, stopAllTunnels } from './mcp/gmail/server-creator/tunneling-manager';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { registerSEOHandlers } from './seo/seo-analyzer';
 let wordpressHandler: WordPressHandler;
@@ -1680,15 +1682,97 @@ const createWindow = async () => {
         }
       });
 
+      // Tunnel registration handler
+      ipcMain.handle('mcp-tunnel-register', async (_event, name: string, password?: string) => {
+        try {
+          console.log(`🌐 Registering tunnel for: ${name}`);
+          const result = await registerServerName(name, password);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Tunnel registration error:', error);
+          return {
+            success: false,
+            status: 'error',
+            message: error.message || 'Unknown error during tunnel registration'
+          };
+        }
+      });
+
+      // Tunnel start handler
+      ipcMain.handle('mcp-tunnel-start', async (_event, serverName: string, localServerUrl?: string) => {
+        try {
+          console.log(`🚀 Starting tunnel: ${serverName}`);
+          const result = await startTunnel(serverName, localServerUrl);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to start tunnel:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Tunnel stop handler
+      ipcMain.handle('mcp-tunnel-stop', async (_event, serverName: string) => {
+        try {
+          console.log(`🛑 Stopping tunnel: ${serverName}`);
+          const result = stopTunnel(serverName);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to stop tunnel:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Tunnel status handler
+      ipcMain.handle('mcp-tunnel-status', async (_event, serverName: string) => {
+        try {
+          const status = getTunnelStatus(serverName);
+          return {
+            success: true,
+            ...status
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get tunnel status:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Get active tunnels handler
+      ipcMain.handle('mcp-tunnel-list', async () => {
+        try {
+          const tunnels = getActiveTunnels();
+          return {
+            success: true,
+            tunnels
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to list tunnels:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
       // Simple environment check handler
       ipcMain.handle('env-check-config', async () => {
         try {
           const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
+          const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || null;
           const supabaseUrl = process.env.SUPABASE_URL || 'https://cbptgzaubhcclkmvkiua.supabase.co';
           
           return { 
             success: true, 
             hasSupabaseKey,
+            supabaseAnonKey,
             supabaseUrl,
             message: hasSupabaseKey ? 'Supabase configured' : 'Supabase anon key not found in environment'
           };
@@ -1789,6 +1873,10 @@ const createWindow = async () => {
     // Register MCP Server Manager handlers
     const mcpServerManager = getMCPServerManager();
     mcpServerManager.registerIPCHandlers();
+
+    // Register MCP Local Server Manager handlers
+    const mcpLocalServerManager = getLocalServerManager();
+    mcpLocalServerManager.registerIPCHandlers();
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');

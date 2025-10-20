@@ -1257,6 +1257,17 @@ const electronHandler = {
   mcp: {
     register: (name: string, password?: string) => ipcRenderer.invoke('mcp-register', name, password),
     testConnection: () => ipcRenderer.invoke('mcp-test-connection'),
+    registerTunnel: (name: string, password?: string) => ipcRenderer.invoke('mcp-tunnel-register', name, password),
+  },
+
+  /**
+   * Tunnel Management API
+   */
+  tunnel: {
+    start: (serverName: string, localServerUrl?: string) => ipcRenderer.invoke('mcp-tunnel-start', serverName, localServerUrl),
+    stop: (serverName: string) => ipcRenderer.invoke('mcp-tunnel-stop', serverName),
+    status: (serverName: string) => ipcRenderer.invoke('mcp-tunnel-status', serverName),
+    list: () => ipcRenderer.invoke('mcp-tunnel-list'),
   },
 
   /**
@@ -1317,14 +1328,39 @@ mcpServer: {
   getInstructions: () => ipcRenderer.invoke('mcp-server-get-instructions'),
 },
 
+/**
+ * HTTPS Server Management API
+ */
+httpsServer: {
+  start: (options: { port: number; keyPath: string; certPath: string }) => ipcRenderer.invoke('https-server-start', options),
+  stop: () => ipcRenderer.invoke('https-server-stop'),
+  status: () => ipcRenderer.invoke('https-server-status'),
+  restart: (options: { port: number; keyPath: string; certPath: string }) => ipcRenderer.invoke('https-server-restart', options),
+  getNetworkInfo: () => ipcRenderer.invoke('https-server-get-network-info'),
+},
+
+/**
+ * SSL Certificate Management API (mkcert)
+ */
+sslCertificate: {
+  generate: (request: { domain: string; email?: string }) => 
+    ipcRenderer.invoke('ssl-certificate-generate', request),
+  generateForce: (request: { domain: string; email?: string }) => 
+    ipcRenderer.invoke('ssl-certificate-generate-force', request),
+  list: () => ipcRenderer.invoke('ssl-certificate-list'),
+  get: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-get', certificateId),
+  delete: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-delete', certificateId),
+  renew: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-renew', certificateId),
+  cleanup: () => ipcRenderer.invoke('ssl-certificate-cleanup'),
+},
+
   // ========================================================================
-  // LOCAL TUNNEL FUNCTIONALITY (disabled)
+  // GENERIC IPC INVOKE METHOD
   // ========================================================================
-  tunnel: {
-    start: async (_port?: number) => ({ success: false, error: 'Tunnel disabled' }),
-    stop: async () => ({ success: true, message: 'Tunnel disabled' }),
-    status: async () => ({ success: true, isRunning: false, url: null }),
-  },
+  /**
+   * Generic invoke method for any IPC channel
+   */
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
 };
 
 // ============================================================================
