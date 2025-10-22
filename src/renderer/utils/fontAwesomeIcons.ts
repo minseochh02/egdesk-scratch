@@ -155,7 +155,7 @@ export {
   faArrowRight as faRedo,
   faImage as faPalette,
   faPhone as faMobile,
-  faMonitor as faDesktop,
+  faDesktop,
   faLaptop as faTablet,
   faPaperPlane,
   faLightbulb as faBrain,

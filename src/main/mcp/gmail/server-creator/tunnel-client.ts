@@ -1,54 +1,81 @@
 /**
- * WebSocket Tunnel Client (using Supabase Realtime)
+ * WebSocket Tunnel Client
  * 
- * Maintains a persistent connection to Supabase Realtime for tunneling.
+ * Maintains a persistent WebSocket connection to the tunnel service.
  * Forwards incoming requests to local MCP server and sends responses back.
  */
 
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import http from 'http';
 import { URL } from 'url';
 
 interface TunnelConfig {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
+  tunnelServerUrl: string;
   serverName: string;
   localServerUrl: string;
   reconnectInterval?: number;
 }
 
 interface TunnelRequest {
-  requestId: string;
+  type: 'request';
+  request_id: string;
   method: string;
   path: string;
   headers: Record<string, string>;
+  query_params?: Record<string, string>;
   body?: string;
+}
+
+interface TunnelResponse {
+  type: 'response';
+  request_id: string;
+  status_code: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+interface TunnelStreamChunk {
+  type: 'stream_chunk';
+  request_id: string;
+  body: string;
+}
+
+interface TunnelStreamEnd {
+  type: 'stream_end';
+  request_id: string;
+}
+
+interface ConnectedMessage {
+  type: 'connected';
+  tunnel_id: string;
+  public_url: string;
 }
 
 export class TunnelClient {
   private config: TunnelConfig;
-  private supabase: any;
-  private channel: RealtimeChannel | null = null;
+  private tunnelServerUrl: string;
+  private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect: boolean = true;
-  private pingInterval: NodeJS.Timeout | null = null;
   private isConnecting: boolean = false;
+  private publicUrl: string | null = null;
+  private tunnelId: string | null = null;
 
   constructor(config: TunnelConfig) {
     this.config = {
       ...config,
       reconnectInterval: config.reconnectInterval || 5000,
     };
-
-    // Initialize Supabase client
-    this.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+    
+    // Store tunnel server URL
+    this.tunnelServerUrl = config.tunnelServerUrl;
   }
 
   /**
    * Start the tunnel client
    */
   public async start(): Promise<void> {
-    console.log(`🚀 Starting tunnel client for: ${this.config.serverName}`);
+    console.log(`🚀 Starting tunnel client...`);
     this.shouldReconnect = true;
     await this.connect();
   }
@@ -57,22 +84,17 @@ export class TunnelClient {
    * Stop the tunnel client
    */
   public async stop(): Promise<void> {
-    console.log(`🛑 Stopping tunnel client for: ${this.config.serverName}`);
+    console.log(`🛑 Stopping tunnel client...`);
     this.shouldReconnect = false;
-
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
 
-    if (this.channel) {
-      await this.supabase.removeChannel(this.channel);
-      this.channel = null;
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
     }
   }
 
@@ -80,11 +102,25 @@ export class TunnelClient {
    * Check if tunnel is connected
    */
   public isConnected(): boolean {
-    return this.channel !== null;
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
   /**
-   * Connect to Supabase Realtime
+   * Get the public URL for this tunnel
+   */
+  public getPublicUrl(): string | null {
+    return this.publicUrl;
+  }
+
+  /**
+   * Get the tunnel ID
+   */
+  public getTunnelId(): string | null {
+    return this.tunnelId;
+  }
+
+  /**
+   * Connect to tunnel server via WebSocket
    */
   private async connect(): Promise<void> {
     if (this.isConnecting || this.isConnected()) {
@@ -94,66 +130,67 @@ export class TunnelClient {
     this.isConnecting = true;
 
     try {
-      console.log(`🔌 Connecting to Supabase Realtime for: ${this.config.serverName}`);
+      // Convert HTTP(S) URL to WS(S) URL and add /tunnel/connect path
+      const wsUrl = this.tunnelServerUrl
+        .replace('https://', 'wss://')
+        .replace('http://', 'ws://') + '/tunnel/connect';
 
-      // Subscribe to the tunnel channel for this server
-      // All requests come through this single channel
-      // Note: Setting self: true to ensure we receive messages from the edge function
-      // (which uses the same auth credentials)
-      const channelName = `tunnel:${this.config.serverName}`;
-      console.log(`📺 Creating channel: ${channelName}`);
-      this.channel = this.supabase.channel(channelName, {
-        config: {
-          broadcast: {
-            self: true  // Receive messages from all sources including same auth
+      console.log(`🔌 Connecting to tunnel server: ${wsUrl}`);
+
+      this.ws = new WebSocket(wsUrl);
+
+      // Handle connection open
+      this.ws.on('open', () => {
+        console.log(`✅ WebSocket connected`);
+      });
+
+      // Handle incoming messages
+      this.ws.on('message', async (data: WebSocket.Data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          
+          if (message.type === 'connected') {
+            const connectedMsg = message as ConnectedMessage;
+            this.tunnelId = connectedMsg.tunnel_id;
+            this.publicUrl = connectedMsg.public_url;
+            this.isConnecting = false;
+            
+            console.log(`🎉 Tunnel established!`);
+            console.log(`📡 Tunnel ID: ${this.tunnelId}`);
+            console.log(`🌐 Public URL: ${this.publicUrl}`);
+            console.log(`🔄 Forwarding to: ${this.config.localServerUrl}`);
+          } else if (message.type === 'request') {
+            const request = message as TunnelRequest;
+            console.log(`📨 Received request: ${request.method} ${request.path}`);
+            await this.handleRequest(request);
           }
+        } catch (error) {
+          console.error('Error parsing message:', error);
         }
       });
 
-      // Listen for incoming requests
-      if (!this.channel) {
-        throw new Error('Failed to create channel');
-      }
+      // Handle connection close
+      this.ws.on('close', () => {
+        console.log(`❌ WebSocket disconnected`);
+        this.ws = null;
+        this.publicUrl = null;
+        this.tunnelId = null;
+        this.isConnecting = false;
+        
+        if (this.shouldReconnect) {
+          this.scheduleReconnect();
+        }
+      });
 
-      // Add catch-all listener to see ALL broadcasts
-      this.channel
-        .on('broadcast', { event: '*' }, (payload: any) => {
-          console.log(`🔔 Received broadcast event:`, payload.event, payload.payload);
-        })
-        .on('broadcast', { event: 'request' }, async (payload: any) => {
-          console.log(`📨 Received request via Realtime:`, payload.payload.requestId);
-          await this.handleRequest(payload.payload as TunnelRequest);
-        })
-        .on('broadcast', { event: 'ping' }, async (payload: any) => {
-          console.log(`🏓 Received PING, sending PONG...`, payload);
-          if (this.channel) {
-            await this.channel.send({
-              type: 'broadcast',
-              event: 'pong',
-              payload: { timestamp: Date.now(), message: 'Hello from tunnel client!' }
-            });
-            console.log(`🏓 PONG sent`);
-          }
-        })
-        .subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            console.log(`✅ Tunnel connected: ${this.config.serverName}`);
-            console.log(`🎉 Tunnel established at ${new Date().toISOString()}`);
-            this.isConnecting = false;
-            this.startPingInterval();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            console.error(`❌ Tunnel error: ${status}`);
-            this.channel = null;
-            this.isConnecting = false;
-            if (this.shouldReconnect) {
-              this.scheduleReconnect();
-            }
-          }
-        });
+      // Handle errors
+      this.ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        this.isConnecting = false;
+      });
 
     } catch (error) {
       console.error('Error connecting to tunnel:', error);
-      this.channel = null;
+      this.ws = null;
       this.isConnecting = false;
       if (this.shouldReconnect) {
         this.scheduleReconnect();
@@ -166,7 +203,7 @@ export class TunnelClient {
    */
   private async handleRequest(request: TunnelRequest): Promise<void> {
     try {
-      console.log(`📨 Tunnel request: ${request.method} ${request.path}`);
+      console.log(`→ ${request.method} ${request.path}`);
 
       // Forward request to local server
       const targetUrl = new URL(this.config.localServerUrl);
@@ -180,98 +217,147 @@ export class TunnelClient {
         headers: request.headers,
       };
 
-      // Make HTTP request to local server
-      const responseData = await new Promise<{
-        statusCode: number;
-        headers: Record<string, string>;
-        body: string;
-      }>((resolve, reject) => {
-        const req = http.request(options, (res) => {
-          let body = '';
-          
-          res.on('data', (chunk) => {
-            body += chunk;
-          });
-          
-          res.on('end', () => {
-            const headers: Record<string, string> = {};
-            Object.entries(res.headers).forEach(([key, value]) => {
-              if (typeof value === 'string') {
-                headers[key] = value;
-              } else if (Array.isArray(value)) {
-                headers[key] = value.join(', ');
-              }
-            });
-            
-            resolve({
-              statusCode: res.statusCode || 200,
-              headers,
-              body
-            });
-          });
-        });
-        
-        req.on('error', (err) => {
-          reject(err);
-        });
-        
-        // Send request body if present
-        if (request.body) {
-          req.write(request.body);
-        }
-        
-        req.end();
-      });
+      // Check if this is an SSE request
+      const isSSE = request.method === 'GET' && (request.path.includes('/sse') || request.path.endsWith('/sse'));
 
-      // Send response back through Realtime broadcast
-      if (this.channel) {
-        await this.channel.send({
-          type: 'broadcast',
-          event: 'response',
-          payload: {
-            requestId: request.requestId,
-            status: responseData.statusCode,
-            headers: responseData.headers,
-            body: responseData.body,
-          }
-        });
-
-        console.log(`✅ Response sent: ${responseData.statusCode}`);
+      if (isSSE) {
+        // Handle SSE streaming request
+        await this.handleSSERequest(request, options);
+      } else {
+        // Handle regular request/response
+        await this.handleRegularRequest(request, options);
       }
 
     } catch (error) {
       console.error('Error handling request:', error);
 
       // Send error response
-      if (this.channel) {
-        await this.channel.send({
-          type: 'broadcast',
-          event: 'error',
-          payload: {
-            requestId: request.requestId,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          }
-        });
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        const errorResponse: TunnelResponse = {
+          type: 'response',
+          request_id: request.request_id,
+          status_code: 502,
+          headers: {},
+          body: JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+        };
+
+        this.ws.send(JSON.stringify(errorResponse));
       }
     }
   }
 
   /**
-   * Start ping interval to keep connection alive
+   * Handle regular (non-streaming) request
    */
-  private startPingInterval(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-
-    // Supabase Realtime keeps connections alive automatically
-    // But we can still send periodic pings if needed
-    this.pingInterval = setInterval(() => {
-      if (this.channel) {
-        // Connection is alive if channel exists
-        console.log(`💓 Tunnel heartbeat: ${this.config.serverName}`);
+  private async handleRegularRequest(request: TunnelRequest, options: http.RequestOptions): Promise<void> {
+    const responseData = await new Promise<{
+      statusCode: number;
+      headers: Record<string, string>;
+      body: string;
+    }>((resolve, reject) => {
+      const req = http.request(options, (res) => {
+        let body = '';
+        
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        
+        res.on('end', () => {
+          const headers: Record<string, string> = {};
+          Object.entries(res.headers).forEach(([key, value]) => {
+            if (typeof value === 'string') {
+              headers[key] = value;
+            } else if (Array.isArray(value)) {
+              headers[key] = value.join(', ');
+            }
+          });
+          
+          resolve({
+            statusCode: res.statusCode || 200,
+            headers,
+            body
+          });
+        });
+      });
+      
+      req.on('error', (err) => {
+        reject(err);
+      });
+      
+      // Send request body if present
+      if (request.body) {
+        req.write(request.body);
       }
-    }, 30000);
+      
+      req.end();
+    });
+
+    // Send response back through WebSocket
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const response: TunnelResponse = {
+        type: 'response',
+        request_id: request.request_id,
+        status_code: responseData.statusCode,
+        headers: responseData.headers,
+        body: responseData.body,
+      };
+
+      this.ws.send(JSON.stringify(response));
+      console.log(`← ${responseData.statusCode} ${request.method} ${options.path}`);
+    }
+  }
+
+  /**
+   * Handle SSE streaming request
+   */
+  private async handleSSERequest(request: TunnelRequest, options: http.RequestOptions): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const req = http.request(options, (res) => {
+        console.log(`← ${res.statusCode} ${request.method} ${options.path} (streaming)`);
+
+        // Stream response chunks as they arrive
+        res.on('data', (chunk) => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const chunkStr = chunk.toString();
+            console.log(`📤 Sending stream chunk (${chunkStr.length} bytes) for ${request.request_id}`);
+            const streamChunk: TunnelStreamChunk = {
+              type: 'stream_chunk',
+              request_id: request.request_id,
+              body: chunkStr
+            };
+            this.ws.send(JSON.stringify(streamChunk));
+          }
+        });
+
+        // Signal end of stream
+        res.on('end', () => {
+          console.log(`🏁 Stream ended for ${request.request_id}`);
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const streamEnd: TunnelStreamEnd = {
+              type: 'stream_end',
+              request_id: request.request_id
+            };
+            this.ws.send(JSON.stringify(streamEnd));
+          }
+          resolve();
+        });
+
+        res.on('error', (err) => {
+          reject(err);
+        });
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      // Send request body if present
+      if (request.body) {
+        req.write(request.body);
+      }
+
+      req.end();
+    });
   }
 
   /**

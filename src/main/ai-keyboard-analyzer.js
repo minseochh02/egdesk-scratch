@@ -1,7 +1,6 @@
 // AI Keyboard Analyzer
 // This file contains AI-powered keyboard analysis and typing functionality using segmentation masks
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,112 +39,192 @@ const path = require('path');
 /**
  * Analyzes an image using segmentation masks to detect keyboard keys
  * @param {string} imagePath - Path to the image file
- * @param {string} apiKey - Gemini API key
+ * @param {string} apiKey - Roboflow API key
  * @param {string} targetItems - What to detect (e.g., "keyboard keys", "all objects")
  * @returns {Promise<SegmentationMask[]>} Array of segmentation results
  */
 async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboard keys') {
   try {
-    console.log('[AI-KEYBOARD] Starting segmentation analysis...');
+    console.log('[AI-KEYBOARD] Starting segmentation analysis with Roboflow...');
     
-    // Initialize AI with the passed API key
-    const ai = new GoogleGenerativeAI(apiKey);
-    
-    // Read image file
+    // Read image file and convert to base64
     const imageData = fs.readFileSync(imagePath);
     const base64Image = imageData.toString('base64');
     
-    // Enhanced prompt to focus on keyboard keys and exclude logos/decorations
-    const prompt = `Find all keyboard keys in this image. Include letters, numbers, and special character keys (like Enter, Shift, symbols, etc.). 
-         EXCLUDE any logos, bank names, decorative text, or non-clickable elements. 
-         Only segment the actual clickable keyboard keys.
-         Output a JSON list of segmentation masks where each entry contains:
-         - "box_2d": the 2D bounding box [ymin, xmin, ymax, xmax]
-         - "mask": the segmentation mask
-         - "label": a descriptive label for the key (e.g., "key_letter_a", "key_number_1", "key_shift_left", etc.)`
-
-    // Use the same configuration as spatial-understanding
-    const config = {
-      temperature: 0.1
-    };
-
-    const model = ai.getGenerativeModel({ 
-      model: 'gemini-2.5-flash'
-    });
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: base64Image,
-                mimeType: 'image/png'
-              }
-            },
-            { text: prompt }
-          ]
+    // Prepare Roboflow API request
+    const roboflowEndpoint = 'https://serverless.roboflow.com/visionmodeltest/workflows/custom-workflow-2';
+    
+    console.log('[AI-KEYBOARD] Sending request to Roboflow endpoint...');
+    
+    // Send request to Roboflow
+    const response = await fetch(roboflowEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        inputs: {
+          image: {
+            type: 'base64',
+            value: base64Image
+          }
         }
-      ],
-      generationConfig: {
-        temperature: config.temperature,
-        maxOutputTokens: 65536
-      }
+      })
     });
-
-    const response = await result.response;
-    let responseText = response.text();
     
-    // Debug: Log the raw response
-    console.log('[AI-KEYBOARD] Raw AI response length:', responseText.length);
-    console.log('[AI-KEYBOARD] Raw AI response preview:', responseText.substring(0, 200) + '...');
-    
-    // Clean up response like spatial-understanding does
-    if (responseText.includes('```json')) {
-      responseText = responseText.split('```json')[1].split('```')[0];
-      console.log('[AI-KEYBOARD] Cleaned JSON response length:', responseText.length);
+    if (!response.ok) {
+      throw new Error(`Roboflow API error: ${response.status} ${response.statusText}`);
     }
     
-    // Additional cleanup for common AI response issues
-    responseText = responseText.trim();
+    const result = await response.json();
     
-    // Remove any leading/trailing non-JSON content
-    const jsonStart = responseText.indexOf('[');
-    const jsonEnd = responseText.lastIndexOf(']');
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      responseText = responseText.substring(jsonStart, jsonEnd + 1);
-    }
-    
-    console.log('[AI-KEYBOARD] Final JSON to parse:', responseText.substring(0, 500) + '...');
-    
-    // Parse JSON response with fallback
-    let segmentations;
+    // Save raw response to JSON file for inspection
     try {
-      segmentations = JSON.parse(responseText);
-    } catch (parseError) {
-      console.warn('[AI-KEYBOARD] JSON parse failed, attempting to fix common issues...');
-      
-      // Try to fix common JSON issues
-      let fixedResponse = responseText;
-      
-      // Fix trailing commas
-      fixedResponse = fixedResponse.replace(/,(\s*[}\]])/g, '$1');
-      
-      // Fix missing quotes around property names
-      fixedResponse = fixedResponse.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
-      
-      // Try parsing again
-      try {
-        segmentations = JSON.parse(fixedResponse);
-        console.log('[AI-KEYBOARD] Successfully parsed after fixing common issues');
-      } catch (secondError) {
-        console.error('[AI-KEYBOARD] Still failed to parse JSON after fixes:', secondError);
-        throw parseError; // Throw original error
+      const debugDir = path.join(process.cwd(), 'output', 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
       }
+      
+      const timestamp = Date.now();
+      const rawResponsePath = path.join(debugDir, `roboflow-raw-response-${timestamp}.json`);
+      fs.writeFileSync(rawResponsePath, JSON.stringify(result, null, 2));
+      console.log('[AI-KEYBOARD] Raw Roboflow response saved to:', rawResponsePath);
+    } catch (saveError) {
+      console.warn('[AI-KEYBOARD] Failed to save raw response:', saveError);
+    }
+    
+    // Parse Roboflow response and convert to expected format
+    // Roboflow response format may vary - adjust based on actual response structure
+    let segmentations = [];
+    
+    // Check if result has predictions or detections
+    if (result.outputs && Array.isArray(result.outputs)) {
+      // Handle workflow outputs format
+      console.log('[AI-KEYBOARD] Found outputs array, length:', result.outputs.length);
+      const outputs = result.outputs;
+      for (const output of outputs) {
+        // Check for model_predictions (Roboflow workflow format)
+        if (output.model_predictions && output.model_predictions.predictions && Array.isArray(output.model_predictions.predictions)) {
+          const predictions = output.model_predictions.predictions;
+          const imageWidth = output.model_predictions.image?.width || 1;
+          const imageHeight = output.model_predictions.image?.height || 1;
+          
+          console.log('[AI-KEYBOARD] Found predictions in model_predictions, count:', predictions.length);
+          console.log('[AI-KEYBOARD] Image dimensions:', imageWidth, 'x', imageHeight);
+          
+          segmentations = predictions.map((pred, idx) => {
+            // Convert Roboflow format to expected format
+            // Roboflow returns {x, y, width, height, class, confidence}
+            // We need to convert to {box_2d: [ymin, xmin, ymax, xmax], mask, label}
+            
+            const x = pred.x || 0;
+            const y = pred.y || 0;
+            const width = pred.width || 0;
+            const height = pred.height || 0;
+            
+            // Convert center coordinates to corner coordinates
+            const xmin = x - width / 2;
+            const ymin = y - height / 2;
+            const xmax = x + width / 2;
+            const ymax = y + height / 2;
+            
+            // Normalize to 0-1000 range (Roboflow returns pixel coordinates)
+            const normalizedXmin = (xmin / imageWidth) * 1000;
+            const normalizedYmin = (ymin / imageHeight) * 1000;
+            const normalizedXmax = (xmax / imageWidth) * 1000;
+            const normalizedYmax = (ymax / imageHeight) * 1000;
+            
+            return {
+              box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
+              mask: '', // Roboflow object detection doesn't provide masks
+              label: pred.class || pred.label || `key_${idx}`
+            };
+          });
+          console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from model_predictions');
+          break;
+        }
+        // Fallback: check for direct predictions array (older format)
+        else if (output.predictions && Array.isArray(output.predictions)) {
+          console.log('[AI-KEYBOARD] Found predictions in output, count:', output.predictions.length);
+          segmentations = output.predictions.map((pred, idx) => {
+            const x = pred.x || 0;
+            const y = pred.y || 0;
+            const width = pred.width || 0;
+            const height = pred.height || 0;
+            
+            const xmin = x - width / 2;
+            const ymin = y - height / 2;
+            const xmax = x + width / 2;
+            const ymax = y + height / 2;
+            
+            const imageWidth = pred.image_width || 1;
+            const imageHeight = pred.image_height || 1;
+            
+            const normalizedXmin = (xmin / imageWidth) * 1000;
+            const normalizedYmin = (ymin / imageHeight) * 1000;
+            const normalizedXmax = (xmax / imageWidth) * 1000;
+            const normalizedYmax = (ymax / imageHeight) * 1000;
+            
+            return {
+              box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
+              mask: '',
+              label: pred.class || pred.label || `key_${idx}`
+            };
+          });
+          console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from outputs');
+          break;
+        }
+      }
+    } else if (result.predictions && Array.isArray(result.predictions)) {
+      // Handle direct predictions format
+      console.log('[AI-KEYBOARD] Found direct predictions array, count:', result.predictions.length);
+      segmentations = result.predictions.map((pred, idx) => {
+        const x = pred.x || 0;
+        const y = pred.y || 0;
+        const width = pred.width || 0;
+        const height = pred.height || 0;
+        
+        const xmin = x - width / 2;
+        const ymin = y - height / 2;
+        const xmax = x + width / 2;
+        const ymax = y + height / 2;
+        
+        const imageWidth = pred.image_width || 1;
+        const imageHeight = pred.image_height || 1;
+        
+        const normalizedXmin = (xmin / imageWidth) * 1000;
+        const normalizedYmin = (ymin / imageHeight) * 1000;
+        const normalizedXmax = (xmax / imageWidth) * 1000;
+        const normalizedYmax = (ymax / imageHeight) * 1000;
+        
+        return {
+          box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
+          mask: pred.mask || '',
+          label: pred.class || pred.label || `key_${idx}`
+        };
+      });
+      console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from direct predictions');
+    } else {
+      console.warn('[AI-KEYBOARD] ⚠️ Could not find predictions in response!');
+      console.warn('[AI-KEYBOARD] Available top-level keys:', Object.keys(result));
     }
     
     console.log('[AI-KEYBOARD] Successfully analyzed image, found', segmentations.length, 'objects');
+    
+    // Save parsed segmentations for debugging
+    if (segmentations.length > 0) {
+      try {
+        const debugDir = path.join(process.cwd(), 'output', 'debug');
+        const timestamp = Date.now();
+        const parsedPath = path.join(debugDir, `roboflow-parsed-segmentations-${timestamp}.json`);
+        fs.writeFileSync(parsedPath, JSON.stringify(segmentations, null, 2));
+        console.log('[AI-KEYBOARD] Parsed segmentations saved to:', parsedPath);
+      } catch (saveError) {
+        console.warn('[AI-KEYBOARD] Failed to save parsed segmentations:', saveError);
+      }
+    }
+    
     return segmentations;
   } catch (error) {
     console.error('[AI-KEYBOARD] Error analyzing image segmentation:', error);
@@ -161,11 +240,10 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
         timestamp: new Date().toISOString(),
         imagePath: imagePath,
         error: error.message,
-        rawResponse: responseText || 'No response text available',
-        responseLength: responseText?.length || 0
+        errorStack: error.stack
       };
       
-      const debugPath = path.join(debugDir, `ai-keyboard-error-${Date.now()}.json`);
+      const debugPath = path.join(debugDir, `roboflow-error-${Date.now()}.json`);
       fs.writeFileSync(debugPath, JSON.stringify(debugData, null, 2));
       console.log('[AI-KEYBOARD] Saved error debug data to:', debugPath);
     } catch (debugError) {
@@ -621,7 +699,7 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
 /**
  * Main function to analyze keyboard and type text
  * @param {string} imagePath - Path to keyboard screenshot
- * @param {string} apiKey - Gemini API key
+ * @param {string} apiKey - Roboflow API key
  * @param {Object} targetImageBox - Target image bounding box
  * @param {string} textToType - Text to type on keyboard
  * @param {Object} page - Playwright page object (optional)

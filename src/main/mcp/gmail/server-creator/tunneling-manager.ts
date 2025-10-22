@@ -14,6 +14,7 @@ import { TunnelClient } from './tunnel-client';
 // Environment variables (loaded via dotenv in main.ts)
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const TUNNEL_SERVER_URL = process.env.TUNNEL_SERVER_URL || 'https://tunneling-service.onrender.com';
 
 // Active tunnel clients
 const activeTunnels = new Map<string, TunnelClient>();
@@ -124,10 +125,6 @@ export async function startTunnel(
   localServerUrl: string = 'http://localhost:8080'
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    if (!SUPABASE_URL) {
-      throw new Error('SUPABASE_URL environment variable is not set');
-    }
-
     // Check if tunnel already running
     const existingTunnel = activeTunnels.get(serverName);
     if (existingTunnel && existingTunnel.isConnected()) {
@@ -141,8 +138,7 @@ export async function startTunnel(
 
     // Create tunnel client
     const tunnel = new TunnelClient({
-      supabaseUrl: SUPABASE_URL,
-      supabaseAnonKey: SUPABASE_ANON_KEY,
+      tunnelServerUrl: TUNNEL_SERVER_URL,
       serverName,
       localServerUrl,
       reconnectInterval: 5000,
