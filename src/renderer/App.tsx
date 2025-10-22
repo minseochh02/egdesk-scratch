@@ -24,6 +24,7 @@ import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
 import MCPServer from './components/MCPServer/MCPServer';
+import EGDesktopControl from './components/EGDesktop/EGDesktopControl';
 import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 
@@ -665,6 +666,7 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/index.html" element={<LandingPage />} />
             <Route path="/viewer" element={<URLFileViewerPage />} />
+            <Route path="/egdesktop" element={<EGDesktopControl />} />
             <Route 
               path="/blog-connector" 
               element={

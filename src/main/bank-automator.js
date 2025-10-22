@@ -5,6 +5,10 @@ const { analyzeKeyboardAndType } = require('./ai-keyboard-analyzer');
 const { generateKeyboardVisualization } = require('./keyboard-visualization');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('./bilingual-keyboard-parser');
 
+
+// Roboflow Custom Vision API
+// API Key should be set in environment variable: ROBOFLOW_API_KEY
+
 // Simple debug visualization without external dependencies
 
 // ============================================================================
@@ -710,10 +714,9 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
  * @param {string} password - Password to type
  * @param {string} id - User ID to fill
  * @param {string} proxyUrl - Proxy URL
- * @param {string} geminiApiKey - Gemini API key for AI analysis
  * @returns {Promise<Object>} Automation result
  */
-async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiKey) {
+async function runShinhanAutomation(username, password, id, proxyUrl) {
   const proxy = buildProxyOption(proxyUrl);
   let browser = null;
   
@@ -766,15 +769,18 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
         await keyboardLocator.screenshot({ path: screenshotPath });
         console.log('[SHINHAN] Screenshot saved to:', screenshotPath);
         
+        // Get Roboflow API key from environment
+        const roboflowApiKey = process.env.ROBOFLOW_API_KEY;
+        
         // Use AI to analyze the keyboard (but don't type yet - we'll use JSON for typing)
-        if (geminiApiKey && screenshotPath) {
-          console.log('[SHINHAN] Starting AI keyboard analysis...');
+        if (roboflowApiKey && screenshotPath) {
+          console.log('[SHINHAN] Starting AI keyboard analysis with Roboflow...');
           try {
             // Pass null for password and page to only analyze, not type
             // But pass page with options to enable shift keyboard capture
             keyboardAnalysisResult = await analyzeKeyboardAndType(
               screenshotPath,
-              geminiApiKey,
+              roboflowApiKey,
               keyboardBox,
               null,  // Don't pass password to prevent typing
               page,  // Pass page for shift keyboard capture
@@ -815,7 +821,7 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
                     // Analyze shifted keyboard with AI
                     const shiftedAnalysisResult = await analyzeKeyboardAndType(
                       shiftedScreenshotPath,
-                      geminiApiKey,
+                      roboflowApiKey,
                       keyboardBox,
                       null,  // Don't type
                       null,  // Don't pass page to avoid another shift capture
@@ -879,7 +885,11 @@ async function runShinhanAutomation(username, password, id, proxyUrl, geminiApiK
             console.warn('[SHINHAN] AI keyboard analysis error:', aiError);
           }
         } else {
-          console.log('[SHINHAN] Skipping AI analysis - no API key or screenshot available');
+          if (!roboflowApiKey) {
+            console.warn('[SHINHAN] Skipping AI analysis - ROBOFLOW_API_KEY environment variable not set');
+          } else {
+            console.log('[SHINHAN] Skipping AI analysis - no screenshot available');
+          }
         }
         }
     } catch (error) {

@@ -88,15 +88,37 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
+    
+    // Migration: Fix port 8081 -> 8080 for connections
+    try {
+      const config = store.get('mcpConfiguration');
+      let updated = false;
+      if (config && config.connections) {
+        config.connections.forEach((conn: any) => {
+          if (conn.accessLevel && conn.accessLevel.port === 8081) {
+            console.log(`🔧 Migrating connection "${conn.name}" port from 8081 to 8080`);
+            conn.accessLevel.port = 8080;
+            updated = true;
+          }
+        });
+        if (updated) {
+          store.set('mcpConfiguration', config);
+          console.log('✅ Port migration completed');
+        }
+      }
+    } catch (migrationError) {
+      console.warn('⚠️ Port migration warning:', migrationError);
+    }
 
     try {
       ipcMain.handle('start-automation', async (_event, creds?: { id?: string; pw?: string; proxy?: string; title?: string; content?: string; tags?: string }) => {
         const { runAutomation } = require('./automator');
         return await runAutomation(creds?.id, creds?.pw, creds?.proxy, creds?.title, creds?.content, creds?.tags);
       });
-      ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string; geminiApiKey?: string }) => {
+      ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string }) => {
         const { runShinhanAutomation } = require('./bank-automator');
-        return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy, opts?.geminiApiKey);
+        // Note: ROBOFLOW_API_KEY should be set in environment variables
+        return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
       });
       ipcMain.handle('start-naver-blog-with-image', async (_event, opts?: { id?: string; password?: string; proxy?: string; title?: string; content?: string; tags?: string; includeDogImage?: boolean; dogImagePrompt?: string }) => {
         try {

@@ -17,6 +17,8 @@ import { app, ipcMain } from 'electron';
 import { getStore } from '../../../storage';
 import { GmailMCPFetcher } from '../server-script/gmail-service';
 import { GmailConnection } from '../../../types/gmail-types';
+import { SSEMCPHandler } from './sse-handler';
+import { HTTPStreamHandler } from './http-stream-handler';
 
 export interface HTTPServerOptions {
   port: number;
@@ -61,6 +63,8 @@ export class LocalServerManager {
   private currentPort: number | null = null;
   private useHTTPS = false;
   private store = getStore();
+  private sseHandler: SSEMCPHandler | null = null;
+  private httpStreamHandler: HTTPStreamHandler | null = null;
 
   private constructor() {}
 
@@ -94,35 +98,6 @@ export class LocalServerManager {
     ipcMain.handle('https-server-restart', async (event, options: HTTPServerOptions) => {
       await this.stopServer();
       return await this.startServer(options);
-    });
-
-    // SSL Certificate handlers
-    ipcMain.handle('ssl-certificate-generate', async (event, request: CertificateRequest) => {
-      return await this.generateCertificate(request);
-    });
-
-    ipcMain.handle('ssl-certificate-generate-force', async (event, request: CertificateRequest) => {
-      return await this.generateCertificateForce(request);
-    });
-
-    ipcMain.handle('ssl-certificate-list', async () => {
-      return await this.listCertificates();
-    });
-
-    ipcMain.handle('ssl-certificate-get', async (event, certificateId: string) => {
-      return await this.getCertificate(certificateId);
-    });
-
-    ipcMain.handle('ssl-certificate-delete', async (event, certificateId: string) => {
-      return await this.deleteCertificate(certificateId);
-    });
-
-    ipcMain.handle('ssl-certificate-renew', async (event, certificateId: string) => {
-      return await this.renewCertificate(certificateId);
-    });
-
-    ipcMain.handle('ssl-certificate-cleanup', async () => {
-      return await this.cleanupExpiredCertificates();
     });
 
     // Get network information
@@ -279,9 +254,32 @@ export class LocalServerManager {
     const url = req.url || '/';
     console.log(`📨 Incoming request: ${req.method} ${url}`);
 
-    // Root endpoint - List all available MCP servers
-    if (url === '/' || url === '/mcp') {
+    // Root endpoint - List all available MCP servers (GET only)
+    if ((url === '/' || url === '/mcp') && req.method === 'GET') {
       this.handleMCPServerList(res);
+      return;
+    }
+
+    // HTTP Streamable endpoint for MCP protocol (POST for bidirectional streaming)
+    if ((url === '/mcp' || url === '/gmail/mcp') && req.method === 'POST') {
+      await this.handleHTTPStream(req, res);
+      return;
+    }
+
+    // SSE endpoint for MCP protocol (GET for stream, POST for messages)
+    if (url === '/gmail/sse' || url === '/sse') {
+      if (req.method === 'GET') {
+        await this.handleGmailSSEStream(req, res);
+        return;
+      } else if (req.method === 'POST') {
+        await this.handleGmailMessage(req, res);
+        return;
+      }
+    }
+
+    // Alternative message endpoint for MCP protocol (POST)
+    if ((url === '/gmail/message' || url === '/message') && req.method === 'POST') {
+      await this.handleGmailMessage(req, res);
       return;
     }
 
@@ -304,6 +302,8 @@ export class LocalServerManager {
       error: 'Endpoint not found',
       availableEndpoints: [
         '/ - List all MCP servers',
+        'POST /mcp - HTTP Streamable endpoint for MCP protocol (bidirectional streaming)',
+        '/gmail/sse - SSE endpoint for MCP protocol (legacy)',
         '/gmail/tools - List Gmail tools',
         '/gmail/tools/call - Call a Gmail tool',
         '/test-gmail - Test endpoint (dev only)'
@@ -334,6 +334,113 @@ export class LocalServerManager {
       totalServers: enabledServers.length,
       timestamp: new Date().toISOString()
     }, null, 2));
+  }
+
+  /**
+   * Get or create SSE handler instance
+   */
+  private async getSSEHandler(): Promise<SSEMCPHandler> {
+    if (!this.sseHandler) {
+      const connection = await this.getGmailConnection();
+      this.sseHandler = new SSEMCPHandler(connection);
+    }
+    return this.sseHandler;
+  }
+
+  /**
+   * Get or create HTTP Stream handler instance
+   */
+  private async getHTTPStreamHandler(): Promise<HTTPStreamHandler> {
+    if (!this.httpStreamHandler) {
+      const connection = await this.getGmailConnection();
+      this.httpStreamHandler = new HTTPStreamHandler(connection);
+    }
+    return this.httpStreamHandler;
+  }
+
+  /**
+   * Handle HTTP Stream endpoint (POST /mcp)
+   * This is the new bidirectional HTTP streaming protocol
+   */
+  private async handleHTTPStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Gmail MCP is enabled
+    if (!this.isMCPServerEnabled('gmail')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Gmail MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'gmail'
+      }));
+      return;
+    }
+
+    try {
+      const httpStreamHandler = await this.getHTTPStreamHandler();
+      await httpStreamHandler.handleStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling HTTP Stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Gmail SSE stream endpoint (GET /sse)
+   */
+  private async handleGmailSSEStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Gmail MCP is enabled
+    if (!this.isMCPServerEnabled('gmail')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Gmail MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'gmail'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = await this.getSSEHandler();
+      await sseHandler.handleSSEStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling Gmail SSE stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Gmail message endpoint (POST /message)
+   */
+  private async handleGmailMessage(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Gmail MCP is enabled
+    if (!this.isMCPServerEnabled('gmail')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Gmail MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'gmail'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = await this.getSSEHandler();
+      await sseHandler.handleMessage(req, res);
+    } catch (error) {
+      console.error('❌ Error handling Gmail message:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
   }
 
   /**
@@ -369,6 +476,8 @@ export class LocalServerManager {
       success: false,
       error: 'Gmail MCP endpoint not found',
       availableEndpoints: [
+        'POST /mcp - HTTP Streamable endpoint for MCP protocol (bidirectional streaming)',
+        '/gmail/sse - SSE endpoint for MCP protocol (legacy)',
         '/gmail/tools - List available tools',
         '/gmail/tools/call - Call a tool'
       ]
@@ -377,81 +486,77 @@ export class LocalServerManager {
 
   /**
    * Handle Gmail tools list
+   * MCP protocol expects a plain array of tools, not wrapped in an object
    */
   private handleGmailToolsList(res: http.ServerResponse): void {
     res.writeHead(200);
-    res.end(JSON.stringify({
-      success: true,
-      server: 'gmail',
-      tools: [
-        {
-          name: 'gmail_list_users',
-          description: 'List all domain users from Google Workspace',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-            required: []
-          }
-        },
-        {
-          name: 'gmail_get_user_messages',
-          description: 'Get Gmail messages for a specific user',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              email: {
-                type: 'string',
-                description: 'The email address of the user'
-              },
-              maxResults: {
-                type: 'number',
-                description: 'Maximum number of messages to return (default: 50)',
-                default: 50
-              }
-            },
-            required: ['email']
-          }
-        },
-        {
-          name: 'gmail_get_user_stats',
-          description: 'Get Gmail statistics for a specific user',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              email: {
-                type: 'string',
-                description: 'The email address of the user'
-              }
-            },
-            required: ['email']
-          }
-        },
-        {
-          name: 'gmail_search_messages',
-          description: 'Search Gmail messages by query',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Search query (e.g., "from:example@gmail.com")'
-              },
-              email: {
-                type: 'string',
-                description: 'Optional: filter by specific user email'
-              },
-              maxResults: {
-                type: 'number',
-                description: 'Maximum number of messages to return (default: 50)',
-                default: 50
-              }
-            },
-            required: ['query']
-          }
+    res.end(JSON.stringify([
+      {
+        name: 'gmail_list_users',
+        description: 'List all domain users from Google Workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
         }
-      ],
-      timestamp: new Date().toISOString()
-    }, null, 2));
+      },
+      {
+        name: 'gmail_get_user_messages',
+        description: 'Get Gmail messages for a specific user',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            email: {
+              type: 'string',
+              description: 'The email address of the user'
+            },
+            maxResults: {
+              type: 'number',
+              description: 'Maximum number of messages to return (default: 50)',
+              default: 50
+            }
+          },
+          required: ['email']
+        }
+      },
+      {
+        name: 'gmail_get_user_stats',
+        description: 'Get Gmail statistics for a specific user',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            email: {
+              type: 'string',
+              description: 'The email address of the user'
+            }
+          },
+          required: ['email']
+        }
+      },
+      {
+        name: 'gmail_search_messages',
+        description: 'Search Gmail messages by query',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query (e.g., "from:example@gmail.com")'
+            },
+            email: {
+              type: 'string',
+              description: 'Optional: filter by specific user email'
+            },
+            maxResults: {
+              type: 'number',
+              description: 'Maximum number of messages to return (default: 50)',
+              default: 50
+            }
+          },
+          required: ['query']
+        }
+      }
+    ], null, 2));
   }
 
   /**
@@ -775,434 +880,6 @@ export class LocalServerManager {
     } catch (error) {
       console.error('Failed to get network info:', error);
       return { localIP: 'localhost', interfaces: [] };
-    }
-  }
-
-  /**
-   * Generate self-signed certificate instructions
-   */
-  public getCertificateInstructions(): string {
-    return `
-To generate self-signed SSL certificates for local development:
-
-1. Install OpenSSL (if not already installed)
-2. Run the following command in your terminal:
-
-openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' \\
-  -keyout private-key.pem -out certificate.pem
-
-This will create:
-- private-key.pem (private key file)
-- certificate.pem (certificate file)
-
-Place these files in a secure location and use their paths when starting the HTTPS server.
-    `.trim();
-  }
-
-  /**
-   * Generate SSL certificate using mkcert
-   * For debug mode: Always generates a fresh certificate
-   */
-  private async generateCertificate(request: CertificateRequest, forceNew: boolean = true): Promise<{ success: boolean; certificate?: SSLCertificate; error?: string }> {
-    try {
-      console.log(`🔐 Generating mkcert SSL certificate for domain: ${request.domain}`);
-
-      // For debug purposes, always generate a fresh certificate
-      if (forceNew) {
-        console.log(`🔄 Debug mode: Generating fresh mkcert certificate for ${request.domain}...`);
-        return await this.generateMkcertCertificate(request);
-      }
-
-      // Check if we already have a valid certificate for this domain
-      const existingCert = await this.findValidCertificateForDomain(request.domain);
-      
-      if (existingCert) {
-        console.log(`✅ Found valid existing certificate for ${request.domain} (expires: ${existingCert.validTo})`);
-        return { success: true, certificate: existingCert };
-      }
-
-      // No valid certificate found, generate a new one with mkcert
-      console.log(`🔄 No valid certificate found for ${request.domain}, generating new mkcert certificate...`);
-      return await this.generateMkcertCertificate(request);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Failed to generate certificate:', errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  }
-
-  /**
-   * Find a valid (non-expired) certificate for the given domain
-   */
-  private async findValidCertificateForDomain(domain: string): Promise<SSLCertificate | null> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      const now = new Date();
-      
-      // Find the most recent valid certificate for this domain
-      const validCerts = certificates
-        .filter(cert => 
-          cert.domain === domain && 
-          new Date(cert.validTo) > now && 
-          !cert.isExpired
-        )
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      return validCerts.length > 0 ? validCerts[0] : null;
-    } catch (error) {
-      console.error('Failed to find valid certificate:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Force generate SSL certificate (bypasses existing certificate check)
-   */
-  private async generateCertificateForce(request: CertificateRequest): Promise<{ success: boolean; certificate?: SSLCertificate; error?: string }> {
-    try {
-      console.log(`🔄 Force generating mkcert SSL certificate for domain: ${request.domain}`);
-      return await this.generateMkcertCertificate(request);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Failed to force generate certificate:', errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  }
-
-
-  /**
-   * Get bundled mkcert path based on platform
-   */
-  private getBundledMkcertPath(): string | null {
-    const os = require('os');
-    const platform = os.platform();
-    const arch = os.arch();
-
-    let mkcertPath: string;
-    
-    // Determine the correct mkcert binary path based on platform
-    if (platform === 'darwin') {
-      // macOS
-      const archFolder = arch === 'arm64' ? 'arm64' : 'x64';
-      mkcertPath = path.join(app.getAppPath(), 'mkcert-bundle', 'macos', archFolder, 'mkcert');
-    } else if (platform === 'win32') {
-      // Windows
-      mkcertPath = path.join(app.getAppPath(), 'mkcert-bundle', 'windows', 'x64', 'mkcert.exe');
-    } else if (platform === 'linux') {
-      // Linux
-      const archFolder = arch === 'arm64' ? 'arm64' : 'x64';
-      mkcertPath = path.join(app.getAppPath(), 'mkcert-bundle', 'linux', archFolder, 'mkcert');
-    } else {
-      return null;
-    }
-
-    // Check if bundled mkcert exists
-    if (fs.existsSync(mkcertPath)) {
-      return mkcertPath;
-    }
-
-    return null;
-  }
-
-  /**
-   * Generate mkcert certificate (locally-trusted development certificates)
-   */
-  private async generateMkcertCertificate(request: CertificateRequest): Promise<{ success: boolean; certificate?: SSLCertificate; error?: string }> {
-    try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-
-      // Try to use bundled mkcert first
-      let mkcertCommand = this.getBundledMkcertPath();
-      
-      if (!mkcertCommand) {
-        // Fallback to system mkcert
-        try {
-          await execAsync('mkcert -version');
-          mkcertCommand = 'mkcert';
-        } catch {
-          return {
-            success: false,
-            error: 'mkcert is not available. The bundled version was not found, and mkcert is not installed on your system.\n\nTo install:\nmacOS: brew install mkcert && mkcert -install\nWindows: choco install mkcert && mkcert -install\nLinux: See https://github.com/FiloSottile/mkcert#installation'
-          };
-        }
-      } else {
-        console.log(`✅ Using bundled mkcert: ${mkcertCommand}`);
-      }
-
-      // First-time setup: Install mkcert CA if needed
-      // This may require sudo password on first run
-      try {
-        console.log('🔧 Checking mkcert installation...');
-        
-        // Check if mkcert CA is already installed by testing with mkcert
-        let needsInstall = false;
-        try {
-          // Try to check if CAROOT exists
-          const checkResult = await execAsync(`"${mkcertCommand}" -CAROOT`);
-          const carootPath = checkResult.stdout.trim();
-          
-          if (!fs.existsSync(carootPath) || !fs.existsSync(path.join(carootPath, 'rootCA.pem'))) {
-            needsInstall = true;
-          } else {
-            console.log(`✅ mkcert CA already installed at: ${carootPath}`);
-          }
-        } catch {
-          needsInstall = true;
-        }
-        
-        if (needsInstall) {
-          console.log('📋 First-time mkcert setup required...');
-          console.log('🔐 Installing mkcert certificate authority in system trust store...');
-          console.log('💡 A system dialog will appear asking for your password');
-          
-          // Use sudo-prompt for GUI password dialog
-          const sudoPrompt = require('sudo-prompt');
-          const options = {
-            name: 'EGDesk Certificate Setup',
-          };
-          
-          await new Promise((resolve, reject) => {
-            // Install to default system location (no custom CAROOT)
-            const installCommand = `"${mkcertCommand}" -install`;
-            console.log('🔐 Requesting administrator access for certificate installation...');
-            
-            sudoPrompt.exec(installCommand, options, (error: any, stdout: any, stderr: any) => {
-              if (error) {
-                console.error('❌ mkcert install failed:', error);
-                console.error('This usually happens if the password dialog was cancelled');
-                reject(error);
-              } else {
-                console.log('✅ mkcert CA installed successfully!');
-                console.log('🎉 Your certificates will now be trusted by all browsers');
-                if (stdout) console.log('stdout:', stdout);
-                if (stderr) console.log('stderr:', stderr);
-                resolve(stdout);
-              }
-            });
-          });
-        }
-      } catch (installError: any) {
-        console.warn('⚠️  mkcert install warning:', installError);
-        
-        // Check if user cancelled
-        if (installError.message && installError.message.includes('User did not grant permission')) {
-          throw new Error('Certificate installation was cancelled. Browser-trusted certificates require administrator access to install the local certificate authority.');
-        }
-        
-        console.warn('⚠️  Could not install mkcert CA automatically');
-        throw new Error('Failed to install certificate authority. Certificates may not be trusted by browsers.\n\nPlease run this command manually in Terminal:\n\n  ' + mkcertCommand + ' -install');
-      }
-
-      // Create temporary directory for certificates
-      const tempDir = path.join(app.getPath('temp'), 'ssl-certs');
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
-
-      const certPath = path.join(tempDir, `${request.domain}-cert.pem`);
-      const keyPath = path.join(tempDir, `${request.domain}-key.pem`);
-
-      // Generate locally-trusted certificate using mkcert
-      const command = `"${mkcertCommand}" -cert-file "${certPath}" -key-file "${keyPath}" ${request.domain}`;
-      
-      console.log(`🔐 Running: ${command}`);
-      console.log(`📁 Output directory: ${tempDir}`);
-      
-      try {
-        const result = await execAsync(command, {
-          cwd: tempDir
-        });
-        console.log('✅ mkcert output:', result.stdout);
-        if (result.stderr) {
-          console.log('⚠️  mkcert stderr:', result.stderr);
-        }
-      } catch (execError: any) {
-        console.error('❌ mkcert command failed:', execError);
-        console.error('Command:', command);
-        console.error('stdout:', execError.stdout);
-        console.error('stderr:', execError.stderr);
-        throw new Error(`mkcert command failed: ${execError.message}\nstderr: ${execError.stderr}`);
-      }
-
-      // Verify files were created
-      if (!fs.existsSync(keyPath)) {
-        throw new Error(`Private key file was not created: ${keyPath}`);
-      }
-      if (!fs.existsSync(certPath)) {
-        throw new Error(`Certificate file was not created: ${certPath}`);
-      }
-
-      // Read the generated files
-      const privateKey = fs.readFileSync(keyPath, 'utf8');
-      const certificate = fs.readFileSync(certPath, 'utf8');
-
-      // Create certificate object
-      const cert: SSLCertificate = {
-        id: `mkcert-${Date.now()}`,
-        domain: request.domain,
-        certificate,
-        privateKey,
-        issuer: 'mkcert (Locally Trusted)',
-        validFrom: new Date().toISOString(),
-        validTo: new Date(Date.now() + 825 * 24 * 60 * 60 * 1000).toISOString(), // ~2.25 years
-        createdAt: new Date().toISOString(),
-        isExpired: false
-      };
-
-      // Store in Electron store
-      await this.storeCertificate(cert);
-
-      // Clean up temporary files
-      fs.unlinkSync(keyPath);
-      fs.unlinkSync(certPath);
-
-      console.log(`✅ mkcert certificate generated for ${request.domain} (Browser-trusted!)`);
-      return { success: true, certificate: cert };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: `Failed to generate mkcert certificate: ${errorMessage}` };
-    }
-  }
-
-
-  /**
-   * Store certificate in Electron store
-   */
-  private async storeCertificate(certificate: SSLCertificate): Promise<void> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      certificates.push(certificate);
-      this.store.set('sslCertificates', certificates);
-      console.log(`📁 Certificate stored: ${certificate.id}`);
-    } catch (error) {
-      console.error('Failed to store certificate:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * List all stored certificates
-   */
-  private async listCertificates(): Promise<{ success: boolean; certificates?: SSLCertificate[]; error?: string }> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      
-      // Check for expired certificates and update status
-      const now = new Date();
-      const updatedCertificates = certificates.map(cert => ({
-        ...cert,
-        isExpired: new Date(cert.validTo) < now
-      }));
-
-      // Update store with expiration status
-      this.store.set('sslCertificates', updatedCertificates);
-
-      // Clean up expired certificates (optional - you can remove this if you want to keep expired ones)
-      await this.cleanupExpiredCertificates();
-
-      return { success: true, certificates: updatedCertificates };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: errorMessage };
-    }
-  }
-
-  /**
-   * Clean up expired certificates from the store
-   */
-  private async cleanupExpiredCertificates(): Promise<void> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      const now = new Date();
-      
-      // Keep only non-expired certificates
-      const validCertificates = certificates.filter(cert => new Date(cert.validTo) > now);
-      
-      if (validCertificates.length !== certificates.length) {
-        this.store.set('sslCertificates', validCertificates);
-        console.log(`🧹 Cleaned up ${certificates.length - validCertificates.length} expired certificates`);
-      }
-    } catch (error) {
-      console.error('Failed to cleanup expired certificates:', error);
-    }
-  }
-
-  /**
-   * Get specific certificate by ID
-   */
-  private async getCertificate(certificateId: string): Promise<{ success: boolean; certificate?: SSLCertificate; error?: string }> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      const certificate = certificates.find(cert => cert.id === certificateId);
-      
-      if (!certificate) {
-        return { success: false, error: 'Certificate not found' };
-      }
-
-      return { success: true, certificate };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: errorMessage };
-    }
-  }
-
-  /**
-   * Delete certificate
-   */
-  private async deleteCertificate(certificateId: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      const filteredCertificates = certificates.filter(cert => cert.id !== certificateId);
-      
-      if (filteredCertificates.length === certificates.length) {
-        return { success: false, error: 'Certificate not found' };
-      }
-
-      this.store.set('sslCertificates', filteredCertificates);
-      console.log(`🗑️ Certificate deleted: ${certificateId}`);
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: errorMessage };
-    }
-  }
-
-  /**
-   * Renew certificate (for self-signed, this generates a new one)
-   */
-  private async renewCertificate(certificateId: string): Promise<{ success: boolean; certificate?: SSLCertificate; error?: string }> {
-    try {
-      const certificates = this.store.get('sslCertificates', []) as SSLCertificate[];
-      const certificate = certificates.find(cert => cert.id === certificateId);
-      
-      if (!certificate) {
-        return { success: false, error: 'Certificate not found' };
-      }
-
-      // For self-signed certificates, generate a new one
-      if (certificate.issuer === 'Self-Signed') {
-        const newRequest: CertificateRequest = {
-          domain: certificate.domain,
-          email: 'renewal@example.com', // Default email for renewal
-          provider: 'selfsigned'
-        };
-
-        const result = await this.generateSelfSignedCertificate(newRequest);
-        if (result.success && result.certificate) {
-          // Delete old certificate
-          await this.deleteCertificate(certificateId);
-          return result;
-        } else {
-          return result;
-        }
-      } else {
-        return { success: false, error: 'Certificate renewal not supported for this issuer' };
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: errorMessage };
     }
   }
 

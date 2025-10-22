@@ -1350,7 +1350,6 @@ sslCertificate: {
   list: () => ipcRenderer.invoke('ssl-certificate-list'),
   get: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-get', certificateId),
   delete: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-delete', certificateId),
-  renew: (certificateId: string) => ipcRenderer.invoke('ssl-certificate-renew', certificateId),
   cleanup: () => ipcRenderer.invoke('ssl-certificate-cleanup'),
 },
 

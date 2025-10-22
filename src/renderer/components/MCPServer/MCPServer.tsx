@@ -295,7 +295,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
             name: 'Custom Blog Server',
             type: 'custom',
             address: '0.0.0.0',
-            port: 8081,
+            port: 8080,
             protocol: 'http',
             status: 'running',
             uptime: 7200,
@@ -306,7 +306,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
             description: 'Custom blog automation server',
             accessLevel: {
               level: 'local-network',
-              port: 8081,
+              port: 8080,
               bindAddress: '0.0.0.0',
               requiresAuth: true,
               allowedIPs: ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']

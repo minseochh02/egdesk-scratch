@@ -9,6 +9,7 @@ import {
   faShieldAlt,
   faServer,
   faGlobe,
+  faDesktop,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -25,6 +26,21 @@ const LandingPage: React.FC = () => {
 
           {/* Action Cards */}
           <div className="action-cards">
+            <Link to="/egdesktop" className="action-card desktop-card">
+              <div className="card-icon">
+                <FontAwesomeIcon icon={faDesktop} />
+              </div>
+              <h3 className="card-title">EGDesktop</h3>
+              <p className="card-description">
+                통합 데스크톱 환경에서 모든 EGDesk 기능을 한눈에 관리하고 제어하세요.
+              </p>
+              <div className="card-features">
+                <span className="feature-tag">통합 관리</span>
+                <span className="feature-tag">대시보드</span>
+                <span className="feature-tag">중앙 제어</span>
+              </div>
+            </Link>
+
             <Link to="/homepage-editor" className="action-card homepage-card">
               <div className="card-icon">
                 <FontAwesomeIcon icon={faCog} />
