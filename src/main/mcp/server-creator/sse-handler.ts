@@ -3,11 +3,12 @@
  * 
  * Implements Server-Sent Events transport for Model Context Protocol.
  * This allows Cursor and other MCP clients to connect via HTTP/SSE.
+ * 
+ * This is a generic handler that works with any MCP service.
  */
 
 import * as http from 'http';
-import { GmailMCPFetcher } from '../server-script/gmail-service';
-import { GmailConnection } from '../../../types/gmail-types';
+import { IMCPService } from '../types/mcp-service';
 
 interface JSONRPCRequest {
   jsonrpc: '2.0';
@@ -39,14 +40,14 @@ const globalSSEConnections = new Map<string, http.ServerResponse>();
 const responseSendLocks = new Map<string, boolean>();
 
 export class SSEMCPHandler {
-  private connection: GmailConnection | null = null;
-  private fetcher: GmailMCPFetcher | null = null;
+  private service: IMCPService;
+  private endpointPath: string;
+  private sessionId: string;
 
-  constructor(connection: GmailConnection | null) {
-    this.connection = connection;
-    if (connection) {
-      this.fetcher = new GmailMCPFetcher(connection);
-    }
+  constructor(service: IMCPService, endpointPath: string = '/sse', sessionId: string = 'default') {
+    this.service = service;
+    this.endpointPath = endpointPath;
+    this.sessionId = sessionId;
   }
 
   /**
@@ -54,16 +55,21 @@ export class SSEMCPHandler {
    * This keeps the connection open for server-to-client messages
    */
   async handleSSEStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    // Generate session ID from request or use a default
-    const sessionId = 'default';
+    // Use the configured session ID for this handler instance
+    const sessionId = this.sessionId;
     
     // Check if we already have an active SSE connection
     const existingConnection = globalSSEConnections.get(sessionId);
     if (existingConnection) {
-      console.log(`⚠️  SSE connection already exists! Rejecting duplicate`);
-      res.writeHead(409, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'SSE connection already established' }));
-      return;
+      console.log(`⚠️  Replacing existing SSE connection for session '${sessionId}'`);
+      // Close the old connection
+      try {
+        existingConnection.end();
+      } catch (err) {
+        console.log(`Error closing old connection: ${err}`);
+      }
+      globalSSEConnections.delete(sessionId);
+      responseSendLocks.delete(sessionId);
     }
     
     // Set SSE headers
@@ -82,8 +88,8 @@ export class SSEMCPHandler {
 
     // Send endpoint information - MUST be a named SSE event per MCP spec
     res.write(`event: endpoint\n`);
-    res.write(`data: /gmail/sse\n\n`);
-    console.log(`📤 Sent endpoint event: /gmail/sse`);
+    res.write(`data: ${this.endpointPath}\n\n`);
+    console.log(`📤 Sent endpoint event: ${this.endpointPath}`);
 
     // Keep connection alive with periodic pings
     const keepAlive = setInterval(() => {
@@ -93,9 +99,14 @@ export class SSEMCPHandler {
     // Handle client disconnect
     req.on('close', () => {
       clearInterval(keepAlive);
-      globalSSEConnections.delete(sessionId);
-      responseSendLocks.delete(sessionId);
-      console.log(`📡 SSE stream connection closed (session: ${sessionId})`);
+      // Only delete if THIS connection is still the active one
+      if (globalSSEConnections.get(sessionId) === res) {
+        globalSSEConnections.delete(sessionId);
+        responseSendLocks.delete(sessionId);
+        console.log(`📡 SSE stream connection closed (session: ${sessionId})`);
+      } else {
+        console.log(`📡 Old SSE stream connection closed (session: ${sessionId}) - keeping active connection`);
+      }
     });
   }
 
@@ -121,21 +132,21 @@ export class SSEMCPHandler {
           res.end();
 
           // Wait for SSE connection to be established (with shorter timeout)
-          let sseRes = globalSSEConnections.get('default');
+          let sseRes = globalSSEConnections.get(this.sessionId);
           let waitAttempts = 0;
           
           while (!sseRes && waitAttempts < 200) { // ~20 seconds (200 * 100ms)
             await new Promise(resolve => setTimeout(resolve, 100));
-            sseRes = globalSSEConnections.get('default');
+            sseRes = globalSSEConnections.get(this.sessionId);
             waitAttempts++;
           }
           
           if (!sseRes) {
-            console.error(`❌ SSE connection not available after 20s for ${requestMethod}`);
+            console.error(`❌ SSE connection not available after 20s for ${requestMethod} (session: ${this.sessionId})`);
             return;
           }
 
-          console.log(`✅ SSE connection found, processing ${requestMethod} (id: ${request.id})`);
+          console.log(`✅ SSE connection found, processing ${requestMethod} (id: ${request.id}) (session: ${this.sessionId})`);
           
           const response = await this.handleJSONRPC(request);
 
@@ -173,6 +184,21 @@ export class SSEMCPHandler {
         case 'tools/call':
           return await this.handleToolCall(id, params);
 
+        case 'resources/list':
+          return this.handleResourcesList(id);
+
+        case 'resources/read':
+          return await this.handleResourceRead(id, params);
+
+        case 'notifications/initialized':
+          // Client notification that initialization is complete
+          // No response needed for notifications, but we'll acknowledge
+          return {
+            jsonrpc: '2.0',
+            id: id ?? null,
+            result: {}
+          };
+
         default:
           return {
             jsonrpc: '2.0',
@@ -203,19 +229,16 @@ export class SSEMCPHandler {
   private handleInitialize(id: string | number | null | undefined, params: any): JSONRPCResponse {
     console.log('🔄 Initializing MCP session');
     
+    const serverInfo = this.service.getServerInfo();
+    const capabilities = this.service.getCapabilities();
+    
     return {
       jsonrpc: '2.0',
       id: id ?? null,
       result: {
         protocolVersion: '2024-11-05',
-        serverInfo: {
-          name: 'gmail-mcp-server',
-          version: '1.0.0'
-        },
-        capabilities: {
-          tools: {},
-          resources: {}
-        }
+        serverInfo,
+        capabilities
       }
     };
   }
@@ -226,77 +249,13 @@ export class SSEMCPHandler {
   private handleToolsList(id: string | number | null | undefined): JSONRPCResponse {
     console.log('📋 Listing tools');
 
+    const tools = this.service.listTools();
+
     return {
       jsonrpc: '2.0',
       id: id ?? null,
       result: {
-        tools: [
-          {
-            name: 'gmail_list_users',
-            description: 'List all domain users from Google Workspace',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-              required: []
-            }
-          },
-          {
-            name: 'gmail_get_user_messages',
-            description: 'Get Gmail messages for a specific user',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                email: {
-                  type: 'string',
-                  description: 'The email address of the user'
-                },
-                maxResults: {
-                  type: 'number',
-                  description: 'Maximum number of messages to return (default: 50)',
-                  default: 50
-                }
-              },
-              required: ['email']
-            }
-          },
-          {
-            name: 'gmail_get_user_stats',
-            description: 'Get Gmail statistics for a specific user',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                email: {
-                  type: 'string',
-                  description: 'The email address of the user'
-                }
-              },
-              required: ['email']
-            }
-          },
-          {
-            name: 'gmail_search_messages',
-            description: 'Search Gmail messages by query',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query (e.g., "from:example@gmail.com")'
-                },
-                email: {
-                  type: 'string',
-                  description: 'Optional: filter by specific user email'
-                },
-                maxResults: {
-                  type: 'number',
-                  description: 'Maximum number of messages to return (default: 50)',
-                  default: 50
-                }
-              },
-              required: ['query']
-            }
-          }
-        ]
+        tools
       }
     };
   }
@@ -312,100 +271,18 @@ export class SSEMCPHandler {
 
     console.log(`🔧 Calling tool: ${name}`);
 
-    if (!this.fetcher || !this.connection) {
-      return {
-        jsonrpc: '2.0',
-        id: id ?? null,
-        error: {
-          code: -32603,
-          message: 'No Gmail connection available'
-        }
-      };
+    // Initialize service if needed
+    if (this.service.initialize) {
+      await this.service.initialize();
     }
 
-    // Initialize fetcher if needed
-    await this.fetcher.waitForInitialization();
-
     try {
-      let result;
-
-      switch (name) {
-        case 'gmail_list_users': {
-          const users = await this.fetcher.fetchAllDomainUsers();
-          result = {
-            totalUsers: users.length,
-            users
-          };
-          break;
-        }
-
-        case 'gmail_get_user_messages': {
-          const { email, maxResults = 50 } = args || {};
-          if (!email) {
-            throw new Error('Missing required parameter: email');
-          }
-          const messages = await this.fetcher.fetchUserMessages(email, { maxResults });
-          result = {
-            userEmail: email,
-            totalMessages: messages.length,
-            messages
-          };
-          break;
-        }
-
-        case 'gmail_get_user_stats': {
-          const { email } = args || {};
-          if (!email) {
-            throw new Error('Missing required parameter: email');
-          }
-          const stats = await this.fetcher.fetchUserStats(email);
-          result = {
-            userEmail: email,
-            stats
-          };
-          break;
-        }
-
-        case 'gmail_search_messages': {
-          const { query, email, maxResults = 50 } = args || {};
-          if (!query) {
-            throw new Error('Missing required parameter: query');
-          }
-          const messages = await this.fetcher.fetchUserMessages(email || '', { 
-            query,
-            maxResults 
-          });
-          result = {
-            query,
-            userEmail: email,
-            totalMessages: messages.length,
-            messages
-          };
-          break;
-        }
-
-        default:
-          return {
-            jsonrpc: '2.0',
-            id: id ?? null,
-            error: {
-              code: -32601,
-              message: `Unknown tool: ${name}`
-            }
-          };
-      }
+      const result = await this.service.executeTool(name, args || {});
 
       return {
         jsonrpc: '2.0',
         id: id ?? null,
-        result: {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2)
-            }
-          ]
-        }
+        result
       };
     } catch (error) {
       console.error(`Error executing tool ${name}:`, error);
@@ -421,6 +298,80 @@ export class SSEMCPHandler {
   }
 
   /**
+   * Handle resources/list request
+   */
+  private handleResourcesList(id: string | number | null | undefined): JSONRPCResponse {
+    console.log('📋 Listing resources (SSE)');
+
+    // Check if service supports resources
+    if ('listResources' in this.service && typeof (this.service as any).listResources === 'function') {
+      const resources = (this.service as any).listResources();
+      return {
+        jsonrpc: '2.0',
+        id: id ?? null,
+        result: {
+          resources
+        }
+      };
+    }
+
+    // Return empty array if service doesn't support resources
+    return {
+      jsonrpc: '2.0',
+      id: id ?? null,
+      result: {
+        resources: []
+      }
+    };
+  }
+
+  /**
+   * Handle resources/read request
+   */
+  private async handleResourceRead(
+    id: string | number | null | undefined,
+    params: any
+  ): Promise<JSONRPCResponse> {
+    const { uri } = params;
+
+    console.log(`📖 Reading resource: ${uri} (SSE)`);
+
+    // Check if service supports resources
+    if ('readResource' in this.service && typeof (this.service as any).readResource === 'function') {
+      try {
+        const resource = await (this.service as any).readResource(uri);
+        return {
+          jsonrpc: '2.0',
+          id: id ?? null,
+          result: {
+            contents: [resource]
+          }
+        };
+      } catch (error) {
+        console.error(`Error reading resource ${uri}:`, error);
+        return {
+          jsonrpc: '2.0',
+          id: id ?? null,
+          error: {
+            code: -32603,
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }
+        };
+      }
+    }
+
+    // Return error if service doesn't support resources
+    return {
+      jsonrpc: '2.0',
+      id: id ?? null,
+      error: {
+        code: -32601,
+        message: 'Resources not supported by this service'
+      }
+    };
+  }
+
+  /**
    * Send SSE message (for JSON-RPC responses and notifications)
    */
   private sendSSEMessage(res: http.ServerResponse, data: JSONRPCResponse | JSONRPCNotification): void {
@@ -430,12 +381,15 @@ export class SSEMCPHandler {
     const sseMessage = `event: message\ndata: ${message}\n\n`;
     
     console.log(`📤 Sending SSE message: ${data.jsonrpc ? (data as any).method || 'response' : 'unknown'} (${message.length} bytes)`);
+    console.log(`📝 SSE message content: ${sseMessage.substring(0, 200)}...`);
     
-    res.write(sseMessage);
+    const written = res.write(sseMessage);
+    console.log(`✍️  Write result: ${written}, writable: ${res.writable}`);
     
     // Flush the response to ensure it's sent immediately
     if ('flush' in res && typeof (res as any).flush === 'function') {
       (res as any).flush();
+      console.log(`💧 Flushed SSE response`);
     }
   }
 }

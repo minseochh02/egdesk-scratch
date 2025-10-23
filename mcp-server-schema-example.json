@@ -45,6 +45,41 @@
           "claudeConfigPath": "/Users/minseocha/Library/Application Support/Claude/claude_desktop_config.json",
           "transport": "stdio"
         }
+      },
+      {
+        "id": "filesystem-server-1",
+        "name": "File System MCP Server",
+        "type": "http",
+        "description": "HTTP-based MCP server for file system operations via tunnel",
+        "version": "1.0.0",
+        "createdAt": "2024-01-15T10:30:00.000Z",
+        "updatedAt": "2024-01-15T10:30:00.000Z",
+        "config": {
+          "port": 8080,
+          "transport": "http_streamable",
+          "endpoints": [
+            {
+              "path": "/mcp",
+              "method": "POST",
+              "description": "HTTP Streamable MCP endpoint"
+            },
+            {
+              "path": "/sse",
+              "method": "GET",
+              "description": "SSE MCP endpoint"
+            },
+            {
+              "path": "/message",
+              "method": "POST",
+              "description": "Message endpoint for SSE transport"
+            }
+          ],
+          "security": {
+            "allowedPaths": [],
+            "blockedPaths": [],
+            "blockHiddenFiles": true
+          }
+        }
       }
     ],
     "connections": [
@@ -255,6 +290,105 @@
         "errorRate": 0,
         "activeConnections": 0,
         "totalRequests": 0
+      }
+    },
+    {
+      "id": "filesystem-server-1",
+      "serverId": "filesystem-server-1",
+      "name": "File System MCP Server",
+      "type": "http",
+      "status": "running",
+      "address": "192.168.1.100",
+      "port": 8080,
+      "protocol": "http",
+      "url": "http://192.168.1.100:8080",
+      "tunnelUrl": "https://tunneling-service.onrender.com/t/mcp-server-a7f3k2",
+      "processId": 12346,
+      "startedAt": "2024-01-15T10:30:00.000Z",
+      "uptime": 3600,
+      "memoryUsage": 32.5,
+      "cpuUsage": 8.2,
+      "lastActivity": "2024-01-15T11:30:00.000Z",
+      "version": "1.0.0",
+      "description": "HTTP-based MCP server for file system operations via tunnel",
+      "healthCheck": {
+        "status": "healthy",
+        "lastCheck": "2024-01-15T11:30:00.000Z",
+        "responseTime": 25,
+        "endpoint": "http://192.168.1.100:8080/health",
+        "checks": [
+          {
+            "endpoint": "/health",
+            "status": "healthy",
+            "responseTime": 25,
+            "lastCheck": "2024-01-15T11:30:00.000Z"
+          },
+          {
+            "endpoint": "/mcp",
+            "status": "healthy",
+            "responseTime": 35,
+            "lastCheck": "2024-01-15T11:29:30.000Z"
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "fs_read_file",
+          "description": "Read file contents",
+          "enabled": true,
+          "endpoint": "/mcp"
+        },
+        {
+          "name": "fs_write_file",
+          "description": "Write file contents",
+          "enabled": true,
+          "endpoint": "/mcp"
+        },
+        {
+          "name": "fs_download_file",
+          "description": "Download file as binary data",
+          "enabled": true,
+          "endpoint": "/mcp"
+        },
+        {
+          "name": "fs_list_directory",
+          "description": "List directory contents",
+          "enabled": true,
+          "endpoint": "/mcp"
+        },
+        {
+          "name": "fs_search_files",
+          "description": "Search for files",
+          "enabled": true,
+          "endpoint": "/mcp"
+        }
+      ],
+      "logs": [
+        {
+          "timestamp": "2024-01-15T11:30:00.000Z",
+          "level": "info",
+          "message": "File System MCP server started successfully",
+          "source": "filesystem-server"
+        },
+        {
+          "timestamp": "2024-01-15T11:29:45.000Z",
+          "level": "info",
+          "message": "Tunnel connection established",
+          "source": "tunnel-client"
+        },
+        {
+          "timestamp": "2024-01-15T11:29:30.000Z",
+          "level": "info",
+          "message": "fs_read_file executed successfully",
+          "source": "mcp-handler"
+        }
+      ],
+      "metrics": {
+        "requestsPerMinute": 8,
+        "averageResponseTime": 45,
+        "errorRate": 0.01,
+        "activeConnections": 2,
+        "totalRequests": 450
       }
     }
   ],

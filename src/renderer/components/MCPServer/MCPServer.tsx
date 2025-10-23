@@ -33,6 +33,8 @@ import {
 } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
+import RunningServersSection from './RunningServersSection';
+import TunnelAndServerConfig from './TunnelAndServerConfig';
 
 // Import GmailConnection type from GmailDashboard
 interface GmailConnection {
@@ -143,6 +145,15 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [editingServer, setEditingServer] = useState<RunningMCPServer | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   
+  // Tunnel registration modal state
+  const [showTunnelRegistrationModal, setShowTunnelRegistrationModal] = useState<boolean>(false);
+  const [tunnelServerName, setTunnelServerName] = useState<string>('');
+  const [tunnelRegistrationStatus, setTunnelRegistrationStatus] = useState<{
+    status: 'idle' | 'registering' | 'success' | 'error' | 'name_taken';
+    message?: string;
+    publicUrl?: string;
+  }>({ status: 'idle' });
+  
   // Server name editing state
   const [editingServerName, setEditingServerName] = useState<string | null>(null);
   const [editingServerNameValue, setEditingServerNameValue] = useState<string>('');
@@ -191,6 +202,39 @@ const MCPServer: React.FC<MCPServerProps> = () => {
 
   // State for showing/hiding anon key
   const [showAnonKey, setShowAnonKey] = useState<boolean>(false);
+
+  // Tunnel configurations state
+  const [tunnelConfigs, setTunnelConfigs] = useState<Array<{
+    name: string;
+    tunnelUrl: string;
+    registeredAt: string;
+    id?: string;
+    ip?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>>([]);
+
+  // MCP Server name state
+  const [mcpServerName, setMcpServerName] = useState<string>('my-mcp-server');
+  const [isEditingMcpServerName, setIsEditingMcpServerName] = useState<boolean>(false);
+  const [editingMcpServerNameValue, setEditingMcpServerNameValue] = useState<string>('');
+
+  // Active tunnel configuration state
+  const [activeTunnelConfig, setActiveTunnelConfig] = useState<{
+    registered: boolean;
+    registrationId: string;
+    serverName: string;
+    publicUrl: string;
+    registeredAt: string;
+    lastConnectedAt: string;
+  }>({
+    registered: false,
+    registrationId: '',
+    serverName: '',
+    publicUrl: '',
+    registeredAt: '',
+    lastConnectedAt: '',
+  });
 
   // Load running servers
   const loadRunningServers = useCallback(async (isManualRefresh = false) => {
@@ -446,12 +490,106 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   };
 
+  // Load tunnel configurations
+  const loadTunnelConfigs = async () => {
+    try {
+      const result = await window.electron.invoke('get-tunnel-configs');
+      if (result.success && result.configs) {
+        setTunnelConfigs(result.configs);
+      }
+    } catch (err) {
+      console.error('Error loading tunnel configs:', err);
+    }
+  };
+
+  // Load MCP server name
+  const loadMcpServerName = async () => {
+    try {
+      const result = await window.electron.invoke('get-mcp-server-name');
+      if (result.success && result.serverName) {
+        setMcpServerName(result.serverName);
+      }
+    } catch (err) {
+      console.error('Error loading MCP server name:', err);
+    }
+  };
+
+  // Load active tunnel configuration
+  const loadActiveTunnelConfig = async () => {
+    try {
+      const result = await window.electron.invoke('get-mcp-tunnel-config');
+      if (result.success && result.tunnel) {
+        setActiveTunnelConfig(result.tunnel);
+      } else {
+        // Clear state when no tunnel is active (important for UI sync)
+        setActiveTunnelConfig({
+          registered: false,
+          registrationId: '',
+          serverName: '',
+          publicUrl: '',
+          registeredAt: '',
+          lastConnectedAt: ''
+        });
+      }
+    } catch (err) {
+      console.error('Error loading tunnel configuration:', err);
+      // Also clear state on error to prevent stuck UI
+      setActiveTunnelConfig({
+        registered: false,
+        registrationId: '',
+        serverName: '',
+        publicUrl: '',
+        registeredAt: '',
+        lastConnectedAt: ''
+      });
+    }
+  };
+
+  // Save MCP server name
+  const handleSaveMcpServerName = async () => {
+    if (!editingMcpServerNameValue.trim()) {
+      alert('Server name cannot be empty');
+      return;
+    }
+
+    // Validate server name format (lowercase, alphanumeric, hyphens only)
+    const normalizedName = editingMcpServerNameValue.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    
+    try {
+      const result = await window.electron.invoke('set-mcp-server-name', normalizedName);
+      if (result.success) {
+        setMcpServerName(normalizedName);
+        setIsEditingMcpServerName(false);
+        setEditingMcpServerNameValue('');
+        alert('MCP server name updated successfully!');
+      } else {
+        alert(`Failed to update server name: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Error saving MCP server name:', err);
+      alert(`Error saving server name: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleEditMcpServerName = () => {
+    setIsEditingMcpServerName(true);
+    setEditingMcpServerNameValue(mcpServerName);
+  };
+
+  const handleCancelEditMcpServerName = () => {
+    setIsEditingMcpServerName(false);
+    setEditingMcpServerNameValue('');
+  };
+
   // Check Claude Desktop status on mount
   useEffect(() => {
     checkClaudeDesktopStatus();
     loadHttpServerStatus();
     loadMCPServers();
     loadSupabaseConfig();
+    loadTunnelConfigs();
+    loadMcpServerName();
+    loadActiveTunnelConfig();
   }, []);
 
   // Load HTTP server status
@@ -1047,98 +1185,32 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   };
 
-  const handleStartLocalhost = async () => {
-    try {
-      console.log('🚀 Starting local network server...');
-      
-      // Start HTTP server (no SSL needed for local network!)
-      console.log('🌐 Starting HTTP server on local network...');
-      const serverResult = await window.electron.httpsServer.start({
-        port: 8080,
-        useHTTPS: false  // Use HTTP for local network
-      });
-
-      if (serverResult.success) {
-        // Get the local IP address for network access from main process
-        const networkInfo = await window.electron.httpsServer.getNetworkInfo();
-        const localIP = networkInfo.localIP || 'localhost';
-        const protocol = serverResult.protocol || 'http';
-
-        alert(`✅ ${protocol.toUpperCase()} server started successfully!\n\nLocal URL: ${protocol}://localhost:${serverResult.port}\nNetwork URL: ${protocol}://${localIP}:${serverResult.port}\n\n✨ No SSL certificate needed!\n📱 Works perfectly with mobile apps and API calls\n🌐 All devices on your network can connect without any warnings`);
-        console.log(`🌐 ${protocol.toUpperCase()} Server running on:`, `${protocol}://localhost:${serverResult.port}`);
-        console.log('🌐 Network accessible at:', `${protocol}://${localIP}:${serverResult.port}`);
-        
-        // Refresh the servers list to show the new server
-        await loadRunningServers(true);
-      } else {
-        alert(`Failed to start server: ${serverResult.error || 'Unknown error'}`);
-      }
-    } catch (err) {
-      console.error('Error starting localhost server:', err);
-      alert(`Error starting localhost server: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
-
-  const handleDebugTunnelRegistration = async () => {
-    try {
-      // Generate a test server name
-      const testServerName = `test-server-${Date.now()}`;
-      const testPassword = 'test123';
-      
-      console.log(`🧪 [DEBUG] Testing tunnel registration...`);
-      console.log(`🧪 [DEBUG] Server name: ${testServerName}`);
-      console.log(`🧪 [DEBUG] Password: ${testPassword}`);
-      
-      const result = await window.electron.invoke('mcp-tunnel-register', testServerName, testPassword) as {
-        success: boolean;
-        status?: 'registered' | 'name_taken' | 'error';
-        message?: string;
-        name?: string;
-        ip?: string;
-        timestamp?: string;
-        id?: string;
-        existing_record?: {
-          name: string;
-          ip: string;
-          registered_at: string;
-        };
-      };
-      
-      console.log(`🧪 [DEBUG] Registration result:`, result);
-      
-      if (result.success && result.status === 'registered') {
-        alert(`✅ DEBUG: Tunnel registered successfully!\n\nServer Name: ${result.name}\nIP Address: ${result.ip}\nTimestamp: ${result.timestamp}\nID: ${result.id}\n\nCheck console for full details.`);
-      } else if (result.status === 'name_taken') {
-        alert(`⚠️ DEBUG: Name already taken!\n\nExisting Registration:\nName: ${result.existing_record?.name}\nIP: ${result.existing_record?.ip}\nRegistered: ${result.existing_record?.registered_at}\n\nCheck console for full details.`);
-      } else {
-        alert(`❌ DEBUG: Registration failed!\n\nStatus: ${result.status}\nMessage: ${result.message || 'Unknown error'}\n\nCheck console for full details.`);
-      }
-    } catch (error) {
-      console.error('🧪 [DEBUG] Tunnel registration error:', error);
-      alert(`❌ DEBUG: Exception occurred!\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck console for full details.`);
-    }
-  };
-
   const handleStartTunnel = async (server: RunningMCPServer) => {
     try {
       console.log(`🚀 Starting tunnel for: ${server.name}`);
       
-      // Generate tunnel server name (lowercase, no spaces)
-      const tunnelServerName = server.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      // Use the global MCP server name instead of per-server name
+      const localServerUrl = `http://localhost:${server.port}`;
       
-      // Register server name first
-      const registerResult = await window.electron.mcp.registerTunnel(tunnelServerName);
-      
-      if (!registerResult.success && registerResult.status !== 'name_taken') {
-        alert(`❌ Failed to register tunnel: ${registerResult.message}`);
-        return;
-      }
-      
-      // Start the WebSocket tunnel
-      const result = await window.electron.tunnel.start(tunnelServerName, `http://localhost:${server.port}`);
+      // Start tunnel (auto-registers and connects)
+      const result = await window.electron.invoke('mcp-tunnel-start', mcpServerName, localServerUrl) as {
+        success: boolean;
+        message?: string;
+        error?: string;
+        publicUrl?: string;
+        registrationId?: string;
+        tunnelId?: string;
+      };
       
       if (result.success) {
-        alert(`✅ Tunnel started successfully!\n\nServer: ${server.name}\nTunnel Name: ${tunnelServerName}\nLocal Port: ${server.port}\n\nYour server is now accessible through the public URL.`);
+        // Reload the saved tunnel configuration
+        await loadActiveTunnelConfig();
+        
+        const publicUrlMessage = result.publicUrl 
+          ? `\n\nPublic URL: ${result.publicUrl}`
+          : '';
+        
+        alert(`✅ Tunnel started successfully!\n\nServer: ${server.name}\nTunnel Name: ${mcpServerName}\nLocal Port: ${server.port}${publicUrlMessage}\n\nYour server is now accessible through the public URL.`);
         
         // Refresh server list to update tunnel status
         await loadRunningServers(true);
@@ -1155,14 +1227,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     try {
       console.log(`🛑 Stopping tunnel for: ${server.name}`);
       
-      // Generate tunnel server name (lowercase, no spaces)
-      const tunnelServerName = server.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      
-      // Stop the WebSocket tunnel
-      const result = await window.electron.tunnel.stop(tunnelServerName);
+      // Use the global MCP server name
+      const result = await window.electron.invoke('mcp-tunnel-stop', mcpServerName);
       
       if (result.success) {
-        alert(`✅ Tunnel stopped successfully!\n\nServer: ${server.name}\nTunnel Name: ${tunnelServerName}`);
+        // Reload the saved tunnel configuration
+        await loadActiveTunnelConfig();
+        
+        alert(`✅ Tunnel stopped successfully!\n\nServer: ${server.name}\nTunnel Name: ${mcpServerName}`);
         
         // Refresh server list to update tunnel status
         await loadRunningServers(true);
@@ -1175,6 +1247,164 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   };
 
+  // Tunnel handlers for TunnelAndServerConfig (uses HTTP server port 8080)
+  const handleStartTunnelForConfig = async () => {
+    try {
+      if (!httpServerStatus.isRunning || !httpServerStatus.port) {
+        alert('❌ HTTP server must be running to start tunnel');
+        return;
+      }
+      
+      console.log(`🚀 Starting tunnel for MCP server: ${mcpServerName}`);
+      
+      const localServerUrl = `http://localhost:${httpServerStatus.port}`;
+      
+      // Start tunnel (auto-registers and connects)
+      const result = await window.electron.invoke('mcp-tunnel-start', mcpServerName, localServerUrl) as {
+        success: boolean;
+        message?: string;
+        error?: string;
+        publicUrl?: string;
+        registrationId?: string;
+        tunnelId?: string;
+      };
+      
+      if (result.success) {
+        // Reload the saved tunnel configuration
+        await loadActiveTunnelConfig();
+        
+        const publicUrlMessage = result.publicUrl 
+          ? `\n\n🌐 Public URL: ${result.publicUrl}`
+          : '';
+        
+        alert(`✅ Tunnel started successfully!\n\nTunnel Name: ${mcpServerName}\nLocal Port: ${httpServerStatus.port}${publicUrlMessage}`);
+      } else {
+        alert(`❌ Failed to start tunnel: ${result.error || result.message}`);
+      }
+    } catch (error) {
+      console.error('Error starting tunnel:', error);
+      alert(`❌ Error starting tunnel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleStopTunnelForConfig = async () => {
+    try {
+      console.log(`🛑 Stopping tunnel for: ${mcpServerName}`);
+      
+      const result = await window.electron.invoke('mcp-tunnel-stop', mcpServerName);
+      
+      // Always reload tunnel config to sync state, even if stop fails
+      await loadActiveTunnelConfig();
+      
+      if (result.success) {
+        alert(`✅ Tunnel stopped successfully!\n\nTunnel Name: ${mcpServerName}`);
+      } else {
+        const errorMsg = result.error || result.message || 'Unknown error';
+        // If tunnel not found, the state is already cleared by reload above
+        if (errorMsg.includes('No active tunnel') || errorMsg.includes('not found')) {
+          alert(`ℹ️ Tunnel state cleared.\n\nThe tunnel was already disconnected (possibly from app restart).\nYou can now start a new tunnel.`);
+        } else {
+          alert(`❌ Failed to stop tunnel: ${errorMsg}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error stopping tunnel:', error);
+      // Still reload to ensure state is synced
+      await loadActiveTunnelConfig();
+      alert(`❌ Error stopping tunnel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleOpenTunnelRegistration = () => {
+    setShowTunnelRegistrationModal(true);
+    setTunnelServerName('');
+    setTunnelRegistrationStatus({ status: 'idle' });
+  };
+
+  const handleRegisterTunnel = async () => {
+    if (!tunnelServerName.trim()) {
+      setTunnelRegistrationStatus({
+        status: 'error',
+        message: 'Please enter a server name'
+      });
+      return;
+    }
+
+    // Validate server name format (lowercase, alphanumeric, hyphens only)
+    const normalizedName = tunnelServerName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    
+    if (normalizedName !== tunnelServerName.toLowerCase()) {
+      setTunnelServerName(normalizedName);
+    }
+
+    try {
+      setTunnelRegistrationStatus({ status: 'registering', message: 'Registering with tunnel service...' });
+
+      // Register with tunnel service
+      const result = await window.electron.invoke('mcp-tunnel-register', normalizedName) as {
+        success: boolean;
+        status?: 'registered' | 'name_taken' | 'error';
+        message?: string;
+        name?: string;
+        ip?: string;
+        id?: string;
+        created_at?: string;
+      };
+
+      if (result.success && result.status === 'registered') {
+        // Generate tunnel URL based on Supabase configuration
+        const tunnelUrl = supabaseConfig.supabaseUrl 
+          ? `${supabaseConfig.supabaseUrl}/functions/v1/tunnel?name=${normalizedName}`
+          : `https://your-supabase-project.supabase.co/functions/v1/tunnel?name=${normalizedName}`;
+
+        // Save tunnel configuration to electron store
+        const saveResult = await window.electron.invoke('save-tunnel-config', {
+          name: normalizedName,
+          tunnelUrl: tunnelUrl,
+          registeredAt: result.created_at || new Date().toISOString(),
+          id: result.id,
+          ip: result.ip
+        });
+
+        if (saveResult.success) {
+          setTunnelRegistrationStatus({
+            status: 'success',
+            message: `Successfully registered "${normalizedName}"!`,
+            publicUrl: tunnelUrl
+          });
+          // Reload tunnel configs to show the new registration
+          await loadTunnelConfigs();
+        } else {
+          setTunnelRegistrationStatus({
+            status: 'error',
+            message: `Registration successful but failed to save configuration: ${saveResult.error}`
+          });
+        }
+      } else if (result.status === 'name_taken') {
+        setTunnelRegistrationStatus({
+          status: 'name_taken',
+          message: `The name "${normalizedName}" is already taken. Please choose a different name.`
+        });
+      } else {
+        setTunnelRegistrationStatus({
+          status: 'error',
+          message: result.message || 'Registration failed'
+        });
+      }
+    } catch (error) {
+      console.error('Error registering tunnel:', error);
+      setTunnelRegistrationStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
+  };
+
+  const handleCloseTunnelRegistration = () => {
+    setShowTunnelRegistrationModal(false);
+    setTunnelServerName('');
+    setTunnelRegistrationStatus({ status: 'idle' });
+  };
 
   // Show Gmail tool if selected
   if (showGmailTool) {
@@ -1230,31 +1460,6 @@ const MCPServer: React.FC<MCPServerProps> = () => {
               <FontAwesomeIcon icon={faPlus} />
               <span>Add MCP Server</span>
             </button>
-            <button 
-              className="hero-action-btn"
-              onClick={() => loadRunningServers(true)}
-            >
-              <FontAwesomeIcon icon={faRefresh} />
-              <span>Refresh Servers</span>
-            </button>
-            <button 
-              className="hero-action-btn"
-              onClick={handleStartLocalhost}
-              style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
-              title="Start HTTPS server accessible from your local network (same WiFi)"
-            >
-              <FontAwesomeIcon icon={faServer} />
-              <span>Start Local Network Server</span>
-            </button>
-            <button 
-              className="hero-action-btn"
-              onClick={handleDebugTunnelRegistration}
-              style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}
-              title="Test tunnel registration with Supabase"
-            >
-              <FontAwesomeIcon icon={faTerminal} />
-              <span>🧪 Debug Tunnel</span>
-            </button>
           </div>
         </div>
         
@@ -1273,966 +1478,310 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         </div>
       </div>
 
-      {/* Supabase Configuration Section */}
-      <div className="supabase-config-section" style={{
-        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)',
-        borderRadius: '16px',
-        padding: '24px',
-        margin: '24px 0',
-        border: '1px solid rgba(16, 185, 129, 0.2)'
-      }}>
-        <div className="section-header">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <FontAwesomeIcon icon={faGlobe} />
-            Supabase Tunnel Configuration
-          </h2>
-          <p>Configuration for public MCP server tunneling via Supabase</p>
-        </div>
+      {/* Tunnel and Server Configuration */}
+      <TunnelAndServerConfig
+        mcpServerName={mcpServerName}
+        isEditingMcpServerName={isEditingMcpServerName}
+        editingMcpServerNameValue={editingMcpServerNameValue}
+        setEditingMcpServerNameValue={setEditingMcpServerNameValue}
+        handleEditMcpServerName={handleEditMcpServerName}
+        handleSaveMcpServerName={handleSaveMcpServerName}
+        handleCancelEditMcpServerName={handleCancelEditMcpServerName}
+        activeTunnelConfig={activeTunnelConfig}
+        tunnelConfigs={tunnelConfigs}
+        httpServerStatus={httpServerStatus}
+        mcpServers={mcpServers}
+        handleStartHttpServer={handleStartHttpServer}
+        handleStopHttpServer={handleStopHttpServer}
+        loadHttpServerStatus={loadHttpServerStatus}
+        handleEnableMCPServer={handleEnableMCPServer}
+        handleDisableMCPServer={handleDisableMCPServer}
+        handleStartTunnel={handleStartTunnelForConfig}
+        handleStopTunnel={handleStopTunnelForConfig}
+        loadActiveTunnelConfig={loadActiveTunnelConfig}
+      />
 
-        <div style={{ marginTop: '24px' }}>
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            padding: '20px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            {supabaseConfig.isLoading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#f59e0b' }}>
-                <FontAwesomeIcon icon={faSpinner} spin />
-                <span>Loading Supabase configuration...</span>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Supabase URL */}
-                  <div>
-                    <div style={{ 
-                      fontSize: '14px', 
-                      fontWeight: '600', 
-                      marginBottom: '8px',
-                      opacity: 0.7
-                    }}>
-                      Supabase URL
-                    </div>
-                    <div style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '12px',
+      {/* Running Servers Section */}
+      <RunningServersSection
+        servers={servers}
+        loading={loading}
+        error={error}
+        editingServerName={editingServerName}
+        editingServerNameValue={editingServerNameValue}
+        claudeDesktopStatus={claudeDesktopStatus}
+        supabaseConfig={supabaseConfig}
+        loadRunningServers={loadRunningServers}
+        setEditingServerNameValue={setEditingServerNameValue}
+        handleSaveServerName={handleSaveServerName}
+        handleCancelEditServerName={handleCancelEditServerName}
+        handleEditServerName={handleEditServerName}
+        formatUptime={formatUptime}
+        getStatusIcon={getStatusIcon}
+        getStatusColor={getStatusColor}
+        getAccessLevelIcon={getAccessLevelIcon}
+        getAccessLevelColor={getAccessLevelColor}
+        getAccessLevelDisplayName={getAccessLevelDisplayName}
+        generateMCPSchema={generateMCPSchema}
+        generateNetworkMCPSchema={generateNetworkMCPSchema}
+        generatePublicMCPSchema={generatePublicMCPSchema}
+        handleCopySchema={handleCopySchema}
+        handleCopyNetworkSchema={handleCopyNetworkSchema}
+        handleCopyPublicSchema={handleCopyPublicSchema}
+        handleConfigureClaudeDesktop={handleConfigureClaudeDesktop}
+        handleUnconfigureClaudeDesktop={handleUnconfigureClaudeDesktop}
+        handleEditAccessLevel={handleEditAccessLevel}
+        handleViewDashboard={handleViewDashboard}
+      />
+
+
+      {/* Tunnel Registration Modal */}
+      {showTunnelRegistrationModal && (
+        <div className="access-level-modal-overlay">
+          <div className="access-level-modal">
+            <div className="access-level-modal-header">
+              <h3>Register MCP Server Tunnel</h3>
+              <button
+                className="access-level-modal-close"
+                onClick={handleCloseTunnelRegistration}
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            
+            <div className="access-level-modal-content">
+              <div style={{ marginBottom: '24px' }}>
+                <p style={{ marginBottom: '16px', opacity: 0.9 }}>
+                  Register a unique name for your MCP server to enable public tunnel access. 
+                  This name will be used to route requests to your server.
+                </p>
+                
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '8px', 
+                    fontWeight: '600',
+                    fontSize: '14px'
+                  }}>
+                    MCP Server Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tunnelServerName}
+                    onChange={(e) => setTunnelServerName(e.target.value)}
+                    placeholder="my-mcp-server"
+                    disabled={tunnelRegistrationStatus.status === 'registering' || tunnelRegistrationStatus.status === 'success'}
+                    style={{
+                      width: '100%',
                       padding: '12px',
-                      background: 'rgba(0, 0, 0, 0.2)',
                       borderRadius: '8px',
-                      fontFamily: 'monospace',
-                      fontSize: '14px'
-                    }}>
-                      {supabaseConfig.supabaseUrl ? (
-                        <>
-                          <FontAwesomeIcon icon={faCircleCheck} style={{ color: '#10b981' }} />
-                          <span style={{ flex: 1, wordBreak: 'break-all' }}>
-                            {supabaseConfig.supabaseUrl}
-                          </span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(supabaseConfig.supabaseUrl || '');
-                              alert('Supabase URL copied to clipboard!');
-                            }}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              border: '1px solid rgba(255, 255, 255, 0.2)',
-                              borderRadius: '6px',
-                              padding: '6px 12px',
-                              color: 'white',
-                              cursor: 'pointer',
-                              fontSize: '12px'
-                            }}
-                          >
-                            <FontAwesomeIcon icon={faCopy} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <FontAwesomeIcon icon={faCircleXmark} style={{ color: '#ef4444' }} />
-                          <span style={{ opacity: 0.5 }}>Not configured</span>
-                        </>
-                      )}
-                    </div>
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'rgba(0, 0, 0, 0.3)',
+                      color: 'white',
+                      fontSize: '14px',
+                      fontFamily: 'monospace'
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && tunnelRegistrationStatus.status !== 'registering' && tunnelRegistrationStatus.status !== 'success') {
+                        handleRegisterTunnel();
+                      }
+                    }}
+                  />
+                  <div style={{ 
+                    marginTop: '6px', 
+                    fontSize: '12px', 
+                    opacity: 0.6 
+                  }}>
+                    Use lowercase letters, numbers, and hyphens only
                   </div>
-
-                  {/* Anon Key */}
-                  <div>
-                    <div style={{ 
-                      fontSize: '14px', 
-                      fontWeight: '600', 
-                      marginBottom: '8px',
-                      opacity: 0.7
-                    }}>
-                      Supabase Anon Key
-                    </div>
-                    <div style={{ 
-                      display: 'flex', 
-                      flexDirection: 'column',
-                      gap: '8px',
-                      padding: '12px',
-                      background: 'rgba(0, 0, 0, 0.2)',
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {supabaseConfig.hasSupabaseKey ? (
-                          <>
-                            <FontAwesomeIcon icon={faCircleCheck} style={{ color: '#10b981', fontSize: '20px' }} />
-                            <span style={{ fontWeight: '600' }}>Configured</span>
-                            <span style={{ 
-                              marginLeft: 'auto',
-                              padding: '4px 12px',
-                              background: 'rgba(16, 185, 129, 0.2)',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              color: '#10b981'
-                            }}>
-                              ✓ Ready
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <FontAwesomeIcon icon={faCircleXmark} style={{ color: '#ef4444', fontSize: '20px' }} />
-                            <span style={{ fontWeight: '600' }}>Not configured</span>
-                            <span style={{ 
-                              marginLeft: 'auto',
-                              padding: '4px 12px',
-                              background: 'rgba(239, 68, 68, 0.2)',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              color: '#ef4444'
-                            }}>
-                              ⚠ Optional
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      
-                      {/* Show anon key value if configured */}
-                      {supabaseConfig.supabaseAnonKey && (
-                        <div style={{ 
-                          marginTop: '8px',
-                          padding: '10px 12px',
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          borderRadius: '6px',
-                          fontFamily: 'monospace',
-                          fontSize: '13px',
-                          wordBreak: 'break-all',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <FontAwesomeIcon 
-                            icon={faLock} 
-                            style={{ color: '#10b981', flexShrink: 0 }} 
-                          />
-                          <span style={{ flex: 1, userSelect: 'all' }}>
-                            {showAnonKey 
-                              ? supabaseConfig.supabaseAnonKey 
-                              : '•'.repeat(Math.min(supabaseConfig.supabaseAnonKey.length, 50))
-                            }
-                          </span>
-                          <button
-                            onClick={() => setShowAnonKey(!showAnonKey)}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              border: '1px solid rgba(255, 255, 255, 0.2)',
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              color: 'white',
-                              cursor: 'pointer',
-                              fontSize: '11px',
-                              flexShrink: 0
-                            }}
-                            title={showAnonKey ? 'Hide key' : 'Show key'}
-                          >
-                            {showAnonKey ? '👁️ Hide' : '👁️ Show'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(supabaseConfig.supabaseAnonKey || '');
-                              alert('Anon key copied to clipboard!');
-                            }}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              border: '1px solid rgba(255, 255, 255, 0.2)',
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              color: 'white',
-                              cursor: 'pointer',
-                              fontSize: '11px',
-                              flexShrink: 0
-                            }}
-                            title="Copy to clipboard"
-                          >
-                            <FontAwesomeIcon icon={faCopy} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Tunnel Endpoints */}
-                  {supabaseConfig.supabaseUrl && (
-                    <div>
-                      <div style={{ 
-                        fontSize: '14px', 
-                        fontWeight: '600', 
-                        marginBottom: '8px',
-                        opacity: 0.7
-                      }}>
-                        Tunnel Endpoints
-                      </div>
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column',
-                        gap: '8px'
-                      }}>
-                        {/* Register Endpoint */}
-                        <div style={{ 
-                          padding: '10px 12px',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          borderRadius: '8px',
-                          fontSize: '13px'
-                        }}>
-                          <div style={{ opacity: 0.6, marginBottom: '4px', fontSize: '11px' }}>
-                            Registration Endpoint:
-                          </div>
-                          <div style={{ 
-                            fontFamily: 'monospace',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}>
-                            <span style={{ flex: 1, wordBreak: 'break-all' }}>
-                              {supabaseConfig.supabaseUrl}/functions/v1/register?name=YOUR_NAME
-                            </span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(`${supabaseConfig.supabaseUrl}/functions/v1/register?name=YOUR_NAME`);
-                                alert('Registration endpoint copied to clipboard!');
-                              }}
-                              style={{
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 8px',
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                              }}
-                            >
-                              <FontAwesomeIcon icon={faCopy} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Lookup Endpoint */}
-                        <div style={{ 
-                          padding: '10px 12px',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          borderRadius: '8px',
-                          fontSize: '13px'
-                        }}>
-                          <div style={{ opacity: 0.6, marginBottom: '4px', fontSize: '11px' }}>
-                            Lookup Endpoint:
-                          </div>
-                          <div style={{ 
-                            fontFamily: 'monospace',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}>
-                            <span style={{ flex: 1, wordBreak: 'break-all' }}>
-                              {supabaseConfig.supabaseUrl}/functions/v1/r?name=YOUR_NAME
-                            </span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(`${supabaseConfig.supabaseUrl}/functions/v1/r?name=YOUR_NAME`);
-                                alert('Lookup endpoint copied to clipboard!');
-                              }}
-                              style={{
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 8px',
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                              }}
-                            >
-                              <FontAwesomeIcon icon={faCopy} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                {!supabaseConfig.supabaseUrl && (
-                  <div style={{ 
-                    marginTop: '16px',
+                {/* Status Messages */}
+                {tunnelRegistrationStatus.status === 'registering' && (
+                  <div style={{
                     padding: '12px',
-                    background: 'rgba(239, 68, 68, 0.1)',
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
                     borderRadius: '8px',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    fontSize: '13px'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    color: '#f59e0b'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <FontAwesomeIcon icon={faTriangleExclamation} style={{ color: '#ef4444' }} />
-                      <strong>Supabase Not Configured</strong>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    <span>{tunnelRegistrationStatus.message}</span>
+                  </div>
+                )}
+
+                {tunnelRegistrationStatus.status === 'success' && (
+                  <div style={{
+                    padding: '16px',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: '8px',
+                    color: '#10b981'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <FontAwesomeIcon icon={faCircleCheck} style={{ fontSize: '20px' }} />
+                      <strong>{tunnelRegistrationStatus.message}</strong>
                     </div>
-                    <div style={{ opacity: 0.9 }}>
-                      Add SUPABASE_URL to your .env file to enable tunnel registration.
+                    <div style={{ 
+                      marginTop: '12px',
+                      padding: '12px',
+                      background: 'rgba(0, 0, 0, 0.3)',
+                      borderRadius: '6px'
+                    }}>
+                      <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '6px' }}>
+                        Tunnel URL:
+                      </div>
+                      <div style={{ 
+                        fontFamily: 'monospace', 
+                        fontSize: '13px',
+                        wordBreak: 'break-all',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <span style={{ flex: 1 }}>{tunnelRegistrationStatus.publicUrl}</span>
+                        <button
+                          onClick={() => {
+                            if (tunnelRegistrationStatus.publicUrl) {
+                              navigator.clipboard.writeText(tunnelRegistrationStatus.publicUrl);
+                              alert('Tunnel URL copied to clipboard!');
+                            }
+                          }}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: '4px',
+                            padding: '6px 10px',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faCopy} />
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '12px', fontSize: '13px', opacity: 0.9 }}>
+                      ✓ Configuration saved to electron store
                     </div>
                   </div>
                 )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* HTTP Server Control Section */}
-      <div className="http-server-control-section" style={{
-        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)',
-        borderRadius: '16px',
-        padding: '24px',
-        margin: '24px 0',
-        border: '1px solid rgba(59, 130, 246, 0.2)'
-      }}>
-        <div className="section-header">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <FontAwesomeIcon icon={faServer} />
-            HTTP Server Control
-          </h2>
-          <p>Manage your MCP HTTP server and enabled services</p>
-        </div>
+                {tunnelRegistrationStatus.status === 'name_taken' && (
+                  <div style={{
+                    padding: '12px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                    color: '#ef4444'
+                  }}>
+                    <FontAwesomeIcon icon={faTriangleExclamation} style={{ marginTop: '2px' }} />
+                    <span>{tunnelRegistrationStatus.message}</span>
+                  </div>
+                )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-          {/* HTTP Server Status */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            padding: '20px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FontAwesomeIcon icon={faGlobe} />
-              Server Status
-            </h3>
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                <FontAwesomeIcon 
-                  icon={httpServerStatus.isRunning ? faCircleCheck : faCircleXmark}
-                  style={{ color: httpServerStatus.isRunning ? '#10b981' : '#6b7280', fontSize: '20px' }}
-                />
-                <span style={{ fontSize: '18px', fontWeight: '600' }}>
-                  {httpServerStatus.isLoading ? 'Checking...' : httpServerStatus.isRunning ? 'Running' : 'Stopped'}
-                </span>
+                {tunnelRegistrationStatus.status === 'error' && (
+                  <div style={{
+                    padding: '12px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                    color: '#ef4444'
+                  }}>
+                    <FontAwesomeIcon icon={faCircleXmark} style={{ marginTop: '2px' }} />
+                    <span>{tunnelRegistrationStatus.message}</span>
+                  </div>
+                )}
               </div>
-              {httpServerStatus.isRunning && httpServerStatus.port && (
-                <div style={{ marginLeft: '32px', opacity: 0.8 }}>
-                  <div>Port: {httpServerStatus.port}</div>
-                  <div>Local: http://localhost:{httpServerStatus.port}</div>
+
+              {/* Info Box */}
+              {tunnelRegistrationStatus.status !== 'success' && (
+                <div style={{
+                  padding: '12px',
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#3b82f6'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <FontAwesomeIcon icon={faGlobe} />
+                    <strong>How it works</strong>
+                  </div>
+                  <ul style={{ marginLeft: '20px', marginTop: '8px', opacity: 0.9 }}>
+                    <li>Your server name is registered in the tunnel service</li>
+                    <li>A unique tunnel URL is generated for your server</li>
+                    <li>Configuration is saved locally for easy access</li>
+                    <li>You can start the tunnel anytime from the server actions</li>
+                  </ul>
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {httpServerStatus.isRunning ? (
+
+            <div className="access-level-modal-footer">
+              {tunnelRegistrationStatus.status === 'success' ? (
                 <button
-                  onClick={handleStopHttpServer}
-                  disabled={httpServerStatus.isLoading}
-                  style={{
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '10px 20px',
-                    cursor: httpServerStatus.isLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    opacity: httpServerStatus.isLoading ? 0.5 : 1
-                  }}
-                >
-                  <FontAwesomeIcon icon={faStop} />
-                  Stop Server
-                </button>
-              ) : (
-                <button
-                  onClick={handleStartHttpServer}
-                  disabled={httpServerStatus.isLoading}
+                  className="access-level-modal-cancel"
+                  onClick={handleCloseTunnelRegistration}
                   style={{
                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '10px 20px',
-                    cursor: httpServerStatus.isLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    opacity: httpServerStatus.isLoading ? 0.5 : 1
+                    border: 'none'
                   }}
                 >
-                  <FontAwesomeIcon icon={faPlay} />
-                  Start Server
+                  Done
                 </button>
-              )}
-              <button
-                onClick={loadHttpServerStatus}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'white',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  padding: '10px 16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <FontAwesomeIcon icon={faRefresh} />
-              </button>
-            </div>
-          </div>
-
-          {/* MCP Servers Configuration */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            padding: '20px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FontAwesomeIcon icon={faCog} />
-              MCP Services
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {mcpServers.map(server => (
-                <div key={server.name} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>{server.name}</div>
-                    <div style={{ fontSize: '12px', opacity: 0.7 }}>{server.description}</div>
-                  </div>
+              ) : (
+                <>
                   <button
-                    onClick={() => server.enabled ? handleDisableMCPServer(server.name) : handleEnableMCPServer(server.name)}
+                    className="access-level-modal-cancel"
+                    onClick={handleCloseTunnelRegistration}
+                    disabled={tunnelRegistrationStatus.status === 'registering'}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRegisterTunnel}
+                    disabled={!tunnelServerName.trim() || tunnelRegistrationStatus.status === 'registering'}
                     style={{
-                      background: server.enabled 
-                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                        : 'rgba(255, 255, 255, 0.1)',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       color: 'white',
-                      border: server.enabled ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '12px 24px',
+                      cursor: (!tunnelServerName.trim() || tunnelRegistrationStatus.status === 'registering') ? 'not-allowed' : 'pointer',
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      minWidth: '100px',
-                      justifyContent: 'center'
+                      gap: '8px',
+                      opacity: (!tunnelServerName.trim() || tunnelRegistrationStatus.status === 'registering') ? 0.5 : 1
                     }}
                   >
-                    <FontAwesomeIcon icon={server.enabled ? faCheck : faPlay} />
-                    {server.enabled ? 'Enabled' : 'Enable'}
+                    {tunnelRegistrationStatus.status === 'registering' ? (
+                      <>
+                        <FontAwesomeIcon icon={faSpinner} spin />
+                        Registering...
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faGlobe} />
+                        Register
+                      </>
+                    )}
                   </button>
-                </div>
-              ))}
-              {mcpServers.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '20px', opacity: 0.5 }}>
-                  No MCP services configured
-                </div>
+                </>
               )}
             </div>
           </div>
         </div>
-
-        {httpServerStatus.isRunning && mcpServers.some(s => s.enabled) && (
-          <div style={{
-            marginTop: '16px',
-            padding: '16px',
-            background: 'rgba(16, 185, 129, 0.1)',
-            borderRadius: '8px',
-            border: '1px solid rgba(16, 185, 129, 0.3)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <FontAwesomeIcon icon={faCircleCheck} style={{ color: '#10b981' }} />
-              <strong>MCP Server Ready!</strong>
-            </div>
-            <div style={{ fontSize: '14px', opacity: 0.9 }}>
-              Enabled services: {mcpServers.filter(s => s.enabled).map(s => s.name).join(', ')}
-              <br />
-              View documentation at: http://localhost:{httpServerStatus.port}/
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Running Servers Section */}
-      <div className="running-servers-section">
-        <div className="section-header">
-          <h2>Running MCP Servers</h2>
-          <p>Monitor and manage your active MCP server connections</p>
-        </div>
-
-        {loading && (
-          <div className="loading-state">
-            <FontAwesomeIcon icon={faSpinner} spin />
-            <span>Loading servers...</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="error-state">
-            <FontAwesomeIcon icon={faTriangleExclamation} />
-            <span>{error}</span>
-            <button onClick={() => loadRunningServers(true)}>Retry</button>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <div className="running-servers-grid">
-            {servers.filter(server => server && server.id).map((server) => (
-              <div key={server.id} className="running-servers-card">
-                <div className="running-servers-card-header">
-                  <div className="mcp-server-info-container">
-                    <div className={`mcp-server-icon-box ${server.type === 'gmail' ? 'gmail-icon-box' : ''}`}>
-                      <FontAwesomeIcon icon={server.type === 'gmail' ? faEnvelope : faServer} />
-                    </div>
-                    <div className="mcp-server-text-details">
-                      <div className="mcp-server-name-container">
-                        {editingServerName === server.id ? (
-                          <div className="mcp-server-name-edit">
-                            <input
-                              type="text"
-                              value={editingServerNameValue}
-                              onChange={(e) => setEditingServerNameValue(e.target.value)}
-                              className="mcp-server-name-input"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSaveServerName(server.id);
-                                } else if (e.key === 'Escape') {
-                                  handleCancelEditServerName();
-                                }
-                              }}
-                            />
-                            <div className="mcp-server-name-edit-buttons">
-                              <button
-                                className="mcp-server-name-save-btn"
-                                onClick={() => handleSaveServerName(server.id)}
-                                title="Save"
-                              >
-                                <FontAwesomeIcon icon={faCheck} />
-                              </button>
-                              <button
-                                className="mcp-server-name-cancel-btn"
-                                onClick={handleCancelEditServerName}
-                                title="Cancel"
-                              >
-                                <FontAwesomeIcon icon={faTimes} />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mcp-server-name-display">
-                            <h3 className="mcp-server-name">{server.name}</h3>
-                            <button
-                              className="mcp-server-name-edit-btn"
-                              onClick={() => handleEditServerName(server)}
-                              title="Edit server name"
-                            >
-                              <FontAwesomeIcon icon={faEdit} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <p className="mcp-server-description">{server.description}</p>
-                      <div className="mcp-server-meta">
-                        <span className="mcp-server-type">{server.type}</span>
-                        <span className="mcp-server-version">v{server.version}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="running-servers-status">
-                    <FontAwesomeIcon 
-                      icon={getStatusIcon(server.status)} 
-                      style={{ color: getStatusColor(server.status) }}
-                    />
-                    <span style={{ color: getStatusColor(server.status) }}>
-                      {server.status.charAt(0).toUpperCase() + server.status.slice(1)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="running-servers-card-metrics">
-                  <div className="running-servers-metric">
-                    <FontAwesomeIcon icon={faClock} />
-                    <span className="running-servers-metric-label">Uptime:</span>
-                    <span className="running-servers-metric-value">{formatUptime(server.uptime)}</span>
-                  </div>
-                  <div className="running-servers-metric running-servers-access-metric">
-                    <div className="running-servers-access-info">
-                      <FontAwesomeIcon 
-                        icon={getAccessLevelIcon(server.accessLevel?.level || 'claude-desktop')} 
-                        style={{ color: getAccessLevelColor(server.accessLevel?.level || 'claude-desktop') }}
-                      />
-                      <span className="running-servers-metric-label">Access:</span>
-                      <span 
-                        className="running-servers-metric-value"
-                        style={{ color: getAccessLevelColor(server.accessLevel?.level || 'claude-desktop') }}
-                      >
-                        {getAccessLevelDisplayName(server.accessLevel?.level || 'claude-desktop')}
-                      </span>
-                    </div>
-                    <button
-                      className="running-servers-access-edit-btn"
-                      onClick={() => handleEditAccessLevel(server)}
-                      title="Change Access Level"
-                    >
-                      <FontAwesomeIcon icon={faShieldAlt} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Show MCP configuration for claude-desktop and local-network modes */}
-                {(server.accessLevel?.level === 'claude-desktop' || server.accessLevel?.level === 'local-network') && (
-                  <div className="running-servers-card-schema">
-                    <div className="running-servers-schema-header">
-                      <span className="running-servers-schema-label">MCP Schema:</span>
-                      <div className="running-servers-schema-status">
-                        {claudeDesktopStatus.isLoading ? (
-                          <span className="running-servers-status-loading">
-                            <FontAwesomeIcon icon={faSpinner} spin />
-                            Checking...
-                          </span>
-                        ) : claudeDesktopStatus.error ? (
-                          <span className="running-servers-status-error">
-                            <FontAwesomeIcon icon={faTriangleExclamation} />
-                            Error
-                          </span>
-                        ) : claudeDesktopStatus.isConfigured ? (
-                          <span className="running-servers-status-configured">
-                            <FontAwesomeIcon icon={faCircleCheck} />
-                            In Claude Desktop
-                          </span>
-                        ) : (
-                          <span className="running-servers-status-not-configured">
-                            <FontAwesomeIcon icon={faCircleXmark} />
-                            Not in Claude Desktop
-                          </span>
-                        )}
-                      </div>
-                      <div className="running-servers-schema-buttons">
-                        <button 
-                          className="running-servers-schema-copy-btn"
-                          onClick={() => handleCopySchema(server)}
-                          title="Copy MCP schema to clipboard"
-                        >
-                          <FontAwesomeIcon icon={faCopy} />
-                          Copy
-                        </button>
-                        {claudeDesktopStatus.isConfigured ? (
-                          <button 
-                            className="running-servers-schema-remove-btn"
-                            onClick={() => handleUnconfigureClaudeDesktop(server)}
-                            title="Remove from Claude Desktop app"
-                          >
-                            <FontAwesomeIcon icon={faTimes} />
-                            Remove from Claude Desktop
-                          </button>
-                        ) : (
-                          <button 
-                            className="running-servers-schema-configure-btn"
-                            onClick={() => handleConfigureClaudeDesktop(server)}
-                            title="Add to Claude Desktop app"
-                          >
-                            <FontAwesomeIcon icon={faServer} />
-                            Add to Claude Desktop
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="running-servers-schema-code">
-                      <code>{generateMCPSchema(server)}</code>
-                    </div>
-                  </div>
-                )}
-
-                {/* Show additional network MCP configuration for local-network mode */}
-                {server.accessLevel?.level === 'local-network' && (
-                  <div className="running-servers-card-schema">
-                    <div className="running-servers-schema-header">
-                      <span className="running-servers-schema-label">Network MCP Configuration:</span>
-                      <div className="running-servers-schema-status">
-                        <span className="running-servers-status-configured">
-                          <FontAwesomeIcon icon={faWifi} />
-                          Network Access
-                        </span>
-                      </div>
-                      <div className="running-servers-schema-buttons">
-                        <button 
-                          className="running-servers-schema-copy-btn"
-                          onClick={() => handleCopyNetworkSchema(server)}
-                          title="Copy network MCP configuration to clipboard"
-                        >
-                          <FontAwesomeIcon icon={faCopy} />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                    <div className="running-servers-schema-code">
-                      <code>{generateNetworkMCPSchema(server)}</code>
-                    </div>
-                  </div>
-                )}
-
-                {/* Show all three MCP configurations for public mode */}
-                {server.accessLevel?.level === 'public' && (
-                  <>
-                    {/* 1. Claude Desktop MCP Configuration */}
-                    <div className="running-servers-card-schema">
-                      <div className="running-servers-schema-header">
-                        <span className="running-servers-schema-label">Claude Desktop MCP:</span>
-                        <div className="running-servers-schema-status">
-                          {claudeDesktopStatus.isLoading ? (
-                            <span className="running-servers-status-loading">
-                              <FontAwesomeIcon icon={faSpinner} spin />
-                              Checking...
-                            </span>
-                          ) : claudeDesktopStatus.error ? (
-                            <span className="running-servers-status-error">
-                              <FontAwesomeIcon icon={faTriangleExclamation} />
-                              Error
-                            </span>
-                          ) : claudeDesktopStatus.isConfigured ? (
-                            <span className="running-servers-status-configured">
-                              <FontAwesomeIcon icon={faCircleCheck} />
-                              In Claude Desktop
-                            </span>
-                          ) : (
-                            <span className="running-servers-status-not-configured">
-                              <FontAwesomeIcon icon={faCircleXmark} />
-                              Not in Claude Desktop
-                            </span>
-                          )}
-                        </div>
-                        <div className="running-servers-schema-buttons">
-                          <button 
-                            className="running-servers-schema-copy-btn"
-                            onClick={() => handleCopySchema(server)}
-                            title="Copy MCP schema to clipboard"
-                          >
-                            <FontAwesomeIcon icon={faCopy} />
-                            Copy
-                          </button>
-                          {claudeDesktopStatus.isConfigured ? (
-                            <button 
-                              className="running-servers-schema-remove-btn"
-                              onClick={() => handleUnconfigureClaudeDesktop(server)}
-                              title="Remove from Claude Desktop app"
-                            >
-                              <FontAwesomeIcon icon={faTimes} />
-                              Remove from Claude Desktop
-                            </button>
-                          ) : (
-                            <button 
-                              className="running-servers-schema-configure-btn"
-                              onClick={() => handleConfigureClaudeDesktop(server)}
-                              title="Add to Claude Desktop app"
-                            >
-                              <FontAwesomeIcon icon={faServer} />
-                              Add to Claude Desktop
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="running-servers-schema-code">
-                        <code>{generateMCPSchema(server)}</code>
-                      </div>
-                    </div>
-
-                    {/* 2. Local Network MCP Configuration */}
-                    <div className="running-servers-card-schema">
-                      <div className="running-servers-schema-header">
-                        <span className="running-servers-schema-label">Local Network MCP:</span>
-                        <div className="running-servers-schema-status">
-                          <span className="running-servers-status-configured">
-                            <FontAwesomeIcon icon={faWifi} />
-                            Network Access
-                          </span>
-                        </div>
-                        <div className="running-servers-schema-buttons">
-                          <button 
-                            className="running-servers-schema-copy-btn"
-                            onClick={() => handleCopyNetworkSchema(server)}
-                            title="Copy network MCP configuration to clipboard"
-                          >
-                            <FontAwesomeIcon icon={faCopy} />
-                            Copy
-                          </button>
-                        </div>
-                      </div>
-                      <div className="running-servers-schema-code">
-                        <code>{generateNetworkMCPSchema(server)}</code>
-                      </div>
-                    </div>
-
-                    {/* 3. Public Tunnel MCP Configuration */}
-                    <div className="running-servers-card-schema">
-                      <div className="running-servers-schema-header">
-                        <span className="running-servers-schema-label">Public Tunnel MCP:</span>
-                        <div className="running-servers-schema-status">
-                          <span className="running-servers-status-configured" style={{ color: '#f59e0b' }}>
-                            <FontAwesomeIcon icon={faPublic} />
-                            Tunnel Required
-                          </span>
-                        </div>
-                        <div className="running-servers-schema-buttons">
-                          <button 
-                            className="running-servers-schema-copy-btn"
-                            onClick={() => handleCopyPublicSchema(server)}
-                            title="Copy public MCP configuration to clipboard"
-                          >
-                            <FontAwesomeIcon icon={faCopy} />
-                            Copy
-                          </button>
-                        </div>
-                      </div>
-                      <div className="running-servers-schema-code">
-                        <code>{generatePublicMCPSchema(server)}</code>
-                      </div>
-                      {supabaseConfig.supabaseUrl ? (
-                        <div style={{ 
-                          marginTop: '8px', 
-                          padding: '8px 12px', 
-                          background: 'rgba(16, 185, 129, 0.1)', 
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: '#10b981'
-                        }}>
-                          <FontAwesomeIcon icon={faCircleCheck} style={{ marginRight: '6px' }} />
-                          Tunnel URL configured: {supabaseConfig.supabaseUrl}/functions/v1/r?name={server.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}
-                          {supabaseConfig.hasSupabaseKey && (
-                            <div style={{ marginTop: '4px', fontSize: '11px', opacity: 0.8 }}>
-                              ⚠️ Remember to set SUPABASE_ANON_KEY environment variable
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ 
-                          marginTop: '8px', 
-                          padding: '8px 12px', 
-                          background: 'rgba(245, 158, 11, 0.1)', 
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: '#f59e0b'
-                        }}>
-                          <FontAwesomeIcon icon={faExclamationCircleIcon} style={{ marginRight: '6px' }} />
-                          Configure SUPABASE_URL in your .env file to enable tunnel routing
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                <div className="running-servers-card-actions">
-                  {server.type === 'gmail' && (
-                    <button
-                      className="running-servers-action-btn running-servers-dashboard-btn"
-                      onClick={() => handleViewDashboard(server)}
-                      title="View Gmail dashboard"
-                    >
-                      <FontAwesomeIcon icon={faChartBar} />
-                      Dashboard
-                    </button>
-                  )}
-                  <button
-                    className="running-servers-action-btn"
-                    onClick={() => handleStartTunnel(server)}
-                    title="Start WebSocket tunnel for public access"
-                    style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
-                  >
-                    <FontAwesomeIcon icon={faPublic} />
-                    Start Tunnel
-                  </button>
-                  <button
-                    className="running-servers-action-btn"
-                    onClick={() => handleStopTunnel(server)}
-                    title="Stop WebSocket tunnel"
-                    style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}
-                  >
-                    <FontAwesomeIcon icon={faStop} />
-                    Stop Tunnel
-                  </button>
-                  <button
-                    className="running-servers-action-btn running-servers-logs-btn"
-                    onClick={() => handleViewLogs(server)}
-                    title="View logs"
-                  >
-                    <FontAwesomeIcon icon={faTerminal} />
-                    Logs
-                  </button>
-                  {server.status === 'running' ? (
-                    <>
-                      <button
-                        className="running-servers-action-btn running-servers-restart-btn"
-                        onClick={() => handleServerAction(server.id, 'restart')}
-                        title="Restart server"
-                      >
-                        <FontAwesomeIcon icon={faRefresh} />
-                        Restart
-                      </button>
-                      <button
-                        className="running-servers-action-btn running-servers-stop-btn"
-                        onClick={() => handleServerAction(server.id, 'stop')}
-                        title="Stop server"
-                      >
-                        <FontAwesomeIcon icon={faStop} />
-                        Stop
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="running-servers-action-btn running-servers-start-btn"
-                      onClick={() => handleServerAction(server.id, 'start')}
-                      title="Start server"
-                    >
-                      <FontAwesomeIcon icon={faPlay} />
-                      Start
-                    </button>
-                  )}
-                  <button
-                    className="running-servers-action-btn running-servers-delete-btn"
-                    onClick={() => handleDeleteServer(server.id)}
-                    title="Delete server"
-                  >
-                    <FontAwesomeIcon icon={faTrash} />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
+      )}
 
       {/* Access Level Modal */}
       {showAccessLevelModal && editingServer && (

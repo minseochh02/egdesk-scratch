@@ -154,19 +154,101 @@ All tools are declared and managed by EGDesk, but data is provided by users:
 ```json
 {
   "filesystem": {
-    "read_file": {
-      "description": "Read files from user's desktop",
+    "fs_read_file": {
+      "description": "Read file contents as text",
       "parameters": {
-        "filePath": "string"
+        "path": "string",
+        "encoding": "string (optional, default: utf8)"
       },
-      "dataSource": "user_desktop_files"
+      "dataSource": "user_local_files"
     },
-    "list_directory": {
+    "fs_write_file": {
+      "description": "Write content to a file (creates or overwrites)",
+      "parameters": {
+        "path": "string",
+        "content": "string"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_edit_file": {
+      "description": "Edit file with multiple operations (search/replace, insert, delete)",
+      "parameters": {
+        "path": "string",
+        "edits": "array of edit operations"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_list_directory": {
       "description": "List directory contents",
       "parameters": {
-        "directoryPath": "string"
+        "path": "string"
       },
-      "dataSource": "user_desktop_files"
+      "dataSource": "user_local_files"
+    },
+    "fs_create_directory": {
+      "description": "Create a directory (optionally recursive)",
+      "parameters": {
+        "path": "string",
+        "recursive": "boolean (optional, default: true)"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_move_file": {
+      "description": "Move or rename a file or directory",
+      "parameters": {
+        "source": "string",
+        "destination": "string"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_copy_file": {
+      "description": "Copy a file",
+      "parameters": {
+        "source": "string",
+        "destination": "string"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_delete_file": {
+      "description": "Delete a file or directory",
+      "parameters": {
+        "path": "string",
+        "recursive": "boolean (optional, default: false)"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_search_files": {
+      "description": "Search for files matching a pattern (supports regex and content search)",
+      "parameters": {
+        "path": "string",
+        "pattern": "string (regex)",
+        "searchContent": "boolean (optional, default: false)",
+        "maxResults": "number (optional, default: 100)"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_get_file_info": {
+      "description": "Get file metadata (size, dates, permissions)",
+      "parameters": {
+        "path": "string"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_get_directory_tree": {
+      "description": "Get directory tree structure",
+      "parameters": {
+        "path": "string",
+        "maxDepth": "number (optional, default: 3)"
+      },
+      "dataSource": "user_local_files"
+    },
+    "fs_download_file": {
+      "description": "Download a file as binary data (returns base64-encoded via tunnel)",
+      "parameters": {
+        "path": "string"
+      },
+      "dataSource": "user_local_files",
+      "note": "File is sent as base64 through WebSocket tunnel - works for files up to ~100MB"
     }
   }
 }

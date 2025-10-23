@@ -2,9 +2,9 @@
 // This file will handle Gmail data fetching through Google APIs
 // All data will be saved to sqlite. no mcp will ever attempt to access the google api directly.
 
-import { GmailMessage, GmailStats, GmailConnection } from '../../../types/gmail-types';
+import { GmailMessage, GmailStats, GmailConnection } from '../../types/gmail-types';
 import { google } from 'googleapis';
-import { GmailDatabase, GmailMessageRecord, GmailStatsRecord, DomainUserRecord } from '../../../sqlite/gmails';
+import { GmailDatabase, GmailMessageRecord, GmailStatsRecord, DomainUserRecord } from '../../sqlite/gmails';
 
 export interface DomainUser {
   id: string;

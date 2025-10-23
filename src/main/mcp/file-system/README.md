@@ -2,13 +2,25 @@
 
 A complete Model Context Protocol (MCP) server implementation for file system operations, similar to Claude Desktop's file system tools.
 
+## 🎯 Integration Status
+
+✅ **Now Available in EGDesk MCP Configuration!**
+
+The File System MCP Server is now integrated into the EGDesk MCP configuration and can be accessed via:
+- **Local HTTP Server** (localhost:8080)
+- **WebSocket Tunnel** (via tunneling-service.onrender.com)
+- **Both SSE and HTTP Streamable** transports
+
+See `MCP-SERVER-README.md` and `mcp-server-schema-example.json` for configuration examples.
+
 ## Features
 
 - 🔐 **Security**: Configurable allowed directories with path validation
 - 🌐 **Multiple Transports**: HTTP Streaming and SSE (Server-Sent Events)
-- 🛠️ **12 File System Tools**: Read, write, edit, search, and manage files
+- 🛠️ **13 File System Tools**: Read, write, edit, search, download, and manage files
 - 📦 **TypeScript**: Full type safety and IDE support
 - ⚡ **Async/Await**: Modern asynchronous API
+- 🚀 **Tunnel Support**: Files sent as base64 through WebSocket (up to ~100MB)
 
 ## Architecture
 
@@ -58,7 +70,7 @@ const results = await service.searchFiles('.', '*.ts');
 
 ## Available Tools
 
-The MCP server exposes 12 file system tools:
+The MCP server exposes 14 file system tools:
 
 1. **fs_read_file** - Read file contents
    ```json
@@ -188,7 +200,64 @@ The MCP server exposes 12 file system tools:
     }
     ```
 
-12. **fs_list_allowed_directories** - List accessible directories
+12. **fs_download_file** - Download file as binary data
+    ```json
+    {
+      "name": "fs_download_file",
+      "arguments": {
+        "path": "image.png"
+      }
+    }
+    ```
+    **Note**: Returns file as base64-encoded data in the response. The file is sent through the WebSocket tunnel immediately - no external storage needed! Works great for files up to ~100MB.
+    
+    **Response Format**:
+    ```json
+    {
+      "content": [{
+        "type": "text",
+        "text": "File downloaded: image.png (52847 bytes)",
+        "data": "iVBORw0KGgoAAAANSUhEUgAA..." // base64 encoded binary data
+      }]
+    }
+    ```
+
+13. **fs_upload_file** - Upload file to Downloads folder
+    ```json
+    {
+      "name": "fs_upload_file",
+      "arguments": {
+        "filename": "report.pdf",
+        "content": "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC...",
+        "encoding": "base64"
+      }
+    }
+    ```
+    **Note**: Saves files directly to the user's Downloads folder for easy access. Supports both text (utf8) and binary (base64) files. The uploaded file is automatically registered as an MCP resource.
+    
+    **Response Format**:
+    ```json
+    {
+      "content": [{
+        "type": "text",
+        "text": "File uploaded successfully to: /Users/username/Downloads/report.pdf\nResource URI: file:///Users/username/Downloads/report.pdf"
+      }]
+    }
+    ```
+    
+    **Text File Example**:
+    ```json
+    {
+      "name": "fs_upload_file",
+      "arguments": {
+        "filename": "notes.txt",
+        "content": "Hello, World!",
+        "encoding": "utf8"
+      }
+    }
+    ```
+
+14. **fs_list_allowed_directories** - List accessible directories
     ```json
     {
       "name": "fs_list_allowed_directories",
@@ -300,4 +369,6 @@ See inline documentation in:
 ## License
 
 Same as the main project.
+
+
 

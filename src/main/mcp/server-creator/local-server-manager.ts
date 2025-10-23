@@ -14,9 +14,11 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app, ipcMain } from 'electron';
-import { getStore } from '../../../storage';
-import { GmailMCPFetcher } from '../server-script/gmail-service';
-import { GmailConnection } from '../../../types/gmail-types';
+import { getStore } from '../../storage';
+import { GmailMCPFetcher } from '../gmail/gmail-service';
+import { GmailConnection } from '../../types/gmail-types';
+import { GmailMCPService } from '../gmail/gmail-mcp-service';
+import { FileSystemMCPService } from '../file-system/file-system-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 
@@ -63,8 +65,12 @@ export class LocalServerManager {
   private currentPort: number | null = null;
   private useHTTPS = false;
   private store = getStore();
-  private sseHandler: SSEMCPHandler | null = null;
+  private gmailMCPService: GmailMCPService | null = null;
+  private filesystemMCPService: FileSystemMCPService | null = null;
+  private gmailSSEHandler: SSEMCPHandler | null = null;
+  private filesystemSSEHandler: SSEMCPHandler | null = null;
   private httpStreamHandler: HTTPStreamHandler | null = null;
+  private filesystemHTTPStreamHandler: HTTPStreamHandler | null = null;
 
   private constructor() {}
 
@@ -283,9 +289,37 @@ export class LocalServerManager {
       return;
     }
 
+    // FileSystem HTTP Streamable endpoint for MCP protocol (POST for bidirectional streaming)
+    if (url === '/filesystem' && req.method === 'POST') {
+      await this.handleFilesystemHTTPStream(req, res);
+      return;
+    }
+
+    // FileSystem SSE endpoints for MCP protocol
+    if (url === '/filesystem/sse') {
+      if (req.method === 'GET') {
+        await this.handleFilesystemSSEStream(req, res);
+        return;
+      } else if (req.method === 'POST') {
+        await this.handleFilesystemMessage(req, res);
+        return;
+      }
+    }
+
+    if (url === '/filesystem/message' && req.method === 'POST') {
+      await this.handleFilesystemMessage(req, res);
+      return;
+    }
+
     // Gmail MCP Server endpoints
     if (url.startsWith('/gmail')) {
       await this.handleGmailMCP(url, req, res);
+      return;
+    }
+
+    // FileSystem MCP Server endpoints (REST API)
+    if (url.startsWith('/filesystem')) {
+      await this.handleFilesystemMCP(url, req, res);
       return;
     }
 
@@ -303,9 +337,15 @@ export class LocalServerManager {
       availableEndpoints: [
         '/ - List all MCP servers',
         'POST /mcp - HTTP Streamable endpoint for MCP protocol (bidirectional streaming)',
-        '/gmail/sse - SSE endpoint for MCP protocol (legacy)',
+        'GET /gmail/sse - Gmail SSE endpoint for MCP protocol',
+        'POST /gmail/message - Gmail message endpoint for SSE',
         '/gmail/tools - List Gmail tools',
         '/gmail/tools/call - Call a Gmail tool',
+        'POST /filesystem - FileSystem HTTP Streamable endpoint for MCP protocol (bidirectional streaming)',
+        'GET /filesystem/sse - FileSystem SSE endpoint for MCP protocol',
+        'POST /filesystem/message - FileSystem message endpoint for SSE',
+        '/filesystem/tools - List File System tools',
+        '/filesystem/tools/call - Call a File System tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -337,14 +377,47 @@ export class LocalServerManager {
   }
 
   /**
-   * Get or create SSE handler instance
+   * Get or create Gmail MCP Service instance
    */
-  private async getSSEHandler(): Promise<SSEMCPHandler> {
-    if (!this.sseHandler) {
+  private async getGmailMCPService(): Promise<GmailMCPService> {
+    if (!this.gmailMCPService) {
       const connection = await this.getGmailConnection();
-      this.sseHandler = new SSEMCPHandler(connection);
+      this.gmailMCPService = new GmailMCPService(connection);
     }
-    return this.sseHandler;
+    return this.gmailMCPService;
+  }
+
+  /**
+   * Get or create FileSystem MCP Service instance
+   */
+  private getFilesystemMCPService(): FileSystemMCPService {
+    if (!this.filesystemMCPService) {
+      // Initialize with default security config (can be customized)
+      this.filesystemMCPService = new FileSystemMCPService({});
+    }
+    return this.filesystemMCPService;
+  }
+
+  /**
+   * Get or create Gmail SSE handler instance
+   */
+  private async getGmailSSEHandler(): Promise<SSEMCPHandler> {
+    if (!this.gmailSSEHandler) {
+      const gmailService = await this.getGmailMCPService();
+      this.gmailSSEHandler = new SSEMCPHandler(gmailService, '/gmail/message', 'gmail');
+    }
+    return this.gmailSSEHandler;
+  }
+
+  /**
+   * Get or create FileSystem SSE handler instance
+   */
+  private getFilesystemSSEHandler(): SSEMCPHandler {
+    if (!this.filesystemSSEHandler) {
+      const filesystemService = this.getFilesystemMCPService();
+      this.filesystemSSEHandler = new SSEMCPHandler(filesystemService, '/filesystem/message', 'filesystem');
+    }
+    return this.filesystemSSEHandler;
   }
 
   /**
@@ -352,10 +425,21 @@ export class LocalServerManager {
    */
   private async getHTTPStreamHandler(): Promise<HTTPStreamHandler> {
     if (!this.httpStreamHandler) {
-      const connection = await this.getGmailConnection();
-      this.httpStreamHandler = new HTTPStreamHandler(connection);
+      const gmailService = await this.getGmailMCPService();
+      this.httpStreamHandler = new HTTPStreamHandler(gmailService);
     }
     return this.httpStreamHandler;
+  }
+
+  /**
+   * Get or create FileSystem HTTP Stream handler instance
+   */
+  private getFilesystemHTTPStreamHandler(): HTTPStreamHandler {
+    if (!this.filesystemHTTPStreamHandler) {
+      const filesystemService = this.getFilesystemMCPService();
+      this.filesystemHTTPStreamHandler = new HTTPStreamHandler(filesystemService);
+    }
+    return this.filesystemHTTPStreamHandler;
   }
 
   /**
@@ -388,6 +472,35 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle FileSystem HTTP Stream endpoint (POST /filesystem/mcp)
+   * This is the new bidirectional HTTP streaming protocol
+   */
+  private async handleFilesystemHTTPStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if FileSystem MCP is enabled
+    if (!this.isMCPServerEnabled('filesystem')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'FileSystem MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'filesystem'
+      }));
+      return;
+    }
+
+    try {
+      const httpStreamHandler = this.getFilesystemHTTPStreamHandler();
+      await httpStreamHandler.handleStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling FileSystem HTTP Stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle Gmail SSE stream endpoint (GET /sse)
    */
   private async handleGmailSSEStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -403,7 +516,7 @@ export class LocalServerManager {
     }
 
     try {
-      const sseHandler = await this.getSSEHandler();
+      const sseHandler = await this.getGmailSSEHandler();
       await sseHandler.handleSSEStream(req, res);
     } catch (error) {
       console.error('❌ Error handling Gmail SSE stream:', error);
@@ -431,10 +544,66 @@ export class LocalServerManager {
     }
 
     try {
-      const sseHandler = await this.getSSEHandler();
+      const sseHandler = await this.getGmailSSEHandler();
       await sseHandler.handleMessage(req, res);
     } catch (error) {
       console.error('❌ Error handling Gmail message:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle FileSystem SSE stream endpoint (GET /filesystem/sse)
+   */
+  private async handleFilesystemSSEStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if FileSystem MCP is enabled
+    if (!this.isMCPServerEnabled('filesystem')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'File System MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'filesystem'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = this.getFilesystemSSEHandler();
+      await sseHandler.handleSSEStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling FileSystem SSE stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle FileSystem message endpoint (POST /filesystem/message)
+   */
+  private async handleFilesystemMessage(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if FileSystem MCP is enabled
+    if (!this.isMCPServerEnabled('filesystem')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'File System MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'filesystem'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = this.getFilesystemSSEHandler();
+      await sseHandler.handleMessage(req, res);
+    } catch (error) {
+      console.error('❌ Error handling FileSystem message:', error);
       res.writeHead(500);
       res.end(JSON.stringify({
         success: false,
@@ -482,6 +651,97 @@ export class LocalServerManager {
         '/gmail/tools/call - Call a tool'
       ]
     }));
+  }
+
+  /**
+   * Handle FileSystem MCP requests
+   */
+  private async handleFilesystemMCP(url: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if FileSystem MCP is enabled
+    if (!this.isMCPServerEnabled('filesystem')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'File System MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'filesystem'
+      }));
+      return;
+    }
+
+    // List FileSystem tools
+    if (url === '/filesystem/tools' && req.method === 'GET') {
+      this.handleFilesystemToolsList(res);
+      return;
+    }
+
+    // Call a FileSystem tool
+    if (url === '/filesystem/tools/call' && req.method === 'POST') {
+      await this.handleFilesystemToolCall(req, res);
+      return;
+    }
+
+    // Unknown FileSystem endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'File System MCP endpoint not found',
+      availableEndpoints: [
+        '/filesystem/tools - List available tools',
+        '/filesystem/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle FileSystem tools list
+   */
+  private handleFilesystemToolsList(res: http.ServerResponse): void {
+    const service = this.getFilesystemMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle FileSystem tool call
+   */
+  private async handleFilesystemToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`🔧 Calling FileSystem tool: ${tool}`);
+
+      // Get FileSystem service
+      const service = this.getFilesystemMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling FileSystem tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
   }
 
   /**
@@ -911,6 +1171,11 @@ export class LocalServerManager {
         name: 'gmail',
         enabled: false, // Disabled by default
         description: 'Gmail MCP Server - Access Gmail data from Google Workspace'
+      },
+      {
+        name: 'filesystem',
+        enabled: true, // Enabled by default
+        description: 'File System MCP Server - Access files and directories with security controls'
       }
       // Future servers:
       // {
