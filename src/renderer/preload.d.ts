@@ -403,6 +403,43 @@ export interface IElectronAPI {
       error?: string; 
     }>;
   };
+  permissions: {
+    add: (request: {
+      server_key: string;
+      emails: string[];
+      access_level?: 'read_only' | 'read_write' | 'admin';
+      expires_at?: string;
+      notes?: string;
+    }) => Promise<{
+      success: boolean;
+      message?: string;
+      added?: number;
+      permissions?: any[];
+      error?: string;
+    }>;
+    get: (serverKey: string) => Promise<{
+      success: boolean;
+      server_key?: string;
+      permissions?: any[];
+      error?: string;
+    }>;
+    update: (permissionId: string, updates: {
+      access_level?: 'read_only' | 'read_write' | 'admin';
+      expires_at?: string;
+      notes?: string;
+      status?: 'pending' | 'active' | 'revoked' | 'expired';
+    }) => Promise<{
+      success: boolean;
+      message?: string;
+      permission?: any;
+      error?: string;
+    }>;
+    revoke: (permissionId: string) => Promise<{
+      success: boolean;
+      message?: string;
+      error?: string;
+    }>;
+  };
   env: {
     checkConfig: () => Promise<{ 
       success: boolean; 

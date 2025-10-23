@@ -7,16 +7,17 @@
  * - list_directory, create_directory
  * - move_file, copy_file, delete_file
  * - search_files, get_file_info, get_directory_tree
- * - list_allowed_directories
+ * - download_file, upload_file
  */
 
 import * as http from 'http';
-import { FileSystemService } from './file-system-service';
-import { FileSystemHTTPStreamHandler } from './http-stream-handler';
-import { FileSystemSSEHandler } from './sse-handler';
+import { SecurityConfig } from './security-exclusions';
+import { FileSystemMCPService } from './file-system-mcp-service';
+import { HTTPStreamHandler } from '../server-creator/http-stream-handler';
+import { SSEMCPHandler } from '../server-creator/sse-handler';
 
 export interface FileSystemMCPServerConfig {
-  allowedDirectories?: string[];
+  securityConfig?: SecurityConfig;
   port?: number;
   host?: string;
 }
@@ -26,22 +27,22 @@ export interface FileSystemMCPServerConfig {
  * Provides a complete MCP server for file system operations
  */
 export class FileSystemMCPServer {
-  private service: FileSystemService;
-  private httpStreamHandler: FileSystemHTTPStreamHandler;
-  private sseHandler: FileSystemSSEHandler;
+  private mcpService: FileSystemMCPService;
+  private httpStreamHandler: HTTPStreamHandler;
+  private sseHandler: SSEMCPHandler;
   private server: http.Server | null = null;
   private config: FileSystemMCPServerConfig;
 
   constructor(config: FileSystemMCPServerConfig = {}) {
     this.config = {
-      allowedDirectories: config.allowedDirectories || [],
+      securityConfig: config.securityConfig || {},
       port: config.port || 3000,
       host: config.host || 'localhost'
     };
 
-    this.service = new FileSystemService(this.config.allowedDirectories || []);
-    this.httpStreamHandler = new FileSystemHTTPStreamHandler(this.config.allowedDirectories || []);
-    this.sseHandler = new FileSystemSSEHandler(this.config.allowedDirectories || []);
+    this.mcpService = new FileSystemMCPService(this.config.securityConfig);
+    this.httpStreamHandler = new HTTPStreamHandler(this.mcpService);
+    this.sseHandler = new SSEMCPHandler(this.mcpService);
   }
 
   /**
@@ -120,7 +121,7 @@ export class FileSystemMCPServer {
 
     // SSE endpoint (legacy transport)
     if (url === '/sse' && method === 'GET') {
-      await this.sseHandler.handleSSE(req, res);
+      await this.sseHandler.handleSSEStream(req, res);
       return;
     }
 
@@ -139,8 +140,7 @@ export class FileSystemMCPServer {
       res.end(JSON.stringify({
         status: 'healthy',
         server: 'filesystem-mcp-server',
-        version: '1.0.0',
-        allowedDirectories: this.service.listAllowedDirectories()
+        version: '1.0.0'
       }));
       return;
     }
@@ -161,7 +161,7 @@ export class FileSystemMCPServer {
           message: 'POST /message - Message endpoint for SSE transport',
           health: 'GET /health - Health check'
         },
-        allowedDirectories: this.service.listAllowedDirectories()
+        tools: this.mcpService.listTools().length
       }));
       return;
     }
@@ -184,10 +184,17 @@ export class FileSystemMCPServer {
   }
 
   /**
-   * Get the file system service
+   * Get the MCP service
    */
-  getService(): FileSystemService {
-    return this.service;
+  getMCPService(): FileSystemMCPService {
+    return this.mcpService;
+  }
+
+  /**
+   * Get the underlying file system service
+   */
+  getFileSystemService() {
+    return this.mcpService.getFileSystemService();
   }
 
   /**

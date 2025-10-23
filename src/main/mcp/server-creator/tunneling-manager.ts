@@ -9,7 +9,15 @@
  * - Tunnel lifecycle management
  */
 
-import { TunnelClient } from './tunnel-client';
+import { 
+  TunnelClient, 
+  AddPermissionsRequest, 
+  AddPermissionsResponse,
+  GetPermissionsResponse,
+  UpdatePermissionRequest,
+  UpdatePermissionResponse,
+  DeletePermissionResponse
+} from './tunnel-client';
 
 // Environment variables (loaded via dotenv in main.ts)
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -116,14 +124,22 @@ export async function registerServerName(
 
 /**
  * Start WebSocket tunnel for a server
- * @param serverName - The registered server name
+ * Auto-registers the server name and establishes tunnel connection
+ * @param serverName - The server name to register and tunnel
  * @param localServerUrl - Local server URL (e.g., 'http://localhost:8080')
- * @returns Tunnel start result
+ * @returns Tunnel start result with public URL
  */
 export async function startTunnel(
   serverName: string,
   localServerUrl: string = 'http://localhost:8080'
-): Promise<{ success: boolean; message?: string; error?: string }> {
+): Promise<{ 
+  success: boolean; 
+  message?: string; 
+  error?: string;
+  publicUrl?: string;
+  registrationId?: string;
+  tunnelId?: string;
+}> {
   try {
     // Check if tunnel already running
     const existingTunnel = activeTunnels.get(serverName);
@@ -131,30 +147,46 @@ export async function startTunnel(
       return {
         success: false,
         message: 'Tunnel is already running for this server',
+        publicUrl: existingTunnel.getPublicUrl() || undefined,
       };
     }
 
     console.log(`🚀 Starting tunnel: ${serverName} → ${localServerUrl}`);
+    console.log(`📝 Auto-registering with tunnel service...`);
 
-    // Create tunnel client
+    // Create tunnel client (registration happens automatically in start())
     const tunnel = new TunnelClient({
       tunnelServerUrl: TUNNEL_SERVER_URL,
       serverName,
       localServerUrl,
       reconnectInterval: 5000,
+      autoPrompt: false, // Don't prompt in GUI mode
     });
 
-    // Start tunnel
+    // Start tunnel (this auto-registers and connects)
     await tunnel.start();
+
+    // Wait a bit for connection to establish and get public URL
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Store active tunnel
     activeTunnels.set(serverName, tunnel);
 
+    const publicUrl = tunnel.getPublicUrl();
+    const registrationId = tunnel.getRegistrationId();
+    const tunnelId = tunnel.getTunnelId();
+
     console.log(`✅ Tunnel started: ${serverName}`);
+    if (publicUrl) {
+      console.log(`🌐 Public URL: ${publicUrl}`);
+    }
 
     return {
       success: true,
       message: `Tunnel established for ${serverName}`,
+      publicUrl: publicUrl || undefined,
+      registrationId: registrationId || undefined,
+      tunnelId: tunnelId || undefined,
     };
   } catch (error) {
     console.error('❌ Failed to start tunnel:', error);
@@ -220,6 +252,40 @@ export function getTunnelStatus(
 }
 
 /**
+ * Get full tunnel info including public URL
+ * @param serverName - The server name
+ * @returns Tunnel information
+ */
+export function getTunnelInfo(
+  serverName: string
+): { 
+  isActive: boolean; 
+  isConnected: boolean;
+  publicUrl?: string;
+  tunnelId?: string;
+  registrationId?: string;
+  serverName?: string;
+} {
+  const tunnel = activeTunnels.get(serverName);
+  
+  if (!tunnel) {
+    return {
+      isActive: false,
+      isConnected: false,
+    };
+  }
+  
+  return {
+    isActive: true,
+    isConnected: tunnel.isConnected(),
+    publicUrl: tunnel.getPublicUrl() || undefined,
+    tunnelId: tunnel.getTunnelId() || undefined,
+    registrationId: tunnel.getRegistrationId() || undefined,
+    serverName: tunnel.getServerName() || undefined,
+  };
+}
+
+/**
  * Get all active tunnels
  * @returns List of active tunnel names
  */
@@ -240,4 +306,60 @@ export function stopAllTunnels(): void {
   
   activeTunnels.clear();
   console.log('✅ All tunnels stopped');
+}
+
+/**
+ * Add permissions to a server
+ * Creates a temporary client to make the request
+ */
+export async function addPermissions(request: AddPermissionsRequest): Promise<AddPermissionsResponse> {
+  const client = new TunnelClient({
+    tunnelServerUrl: TUNNEL_SERVER_URL,
+    localServerUrl: 'http://localhost:8080', // Not used for permissions
+    autoPrompt: false
+  });
+  
+  return await client.addPermissions(request);
+}
+
+/**
+ * Get permissions for a server
+ */
+export async function getPermissions(serverKey: string): Promise<GetPermissionsResponse> {
+  const client = new TunnelClient({
+    tunnelServerUrl: TUNNEL_SERVER_URL,
+    localServerUrl: 'http://localhost:8080', // Not used for permissions
+    autoPrompt: false
+  });
+  
+  return await client.getPermissions(serverKey);
+}
+
+/**
+ * Update a permission
+ */
+export async function updatePermission(
+  permissionId: string, 
+  updates: UpdatePermissionRequest
+): Promise<UpdatePermissionResponse> {
+  const client = new TunnelClient({
+    tunnelServerUrl: TUNNEL_SERVER_URL,
+    localServerUrl: 'http://localhost:8080', // Not used for permissions
+    autoPrompt: false
+  });
+  
+  return await client.updatePermission(permissionId, updates);
+}
+
+/**
+ * Revoke a permission
+ */
+export async function revokePermission(permissionId: string): Promise<DeletePermissionResponse> {
+  const client = new TunnelClient({
+    tunnelServerUrl: TUNNEL_SERVER_URL,
+    localServerUrl: 'http://localhost:8080', // Not used for permissions
+    autoPrompt: false
+  });
+  
+  return await client.revokePermission(permissionId);
 }

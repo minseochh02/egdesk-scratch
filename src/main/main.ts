@@ -30,11 +30,23 @@ import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { registerNaverBlogHandlers } from './naver-blog-handlers';
-import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/server-script/registration-service';
-import { registerGmailMCPHandlers } from './mcp/gmail/server-script/gmail-mcp-handler';
-import { getMCPServerManager } from './mcp/gmail/server-script/mcp-server-manager';
-import { getLocalServerManager } from './mcp/gmail/server-creator/local-server-manager';
-import { registerServerName, startTunnel, stopTunnel, getTunnelStatus, getActiveTunnels, stopAllTunnels } from './mcp/gmail/server-creator/tunneling-manager';
+import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
+import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
+import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
+import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
+import { 
+  registerServerName, 
+  startTunnel, 
+  stopTunnel, 
+  getTunnelStatus, 
+  getTunnelInfo, 
+  getActiveTunnels, 
+  stopAllTunnels,
+  addPermissions,
+  getPermissions,
+  updatePermission,
+  revokePermission
+} from './mcp/server-creator/tunneling-manager';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { registerSEOHandlers } from './seo/seo-analyzer';
 let wordpressHandler: WordPressHandler;
@@ -42,6 +54,16 @@ let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
 // Tunnel functionality removed
+
+/**
+ * Generate a random MCP server name
+ * Format: mcp-server-[6 random alphanumeric characters]
+ * Example: mcp-server-a7f3k2
+ */
+function generateRandomServerName(): string {
+  const randomString = Math.random().toString(36).substring(2, 8);
+  return `mcp-server-${randomString}`;
+}
 
 class AppUpdater {
   constructor() {
@@ -108,6 +130,29 @@ const createWindow = async () => {
       }
     } catch (migrationError) {
       console.warn('⚠️ Port migration warning:', migrationError);
+    }
+
+    // Migration: Move standalone mcpServerName to mcpConfiguration.serverName
+    try {
+      if (store.has('mcpServerName')) {
+        const oldServerName = store.get('mcpServerName') as string;
+        const config = store.get('mcpConfiguration');
+        
+        // Only migrate if the new location is empty
+        if (oldServerName && !config.serverName) {
+          console.log(`🔧 Migrating MCP server name: ${oldServerName}`);
+          config.serverName = oldServerName;
+          store.set('mcpConfiguration', config);
+          store.delete('mcpServerName');
+          console.log('✅ MCP server name migration completed');
+        } else if (oldServerName && config.serverName) {
+          // Both exist, just delete the old one
+          console.log('🔧 Cleaning up old mcpServerName key');
+          store.delete('mcpServerName');
+        }
+      }
+    } catch (migrationError) {
+      console.warn('⚠️ MCP server name migration warning:', migrationError);
     }
 
     try {
@@ -1720,11 +1765,32 @@ const createWindow = async () => {
         }
       });
 
-      // Tunnel start handler
+      // Tunnel start handler (auto-registers and saves config)
       ipcMain.handle('mcp-tunnel-start', async (_event, serverName: string, localServerUrl?: string) => {
         try {
           console.log(`🚀 Starting tunnel: ${serverName}`);
           const result = await startTunnel(serverName, localServerUrl);
+          
+          // Auto-save tunnel configuration to electron store if successful
+          if (result.success && result.publicUrl) {
+            try {
+              const mcpConfig = store.get('mcpConfiguration');
+              mcpConfig.tunnel = {
+                registered: true,
+                registrationId: result.registrationId || '',
+                serverName: serverName,
+                publicUrl: result.publicUrl,
+                registeredAt: new Date().toISOString(),
+                lastConnectedAt: new Date().toISOString(),
+              };
+              store.set('mcpConfiguration', mcpConfig);
+              console.log(`💾 Auto-saved tunnel configuration: ${result.publicUrl}`);
+            } catch (saveError) {
+              console.error('⚠️ Failed to auto-save tunnel config:', saveError);
+              // Don't fail the whole operation if save fails
+            }
+          }
+          
           return result;
         } catch (error: any) {
           console.error('❌ Failed to start tunnel:', error);
@@ -1740,9 +1806,46 @@ const createWindow = async () => {
         try {
           console.log(`🛑 Stopping tunnel: ${serverName}`);
           const result = stopTunnel(serverName);
+          
+          // Clear the stored tunnel configuration (success or failure)
+          try {
+            const mcpConfig = store.get('mcpConfiguration');
+            mcpConfig.tunnel = {
+              registered: false,
+              registrationId: '',
+              serverName: '',
+              publicUrl: '',
+              registeredAt: '',
+              lastConnectedAt: '',
+            };
+            store.set('mcpConfiguration', mcpConfig);
+            console.log(`💾 Cleared stored tunnel configuration`);
+          } catch (clearError) {
+            console.error('⚠️ Failed to clear tunnel config:', clearError);
+            // Don't fail the whole operation if clear fails
+          }
+          
           return result;
         } catch (error: any) {
           console.error('❌ Failed to stop tunnel:', error);
+          
+          // Still try to clear stored config even on error
+          try {
+            const mcpConfig = store.get('mcpConfiguration');
+            mcpConfig.tunnel = {
+              registered: false,
+              registrationId: '',
+              serverName: '',
+              publicUrl: '',
+              registeredAt: '',
+              lastConnectedAt: '',
+            };
+            store.set('mcpConfiguration', mcpConfig);
+            console.log(`💾 Cleared stored tunnel configuration (after error)`);
+          } catch (clearError) {
+            console.error('⚠️ Failed to clear tunnel config:', clearError);
+          }
+          
           return {
             success: false,
             error: error.message || 'Unknown error'
@@ -1767,6 +1870,23 @@ const createWindow = async () => {
         }
       });
 
+      // Get tunnel info (including public URL)
+      ipcMain.handle('mcp-tunnel-info', async (_event, serverName: string) => {
+        try {
+          const info = getTunnelInfo(serverName);
+          return {
+            success: true,
+            ...info
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get tunnel info:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
       // Get active tunnels handler
       ipcMain.handle('mcp-tunnel-list', async () => {
         try {
@@ -1780,6 +1900,226 @@ const createWindow = async () => {
           return {
             success: false,
             error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Permission Management Handlers
+
+      // Add permissions to a server
+      ipcMain.handle('mcp-permissions-add', async (_event, request: {
+        server_key: string;
+        emails: string[];
+        access_level?: 'read_only' | 'read_write' | 'admin';
+        expires_at?: string;
+        notes?: string;
+      }) => {
+        try {
+          console.log(`🔐 Adding permissions to server: ${request.server_key}`);
+          const result = await addPermissions(request);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to add permissions:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Get permissions for a server
+      ipcMain.handle('mcp-permissions-get', async (_event, serverKey: string) => {
+        try {
+          console.log(`🔐 Getting permissions for server: ${serverKey}`);
+          const result = await getPermissions(serverKey);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to get permissions:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Update a permission
+      ipcMain.handle('mcp-permissions-update', async (_event, permissionId: string, updates: {
+        access_level?: 'read_only' | 'read_write' | 'admin';
+        expires_at?: string;
+        notes?: string;
+        status?: 'pending' | 'active' | 'revoked' | 'expired';
+      }) => {
+        try {
+          console.log(`🔐 Updating permission: ${permissionId}`);
+          const result = await updatePermission(permissionId, updates);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to update permission:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Revoke a permission
+      ipcMain.handle('mcp-permissions-revoke', async (_event, permissionId: string) => {
+        try {
+          console.log(`🔐 Revoking permission: ${permissionId}`);
+          const result = await revokePermission(permissionId);
+          return result;
+        } catch (error: any) {
+          console.error('❌ Failed to revoke permission:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Save tunnel configuration handler
+      ipcMain.handle('save-tunnel-config', async (_event, config: {
+        name: string;
+        tunnelUrl: string;
+        registeredAt: string;
+        id?: string;
+        ip?: string;
+      }) => {
+        try {
+          console.log(`💾 Saving tunnel configuration for: ${config.name}`);
+          
+          // Get existing tunnel configs or initialize empty array
+          const existingConfigs = store.get('tunnelConfigs', []) as any[];
+          
+          // Check if this tunnel name already exists
+          const existingIndex = existingConfigs.findIndex((c: any) => c.name === config.name);
+          
+          if (existingIndex >= 0) {
+            // Update existing configuration
+            existingConfigs[existingIndex] = {
+              ...existingConfigs[existingIndex],
+              ...config,
+              updatedAt: new Date().toISOString()
+            };
+          } else {
+            // Add new configuration
+            existingConfigs.push({
+              ...config,
+              createdAt: new Date().toISOString()
+            });
+          }
+          
+          // Save to store
+          store.set('tunnelConfigs', existingConfigs);
+          
+          console.log(`✅ Tunnel configuration saved successfully`);
+          return {
+            success: true,
+            message: 'Tunnel configuration saved successfully'
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to save tunnel configuration:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Get tunnel configurations handler
+      ipcMain.handle('get-tunnel-configs', async () => {
+        try {
+          const tunnelConfigs = store.get('tunnelConfigs', []) as any[];
+          return {
+            success: true,
+            configs: tunnelConfigs
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get tunnel configurations:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error',
+            configs: []
+          };
+        }
+      });
+
+      // Get MCP server name handler
+      ipcMain.handle('get-mcp-server-name', async () => {
+        try {
+          const mcpConfig = store.get('mcpConfiguration');
+          let serverName = mcpConfig.serverName as string;
+          
+          // If no server name exists, generate a random one
+          if (!serverName) {
+            serverName = generateRandomServerName();
+            mcpConfig.serverName = serverName;
+            store.set('mcpConfiguration', mcpConfig);
+            console.log(`🎲 Generated random MCP server name: ${serverName}`);
+          }
+          
+          return {
+            success: true,
+            serverName
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get MCP server name:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error',
+            serverName: 'mcp-server-' + Math.random().toString(36).substring(2, 8)
+          };
+        }
+      });
+
+      // Set MCP server name handler
+      ipcMain.handle('set-mcp-server-name', async (_event, serverName: string) => {
+        try {
+          console.log(`💾 Setting MCP server name: ${serverName}`);
+          const mcpConfig = store.get('mcpConfiguration');
+          mcpConfig.serverName = serverName;
+          store.set('mcpConfiguration', mcpConfig);
+          return {
+            success: true,
+            message: 'MCP server name saved successfully'
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to set MCP server name:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      });
+
+      // Get MCP tunnel configuration
+      ipcMain.handle('get-mcp-tunnel-config', async () => {
+        try {
+          const mcpConfig = store.get('mcpConfiguration');
+          return {
+            success: true,
+            tunnel: mcpConfig.tunnel || {
+              registered: false,
+              registrationId: '',
+              serverName: '',
+              publicUrl: '',
+              registeredAt: '',
+              lastConnectedAt: '',
+            }
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get MCP tunnel config:', error);
+          return {
+            success: false,
+            error: error.message || 'Unknown error',
+            tunnel: {
+              registered: false,
+              registrationId: '',
+              serverName: '',
+              publicUrl: '',
+              registeredAt: '',
+              lastConnectedAt: '',
+            }
           };
         }
       });
@@ -1971,6 +2311,24 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Cleanup tunnels and clear stored config
+  try {
+    stopAllTunnels();
+    const mcpConfig = store.get('mcpConfiguration');
+    mcpConfig.tunnel = {
+      registered: false,
+      registrationId: '',
+      serverName: '',
+      publicUrl: '',
+      registeredAt: '',
+      lastConnectedAt: '',
+    };
+    store.set('mcpConfiguration', mcpConfig);
+    console.log('💾 Cleared tunnel configuration on app quit');
+  } catch (error) {
+    console.error('⚠️ Failed to cleanup tunnels on quit:', error);
+  }
+
   // Cleanup WordPress handler resources
   if (wordpressHandler) {
     wordpressHandler.cleanup();

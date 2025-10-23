@@ -1,8 +1,8 @@
 // Gmail MCP Handler - IPC handlers for Gmail MCP operations
 import { ipcMain } from 'electron';
 import { GmailMCPFetcher } from './gmail-service';
-import { GmailConnection } from '../../../types/gmail-types';
-import { getStore } from '../../../storage';
+import { GmailConnection } from '../../types/gmail-types';
+import { getStore } from '../../storage';
 
 // Store active fetcher instances
 const fetcherInstances = new Map<string, GmailMCPFetcher>();

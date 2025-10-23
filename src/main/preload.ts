@@ -1271,6 +1271,27 @@ const electronHandler = {
   },
 
   /**
+   * Permission Management API
+   */
+  permissions: {
+    add: (request: {
+      server_key: string;
+      emails: string[];
+      access_level?: 'read_only' | 'read_write' | 'admin';
+      expires_at?: string;
+      notes?: string;
+    }) => ipcRenderer.invoke('mcp-permissions-add', request),
+    get: (serverKey: string) => ipcRenderer.invoke('mcp-permissions-get', serverKey),
+    update: (permissionId: string, updates: {
+      access_level?: 'read_only' | 'read_write' | 'admin';
+      expires_at?: string;
+      notes?: string;
+      status?: 'pending' | 'active' | 'revoked' | 'expired';
+    }) => ipcRenderer.invoke('mcp-permissions-update', permissionId, updates),
+    revoke: (permissionId: string) => ipcRenderer.invoke('mcp-permissions-revoke', permissionId),
+  },
+
+  /**
    * Environment Configuration API
    */
   env: {

@@ -35,23 +35,91 @@ export function initializeStore(): Promise<void> {
           smartProjectContext: {},
           // MCP Configuration: Store for Model Context Protocol server configurations
           mcpConfiguration: {
+            // Gmail MCP servers (existing)
             servers: [],
             connections: [],
-            settings: {
-              autoStart: false,
-              defaultPort: 8080,
-              enableLogging: true,
-              logLevel: 'info',
+            
+            // Local MCP server configuration
+            serverName: '',  // e.g., "mcp-server-a7f3k2"
+            
+            // Tunnel configuration
+            tunnel: {
+              registered: false,
+              registrationId: '',
+              serverName: '',
+              publicUrl: '',
+              registeredAt: '',
+              lastConnectedAt: '',
             },
+            
+            // HTTP server settings
+            httpServer: {
+              enabled: false,
+              port: 8080,
+              lastStartedAt: '',
+            },
+            
+          // General settings
+          settings: {
+            autoStart: false,
+            defaultPort: 8080,
+            enableLogging: true,
+            logLevel: 'info',
           },
         },
-      });
+        // MCP Servers list
+        mcpServers: [
+          {
+            name: 'gmail',
+            enabled: false,
+            description: 'Gmail MCP Server - Access Gmail data from Google Workspace'
+          },
+          {
+            name: 'filesystem',
+            enabled: true,
+            description: 'File System MCP Server - Access files and directories with security controls'
+          }
+        ],
+      },
+    });
+      
+      // Migration: Add filesystem server to existing stores
+      migrateFilesystemServer();
+      
       resolve();
     } catch (error) {
       console.error('Failed to initialize Electron Store:', error);
       reject(error);
     }
   });
+}
+
+/**
+ * Migration: Add filesystem server to existing stores if not present
+ */
+function migrateFilesystemServer() {
+  try {
+    const mcpServers = store.get('mcpServers', []) as any[];
+    
+    // Check if filesystem server already exists
+    const hasFilesystem = mcpServers.some(server => server.name === 'filesystem');
+    
+    if (!hasFilesystem) {
+      console.log('🔄 Migrating: Adding filesystem server to MCP servers list');
+      
+      // Add filesystem server
+      mcpServers.push({
+        name: 'filesystem',
+        enabled: true,
+        description: 'File System MCP Server - Access files and directories with security controls'
+      });
+      
+      store.set('mcpServers', mcpServers);
+      console.log('✅ Filesystem server added to MCP servers list');
+    }
+  } catch (error) {
+    console.error('Error during filesystem server migration:', error);
+  }
 }
 
 export function getStore() {
