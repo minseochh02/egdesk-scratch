@@ -25,6 +25,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
 import MCPServer from './components/MCPServer/MCPServer';
 import EGDesktopControl from './components/EGDesktop/EGDesktopControl';
+import SignInPage from './components/Auth/SignInPage';
+import AuthButton from './components/Auth/AuthButton';
+import UserProfile from './components/Auth/UserProfile';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 
@@ -512,6 +516,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 function NavigationBar({ showDebugModal, setShowDebugModal }: { showDebugModal: boolean; setShowDebugModal: (show: boolean) => void }) {
   const location = useLocation();
   const [isNarrow, setIsNarrow] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     const checkWidth = () => {
@@ -594,6 +599,9 @@ function NavigationBar({ showDebugModal, setShowDebugModal }: { showDebugModal: 
         </button>
 
       </nav>
+      <div className="nav-auth">
+        <AuthButton />
+      </div>
     </div>
   );
 }
@@ -652,11 +660,27 @@ function RouteWindowBoundsManager() {
   return null;
 }
 
-export default function App() {
+function AppContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
+  const { user, loading } = useAuth();
+
+  // Show loading screen while checking authentication
+  if (loading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  // Show sign-in page if not authenticated
+  if (!user) {
+    return <SignInPage />;
+  }
 
   return (
-    <Router>
+    <>
       <RouteWindowBoundsManager />
       <div className="app-container">
         <NavigationBar showDebugModal={showDebugModal} setShowDebugModal={setShowDebugModal} />
@@ -665,6 +689,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/index.html" element={<LandingPage />} />
+            <Route path="/profile" element={<UserProfile />} />
             <Route path="/viewer" element={<URLFileViewerPage />} />
             <Route path="/egdesktop" element={<EGDesktopControl />} />
             <Route 
@@ -686,6 +711,16 @@ export default function App() {
           </Routes>
         </main>
       </div>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </Router>
   );
 }

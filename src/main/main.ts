@@ -49,6 +49,7 @@ import {
 } from './mcp/server-creator/tunneling-manager';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { registerSEOHandlers } from './seo/seo-analyzer';
+import { getAuthService } from './auth/auth-service';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
@@ -2363,10 +2364,28 @@ app.on('before-quit', async () => {
   // Tunnel cleanup removed
 });
 
+// Set up protocol for OAuth deep links
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('egdesk');
+}
+
 app
   .whenReady()
   .then(() => {
+    // Initialize auth service
+    const authService = getAuthService();
+    authService.registerHandlers();
+    
     createWindow();
+    
+    // Set up deep link handler for OAuth callbacks
+    // Pass a function that returns the current main window
+    authService.setupDeepLinkHandler(() => mainWindow);
+    
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.

@@ -524,6 +524,20 @@ export interface IElectronAPI {
     getNetworkInfo: () => Promise<{ localIP: string; interfaces: any[] }>;
   };
 
+  auth: {
+    getSession: () => Promise<{
+      success: boolean;
+      session: any | null;
+      user: any | null;
+      error?: string;
+    }>;
+    signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+    signInWithGithub: () => Promise<{ success: boolean; error?: string }>;
+    signOut: () => Promise<{ success: boolean; error?: string }>;
+    handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
+    onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => () => void;
+  };
+
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 
