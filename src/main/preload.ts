@@ -1374,6 +1374,26 @@ sslCertificate: {
   cleanup: () => ipcRenderer.invoke('ssl-certificate-cleanup'),
 },
 
+/**
+ * Authentication API
+ */
+auth: {
+  getSession: () => ipcRenderer.invoke('auth:get-session'),
+  signInWithGoogle: () => ipcRenderer.invoke('auth:sign-in-google'),
+  signInWithGithub: () => ipcRenderer.invoke('auth:sign-in-github'),
+  signOut: () => ipcRenderer.invoke('auth:sign-out'),
+  handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
+  onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => {
+    const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on('auth:state-changed', subscription);
+    
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('auth:state-changed', subscription);
+    };
+  },
+},
+
   // ========================================================================
   // GENERIC IPC INVOKE METHOD
   // ========================================================================
