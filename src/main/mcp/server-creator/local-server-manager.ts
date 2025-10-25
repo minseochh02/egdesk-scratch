@@ -13,12 +13,13 @@ import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, powerSaveBlocker } from 'electron';
 import { getStore } from '../../storage';
 import { GmailMCPFetcher } from '../gmail/gmail-service';
 import { GmailConnection } from '../../types/gmail-types';
 import { GmailMCPService } from '../gmail/gmail-mcp-service';
 import { FileSystemMCPService } from '../file-system/file-system-mcp-service';
+import { FileConversionMCPService } from '../file-conversion/file-conversion-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 
@@ -33,6 +34,10 @@ export interface HTTPServerStatus {
   isRunning: boolean;
   port: number | null;
   error: string | null;
+  powerSaveBlocker?: {
+    isActive: boolean;
+    blockerId: number | null;
+  };
 }
 
 export interface SSLCertificate {
@@ -67,10 +72,14 @@ export class LocalServerManager {
   private store = getStore();
   private gmailMCPService: GmailMCPService | null = null;
   private filesystemMCPService: FileSystemMCPService | null = null;
+  private fileConversionMCPService: FileConversionMCPService | null = null;
   private gmailSSEHandler: SSEMCPHandler | null = null;
   private filesystemSSEHandler: SSEMCPHandler | null = null;
+  private fileConversionSSEHandler: SSEMCPHandler | null = null;
   private httpStreamHandler: HTTPStreamHandler | null = null;
   private filesystemHTTPStreamHandler: HTTPStreamHandler | null = null;
+  // Power management
+  private powerSaveBlockerId: number | null = null;
 
   private constructor() {}
 
@@ -109,6 +118,11 @@ export class LocalServerManager {
     // Get network information
     ipcMain.handle('https-server-get-network-info', () => {
       return this.getNetworkInfo();
+    });
+
+    // Get power management status
+    ipcMain.handle('https-server-get-power-status', () => {
+      return this.getPowerSaveBlockerStatus();
     });
 
     // MCP Server management handlers
@@ -202,6 +216,9 @@ export class LocalServerManager {
         console.log(`✅ ${protocol.toUpperCase()} Server running on port ${options.port} (accessible from network)`);
         console.log(`🌐 Access from any device: ${protocol}://[YOUR_IP]:${options.port}`);
         
+        // Prevent system sleep while server is running
+        this.preventSleep();
+        
         // Trigger firewall prompt by making a test connection
         this.triggerFirewallPrompt(options.port, protocol);
       });
@@ -211,6 +228,9 @@ export class LocalServerManager {
         console.error('Server error:', error);
         this.isRunning = false;
         this.currentPort = null;
+        
+        // Allow system sleep if server fails
+        this.allowSleep();
       });
 
       return { success: true, port: options.port, protocol };
@@ -228,16 +248,19 @@ export class LocalServerManager {
     try {
       if (this.server) {
         this.server.close(() => {
-          console.log('🔒 HTTPS Server stopped');
+          console.log('🔒 Server stopped');
         });
         this.server = null;
         this.isRunning = false;
         this.currentPort = null;
+        
+        // Allow system sleep when server is stopped
+        this.allowSleep();
       }
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Failed to stop HTTPS server:', errorMessage);
+      console.error('Failed to stop server:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }
@@ -249,7 +272,8 @@ export class LocalServerManager {
     return {
       isRunning: this.isRunning,
       port: this.currentPort,
-      error: null
+      error: null,
+      powerSaveBlocker: this.getPowerSaveBlockerStatus()
     };
   }
 
@@ -323,6 +347,12 @@ export class LocalServerManager {
       return;
     }
 
+    // File Conversion MCP Server endpoints (REST API)
+    if (url.startsWith('/file-conversion')) {
+      await this.handleFileConversionEndpoint(req, res, url);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -346,6 +376,8 @@ export class LocalServerManager {
         'POST /filesystem/message - FileSystem message endpoint for SSE',
         '/filesystem/tools - List File System tools',
         '/filesystem/tools/call - Call a File System tool',
+        '/file-conversion/tools - List File Conversion tools',
+        '/file-conversion/tools/call - Call a File Conversion tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -396,6 +428,20 @@ export class LocalServerManager {
       this.filesystemMCPService = new FileSystemMCPService({});
     }
     return this.filesystemMCPService;
+  }
+
+  /**
+   * Get or create File Conversion MCP Service instance
+   */
+  private getFileConversionMCPService(): FileConversionMCPService {
+    if (!this.fileConversionMCPService) {
+      this.fileConversionMCPService = new FileConversionMCPService();
+      // Initialize the service
+      this.fileConversionMCPService.initialize().catch(err => {
+        console.error('Failed to initialize File Conversion service:', err);
+      });
+    }
+    return this.fileConversionMCPService;
   }
 
   /**
@@ -690,6 +736,97 @@ export class LocalServerManager {
         '/filesystem/tools/call - Call a tool'
       ]
     }));
+  }
+
+  /**
+   * Handle File Conversion MCP endpoints
+   */
+  private async handleFileConversionEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // Check if file-conversion server is enabled
+    if (!this.isMCPServerEnabled('file-conversion')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'File Conversion MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'file-conversion'
+      }));
+      return;
+    }
+
+    // List File Conversion tools
+    if (url === '/file-conversion/tools' && req.method === 'GET') {
+      this.handleFileConversionToolsList(res);
+      return;
+    }
+
+    // Call a File Conversion tool
+    if (url === '/file-conversion/tools/call' && req.method === 'POST') {
+      await this.handleFileConversionToolCall(req, res);
+      return;
+    }
+
+    // Unknown File Conversion endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'File Conversion MCP endpoint not found',
+      availableEndpoints: [
+        '/file-conversion/tools - List available tools',
+        '/file-conversion/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle File Conversion tools list
+   */
+  private handleFileConversionToolsList(res: http.ServerResponse): void {
+    const service = this.getFileConversionMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle File Conversion tool call
+   */
+  private async handleFileConversionToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`🔄 Calling File Conversion tool: ${tool}`);
+
+      // Get File Conversion service
+      const service = this.getFileConversionMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling File Conversion tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
   }
 
   /**
@@ -1145,6 +1282,67 @@ export class LocalServerManager {
 
   /**
    * ========================================
+   * Power Management Methods
+   * ========================================
+   */
+
+  /**
+   * Prevent system sleep while server is running
+   */
+  private preventSleep(): void {
+    try {
+      if (this.powerSaveBlockerId !== null) {
+        console.log('🔋 System sleep prevention already active');
+        return;
+      }
+
+      this.powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+      console.log('🔋 System sleep prevention enabled - desktop will stay awake while server is running');
+      console.log(`📱 Power save blocker ID: ${this.powerSaveBlockerId}`);
+    } catch (error) {
+      console.error('❌ Failed to prevent system sleep:', error);
+      this.powerSaveBlockerId = null;
+    }
+  }
+
+  /**
+   * Allow system sleep when server is stopped
+   */
+  private allowSleep(): void {
+    try {
+      if (this.powerSaveBlockerId === null) {
+        console.log('🔋 System sleep prevention not active');
+        return;
+      }
+
+      const wasActive = powerSaveBlocker.isStarted(this.powerSaveBlockerId);
+      if (wasActive) {
+        powerSaveBlocker.stop(this.powerSaveBlockerId);
+        console.log('🔋 System sleep prevention disabled - desktop can now sleep normally');
+      }
+      
+      this.powerSaveBlockerId = null;
+    } catch (error) {
+      console.error('❌ Failed to restore system sleep:', error);
+      // Still reset the ID to avoid keeping a stale reference
+      this.powerSaveBlockerId = null;
+    }
+  }
+
+  /**
+   * Get current power save blocker status
+   */
+  private getPowerSaveBlockerStatus(): { isActive: boolean; blockerId: number | null } {
+    const isActive = this.powerSaveBlockerId !== null && 
+                     powerSaveBlocker.isStarted(this.powerSaveBlockerId);
+    return {
+      isActive,
+      blockerId: this.powerSaveBlockerId
+    };
+  }
+
+  /**
+   * ========================================
    * MCP Server Management Methods
    * ========================================
    */
@@ -1176,6 +1374,11 @@ export class LocalServerManager {
         name: 'filesystem',
         enabled: true, // Enabled by default
         description: 'File System MCP Server - Access files and directories with security controls'
+      },
+      {
+        name: 'file-conversion',
+        enabled: true, // Enabled by default
+        description: 'File Conversion MCP Server - Convert between file formats (PDF, images, documents)'
       }
       // Future servers:
       // {

@@ -227,6 +227,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     publicUrl: string;
     registeredAt: string;
     lastConnectedAt: string;
+    // Health status fields
+    isConnected: boolean;        // Is there an active WebSocket tunnel connection?
+    isServiceAvailable: boolean; // Is the tunneling service reachable?
+    lastHealthCheck: string;
+    healthError?: string;
+    // Auto-reconnection tracking
+    wasAutoDisconnected: boolean;
+    autoReconnectAttempts: number;
   }>({
     registered: false,
     registrationId: '',
@@ -234,6 +242,12 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     publicUrl: '',
     registeredAt: '',
     lastConnectedAt: '',
+    isConnected: false,
+    isServiceAvailable: false,
+    lastHealthCheck: '',
+    healthError: undefined,
+    wasAutoDisconnected: false,
+    autoReconnectAttempts: 0,
   });
 
   // Load running servers
@@ -514,12 +528,143 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   };
 
+  // Check tunnel service availability (is tunneling-service.onrender.com reachable?)
+  const checkTunnelServiceAvailability = async () => {
+    try {
+      // Ping the tunneling service root endpoint with a short timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      const response = await fetch('https://tunneling-service.onrender.com/', {
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'no-cors', // Avoid CORS issues since we just want to check reachability
+      });
+
+      clearTimeout(timeoutId);
+      
+      // With no-cors mode, we can't check response.ok, but if fetch completes without error,
+      // the service is reachable
+      console.log('✅ Tunneling service is reachable');
+      return true;
+      
+    } catch (err) {
+      // Check if it's a timeout or network error
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          console.log('🔴 Tunneling service timeout (took longer than 5 seconds)');
+        } else {
+          console.log('🔴 Tunneling service not reachable:', err.message);
+        }
+      }
+      return false;
+    }
+  };
+
+  // Check tunnel health status (separated: service availability + connection status)
+  const checkTunnelHealth = async (serverName: string) => {
+    try {
+      // First check if local HTTP server is running
+      const localServerStatus = await window.electron.httpsServer.status();
+      
+      if (!localServerStatus.isRunning) {
+        // Local server is down - tunnel should be considered disconnected
+        console.log('🔴 Local HTTP server is down, tunnel cannot function');
+        
+        // Still check service availability for accurate status
+        const isServiceAvailable = await checkTunnelServiceAvailability();
+        
+        return {
+          isConnected: false,
+          isServiceAvailable,
+          lastHealthCheck: new Date().toISOString(),
+          healthError: `Local HTTP server is not running (port ${localServerStatus.port || 'unknown'})`,
+        };
+      }
+
+      // Check 1: Is the tunneling service reachable?
+      const isServiceAvailable = await checkTunnelServiceAvailability();
+      
+      if (!isServiceAvailable) {
+        console.log('🔴 Tunneling service is not reachable');
+        return {
+          isConnected: false,
+          isServiceAvailable: false,
+          lastHealthCheck: new Date().toISOString(),
+          healthError: 'Tunneling service is not reachable (tunneling-service.onrender.com may be down)',
+        };
+      }
+
+      // Check 2: Do we have an active WebSocket tunnel connection?
+      const connectionResult = await window.electron.invoke('mcp-tunnel-info', serverName);
+      
+      if (connectionResult.success) {
+        // connectionResult structure: { success: true, isActive: boolean, isConnected: boolean, ... }
+        const isActive = connectionResult.isActive || false;
+        const isConnected = connectionResult.isConnected || false;
+        
+        if (isActive && isConnected) {
+          console.log('✅ Tunnel health check: Service reachable and WebSocket connected');
+          return {
+            isConnected: true,
+            isServiceAvailable: true,
+            lastHealthCheck: new Date().toISOString(),
+            healthError: undefined,
+          };
+        } else if (isActive && !isConnected) {
+          console.log('⚠️ Tunnel is active but WebSocket connection is lost');
+          return {
+            isConnected: false,
+            isServiceAvailable: true,
+            lastHealthCheck: new Date().toISOString(),
+            healthError: 'Tunnel active but WebSocket connection lost',
+          };
+        } else {
+          console.log('ℹ️ No active tunnel found for this server');
+          return {
+            isConnected: false,
+            isServiceAvailable: true,
+            lastHealthCheck: new Date().toISOString(),
+            healthError: 'No active tunnel connection found',
+          };
+        }
+      } else {
+        console.log('⚠️ Failed to get tunnel connection status from local manager');
+        return {
+          isConnected: false,
+          isServiceAvailable: true,
+          lastHealthCheck: new Date().toISOString(),
+          healthError: connectionResult.error || 'Failed to check local tunnel status',
+        };
+      }
+    } catch (err) {
+      console.error('Error checking tunnel health:', err);
+      return {
+        isConnected: false,
+        isServiceAvailable: false,
+        lastHealthCheck: new Date().toISOString(),
+        healthError: err instanceof Error ? err.message : 'Health check failed',
+      };
+    }
+  };
+
   // Load active tunnel configuration
   const loadActiveTunnelConfig = async () => {
     try {
       const result = await window.electron.invoke('get-mcp-tunnel-config');
       if (result.success && result.tunnel) {
-        setActiveTunnelConfig(result.tunnel);
+        // Get health status for the configured tunnel
+        const healthStatus = await checkTunnelHealth(result.tunnel.serverName);
+        
+        setActiveTunnelConfig({
+          // Start with defaults for new fields
+          wasAutoDisconnected: false,
+          autoReconnectAttempts: 0,
+          // Then merge stored tunnel config
+          ...result.tunnel,
+          // Finally merge health status (which might override defaults)
+          ...healthStatus,
+        });
       } else {
         // Clear state when no tunnel is active (important for UI sync)
         setActiveTunnelConfig({
@@ -528,7 +673,13 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           serverName: '',
           publicUrl: '',
           registeredAt: '',
-          lastConnectedAt: ''
+          lastConnectedAt: '',
+          isConnected: false,
+          isServiceAvailable: false,
+          lastHealthCheck: '',
+          healthError: undefined,
+          wasAutoDisconnected: false,
+          autoReconnectAttempts: 0,
         });
       }
     } catch (err) {
@@ -540,7 +691,13 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         serverName: '',
         publicUrl: '',
         registeredAt: '',
-        lastConnectedAt: ''
+        lastConnectedAt: '',
+        isConnected: false,
+        isServiceAvailable: false,
+        lastHealthCheck: '',
+        healthError: err instanceof Error ? err.message : 'Unknown error',
+        wasAutoDisconnected: false,
+        autoReconnectAttempts: 0,
       });
     }
   };
@@ -591,6 +748,226 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     loadMcpServerName();
     loadActiveTunnelConfig();
   }, []);
+
+  // Periodic tunnel health checking with auto-disconnect
+  useEffect(() => {
+    // Only start health checking if tunnel is registered
+    if (!activeTunnelConfig.registered || !activeTunnelConfig.serverName) {
+      return;
+    }
+
+    console.log(`🔍 Starting periodic health checks for tunnel: ${activeTunnelConfig.serverName}`);
+
+    const healthCheckInterval = setInterval(async () => {
+      try {
+        const healthStatus = await checkTunnelHealth(activeTunnelConfig.serverName);
+        
+        // Auto-disconnect: If local server is down and tunnel was previously connected,
+        // automatically stop the tunnel to clean up the connection
+        if (!healthStatus.isConnected && 
+            activeTunnelConfig.isConnected && 
+            healthStatus.healthError?.includes('Local HTTP server is not running')) {
+          
+          console.log('🛑 Local server went down, automatically stopping tunnel...');
+          
+          try {
+            const stopResult = await window.electron.invoke('mcp-tunnel-stop', activeTunnelConfig.serverName);
+            if (stopResult.success) {
+              console.log('✅ Tunnel automatically stopped due to local server being down');
+              
+              // Mark as auto-disconnected for future auto-reconnection
+              setActiveTunnelConfig(prev => ({
+                ...prev,
+                isConnected: false,
+                wasAutoDisconnected: true,
+                autoReconnectAttempts: 0,
+                lastHealthCheck: new Date().toISOString(),
+                healthError: 'Local HTTP server is not running - tunnel auto-disconnected',
+              }));
+              
+              return; // Skip the normal health status update
+            } else {
+              console.warn('⚠️ Failed to automatically stop tunnel:', stopResult.error);
+            }
+          } catch (stopErr) {
+            console.error('❌ Error automatically stopping tunnel:', stopErr);
+          }
+        }
+
+        // Auto-reconnect 1: WebSocket connection lost (service available, local server running, but WebSocket disconnected)
+        const shouldAutoReconnect = healthStatus.isConnected === false && 
+            healthStatus.isServiceAvailable && 
+            !healthStatus.healthError?.includes('Local HTTP server is not running') &&
+            !healthStatus.healthError?.includes('Tunneling service is not reachable') &&
+            activeTunnelConfig.registered && 
+            activeTunnelConfig.publicUrl &&
+            !activeTunnelConfig.wasAutoDisconnected && // This is for normal WebSocket drops, not local server issues
+            activeTunnelConfig.autoReconnectAttempts < 3; // Limit attempts to prevent infinite loops
+
+        // Debug logging to see why auto-reconnection might not trigger
+        console.log('🔍 Auto-reconnect check:', {
+          isConnected: healthStatus.isConnected,
+          isServiceAvailable: healthStatus.isServiceAvailable,
+          healthError: healthStatus.healthError,
+          hasLocalServerError: healthStatus.healthError?.includes('Local HTTP server is not running'),
+          hasServiceError: healthStatus.healthError?.includes('Tunneling service is not reachable'),
+          registered: activeTunnelConfig.registered,
+          hasPublicUrl: !!activeTunnelConfig.publicUrl,
+          wasAutoDisconnected: activeTunnelConfig.wasAutoDisconnected,
+          autoReconnectAttempts: activeTunnelConfig.autoReconnectAttempts,
+          shouldAutoReconnect
+        });
+
+        if (shouldAutoReconnect) {
+          
+          console.log('🔄 WebSocket connection lost, attempting auto-reconnection...');
+          
+          try {
+            const reconnectResult = await window.electron.invoke('mcp-tunnel-start', 
+              activeTunnelConfig.serverName, 
+              `http://localhost:${httpServerStatus.port || 8080}`);
+              
+            if (reconnectResult.success) {
+              console.log('🎉 WebSocket tunnel automatically reconnected!');
+              
+              // Update state to reflect successful reconnection
+              setActiveTunnelConfig(prev => ({
+                ...prev,
+                isConnected: true,
+                autoReconnectAttempts: 0,   // Reset attempts counter
+                lastHealthCheck: new Date().toISOString(),
+                healthError: undefined,
+                lastConnectedAt: new Date().toISOString(),
+              }));
+              
+              // Show user notification
+              const notificationMessage = `✅ Tunnel automatically reconnected!\n\nServer: ${activeTunnelConfig.serverName}\nWebSocket connection restored after network interruption.`;
+              setTimeout(() => alert(notificationMessage), 500);
+              
+              return; // Skip the normal health status update
+            } else {
+              console.warn('⚠️ WebSocket auto-reconnection attempt failed:', reconnectResult.error);
+              
+              // Increment attempt counter
+              setActiveTunnelConfig(prev => ({
+                ...prev,
+                autoReconnectAttempts: prev.autoReconnectAttempts + 1,
+                lastHealthCheck: new Date().toISOString(),
+                healthError: `WebSocket auto-reconnection failed (attempt ${prev.autoReconnectAttempts + 1}/3): ${reconnectResult.error}`,
+              }));
+              
+              return;
+            }
+          } catch (reconnectErr) {
+            console.error('❌ Error during WebSocket auto-reconnection:', reconnectErr);
+            
+            // Increment attempt counter
+            setActiveTunnelConfig(prev => ({
+              ...prev,
+              autoReconnectAttempts: prev.autoReconnectAttempts + 1,
+              lastHealthCheck: new Date().toISOString(),
+              healthError: `WebSocket auto-reconnection error (attempt ${prev.autoReconnectAttempts + 1}/3): ${reconnectErr instanceof Error ? reconnectErr.message : 'Unknown error'}`,
+            }));
+            
+            return;
+          }
+        }
+
+        // Auto-reconnect 2: If local server comes back online and tunnel was auto-disconnected,
+        // attempt to restart the tunnel automatically (only if service is available)
+        if (healthStatus.isConnected === false && 
+            healthStatus.isServiceAvailable && 
+            !healthStatus.healthError?.includes('Local HTTP server is not running') &&
+            !healthStatus.healthError?.includes('Tunneling service is not reachable') &&
+            activeTunnelConfig.wasAutoDisconnected &&
+            activeTunnelConfig.autoReconnectAttempts < 3) { // Limit attempts to prevent infinite loops
+          
+          console.log('🔄 Local server is back online, attempting tunnel auto-reconnection...');
+          
+          try {
+            const reconnectResult = await window.electron.invoke('mcp-tunnel-start', 
+              activeTunnelConfig.serverName, 
+              `http://localhost:${httpServerStatus.port || 8080}`);
+              
+            if (reconnectResult.success) {
+              console.log('🎉 Tunnel automatically reconnected after local server recovery!');
+              
+              // Update state to reflect successful reconnection
+              setActiveTunnelConfig(prev => ({
+                ...prev,
+                isConnected: true,
+                wasAutoDisconnected: false, // Clear the auto-disconnect flag
+                autoReconnectAttempts: 0,   // Reset attempts counter
+                lastHealthCheck: new Date().toISOString(),
+                healthError: undefined,
+                lastConnectedAt: new Date().toISOString(),
+              }));
+              
+              // Show user notification
+              const notificationMessage = `✅ Tunnel automatically reconnected!\n\nServer: ${activeTunnelConfig.serverName}\nLocal server came back online and tunnel was restored.`;
+              // Using alert for now, could be replaced with a toast notification
+              setTimeout(() => alert(notificationMessage), 500);
+              
+              return; // Skip the normal health status update
+            } else {
+              console.warn('⚠️ Auto-reconnection attempt failed:', reconnectResult.error);
+              
+              // Increment attempt counter
+              setActiveTunnelConfig(prev => ({
+                ...prev,
+                autoReconnectAttempts: prev.autoReconnectAttempts + 1,
+                lastHealthCheck: new Date().toISOString(),
+                healthError: `Auto-reconnection failed (attempt ${prev.autoReconnectAttempts + 1}/3): ${reconnectResult.error}`,
+              }));
+              
+              return;
+            }
+          } catch (reconnectErr) {
+            console.error('❌ Error during auto-reconnection:', reconnectErr);
+            
+            // Increment attempt counter
+            setActiveTunnelConfig(prev => ({
+              ...prev,
+              autoReconnectAttempts: prev.autoReconnectAttempts + 1,
+              lastHealthCheck: new Date().toISOString(),
+              healthError: `Auto-reconnection error (attempt ${prev.autoReconnectAttempts + 1}/3): ${reconnectErr instanceof Error ? reconnectErr.message : 'Unknown error'}`,
+            }));
+            
+            return;
+          }
+        }
+        
+        // Update tunnel config with new health status
+        setActiveTunnelConfig(prev => ({
+          ...prev,
+          ...healthStatus,
+        }));
+
+        // Log health status changes
+        if (healthStatus.isConnected !== activeTunnelConfig.isConnected) {
+          console.log(`🔄 Tunnel connection status changed: ${healthStatus.isConnected ? 'Connected' : 'Disconnected'}`);
+          
+          // If tunnel disconnected unexpectedly, provide helpful context
+          if (!healthStatus.isConnected && activeTunnelConfig.isConnected) {
+            if (healthStatus.healthError) {
+              console.log(`📋 Disconnection reason: ${healthStatus.healthError}`);
+            }
+          }
+        }
+        if (healthStatus.isServiceAvailable !== activeTunnelConfig.isServiceAvailable) {
+          console.log(`🔄 Tunnel service availability changed: ${healthStatus.isServiceAvailable ? 'Available' : 'Unavailable'}`);
+        }
+      } catch (err) {
+        console.error('Error in periodic tunnel health check:', err);
+      }
+    }, 10000); // Check every 10 seconds (more frequent to catch server downs faster)
+
+    // Cleanup interval on unmount or when tunnel changes
+    return () => {
+      console.log(`🛑 Stopping periodic health checks for tunnel: ${activeTunnelConfig.serverName}`);
+      clearInterval(healthCheckInterval);
+    };
+  }, [activeTunnelConfig.registered, activeTunnelConfig.serverName, activeTunnelConfig.isConnected]); // Include isConnected to react to connection state changes
 
   // Load HTTP server status
   const loadHttpServerStatus = async () => {
@@ -1203,6 +1580,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       };
       
       if (result.success) {
+        // Reset auto-reconnection state on manual start
+        setActiveTunnelConfig(prev => ({
+          ...prev,
+          autoReconnectAttempts: 0,
+          wasAutoDisconnected: false,
+          healthError: undefined,
+        }));
+        
         // Reload the saved tunnel configuration
         await loadActiveTunnelConfig();
         
@@ -1231,6 +1616,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       const result = await window.electron.invoke('mcp-tunnel-stop', mcpServerName);
       
       if (result.success) {
+        // Reset auto-reconnection state on manual stop
+        setActiveTunnelConfig(prev => ({
+          ...prev,
+          autoReconnectAttempts: 0,
+          wasAutoDisconnected: false,
+          healthError: undefined,
+        }));
+        
         // Reload the saved tunnel configuration
         await loadActiveTunnelConfig();
         
@@ -1270,6 +1663,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       };
       
       if (result.success) {
+        // Reset auto-reconnection state on manual start
+        setActiveTunnelConfig(prev => ({
+          ...prev,
+          autoReconnectAttempts: 0,
+          wasAutoDisconnected: false,
+          healthError: undefined,
+        }));
+        
         // Reload the saved tunnel configuration
         await loadActiveTunnelConfig();
         
@@ -1292,6 +1693,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       console.log(`🛑 Stopping tunnel for: ${mcpServerName}`);
       
       const result = await window.electron.invoke('mcp-tunnel-stop', mcpServerName);
+      
+      // Reset auto-reconnection state on manual stop attempt
+      setActiveTunnelConfig(prev => ({
+        ...prev,
+        autoReconnectAttempts: 0,
+        wasAutoDisconnected: false,
+        healthError: undefined,
+      }));
       
       // Always reload tunnel config to sync state, even if stop fails
       await loadActiveTunnelConfig();
@@ -1499,6 +1908,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         handleStartTunnel={handleStartTunnelForConfig}
         handleStopTunnel={handleStopTunnelForConfig}
         loadActiveTunnelConfig={loadActiveTunnelConfig}
+        checkTunnelHealth={checkTunnelHealth}
       />
 
       {/* Running Servers Section */}

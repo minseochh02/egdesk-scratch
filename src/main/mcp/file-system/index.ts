@@ -19,8 +19,9 @@ export type {
 } from './file-system-service';
 
 // Protocol handlers
-export { FileSystemHTTPStreamHandler } from './http-stream-handler';
-export { FileSystemSSEHandler } from './sse-handler';
+export { HTTPStreamHandler } from '../server-creator/http-stream-handler';
+export { SSEMCPHandler } from '../server-creator/sse-handler';
+
 
 
 

@@ -23,7 +23,21 @@ const configuration: webpack.Configuration = {
 
   target: 'electron-renderer',
 
-  externals: ['fsevents', 'crypto-browserify', '@modelcontextprotocol/sdk'],
+  externals: [
+    'fsevents', 
+    'crypto-browserify', 
+    '@modelcontextprotocol/sdk',
+    '@types/ws',
+    'ws',
+    // File conversion libraries (main process only)
+    'sharp',
+    'pdf-lib',
+    'mammoth',
+    'marked',
+    'canvas',
+    'pdfjs-dist',
+    'tesseract.js'
+  ],
 
   /**
    * Use `module` from `webpack.config.renderer.dev.js`

@@ -541,3 +541,22 @@ export class FileSystemService {
   }
 }
 
+/**
+ * Standalone path validation function
+ */
+export function validateFilePath(filePath: string, securityConfig: SecurityConfig = {}): void {
+  const absolutePath = path.resolve(filePath);
+  const check = isPathBlockedWithConfig(absolutePath, securityConfig);
+  
+  if (check.blocked) {
+    throw new Error(`Access denied: ${check.reason}`);
+  }
+}
+
+/**
+ * Factory function to create FileSystemService instance
+ */
+export function createFileSystemService(securityConfig?: SecurityConfig): FileSystemService {
+  return new FileSystemService(securityConfig);
+}
+
