@@ -31,6 +31,14 @@ interface TunnelAndServerConfigProps {
     publicUrl: string;
     registeredAt: string;
     lastConnectedAt: string;
+    // Health status fields
+    isConnected: boolean;        // Is there an active WebSocket tunnel connection?
+    isServiceAvailable: boolean; // Is the tunneling service reachable?
+    lastHealthCheck: string;
+    healthError?: string;
+    // Auto-reconnection tracking
+    wasAutoDisconnected: boolean;
+    autoReconnectAttempts: number;
   };
   tunnelConfigs: Array<{
     name: string;
@@ -59,6 +67,12 @@ interface TunnelAndServerConfigProps {
   handleStartTunnel: () => Promise<void>;
   handleStopTunnel: () => Promise<void>;
   loadActiveTunnelConfig: () => Promise<void>;
+  checkTunnelHealth: (serverName: string) => Promise<{
+    isConnected: boolean;
+    isServiceAvailable: boolean;
+    lastHealthCheck: string;
+    healthError?: string;
+  }>;
 }
 
 const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
@@ -80,7 +94,8 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   handleDisableMCPServer,
   handleStartTunnel,
   handleStopTunnel,
-  loadActiveTunnelConfig
+  loadActiveTunnelConfig,
+  checkTunnelHealth
 }) => {
   const handleCopyPublicUrl = () => {
     if (activeTunnelConfig.publicUrl) {
@@ -276,12 +291,44 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
           ) : (
             <button
               onClick={handleStopTunnel}
+              disabled={!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable}
               style={{
                 background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                 color: 'white',
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 borderRadius: '8px',
                 padding: '12px 24px',
+                cursor: (!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: (!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) ? 0.6 : 1,
+                transition: 'all 0.2s ease'
+              }}
+              title={(!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) 
+                ? "Cannot stop tunnel - service unavailable. Use refresh button to sync state." 
+                : "Stop tunnel connection"}
+            >
+              <FontAwesomeIcon icon={faStop} />
+              {activeTunnelConfig.isConnected || activeTunnelConfig.isServiceAvailable ? 'Stop Tunnel' : 'Force Stop'}
+            </button>
+          )}
+          
+          {/* Reset Auto-Reconnection button - only show if auto-reconnection failed */}
+          {activeTunnelConfig.wasAutoDisconnected && activeTunnelConfig.autoReconnectAttempts >= 3 && (
+            <button
+              onClick={() => {
+                // Reset auto-reconnection state to allow manual retry
+                loadActiveTunnelConfig();
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                color: 'white',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 16px',
                 cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: '600',
@@ -290,13 +337,13 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                 gap: '8px',
                 transition: 'all 0.2s ease'
               }}
-              title="Stop tunnel connection"
+              title="Reset auto-reconnection state and try manual reconnection"
             >
-              <FontAwesomeIcon icon={faStop} />
-              Stop Tunnel
+              <FontAwesomeIcon icon={faRefresh} />
+              Reset Auto-Reconnect
             </button>
           )}
-          
+
           {/* Refresh button to clear stale state */}
           <button
             onClick={loadActiveTunnelConfig}
@@ -320,14 +367,73 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
           </button>
         </div>
 
+        {/* Local Server Warning for Tunnel */}
+        {activeTunnelConfig.publicUrl && !httpServerStatus.isRunning && (
+          <div style={{
+            padding: '12px 16px',
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            color: '#f59e0b'
+          }}>
+            <FontAwesomeIcon icon={faCircleXmark} style={{ fontSize: '18px' }} />
+            <div>
+              <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                Local HTTP Server is Down
+              </div>
+              <div style={{ fontSize: '13px', opacity: 0.9 }}>
+                Tunnel is configured but won't work until you start the HTTP server. 
+                {activeTunnelConfig.wasAutoDisconnected 
+                  ? 'The tunnel will automatically reconnect when the server starts.'
+                  : 'The tunnel will automatically disconnect to prevent resource waste.'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Auto-Reconnection Info */}
+        {activeTunnelConfig.publicUrl && activeTunnelConfig.isServiceAvailable && !activeTunnelConfig.isConnected && 
+         activeTunnelConfig.autoReconnectAttempts === 0 && !activeTunnelConfig.wasAutoDisconnected && (
+          <div style={{
+            padding: '12px 16px',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            color: '#3b82f6'
+          }}>
+            <FontAwesomeIcon icon={faRefresh} style={{ fontSize: '18px' }} />
+            <div>
+              <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                Auto-Reconnection Active
+              </div>
+              <div style={{ fontSize: '13px', opacity: 0.9 }}>
+                WebSocket connection lost but tunneling service is available. 
+                The system will automatically attempt to restore the connection.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Active Tunnel Status */}
         {activeTunnelConfig.registered && activeTunnelConfig.publicUrl && (
           <div style={{ marginTop: '24px', marginBottom: '24px' }}>
             <div style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%)',
+              background: activeTunnelConfig.isConnected && activeTunnelConfig.isServiceAvailable
+                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%)'
+                : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%)',
               borderRadius: '12px',
               padding: '20px',
-              border: '1px solid rgba(16, 185, 129, 0.3)'
+              border: activeTunnelConfig.isConnected && activeTunnelConfig.isServiceAvailable
+                ? '1px solid rgba(16, 185, 129, 0.3)'
+                : '1px solid rgba(239, 68, 68, 0.3)'
             }}>
               <div style={{ 
                 fontSize: '14px', 
@@ -338,9 +444,79 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                 alignItems: 'center',
                 gap: '8px'
               }}>
-                <FontAwesomeIcon icon={faCircleCheck} style={{ color: '#10b981' }} />
-                Active Tunnel Connection
+                <FontAwesomeIcon 
+                  icon={activeTunnelConfig.isConnected && activeTunnelConfig.isServiceAvailable ? faCircleCheck : faCircleXmark} 
+                  style={{ 
+                    color: activeTunnelConfig.isConnected && activeTunnelConfig.isServiceAvailable ? '#10b981' : '#ef4444' 
+                  }} 
+                />
+                {activeTunnelConfig.isConnected && activeTunnelConfig.isServiceAvailable 
+                  ? 'Active Tunnel Connection' 
+                  : !activeTunnelConfig.isServiceAvailable
+                    ? 'Tunneling Service Unavailable'
+                    : 'No Active Tunnel Connection'}
               </div>
+
+              {/* Connection Status Details */}
+              {(!activeTunnelConfig.isConnected || !activeTunnelConfig.isServiceAvailable) && (
+                <div style={{
+                  padding: '12px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '8px',
+                    color: '#ef4444'
+                  }}>
+                    <FontAwesomeIcon icon={faCircleXmark} />
+                    <span style={{ fontWeight: '600' }}>
+                      {activeTunnelConfig.healthError?.includes('Local HTTP server is not running')
+                        ? 'Local Server Down - Tunnel Disconnected'
+                        : !activeTunnelConfig.isServiceAvailable 
+                          ? 'Tunneling Service Unavailable' 
+                          : activeTunnelConfig.isServiceAvailable && !activeTunnelConfig.isConnected
+                            ? 'WebSocket Connection Lost'
+                            : 'Tunnel Connection Issue'}
+                    </span>
+                  </div>
+                  {activeTunnelConfig.healthError && (
+                    <div style={{ fontSize: '13px', opacity: 0.9, marginLeft: '20px' }}>
+                      {activeTunnelConfig.healthError}
+                      {activeTunnelConfig.healthError?.includes('Local HTTP server is not running') && !activeTunnelConfig.wasAutoDisconnected && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', opacity: 0.8 }}>
+                          💡 Start the HTTP server to restore tunnel connectivity
+                        </div>
+                      )}
+                      {activeTunnelConfig.wasAutoDisconnected && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', opacity: 0.8, color: '#3b82f6' }}>
+                          🔄 Tunnel will automatically reconnect when HTTP server starts
+                        </div>
+                      )}
+                      {(activeTunnelConfig.healthError?.includes('Auto-reconnection') || 
+                        activeTunnelConfig.healthError?.includes('WebSocket auto-reconnection')) && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', opacity: 0.8 }}>
+                          ⚠️ Auto-reconnection attempts: {activeTunnelConfig.autoReconnectAttempts}/3
+                          {activeTunnelConfig.healthError?.includes('WebSocket') && (
+                            <span style={{ marginLeft: '8px', color: '#3b82f6' }}>
+                              (WebSocket reconnection)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {activeTunnelConfig.lastHealthCheck && (
+                    <div style={{ fontSize: '12px', opacity: 0.7, marginLeft: '20px', marginTop: '4px' }}>
+                      Last checked: {new Date(activeTunnelConfig.lastHealthCheck).toLocaleTimeString()}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Public URL */}
               <div style={{ marginBottom: '12px' }}>
@@ -400,6 +576,40 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                     {activeTunnelConfig.serverName}
                   </div>
                 </div>
+
+                <div>
+                  <div style={{ opacity: 0.7, marginBottom: '4px' }}>Tunnel Status</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {/* Service Availability */}
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '6px',
+                      fontSize: '11px',
+                      color: activeTunnelConfig.isServiceAvailable ? '#10b981' : '#ef4444'
+                    }}>
+                      <FontAwesomeIcon 
+                        icon={activeTunnelConfig.isServiceAvailable ? faCircleCheck : faCircleXmark} 
+                        style={{ fontSize: '10px' }}
+                      />
+                      Service: {activeTunnelConfig.isServiceAvailable ? 'Available' : 'Unavailable'}
+                    </div>
+                    {/* Connection Status */}
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '6px',
+                      fontSize: '11px', 
+                      color: activeTunnelConfig.isConnected ? '#10b981' : '#6b7280'
+                    }}>
+                      <FontAwesomeIcon 
+                        icon={activeTunnelConfig.isConnected ? faCircleCheck : faCircleXmark} 
+                        style={{ fontSize: '10px' }}
+                      />
+                      WebSocket: {activeTunnelConfig.isConnected ? 'Connected' : 'Disconnected'}
+                    </div>
+                  </div>
+                </div>
                 
                 {activeTunnelConfig.registrationId && (
                   <div>
@@ -424,6 +634,24 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                     <div style={{ opacity: 0.7, marginBottom: '4px' }}>Last Connected</div>
                     <div>
                       {new Date(activeTunnelConfig.lastConnectedAt).toLocaleDateString()} {new Date(activeTunnelConfig.lastConnectedAt).toLocaleTimeString()}
+                    </div>
+                  </div>
+                )}
+
+                {activeTunnelConfig.lastHealthCheck && (
+                  <div>
+                    <div style={{ opacity: 0.7, marginBottom: '4px' }}>Last Health Check</div>
+                    <div>
+                      {new Date(activeTunnelConfig.lastHealthCheck).toLocaleTimeString()}
+                    </div>
+                  </div>
+                )}
+
+                {activeTunnelConfig.wasAutoDisconnected && activeTunnelConfig.autoReconnectAttempts >= 3 && (
+                  <div>
+                    <div style={{ opacity: 0.7, marginBottom: '4px' }}>Auto-Reconnection</div>
+                    <div style={{ color: '#ef4444', fontSize: '11px' }}>
+                      Failed after 3 attempts
                     </div>
                   </div>
                 )}

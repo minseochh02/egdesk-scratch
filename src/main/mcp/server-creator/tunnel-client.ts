@@ -131,6 +131,7 @@ export class TunnelClient {
   private tunnelId: string | null = null;
   private serverName: string | null = null;
   private registrationId: string | null = null;
+  private activeStreamRequests: Map<string, http.ClientRequest> = new Map();
 
   constructor(config: TunnelConfig) {
     this.config = {
@@ -546,6 +547,25 @@ export class TunnelClient {
             const request = message as TunnelRequest;
             console.log(`📨 Received request: ${request.method} ${request.path}`);
             await this.handleRequest(request);
+          } else if (message.type === 'ping') {
+            // Respond to heartbeat ping
+            console.log(`💓 Received heartbeat ping`);
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              this.ws.send(JSON.stringify({
+                type: 'pong',
+                timestamp: message.timestamp
+              }));
+            }
+          } else if (message.type === 'stream_cancel') {
+            // Client disconnected from SSE stream - cancel the request
+            const requestId = message.request_id;
+            console.log(`🛑 Received stream cancellation for ${requestId}`);
+            const activeRequest = this.activeStreamRequests.get(requestId);
+            if (activeRequest) {
+              activeRequest.destroy();
+              this.activeStreamRequests.delete(requestId);
+              console.log(`✅ Cancelled stream request ${requestId}`);
+            }
           }
         } catch (error) {
           console.error('Error parsing message:', error);
@@ -559,6 +579,19 @@ export class TunnelClient {
         this.publicUrl = null;
         this.tunnelId = null;
         this.isConnecting = false;
+        
+        // Clean up all active stream requests
+        if (this.activeStreamRequests.size > 0) {
+          console.log(`🧹 Cleaning up ${this.activeStreamRequests.size} active stream request(s)`);
+          for (const [requestId, req] of this.activeStreamRequests.entries()) {
+            try {
+              req.destroy();
+            } catch (error) {
+              console.error(`Error destroying request ${requestId}:`, error);
+            }
+          }
+          this.activeStreamRequests.clear();
+        }
         
         if (this.shouldReconnect) {
           this.scheduleReconnect();
@@ -715,6 +748,9 @@ export class TunnelClient {
         // Signal end of stream
         res.on('end', () => {
           console.log(`🏁 Stream ended for ${request.request_id}`);
+          // Clean up from active requests
+          this.activeStreamRequests.delete(request.request_id);
+          
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             const streamEnd: TunnelStreamEnd = {
               type: 'stream_end',
@@ -726,13 +762,21 @@ export class TunnelClient {
         });
 
         res.on('error', (err) => {
+          // Clean up from active requests
+          this.activeStreamRequests.delete(request.request_id);
           reject(err);
         });
       });
 
       req.on('error', (err) => {
+        // Clean up from active requests
+        this.activeStreamRequests.delete(request.request_id);
         reject(err);
       });
+
+      // Track this streaming request so it can be cancelled
+      this.activeStreamRequests.set(request.request_id, req);
+      console.log(`📝 Tracking stream request ${request.request_id}`);
 
       // Send request body if present
       if (request.body) {

@@ -78,13 +78,19 @@ export function initializeStore(): Promise<void> {
             name: 'filesystem',
             enabled: true,
             description: 'File System MCP Server - Access files and directories with security controls'
+          },
+          {
+            name: 'file-conversion',
+            enabled: true,
+            description: 'File Conversion MCP Server - Convert between file formats (PDF, images, documents)'
           }
         ],
       },
     });
       
-      // Migration: Add filesystem server to existing stores
+      // Migrations: Add filesystem and file-conversion servers to existing stores
       migrateFilesystemServer();
+      migrateFileConversionServer();
       
       resolve();
     } catch (error) {
@@ -119,6 +125,34 @@ function migrateFilesystemServer() {
     }
   } catch (error) {
     console.error('Error during filesystem server migration:', error);
+  }
+}
+
+/**
+ * Migration: Add file-conversion server to existing stores if not present
+ */
+function migrateFileConversionServer() {
+  try {
+    const mcpServers = store.get('mcpServers', []) as any[];
+    
+    // Check if file-conversion server already exists
+    const hasFileConversion = mcpServers.some(server => server.name === 'file-conversion');
+    
+    if (!hasFileConversion) {
+      console.log('🔄 Migrating: Adding file-conversion server to MCP servers list');
+      
+      // Add file-conversion server
+      mcpServers.push({
+        name: 'file-conversion',
+        enabled: true,
+        description: 'File Conversion MCP Server - Convert between file formats (PDF, images, documents)'
+      });
+      
+      store.set('mcpServers', mcpServers);
+      console.log('✅ File-conversion server added to MCP servers list');
+    }
+  } catch (error) {
+    console.error('Error during file-conversion server migration:', error);
   }
 }
 
