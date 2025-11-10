@@ -15,6 +15,7 @@ import {
   faShieldAlt,
   faCog,
   faServer,
+  faQuestion,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -31,6 +32,180 @@ import UserProfile from './components/Auth/UserProfile';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
+
+function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        backgroundColor: '#1e1e1e',
+        border: '1px solid #333',
+        borderRadius: '8px',
+        padding: '30px',
+        maxWidth: '600px',
+        width: '90%',
+        maxHeight: '80vh',
+        overflowY: 'auto'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ color: '#fff', margin: 0 }}>지원 및 도움말</h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#888',
+              fontSize: '24px',
+              cursor: 'pointer',
+              padding: '4px'
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Contact Information */}
+          <div>
+            <h3 style={{ color: '#4CAF50', marginBottom: '10px', fontSize: '18px' }}>📧 연락처</h3>
+            <div style={{ color: '#ccc', lineHeight: '1.6' }}>
+              <p style={{ margin: '8px 0' }}>이메일: support@egdesk.com</p>
+              <p style={{ margin: '8px 0' }}>전화: 02-1234-5678</p>
+              <p style={{ margin: '8px 0' }}>운영 시간: 평일 09:00 - 18:00</p>
+            </div>
+          </div>
+
+          {/* Documentation */}
+          <div>
+            <h3 style={{ color: '#2196F3', marginBottom: '10px', fontSize: '18px' }}>📚 문서 및 가이드</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                onClick={() => window.open('https://docs.egdesk.com', '_blank')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+              >
+                📖 사용자 가이드
+              </button>
+              <button
+                onClick={() => window.open('https://docs.egdesk.com/api', '_blank')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+              >
+                🔌 API 문서
+              </button>
+              <button
+                onClick={() => window.open('https://docs.egdesk.com/faq', '_blank')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+              >
+                ❓ 자주 묻는 질문
+              </button>
+            </div>
+          </div>
+
+          {/* Community */}
+          <div>
+            <h3 style={{ color: '#FF9800', marginBottom: '10px', fontSize: '18px' }}>💬 커뮤니티</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                onClick={() => window.open('https://community.egdesk.com', '_blank')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+              >
+                🌐 커뮤니티 포럼
+              </button>
+              <button
+                onClick={() => window.open('https://github.com/egdesk', '_blank')}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+              >
+                💻 GitHub 이슈
+              </button>
+            </div>
+          </div>
+
+          {/* Version Info */}
+          <div>
+            <h3 style={{ color: '#9C27B0', marginBottom: '10px', fontSize: '18px' }}>ℹ️ 버전 정보</h3>
+            <div style={{ 
+              backgroundColor: '#2a2a2a', 
+              padding: '12px', 
+              borderRadius: '4px',
+              border: '1px solid #444',
+              color: '#ccc',
+              fontSize: '14px'
+            }}>
+              <p style={{ margin: '4px 0' }}>EGDesk 버전: 1.0.0</p>
+              <p style={{ margin: '4px 0' }}>빌드: 2025.10.30</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [wooriId, setWooriId] = useState('');
@@ -513,7 +688,17 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
-function NavigationBar({ showDebugModal, setShowDebugModal }: { showDebugModal: boolean; setShowDebugModal: (show: boolean) => void }) {
+function NavigationBar({ 
+  showDebugModal, 
+  setShowDebugModal,
+  showSupportModal,
+  setShowSupportModal
+}: { 
+  showDebugModal: boolean; 
+  setShowDebugModal: (show: boolean) => void;
+  showSupportModal: boolean;
+  setShowSupportModal: (show: boolean) => void;
+}) {
   const location = useLocation();
   const [isNarrow, setIsNarrow] = useState(false);
   const { user } = useAuth();
@@ -597,6 +782,15 @@ function NavigationBar({ showDebugModal, setShowDebugModal }: { showDebugModal: 
           <FontAwesomeIcon icon={faRobot} />
           {!isNarrow && <span>Debug</span>}
         </button>
+        <button
+          className="nav-link"
+          onClick={() => setShowSupportModal(true)}
+          style={{ cursor: 'pointer' }}
+          title="지원 및 도움말"
+        >
+          <FontAwesomeIcon icon={faQuestion} />
+          {!isNarrow && <span>지원</span>}
+        </button>
 
       </nav>
       <div className="nav-auth">
@@ -662,6 +856,7 @@ function RouteWindowBoundsManager() {
 
 function AppContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const { user, loading } = useAuth();
 
   // Show loading screen while checking authentication
@@ -683,7 +878,13 @@ function AppContent() {
     <>
       <RouteWindowBoundsManager />
       <div className="app-container">
-        <NavigationBar showDebugModal={showDebugModal} setShowDebugModal={setShowDebugModal} />
+        <NavigationBar 
+          showDebugModal={showDebugModal} 
+          setShowDebugModal={setShowDebugModal}
+          showSupportModal={showSupportModal}
+          setShowSupportModal={setShowSupportModal}
+        />
+        <SupportModal isOpen={showSupportModal} onClose={() => setShowSupportModal(false)} />
         <DebugModal isOpen={showDebugModal} onClose={() => setShowDebugModal(false)} />
         <main className="main-content">
           <Routes>
