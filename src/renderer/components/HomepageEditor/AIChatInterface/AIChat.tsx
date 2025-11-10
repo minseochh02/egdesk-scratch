@@ -140,6 +140,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const [currentMessage, setCurrentMessage] = useState<string>('');
   const [lastEventType, setLastEventType] = useState<AIEventType | null>(null);
   const [currentTurnNumber, setCurrentTurnNumber] = useState<number | null>(null);
+  const [hasCreatedInitialBubble, setHasCreatedInitialBubble] = useState(false);
   
   // Data fetching state
   const [conversations, setConversations] = useState<any[]>([]);
@@ -913,6 +914,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       console.log('🎯 Starting autonomous conversation with:', message);
       setStreamingEvents([]);
       setToolCalls([]);
+      setHasCreatedInitialBubble(false); // Reset for new conversation
 
       // Add a loading indicator message immediately
       setMessages(prev => [...prev, {
@@ -973,7 +975,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             console.log('✍️ New content to append:', JSON.stringify(newContent), 'length:', newContent.length);
             
             if (newContent) {
-              // Append text from content event to currentMessage
+              // Just append to currentMessage - bubble already created by TurnStarted
               setCurrentMessage(prev => {
                 const updated = prev + newContent;
                 return updated;
@@ -1093,6 +1095,11 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             const turnEvent = event as any;
             console.log(`📬 Turn ${turnEvent.turnNumber} started`);
             
+            // Remove any loading messages
+            setMessages(prev => prev.filter(msg =>
+              !(msg.role === 'model' && msg.parts[0]?.text?.includes('🔄 Starting autonomous conversation'))
+            ));
+            
             // Create a new, empty message bubble in UI
             setMessages(prev => [...prev, {
               role: 'model' as const,
@@ -1105,6 +1112,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             
             // Clear currentMessage to start fresh
             setCurrentMessage('');
+            
+            // Reset bubble creation flag for this turn
+            setHasCreatedInitialBubble(true);
             
             // Update turn state
             setCurrentTurnNumber(turnEvent.turnNumber);
