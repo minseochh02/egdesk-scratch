@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   HashRouter as Router,
   Routes,
@@ -32,6 +32,8 @@ import UserProfile from './components/Auth/UserProfile';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
+
+const GEMMA_MODEL_ID = 'gemma:2b';
 
 function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null;
@@ -858,6 +860,136 @@ function AppContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const { user, loading } = useAuth();
+  const [ollamaStatus, setOllamaStatus] = useState<'checking' | 'installed' | 'not_installed' | 'error'>('checking');
+  const [ollamaMessage, setOllamaMessage] = useState<string | null>(null);
+  const [isEnsuringOllama, setIsEnsuringOllama] = useState(false);
+  const [gemmaStatus, setGemmaStatus] = useState<'idle' | 'checking' | 'pulling' | 'ready' | 'error'>('idle');
+  const [gemmaMessage, setGemmaMessage] = useState<string | null>(null);
+  const gemmaEnsureRequested = useRef(false);
+
+  const checkOllamaStatus = useCallback(async () => {
+    if (!(window as any)?.electron?.ollama?.checkInstalled) {
+      setOllamaStatus('error');
+      setOllamaMessage('Ollama management bridge unavailable.');
+      return;
+    }
+
+    setOllamaStatus((status) => (status === 'installed' ? status : 'checking'));
+
+    try {
+      const result = await (window as any).electron.ollama.checkInstalled();
+
+      if (result.success && result.installed) {
+        setOllamaStatus('installed');
+        setOllamaMessage(null);
+      } else {
+        setOllamaStatus('not_installed');
+        setOllamaMessage(result.error || result.message || null);
+      }
+    } catch (error: any) {
+      setOllamaStatus('error');
+      setOllamaMessage(error?.message || 'Failed to check Ollama status.');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkOllamaStatus();
+  }, [checkOllamaStatus]);
+
+  const ensureGemmaModel = useCallback(async () => {
+    const electron = (window as any)?.electron;
+    if (!electron?.ollama?.ensure || !electron?.ollama?.hasModel || !electron?.ollama?.pullModel) {
+      setGemmaStatus('error');
+      setGemmaMessage('Gemma model management bridge unavailable.');
+      return;
+    }
+
+    setGemmaStatus((status) => (status === 'pulling' ? status : 'checking'));
+    setGemmaMessage(null);
+
+    try {
+      const ensureResult = await electron.ollama.ensure();
+      if (!ensureResult?.success || !ensureResult?.installed) {
+        setGemmaStatus('error');
+        setGemmaMessage(ensureResult?.error || ensureResult?.message || 'Ollama is not ready.');
+        return;
+      }
+
+      const hasModelResult = await electron.ollama.hasModel(GEMMA_MODEL_ID);
+      if (hasModelResult?.success && hasModelResult?.exists) {
+        setGemmaStatus('ready');
+        setGemmaMessage(null);
+        return;
+      }
+
+      setGemmaStatus('pulling');
+      const pullResult = await electron.ollama.pullModel(GEMMA_MODEL_ID);
+      if (!pullResult?.success) {
+        setGemmaStatus('error');
+        setGemmaMessage(pullResult?.error || pullResult?.message || 'Failed to download Gemma 4GB model.');
+        return;
+      }
+
+      const verifyResult = await electron.ollama.hasModel(GEMMA_MODEL_ID);
+      if (verifyResult?.success && verifyResult?.exists) {
+        setGemmaStatus('ready');
+        setGemmaMessage(null);
+      } else {
+        setGemmaStatus('error');
+        setGemmaMessage('Gemma 4GB download finished but verification failed.');
+      }
+    } catch (error: any) {
+      setGemmaStatus('error');
+      setGemmaMessage(error?.message || 'Failed to prepare Gemma 4GB model.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ollamaStatus === 'installed') {
+      if (!gemmaEnsureRequested.current) {
+        gemmaEnsureRequested.current = true;
+        ensureGemmaModel();
+      }
+    } else {
+      gemmaEnsureRequested.current = false;
+      setGemmaStatus('idle');
+      setGemmaMessage(null);
+    }
+  }, [ollamaStatus, ensureGemmaModel]);
+
+  const handleEnsureGemma = useCallback(async () => {
+    gemmaEnsureRequested.current = true;
+    await ensureGemmaModel();
+  }, [ensureGemmaModel]);
+
+  const handleEnsureOllama = useCallback(async () => {
+    if (!(window as any)?.electron?.ollama?.ensure) {
+      setOllamaStatus('error');
+      setOllamaMessage('Ollama management bridge unavailable.');
+      return;
+    }
+
+    setIsEnsuringOllama(true);
+    setOllamaStatus('checking');
+    setOllamaMessage(null);
+
+    try {
+      const result = await (window as any).electron.ollama.ensure();
+
+      if (!result.success || !result.installed) {
+        setOllamaMessage(result.error || result.message || 'Ollama is not ready yet.');
+      } else {
+        gemmaEnsureRequested.current = true;
+        await ensureGemmaModel();
+      }
+    } catch (error: any) {
+      setOllamaStatus('error');
+      setOllamaMessage(error?.message || 'Failed to install or start Ollama.');
+    } finally {
+      setIsEnsuringOllama(false);
+      await checkOllamaStatus();
+    }
+  }, [checkOllamaStatus, ensureGemmaModel]);
 
   // Show loading screen while checking authentication
   if (loading) {
@@ -884,6 +1016,62 @@ function AppContent() {
           showSupportModal={showSupportModal}
           setShowSupportModal={setShowSupportModal}
         />
+        {(ollamaStatus === 'not_installed' || ollamaStatus === 'error') && (
+          <div className={`ollama-banner ${ollamaStatus}`}>
+            <div className="ollama-banner__text">
+              {ollamaStatus === 'error'
+                ? 'Unable to communicate with the local Ollama manager.'
+                : 'Ollama is not installed or not running. Install it to enable local AI features.'}
+              {ollamaMessage ? ` ${ollamaMessage}` : ''}
+            </div>
+            <div className="ollama-banner__actions">
+              <button
+                type="button"
+                onClick={handleEnsureOllama}
+                disabled={isEnsuringOllama}
+              >
+                {isEnsuringOllama ? 'Preparing Ollama...' : 'Install / Start Ollama'}
+              </button>
+              <button
+                type="button"
+                onClick={() => checkOllamaStatus()}
+                disabled={isEnsuringOllama}
+                className="ollama-banner__refresh"
+              >
+                Recheck
+              </button>
+            </div>
+          </div>
+        )}
+        {ollamaStatus === 'installed' && gemmaStatus !== 'ready' && (
+          <div className={`ollama-banner gemma ${gemmaStatus === 'error' ? 'error' : gemmaStatus}`}>
+            <div className="ollama-banner__text">
+              {gemmaStatus === 'pulling'
+                ? 'Downloading Gemma 4GB model... This may take a few minutes depending on your network speed.'
+                : gemmaStatus === 'error'
+                  ? `Unable to prepare Gemma 4GB model.${gemmaMessage ? ` ${gemmaMessage}` : ''}`
+                  : 'Gemma 4GB model is not available locally. Download it to enable local AI conversations.'}
+              {gemmaStatus !== 'error' && gemmaMessage ? ` ${gemmaMessage}` : ''}
+            </div>
+            <div className="ollama-banner__actions">
+              <button
+                type="button"
+                onClick={handleEnsureGemma}
+                disabled={gemmaStatus === 'pulling' || gemmaStatus === 'checking'}
+              >
+                {gemmaStatus === 'pulling' ? 'Downloading Gemma 4GB…' : 'Install Gemma 4GB'}
+              </button>
+              <button
+                type="button"
+                onClick={handleEnsureGemma}
+                disabled={gemmaStatus === 'pulling'}
+                className="ollama-banner__refresh"
+              >
+                {gemmaStatus === 'pulling' ? 'In Progress' : 'Retry'}
+              </button>
+            </div>
+          </div>
+        )}
         <SupportModal isOpen={showSupportModal} onClose={() => setShowSupportModal(false)} />
         <DebugModal isOpen={showDebugModal} onClose={() => setShowDebugModal(false)} />
         <main className="main-content">

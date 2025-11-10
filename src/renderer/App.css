@@ -21,6 +21,79 @@ body {
   min-height: 100vh;
 }
 
+.ollama-banner {
+  background-color: #fff5e6;
+  border-bottom: 1px solid #ffab40;
+  color: #6e4300;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ollama-banner.error {
+  background-color: #ffe8e8;
+  border-color: #ff6666;
+  color: #7a061f;
+}
+
+.ollama-banner__text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.ollama-banner__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ollama-banner__actions button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.ollama-banner__actions button:not(.ollama-banner__refresh) {
+  background-color: #ff8c00;
+  color: #ffffff;
+}
+
+.ollama-banner__actions button:not(:disabled):hover {
+  filter: brightness(0.95);
+}
+
+.ollama-banner__actions .ollama-banner__refresh {
+  background-color: #ffffff;
+  color: #ff8c00;
+  border: 1px solid #ff8c00;
+}
+
+.ollama-banner__actions .ollama-banner__refresh:hover:not(:disabled) {
+  background-color: #ffe6cc;
+}
+
+.ollama-banner__actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ollama-banner.gemma {
+  background-color: #e6f0ff;
+  border-color: #1a73e8;
+  color: #0b3d91;
+}
+
+.ollama-banner.gemma.error {
+  background-color: #ffe6e6;
+  border-color: #d93025;
+  color: #7a1b15;
+}
+
 /* Navigation Bar */
 .navigation-bar {
   background-color: #ffffff;

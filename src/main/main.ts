@@ -50,6 +50,7 @@ import {
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { registerSEOHandlers } from './seo/seo-analyzer';
 import { getAuthService } from './auth/auth-service';
+import { ollamaManager } from './ollama/installer';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
@@ -2142,6 +2143,118 @@ const createWindow = async () => {
         } catch (error: any) {
           console.error('❌ Failed to check environment config:', error);
           return { success: false, error: error.message };
+        }
+      });
+
+      ipcMain.handle('ollama-check-installed', async () => {
+        try {
+          const installed = await ollamaManager.checkInstalled();
+          return { success: true, installed };
+        } catch (error: any) {
+          console.error('❌ Ollama check failed:', error);
+          return {
+            success: false,
+            installed: false,
+            error: error?.message || 'Unknown error while checking Ollama status',
+          };
+        }
+      });
+
+      ipcMain.handle('ollama-ensure', async () => {
+        try {
+          const installed = await ollamaManager.ensureOllama();
+          return {
+            success: true,
+            installed,
+          };
+        } catch (error: any) {
+          console.error('❌ Ollama ensure failed:', error);
+          return {
+            success: false,
+            installed: false,
+            error: error?.message || 'Unable to ensure Ollama installation',
+          };
+        }
+      });
+
+      ipcMain.handle('ollama-install', async () => {
+        try {
+          const installed = await ollamaManager.install();
+          return {
+            success: installed,
+            installed,
+            message: installed ? 'Ollama installed successfully' : 'Ollama installation did not complete',
+          };
+        } catch (error: any) {
+          console.error('❌ Ollama installation failed:', error);
+          return {
+            success: false,
+            installed: false,
+            error: error?.message || 'Ollama installation failed',
+          };
+        }
+      });
+
+      ipcMain.handle('ollama-start', async () => {
+        try {
+          const started = await ollamaManager.startOllama();
+          return {
+            success: started,
+            started,
+          };
+        } catch (error: any) {
+          console.error('❌ Ollama start failed:', error);
+          return {
+            success: false,
+            started: false,
+            error: error?.message || 'Unable to start Ollama',
+          };
+        }
+      });
+
+      ipcMain.handle('ollama-pull-model', async (_event, model: string) => {
+        try {
+          const pulled = await ollamaManager.pullModel(model);
+          autonomousGeminiClient.updateOllamaModelAvailability(model, pulled);
+          return {
+            success: pulled,
+            model,
+          };
+        } catch (error: any) {
+          console.error(`❌ Ollama pull failed for ${model}:`, error);
+          return {
+            success: false,
+            model,
+            error: error?.message || `Unable to pull Ollama model "${model}"`,
+          };
+        }
+      });
+
+      ipcMain.handle('ollama-has-model', async (_event, model: string) => {
+        if (!model) {
+          return {
+            success: false,
+            exists: false,
+            error: 'Model identifier is required',
+          };
+        }
+
+        try {
+          const exists = await ollamaManager.hasModel(model);
+          autonomousGeminiClient.updateOllamaModelAvailability(model, exists);
+          return {
+            success: true,
+            exists,
+            model,
+          };
+        } catch (error: any) {
+          console.error(`❌ Ollama model check failed for ${model}:`, error);
+          return {
+            success: false,
+            exists: false,
+            model,
+            error: error?.message || `Unable to verify Ollama model "${model}"`,
+          };
         }
       });
 

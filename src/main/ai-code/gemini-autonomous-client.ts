@@ -13,6 +13,7 @@ import { projectContextBridge } from './project-context-bridge';
 import { getEGDeskSystemPrompt } from './prompts/system-prompt';
 import { getSQLiteManager } from '../sqlite/manager';
 import { AIChatDatabase, conversationMessageToAIMessage } from '../sqlite/ai';
+import { ollamaManager } from '../ollama/installer';
 import type { 
   AIClientConfig, 
   ConversationMessage, 
@@ -34,6 +35,10 @@ export class AutonomousGeminiClient implements AIClientService {
   private conversationHistory: ConversationMessage[] = [];
   private conversationState: ConversationState | null = null;
   private abortController?: AbortController;
+  private mode: 'gemini' | 'ollama' = 'gemini';
+  private currentModelId: string = 'gemini-2.5-flash';
+  private ollamaChatHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+  private availableOllamaModels: Set<string> = new Set();
   
   // Event buffering for conversations
   private conversationEventBuffers = new Map<string, AIStreamEvent[]>();
@@ -47,6 +52,25 @@ export class AutonomousGeminiClient implements AIClientService {
   constructor() {
     this.initializeSQLite();
     this.registerIPCHandlers();
+  }
+
+  private isOllamaModel(model?: string): boolean {
+    if (!model) return false;
+    return model.startsWith('ollama:') || model.startsWith('gemma');
+  }
+
+  private normalizeOllamaModel(model: string): string {
+    const trimmed = model.trim();
+    return trimmed.startsWith('ollama:') ? trimmed.substring('ollama:'.length) : trimmed;
+  }
+
+  public updateOllamaModelAvailability(model: string, available: boolean): void {
+    const normalized = this.normalizeOllamaModel(model);
+    if (available) {
+      this.availableOllamaModels.add(normalized);
+    } else {
+      this.availableOllamaModels.delete(normalized);
+    }
   }
 
   /**
@@ -71,14 +95,48 @@ export class AutonomousGeminiClient implements AIClientService {
    */
   async configure(config: AIClientConfig): Promise<boolean> {
     try {
+      const targetModel = (config.model || 'gemini-2.5-flash').trim();
+      this.currentModelId = targetModel;
+      this.config = { ...config, model: targetModel };
+
+      if (this.isOllamaModel(targetModel)) {
+        const normalizedModel = this.normalizeOllamaModel(targetModel);
+        const isAvailable = this.availableOllamaModels.has(normalizedModel)
+          ? true
+          : await ollamaManager.hasModel(normalizedModel);
+
+        if (!isAvailable) {
+          throw new Error(`Ollama model "${normalizedModel}" is not installed or ready. Please install it first.`);
+        }
+
+        this.availableOllamaModels.add(normalizedModel);
+        this.mode = 'ollama';
+        this.genAI = undefined;
+        this.model = undefined;
+        this.conversationHistory = [];
+        this.ollamaChatHistory = [];
+
+        const projectContext = await this.getProjectContext();
+        const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
+        if (systemPrompt && systemPrompt.trim().length > 0) {
+          this.ollamaChatHistory.push({
+            role: 'system',
+            content: systemPrompt
+          });
+        }
+
+        console.log(`✅ Ollama client configured with local model "${normalizedModel}"`);
+        return true;
+      }
+
+      // Default to Gemini cloud workflow
       this.genAI = new GoogleGenerativeAI(config.apiKey);
-      
-      // Get project context for system prompt
+
       const projectContext = await this.getProjectContext();
       const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
-      
+
       this.model = this.genAI.getGenerativeModel({
-        model: config.model || 'gemini-2.5-flash',
+        model: targetModel,
         generationConfig: {
           temperature: config.temperature || 0.7,
           topP: config.topP || 0.8,
@@ -87,7 +145,9 @@ export class AutonomousGeminiClient implements AIClientService {
         systemInstruction: systemPrompt
       });
 
-      this.config = config;
+      this.mode = 'gemini';
+      this.ollamaChatHistory = [];
+
       console.log('✅ Autonomous Gemini client configured with EGDesk system prompt');
       return true;
     } catch (error) {
@@ -100,6 +160,9 @@ export class AutonomousGeminiClient implements AIClientService {
    * Check if client is configured
    */
   isConfigured(): boolean {
+    if (this.mode === 'ollama') {
+      return !!this.currentModelId;
+    }
     return !!(this.genAI && this.model && this.config);
   }
 
@@ -123,6 +186,11 @@ export class AutonomousGeminiClient implements AIClientService {
         error: { message: 'AI client not configured', recoverable: false },
         timestamp: new Date()
       };
+      return;
+    }
+
+    if (this.mode === 'ollama') {
+      yield* this.sendMessageStreamOllama(message, options);
       return;
     }
 
@@ -179,6 +247,137 @@ export class AutonomousGeminiClient implements AIClientService {
       clearTimeout(timeoutId);
       this.conversationState = null;
       this.abortController = undefined;
+    }
+  }
+
+  private async *sendMessageStreamOllama(
+    message: string,
+    options: {
+      tools?: ToolDefinition[];
+      maxTurns?: number;
+      timeoutMs?: number;
+      autoExecuteTools?: boolean;
+      context?: Record<string, any>;
+    } = {}
+  ): AsyncGenerator<AIStreamEvent> {
+    const sessionId = uuidv4();
+    const timeoutMs = options.timeoutMs || 300000;
+
+    this.conversationState = {
+      sessionId,
+      turns: [],
+      currentTurn: 0,
+      isActive: true,
+      maxTurns: options.maxTurns || 1,
+      timeoutMs,
+      startTime: new Date(),
+      context: options.context
+    };
+
+    this.abortController = new AbortController();
+
+    const routeHint = this.buildRouteHint();
+    let contextualMessage = routeHint ? `${routeHint}\n\n${message}` : message;
+
+    if (options.context?.attachedFiles?.length) {
+      const attachments = options.context.attachedFiles
+        .map((file: any) => file.filePath || file.path)
+        .filter(Boolean);
+      if (attachments.length > 0) {
+        contextualMessage = `${contextualMessage}\n\nAttached files: ${attachments.join(', ')}`;
+      }
+    }
+
+    this.addToHistory({
+      role: 'user',
+      parts: [{ text: contextualMessage }],
+      timestamp: new Date()
+    });
+
+    this.ollamaChatHistory.push({
+      role: 'user',
+      content: contextualMessage
+    });
+
+    const controller = this.abortController;
+    const normalizedModel = this.normalizeOllamaModel(this.currentModelId);
+
+    try {
+      const response = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller?.signal,
+        body: JSON.stringify({
+          model: normalizedModel,
+          messages: this.ollamaChatHistory,
+          stream: false,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama chat request failed (${response.status} ${response.statusText})`);
+      }
+
+      const data: any = await response.json();
+      const assistantContent = data?.message?.content;
+
+      let assistantText = '';
+      if (Array.isArray(assistantContent)) {
+        assistantText = assistantContent
+          .map((entry: any) => entry?.text || '')
+          .join('');
+      } else if (typeof assistantContent === 'string') {
+        assistantText = assistantContent;
+      } else if (assistantContent?.text) {
+        assistantText = assistantContent.text;
+      }
+
+      if (!assistantText) {
+        assistantText = 'No response generated by the local model.';
+      }
+
+      this.ollamaChatHistory.push({
+        role: 'assistant',
+        content: assistantText
+      });
+
+      this.addToHistory({
+        role: 'model',
+        parts: [{ text: assistantText }],
+        timestamp: new Date()
+      });
+
+      yield* this.streamTextContent(assistantText);
+
+      yield {
+        type: AIEventType.Finished,
+        reason: 'tool_calls_complete',
+        timestamp: new Date()
+      };
+    } catch (error: any) {
+      const messageText =
+        error?.name === 'AbortError'
+          ? 'Conversation cancelled.'
+          : (error instanceof Error ? error.message : 'Unknown error communicating with Ollama.');
+
+      yield {
+        type: error?.name === 'AbortError' ? AIEventType.UserCancelled : AIEventType.Error,
+        ...(error?.name === 'AbortError'
+          ? {}
+          : {
+              error: {
+                message: messageText,
+                recoverable: false,
+              },
+            }),
+        timestamp: new Date()
+      } as any;
+    } finally {
+      if (this.conversationState) {
+        this.conversationState.isActive = false;
+      }
+      this.abortController = undefined;
+      this.conversationState = null;
     }
   }
 
@@ -651,6 +850,9 @@ export class AutonomousGeminiClient implements AIClientService {
 
   clearHistory(): void {
     this.conversationHistory = [];
+    if (this.ollamaChatHistory.length > 0) {
+      this.ollamaChatHistory = this.ollamaChatHistory.filter(entry => entry.role === 'system');
+    }
   }
 
   /**
@@ -693,12 +895,16 @@ export class AutonomousGeminiClient implements AIClientService {
   }
 
   getAvailableModels(): string[] {
-    return [
+    const cloudModels = [
       'gemini-2.5-flash',
       'gemini-1.5-flash-latest',
       'gemini-1.5-pro-latest',
       'gemini-1.0-pro'
     ];
+
+    const localModels = Array.from(this.availableOllamaModels).map(model => `ollama:${model}`);
+
+    return [...cloudModels, ...localModels];
   }
 
   /**

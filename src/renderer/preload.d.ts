@@ -1,4 +1,4 @@
-import type { AIServiceAPI } from '../main/preload';
+import type { AIServiceAPI, OllamaAPI } from '../main/preload';
 
 export interface IElectronAPI {
   ipcRenderer: {
@@ -537,6 +537,8 @@ export interface IElectronAPI {
     handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
     onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => () => void;
   };
+
+  ollama: OllamaAPI;
 
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }

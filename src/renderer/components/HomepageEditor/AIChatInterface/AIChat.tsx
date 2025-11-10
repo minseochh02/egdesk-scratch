@@ -3,7 +3,7 @@
  * Integrated with AI Keys Manager for automatic Gemini configuration
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faKey, 
@@ -14,7 +14,9 @@ import {
   faFolder, 
   faChevronDown,
   faArrowLeft,
-  faUndo
+  faUndo,
+  faRobot,
+  faRefresh
 } from '../../../utils/fontAwesomeIcons';
 import { AIService } from '../../../services/ai-service';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
@@ -145,12 +147,25 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const [showConversationList, setShowConversationList] = useState(false);
   const [overallStats, setOverallStats] = useState<any>(null);
   
-  // Key selector dropdown state
+  const defaultModelId = 'gemini-2.5-flash';
+  const [availableModels, setAvailableModels] = useState<string[]>([defaultModelId]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [selectedModelId, setSelectedModelId] = useState<string>(defaultModelId);
+
+  // Key and model selector dropdown state
   const [showKeyDropdown, setShowKeyDropdown] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
   const keySelectorRef = useRef<HTMLDivElement>(null);
+  const modelSelectorRef = useRef<HTMLDivElement>(null);
+  const lastConfigurationRef = useRef<{ keyId: string | null; modelId: string } | null>(null);
 
   // Backup manager state
   const [showBackupManager, setShowBackupManager] = useState(false);
+
+  const googleKeys = useMemo(
+    () => aiKeysState.keys.filter((key) => key.providerId === 'google' && key.isActive),
+    [aiKeysState.keys]
+  );
 
   // Recently inserted photo previews (keep preview URL and saved file path)
   const [uploadPreviews, setUploadPreviews] = useState<Array<{ previewUrl: string; filePath?: string }>>([]);
@@ -174,6 +189,117 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     risks: string[];
     parameters: any;
   } | null>(null);
+
+  const configureAI = useCallback(
+    async (modelId: string, key?: AIKey | null) => {
+      const isLocalModel = modelId.startsWith('ollama:');
+      const apiKey = key?.fields?.apiKey || '';
+
+      if (!isLocalModel && !apiKey) {
+        console.warn(`Cannot configure remote model "${modelId}" without an active Google AI key.`);
+        setIsConfigured(false);
+        setConnectionStatus('disconnected');
+        lastConfigurationRef.current = null;
+        return false;
+      }
+
+      setConnectionStatus('checking');
+
+      try {
+        const success = await AIService.configure({
+          apiKey,
+          model: modelId,
+        });
+
+        if (success) {
+          setIsConfigured(true);
+          setConnectionStatus('connected');
+          lastConfigurationRef.current = { keyId: key?.id ?? null, modelId };
+        } else {
+          setIsConfigured(false);
+          setConnectionStatus('error');
+          lastConfigurationRef.current = null;
+        }
+
+        return success;
+      } catch (error) {
+        console.error('Error configuring AI client:', error);
+        setIsConfigured(false);
+        setConnectionStatus('error');
+        lastConfigurationRef.current = null;
+        return false;
+      }
+    },
+    [setConnectionStatus, setIsConfigured],
+  );
+
+  const refreshModels = useCallback(
+    async (showSpinner = true) => {
+      if (showSpinner) setModelsLoading(true);
+      try {
+        const models = await AIService.getAvailableModels();
+        const normalized =
+          Array.isArray(models) && models.length > 0 ? models : [defaultModelId];
+        setAvailableModels(normalized);
+
+        if (!normalized.includes(selectedModelId)) {
+          const fallback = normalized.includes(defaultModelId)
+            ? defaultModelId
+            : normalized[0];
+          setSelectedModelId(fallback);
+
+          if (fallback.startsWith('ollama:')) {
+            await configureAI(fallback, selectedGoogleKey);
+          } else if (selectedGoogleKey) {
+            await configureAI(fallback, selectedGoogleKey);
+          } else {
+            setIsConfigured(false);
+            setConnectionStatus('disconnected');
+          }
+        } else if (selectedModelId.startsWith('ollama:') && lastConfigurationRef.current?.modelId !== selectedModelId) {
+          await configureAI(selectedModelId, selectedGoogleKey);
+        }
+      } catch (error) {
+        console.error('Error fetching available models:', error);
+      } finally {
+        if (showSpinner) setModelsLoading(false);
+      }
+    },
+    [configureAI, selectedGoogleKey, selectedModelId],
+  );
+
+  const formatModelName = useCallback((modelId: string) => {
+    if (modelId.startsWith('ollama:')) {
+      return `Local • ${modelId.replace('ollama:', '')}`;
+    }
+    const friendlyNames: Record<string, string> = {
+      'gemini-2.5-flash': 'Gemini 2.5 Flash',
+      'gemini-1.5-flash-latest': 'Gemini 1.5 Flash (Latest)',
+      'gemini-1.5-pro-latest': 'Gemini 1.5 Pro (Latest)',
+      'gemini-1.0-pro': 'Gemini 1.0 Pro',
+    };
+    return friendlyNames[modelId] || modelId;
+  }, []);
+
+  const toggleModelDropdown = () => {
+    setShowModelDropdown((prev) => !prev);
+  };
+
+  const handleModelSelection = (modelId: string) => {
+    setSelectedModelId(modelId);
+    setShowModelDropdown(false);
+    configureAI(modelId, selectedGoogleKey);
+  };
+
+  const selectedModelIsLocal = useMemo(
+    () => selectedModelId.startsWith('ollama:'),
+    [selectedModelId],
+  );
+
+  const assistantDisplayName = useMemo(
+    () => (selectedModelIsLocal ? '🤖 Gemma (Local)' : '🤖 Gemini'),
+    [selectedModelIsLocal],
+  );
 
   // Quick undo (Ctrl/Cmd+Z) to revert last backup for current conversation
   useEffect(() => {
@@ -403,24 +529,35 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // (Viewer init moved out of AIChat; AIChat only deep-links the preview window)
 
   useEffect(() => {
-    // Auto-select the first active Google AI key
-    const googleKeys = aiKeysState.keys.filter(key => 
-      key.providerId === 'google' && key.isActive
-    );
-    
-    if (googleKeys.length > 0 && !selectedGoogleKey) {
-      setSelectedGoogleKey(googleKeys[0]);
-      configureWithKey(googleKeys[0]);
-    } else if (googleKeys.length === 0) {
-      setSelectedGoogleKey(null);
-      setIsConfigured(false);
-      setConnectionStatus('disconnected');
+    if (googleKeys.length === 0) {
+      if (selectedGoogleKey !== null) {
+        setSelectedGoogleKey(null);
+      }
+      if (selectedModelId.startsWith('ollama:')) {
+        configureAI(selectedModelId, null);
+      } else {
+        setIsConfigured(false);
+        setConnectionStatus('disconnected');
+      }
+      return;
     }
-  }, [aiKeysState.keys, selectedGoogleKey]);
+
+    if (!selectedGoogleKey || !googleKeys.some((key) => key.id === selectedGoogleKey.id)) {
+      const nextKey = googleKeys[0];
+      setSelectedGoogleKey(nextKey);
+      configureAI(selectedModelId, nextKey);
+    }
+  }, [configureAI, googleKeys, selectedGoogleKey, selectedModelId]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    refreshModels();
+    const interval = setInterval(() => refreshModels(false), 60000);
+    return () => clearInterval(interval);
+  }, [refreshModels]);
 
   // Click outside handler for key dropdown
   useEffect(() => {
@@ -438,6 +575,23 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showKeyDropdown]);
+
+  // Click outside handler for model dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+
+    if (showModelDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showModelDropdown]);
 
   const checkConfiguration = async () => {
     setConnectionStatus('checking');
@@ -505,33 +659,9 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     }
   };
 
-  const configureWithKey = async (key: AIKey) => {
-    setConnectionStatus('checking');
-    try {
-      const success = await AIService.configure({
-        apiKey: key.fields.apiKey,
-        model: 'gemini-2.5-flash'
-      });
-
-      if (success) {
-        setIsConfigured(true);
-        setConnectionStatus('connected');
-        console.log(`✅ Configured AI with key: ${key.name}`);
-      } else {
-        console.error('Failed to configure AI with key:', key.name);
-        setIsConfigured(false);
-        setConnectionStatus('error');
-      }
-    } catch (error) {
-      console.error('Error configuring AI with key:', error);
-      setIsConfigured(false);
-      setConnectionStatus('error');
-    }
-  };
-
   const handleKeySelection = (key: AIKey) => {
     setSelectedGoogleKey(key);
-    configureWithKey(key);
+    configureAI(selectedModelId, key);
     setShowKeyDropdown(false); // Close dropdown after selection
   };
 
@@ -1127,17 +1257,20 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
   const getConnectionStatusText = () => {
     switch (connectionStatus) {
-      case 'checking': return 'Checking connection...';
-      case 'connected': return `Connected with ${selectedGoogleKey?.name || 'Google AI'}`;
-      case 'disconnected': return 'No Google AI key available';
+      case 'checking':
+        return 'Checking connection...';
+      case 'connected':
+        return selectedModelId.startsWith('ollama:')
+          ? `Local model ready: ${selectedModelId.replace('ollama:', '')}`
+          : `Connected with ${selectedGoogleKey?.name || 'Google AI'} (${formatModelName(selectedModelId)})`;
+      case 'disconnected':
+        return selectedModelId.startsWith('ollama:')
+          ? 'Local model available (no API key required)'
+          : 'No Google AI key available';
       case 'error': return 'Connection error';
       default: return 'Disconnected';
     }
   };
-
-  const googleKeys = aiKeysState.keys.filter(key => 
-    key.providerId === 'google' && key.isActive
-  );
 
   return (
     <div className="ai-chat" onDragOver={(e) => { e.preventDefault(); }} onDrop={async (e) => {
@@ -1197,6 +1330,59 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                 Back
               </button>
             )}
+
+            {/* Model Selector */}
+            <div className="model-selector" ref={modelSelectorRef}>
+              <div className="model-info" onClick={toggleModelDropdown}>
+                <FontAwesomeIcon icon={faRobot} className="homepage-editor-model-icon" />
+                <span className="model-label">Model:</span>
+                <span className="model-name">
+                  {modelsLoading ? `${formatModelName(selectedModelId)} • refreshing...` : formatModelName(selectedModelId)}
+                </span>
+                <FontAwesomeIcon
+                  icon={faChevronDown}
+                  className={`homepage-editor-dropdown-icon ${showModelDropdown ? 'open' : ''}`}
+                />
+              </div>
+              {showModelDropdown && (
+                <div className="model-dropdown">
+                  <div className="model-dropdown-header">
+                    <span>Available Models</span>
+                    <button
+                      type="button"
+                      className="model-refresh-btn"
+                      onClick={() => refreshModels()}
+                      disabled={modelsLoading}
+                    >
+                      <FontAwesomeIcon icon={faRefresh} className="model-refresh-icon" />
+                      {modelsLoading ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  </div>
+                  <div className="model-options">
+                    {availableModels.length === 0 ? (
+                      <div className="model-option empty">No models available</div>
+                    ) : (
+                      availableModels.map((model) => {
+                        const isSelected = selectedModelId === model;
+                        const typeLabel = model.startsWith('ollama:') ? 'Local' : 'Cloud';
+                        return (
+                          <div
+                            key={model}
+                            className={`model-option ${isSelected ? 'selected' : ''}`}
+                            onClick={() => handleModelSelection(model)}
+                          >
+                            <span className="model-option-name">{formatModelName(model)}</span>
+                            <span className={`model-option-type ${typeLabel.toLowerCase()}`}>
+                              {typeLabel}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Google AI Key Selector */}
             {googleKeys.length > 1 && (
@@ -1353,7 +1539,7 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
                     <div className="message-header">
                       <span className="role">
                         {message.role === 'user' ? '👤 You' : 
-                         message.role === 'tool' || isToolMessage ? '🔧 Tool' : '🤖 Gemini'}
+                         message.role === 'tool' || isToolMessage ? '🔧 Tool' : assistantDisplayName}
                       </span>
                       <span className="timestamp">
                         {message.timestamp.toLocaleTimeString()}
