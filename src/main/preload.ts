@@ -23,6 +23,59 @@ export interface WriteFileResult {
 }
 
 /**
+ * Result of Ollama status operations
+ */
+export interface OllamaCheckResult {
+  success: boolean;
+  installed?: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Result of attempts to start Ollama
+ */
+export interface OllamaStartResult {
+  success: boolean;
+  started?: boolean;
+  installed?: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Result of pulling an Ollama model
+ */
+export interface OllamaPullResult {
+  success: boolean;
+  model?: string;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Result of checking for an Ollama model
+ */
+export interface OllamaModelCheckResult {
+  success: boolean;
+  model?: string;
+  exists?: boolean;
+  error?: string;
+}
+
+/**
+ * Ollama management API exposed to the renderer
+ */
+export interface OllamaAPI {
+  checkInstalled: () => Promise<OllamaCheckResult>;
+  ensure: () => Promise<OllamaCheckResult>;
+  install: () => Promise<OllamaCheckResult>;
+  start: () => Promise<OllamaStartResult>;
+  pullModel: (model: string) => Promise<OllamaPullResult>;
+  hasModel: (model: string) => Promise<OllamaModelCheckResult>;
+}
+
+/**
  * IPC communication channels
  */
 export type Channels =
@@ -1164,6 +1217,18 @@ const electronHandler = {
     getCurrentProject: () => ipcRenderer.invoke('project-context-get-current'),
     getContext: () => ipcRenderer.invoke('project-context-get'),
   } as ProjectContextAPI,
+
+  /**
+   * Ollama management API
+   */
+  ollama: {
+    checkInstalled: () => ipcRenderer.invoke('ollama-check-installed'),
+    ensure: () => ipcRenderer.invoke('ollama-ensure'),
+    install: () => ipcRenderer.invoke('ollama-install'),
+    start: () => ipcRenderer.invoke('ollama-start'),
+    pullModel: (model: string) => ipcRenderer.invoke('ollama-pull-model', model),
+    hasModel: (model: string) => ipcRenderer.invoke('ollama-has-model', model),
+  } as OllamaAPI,
   
   /**
    * AI chat data management API
