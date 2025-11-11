@@ -303,6 +303,13 @@ export class AutonomousGeminiClient implements AIClientService {
     const normalizedModel = this.normalizeOllamaModel(this.currentModelId);
 
     try {
+      // Emit TurnStarted so frontend creates a message bubble
+      yield {
+        type: AIEventType.TurnStarted,
+        turnNumber: 1,
+        timestamp: new Date()
+      };
+
       const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -310,7 +317,7 @@ export class AutonomousGeminiClient implements AIClientService {
         body: JSON.stringify({
           model: normalizedModel,
           messages: this.ollamaChatHistory,
-          stream: false,
+          stream: true,
         })
       });
 
@@ -318,18 +325,55 @@ export class AutonomousGeminiClient implements AIClientService {
         throw new Error(`Ollama chat request failed (${response.status} ${response.statusText})`);
       }
 
-      const data: any = await response.json();
-      const assistantContent = data?.message?.content;
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Ollama streaming response does not contain a readable body.');
+      }
 
       let assistantText = '';
-      if (Array.isArray(assistantContent)) {
-        assistantText = assistantContent
-          .map((entry: any) => entry?.text || '')
-          .join('');
-      } else if (typeof assistantContent === 'string') {
-        assistantText = assistantContent;
-      } else if (assistantContent?.text) {
-        assistantText = assistantContent.text;
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim().length > 0);
+
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line);
+            const chunkText = json?.message?.content?.map?.((entry: any) => entry?.text || '').join('')
+              || json?.message?.content?.text
+              || json?.message?.content
+              || json?.response
+              || '';
+
+            if (chunkText) {
+              assistantText += chunkText;
+              yield {
+                type: AIEventType.Content,
+                content: chunkText,
+                timestamp: new Date()
+              };
+            }
+
+            if (json?.done) {
+              if (json?.message?.content) {
+                const finalText = Array.isArray(json.message.content)
+                  ? json.message.content.map((entry: any) => entry?.text || '').join('')
+                  : (json.message.content?.text || json.message.content || '');
+                if (finalText && !assistantText.includes(finalText)) {
+                  assistantText += finalText;
+                }
+              }
+              break;
+            }
+          } catch (err) {
+            console.warn('Failed to parse Ollama stream chunk:', line, err);
+          }
+        }
       }
 
       if (!assistantText) {
@@ -347,7 +391,12 @@ export class AutonomousGeminiClient implements AIClientService {
         timestamp: new Date()
       });
 
-      yield* this.streamTextContent(assistantText);
+      // Emit TurnCompleted so frontend knows the message is complete
+      yield {
+        type: AIEventType.TurnCompleted,
+        turnNumber: 1,
+        timestamp: new Date()
+      };
 
       yield {
         type: AIEventType.Finished,
@@ -439,7 +488,7 @@ export class AutonomousGeminiClient implements AIClientService {
 
         // if image files are in the context, add them to the message
         if (this.conversationState.context?.attachedFiles) {
-          contextualMessage = `${contextualMessage}\n\nAttached files: ${this.conversationState.context.attachedFiles.map(f => f.filePath).join(', ')}`;
+          contextualMessage = `${contextualMessage}\n\nAttached files: ${this.conversationState.context.attachedFiles.map((f: any) => f.filePath).join(', ')}`;
         }
 
         // Send message to Gemini with tools

@@ -10,13 +10,15 @@ import {
   faServer,
   faGlobe,
   faDesktop,
+  faComments,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
 const LandingPage: React.FC = () => {
   return (
     <div className="egdesk-landing-page">
-      <div className="egdesk-landing-container">
+      <div className="egdesk-landing-scroll">
+        <div className="egdesk-landing-container">
 
         {/* Main Content */}
         <div className="egdesk-landing-content">
@@ -38,6 +40,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">통합 관리</span>
                 <span className="egdesk-landing-feature-tag">대시보드</span>
                 <span className="egdesk-landing-feature-tag">중앙 제어</span>
+              </div>
+            </Link>
+
+            <Link to="/egchatting" className="egdesk-landing-action-card egdesk-landing-chat-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faComments} />
+              </div>
+              <h3 className="egdesk-landing-card-title">EG Chatting</h3>
+              <p className="egdesk-landing-card-description">
+                팀과 실시간으로 협업하고 AI 어시스턴트와 대화하며 프로젝트를 빠르게 진행하세요.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">실시간 협업</span>
+                <span className="egdesk-landing-feature-tag">AI 어시스트</span>
+                <span className="egdesk-landing-feature-tag">멀티 탭</span>
               </div>
             </Link>
 
@@ -130,6 +147,7 @@ const LandingPage: React.FC = () => {
         </div>
 
         
+        </div>
       </div>
     </div>
   );
