@@ -977,7 +977,11 @@ export class SQLiteManager {
     // Get scheduled posts by connection
     ipcMain.handle('sqlite-scheduled-posts-get-by-connection', async (event, connectionId) => {
       try {
-        const scheduledPosts = this.scheduledPostsManager!.getScheduledPostsByConnection(connectionId);
+        if (!this.scheduledPostsManager) {
+          return { success: true, data: [] };
+        }
+
+        const scheduledPosts = this.scheduledPostsManager.getScheduledPostsByConnection(connectionId);
         return { success: true, data: scheduledPosts };
       } catch (error) {
         return {
