@@ -933,6 +933,61 @@
   color: rgba(148, 163, 184, 0.75);
 }
 
+.eg-chatting__composer-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.eg-chatting__composer-attachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(226, 232, 240, 0.4);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.eg-chatting__composer-attachment-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eg-chatting__composer-attachment-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.eg-chatting__composer-attachment-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.eg-chatting__composer-attachment-remove {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.eg-chatting__composer-attachment-remove:hover,
+.eg-chatting__composer-attachment-remove:focus-visible {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+  outline: none;
+}
+
 .eg-chatting__composer-actions {
   display: flex;
   justify-content: space-between;
@@ -971,6 +1026,52 @@
 .eg-chatting__composer-send:focus-visible {
   background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
   transform: translateY(-1px);
+}
+
+.eg-chatting__composer-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eg-chatting__composer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.eg-chatting__message-attachments {
+  list-style: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eg-chatting__message-attachments li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.eg-chatting__message-attachment-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.eg-chatting__message-attachment-meta {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.75);
 }
 
 .eg-chatting__toolcall-group {
@@ -1117,5 +1218,104 @@
   .eg-chatting__sidebar {
     display: none;
   }
+}
+
+/* Ollama Setup Styles */
+.eg-chatting__ollama-setup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  flex: 1;
+}
+
+.eg-chatting__ollama-setup-card {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+.eg-chatting__ollama-setup-card h3 {
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.eg-chatting__ollama-status,
+.eg-chatting__ollama-error,
+.eg-chatting__ollama-install,
+.eg-chatting__ollama-model {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.eg-chatting__ollama-status span,
+.eg-chatting__ollama-error p,
+.eg-chatting__ollama-install p,
+.eg-chatting__ollama-model p {
+  font-size: 14px;
+  color: #475569;
+  margin: 0;
+}
+
+.eg-chatting__ollama-action {
+  background: #3b82f6;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.eg-chatting__ollama-action:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.eg-chatting__ollama-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.eg-chatting__ollama-action:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.eg-chatting__ollama-error button {
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.eg-chatting__ollama-error button:hover {
+  background: #dc2626;
+}
+
+.eg-chatting__generating {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.eg-chatting__chat-status--ready {
+  color: #10b981 !important;
+  font-weight: 500;
 }
 

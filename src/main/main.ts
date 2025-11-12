@@ -51,6 +51,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { registerSEOHandlers } from './seo/seo-analyzer';
 import { getAuthService } from './auth/auth-service';
 import { ollamaManager } from './ollama/installer';
+import { registerOllamaHandlers } from './ollama/ollama-handlers';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
@@ -2353,6 +2354,9 @@ const createWindow = async () => {
     // Register MCP Local Server Manager handlers
     const mcpLocalServerManager = getLocalServerManager();
     mcpLocalServerManager.registerIPCHandlers();
+
+    // Register Ollama handlers
+    registerOllamaHandlers();
 
   // Load the HTML file with error handling
   const htmlPath = resolveHtmlPath('index.html');

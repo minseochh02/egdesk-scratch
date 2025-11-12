@@ -34,7 +34,7 @@ import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 import EGChatting from './components/EGChatting';
 
-const GEMMA_MODEL_ID = 'gemma:2b';
+const GEMMA_MODEL_ID = 'gemma3:4b';
 
 function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null;
