@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { exampleEgChattingData } from './example';
 import './EGChatting.css';
+import { chatWithGemma, GemmaToolCall, OllamaChatMessage } from '../../lib/gemmaClient';
 
 interface MCPServerTool {
   id: string;
@@ -29,6 +30,27 @@ interface FileSystemNode {
   type: FileSystemEntryType;
   children?: FileSystemNode[];
 }
+
+interface AttachmentDescriptor {
+  name: string;
+  size: number;
+  type: string;
+}
+
+interface ProcessedToolResponse {
+  name: string;
+  args: Record<string, any>;
+  result?: unknown;
+  error?: string;
+  serverName?: string;
+  status: 'success' | 'error';
+}
+
+type ChatMessageEntry = OllamaChatMessage & {
+  displayContent?: string;
+  attachments?: AttachmentDescriptor[];
+  toolResponses?: ProcessedToolResponse[];
+};
 
 type ExampleServer = (typeof exampleEgChattingData.servers)[number];
 type ExampleTool = ExampleServer['tools'][number];
@@ -89,6 +111,75 @@ const mapExampleServerToListItem = (server: ExampleServer): MCPServerListItem =>
     tools: Array.isArray(server.tools) ? server.tools.map(mapExampleToolToListItem) : [],
     internalName: normalizedInternalName,
   };
+};
+
+const sanitizeAttachmentKey = (value: string): string =>
+  value
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^\d+[\.\-\)]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+const extractUploadedPath = (payload: unknown): string => {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+
+  const texts: string[] = [];
+
+  if (Array.isArray((payload as any).content)) {
+    (payload as any).content.forEach((entry: any) => {
+      if (entry && typeof entry.text === 'string') {
+        texts.push(entry.text);
+      }
+    });
+  }
+
+  if (typeof (payload as any).message === 'string') {
+    texts.push((payload as any).message);
+  }
+
+  const combined = texts.join('\n');
+  const match = combined.match(/File uploaded successfully to:\s*(.+?)(?:\n|$)/i);
+  if (match) {
+    return match[1].trim();
+  }
+
+  if (typeof (payload as any).path === 'string') {
+    return (payload as any).path;
+  }
+
+  return '';
+};
+
+const inferServiceSlug = (server: MCPServerListItem): string => {
+  const connectionUrl = server.connection_url?.toLowerCase();
+
+  if (connectionUrl && connectionUrl.startsWith('mcp://')) {
+    const stripped = connectionUrl.slice('mcp://'.length);
+    const [host] = stripped.split(/[/?#]/);
+    if (host) {
+      if (host.includes('filesystem')) return 'filesystem';
+      if (host.includes('file-conversion')) return 'file-conversion';
+      if (host.includes('gmail')) return 'gmail';
+      return host.replace(/[^a-z0-9\-]/g, '-');
+    }
+  }
+
+  if (server.internalName) {
+    const internal = server.internalName.toLowerCase();
+    if (internal.includes('filesystem')) return 'filesystem';
+    if (internal.includes('file-conversion')) return 'file-conversion';
+    if (internal.includes('gmail')) return 'gmail';
+    return internal.replace(/[^a-z0-9\-]/g, '-');
+  }
+
+  const slug = slugifyServerName(server.name);
+  if (slug.includes('filesystem')) return 'filesystem';
+  if (slug.includes('file-conversion')) return 'file-conversion';
+  if (slug.includes('gmail')) return 'gmail';
+  return slug;
 };
 
 type ChatParticipant = 'You' | 'Teammate' | 'EG Assistant';
@@ -161,6 +252,20 @@ const EGChatting: React.FC = () => {
   const [loadedDirectories, setLoadedDirectories] = useState<Record<string, boolean>>({});
   const [loadingDirectories, setLoadingDirectories] = useState<Record<string, boolean>>({});
   const [fileSystemRootLabel, setFileSystemRootLabel] = useState<string>('/');
+
+  // Ollama state
+  const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaLoading, setOllamaLoading] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [isPullingModel, setIsPullingModel] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessageEntry[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const GEMMA_MODEL = 'gemma3:4b';
 
   const mapFetchedToolToListItem = useCallback(
     (rawTool: unknown, serverId: string, index: number): MCPServerTool | null => {
@@ -868,6 +973,683 @@ const EGChatting: React.FC = () => {
     void loadRootDirectory();
   }, [loadRootDirectory, activeConversationId]);
 
+  // Check Ollama installation status on mount
+  const checkOllamaStatus = useCallback(async () => {
+    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
+    if (!electronApi?.invoke) {
+      console.warn('Electron API not available for Ollama check');
+      return;
+    }
+
+    setOllamaLoading(true);
+    setOllamaError(null);
+
+    try {
+      const { success, isInstalled } = await electronApi.invoke('ollama:check-installed');
+      if (success) {
+        setOllamaInstalled(isInstalled);
+        
+        if (isInstalled) {
+          // List available models
+          const modelsResult = await electronApi.invoke('ollama:list-models');
+          if (modelsResult.success) {
+            setOllamaModels(modelsResult.models);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check Ollama status:', error);
+      setOllamaError('Failed to check Ollama installation');
+    } finally {
+      setOllamaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkOllamaStatus();
+  }, [checkOllamaStatus]);
+
+  // Install Ollama if needed
+  const handleInstallOllama = useCallback(async () => {
+    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
+    if (!electronApi?.invoke) return;
+
+    setOllamaLoading(true);
+    setOllamaError(null);
+
+    try {
+      const { success, ready } = await electronApi.invoke('ollama:ensure-installed');
+      if (success && ready) {
+        setOllamaInstalled(true);
+        await checkOllamaStatus();
+      } else {
+        setOllamaError('Failed to install Ollama');
+      }
+    } catch (error) {
+      console.error('Failed to install Ollama:', error);
+      setOllamaError(error instanceof Error ? error.message : 'Installation failed');
+    } finally {
+      setOllamaLoading(false);
+    }
+  }, [checkOllamaStatus]);
+
+  // Pull Gemma model
+  const handlePullGemma = useCallback(async () => {
+    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
+    if (!electronApi?.invoke) return;
+
+    setIsPullingModel(true);
+    setOllamaError(null);
+
+    try {
+      const { success, pulled } = await electronApi.invoke('ollama:pull-model', GEMMA_MODEL);
+      if (success && pulled) {
+        await checkOllamaStatus();
+      } else {
+        setOllamaError('Failed to pull Gemma model');
+      }
+    } catch (error) {
+      console.error('Failed to pull Gemma model:', error);
+      setOllamaError(error instanceof Error ? error.message : 'Model pull failed');
+    } finally {
+      setIsPullingModel(false);
+    }
+  }, [GEMMA_MODEL, checkOllamaStatus]);
+
+  // Check if Gemma is installed
+  const hasGemma = useMemo(() => {
+    return ollamaModels.some((model) => model.toLowerCase().includes('gemma'));
+  }, [ollamaModels]);
+
+  const ollamaReady = ollamaInstalled && hasGemma;
+
+  const formatFileSize = useCallback((bytes: number) => {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, exponent);
+    return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+  }, []);
+
+  const fileToBase64 = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result === 'string') {
+          const base64 = result.includes(',') ? result.split(',')[1] : result;
+          resolve(base64);
+        } else {
+          reject(new Error('Failed to read file content'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file content'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const buildSystemPrompt = useCallback(() => {
+    const toolLines = servers
+      .flatMap((server) =>
+        server.tools.map((tool) => {
+          const description =
+            tool.description && tool.description.trim().length > 0
+              ? tool.description
+              : 'No description provided.';
+          return `- ${tool.tool_name} (${server.name}): ${description}`;
+        })
+      )
+      .join('\n');
+
+    const availableCapabilities =
+      toolLines.length > 0 ? toolLines : '(No MCP tools are currently available.)';
+
+    return `ACTION FIRST, TALK SECOND:
+If user message contains "download [filename]" - your response MUST start with a tool call, NOT text.
+
+🚨 MANDATORY PATTERN:
+User: "download image.png"
+Your response: [fs_search_files tool call] (no text before this)
+Then after tool results: "I found X files..." (explanation comes after action)
+
+You are an AI assistant that helps users interact with their MCP (Model Context Protocol) server and its services.
+
+AVAILABLE CAPABILITIES:
+${availableCapabilities}
+
+BEHAVIOR OVERRIDE - CRITICAL:
+If user asks to download/read a file with just a filename:
+1. NEVER ask "where is it?" or "specify directory"  
+2. ALWAYS start with fs_search_files tool call
+3. This overrides all other conversation patterns
+
+IMPORTANT INSTRUCTIONS:
+1. Understand natural language commands and map them to appropriate tool calls
+2. Common user commands and their tool mappings:
+   - "upload this file" / "save this file" → use fs_upload_file
+   - "download [filename]" → FIRST fs_search_files to find it, THEN fs_download_file with full path
+   - "read [filename]" → FIRST fs_search_files to find it, THEN fs_read_file with full path
+   - "convert this file to X" → use file-conversion service tools (if available)
+   - "list files" / "show directory" → use fs_list_directory
+   - "search for X" → use fs_search_files
+
+3. When user says "this file" or "the file", refer to files they have attached to their message
+4. When converting files, use the appropriate conversion tool based on source and target formats
+5. Always provide clear feedback about what actions you're taking
+6. If a file is attached and user asks to upload/save it, use fs_upload_file with the attached file's data
+7. **CRITICAL FOR DOWNLOADS - AUTOMATIC SEARCH REQUIRED**: 
+   - Users will provide INCOMPLETE file names like "download report.xlsx" or "download image.png"
+   - DO NOT ask user for the full path - AUTOMATICALLY search for it!
+   - When user says "download [filename]" or "read [filename]":
+     * IMMEDIATELY use fs_search_files with the filename as pattern
+     * Search in "/" or "~" (user's home directory) to cover all locations
+     * DO NOT ask "where is the file?" - JUST SEARCH!
+   - Only use fs_download_file or fs_read_file AFTER getting the full path from search results
+   - If multiple matches found, list them and ask user which one
+   - If NO matches found, THEN tell user you couldn't find it
+   - Example flow: User says "download report.xlsx" → You immediately call fs_search_files → Then download
+8. Be proactive in chaining operations: ALWAYS search first, then download/read/convert
+9. **CONTEXT AWARENESS**: Maintain context across the conversation
+   - If you asked the user a question (e.g., "which file?"), remember it for their next response
+   - When user says "the 3rd one" or "number 2", refer back to the list you just provided
+   - If user gives a short answer like "yes", "no", "3rd one", interpret it in context of your previous message
+
+RESPONSE FORMAT (MANDATORY JSON):
+{
+  "content": "Helpful response text for the user",
+  "toolCalls": [
+    { "name": "tool_name", "args": { "param1": "value1" } }
+  ]
+}
+- If no tool calls are needed, respond with {"content": "...", "toolCalls": []}
+- Do NOT include any text outside of this JSON object.
+
+Be proactive and helpful in interpreting user intent. If a command is ambiguous, ask for clarification.`;
+  }, [servers]);
+
+  const systemMessage = useMemo<OllamaChatMessage>(
+    () => ({
+      role: 'system',
+      content: buildSystemPrompt(),
+    }),
+    [buildSystemPrompt]
+  );
+
+  const handleOpenFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFilesSelected = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const selectedFiles = Array.from(files);
+    setPendingAttachments((prev) => {
+      const merged = [...prev];
+      selectedFiles.forEach((file) => {
+        const alreadyAdded = merged.some(
+          (item) => item.name === file.name && item.size === file.size && item.type === file.type
+        );
+        if (!alreadyAdded) {
+          merged.push(file);
+        }
+      });
+      return merged;
+    });
+
+    event.target.value = '';
+  }, []);
+
+  const handleRemoveAttachment = useCallback((index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, idx) => idx !== index));
+  }, []);
+
+  const toolServerLookup = useMemo(() => {
+    const map = new Map<string, MCPServerListItem>();
+    servers.forEach((server) => {
+      server.tools.forEach((tool) => {
+        map.set(tool.tool_name, server);
+      });
+    });
+    return map;
+  }, [servers]);
+
+  const callMcpTool = useCallback(
+    async (
+      server: MCPServerListItem,
+      toolName: string,
+      args: Record<string, any>
+    ): Promise<any> => {
+      const baseUrlRaw = normalizeConnectionUrl(server.connection_url);
+      if (!baseUrlRaw) {
+        throw new Error('Server connection URL is missing.');
+      }
+
+      const serviceSlug = inferServiceSlug(server);
+      const baseUrl = baseUrlRaw.replace(/\/$/, '');
+      const payloadBody = JSON.stringify({ tool: toolName, arguments: args });
+      const endpoints = [
+        `${baseUrl}/${serviceSlug}/tools/call`,
+        `${baseUrl}/${serviceSlug}`,
+        `${baseUrl}/tools/call`,
+      ];
+
+      let lastError: Error | null = null;
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: payloadBody,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              `HTTP ${response.status}: ${response.statusText}${
+                errorText ? ` - ${errorText}` : ''
+              }`
+            );
+          }
+
+          const json = await response.json().catch(() => null);
+          return json?.result ?? json ?? {};
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+
+      throw lastError ?? new Error('Failed to call MCP tool endpoint.');
+    },
+    []
+  );
+
+  const executeToolCall = useCallback(
+    async (
+      toolCall: GemmaToolCall,
+      attachmentFiles: File[],
+      attachmentPathMap: Map<string, string>
+    ): Promise<ProcessedToolResponse> => {
+      const rawArgs: Record<string, any> = {
+        ...(toolCall.args ?? {}),
+      };
+      const args: Record<string, any> = {};
+      Object.entries(rawArgs).forEach(([key, value]) => {
+        const camelKey = key.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase());
+        args[camelKey] = value;
+      });
+      let toolName = toolCall.name;
+
+      if (args.directory && !args.path) {
+        args.path = args.directory;
+        delete args.directory;
+      }
+      if (args.dir && !args.path) {
+        args.path = args.dir;
+        delete args.dir;
+      }
+      if (args.input && !args.inputPath) {
+        args.inputPath = args.input;
+        delete args.input;
+      }
+      if (args.output && !args.outputPath) {
+        args.outputPath = args.output;
+        delete args.output;
+      }
+      if (args.target && !args.outputPath) {
+        args.outputPath = args.target;
+        delete args.target;
+      }
+
+      const rewritePathValue = (value: string): string => {
+        const trimmed = value.trim();
+        const sanitized = sanitizeAttachmentKey(trimmed);
+        return (
+          attachmentPathMap.get(sanitized) ??
+          attachmentPathMap.get(trimmed.toLowerCase()) ??
+          trimmed
+        );
+      };
+
+      Object.entries(args).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          const lowerKey = key.toLowerCase();
+          if (
+            lowerKey.includes('path') ||
+            lowerKey.includes('file') ||
+            lowerKey.includes('source') ||
+            lowerKey.includes('input')
+          ) {
+            args[key] = rewritePathValue(value);
+          }
+        } else if (Array.isArray(value)) {
+          args[key] = value.map((entry) =>
+            typeof entry === 'string' ? rewritePathValue(entry) : entry
+          );
+        }
+      });
+
+      if (toolName === 'image_convert') {
+        if (!args.outputPath && typeof args.inputPath === 'string') {
+          const fallback = args.inputPath.replace(/\.[^.]+$/, '') + '.pdf';
+          args.outputPath = fallback;
+        }
+        if (args.outputPath) {
+          const outExt =
+            typeof args.outputPath === 'string'
+              ? args.outputPath.split('.').pop()?.toLowerCase()
+              : undefined;
+          if (outExt === 'pdf') {
+            toolName = 'images_to_pdf';
+            const candidatePath =
+              typeof args.inputPath === 'string'
+                ? args.inputPath
+                : Array.isArray(args.imagePaths) && typeof args.imagePaths[0] === 'string'
+                ? args.imagePaths[0]
+                : undefined;
+            args.imagePaths = candidatePath ? [candidatePath] : args.imagePaths ?? [];
+            if (!args.pageSize) args.pageSize = 'A4';
+            delete args.inputPath;
+            delete args.format;
+          } else if (outExt) {
+            args.format = args.format ?? outExt;
+          }
+        } else if (!args.format) {
+          args.format = 'png';
+        }
+      }
+
+      if (toolName === 'images_to_pdf') {
+        if (!Array.isArray(args.imagePaths) || args.imagePaths.length === 0) {
+          if (typeof args.inputPath === 'string') {
+            args.imagePaths = [args.inputPath];
+            delete args.inputPath;
+          } else if (typeof args.image === 'string') {
+            args.imagePaths = [args.image];
+            delete args.image;
+          }
+        }
+        if (Array.isArray(args.imagePaths)) {
+          args.imagePaths = args.imagePaths.map((entry: any) =>
+            typeof entry === 'string' ? rewritePathValue(entry) : entry
+          );
+        }
+        if (!args.outputPath && Array.isArray(args.imagePaths) && args.imagePaths.length > 0) {
+          args.outputPath = args.imagePaths[0].replace(/\.[^.]+$/, '') + '.pdf';
+        }
+      }
+
+      const server =
+        toolServerLookup.get(toolName) ?? toolServerLookup.get(toolCall.name);
+      if (!server) {
+        return {
+          name: toolName,
+          args,
+          error: 'Tool is not available in the current MCP configuration.',
+          status: 'error',
+        };
+      }
+
+      if (!server.is_active) {
+        return {
+          name: toolName,
+          args,
+          serverName: server.name,
+          error: 'Server is offline. Start it from the MCP Servers panel.',
+          status: 'error',
+        };
+      }
+
+      const preparedArgs: Record<string, any> = { ...args };
+
+      if (toolName === 'fs_upload_file') {
+        const filename =
+          preparedArgs.filename ||
+          preparedArgs.fileName ||
+          preparedArgs.path ||
+          attachmentFiles[0]?.name;
+
+        const matchingFile =
+          attachmentFiles.find((file) => file.name === filename) || attachmentFiles[0];
+
+        if (!matchingFile) {
+          return {
+            name: toolName,
+            args,
+            serverName: server.name,
+            error: 'No matching attachment found for upload.',
+            status: 'error',
+          };
+        }
+
+        try {
+          const base64 = await fileToBase64(matchingFile);
+          preparedArgs.filename = filename ?? matchingFile.name;
+          preparedArgs.content = base64;
+          preparedArgs.encoding = preparedArgs.encoding ?? 'base64';
+        } catch (error) {
+          return {
+            name: toolName,
+            args,
+            serverName: server.name,
+            error: error instanceof Error ? error.message : 'Failed to read attachment.',
+            status: 'error',
+          };
+        }
+      }
+
+      try {
+        const payload = await callMcpTool(server, toolName, preparedArgs);
+        const displayArgs = { ...preparedArgs };
+        if (displayArgs.content && typeof displayArgs.content === 'string') {
+          displayArgs.content = `[base64 content omitted (${displayArgs.content.length} chars)]`;
+        }
+        return {
+          name: toolName,
+          args: displayArgs,
+          result: payload,
+          serverName: server.name,
+          status: 'success',
+        };
+      } catch (error) {
+        return {
+          name: toolName,
+          args,
+          serverName: server.name,
+          error: error instanceof Error ? error.message : 'Unknown error executing tool.',
+          status: 'error',
+        };
+      }
+    },
+    [callMcpTool, fileToBase64, toolServerLookup]
+  );
+
+  // Send chat message
+  const handleSendMessage = useCallback(async () => {
+    if ((!chatInput.trim() && pendingAttachments.length === 0) || isGenerating) return;
+    if (!ollamaReady) {
+      setOllamaError('Gemma is not ready. Complete the setup before chatting.');
+      return;
+    }
+
+    const prompt = chatInput.trim();
+    const priorMessages = [...chatMessages];
+    const attachmentFiles = [...pendingAttachments];
+    const attachments: AttachmentDescriptor[] = attachmentFiles.map((file) => ({
+      name: file.name,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+    }));
+
+    setIsGenerating(true);
+    setOllamaError(null);
+
+    const attachmentPathMap = new Map<string, string>();
+    const uploadedAttachmentResponses: ProcessedToolResponse[] = [];
+
+    if (attachmentFiles.length > 0) {
+      const uploadServer = toolServerLookup.get('fs_upload_file');
+
+      if (!uploadServer || !uploadServer.is_active) {
+        uploadedAttachmentResponses.push({
+          name: 'fs_upload_file',
+          args: {},
+          error: 'File System MCP upload tool is unavailable.',
+          status: 'error',
+        });
+      } else {
+        for (const file of attachmentFiles) {
+          try {
+            const base64 = await fileToBase64(file);
+            const payload = await callMcpTool(uploadServer, 'fs_upload_file', {
+              filename: file.name,
+              content: base64,
+              encoding: 'base64',
+            });
+
+            const uploadedPath = extractUploadedPath(payload);
+            const response: ProcessedToolResponse = {
+              name: 'fs_upload_file',
+              args: { filename: file.name },
+              result: payload,
+              serverName: uploadServer.name,
+              status: uploadedPath ? 'success' : 'error',
+              error: uploadedPath ? undefined : 'Uploaded file path not returned by server.',
+            };
+            uploadedAttachmentResponses.push(response);
+
+            if (uploadedPath) {
+              const keyVariants = [
+                file.name.toLowerCase(),
+                sanitizeAttachmentKey(file.name),
+                sanitizeAttachmentKey(`1. ${file.name}`),
+              ];
+              keyVariants.forEach((key) => attachmentPathMap.set(key, uploadedPath));
+            }
+          } catch (error) {
+            uploadedAttachmentResponses.push({
+              name: 'fs_upload_file',
+              args: { filename: file.name },
+              serverName: uploadServer.name,
+              status: 'error',
+              error: error instanceof Error ? error.message : 'Failed to upload attachment.',
+            });
+          }
+        }
+      }
+    }
+
+    const attachmentDetails = attachments
+      .map((att, index) => {
+        const path =
+          attachmentPathMap.get(sanitizeAttachmentKey(att.name)) ??
+          attachmentPathMap.get(att.name.toLowerCase()) ??
+          '';
+        return `${index + 1}. ${att.name} (${att.type}, ${formatFileSize(att.size)})${
+          path ? ` → ${path}` : ' (path unavailable)'
+        }`;
+      })
+      .join('\n');
+
+    const attachmentSummary =
+      attachments.length > 0
+        ? `\n\n[Attachments]\n${attachmentDetails}\nUse these absolute paths when referencing the user's files.`
+        : '';
+
+    const promptForModel =
+      attachments.length > 0 ? `${prompt}${attachmentSummary}` : prompt;
+
+    const priorContext: OllamaChatMessage[] = priorMessages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+
+    const userMessage: ChatMessageEntry = {
+      role: 'user',
+      content: promptForModel,
+      displayContent: prompt,
+      attachments,
+    };
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput('');
+    setPendingAttachments([]);
+
+    try {
+      const { content: assistantContent, toolCalls, raw } = await chatWithGemma(
+        promptForModel,
+        [systemMessage, ...priorContext]
+      );
+
+      const executedTools: ProcessedToolResponse[] = [];
+      if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+        for (const call of toolCalls) {
+          const execution = await executeToolCall(call, attachmentFiles, attachmentPathMap);
+          executedTools.push(execution);
+        }
+      }
+
+      const allToolResponses = [...uploadedAttachmentResponses, ...executedTools];
+
+      const toolSummary =
+        allToolResponses.length > 0
+          ? allToolResponses
+              .map((tool, index) => {
+                const statusLabel = tool.status === 'success' ? 'Success' : 'Error';
+                const serverLabel = tool.serverName ? ` @ ${tool.serverName}` : '';
+                return `${index + 1}. ${tool.name}${serverLabel} (${statusLabel})`;
+              })
+              .join('\n')
+          : '';
+
+      const combinedContent =
+        allToolResponses.length > 0 && toolSummary
+          ? `${assistantContent}\n\nTool Results:\n${toolSummary}`
+          : assistantContent || raw || '';
+
+      const assistantMessage: ChatMessageEntry = {
+        role: 'assistant',
+        content: combinedContent,
+        displayContent: assistantContent || toolSummary || 'Tool call executed.',
+        toolResponses: allToolResponses.length > 0 ? allToolResponses : undefined,
+      };
+
+      setChatMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      setOllamaError(error instanceof Error ? error.message : 'Chat failed');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            'Gemma could not respond right now. Please ensure Ollama is running and try again.',
+          displayContent:
+            'Gemma could not respond right now. Please ensure Ollama is running and try again.',
+        },
+      ]);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [
+    callMcpTool,
+    chatInput,
+    chatMessages,
+    executeToolCall,
+    fileToBase64,
+    formatFileSize,
+    isGenerating,
+    ollamaReady,
+    pendingAttachments,
+    systemMessage,
+    toolServerLookup,
+  ]);
+
   const renderFileSystemNodes = useCallback(
     (nodes: FileSystemNode[], depth = 0): React.ReactElement | null => {
       if (!nodes || nodes.length === 0) {
@@ -1132,74 +1914,227 @@ const EGChatting: React.FC = () => {
           <header className="eg-chatting__chat-header">
             <div className="eg-chatting__chat-title">
               <span className="eg-chatting__chat-name">
-                {activeConversation?.title ?? 'Conversation'}
+                {activeConversation?.title ?? 'Chat with Gemma'}
               </span>
-              <span className="eg-chatting__chat-status">Live · synced</span>
+              <span className={`eg-chatting__chat-status${ollamaReady ? ' eg-chatting__chat-status--ready' : ''}`}>
+                {ollamaLoading
+                  ? 'Checking Ollama...'
+                  : ollamaReady
+                  ? '🟢 Gemma Ready'
+                  : '⚪ Setup Required'}
+              </span>
             </div>
             <div className="eg-chatting__chat-actions">
-              <button>Share</button>
-              <button>History</button>
-              <button>Settings</button>
+              <button type="button" onClick={checkOllamaStatus} title="Refresh Ollama status">
+                Refresh
+              </button>
             </div>
           </header>
 
           <div className="eg-chatting__message-feed">
-            {messages.map((message) => (
-              <article
-                key={message.id}
-                className={`eg-chatting__message${message.isOwn ? ' eg-chatting__message--own' : ''}`}
-              >
-                <header className="eg-chatting__message-meta">
-                  <span className="eg-chatting__message-author">{message.author}</span>
-                  <time>{message.timestamp}</time>
-                </header>
-                <p className="eg-chatting__message-content">{message.content}</p>
-                {message.toolCalls && message.toolCalls.length > 0 ? (
+            {!ollamaReady ? (
+              <div className="eg-chatting__ollama-setup">
+                <div className="eg-chatting__ollama-setup-card">
+                  <h3>🤖 Local AI Setup</h3>
+                  {ollamaLoading ? (
+                    <div className="eg-chatting__ollama-status">
+                      <span className="eg-chatting__filesystem-spinner" aria-hidden="true" />
+                      <span>Checking Ollama status...</span>
+                    </div>
+                  ) : ollamaError ? (
+                    <div className="eg-chatting__ollama-error">
+                      <p>⚠️ {ollamaError}</p>
+                      <button type="button" onClick={checkOllamaStatus}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : ollamaInstalled === false ? (
+                    <div className="eg-chatting__ollama-install">
+                      <p>Ollama is not installed. Install it to use local AI models.</p>
+                      <button
+                        type="button"
+                        className="eg-chatting__ollama-action"
+                        onClick={handleInstallOllama}
+                        disabled={ollamaLoading}
+                      >
+                        Install Ollama
+                      </button>
+                    </div>
+                  ) : !hasGemma ? (
+                    <div className="eg-chatting__ollama-model">
+                      <p>Gemma 4B model is not installed. Pull it to start chatting.</p>
+                      <button
+                        type="button"
+                        className="eg-chatting__ollama-action"
+                        onClick={handlePullGemma}
+                        disabled={isPullingModel}
+                      >
+                        {isPullingModel ? 'Pulling Gemma 4B...' : 'Pull Gemma 4B'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <>
+                {chatMessages.map((msg, idx) => (
+                  <article
+                    key={idx}
+                    className={`eg-chatting__message${
+                      msg.role === 'user' ? ' eg-chatting__message--own' : ''
+                    }`}
+                  >
+                    <header className="eg-chatting__message-meta">
+                      <span className="eg-chatting__message-author">
+                        {msg.role === 'user' ? 'You' : 'Gemma'}
+                      </span>
+                    </header>
+                <p className="eg-chatting__message-content">
+                  {msg.displayContent ?? msg.content}
+                </p>
+                {msg.attachments && msg.attachments.length > 0 ? (
+                  <ul className="eg-chatting__message-attachments">
+                    {msg.attachments.map((file, idx) => (
+                      <li key={`${file.name}-${idx}`}>
+                        <span className="eg-chatting__message-attachment-name">{file.name}</span>
+                        <span className="eg-chatting__message-attachment-meta">
+                          {file.type} · {formatFileSize(file.size)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {msg.toolResponses && msg.toolResponses.length > 0 ? (
                   <div className="eg-chatting__toolcall-group">
-                    {message.toolCalls.map((entry) => (
-                      <div key={entry.id} className="eg-chatting__toolcall-card">
+                    {msg.toolResponses.map((tool, index) => (
+                      <div key={`${tool.name}-${index}`} className="eg-chatting__toolcall-card">
                         <div className="eg-chatting__toolcall-heading">
                           <span className="eg-chatting__toolcall-icon" aria-hidden="true">
                             🔧
                           </span>
                           <div className="eg-chatting__toolcall-title">
-                            <span className="eg-chatting__toolcall-name">{entry.toolName}</span>
-                            <span className="eg-chatting__toolcall-server">{entry.serverName}</span>
+                            <span className="eg-chatting__toolcall-name">{tool.name}</span>
+                            {tool.serverName ? (
+                              <span className="eg-chatting__toolcall-server">{tool.serverName}</span>
+                            ) : null}
                           </div>
                           <span
-                            className={`eg-chatting__toolcall-status eg-chatting__toolcall-status--${entry.status}`}
+                            className={`eg-chatting__toolcall-status eg-chatting__toolcall-status--${
+                              tool.status === 'success' ? 'success' : 'error'
+                            }`}
                           >
-                            {entry.status}
+                            {tool.status === 'success' ? 'Success' : 'Error'}
                           </span>
                         </div>
                         <details className="eg-chatting__toolcall-details">
-                          <summary>Parameters &amp; result</summary>
+                          <summary>Arguments &amp; result</summary>
                           <div className="eg-chatting__toolcall-json">
-                            <strong>Input</strong>
-                            <pre>{entry.inputPreview}</pre>
-                            {entry.outputPreview ? (
+                            <strong>Args</strong>
+                            <pre>{JSON.stringify(tool.args ?? {}, null, 2)}</pre>
+                            {tool.error ? (
                               <>
-                                <strong>Output</strong>
-                                <pre>{entry.outputPreview}</pre>
+                                <strong>Error</strong>
+                                <pre>{tool.error}</pre>
                               </>
-                            ) : null}
+                            ) : (
+                              <>
+                                <strong>Result</strong>
+                                <pre>
+                                  {typeof tool.result === 'string'
+                                    ? tool.result
+                                    : JSON.stringify(tool.result ?? {}, null, 2)}
+                                </pre>
+                              </>
+                            )}
                           </div>
                         </details>
                       </div>
                     ))}
                   </div>
                 ) : null}
-              </article>
-            ))}
+                  </article>
+                ))}
+                {isGenerating && (
+                  <div className="eg-chatting__generating">
+                    <span className="eg-chatting__filesystem-spinner" aria-hidden="true" />
+                    <span>Gemma is thinking...</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <footer className="eg-chatting__composer">
-            <textarea placeholder="Type a message, ask EG Assistant, or use /commands…" rows={3} />
+            <textarea
+              placeholder={
+                ollamaReady
+                  ? 'Type a message to chat with Gemma...'
+                  : 'Complete Ollama setup above to start chatting'
+              }
+              rows={3}
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && ollamaReady && (chatInput.trim().length > 0 || pendingAttachments.length > 0)) {
+                  e.preventDefault();
+                  void handleSendMessage();
+                }
+              }}
+              disabled={!ollamaReady || isGenerating}
+            />
+            {pendingAttachments.length > 0 ? (
+              <div className="eg-chatting__composer-attachments" role="list">
+                {pendingAttachments.map((file, index) => (
+                  <div key={`${file.name}-${file.lastModified}-${index}`} className="eg-chatting__composer-attachment" role="listitem">
+                    <div className="eg-chatting__composer-attachment-details">
+                      <span className="eg-chatting__composer-attachment-name">{file.name}</span>
+                      <span className="eg-chatting__composer-attachment-meta">
+                        {file.type || 'application/octet-stream'} · {formatFileSize(file.size)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="eg-chatting__composer-attachment-remove"
+                      onClick={() => handleRemoveAttachment(index)}
+                      aria-label={`Remove attachment ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="eg-chatting__composer-actions">
-              <button>Attach</button>
-              <button>Run Task</button>
-              <button className="eg-chatting__composer-send">Send</button>
+              <button
+                type="button"
+                className="eg-chatting__composer-attach"
+                onClick={handleOpenFilePicker}
+                disabled={isGenerating}
+              >
+                Attach file
+              </button>
+              <button
+                type="button"
+                className="eg-chatting__composer-send"
+                onClick={handleSendMessage}
+                disabled={
+                  !ollamaReady ||
+                  isGenerating ||
+                  (chatInput.trim().length === 0 && pendingAttachments.length === 0)
+                }
+              >
+                {isGenerating ? 'Generating...' : 'Send'}
+              </button>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="eg-chatting__composer-file-input"
+              onChange={handleFilesSelected}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
           </footer>
         </section>
 
