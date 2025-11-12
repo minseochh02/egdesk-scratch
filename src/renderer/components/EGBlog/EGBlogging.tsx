@@ -160,9 +160,11 @@ const EGBlogging: React.FC = () => {
   if (isLoading) {
     return (
       <div className="eg-blogging">
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading your blog connections...</p>
+        <div className="eg-blogging-scroll">
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Loading your blog connections...</p>
+          </div>
         </div>
       </div>
     );
@@ -172,14 +174,16 @@ const EGBlogging: React.FC = () => {
   if (currentView === 'connection-dashboard' && selectedConnection) {
     return (
       <div className="eg-blogging connection-dashboard-view">
-        <ConnectionDashboard
-          connection={selectedConnection}
-          onEdit={handleEditConnection}
-          onDelete={handleDeleteConnection}
-          onTestConnection={handleTestConnection}
-          onRefresh={handleRefreshDashboard}
-          onBack={handleBackFromDashboard}
-        />
+        <div className="eg-blogging-scroll">
+          <ConnectionDashboard
+            connection={selectedConnection}
+            onEdit={handleEditConnection}
+            onDelete={handleDeleteConnection}
+            onTestConnection={handleTestConnection}
+            onRefresh={handleRefreshDashboard}
+            onBack={handleBackFromDashboard}
+          />
+        </div>
       </div>
     );
   }
@@ -188,13 +192,15 @@ const EGBlogging: React.FC = () => {
   if (currentView === 'connection-list') {
     return (
       <div className="eg-blogging connection-list-view">
-        <ConnectionList
-          onEdit={() => {}}
-          onDelete={() => {}}
-          onConnect={handleViewConnection}
-          onView={handleViewConnection}
-          onBack={handleBackFromConnectionList}
-        />
+        <div className="eg-blogging-scroll">
+          <ConnectionList
+            onEdit={() => {}}
+            onDelete={() => {}}
+            onConnect={handleViewConnection}
+            onView={handleViewConnection}
+            onBack={handleBackFromConnectionList}
+          />
+        </div>
       </div>
     );
   }
@@ -203,48 +209,50 @@ const EGBlogging: React.FC = () => {
   // Render platform selection (default view)
   return (
     <div className="eg-blogging">
-      {/* Hero Section */}
-      <div className="blogging-hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <FontAwesomeIcon icon={faRocket} />
-            <span>EG Blogging</span>
+      <div className="eg-blogging-scroll">
+        {/* Hero Section */}
+        <div className="blogging-hero">
+          <div className="hero-content">
+            <div className="hero-badge">
+              <FontAwesomeIcon icon={faRocket} />
+              <span>EG Blogging</span>
+            </div>
+            <h1>{hasConnections ? 'Add New Blog Platform' : 'Connect Your Blog Platform'}</h1>
+            <p>
+              {hasConnections 
+                ? 'Add another blog platform to your collection or manage your existing connections'
+                : 'Seamlessly integrate with your favorite blogging platform and unlock powerful automation features'
+              }
+            </p>
+            <div className="hero-actions">
+              {hasConnections && (
+                <button className="view-connections-btn" onClick={handleShowConnectionList}>
+                  <FontAwesomeIcon icon={faArrowRight} />
+                  <span>See my blogs</span>
+                </button>
+              )}
+            </div>
           </div>
-          <h1>{hasConnections ? 'Add New Blog Platform' : 'Connect Your Blog Platform'}</h1>
-          <p>
-            {hasConnections 
-              ? 'Add another blog platform to your collection or manage your existing connections'
-              : 'Seamlessly integrate with your favorite blogging platform and unlock powerful automation features'
-            }
-          </p>
-          <div className="hero-actions">
-            {hasConnections && (
-              <button className="view-connections-btn" onClick={handleShowConnectionList}>
-                <FontAwesomeIcon icon={faArrowRight} />
-                <span>See my blogs</span>
-              </button>
-            )}
+          <div className="hero-visual">
+            <div className="floating-cards">
+              <div className="floating-card card-1">
+                <FontAwesomeIcon icon={faWordpress} />
+              </div>
+              <div className="floating-card card-2">
+                <img src={naverblogIcon} alt="Naver Blog" style={{ width: '24px', height: '24px' }} />
+              </div>
+              <div className="floating-card card-3">
+                <img src={tistoryIcon} alt="Tistory" style={{ width: '24px', height: '24px' }} />
+              </div>
+            </div>
           </div>
         </div>
-        <div className="hero-visual">
-          <div className="floating-cards">
-            <div className="floating-card card-1">
-              <FontAwesomeIcon icon={faWordpress} />
-            </div>
-            <div className="floating-card card-2">
-              <img src={naverblogIcon} alt="Naver Blog" style={{ width: '24px', height: '24px' }} />
-            </div>
-            <div className="floating-card card-3">
-              <img src={tistoryIcon} alt="Tistory" style={{ width: '24px', height: '24px' }} />
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Platform Selection - Use BlogConnector with navigation handlers */}
-      <BlogConnector 
-        onShowConnectionList={handleShowConnectionList}
-      />
+        {/* Platform Selection - Use BlogConnector with navigation handlers */}
+        <BlogConnector 
+          onShowConnectionList={handleShowConnectionList}
+        />
+      </div>
     </div>
   );
 };

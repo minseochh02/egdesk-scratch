@@ -1,3 +1,17 @@
+.egseo-analyzer-container {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #f5f7fa;
+}
+
+.egseo-analyzer-scroll {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2rem 0;
+}
+
 .egseo-analyzer {
   padding: 2rem;
   max-width: 800px;
