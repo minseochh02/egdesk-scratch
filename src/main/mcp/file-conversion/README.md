@@ -2,7 +2,7 @@
 
 > ✅ **STATUS**: Fully integrated and ready to use!  
 > ✅ **Integration**: Available in Local Server Manager alongside Gmail and FileSystem MCP  
-> ✅ **Dependencies**: pdf-lib, sharp, mammoth, xlsx, marked, playwright (all installed)
+> ✅ **Dependencies**: pdf-lib, jimp, mammoth, xlsx, marked, playwright (all installed)
 
 ## 🎯 Integration Status
 
@@ -26,7 +26,7 @@ The File Conversion MCP Service provides file format conversion capabilities thr
 
 ### Image Operations
 - ✅ **images_to_pdf**: Convert images to PDF
-- ✅ **image_convert**: Convert between image formats (PNG, JPG, WEBP, AVIF)
+- ✅ **image_convert**: Convert between PNG, JPG/JPEG, BMP, GIF, and TIFF
 - ✅ **image_resize**: Resize images
 
 ### Document Conversions
@@ -183,7 +183,7 @@ Convert images between different formats.
 {
   "inputPath": "/Users/me/photo.jpg",
   "outputPath": "/Users/me/photo.webp",
-  "format": "webp",
+  "format": "png",
   "quality": 85
 }
 ```
@@ -283,7 +283,7 @@ Convert HTML files or URLs to PDF.
 All dependencies are already installed in the EGDesk project:
 
 - ✅ `pdf-lib` (^1.17.1) - PDF manipulation
-- ✅ `sharp` (^0.34.4) - Image processing
+- ✅ `jimp` (^0.22.12) - Image processing (pure JS)
 - ✅ `mammoth` (^1.11.0) - Word document reading
 - ✅ `xlsx` (^0.18.5) - Excel spreadsheet processing
 - ✅ `marked` (^16.4.1) - Markdown parsing
@@ -314,7 +314,7 @@ try {
 ## Performance Notes
 
 - **PDF operations**: Fast, works on files up to 100+ MB
-- **Image conversions**: Very fast, optimized with sharp
+- **Image conversions**: Pure JS (Jimp); slower than sharp but fully cross-platform
 - **Document to PDF**: Slower (uses Playwright rendering), ~2-5 seconds per document
 - **HTML to PDF**: Speed depends on page complexity and network (for URLs)
 
