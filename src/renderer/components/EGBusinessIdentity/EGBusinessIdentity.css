@@ -1,0 +1,201 @@
+.egbusiness-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100%;
+  padding: 32px 40px;
+  background: linear-gradient(150deg, #0f172a 0%, #1f2937 60%, #111827 100%);
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-y: auto;
+}
+
+.egbusiness-identity.demo .egbusiness-identity__header h1 {
+  margin: 0 0 12px;
+  font-size: 32px;
+  color: #f8fafc;
+}
+
+.egbusiness-identity__header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 680px;
+}
+
+.egbusiness-identity__intro {
+  margin: 0;
+  line-height: 1.6;
+  color: #cbd5f5;
+}
+
+.egbusiness-identity__panel {
+  background: rgba(17, 24, 39, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 20px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 30px 50px rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.egbusiness-identity__panel-heading {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.egbusiness-identity__panel-heading h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  color: #f9fafb;
+}
+
+.egbusiness-identity__panel-heading p {
+  margin: 0;
+  color: #cbd5f5;
+  line-height: 1.5;
+}
+
+.egbusiness-identity__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.egbusiness-identity__input-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.egbusiness-identity__input-block label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a5b4fc;
+}
+
+.egbusiness-identity__control {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.egbusiness-identity__control input {
+  flex: 1 1 320px;
+  min-width: 240px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  font-size: 15px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.egbusiness-identity__control input:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.8);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+}
+
+.egbusiness-identity__control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #8b5cf6);
+  color: #f8fafc;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 18px 30px rgba(99, 102, 241, 0.25);
+}
+
+.egbusiness-identity__control button:active {
+  transform: translateY(1px);
+}
+
+.egbusiness-identity__control button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  box-shadow: none;
+}
+
+.egbusiness-identity__hint {
+  margin: 0;
+  font-size: 13px;
+  color: #a5b4fc;
+}
+
+.egbusiness-identity__error {
+  margin: 0;
+  font-size: 13px;
+  color: #f87171;
+}
+
+.egbusiness-identity__status {
+  margin: 0;
+  font-size: 13px;
+  color: #bfdbfe;
+}
+
+.egbusiness-identity__panel--secondary,
+.egbusiness-identity__panel.egbusiness-identity__panel--secondary {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.egbusiness-identity__panel--secondary h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #f3f4f6;
+}
+
+.egbusiness-identity__panel--secondary ol {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #dbeafe;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.egbusiness-identity__panel--secondary li {
+  padding-left: 6px;
+}
+
+@media (max-width: 768px) {
+  .egbusiness-identity {
+    padding: 24px 20px 40px;
+  }
+
+  .egbusiness-identity__panel {
+    padding: 22px;
+  }
+
+  .egbusiness-identity__control {
+    flex-direction: column;
+  }
+
+  .egbusiness-identity__control input,
+  .egbusiness-identity__control button {
+    width: 100%;
+  }
+}
+

@@ -69,14 +69,35 @@ export function registerOllamaHandlers(): void {
   });
 
   // Chat completion (streaming)
-  ipcMain.handle('ollama:chat', async (_event, { model, messages, stream = true }) => {
+  ipcMain.handle('ollama:chat', async (_event, { model, messages, stream = true, websiteContext, systemPrompt }) => {
     try {
+      let enrichedMessages = messages ?? [];
+      
+      // Build system message combining system prompt and website context
+      const systemParts: string[] = [];
+      if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0) {
+        systemParts.push(systemPrompt.trim());
+      }
+      if (websiteContext && typeof websiteContext === 'string' && websiteContext.trim().length > 0) {
+        systemParts.push(`\n\nWebsite content to analyze:\n${websiteContext.trim()}`);
+      }
+      
+      if (systemParts.length > 0) {
+        enrichedMessages = [
+          {
+            role: 'system',
+            content: systemParts.join(''),
+          },
+          ...enrichedMessages,
+        ];
+      }
+
       const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
-          messages,
+          messages: enrichedMessages,
           stream,
         }),
       });

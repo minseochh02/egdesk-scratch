@@ -52,6 +52,7 @@ import { registerSEOHandlers } from './seo/seo-analyzer';
 import { getAuthService } from './auth/auth-service';
 import { ollamaManager } from './ollama/installer';
 import { registerOllamaHandlers } from './ollama/ollama-handlers';
+import { fetchWebsiteContent } from './web/content-fetcher';
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
@@ -372,6 +373,21 @@ const createWindow = async () => {
           return { 
             success: false, 
             error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('web-fetch-content', async (_event, url: string) => {
+        try {
+          return await fetchWebsiteContent(url);
+        } catch (error) {
+          console.error('❌ Failed to fetch website content:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to fetch website content.'
+                : 'Failed to fetch website content.',
           };
         }
       });
@@ -1465,6 +1481,72 @@ const createWindow = async () => {
           return { 
             success: false, 
             error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      ipcMain.handle('open-twitter-with-profile', async (_event, opts?: { profilePath?: string; targetUrl?: string }) => {
+        const profilePath = opts?.profilePath;
+        const targetUrl = opts?.targetUrl || 'https://twitter.com/home';
+
+        try {
+          if (!profilePath || typeof profilePath !== 'string' || !profilePath.trim()) {
+            return {
+              success: false,
+              error: 'A valid Chrome profile path is required.',
+            };
+          }
+
+          const resolvedProfilePath = path.resolve(profilePath);
+          const fs = require('fs');
+
+          if (!fs.existsSync(resolvedProfilePath)) {
+            return {
+              success: false,
+              error: `Profile path does not exist: ${resolvedProfilePath}`,
+            };
+          }
+
+          const { chromium } = require('playwright');
+          console.log(`[Twitter Launcher] Opening Twitter with profile: ${resolvedProfilePath}`);
+
+          const context = await chromium.launchPersistentContext(resolvedProfilePath, {
+            headless: false,
+            channel: 'chrome',
+            args: [
+              '--lang=en-US',
+              '--disable-breakpad',
+              '--disable-dev-shm-usage',
+              '--start-maximized',
+            ],
+          });
+
+          const existingPages = context.pages();
+          const page = existingPages.length > 0 ? existingPages[0] : await context.newPage();
+
+          try {
+            new URL(targetUrl);
+          } catch {
+            return {
+              success: false,
+              error: `Invalid target URL: ${targetUrl}`,
+            };
+          }
+
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+          console.log('[Twitter Launcher] Twitter opened successfully.');
+
+          return {
+            success: true,
+          };
+        } catch (error) {
+          console.error('[Twitter Launcher] Failed to open Twitter with profile:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to open Twitter.'
+                : 'Failed to open Twitter.',
           };
         }
       });

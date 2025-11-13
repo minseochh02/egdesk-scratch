@@ -41,16 +41,23 @@ export interface GemmaChatResult {
   raw?: string;
 }
 
+type GemmaChatOptions = {
+  stream?: boolean;
+  websiteContext?: string;
+  systemPrompt?: string;
+};
+
 export async function chatWithGemma(
   prompt: string,
   context: OllamaChatMessage[] = [],
-  options: { stream?: boolean } = { stream: true }
+  options: GemmaChatOptions = {}
 ): Promise<GemmaChatResult> {
   if (!prompt || prompt.trim().length === 0) {
     throw new Error('Prompt cannot be empty.');
   }
 
   const electronApi = getElectronApi();
+  const { stream = true, websiteContext, systemPrompt } = options;
 
   const ensureServerRunning = async () => {
     try {
@@ -72,11 +79,18 @@ export async function chatWithGemma(
 
   await ensureServerRunning();
 
+  const cleanedWebsiteContext =
+    typeof websiteContext === 'string' && websiteContext.trim().length > 0
+      ? websiteContext.trim().slice(0, 120_000)
+      : undefined;
+
   const invokeChat = async () =>
     (await electronApi.invoke('ollama:chat', {
       model: MODEL_ID,
       messages: [...context, { role: 'user', content: prompt.trim() }],
-      stream: options.stream !== false,
+      stream,
+      websiteContext: cleanedWebsiteContext,
+      systemPrompt: systemPrompt?.trim(),
     })) as OllamaChatResponse;
 
   let response: OllamaChatResponse;
@@ -97,17 +111,23 @@ export async function chatWithGemma(
     throw new Error(response?.error ?? 'Gemma request failed.');
   }
 
-  if (options.stream === false && response.data) {
-    const rawData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-    let parsedContent = rawData;
-    if (response.data && typeof response.data === 'object' && 'content' in response.data) {
-      const possibleContent = (response.data as { content?: string }).content;
-      if (typeof possibleContent === 'string') {
-        parsedContent = possibleContent;
-      }
-    }
+  if (stream === false && response.data) {
+    const payload = response.data;
+    const messageContent =
+      typeof payload === 'object' && payload !== null && 'message' in payload
+        ? (payload as any).message?.content
+        : undefined;
+
+    const rawData =
+      typeof messageContent === 'string'
+        ? messageContent
+        : typeof payload === 'string'
+          ? payload
+          : JSON.stringify(payload);
+
+    const parsedContent = rawData.trim();
     return {
-      content: parsedContent.trim(),
+      content: parsedContent,
       toolCalls: [],
       raw: rawData,
     };

@@ -33,6 +33,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 import EGChatting from './components/EGChatting';
+import EGBusinessIdentity from './components/EGBusinessIdentity';
+import ResultDemo from './components/EGBusinessIdentity/ResultDemo';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -1096,6 +1098,8 @@ function AppContent() {
             <Route path="/seo-analyzer" element={<EGSEOAnalyzer />} />
             <Route path="/mcp-server" element={<MCPServer />} />
             <Route path="/egchatting" element={<EGChatting />} />
+            <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
+            <Route path="/egbusiness-identity/preview" element={<ResultDemo />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

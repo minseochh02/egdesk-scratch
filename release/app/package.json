@@ -25,5 +25,12 @@
     "pdf-lib": "^1.17.1",
     "mammoth": "^1.11.0",
     "marked": "^16.4.1"
+  },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.34.4",
+    "@img/sharp-darwin-x64": "^0.34.4",
+    "@img/sharp-linux-x64": "^0.34.4",
+    "@img/sharp-win32-x64": "^0.34.4",
+    "@img/sharp-win32-ia32": "^0.34.4"
   }
 }
