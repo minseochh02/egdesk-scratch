@@ -11,6 +11,7 @@ import {
   faGlobe,
   faDesktop,
   faComments,
+  faBuilding,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -40,6 +41,25 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">통합 관리</span>
                 <span className="egdesk-landing-feature-tag">대시보드</span>
                 <span className="egdesk-landing-feature-tag">중앙 제어</span>
+              </div>
+            </Link>
+
+            <Link
+              to="/egbusiness-identity"
+              className="egdesk-landing-action-card egdesk-landing-identity-card"
+            >
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faBuilding} />
+              </div>
+              <h3 className="egdesk-landing-card-title">EG Business Identity</h3>
+              <p className="egdesk-landing-card-description">
+                브랜드 자산과 웹사이트를 연결하여 AI가 즉시 브랜드 아이덴티티와 소셜 전략을 설계하도록
+                해보세요.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">브랜드 허브</span>
+                <span className="egdesk-landing-feature-tag">AI 아이덴티티</span>
+                <span className="egdesk-landing-feature-tag">소셜 로드맵</span>
               </div>
             </Link>
 

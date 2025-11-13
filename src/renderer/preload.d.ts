@@ -1,4 +1,8 @@
-import type { AIServiceAPI, OllamaAPI } from '../main/preload';
+import type {
+  AIServiceAPI,
+  OllamaAPI,
+  WebUtilitiesAPI,
+} from '../main/preload';
 
 export interface IElectronAPI {
   ipcRenderer: {
@@ -52,6 +56,8 @@ export interface IElectronAPI {
     writeFileWithParams: (params: any) => Promise<any>;
     writeFileSimple: (filePath: string, content: string) => Promise<any>;
   };
+
+  web: WebUtilitiesAPI;
   wordpress: {
     saveConnection(
       connection: any,
@@ -332,14 +338,65 @@ export interface IElectronAPI {
     cleanupOldBackups: (keepCount?: number) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   debug: {
-    startAutomation(id?: string, pw?: string, proxy?: string, title?: string, content?: string, tags?: string): Promise<{ success: boolean; error?: string }>;
-    startWooriAutomation(id?: string, proxy?: string, geminiApiKey?: string): Promise<{ 
-      success: boolean; 
-      error?: string; 
-      boxes?: any; 
-      clickedPoint?: any; 
-      screenshotPath?: string; 
+    startAutomation(
+      id?: string,
+      pw?: string,
+      proxy?: string,
+      title?: string,
+      content?: string,
+      tags?: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    startWooriAutomation(
+      id?: string,
+      proxy?: string,
+      geminiApiKey?: string,
+    ): Promise<{
+      success: boolean;
+      error?: string;
+      boxes?: any;
+      clickedPoint?: any;
+      screenshotPath?: string;
     }>;
+    startNaverBlogWithImage(
+      id?: string,
+      password?: string,
+      proxy?: string,
+      title?: string,
+      content?: string,
+      tags?: string,
+      includeDogImage?: boolean,
+      dogImagePrompt?: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    launchChrome(): Promise<{ success: boolean; error?: string }>;
+    launchChromeWithUrl(
+      url: string,
+      proxy?: string,
+      openDevTools?: boolean,
+      runLighthouse?: boolean,
+    ): Promise<{ success: boolean; error?: string }>;
+    openTwitterWithProfile(
+      profilePath: string,
+      targetUrl?: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    crawlWebsite(
+      url: string,
+      proxy?: string,
+      openDevTools?: boolean,
+    ): Promise<{
+      success: boolean;
+      data?: any;
+      filepath?: string;
+      error?: string;
+    }>;
+    generateLighthouseReports(
+      urls: string[],
+      proxy?: string,
+    ): Promise<{
+      success: boolean;
+      reports?: Array<{ url: string; reportPath: string }>;
+      error?: string;
+    }>;
+    testPasteComponent(): Promise<{ success: boolean; error?: string }>;
   };
   scheduledPosts: {
     create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;

@@ -153,6 +153,13 @@
     "ws": "^8.18.3",
     "xlsx": "^0.18.5"
   },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.34.4",
+    "@img/sharp-darwin-x64": "^0.34.4",
+    "@img/sharp-linux-x64": "^0.34.4",
+    "@img/sharp-win32-x64": "^0.34.4",
+    "@img/sharp-win32-ia32": "^0.34.4"
+  },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.15",
@@ -238,7 +245,9 @@
       "scripts/**",
       "**\\*.{node,dll,js}",
       "node_modules/@google/genai/**",
-      "node_modules/mime-types/**"
+      "node_modules/mime-types/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
     ],
     "files": [
       "dist",

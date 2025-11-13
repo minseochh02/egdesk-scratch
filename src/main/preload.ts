@@ -814,6 +814,40 @@ export interface BlogGenerationAPI {
   generateAndUpload: (params: BlogUploadParams) => Promise<BlogUploadResult>;
 }
 
+/**
+ * Simplified representation of fetched website content
+ */
+export interface WebsiteContentSummary {
+  url: string;
+  finalUrl: string;
+  status: number;
+  contentType?: string | null;
+  language?: string | null;
+  title?: string | null;
+  description?: string | null;
+  html: string;
+  text: string;
+  textPreview: string;
+  wordCount: number;
+  fetchedAt: string;
+}
+
+/**
+ * Result of requesting website content from the main process
+ */
+export interface WebsiteContentFetchResult {
+  success: boolean;
+  content?: WebsiteContentSummary;
+  error?: string;
+}
+
+/**
+ * Web utilities exposed to renderer processes
+ */
+export interface WebUtilitiesAPI {
+  fetchContent: (url: string) => Promise<WebsiteContentFetchResult>;
+}
+
 
 
 // ============================================================================
@@ -886,6 +920,13 @@ const electronHandler = {
     writeFileSimple: (filePath: string, content: string) =>
       ipcRenderer.invoke('fs-write-file', filePath, content),
   } as FileSystemAPI,
+  
+  // ========================================================================
+  // WEB UTILITIES
+  // ========================================================================
+  web: {
+    fetchContent: (url: string) => ipcRenderer.invoke('web-fetch-content', url),
+  } as WebUtilitiesAPI,
   
   // ========================================================================
   // WORDPRESS MANAGEMENT
@@ -1308,6 +1349,7 @@ const electronHandler = {
     startNaverBlogWithImage: (id?: string, password?: string, proxy?: string, title?: string, content?: string, tags?: string, includeDogImage?: boolean, dogImagePrompt?: string) => ipcRenderer.invoke('start-naver-blog-with-image', { id, password, proxy, title, content, tags, includeDogImage, dogImagePrompt }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
+    openTwitterWithProfile: (profilePath: string, targetUrl?: string) => ipcRenderer.invoke('open-twitter-with-profile', { profilePath, targetUrl }),
     crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),
     generateLighthouseReports: (urls: string[], proxy?: string) => ipcRenderer.invoke('generate-lighthouse-reports', { urls, proxy }),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
