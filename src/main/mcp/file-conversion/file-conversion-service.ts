@@ -7,7 +7,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { PDFDocument } from 'pdf-lib';
-import sharp from 'sharp';
+import Jimp from 'jimp';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import { marked } from 'marked';
@@ -192,7 +192,8 @@ export class FileConversionService {
           image = await pdfDoc.embedJpg(imageBuffer);
         } else {
           // Convert to PNG if not supported
-          const pngBuffer = await sharp(imageBuffer).png().toBuffer();
+          const jimpImage = await Jimp.read(imageBuffer);
+          const pngBuffer = await jimpImage.getBufferAsync(Jimp.MIME_PNG);
           image = await pdfDoc.embedPng(pngBuffer);
         }
 
@@ -226,25 +227,37 @@ export class FileConversionService {
     try {
       await this.validateFile(inputPath);
 
-      const image = sharp(inputPath);
-      
-      switch (format.toLowerCase()) {
-        case 'png':
-          await image.png({ quality }).toFile(outputPath);
-          break;
-        case 'jpg':
-        case 'jpeg':
-          await image.jpeg({ quality }).toFile(outputPath);
-          break;
-        case 'webp':
-          await image.webp({ quality }).toFile(outputPath);
-          break;
-        case 'avif':
-          await image.avif({ quality }).toFile(outputPath);
-          break;
-        default:
-          throw new Error(`Unsupported format: ${format}`);
+      const normalizedFormat = format.toLowerCase();
+      const supportedFormats: Record<string, string> = {
+        png: Jimp.MIME_PNG,
+        jpg: Jimp.MIME_JPEG,
+        jpeg: Jimp.MIME_JPEG,
+        bmp: Jimp.MIME_BMP,
+        tif: Jimp.MIME_TIFF,
+        tiff: Jimp.MIME_TIFF,
+        gif: Jimp.MIME_GIF,
+      };
+
+      const targetMime = supportedFormats[normalizedFormat];
+
+      if (!targetMime) {
+        throw new Error(`Unsupported format: ${format}. Supported formats: png, jpg, jpeg, bmp, tif, tiff, gif`);
       }
+
+      const jimpImage = await Jimp.read(inputPath);
+      const outputExt = path.extname(outputPath).toLowerCase();
+      const normalizedExt = outputExt.startsWith('.') ? outputExt.slice(1) : outputExt;
+
+      if (normalizedExt && normalizedExt !== normalizedFormat && !(normalizedFormat === 'jpg' && normalizedExt === 'jpeg')) {
+        throw new Error(`Output path extension (${outputExt}) does not match requested format (${normalizedFormat})`);
+      }
+
+      if (targetMime === Jimp.MIME_JPEG) {
+        const clampedQuality = Math.max(1, Math.min(quality, 100));
+        jimpImage.quality(clampedQuality);
+      }
+
+      await jimpImage.writeAsync(outputPath);
 
       return {
         success: true,
@@ -263,9 +276,32 @@ export class FileConversionService {
     try {
       await this.validateFile(inputPath);
 
-      await sharp(inputPath)
-        .resize(width, height, { fit: 'inside' })
-        .toFile(outputPath);
+      const image = await Jimp.read(inputPath);
+      const originalWidth = image.bitmap.width;
+      const originalHeight = image.bitmap.height;
+
+      let targetWidth = originalWidth;
+      let targetHeight = originalHeight;
+
+      if (width && height) {
+        const ratio = Math.min(width / originalWidth, height / originalHeight);
+        targetWidth = Math.max(1, Math.round(originalWidth * ratio));
+        targetHeight = Math.max(1, Math.round(originalHeight * ratio));
+      } else if (width) {
+        const ratio = width / originalWidth;
+        targetWidth = width;
+        targetHeight = Math.max(1, Math.round(originalHeight * ratio));
+      } else if (height) {
+        const ratio = height / originalHeight;
+        targetHeight = height;
+        targetWidth = Math.max(1, Math.round(originalWidth * ratio));
+      }
+
+      if (targetWidth !== originalWidth || targetHeight !== originalHeight) {
+        image.resize(targetWidth, targetHeight);
+      }
+
+      await image.writeAsync(outputPath);
 
       return {
         success: true,

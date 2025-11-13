@@ -51,7 +51,7 @@ POST /file-conversion/tools/call    # Execute a conversion tool
 
 All required packages (23 packages total):
 - ✅ pdf-lib (^1.17.1)
-- ✅ sharp (^0.34.4)
+- ✅ jimp (^0.22.12)
 - ✅ mammoth (^1.11.0)
 - ✅ marked (^16.4.1)
 - ✅ playwright (^1.55.1) - already installed
@@ -177,8 +177,8 @@ curl -X POST http://localhost:8080/file-conversion/tools/call \
     "tool": "image_convert",
     "arguments": {
       "inputPath": "/path/to/image.jpg",
-      "outputPath": "/path/to/image.webp",
-      "format": "webp",
+      "outputPath": "/path/to/image.png",
+      "format": "png",
       "quality": 85
     }
   }'

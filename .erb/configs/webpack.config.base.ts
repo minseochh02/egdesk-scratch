@@ -15,13 +15,6 @@ const configuration: webpack.Configuration = {
     'playwright-core',
     'lighthouse',
     'playwright-lighthouse',
-    // Explicitly exclude sharp and its platform-specific packages
-    'sharp',
-    '@img/sharp-darwin-arm64',
-    '@img/sharp-darwin-x64',
-    '@img/sharp-linux-x64',
-    '@img/sharp-win32-x64',
-    '@img/sharp-win32-ia32',
   ],
 
   stats: 'errors-only',

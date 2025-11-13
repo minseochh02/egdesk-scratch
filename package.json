@@ -147,18 +147,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.3.0",
-    "sharp": "^0.34.4",
+    "jimp": "^0.22.12",
     "sudo-prompt": "^9.2.1",
     "uuid": "^13.0.0",
     "ws": "^8.18.3",
     "xlsx": "^0.18.5"
-  },
-  "optionalDependencies": {
-    "@img/sharp-darwin-arm64": "^0.34.4",
-    "@img/sharp-darwin-x64": "^0.34.4",
-    "@img/sharp-linux-x64": "^0.34.4",
-    "@img/sharp-win32-x64": "^0.34.4",
-    "@img/sharp-win32-ia32": "^0.34.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
@@ -245,9 +238,7 @@
       "scripts/**",
       "**\\*.{node,dll,js}",
       "node_modules/@google/genai/**",
-      "node_modules/mime-types/**",
-      "node_modules/sharp/**",
-      "node_modules/@img/**"
+      "node_modules/mime-types/**"
     ],
     "files": [
       "dist",
