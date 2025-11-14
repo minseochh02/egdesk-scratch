@@ -135,6 +135,103 @@
   box-shadow: none;
 }
 
+.egbusiness-identity__control--standalone {
+  margin-top: 18px;
+}
+
+.egbusiness-identity__profile-section {
+  margin-top: 32px;
+}
+
+.egbusiness-identity__profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.egbusiness-identity__profile-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #f8fafc;
+}
+
+.egbusiness-identity__profile-root {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.egbusiness-identity__profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.egbusiness-identity__profile-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.egbusiness-identity__profile-card:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.egbusiness-identity__profile-card:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.8);
+  box-shadow: 0 12px 24px rgba(96, 165, 250, 0.2);
+}
+
+.egbusiness-identity__profile-card.is-selected {
+  border-color: rgba(129, 140, 248, 0.9);
+  box-shadow: 0 16px 28px rgba(129, 140, 248, 0.28);
+}
+
+.egbusiness-identity__profile-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.egbusiness-identity__profile-path {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.9);
+  word-break: break-all;
+}
+
+.egbusiness-identity__profile-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(129, 140, 248, 0.2);
+  color: #c7d2fe;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.egbusiness-identity__selected-profile {
+  margin-top: 18px;
+  font-size: 12px;
+  color: rgba(191, 219, 254, 0.9);
+  word-break: break-all;
+}
+
 .egbusiness-identity__hint {
   margin: 0;
   font-size: 13px;

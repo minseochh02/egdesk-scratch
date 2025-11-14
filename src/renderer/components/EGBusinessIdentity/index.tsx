@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faExternalLinkAlt, faGlobe, faMagic } from '../../utils/fontAwesomeIcons';
+import { faExternalLinkAlt, faGlobe, faMagic, faSync } from '../../utils/fontAwesomeIcons';
 import { useNavigate } from 'react-router-dom';
 import { chatWithGemma } from '../../lib/gemmaClient';
 import './EGBusinessIdentity.css';
@@ -43,8 +43,85 @@ const EGBusinessIdentity: React.FC = () => {
   const navigate = useNavigate();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [openingTwitter, setOpeningTwitter] = useState(false);
+  const [profileRoot, setProfileRoot] = useState('');
+  const [profiles, setProfiles] = useState<
+    Array<{ name: string; directoryName: string; path: string }>
+  >([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [selectedProfileDir, setSelectedProfileDir] = useState('');
+  const [selectedProfilePath, setSelectedProfilePath] = useState('');
+  const [instagramUrl, setInstagramUrl] = useState('https://www.instagram.com/');
+  const [instagramUsername, setInstagramUsername] = useState('');
+  const [instagramPassword, setInstagramPassword] = useState('');
+  const [openingInstagram, setOpeningInstagram] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const fetchProfiles = useCallback(async () => {
+    if (!window.electron?.debug?.listChromeProfiles) {
+      setProfilesError('Chrome 프로필 목록을 불러올 수 없습니다. 앱을 다시 빌드해주세요.');
+      setProfiles([]);
+      return;
+    }
+
+    setProfilesLoading(true);
+    setProfilesError(null);
+
+    try {
+      const result = await window.electron.debug.listChromeProfiles();
+
+      if (!result?.success) {
+        setProfiles([]);
+        setProfileRoot(result?.root || '');
+        setProfilesError(result?.error || 'Chrome 프로필 목록을 불러오지 못했습니다.');
+        return;
+      }
+
+      const profileList = Array.isArray(result.profiles) ? result.profiles : [];
+      setProfileRoot(result.root || '');
+      setProfiles(profileList);
+      setSelectedProfileDir((prev) => {
+        if (prev && profileList.some((profile) => profile.directoryName === prev)) {
+          return prev;
+        }
+        return profileList[0]?.directoryName || '';
+      });
+    } catch (err) {
+      setProfiles([]);
+      setProfileRoot('');
+      setProfilesError(
+        err instanceof Error
+          ? err.message || 'Chrome 프로필 목록을 불러오지 못했습니다.'
+          : 'Chrome 프로필 목록을 불러오지 못했습니다.',
+      );
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProfiles();
+  }, [fetchProfiles]);
+
+  useEffect(() => {
+    if (!profiles || profiles.length === 0) {
+      if (selectedProfileDir !== '') {
+        setSelectedProfileDir('');
+      }
+      setSelectedProfilePath('');
+      return;
+    }
+
+    if (!profiles.some((profile) => profile.directoryName === selectedProfileDir)) {
+      const first = profiles[0];
+      setSelectedProfileDir(first?.directoryName || '');
+      setSelectedProfilePath(first?.path || '');
+      return;
+    }
+
+    const matched = profiles.find((profile) => profile.directoryName === selectedProfileDir);
+    setSelectedProfilePath(matched?.path || '');
+  }, [profiles, selectedProfileDir]);
 
   const handleGenerate = useCallback(async () => {
     const trimmed = url.trim();
@@ -128,31 +205,54 @@ const EGBusinessIdentity: React.FC = () => {
     }
   }, [navigate, url]);
 
-  const handleOpenTwitter = useCallback(async () => {
-    const profilePath = '/Users/minseocha/Library/Application Support/Google/Chrome/Default';
+  const handleOpenInstagram = useCallback(async () => {
+    const trimmedProfilePath = selectedProfilePath.trim();
+    if (!trimmedProfilePath || !selectedProfileDir) {
+      setError('Chrome 프로필을 먼저 선택해주세요.');
+      return;
+    }
+
+    const cleanedUrl = (() => {
+      const value = (instagramUrl || '').trim();
+      if (!value) {
+        return 'https://www.instagram.com/';
+      }
+      if (/^https?:\/\//i.test(value)) {
+        return value;
+      }
+      return `https://${value}`;
+    })();
+
     try {
       setError(null);
-      setOpeningTwitter(true);
+      setOpeningInstagram(true);
 
-      if (!window.electron?.debug?.openTwitterWithProfile) {
-        setError('Twitter 자동화를 사용할 수 없습니다. 앱을 다시 빌드해주세요.');
+      if (!window.electron?.debug?.openInstagramWithProfile) {
+        setError('Instagram 자동화를 사용할 수 없습니다. 앱을 다시 빌드해주세요.');
         return;
       }
 
-      const result = await window.electron.debug.openTwitterWithProfile(profilePath);
+      const result = await window.electron.debug.openInstagramWithProfile({
+        profilePath: selectedProfilePath,
+        profileDirectory: selectedProfileDir,
+        profileRoot: profileRoot || undefined,
+        targetUrl: cleanedUrl,
+        username: instagramUsername.trim() || undefined,
+        password: instagramPassword || undefined,
+      });
       if (!result?.success) {
-        setError(result?.error || 'Twitter를 여는 데 실패했습니다.');
+        setError(result?.error || 'Instagram을 여는 데 실패했습니다.');
       }
     } catch (err) {
       setError(
         err instanceof Error
-          ? err.message || 'Twitter를 여는 중 문제가 발생했습니다.'
-          : 'Twitter를 여는 중 문제가 발생했습니다.',
+          ? err.message || 'Instagram을 여는 중 문제가 발생했습니다.'
+          : 'Instagram을 여는 중 문제가 발생했습니다.',
       );
     } finally {
-      setOpeningTwitter(false);
+      setOpeningInstagram(false);
     }
-  }, []);
+  }, [instagramPassword, instagramUrl, instagramUsername, profileRoot, selectedProfileDir, selectedProfilePath]);
 
   return (
     <div className="egbusiness-identity demo">
@@ -213,14 +313,138 @@ const EGBusinessIdentity: React.FC = () => {
             </p>
           )}
         </div>
-        <div className="egbusiness-identity__control">
+        <div className="egbusiness-identity__profile-section">
+          <div className="egbusiness-identity__profile-header">
+            <div>
+              <h3>Choose a Chrome profile</h3>
+              {profileRoot && (
+                <p className="egbusiness-identity__hint egbusiness-identity__profile-root">
+                  Searching in {profileRoot}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={fetchProfiles}
+              disabled={profilesLoading || openingInstagram}
+            >
+              <FontAwesomeIcon icon={faSync} />
+              {profilesLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+
+          {profilesError && (
+            <p className="egbusiness-identity__error">{profilesError}</p>
+          )}
+
+          {profilesLoading && !profilesError && (
+            <p className="egbusiness-identity__status">
+              Chrome 프로필을 불러오고 있습니다…
+            </p>
+          )}
+
+          {!profilesLoading && !profilesError && profiles.length === 0 && (
+            <p className="egbusiness-identity__hint">
+              Chrome 프로필을 찾을 수 없습니다. Chrome이 설치되어 있고 최소 한 번 이상 실행되었는지 확인해주세요.
+            </p>
+          )}
+
+          {!profilesLoading && !profilesError && profiles.length > 0 && (
+            <div className="egbusiness-identity__profile-grid">
+              {profiles.map((profile) => {
+                const isSelected = selectedProfileDir === profile.directoryName;
+                return (
+                  <button
+                    type="button"
+                    key={profile.path}
+                    className={`egbusiness-identity__profile-card${
+                      isSelected ? ' is-selected' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedProfileDir(profile.directoryName);
+                      setSelectedProfilePath(profile.path);
+                    }}
+                    disabled={openingInstagram}
+                  >
+                    <span className="egbusiness-identity__profile-name">
+                      {profile.name}
+                    </span>
+                    <span className="egbusiness-identity__profile-path">
+                      {profile.path}
+                    </span>
+                    {isSelected && (
+                      <span className="egbusiness-identity__profile-badge">
+                        Selected
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedProfilePath && (
+            <p className="egbusiness-identity__status egbusiness-identity__selected-profile">
+              Selected profile path: {selectedProfilePath}
+            </p>
+          )}
+        </div>
+
+        <div className="egbusiness-identity__input-block">
+          <label htmlFor="instagram-target-url">Instagram URL</label>
+          <div className="egbusiness-identity__control">
+            <input
+              id="instagram-target-url"
+              type="url"
+              placeholder="https://www.instagram.com/"
+              value={instagramUrl}
+              onChange={(event) => setInstagramUrl(event.target.value)}
+            />
+          </div>
+          <p className="egbusiness-identity__hint">
+            Leave as default unless you need a specific Instagram route (e.g. https://www.instagram.com/explore/).
+          </p>
+        </div>
+
+        <div className="egbusiness-identity__input-block">
+          <label htmlFor="instagram-username">Instagram Username</label>
+          <div className="egbusiness-identity__control">
+            <input
+              id="instagram-username"
+              type="text"
+              placeholder="@handle or email"
+              value={instagramUsername}
+              onChange={(event) => setInstagramUsername(event.target.value)}
+              autoComplete="username"
+            />
+          </div>
+        </div>
+
+        <div className="egbusiness-identity__input-block">
+          <label htmlFor="instagram-password">Instagram Password</label>
+          <div className="egbusiness-identity__control">
+            <input
+              id="instagram-password"
+              type="password"
+              placeholder="Enter Instagram password"
+              value={instagramPassword}
+              onChange={(event) => setInstagramPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <p className="egbusiness-identity__hint">
+            Credentials stay on this device and are sent directly to the automation handler when you launch Instagram.
+          </p>
+        </div>
+
+        <div className="egbusiness-identity__control egbusiness-identity__control--standalone">
           <button
             type="button"
-            onClick={handleOpenTwitter}
-            disabled={openingTwitter}
+            onClick={handleOpenInstagram}
+            disabled={openingInstagram || !selectedProfileDir.trim()}
           >
             <FontAwesomeIcon icon={faExternalLinkAlt} />
-            {openingTwitter ? 'Opening Twitter…' : 'Open Twitter (Chrome profile)'}
+            {openingInstagram ? 'Opening Instagram…' : 'Open Instagram (Chrome profile)'}
           </button>
         </div>
       </section>
