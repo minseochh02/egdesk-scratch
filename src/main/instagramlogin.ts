@@ -2,9 +2,9 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium, Browser, BrowserContext, Page, LaunchOptions } from "playwright";
 
-import { createInstagramPost, PostOptions } from "./instagram-post";
+import { createInstagramPost, PostOptions, InstagramContentPlan } from "./instagram-post";
 
 type CloseFn = () => Promise<void>;
 
@@ -26,6 +26,7 @@ interface Credentials {
 interface PostInput {
   imagePath?: string;
   caption?: string;
+  structuredPrompt?: InstagramContentPlan;
   waitAfterShare?: number;
 }
 
@@ -36,6 +37,11 @@ interface RunOptions {
 
 const DEFAULT_LAUNCH_ARGS = ["--disable-gpu"];
 const DEFAULT_HEADLESS = true;
+const PLAYWRIGHT_CHROME_CHANNEL = process.env.PLAYWRIGHT_CHROME_CHANNEL || "chrome";
+const CHROME_EXECUTABLE_PATH =
+  typeof process.env.CHROME_EXECUTABLE_PATH === "string" && process.env.CHROME_EXECUTABLE_PATH.trim().length > 0
+    ? process.env.CHROME_EXECUTABLE_PATH.trim()
+    : undefined;
 const LOGIN_SETTLE_DELAY_MS = 1000;
 const INSTAGRAM_HOME_URL = "https://www.instagram.com/";
 
@@ -116,10 +122,14 @@ function resolvePostOptions(options: PostInput = {}): PostOptions {
     throw new Error(`Instagram image file not found at path: ${imagePath}`);
   }
 
+  const structuredPrompt =
+    coerceStructuredPrompt(options.structuredPrompt) ??
+    coerceStructuredPrompt(process.env.INSTAGRAM_STRUCTURED_PROMPT);
+
   const caption =
     options.caption ??
-    process.env.INSTAGRAM_POST_CONTENT ??
-    `[Automated] ${new Date().toISOString()}`;
+    (structuredPrompt ? undefined : process.env.INSTAGRAM_POST_CONTENT) ??
+    (structuredPrompt ? undefined : `[Automated] ${new Date().toISOString()}`);
 
   let waitAfterShare: number | undefined;
   if (typeof options.waitAfterShare === "number" && Number.isFinite(options.waitAfterShare)) {
@@ -131,11 +141,20 @@ function resolvePostOptions(options: PostInput = {}): PostOptions {
     }
   }
 
-  return {
+  const resolved: PostOptions = {
     imagePath,
-    caption,
+    ...(typeof caption === "string" ? { caption } : {}),
+    ...(structuredPrompt ? { structuredPrompt } : {}),
     ...(waitAfterShare ? { waitAfterShare } : {}),
   };
+
+  if (!resolved.caption && !resolved.structuredPrompt) {
+    throw new Error(
+      "Instagram caption is required. Provide caption, INSTAGRAM_POST_CONTENT, or structuredPrompt."
+    );
+  }
+
+  return resolved;
 }
 
 async function performPost(page: Page, options: PostInput = {}): Promise<void> {
@@ -143,15 +162,63 @@ async function performPost(page: Page, options: PostInput = {}): Promise<void> {
   await createInstagramPost(page, postOptions);
 }
 
+function coerceStructuredPrompt(
+  value?: InstagramContentPlan | string
+): InstagramContentPlan | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+
+  if (typeof value === "object") {
+    return value as InstagramContentPlan;
+  }
+
+  return undefined;
+}
+
+async function launchChromeBrowser(customOptions: LaunchOptions = {}): Promise<Browser> {
+  const launchOptions: LaunchOptions = {
+    headless: DEFAULT_HEADLESS,
+    channel: PLAYWRIGHT_CHROME_CHANNEL,
+    args: DEFAULT_LAUNCH_ARGS,
+    ...customOptions,
+  };
+
+  if (CHROME_EXECUTABLE_PATH) {
+    launchOptions.executablePath = CHROME_EXECUTABLE_PATH;
+  }
+
+  try {
+    return await chromium.launch(launchOptions);
+  } catch (error) {
+    console.error("[Instagram Login] Failed to launch system Chrome via Playwright:", error);
+    throw new Error(
+      'Unable to launch installed Chrome. Verify Chrome is installed locally or set CHROME_EXECUTABLE_PATH.'
+    );
+  }
+}
+
 async function createContext(): Promise<{
   browser: Browser;
   context: BrowserContext;
   page: Page;
 }> {
-  const browser = await chromium.launch({
-    headless: DEFAULT_HEADLESS,
-    args: DEFAULT_LAUNCH_ARGS,
-  });
+  const browser = await launchChromeBrowser();
   const context = await browser.newContext();
   const page = await context.newPage();
 

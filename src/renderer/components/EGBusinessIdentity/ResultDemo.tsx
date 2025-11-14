@@ -1,9 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMagic, faRocket } from '../../utils/fontAwesomeIcons';
+import { faArrowLeft, faCalendarAlt, faMagic, faRocket } from '../../utils/fontAwesomeIcons';
 import './EGBusinessIdentityResultDemo.css';
 import type { WebsiteContentSummary } from '../../main/preload';
+import BusinessIdentityScheduledDemo, { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
+import { buildInstagramStructuredPrompt } from './instagramPrompt';
 
 interface IdentityBlock {
   title: string;
@@ -30,6 +32,26 @@ interface IdentityInsights {
   identityBlocks: IdentityBlock[];
   actions: RecommendedAction[];
   sourceMeta?: SourceMeta;
+}
+
+interface SnsPlanEntry {
+  channel: string;
+  title: string;
+  summary: string;
+  cadence: {
+    type: 'daily' | 'weekly' | 'monthly' | 'custom' | string;
+    dayOfWeek: number | null;
+    dayOfMonth: number | null;
+    customDays: number | null;
+    time: string;
+  };
+  topics: string[];
+  assets: {
+    mediaStyle?: string;
+    copyGuidelines?: string;
+    cta?: string;
+    extraNotes?: string | null;
+  };
 }
 
 const FALLBACK_IDENTITY: IdentityInsights = {
@@ -172,6 +194,9 @@ function buildInsightsFromIdentityData(
 const ResultDemo: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [activeTab, setActiveTab] = useState<'identity' | 'scheduled'>('identity');
+  const [instagramUsername, setInstagramUsername] = useState('');
+  const [instagramPassword, setInstagramPassword] = useState('');
   const source = useMemo<WebsiteContentSummary | undefined>(() => {
     const maybeState = location.state as { source?: WebsiteContentSummary } | undefined;
     if (maybeState && maybeState.source && typeof maybeState.source === 'object') {
@@ -180,11 +205,16 @@ const ResultDemo: React.FC = () => {
     return undefined;
   }, [location.state]);
 
-  const { identityData, rawAiResponse } = useMemo<{
+  const { identityData, rawAiResponse, snsPlan } = useMemo<{
     identityData?: IdentityData;
     rawAiResponse?: string;
+    snsPlan?: SnsPlanEntry[];
   }>(() => {
-    const maybeState = location.state as { identityData?: IdentityData; rawAiResponse?: string } | undefined;
+    const maybeState = location.state as {
+      identityData?: IdentityData;
+      rawAiResponse?: string;
+      snsPlan?: SnsPlanEntry[];
+    } | undefined;
     if (!maybeState) {
       return {};
     }
@@ -193,7 +223,9 @@ const ResultDemo: React.FC = () => {
         ? maybeState.identityData
         : undefined;
     const raw = typeof maybeState.rawAiResponse === 'string' ? maybeState.rawAiResponse : undefined;
-    return { identityData: parsedIdentity, rawAiResponse: raw };
+    const plan =
+      Array.isArray(maybeState.snsPlan) && maybeState.snsPlan.length > 0 ? maybeState.snsPlan : undefined;
+    return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan };
   }, [location.state]);
 
   const displayMode = useMemo<'ai' | 'demo'>(() => {
@@ -210,6 +242,41 @@ const ResultDemo: React.FC = () => {
     }
     return buildInsightsFromSource(source);
   }, [identityData, source]);
+
+  const handleTestScheduledPost = useCallback(
+    async (task: BusinessIdentityScheduledTask) => {
+      if (task.channel !== 'Instagram') {
+        window.alert('Test posts currently support Instagram channel tasks.');
+        return;
+      }
+      if (!instagramUsername.trim() || !instagramPassword.trim()) {
+        window.alert('Instagram username and password are required.');
+        return;
+      }
+      if (!window.electron?.debug?.openInstagramWithProfile) {
+        window.alert('Instagram automation bridge is unavailable in this build.');
+        return;
+      }
+      try {
+        const structuredPrompt = buildInstagramStructuredPrompt(task, identityData);
+        const result = await window.electron.debug.openInstagramWithProfile({
+          username: instagramUsername.trim(),
+          password: instagramPassword,
+          structuredPrompt,
+        });
+        if (!result?.success) {
+          window.alert(result?.error || 'Instagram test post failed. Check automation logs.');
+          return;
+        }
+        window.alert('Instagram automation launched. Check the Playwright window to review the draft.');
+      } catch (err) {
+        window.alert(
+          err instanceof Error ? err.message || 'Instagram test post failed.' : 'Instagram test post failed.'
+        );
+      }
+    },
+    [identityData, instagramPassword, instagramUsername]
+  );
 
   return (
     <div className="egbusiness-identity-result">
@@ -249,116 +316,222 @@ const ResultDemo: React.FC = () => {
           </span>
         </div>
       </header>
+      <div className="egbusiness-identity-result__tabs">
+        <button
+          type="button"
+          className={`egbusiness-identity-result__tab${activeTab === 'identity' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('identity')}
+        >
+          Identity Preview
+        </button>
+        <button
+          type="button"
+          className={`egbusiness-identity-result__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('scheduled')}
+        >
+          Scheduled Posts
+        </button>
+      </div>
 
-      {insights.sourceMeta && (
-        <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--meta">
-          <div className="egbusiness-identity-result__panel-header">
-            <span className="egbusiness-identity-result__icon">
-              <FontAwesomeIcon icon={faMagic} />
-            </span>
-            <div>
-              <h2>Source snapshot</h2>
-              <p>The text below is what the AI will use as grounding context.</p>
-            </div>
-          </div>
-          <div className="egbusiness-identity-result__meta-grid">
-            <div>
-              <strong>Title</strong>
-              <p>{insights.sourceMeta.title}</p>
-            </div>
-            <div>
-              <strong>Status</strong>
-              <p>{insights.sourceMeta.status}</p>
-            </div>
-            <div>
-              <strong>Language</strong>
-              <p>{insights.sourceMeta.language || 'unknown'}</p>
-            </div>
-            <div>
-              <strong>Word count</strong>
-              <p>{insights.sourceMeta.wordCount.toLocaleString()}</p>
-            </div>
-            <div>
-              <strong>Top keywords</strong>
-              <p>
-                {insights.sourceMeta.keywords.length > 0
-                  ? insights.sourceMeta.keywords.join(', ')
-                  : 'Pending AI classification'}
-              </p>
-            </div>
-            {insights.sourceMeta.description && (
-              <div className="egbusiness-identity-result__meta-span">
-                <strong>Meta description</strong>
-                <p>{insights.sourceMeta.description}</p>
+      {activeTab === 'identity' ? (
+        <>
+          {insights.sourceMeta && (
+            <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--meta">
+              <div className="egbusiness-identity-result__panel-header">
+                <span className="egbusiness-identity-result__icon">
+                  <FontAwesomeIcon icon={faMagic} />
+                </span>
+                <div>
+                  <h2>Source snapshot</h2>
+                  <p>The text below is what the AI will use as grounding context.</p>
+                </div>
               </div>
-            )}
-          </div>
-          {insights.sourceMeta.preview && (
-            <div className="egbusiness-identity-result__meta-preview">
-              <strong>Page excerpt</strong>
-              <p>{insights.sourceMeta.preview}</p>
-            </div>
+              <div className="egbusiness-identity-result__meta-grid">
+                <div>
+                  <strong>Title</strong>
+                  <p>{insights.sourceMeta.title}</p>
+                </div>
+                <div>
+                  <strong>Status</strong>
+                  <p>{insights.sourceMeta.status}</p>
+                </div>
+                <div>
+                  <strong>Language</strong>
+                  <p>{insights.sourceMeta.language || 'unknown'}</p>
+                </div>
+                <div>
+                  <strong>Word count</strong>
+                  <p>{insights.sourceMeta.wordCount.toLocaleString()}</p>
+                </div>
+                <div>
+                  <strong>Top keywords</strong>
+                  <p>
+                    {insights.sourceMeta.keywords.length > 0
+                      ? insights.sourceMeta.keywords.join(', ')
+                      : 'Pending AI classification'}
+                  </p>
+                </div>
+                {insights.sourceMeta.description && (
+                  <div className="egbusiness-identity-result__meta-span">
+                    <strong>Meta description</strong>
+                    <p>{insights.sourceMeta.description}</p>
+                  </div>
+                )}
+              </div>
+              {insights.sourceMeta.preview && (
+                <div className="egbusiness-identity-result__meta-preview">
+                  <strong>Page excerpt</strong>
+                  <p>{insights.sourceMeta.preview}</p>
+                </div>
+              )}
+            </section>
           )}
-        </section>
-      )}
 
-      <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--summary">
-        <div className="egbusiness-identity-result__panel-header">
-          <span className="egbusiness-identity-result__icon">
-            <FontAwesomeIcon icon={faMagic} />
-          </span>
-          <div>
-            <h2>Identity Foundations</h2>
-            <p>Snapshot of what the AI extracted from your flagship page.</p>
-          </div>
-        </div>
-        <div className="egbusiness-identity-result__summary-grid">
-          {insights.identityBlocks.map((block) => (
-            <article key={block.title} className="egbusiness-identity-result__block">
-              <h3>{block.title}</h3>
-              <p>{block.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+          <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--summary">
+            <div className="egbusiness-identity-result__panel-header">
+              <span className="egbusiness-identity-result__icon">
+                <FontAwesomeIcon icon={faMagic} />
+              </span>
+              <div>
+                <h2>Identity Foundations</h2>
+                <p>Snapshot of what the AI extracted from your flagship page.</p>
+              </div>
+            </div>
+            <div className="egbusiness-identity-result__summary-grid">
+              {insights.identityBlocks.map((block) => (
+                <article key={block.title} className="egbusiness-identity-result__block">
+                  <h3>{block.title}</h3>
+                  <p>{block.description}</p>
+                </article>
+              ))}
+            </div>
+          </section>
 
-      {rawAiResponse && (
-        <section className="egbusiness-identity-result__panel">
+          {rawAiResponse && (
+            <section className="egbusiness-identity-result__panel">
+              <div className="egbusiness-identity-result__panel-header">
+                <span className="egbusiness-identity-result__icon">
+                  <FontAwesomeIcon icon={faMagic} />
+                </span>
+                <div>
+                  <h2>Debug · AI raw response</h2>
+                  <p>Inspect the exact JSON the assistant returned.</p>
+                </div>
+              </div>
+              <pre className="egbusiness-identity-result__raw">
+                {rawAiResponse}
+              </pre>
+            </section>
+          )}
+
+          <section className="egbusiness-identity-result__panel">
+            <div className="egbusiness-identity-result__panel-header">
+              <span className="egbusiness-identity-result__icon">
+                <FontAwesomeIcon icon={faRocket} />
+              </span>
+              <div>
+                <h2>Recommended actions</h2>
+                <p>Starter automations tailored to this identity. Approve to put them on your calendar.</p>
+              </div>
+            </div>
+
+            <ul className="egbusiness-identity-result__actions-list">
+              {insights.actions.map((action) => (
+                <li key={action.label}>
+                  <span className="egbusiness-identity-result__actions-list-label">{action.label}</span>
+                  <p>{action.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {snsPlan && (
+            <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--sns-plan">
+              <div className="egbusiness-identity-result__panel-header">
+                <span className="egbusiness-identity-result__icon">
+                  <FontAwesomeIcon icon={faCalendarAlt} />
+                </span>
+                <div>
+                  <h2>SNS plan</h2>
+                  <p>Channel-ready cadences generated from this identity.</p>
+                </div>
+              </div>
+              <div className="egbusiness-identity-result__sns-plan-grid">
+                {snsPlan.map((plan) => (
+                  <article key={`${plan.channel}-${plan.title}`} className="egbusiness-identity-result__sns-plan-card">
+                    <header>
+                      <span>{plan.channel}</span>
+                      <strong>{plan.title}</strong>
+                    </header>
+                    <p>{plan.summary}</p>
+                    <div className="egbusiness-identity-result__sns-plan-meta">
+                      <span>Cadence: {plan.cadence?.type || 'custom'}</span>
+                      {plan.cadence?.dayOfWeek !== null && plan.cadence?.dayOfWeek !== undefined && (
+                        <span>Day: {plan.cadence.dayOfWeek}</span>
+                      )}
+                      {plan.cadence?.time && <span>Time: {plan.cadence.time}</span>}
+                    </div>
+                    {plan.topics?.length > 0 && (
+                      <div className="egbusiness-identity-result__sns-plan-topics">
+                        {plan.topics.map((topic) => (
+                          <span key={topic}>{topic}</span>
+                        ))}
+                      </div>
+                    )}
+                    {plan.assets?.cta && (
+                      <div className="egbusiness-identity-result__sns-plan-assets">
+                        <strong>CTA</strong>
+                        <p>{plan.assets.cta}</p>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
+      ) : (
+        <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--scheduled">
           <div className="egbusiness-identity-result__panel-header">
             <span className="egbusiness-identity-result__icon">
-              <FontAwesomeIcon icon={faMagic} />
+              <FontAwesomeIcon icon={faCalendarAlt} />
             </span>
             <div>
-              <h2>Debug · AI raw response</h2>
-              <p>Inspect the exact JSON the assistant returned.</p>
+              <h2>Scheduled Identity Deliverables</h2>
+              <p>Review cadence ideas and prototype automations tied to this identity.</p>
             </div>
           </div>
-          <pre className="egbusiness-identity-result__raw">
-            {rawAiResponse}
-          </pre>
+          <p className="egbusiness-identity-result__hint">
+            These Cursor-themed demos will soon sync with the SNS plan cards above so you can approve, edit, and
+            publish in one view.
+          </p>
+          <div className="egbusiness-identity__credentials">
+            <div>
+              <label htmlFor="result-instagram-username">Instagram Username</label>
+              <input
+                id="result-instagram-username"
+                type="text"
+                autoComplete="username"
+                placeholder="username"
+                value={instagramUsername}
+                onChange={(event) => setInstagramUsername(event.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="result-instagram-password">Instagram Password</label>
+              <input
+                id="result-instagram-password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="password"
+                value={instagramPassword}
+                onChange={(event) => setInstagramPassword(event.target.value)}
+              />
+            </div>
+          </div>
+          <BusinessIdentityScheduledDemo onTestPost={handleTestScheduledPost} />
         </section>
       )}
-
-      <section className="egbusiness-identity-result__panel">
-        <div className="egbusiness-identity-result__panel-header">
-          <span className="egbusiness-identity-result__icon">
-            <FontAwesomeIcon icon={faRocket} />
-          </span>
-          <div>
-            <h2>Recommended actions</h2>
-            <p>Starter automations tailored to this identity. Approve to put them on your calendar.</p>
-          </div>
-        </div>
-
-        <ul className="egbusiness-identity-result__actions-list">
-          {insights.actions.map((action) => (
-            <li key={action.label}>
-              <span className="egbusiness-identity-result__actions-list-label">{action.label}</span>
-              <p>{action.detail}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
     </div>
   );
 };

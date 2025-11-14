@@ -5,6 +5,11 @@ import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
 import { WordPressDatabaseManager } from './wordpress';
 import { SQLiteScheduledPostsManager } from './scheduled-posts';
+import {
+  SQLiteBusinessIdentityManager,
+  CreateBusinessIdentitySnapshot,
+  CreateBusinessIdentitySnsPlan,
+} from './business-identity';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
 import { restartScheduledPostsExecutor } from '../scheduler/executor-instance';
@@ -32,6 +37,7 @@ export class SQLiteManager {
   private taskManager: SQLiteTaskManager | null = null;
   private wordpressManager: WordPressDatabaseManager | null = null;
   private scheduledPostsManager: SQLiteScheduledPostsManager | null = null;
+  private businessIdentityManager: SQLiteBusinessIdentityManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -66,6 +72,7 @@ export class SQLiteManager {
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
+      this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -162,6 +169,8 @@ export class SQLiteManager {
       this.initializationError = null;
       this.taskManager = null;
       this.wordpressManager = null;
+      this.scheduledPostsManager = null;
+      this.businessIdentityManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
     } catch (error) {
@@ -203,6 +212,14 @@ export class SQLiteManager {
   public getWordPressDatabase(): Database.Database {
     this.ensureInitialized();
     return this.wordpressDb!;
+  }
+
+  public getBusinessIdentityManager(): SQLiteBusinessIdentityManager {
+    this.ensureInitialized();
+    if (!this.businessIdentityManager) {
+      this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb!);
+    }
+    return this.businessIdentityManager;
   }
 
   /**
@@ -464,6 +481,7 @@ export class SQLiteManager {
     this.registerTaskHandlers();
     this.registerWordPressHandlers();
     this.registerScheduledPostsHandlers();
+    this.registerBusinessIdentityHandlers();
   }
 
   /**
@@ -1153,6 +1171,86 @@ export class SQLiteManager {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register business identity handlers
+   */
+  private registerBusinessIdentityHandlers(): void {
+    ipcMain.handle('sqlite-business-identity-create-snapshot', async (event, data: CreateBusinessIdentitySnapshot) => {
+      try {
+        const snapshot = this.getBusinessIdentityManager().createSnapshot(data);
+        return { success: true, data: snapshot };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-business-identity-get-snapshot', async (event, id: string) => {
+      try {
+        const snapshot = this.getBusinessIdentityManager().getSnapshot(id);
+        return { success: true, data: snapshot };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-business-identity-list-snapshots', async (event, brandKey: string) => {
+      try {
+        const snapshots = this.getBusinessIdentityManager().listSnapshots(brandKey);
+        return { success: true, data: snapshots };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle(
+      'sqlite-business-identity-save-sns-plans',
+      async (
+        event,
+        payload: {
+          snapshotId: string;
+          plans: CreateBusinessIdentitySnsPlan[];
+        }
+      ) => {
+        try {
+          if (!payload?.snapshotId || !Array.isArray(payload.plans)) {
+            throw new Error('Invalid SNS plan payload.');
+          }
+          const saved = this.getBusinessIdentityManager().replacePlans(payload.snapshotId, payload.plans);
+          return { success: true, data: saved };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      }
+    );
+
+    ipcMain.handle('sqlite-business-identity-list-sns-plans', async (event, snapshotId: string) => {
+      try {
+        if (!snapshotId) {
+          throw new Error('Snapshot ID is required to list SNS plans.');
+        }
+        const plans = this.getBusinessIdentityManager().listPlans(snapshotId);
+        return { success: true, data: plans };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
         };
       }
     });

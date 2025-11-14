@@ -22,6 +22,33 @@ import { NaverHandler } from './naver/naver-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
+function ensureGeminiApiKey(): string | null {
+  const existing = process.env.GEMINI_API_KEY;
+  if (typeof existing === 'string' && existing.trim().length > 0) {
+    return existing.trim();
+  }
+
+  try {
+    const store = getStore?.();
+    const aiKeys = store ? store.get('ai-keys', []) : [];
+    if (Array.isArray(aiKeys)) {
+      const preferred =
+        aiKeys.find((k: any) => (k?.name || '').toLowerCase() === 'egdesk' && k?.providerId === 'google') ??
+        aiKeys.find((k: any) => k?.providerId === 'google' && k?.isActive) ??
+        aiKeys.find((k: any) => k?.providerId === 'google');
+
+      const apiKey = preferred?.fields?.apiKey;
+      if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+        process.env.GEMINI_API_KEY = apiKey.trim();
+        return process.env.GEMINI_API_KEY;
+      }
+    }
+  } catch (error) {
+    console.warn('[Instagram Launcher] Failed to resolve Gemini API key from store:', error);
+  }
+
+  return null;
+}
 import { getSQLiteManager } from './sqlite/manager';
 import { aiChatDataService } from './ai-code/ai-chat-data-service';
 import { registerFileSystemHandlers } from './fs';
@@ -1558,7 +1585,7 @@ const createWindow = async () => {
         }
       });
 
-      ipcMain.handle('open-instagram-with-profile', async (_event, opts?: { profilePath?: string; profileDirectory?: string; profileRoot?: string; targetUrl?: string; username?: string; password?: string; imagePath?: string; caption?: string; waitAfterShare?: number }) => {
+      ipcMain.handle('open-instagram-with-profile', async (_event, opts?: { profilePath?: string; profileDirectory?: string; profileRoot?: string; targetUrl?: string; username?: string; password?: string; imagePath?: string; caption?: string; waitAfterShare?: number; structuredPrompt?: any }) => {
         const profilePath = opts?.profilePath;
         const profileDirectory = opts?.profileDirectory;
         const profileRoot = opts?.profileRoot;
@@ -1579,11 +1606,15 @@ const createWindow = async () => {
           }
           return undefined;
         })();
+        const structuredPrompt = opts?.structuredPrompt;
         const caption =
           typeof opts?.caption === 'string' && opts.caption.trim().length > 0
             ? opts.caption.trim()
-            : `[Automated Test] ${new Date().toISOString()}`;
+            : structuredPrompt
+              ? undefined
+              : `[Automated Test] ${new Date().toISOString()}`;
         const shouldAttemptPost = Boolean(resolvedImagePath);
+        const needsGemini = Boolean(!caption && structuredPrompt);
         const loginOptions = hasCredentials
           ? { username: username as string, password: password as string }
           : undefined;
@@ -1616,7 +1647,7 @@ const createWindow = async () => {
             }
       
             try {
-              const authSession = await getAuthenticatedPage();
+              const authSession = await getAuthenticatedPage(loginOptions);
               const { page } = authSession;
               await waitForPageReady(page, 3000);
       
@@ -1649,11 +1680,20 @@ const createWindow = async () => {
                 };
               }
 
+              if (needsGemini && !ensureGeminiApiKey()) {
+                await authSession.close();
+                return {
+                  success: false,
+                  error: 'Gemini API key not configured. Add a Google key in settings or set GEMINI_API_KEY.',
+                };
+              }
+
               if (shouldAttemptPost && resolvedImagePath) {
                 try {
                   await createInstagramPost(page, {
                     imagePath: resolvedImagePath,
                     caption,
+                    structuredPrompt,
                     waitAfterShare: opts?.waitAfterShare,
                   });
                 } catch (postError) {
@@ -1788,11 +1828,20 @@ const createWindow = async () => {
             };
           }
 
+          if (needsGemini && !ensureGeminiApiKey()) {
+            await browser.close();
+            return {
+              success: false,
+              error: 'Gemini API key not configured. Add a Google key in settings or set GEMINI_API_KEY.',
+            };
+          }
+
           if (shouldAttemptPost && resolvedImagePath) {
             try {
               await createInstagramPost(page, {
                 imagePath: resolvedImagePath,
                 caption,
+                structuredPrompt,
                 waitAfterShare: opts?.waitAfterShare,
               });
             } catch (postError) {
