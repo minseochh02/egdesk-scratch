@@ -374,10 +374,33 @@ export interface IElectronAPI {
       openDevTools?: boolean,
       runLighthouse?: boolean,
     ): Promise<{ success: boolean; error?: string }>;
-    openTwitterWithProfile(
-      profilePath: string,
-      targetUrl?: string,
-    ): Promise<{ success: boolean; error?: string }>;
+    openInstagramWithProfile(options: {
+      profilePath: string;
+      profileDirectory?: string;
+      profileRoot?: string;
+      targetUrl?: string;
+      username?: string;
+      password?: string;
+      imagePath?: string;
+      caption?: string;
+      waitAfterShare?: number;
+    }): Promise<{ success: boolean; error?: string }>;
+    pickChromeProfileFolder(): Promise<{
+      success: boolean;
+      path?: string;
+      canceled?: boolean;
+      error?: string;
+    }>;
+    listChromeProfiles(): Promise<{
+      success: boolean;
+      root?: string;
+      profiles?: Array<{
+        name: string;
+        directoryName: string;
+        path: string;
+      }>;
+      error?: string;
+    }>;
     crawlWebsite(
       url: string,
       proxy?: string,

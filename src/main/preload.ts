@@ -1349,7 +1349,19 @@ const electronHandler = {
     startNaverBlogWithImage: (id?: string, password?: string, proxy?: string, title?: string, content?: string, tags?: string, includeDogImage?: boolean, dogImagePrompt?: string) => ipcRenderer.invoke('start-naver-blog-with-image', { id, password, proxy, title, content, tags, includeDogImage, dogImagePrompt }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
-    openTwitterWithProfile: (profilePath: string, targetUrl?: string) => ipcRenderer.invoke('open-twitter-with-profile', { profilePath, targetUrl }),
+    openInstagramWithProfile: (options: {
+      profilePath: string;
+      profileDirectory?: string;
+      profileRoot?: string;
+      targetUrl?: string;
+      username?: string;
+      password?: string;
+      imagePath?: string;
+      caption?: string;
+      waitAfterShare?: number;
+    }) => ipcRenderer.invoke('open-instagram-with-profile', options),
+    pickChromeProfileFolder: () => ipcRenderer.invoke('pick-chrome-profile-folder'),
+    listChromeProfiles: () => ipcRenderer.invoke('list-chrome-profiles'),
     crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),
     generateLighthouseReports: (urls: string[], proxy?: string) => ipcRenderer.invoke('generate-lighthouse-reports', { urls, proxy }),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),

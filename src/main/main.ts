@@ -8,11 +8,10 @@
  * When running `npm run build` or `npm run build:main`, this file is compiled to
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
-import dotenv from 'dotenv';
-dotenv.config();
-
+import fs from 'fs';
 import path from 'path';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import dotenv from 'dotenv';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -53,11 +52,44 @@ import { getAuthService } from './auth/auth-service';
 import { ollamaManager } from './ollama/installer';
 import { registerOllamaHandlers } from './ollama/ollama-handlers';
 import { fetchWebsiteContent } from './web/content-fetcher';
+import { AuthContext, login as playwrightInstagramLogin, getAuthenticatedPage, loginWithPage } from './instagramlogin';
+import { createInstagramPost } from './instagram-post';
+
+const envCandidates = new Set<string>();
+
+if (app.isPackaged) {
+  envCandidates.add(path.join(process.resourcesPath, '.env'));
+} else {
+  envCandidates.add(path.resolve(__dirname, '../../.env'));
+}
+
+envCandidates.add(path.resolve(process.cwd(), '.env'));
+
+let envLoaded = false;
+for (const candidate of envCandidates) {
+  try {
+    if (fs.existsSync(candidate)) {
+      const result = dotenv.config({ path: candidate });
+      if (!result.error) {
+        envLoaded = true;
+        break;
+      }
+    }
+  } catch (error) {
+    log.warn(`Failed to read environment file at ${candidate}:`, error);
+  }
+}
+
+if (!envLoaded) {
+  dotenv.config();
+}
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
 // Tunnel functionality removed
+
+const activeInstagramSessions: AuthContext[] = [];
 
 /**
  * Generate a random MCP server name
@@ -80,6 +112,47 @@ class AppUpdater {
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
 let scheduledPostsExecutor: ScheduledPostsExecutor;
+
+const getDefaultChromeProfileRoot = (): string | undefined => {
+  const homeDir = app.getPath('home');
+
+  if (process.platform === 'darwin') {
+    return path.join(
+      homeDir,
+      'Library',
+      'Application Support',
+      'Google',
+      'Chrome',
+    );
+  }
+
+  if (process.platform === 'win32') {
+    const localAppData =
+      process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+    return path.join(localAppData, 'Google', 'Chrome', 'User Data');
+  }
+
+  if (process.platform === 'linux') {
+    return path.join(homeDir, '.config', 'google-chrome');
+  }
+
+  return undefined;
+};
+
+async function waitForPageReady(page: any, maxWaitMs = 5000): Promise<void> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const url = page.url();
+      if (url && url !== 'about:blank' && url !== '') {
+        return;
+      }
+    } catch (error) {
+      // Page might not be ready yet
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
 
 
 if (process.env.NODE_ENV === 'production') {
@@ -1485,45 +1558,37 @@ const createWindow = async () => {
         }
       });
 
-      ipcMain.handle('open-twitter-with-profile', async (_event, opts?: { profilePath?: string; targetUrl?: string }) => {
+      ipcMain.handle('open-instagram-with-profile', async (_event, opts?: { profilePath?: string; profileDirectory?: string; profileRoot?: string; targetUrl?: string; username?: string; password?: string; imagePath?: string; caption?: string; waitAfterShare?: number }) => {
         const profilePath = opts?.profilePath;
-        const targetUrl = opts?.targetUrl || 'https://twitter.com/home';
-
+        const profileDirectory = opts?.profileDirectory;
+        const profileRoot = opts?.profileRoot;
+        const targetUrl = opts?.targetUrl || 'https://www.instagram.com/';
+        const username = typeof opts?.username === 'string' ? opts.username.trim() || undefined : undefined;
+        const password = typeof opts?.password === 'string' ? opts.password : undefined;
+        const hasCredentials = Boolean(username && password);
+        const profilePathProvided =
+          typeof profilePath === 'string' && profilePath.trim().length > 0;
+        const resolvedImagePath = (() => {
+          if (typeof opts?.imagePath === 'string' && opts.imagePath.trim().length > 0) {
+            return path.resolve(opts.imagePath.trim());
+          }
+          const defaultCatPath = path.join(app.getPath('home'), 'Downloads', 'cat.png');
+          if (fs.existsSync(defaultCatPath)) {
+            console.log('[Instagram Launcher] Using default image path:', defaultCatPath);
+            return defaultCatPath;
+          }
+          return undefined;
+        })();
+        const caption =
+          typeof opts?.caption === 'string' && opts.caption.trim().length > 0
+            ? opts.caption.trim()
+            : `[Automated Test] ${new Date().toISOString()}`;
+        const shouldAttemptPost = Boolean(resolvedImagePath);
+        const loginOptions = hasCredentials
+          ? { username: username as string, password: password as string }
+          : undefined;
+      
         try {
-          if (!profilePath || typeof profilePath !== 'string' || !profilePath.trim()) {
-            return {
-              success: false,
-              error: 'A valid Chrome profile path is required.',
-            };
-          }
-
-          const resolvedProfilePath = path.resolve(profilePath);
-          const fs = require('fs');
-
-          if (!fs.existsSync(resolvedProfilePath)) {
-            return {
-              success: false,
-              error: `Profile path does not exist: ${resolvedProfilePath}`,
-            };
-          }
-
-          const { chromium } = require('playwright');
-          console.log(`[Twitter Launcher] Opening Twitter with profile: ${resolvedProfilePath}`);
-
-          const context = await chromium.launchPersistentContext(resolvedProfilePath, {
-            headless: false,
-            channel: 'chrome',
-            args: [
-              '--lang=en-US',
-              '--disable-breakpad',
-              '--disable-dev-shm-usage',
-              '--start-maximized',
-            ],
-          });
-
-          const existingPages = context.pages();
-          const page = existingPages.length > 0 ? existingPages[0] : await context.newPage();
-
           try {
             new URL(targetUrl);
           } catch {
@@ -1533,20 +1598,443 @@ const createWindow = async () => {
             };
           }
 
-          await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-          console.log('[Twitter Launcher] Twitter opened successfully.');
+          if (!profilePathProvided) {
+            if (loginOptions) {
+              console.log('[Instagram Launcher] Performing Playwright login with provided credentials.');
+              try {
+                await playwrightInstagramLogin(loginOptions);
+              } catch (authError) {
+                console.error('[Instagram Launcher] Playwright login failed:', authError);
+                return {
+                  success: false,
+                  error:
+                    authError instanceof Error
+                      ? authError.message || 'Instagram login failed.'
+                      : 'Instagram login failed.',
+                };
+              }
+            }
+      
+            try {
+              const authSession = await getAuthenticatedPage();
+              const { page } = authSession;
+              await waitForPageReady(page, 3000);
+      
+              try {
+                await page.goto(targetUrl, {
+                  waitUntil: 'domcontentloaded',
+                  timeout: 60000,
+                });
+              } catch (navigationError) {
+                console.error('[Instagram Launcher] Playwright navigation failed:', navigationError);
+                try {
+                  await authSession.close();
+                } catch (closeError) {
+                  console.warn('[Instagram Launcher] Failed to close Playwright session after navigation error:', closeError);
+                }
+                return {
+                  success: false,
+                  error:
+                    navigationError instanceof Error
+                      ? navigationError.message || 'Failed to navigate to Instagram.'
+                      : 'Failed to navigate to Instagram.',
+                };
+              }
+      
+              if (!resolvedImagePath) {
+                await authSession.close();
+                return {
+                  success: false,
+                  error: 'No image available for Instagram post. Provide imagePath or ensure ~/Downloads/cat.png exists.',
+                };
+              }
+
+              if (shouldAttemptPost && resolvedImagePath) {
+                try {
+                  await createInstagramPost(page, {
+                    imagePath: resolvedImagePath,
+                    caption,
+                    waitAfterShare: opts?.waitAfterShare,
+                  });
+                } catch (postError) {
+                  console.error('[Instagram Launcher] Failed to create Instagram post (Playwright session):', postError);
+                  await authSession.close();
+                  return {
+                    success: false,
+                    error:
+                      postError instanceof Error
+                        ? postError.message || 'Failed to create Instagram post.'
+                        : 'Failed to create Instagram post.',
+                  };
+                }
+              }
+
+              try {
+                await page.bringToFront();
+              } catch (bringError) {
+                console.warn('[Instagram Launcher] Failed to bring Playwright page to front:', bringError);
+              }
+      
+              activeInstagramSessions.push(authSession);
+              console.log('[Instagram Launcher] Instagram opened successfully via Playwright session.');
+              return {
+                success: true,
+                automation: 'playwright',
+              };
+            } catch (sessionError) {
+              console.error('[Instagram Launcher] Failed to open authenticated Playwright session:', sessionError);
+              return {
+                success: false,
+                error:
+                  sessionError instanceof Error
+                    ? sessionError.message || 'Failed to open authenticated Instagram session.'
+                    : 'Failed to open authenticated Instagram session.',
+              };
+            }
+          }
+      
+          if (!profilePathProvided) {
+            return {
+              success: false,
+              error: 'A valid Chrome profile path is required.',
+            };
+          }
+      
+          const resolvedProfilePath = path.resolve(profilePath);
+          const resolvedRootPath =
+            profileRoot && typeof profileRoot === 'string' && profileRoot.trim()
+              ? path.resolve(profileRoot)
+              : path.dirname(resolvedProfilePath);
+          const profileDirName =
+            (profileDirectory && profileDirectory.trim()) || path.basename(resolvedProfilePath);
+          const fs = require('fs');
+      
+          if (!fs.existsSync(resolvedRootPath)) {
+            return {
+              success: false,
+              error: `Profile root does not exist: ${resolvedRootPath}`,
+            };
+          }
+      
+          const targetProfileDirPath = path.join(resolvedRootPath, profileDirName);
+      
+          if (!fs.existsSync(targetProfileDirPath)) {
+            return {
+              success: false,
+              error: `Profile directory does not exist: ${targetProfileDirPath}`,
+            };
+          }
+      
+          const { chromium } = require('playwright');
+          console.log(
+            `[Instagram Launcher] Opening Instagram with profile: ${targetProfileDirPath} (root: ${resolvedRootPath})`,
+          );
+      
+          // Launch a non-persistent Chrome session (fresh runtime each call)
+          const browser = await chromium.launch({
+            headless: false,
+            channel: 'chrome',
+            args: [
+              `--profile-directory=${profileDirName}`,
+            ],
+            ignoreDefaultArgs: ['--enable-automation'],
+          });
+      
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          await waitForPageReady(page, 3000);
+      
+          if (loginOptions) {
+            console.log('[Instagram Launcher] Performing automated login inside Chrome session.');
+            try {
+              await loginWithPage(page, loginOptions);
+            } catch (loginError) {
+              console.error('[Instagram Launcher] Automated login failed:', loginError);
+              await browser.close();
+              return {
+                success: false,
+                error:
+                  loginError instanceof Error
+                    ? loginError.message || 'Failed to log in to Instagram.'
+                    : 'Failed to log in to Instagram.',
+              };
+            }
+          }
+      
+          console.log('[Instagram Launcher] Navigating to', targetUrl);
+      
+          try {
+            await page.goto(targetUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: 60000,
+            });
+          } catch (navigationError) {
+            console.error('[Instagram Launcher] Navigation failed:', navigationError);
+            await browser.close();
+            return {
+              success: false,
+              error:
+                navigationError instanceof Error
+                  ? navigationError.message || 'Failed to navigate to Instagram.'
+                  : 'Failed to navigate to Instagram.',
+            };
+          }
+      
+          if (!resolvedImagePath) {
+            await browser.close();
+            return {
+              success: false,
+              error: 'No image available for Instagram post. Provide imagePath or ensure ~/Downloads/cat.png exists.',
+            };
+          }
+
+          if (shouldAttemptPost && resolvedImagePath) {
+            try {
+              await createInstagramPost(page, {
+                imagePath: resolvedImagePath,
+                caption,
+                waitAfterShare: opts?.waitAfterShare,
+              });
+            } catch (postError) {
+              console.error('[Instagram Launcher] Failed to create Instagram post (Chrome session):', postError);
+              await browser.close();
+              return {
+                success: false,
+                error:
+                  postError instanceof Error
+                    ? postError.message || 'Failed to create Instagram post.'
+                    : 'Failed to create Instagram post.',
+              };
+            }
+          }
+
+          try {
+            await page.bringToFront();
+          } catch (bringError) {
+            console.warn('[Instagram Launcher] Failed to bring page to front:', bringError);
+          }
+      
+          console.log('[Instagram Launcher] Instagram opened successfully.');
+      
+          // Leave browser running so the user can interact with the window.
+      
+          return {
+            success: true,
+            automation: loginOptions ? 'chrome-automation' : 'chrome-profile',
+          };
+      
+        } catch (error) {
+          console.error('[Instagram Launcher] Unexpected error:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'An unexpected error occurred.',
+          };
+        }
+      });
+
+      ipcMain.handle('pick-chrome-profile-folder', async () => {
+        try {
+          const parentWindow = BrowserWindow.getFocusedWindow() ?? mainWindow ?? null;
+          const defaultDirectory = getDefaultChromeProfileRoot();
+
+          const dialogOptions: Electron.OpenDialogOptions = {
+            title: 'Select Chrome Profile Folder',
+            buttonLabel: 'Select Profile',
+            properties: ['openDirectory'],
+            defaultPath: defaultDirectory,
+          };
+
+          const result = parentWindow
+            ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+            : await dialog.showOpenDialog(dialogOptions);
+
+          if (result.canceled || !result.filePaths?.length) {
+            return {
+              success: false,
+              canceled: true,
+            };
+          }
 
           return {
             success: true,
+            path: result.filePaths[0],
           };
         } catch (error) {
-          console.error('[Twitter Launcher] Failed to open Twitter with profile:', error);
+          console.error('[Instagram Launcher] Failed to pick Chrome profile folder:', error);
           return {
             success: false,
             error:
               error instanceof Error
-                ? error.message || 'Failed to open Twitter.'
-                : 'Failed to open Twitter.',
+                ? error.message || 'Failed to pick Chrome profile folder.'
+                : 'Failed to pick Chrome profile folder.',
+          };
+        }
+      });
+
+      ipcMain.handle('list-chrome-profiles', async () => {
+        try {
+          const defaultDirectory = getDefaultChromeProfileRoot();
+          if (!defaultDirectory) {
+            return {
+              success: false,
+              error: 'Unsupported platform for automatic Chrome profile discovery.',
+            };
+          }
+
+          const fs = require('fs');
+          const fsPromises = require('fs/promises');
+
+          if (!fs.existsSync(defaultDirectory)) {
+            return {
+              success: true,
+              root: defaultDirectory,
+              profiles: [],
+            };
+          }
+
+          type ProfileInfo = {
+            name: string;
+            path: string;
+            directoryName: string;
+          };
+
+          let infoCache: Record<
+            string,
+            {
+              name?: string;
+            }
+          > = {};
+
+          const localStatePath = path.join(defaultDirectory, 'Local State');
+          if (fs.existsSync(localStatePath)) {
+            try {
+              const localStateRaw = await fsPromises.readFile(
+                localStatePath,
+                'utf8',
+              );
+              const localState = JSON.parse(localStateRaw);
+              if (
+                localState?.profile &&
+                typeof localState.profile === 'object' &&
+                localState.profile.info_cache &&
+                typeof localState.profile.info_cache === 'object'
+              ) {
+                infoCache = localState.profile.info_cache as Record<
+                  string,
+                  { name?: string }
+                >;
+              }
+            } catch (error) {
+              console.warn(
+                '[Instagram Launcher] Failed to parse Chrome Local State file:',
+                error,
+              );
+            }
+          }
+
+          const entries = await fsPromises.readdir(defaultDirectory);
+
+          const profileDirNames = entries.filter((name: string) => {
+            if (!name || typeof name !== 'string') {
+              return false;
+            }
+
+            const lower = name.toLowerCase();
+            if (lower === 'default') {
+              return true;
+            }
+
+            if (/^profile \d+$/i.test(name)) {
+              return true;
+            }
+
+            if (/^guest profile$/i.test(name)) {
+              return true;
+            }
+
+            if (/^system profile$/i.test(name)) {
+              return false;
+            }
+
+            if (lower.endsWith('-profile')) {
+              return true;
+            }
+
+            if (
+              infoCache[name] &&
+              typeof infoCache[name] === 'object' &&
+              infoCache[name].name
+            ) {
+              return true;
+            }
+
+            const excludedPrefixes = [
+              'crashpad',
+              'swiftshader',
+              'grshadercache',
+              'shadercache',
+              'certificate revocation',
+              'component updater',
+              'extensions',
+              'system',
+              'webstore',
+              'gpu',
+            ];
+
+            return !excludedPrefixes.some((prefix) =>
+              lower.startsWith(prefix),
+            );
+          });
+
+          const profiles: ProfileInfo[] = profileDirNames
+            .map((directoryName: string) => {
+              const profilePath = path.join(defaultDirectory, directoryName);
+              const preferencesPath = path.join(profilePath, 'Preferences');
+              if (!fs.existsSync(preferencesPath)) {
+                return null;
+              }
+
+              const displayName =
+                infoCache[directoryName]?.name?.trim() || directoryName;
+
+              return {
+                name: displayName,
+                path: profilePath,
+                directoryName,
+              };
+            })
+            .filter((profile: ProfileInfo | null) => {
+              if (!profile || !profile.path) return false;
+              try {
+                const stat = fs.lstatSync(profile.path);
+                return stat.isDirectory();
+              } catch {
+                return false;
+              }
+            })
+            .sort((a: ProfileInfo, b: ProfileInfo) =>
+              a.name.localeCompare(b.name, undefined, {
+                numeric: true,
+                sensitivity: 'base',
+              }),
+            );
+
+          return {
+            success: true,
+            root: defaultDirectory,
+            profiles,
+          };
+        } catch (error) {
+          console.error(
+            '[Instagram Launcher] Failed to list Chrome profiles:',
+            error,
+          );
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to list Chrome profiles.'
+                : 'Failed to list Chrome profiles.',
           };
         }
       });
@@ -2471,7 +2959,8 @@ const createWindow = async () => {
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {
-      throw new Error('"mainWindow" is not defined');
+      console.error('Main window was not available during ready-to-show');
+      return;
     }
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize();
@@ -2511,6 +3000,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  const store = getStore();
   // Cleanup tunnels and clear stored config
   try {
     stopAllTunnels();
@@ -2547,6 +3037,18 @@ app.on('before-quit', async () => {
   // Cleanup scheduled posts executor
   if (scheduledPostsExecutor) {
     await scheduledPostsExecutor.cleanup();
+  }
+
+  if (activeInstagramSessions.length > 0) {
+    await Promise.all(
+      activeInstagramSessions.splice(0).map(async (session) => {
+        try {
+          await session.close();
+        } catch (error) {
+          console.warn('[Instagram Launcher] Failed to close Playwright session on shutdown:', error);
+        }
+      }),
+    );
   }
 
   // Cleanup central SQLite manager
