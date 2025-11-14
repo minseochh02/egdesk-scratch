@@ -466,6 +466,36 @@ export interface ScheduledPostsAPI {
 }
 
 /**
+ * Business identity storage API
+ */
+export interface BusinessIdentitySnsPlanInput {
+  snapshotId: string;
+  channel: string;
+  title: string;
+  cadenceType: 'daily' | 'weekly' | 'monthly' | 'custom';
+  cadenceValue?: number | null;
+  dayOfWeek?: number | null;
+  dayOfMonth?: number | null;
+  scheduledTime: string;
+  topics: string[];
+  assets?: Record<string, any> | null;
+  enabled?: boolean;
+}
+
+export interface BusinessIdentityAPI {
+  createSnapshot: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getSnapshot: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  listSnapshots: (brandKey: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  listSnsPlans: (
+    snapshotId: string,
+  ) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  saveSnsPlans: (
+    snapshotId: string,
+    plans: BusinessIdentitySnsPlanInput[],
+  ) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
+/**
  * Synchronization operations API
  */
 export interface SyncAPI {
@@ -1048,6 +1078,18 @@ const electronHandler = {
     runNow: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-run-now', id),
     getExecutionHistory: (id: string) => ipcRenderer.invoke('sqlite-scheduled-posts-get-execution-history', id),
   } as ScheduledPostsAPI,
+
+  // ========================================================================
+  // BUSINESS IDENTITY STORAGE
+  // ========================================================================
+  businessIdentity: {
+    createSnapshot: (data: any) => ipcRenderer.invoke('sqlite-business-identity-create-snapshot', data),
+    getSnapshot: (id: string) => ipcRenderer.invoke('sqlite-business-identity-get-snapshot', id),
+    listSnapshots: (brandKey: string) => ipcRenderer.invoke('sqlite-business-identity-list-snapshots', brandKey),
+    listSnsPlans: (snapshotId: string) => ipcRenderer.invoke('sqlite-business-identity-list-sns-plans', snapshotId),
+    saveSnsPlans: (snapshotId: string, plans: BusinessIdentitySnsPlanInput[]) =>
+      ipcRenderer.invoke('sqlite-business-identity-save-sns-plans', { snapshotId, plans }),
+  } as BusinessIdentityAPI,
   
   // ========================================================================
   // SYNCHRONIZATION MANAGEMENT
@@ -1350,7 +1392,7 @@ const electronHandler = {
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
     openInstagramWithProfile: (options: {
-      profilePath: string;
+      profilePath?: string;
       profileDirectory?: string;
       profileRoot?: string;
       targetUrl?: string;
@@ -1359,6 +1401,7 @@ const electronHandler = {
       imagePath?: string;
       caption?: string;
       waitAfterShare?: number;
+      structuredPrompt?: Record<string, any> | string;
     }) => ipcRenderer.invoke('open-instagram-with-profile', options),
     pickChromeProfileFolder: () => ipcRenderer.invoke('pick-chrome-profile-folder'),
     listChromeProfiles: () => ipcRenderer.invoke('list-chrome-profiles'),

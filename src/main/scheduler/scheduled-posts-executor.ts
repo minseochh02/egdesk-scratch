@@ -142,6 +142,14 @@ export class ScheduledPostsExecutor {
    */
   private async schedulePost(post: any): Promise<void> {
     try {
+      const normalizedType = (post.connectionType || '').toLowerCase();
+      if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
+        console.log(
+          `Skipping scheduler registration for Business Identity post "${post.title}" (not automated yet).`,
+        );
+        return;
+      }
+
       // Cancel existing job if it exists
       if (this.scheduledJobs.has(post.id)) {
         this.scheduledJobs.get(post.id)?.cancel();
@@ -211,10 +219,17 @@ export class ScheduledPostsExecutor {
    */
   public async executeScheduledPost(post: any): Promise<void> {
     // Route to appropriate execution method based on connection type
+    const normalizedType = (post.connectionType || '').toLowerCase();
+
     if (post.connectionType === 'wordpress') {
       await this.executeWordPressScheduledPost(post);
     } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
       await this.executeNaverScheduledPost(post);
+    } else if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
+      console.log(
+        `Skipping Business Identity scheduled post "${post.title}" — automation not yet implemented.`,
+      );
+      return;
     } else {
       throw new Error(`Unsupported connection type: ${post.connectionType}`);
     }

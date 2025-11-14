@@ -1,10 +1,18 @@
 import { Page } from "playwright";
+import {
+  generateInstagramContent,
+  GeneratedInstagramContent,
+  InstagramContentPlan,
+} from "./instagram/generate-instagram-content";
 
 export interface PostOptions {
   imagePath: string;
-  caption: string;
+  caption?: string;
+  structuredPrompt?: InstagramContentPlan;
   waitAfterShare?: number; // milliseconds to wait after clicking Share
 }
+
+export type { InstagramContentPlan, GeneratedInstagramContent } from "./instagram/generate-instagram-content";
 
 /**
  * Instagram post upload function
@@ -14,8 +22,9 @@ export interface PostOptions {
 export async function createInstagramPost(
   page: Page,
   options: PostOptions
-): Promise<void> {
-  const { imagePath, caption, waitAfterShare = 10000 } = options;
+): Promise<GeneratedInstagramContent | undefined> {
+  const { imagePath, waitAfterShare = 10000 } = options;
+  const { caption, generated } = await resolveCaption(options);
 
   // Click the "New post" button
   const postButton = page.locator("[aria-label='New post']");
@@ -48,5 +57,27 @@ export async function createInstagramPost(
 
   // Wait for the upload to complete
   await page.waitForTimeout(waitAfterShare);
+
+  return generated;
+}
+
+async function resolveCaption(
+  options: PostOptions
+): Promise<{ caption: string; generated?: GeneratedInstagramContent }> {
+  if (options.caption && options.caption.trim().length > 0) {
+    return { caption: options.caption.trim() };
+  }
+
+  if (options.structuredPrompt) {
+    const generated = await generateInstagramContent(options.structuredPrompt);
+    if (!generated.caption || generated.caption.trim().length === 0) {
+      throw new Error("AI generation did not return an Instagram caption.");
+    }
+    return { caption: generated.caption.trim(), generated };
+  }
+
+  throw new Error(
+    "Instagram caption is required. Provide a caption or a structuredPrompt for AI generation."
+  );
 }
 

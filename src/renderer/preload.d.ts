@@ -375,7 +375,7 @@ export interface IElectronAPI {
       runLighthouse?: boolean,
     ): Promise<{ success: boolean; error?: string }>;
     openInstagramWithProfile(options: {
-      profilePath: string;
+      profilePath?: string;
       profileDirectory?: string;
       profileRoot?: string;
       targetUrl?: string;
@@ -384,6 +384,7 @@ export interface IElectronAPI {
       imagePath?: string;
       caption?: string;
       waitAfterShare?: number;
+      structuredPrompt?: Record<string, any> | string;
     }): Promise<{ success: boolean; error?: string }>;
     pickChromeProfileFolder(): Promise<{
       success: boolean;
@@ -432,6 +433,18 @@ export interface IElectronAPI {
     getTopics: (scheduledPostId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
     runNow: (id: string) => Promise<{ success: boolean; error?: string }>;
     getExecutionHistory: (id: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  };
+  businessIdentity: {
+    createSnapshot: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+    getSnapshot: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    listSnapshots: (brandKey: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+      listSnsPlans: (
+        snapshotId: string,
+      ) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    saveSnsPlans: (
+      snapshotId: string,
+      plans: BusinessIdentitySnsPlanInput[],
+    ) => Promise<{ success: boolean; data?: any; error?: string }>;
   };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 
@@ -624,6 +637,20 @@ export interface IElectronAPI {
 }
 
 declare global {
+  interface BusinessIdentitySnsPlanInput {
+    snapshotId: string;
+    channel: string;
+    title: string;
+    cadenceType: 'daily' | 'weekly' | 'monthly' | 'custom';
+    cadenceValue?: number | null;
+    dayOfWeek?: number | null;
+    dayOfMonth?: number | null;
+    scheduledTime: string;
+    topics: string[];
+    assets?: Record<string, any> | null;
+    enabled?: boolean;
+  }
+
   interface Window {
     electron: IElectronAPI;
   }

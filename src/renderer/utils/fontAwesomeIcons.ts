@@ -142,6 +142,7 @@ export {
   faSave,
   faHistory,
   faTag,
+  faHashtag,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Brand icons
