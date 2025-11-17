@@ -223,6 +223,11 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [runLighthouse, setRunLighthouse] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [crawlerResults, setCrawlerResults] = useState<any>(null);
+  const [homepageCrawlUrl, setHomepageCrawlUrl] = useState('');
+  const [homepageCrawlResults, setHomepageCrawlResults] = useState<any>(null);
+  const [multiPageCrawlUrl, setMultiPageCrawlUrl] = useState('');
+  const [multiPageCrawlResults, setMultiPageCrawlResults] = useState<any>(null);
+  const [maxPages, setMaxPages] = useState(5);
 
   if (!isOpen) return null;
 
@@ -555,6 +560,443 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </button>
           </div>
 
+          {/* Homepage Crawler for Business Identity */}
+          <div>
+            <h3 style={{ color: '#00BCD4', marginBottom: '10px' }}>Homepage Crawler (Business Identity)</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="url"
+                placeholder="Enter URL to crawl homepage (e.g., https://example.com)"
+                value={homepageCrawlUrl}
+                onChange={(e) => setHomepageCrawlUrl(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!homepageCrawlUrl.trim()) {
+                  alert('Please enter a URL');
+                  return;
+                }
+                
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+                
+                addDebugLog('Starting homepage crawl for business identity...');
+                setHomepageCrawlResults(null);
+                
+                try {
+                  addDebugLog(`🕷️ Crawling homepage: ${homepageCrawlUrl}`);
+                  
+                  const result = await (window as any).electron.web.crawlHomepage(homepageCrawlUrl.trim());
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ Homepage crawl failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Homepage crawl failed:', result?.error);
+                    alert(`Homepage crawl failed${result?.error ? `: ${result.error}` : ''}`);
+                    setHomepageCrawlResults(null);
+                  } else {
+                    addDebugLog('✅ Homepage crawl completed successfully');
+                    console.log('Homepage crawl result:', result);
+                    
+                    const nav = result.navigation || {};
+                    const pages = result.discoveredPages || {};
+                    const message = `Found ${nav.main?.length || 0} main nav links, ${nav.footer?.length || 0} footer links, and ${Object.keys(pages).length} important pages`;
+                    
+                    addDebugLog(`📊 ${message}`);
+                    addDebugLog(`🔗 Main navigation: ${nav.main?.length || 0} links`);
+                    addDebugLog(`🔗 Footer navigation: ${nav.footer?.length || 0} links`);
+                    addDebugLog(`📄 Discovered pages: ${Object.keys(pages).join(', ') || 'none'}`);
+                    addDebugLog(`🌐 Total internal links: ${result.allInternalLinks?.length || 0}`);
+                    
+                    setHomepageCrawlResults(result);
+                    alert(message);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Homepage crawl error: ${e?.message || e}`);
+                  console.error('Homepage crawl error:', e);
+                  alert(`Homepage crawl error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#00BCD4',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Crawl Homepage for Business Identity
+            </button>
+          </div>
+
+          {/* Multi-Page Crawler for Business Identity */}
+          <div>
+            <h3 style={{ color: '#FF9800', marginBottom: '10px' }}>Multi-Page Crawler (Business Identity)</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="url"
+                placeholder="Enter URL to crawl multiple pages (e.g., https://example.com)"
+                value={multiPageCrawlUrl}
+                onChange={(e) => setMultiPageCrawlUrl(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ color: '#fff', fontSize: '12px' }}>Max Pages:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={maxPages}
+                  onChange={(e) => setMaxPages(Math.max(1, Math.min(10, parseInt(e.target.value) || 5)))}
+                  style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', width: '60px' }}
+                />
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (!multiPageCrawlUrl.trim()) {
+                  alert('Please enter a URL');
+                  return;
+                }
+                
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+                
+                addDebugLog('Starting multi-page crawl for business identity...');
+                setMultiPageCrawlResults(null);
+                
+                try {
+                  addDebugLog(`🕷️ Crawling multiple pages: ${multiPageCrawlUrl} (max ${maxPages} pages)`);
+                  
+                  const result = await (window as any).electron.web.crawlMultiplePages(multiPageCrawlUrl.trim(), { maxPages });
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ Multi-page crawl failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Multi-page crawl failed:', result?.error);
+                    alert(`Multi-page crawl failed${result?.error ? `: ${result.error}` : ''}`);
+                    setMultiPageCrawlResults(null);
+                  } else {
+                    addDebugLog('✅ Multi-page crawl completed successfully');
+                    console.log('Multi-page crawl result:', result);
+                    
+                    const message = `Crawled ${result.pagesCrawled || 0} pages with ${result.combinedContent?.totalWordCount || 0} total words`;
+                    
+                    addDebugLog(`📊 ${message}`);
+                    addDebugLog(`📄 Pages crawled: ${result.pages?.map((p: any) => p.pageType).join(', ') || 'none'}`);
+                    addDebugLog(`📝 Combined content: ${result.combinedContent?.totalWordCount || 0} words`);
+                    
+                    setMultiPageCrawlResults(result);
+                    alert(message);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Multi-page crawl error: ${e?.message || e}`);
+                  console.error('Multi-page crawl error:', e);
+                  alert(`Multi-page crawl error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#FF9800',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Crawl Multiple Pages for Business Identity
+            </button>
+          </div>
+
+          {/* Multi-Page Crawl Results Section */}
+          {multiPageCrawlResults && (
+            <div>
+              <h3 style={{ color: '#FF9800', marginBottom: '10px' }}>Multi-Page Crawl Results</h3>
+              
+              {/* Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#4CAF50', fontSize: '16px', fontWeight: 'bold' }}>{multiPageCrawlResults.pagesCrawled || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Pages Crawled</div>
+                </div>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#2196F3', fontSize: '16px', fontWeight: 'bold' }}>{multiPageCrawlResults.combinedContent?.totalWordCount || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Total Words</div>
+                </div>
+                <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ color: '#FF9800', fontSize: '16px', fontWeight: 'bold' }}>{multiPageCrawlResults.siteStructure?.navigation?.main || 0}</div>
+                  <div style={{ color: '#888', fontSize: '12px' }}>Nav Links</div>
+                </div>
+              </div>
+
+              {/* Crawled Pages List */}
+              {multiPageCrawlResults.pages && multiPageCrawlResults.pages.length > 0 && (
+                <div style={{ marginBottom: '15px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '8px', fontSize: '14px' }}>📄 Crawled Pages:</h4>
+                  <div style={{
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    fontSize: '12px'
+                  }}>
+                    {multiPageCrawlResults.pages.map((page: any, index: number) => (
+                      <div key={index} style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <div style={{ color: '#FF9800', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                            {page.pageType} ({page.priority})
+                          </div>
+                          <div style={{ color: '#888', fontSize: '11px' }}>{page.content?.wordCount || 0} words</div>
+                        </div>
+                        {page.title && (
+                          <div style={{ color: '#4CAF50', marginBottom: '2px', fontSize: '11px' }}>Title: {page.title}</div>
+                        )}
+                        <div style={{ color: '#fff', marginTop: '4px', wordBreak: 'break-all', fontSize: '11px' }}>{page.url}</div>
+                        {page.description && (
+                          <div style={{ color: '#ccc', marginTop: '4px', fontSize: '11px', fontStyle: 'italic' }}>
+                            {page.description.substring(0, 100)}...
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Combined Content Preview */}
+              {multiPageCrawlResults.combinedContent?.text && (
+                <div style={{ marginBottom: '15px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '8px', fontSize: '14px' }}>📝 Combined Content Preview (first 500 chars):</h4>
+                  <div style={{
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    color: '#ccc',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    {multiPageCrawlResults.combinedContent.text.substring(0, 500)}...
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(multiPageCrawlResults, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `multi-page-crawl-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#FF9800',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Download JSON
+                </button>
+                <button
+                  onClick={() => {
+                    if (multiPageCrawlResults.combinedContent?.text) {
+                      const blob = new Blob([multiPageCrawlResults.combinedContent.text], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `combined-content-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Download Combined Text
+                </button>
+                <button
+                  onClick={() => setMultiPageCrawlResults(null)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Clear Results
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Homepage Crawl Results Section */}
+          {homepageCrawlResults && (
+            <div>
+              <h3 style={{ color: '#00BCD4', marginBottom: '10px' }}>Homepage Crawl Results</h3>
+              
+              {/* Discovered Pages */}
+              {homepageCrawlResults.discoveredPages && Object.keys(homepageCrawlResults.discoveredPages).length > 0 && (
+                <div style={{ marginBottom: '15px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '8px', fontSize: '14px' }}>📍 Discovered Important Pages:</h4>
+                  <div style={{
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    fontSize: '12px'
+                  }}>
+                    {Object.entries(homepageCrawlResults.discoveredPages).map(([key, url]: [string, any]) => (
+                      <div key={key} style={{ marginBottom: '8px', padding: '4px', backgroundColor: '#2a2a2a', borderRadius: '2px' }}>
+                        <div style={{ color: '#00BCD4', fontWeight: 'bold', textTransform: 'capitalize' }}>{key}:</div>
+                        <div style={{ color: '#fff', marginTop: '2px', wordBreak: 'break-all' }}>{url}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Navigation Links */}
+              {homepageCrawlResults.navigation && (
+                <div style={{ marginBottom: '15px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '8px', fontSize: '14px' }}>🔗 Navigation Links:</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                      <div style={{ color: '#4CAF50', fontSize: '16px', fontWeight: 'bold' }}>{homepageCrawlResults.navigation.main?.length || 0}</div>
+                      <div style={{ color: '#888', fontSize: '12px' }}>Main Nav</div>
+                    </div>
+                    <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                      <div style={{ color: '#2196F3', fontSize: '16px', fontWeight: 'bold' }}>{homepageCrawlResults.navigation.footer?.length || 0}</div>
+                      <div style={{ color: '#888', fontSize: '12px' }}>Footer</div>
+                    </div>
+                  </div>
+
+                  {/* Sample Main Nav Links */}
+                  {homepageCrawlResults.navigation.main && homepageCrawlResults.navigation.main.length > 0 && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <h5 style={{ color: '#4CAF50', marginBottom: '6px', fontSize: '12px' }}>Main Navigation (first 10):</h5>
+                      <div style={{
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        padding: '10px',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        fontSize: '12px'
+                      }}>
+                        {homepageCrawlResults.navigation.main.slice(0, 10).map((link: any, index: number) => (
+                          <div key={index} style={{ marginBottom: '8px', padding: '4px', backgroundColor: '#2a2a2a', borderRadius: '2px' }}>
+                            <div style={{ color: '#4CAF50', fontWeight: 'bold' }}>{link.text || '(no text)'}</div>
+                            <div style={{ color: '#fff', marginTop: '2px', wordBreak: 'break-all', fontSize: '11px' }}>{link.normalizedUrl || link.href}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sample Footer Links */}
+                  {homepageCrawlResults.navigation.footer && homepageCrawlResults.navigation.footer.length > 0 && (
+                    <div>
+                      <h5 style={{ color: '#2196F3', marginBottom: '6px', fontSize: '12px' }}>Footer Links (first 10):</h5>
+                      <div style={{
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        padding: '10px',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        fontSize: '12px'
+                      }}>
+                        {homepageCrawlResults.navigation.footer.slice(0, 10).map((link: any, index: number) => (
+                          <div key={index} style={{ marginBottom: '8px', padding: '4px', backgroundColor: '#2a2a2a', borderRadius: '2px' }}>
+                            <div style={{ color: '#2196F3', fontWeight: 'bold' }}>{link.text || '(no text)'}</div>
+                            <div style={{ color: '#fff', marginTop: '2px', wordBreak: 'break-all', fontSize: '11px' }}>{link.normalizedUrl || link.href}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* All Internal Links Count */}
+              {homepageCrawlResults.allInternalLinks && (
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ backgroundColor: '#2a2a2a', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ color: '#FF9800', fontSize: '16px', fontWeight: 'bold' }}>{homepageCrawlResults.allInternalLinks.length}</div>
+                    <div style={{ color: '#888', fontSize: '12px' }}>Total Internal Links</div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(homepageCrawlResults, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `homepage-crawl-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#00BCD4',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Download JSON
+                </button>
+                <button
+                  onClick={() => setHomepageCrawlResults(null)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Clear Results
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Crawler Results Section */}
           {crawlerResults && (
             <div>
@@ -720,84 +1162,86 @@ function NavigationBar({
 
   return (
     <div className={`navigation-bar ${isNarrow ? 'narrow' : ''}`}>
-      <nav className="nav-links">
-        <Link
-          to="/"
-          className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faHome} />
-          {!isNarrow && <span>홈</span>}
-        </Link>
-        <Link
-          to="/homepage-editor"
-          className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faCog} />
-          {!isNarrow && <span>EG Coding</span>}
-        </Link>
-        {/* Legacy BlogManager navigation - replaced by Blog Connector */}
-        {/* <Link
-          to="/blog-manager"
-          className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          {!isNarrow && <span>EG Blogging</span>}
-        </Link> */}
-        <Link
-          to="/blog-connector"
-          className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          {!isNarrow && <span>EG Blogging</span>}
-        </Link>
-        <Link
-          to="/ssl-analyzer"
-          className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faShieldAlt} />
-          {!isNarrow && <span>EG SSL-Checker</span>}
-        </Link>
-        <Link
-          to="/seo-analyzer"
-          className={`nav-link ${location.pathname === '/seo-analyzer' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          {!isNarrow && <span>EG SEO-Analyzer</span>}
-        </Link>
-        <Link
-          to="/ai-keys"
-          className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faRobot} />
-          {!isNarrow && <span>API 키 관리</span>}
-        </Link>
-        <Link
-          to="/mcp-server"
-          className={`nav-link ${location.pathname === '/mcp-server' ? 'active' : ''}`}
-        >
-          <FontAwesomeIcon icon={faServer} />
-          {!isNarrow && <span>EG MCP Server</span>}
-        </Link>
-        <button
-          className="nav-link"
-          onClick={() => setShowDebugModal(true)}
-          style={{ cursor: 'pointer' }}
-          title="Open Debug Panel"
-        >
-          <FontAwesomeIcon icon={faRobot} />
-          {!isNarrow && <span>Debug</span>}
-        </button>
-        <button
-          className="nav-link"
-          onClick={() => setShowSupportModal(true)}
-          style={{ cursor: 'pointer' }}
-          title="지원 및 도움말"
-        >
-          <FontAwesomeIcon icon={faQuestion} />
-          {!isNarrow && <span>지원</span>}
-        </button>
+      <div className="nav-links-wrapper">
+        <nav className="nav-links">
+          <Link
+            to="/"
+            className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faHome} />
+            {!isNarrow && <span>홈</span>}
+          </Link>
+          <Link
+            to="/homepage-editor"
+            className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faCog} />
+            {!isNarrow && <span>EG Coding</span>}
+          </Link>
+          {/* Legacy BlogManager navigation - replaced by Blog Connector */}
+          {/* <Link
+            to="/blog-manager"
+            className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faGlobe} />
+            {!isNarrow && <span>EG Blogging</span>}
+          </Link> */}
+          <Link
+            to="/blog-connector"
+            className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faGlobe} />
+            {!isNarrow && <span>EG Blogging</span>}
+          </Link>
+          <Link
+            to="/ssl-analyzer"
+            className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faShieldAlt} />
+            {!isNarrow && <span>EG SSL-Checker</span>}
+          </Link>
+          <Link
+            to="/seo-analyzer"
+            className={`nav-link ${location.pathname === '/seo-analyzer' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faGlobe} />
+            {!isNarrow && <span>EG SEO-Analyzer</span>}
+          </Link>
+          <Link
+            to="/ai-keys"
+            className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faRobot} />
+            {!isNarrow && <span>API 키 관리</span>}
+          </Link>
+          <Link
+            to="/mcp-server"
+            className={`nav-link ${location.pathname === '/mcp-server' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faServer} />
+            {!isNarrow && <span>EG MCP Server</span>}
+          </Link>
+          <button
+            className="nav-link"
+            onClick={() => setShowDebugModal(true)}
+            style={{ cursor: 'pointer' }}
+            title="Open Debug Panel"
+          >
+            <FontAwesomeIcon icon={faRobot} />
+            {!isNarrow && <span>Debug</span>}
+          </button>
+          <button
+            className="nav-link"
+            onClick={() => setShowSupportModal(true)}
+            style={{ cursor: 'pointer' }}
+            title="지원 및 도움말"
+          >
+            <FontAwesomeIcon icon={faQuestion} />
+            {!isNarrow && <span>지원</span>}
+          </button>
 
-      </nav>
+        </nav>
+      </div>
       <div className="nav-auth">
         <AuthButton />
       </div>

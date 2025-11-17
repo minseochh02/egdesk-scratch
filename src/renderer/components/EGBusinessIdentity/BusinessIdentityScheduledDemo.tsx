@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCalendarAlt,
@@ -7,11 +7,13 @@ import {
   faTag,
 } from '../../utils/fontAwesomeIcons';
 import { faHashtag } from '@fortawesome/free-solid-svg-icons/faHashtag';
+import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 
 export type BusinessIdentityChannel = 'Instagram' | 'Twitter' | 'LinkedIn' | 'Blog' | string;
 
 export interface BusinessIdentityScheduledTask {
   id: string;
+  planId?: string; // SQLite plan ID (optional for demo tasks)
   channel: BusinessIdentityChannel;
   title: string;
   summary: string;
@@ -23,6 +25,7 @@ export interface BusinessIdentityScheduledTask {
   topics: string[];
   format: string;
   notes?: string;
+  isActive?: boolean; // Whether the schedule is currently active/running
 }
 
 export const businessIdentityDemoTasks: BusinessIdentityScheduledTask[] = [
@@ -89,6 +92,8 @@ export interface BusinessIdentityScheduledDemoProps {
   renderTask?: (task: BusinessIdentityScheduledTask) => React.ReactNode;
   onTaskSelect?: (task: BusinessIdentityScheduledTask) => void;
   onTestPost?: (task: BusinessIdentityScheduledTask) => void;
+  onToggleSchedule?: (task: BusinessIdentityScheduledTask, isActive: boolean) => void;
+  hasAccountForChannel?: (channel: string) => boolean; // Check if account exists for a channel
 }
 
 const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps> = ({
@@ -96,8 +101,36 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
   renderTask,
   onTaskSelect,
   onTestPost,
+  onToggleSchedule,
+  hasAccountForChannel,
 }) => {
   const items = tasks?.length ? tasks : businessIdentityDemoTasks;
+  
+  // Track active state for each task (defaults to false if not provided)
+  const [taskStates, setTaskStates] = useState<Record<string, boolean>>(() => {
+    const initialState: Record<string, boolean> = {};
+    items.forEach((task) => {
+      initialState[task.id] = task.isActive ?? false;
+    });
+    return initialState;
+  });
+
+  // Sync task states when tasks change
+  useEffect(() => {
+    const newStates: Record<string, boolean> = {};
+    items.forEach((task) => {
+      newStates[task.id] = task.isActive ?? taskStates[task.id] ?? false;
+    });
+    setTaskStates(newStates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, items.map((t) => t.id).join(',')]); // Update when task IDs change
+
+  const handleToggleSchedule = (task: BusinessIdentityScheduledTask, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const newState = !taskStates[task.id];
+    setTaskStates((prev) => ({ ...prev, [task.id]: newState }));
+    onToggleSchedule?.(task, newState);
+  };
 
   if (!items.length) {
     return null;
@@ -165,6 +198,23 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
             <div className="egbusiness-identity__scheduled-demo-actions">
               <button
                 type="button"
+                className="egbusiness-identity__scheduled-demo-action-toggle"
+                onClick={(event) => handleToggleSchedule(task, event)}
+                disabled={hasAccountForChannel ? !hasAccountForChannel(task.channel) : false}
+                title={
+                  hasAccountForChannel && !hasAccountForChannel(task.channel)
+                    ? `No ${task.channel} account configured. Please add account credentials first.`
+                    : taskStates[task.id]
+                      ? 'Pause schedule'
+                      : 'Start schedule'
+                }
+              >
+                <FontAwesomeIcon icon={taskStates[task.id] ? faPause : faPlay} />
+                <span>{taskStates[task.id] ? 'Pause' : 'Start'}</span>
+              </button>
+              <button
+                type="button"
+                className="egbusiness-identity__scheduled-demo-action-test"
                 onClick={(event) => {
                   event.stopPropagation();
                   if (onTestPost) {

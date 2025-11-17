@@ -79,8 +79,11 @@ import { getAuthService } from './auth/auth-service';
 import { ollamaManager } from './ollama/installer';
 import { registerOllamaHandlers } from './ollama/ollama-handlers';
 import { fetchWebsiteContent } from './web/content-fetcher';
-import { AuthContext, login as playwrightInstagramLogin, getAuthenticatedPage, loginWithPage } from './instagramlogin';
-import { createInstagramPost } from './instagram-post';
+import { crawlHomepageForBusinessIdentity } from './web/homepage-crawler';
+import { crawlMultiplePagesForBusinessIdentity } from './web/multi-page-crawler';
+import { generateBusinessIdentity, generateSnsPlan } from './web/ai-search';
+import { AuthContext } from './instagramlogin';
+import { createBusinessIdentityInstagramPost } from './business-identity/sns/instagram';
 
 const envCandidates = new Set<string>();
 
@@ -165,22 +168,6 @@ const getDefaultChromeProfileRoot = (): string | undefined => {
 
   return undefined;
 };
-
-async function waitForPageReady(page: any, maxWaitMs = 5000): Promise<void> {
-  const startTime = Date.now();
-  while (Date.now() - startTime < maxWaitMs) {
-    try {
-      const url = page.url();
-      if (url && url !== 'about:blank' && url !== '') {
-        return;
-      }
-    } catch (error) {
-      // Page might not be ready yet
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-}
-
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -488,6 +475,87 @@ const createWindow = async () => {
               error instanceof Error
                 ? error.message || 'Failed to fetch website content.'
                 : 'Failed to fetch website content.',
+          };
+        }
+      });
+
+      // Homepage crawler for business identity
+      ipcMain.handle('web-crawl-homepage', async (_event, url: string) => {
+        try {
+          return await crawlHomepageForBusinessIdentity(url);
+        } catch (error) {
+          console.error('❌ Failed to crawl homepage:', error);
+          return {
+            success: false,
+            homepageUrl: url,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to crawl homepage.'
+                : 'Failed to crawl homepage.',
+          };
+        }
+      });
+
+      // Multi-page crawler for business identity
+      ipcMain.handle('web-crawl-multiple-pages', async (_event, url: string, options?: { maxPages?: number; includePages?: string[] }) => {
+        try {
+          // Type cast includePages to match expected type
+          const typedOptions = options ? {
+            ...options,
+            includePages: options.includePages as ('about' | 'contact' | 'products' | 'services' | 'blog' | 'careers' | 'pricing')[] | undefined
+          } : undefined;
+          return await crawlMultiplePagesForBusinessIdentity(url, typedOptions);
+        } catch (error) {
+          console.error('❌ Failed to crawl multiple pages:', error);
+          return {
+            success: false,
+            domain: new URL(url).hostname,
+            baseUrl: url,
+            pages: [],
+            siteStructure: {
+              navigation: { main: 0, footer: 0 },
+              commonPages: {},
+            },
+            combinedContent: {
+              text: '',
+              totalWordCount: 0,
+              pagesCrawled: 0,
+            },
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to crawl multiple pages.'
+                : 'Failed to crawl multiple pages.',
+          };
+        }
+      });
+
+      // AI Search handlers for business identity
+      ipcMain.handle('ai-search-generate-business-identity', async (_event, websiteText: string) => {
+        try {
+          return await generateBusinessIdentity(websiteText);
+        } catch (error) {
+          console.error('❌ Failed to generate business identity:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to generate business identity.'
+                : 'Failed to generate business identity.',
+          };
+        }
+      });
+
+      ipcMain.handle('ai-search-generate-sns-plan', async (_event, identityData: any) => {
+        try {
+          return await generateSnsPlan(identityData);
+        } catch (error) {
+          console.error('❌ Failed to generate SNS plan:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to generate SNS plan.'
+                : 'Failed to generate SNS plan.',
           };
         }
       });
@@ -1585,300 +1653,21 @@ const createWindow = async () => {
         }
       });
 
-      ipcMain.handle('open-instagram-with-profile', async (_event, opts?: { profilePath?: string; profileDirectory?: string; profileRoot?: string; targetUrl?: string; username?: string; password?: string; imagePath?: string; caption?: string; waitAfterShare?: number; structuredPrompt?: any }) => {
-        const profilePath = opts?.profilePath;
-        const profileDirectory = opts?.profileDirectory;
-        const profileRoot = opts?.profileRoot;
-        const targetUrl = opts?.targetUrl || 'https://www.instagram.com/';
-        const username = typeof opts?.username === 'string' ? opts.username.trim() || undefined : undefined;
-        const password = typeof opts?.password === 'string' ? opts.password : undefined;
-        const hasCredentials = Boolean(username && password);
-        const profilePathProvided =
-          typeof profilePath === 'string' && profilePath.trim().length > 0;
-        const resolvedImagePath = (() => {
-          if (typeof opts?.imagePath === 'string' && opts.imagePath.trim().length > 0) {
-            return path.resolve(opts.imagePath.trim());
-          }
-          const defaultCatPath = path.join(app.getPath('home'), 'Downloads', 'cat.png');
-          if (fs.existsSync(defaultCatPath)) {
-            console.log('[Instagram Launcher] Using default image path:', defaultCatPath);
-            return defaultCatPath;
-          }
-          return undefined;
-        })();
-        const structuredPrompt = opts?.structuredPrompt;
-        const caption =
-          typeof opts?.caption === 'string' && opts.caption.trim().length > 0
-            ? opts.caption.trim()
-            : structuredPrompt
-              ? undefined
-              : `[Automated Test] ${new Date().toISOString()}`;
-        const shouldAttemptPost = Boolean(resolvedImagePath);
-        const needsGemini = Boolean(!caption && structuredPrompt);
-        const loginOptions = hasCredentials
-          ? { username: username as string, password: password as string }
-          : undefined;
-      
-        try {
-          try {
-            new URL(targetUrl);
-          } catch {
-            return {
-              success: false,
-              error: `Invalid target URL: ${targetUrl}`,
-            };
-          }
-
-          if (!profilePathProvided) {
-            if (loginOptions) {
-              console.log('[Instagram Launcher] Performing Playwright login with provided credentials.');
-              try {
-                await playwrightInstagramLogin(loginOptions);
-              } catch (authError) {
-                console.error('[Instagram Launcher] Playwright login failed:', authError);
-                return {
-                  success: false,
-                  error:
-                    authError instanceof Error
-                      ? authError.message || 'Instagram login failed.'
-                      : 'Instagram login failed.',
-                };
-              }
-            }
-      
-            try {
-              const authSession = await getAuthenticatedPage(loginOptions);
-              const { page } = authSession;
-              await waitForPageReady(page, 3000);
-      
-              try {
-                await page.goto(targetUrl, {
-                  waitUntil: 'domcontentloaded',
-                  timeout: 60000,
-                });
-              } catch (navigationError) {
-                console.error('[Instagram Launcher] Playwright navigation failed:', navigationError);
-                try {
-                  await authSession.close();
-                } catch (closeError) {
-                  console.warn('[Instagram Launcher] Failed to close Playwright session after navigation error:', closeError);
-                }
-                return {
-                  success: false,
-                  error:
-                    navigationError instanceof Error
-                      ? navigationError.message || 'Failed to navigate to Instagram.'
-                      : 'Failed to navigate to Instagram.',
-                };
-              }
-      
-              if (!resolvedImagePath) {
-                await authSession.close();
-                return {
-                  success: false,
-                  error: 'No image available for Instagram post. Provide imagePath or ensure ~/Downloads/cat.png exists.',
-                };
-              }
-
-              if (needsGemini && !ensureGeminiApiKey()) {
-                await authSession.close();
-                return {
-                  success: false,
-                  error: 'Gemini API key not configured. Add a Google key in settings or set GEMINI_API_KEY.',
-                };
-              }
-
-              if (shouldAttemptPost && resolvedImagePath) {
-                try {
-                  await createInstagramPost(page, {
-                    imagePath: resolvedImagePath,
-                    caption,
-                    structuredPrompt,
-                    waitAfterShare: opts?.waitAfterShare,
-                  });
-                } catch (postError) {
-                  console.error('[Instagram Launcher] Failed to create Instagram post (Playwright session):', postError);
-                  await authSession.close();
-                  return {
-                    success: false,
-                    error:
-                      postError instanceof Error
-                        ? postError.message || 'Failed to create Instagram post.'
-                        : 'Failed to create Instagram post.',
-                  };
-                }
-              }
-
-              try {
-                await page.bringToFront();
-              } catch (bringError) {
-                console.warn('[Instagram Launcher] Failed to bring Playwright page to front:', bringError);
-              }
-      
-              activeInstagramSessions.push(authSession);
-              console.log('[Instagram Launcher] Instagram opened successfully via Playwright session.');
-              return {
-                success: true,
-                automation: 'playwright',
-              };
-            } catch (sessionError) {
-              console.error('[Instagram Launcher] Failed to open authenticated Playwright session:', sessionError);
-              return {
-                success: false,
-                error:
-                  sessionError instanceof Error
-                    ? sessionError.message || 'Failed to open authenticated Instagram session.'
-                    : 'Failed to open authenticated Instagram session.',
-              };
-            }
-          }
-      
-          if (!profilePathProvided) {
-            return {
-              success: false,
-              error: 'A valid Chrome profile path is required.',
-            };
-          }
-      
-          const resolvedProfilePath = path.resolve(profilePath);
-          const resolvedRootPath =
-            profileRoot && typeof profileRoot === 'string' && profileRoot.trim()
-              ? path.resolve(profileRoot)
-              : path.dirname(resolvedProfilePath);
-          const profileDirName =
-            (profileDirectory && profileDirectory.trim()) || path.basename(resolvedProfilePath);
-          const fs = require('fs');
-      
-          if (!fs.existsSync(resolvedRootPath)) {
-            return {
-              success: false,
-              error: `Profile root does not exist: ${resolvedRootPath}`,
-            };
-          }
-      
-          const targetProfileDirPath = path.join(resolvedRootPath, profileDirName);
-      
-          if (!fs.existsSync(targetProfileDirPath)) {
-            return {
-              success: false,
-              error: `Profile directory does not exist: ${targetProfileDirPath}`,
-            };
-          }
-      
-          const { chromium } = require('playwright');
-          console.log(
-            `[Instagram Launcher] Opening Instagram with profile: ${targetProfileDirPath} (root: ${resolvedRootPath})`,
-          );
-      
-          // Launch a non-persistent Chrome session (fresh runtime each call)
-          const browser = await chromium.launch({
-            headless: false,
-            channel: 'chrome',
-            args: [
-              `--profile-directory=${profileDirName}`,
-            ],
-            ignoreDefaultArgs: ['--enable-automation'],
-          });
-      
-          const context = await browser.newContext();
-          const page = await context.newPage();
-          await waitForPageReady(page, 3000);
-      
-          if (loginOptions) {
-            console.log('[Instagram Launcher] Performing automated login inside Chrome session.');
-            try {
-              await loginWithPage(page, loginOptions);
-            } catch (loginError) {
-              console.error('[Instagram Launcher] Automated login failed:', loginError);
-              await browser.close();
-              return {
-                success: false,
-                error:
-                  loginError instanceof Error
-                    ? loginError.message || 'Failed to log in to Instagram.'
-                    : 'Failed to log in to Instagram.',
-              };
-            }
-          }
-      
-          console.log('[Instagram Launcher] Navigating to', targetUrl);
-      
-          try {
-            await page.goto(targetUrl, {
-              waitUntil: 'domcontentloaded',
-              timeout: 60000,
-            });
-          } catch (navigationError) {
-            console.error('[Instagram Launcher] Navigation failed:', navigationError);
-            await browser.close();
-            return {
-              success: false,
-              error:
-                navigationError instanceof Error
-                  ? navigationError.message || 'Failed to navigate to Instagram.'
-                  : 'Failed to navigate to Instagram.',
-            };
-          }
-      
-          if (!resolvedImagePath) {
-            await browser.close();
-            return {
-              success: false,
-              error: 'No image available for Instagram post. Provide imagePath or ensure ~/Downloads/cat.png exists.',
-            };
-          }
-
-          if (needsGemini && !ensureGeminiApiKey()) {
-            await browser.close();
-            return {
-              success: false,
-              error: 'Gemini API key not configured. Add a Google key in settings or set GEMINI_API_KEY.',
-            };
-          }
-
-          if (shouldAttemptPost && resolvedImagePath) {
-            try {
-              await createInstagramPost(page, {
-                imagePath: resolvedImagePath,
-                caption,
-                structuredPrompt,
-                waitAfterShare: opts?.waitAfterShare,
-              });
-            } catch (postError) {
-              console.error('[Instagram Launcher] Failed to create Instagram post (Chrome session):', postError);
-              await browser.close();
-              return {
-                success: false,
-                error:
-                  postError instanceof Error
-                    ? postError.message || 'Failed to create Instagram post.'
-                    : 'Failed to create Instagram post.',
-              };
-            }
-          }
-
-          try {
-            await page.bringToFront();
-          } catch (bringError) {
-            console.warn('[Instagram Launcher] Failed to bring page to front:', bringError);
-          }
-      
-          console.log('[Instagram Launcher] Instagram opened successfully.');
-      
-          // Leave browser running so the user can interact with the window.
-      
-          return {
-            success: true,
-            automation: loginOptions ? 'chrome-automation' : 'chrome-profile',
-          };
-      
-        } catch (error) {
-          console.error('[Instagram Launcher] Unexpected error:', error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'An unexpected error occurred.',
-          };
-        }
+      ipcMain.handle('open-instagram-with-profile', async (_event, opts?: { planId?: string; profilePath?: string; profileDirectory?: string; profileRoot?: string; targetUrl?: string; username?: string; password?: string; imagePath?: string; caption?: string; waitAfterShare?: number; structuredPrompt?: any }) => {
+        // Use the separated business identity Instagram post handler
+        return await createBusinessIdentityInstagramPost({
+          planId: opts?.planId,
+          username: opts?.username,
+          password: opts?.password,
+          imagePath: opts?.imagePath,
+          caption: opts?.caption,
+          structuredPrompt: opts?.structuredPrompt,
+          profilePath: opts?.profilePath,
+          profileDirectory: opts?.profileDirectory,
+          profileRoot: opts?.profileRoot,
+          targetUrl: opts?.targetUrl,
+          waitAfterShare: opts?.waitAfterShare,
+        });
       });
 
       ipcMain.handle('pick-chrome-profile-folder', async () => {

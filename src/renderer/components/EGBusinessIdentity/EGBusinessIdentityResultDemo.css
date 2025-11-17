@@ -58,6 +58,42 @@
   margin: 8px 0 0;
   color: #cbd5f5;
   line-height: 1.6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.egbusiness-identity-result__score-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+}
+
+.egbusiness-identity-result__score-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.egbusiness-identity-result__score-badge--seo {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.egbusiness-identity-result__score-badge--ssl {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
 }
 
 .egbusiness-identity-result__panel {
@@ -349,6 +385,272 @@
   }
 
   .egbusiness-identity-result__panel--summary .egbusiness-identity-result__summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Analysis Display Styles */
+.egbusiness-identity-result__panel--analysis {
+  gap: 24px;
+}
+
+.egbusiness-identity-result__analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 18px;
+}
+
+.egbusiness-identity-result__analysis-card {
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.egbusiness-identity-result__analysis-card.overall {
+  grid-column: span 2;
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.egbusiness-identity-result__analysis-score {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.egbusiness-identity-result__analysis-card.overall .egbusiness-identity-result__analysis-score {
+  font-size: 3.5rem;
+}
+
+.egbusiness-identity-result__analysis-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a5b4fc;
+  margin-top: 4px;
+}
+
+.egbusiness-identity-result__analysis-status {
+  font-size: 12px;
+  color: #cbd5f5;
+  opacity: 0.8;
+}
+
+.egbusiness-identity-result__analysis-footer {
+  margin-top: 8px;
+}
+
+/* SSL Analysis Styles */
+.egbusiness-identity-result__ssl-grade {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.egbusiness-identity-result__grade-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 2px solid rgba(148, 163, 184, 0.25);
+}
+
+.egbusiness-identity-result__grade-letter {
+  font-size: 4rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.egbusiness-identity-result__grade-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.egbusiness-identity-result__grade-score {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #cbd5f5;
+}
+
+.egbusiness-identity-result__grade-description {
+  font-size: 1rem;
+  color: #a5b4fc;
+  opacity: 0.9;
+}
+
+.egbusiness-identity-result__ssl-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.egbusiness-identity-result__issue-category {
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.6);
+  border-left: 4px solid;
+}
+
+.egbusiness-identity-result__issue-category.critical {
+  border-left-color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+}
+
+.egbusiness-identity-result__issue-category.high {
+  border-left-color: #ffa400;
+  background: rgba(255, 164, 0, 0.1);
+}
+
+.egbusiness-identity-result__issue-category h5 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.egbusiness-identity-result__issue-category ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  color: #e0f2fe;
+  line-height: 1.6;
+}
+
+.egbusiness-identity-result__issue-category li {
+  margin-bottom: 6px;
+}
+
+.egbusiness-identity-result__ssl-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.egbusiness-identity-result__ssl-details h4 {
+  margin: 0;
+  font-size: 18px;
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.egbusiness-identity-result__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.egbusiness-identity-result__detail-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.egbusiness-identity-result__detail-grid strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a5b4fc;
+}
+
+.egbusiness-identity-result__detail-grid span {
+  color: #e0f2fe;
+  font-size: 14px;
+}
+
+.egbusiness-identity-result__status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.egbusiness-identity-result__status-badge.valid {
+  background: rgba(40, 167, 69, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(40, 167, 69, 0.4);
+}
+
+.egbusiness-identity-result__status-badge.expired,
+.egbusiness-identity-result__status-badge.invalid {
+  background: rgba(231, 76, 60, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(231, 76, 60, 0.4);
+}
+
+.egbusiness-identity-result__status-badge.self-signed {
+  background: rgba(255, 164, 0, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(255, 164, 0, 0.4);
+}
+
+.egbusiness-identity-result__ssl-headers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.egbusiness-identity-result__ssl-headers h4 {
+  margin: 0;
+  font-size: 18px;
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.egbusiness-identity-result__headers-summary {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.egbusiness-identity-result__headers-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.egbusiness-identity-result__headers-summary strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a5b4fc;
+}
+
+.egbusiness-identity-result__headers-summary span {
+  color: #e0f2fe;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .egbusiness-identity-result__analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .egbusiness-identity-result__analysis-card.overall {
+    grid-column: span 1;
+  }
+
+  .egbusiness-identity-result__grade-display {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .egbusiness-identity-result__grade-info {
+    text-align: center;
+  }
+
+  .egbusiness-identity-result__detail-grid {
     grid-template-columns: 1fr;
   }
 }

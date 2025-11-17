@@ -493,6 +493,11 @@ export interface BusinessIdentityAPI {
     snapshotId: string,
     plans: BusinessIdentitySnsPlanInput[],
   ) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateAnalysisResults: (
+    snapshotId: string,
+    seoAnalysis: any,
+    sslAnalysis: any,
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -874,8 +879,76 @@ export interface WebsiteContentFetchResult {
 /**
  * Web utilities exposed to renderer processes
  */
+export interface HomepageCrawlResult {
+  success: boolean;
+  homepageUrl: string;
+  navigation?: {
+    main: Array<{ href: string; text: string; title?: string; isInternal: boolean; normalizedUrl?: string }>;
+    footer: Array<{ href: string; text: string; title?: string; isInternal: boolean; normalizedUrl?: string }>;
+  };
+  discoveredPages?: {
+    about?: string;
+    contact?: string;
+    products?: string;
+    services?: string;
+    blog?: string;
+    careers?: string;
+    pricing?: string;
+  };
+  allInternalLinks?: string[];
+  error?: string;
+}
+
+export interface MultiPageCrawlResult {
+  success: boolean;
+  domain: string;
+  baseUrl: string;
+  pages: Array<{
+    url: string;
+    path: string;
+    pageType: 'homepage' | 'about' | 'contact' | 'products' | 'services' | 'blog' | 'careers' | 'pricing' | 'other';
+    title: string | null;
+    description: string | null;
+    content: {
+      text: string;
+      wordCount: number;
+    };
+    metadata: {
+      status: number;
+      language: string | null;
+      fetchedAt: string;
+    };
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  siteStructure: {
+    navigation: {
+      main: number;
+      footer: number;
+    };
+    commonPages: {
+      about?: string;
+      contact?: string;
+      products?: string;
+      services?: string;
+      blog?: string;
+      careers?: string;
+      pricing?: string;
+    };
+  };
+  combinedContent: {
+    text: string;
+    totalWordCount: number;
+    pagesCrawled: number;
+  };
+  error?: string;
+}
+
 export interface WebUtilitiesAPI {
   fetchContent: (url: string) => Promise<WebsiteContentFetchResult>;
+  crawlHomepage: (url: string) => Promise<HomepageCrawlResult>;
+  crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => Promise<MultiPageCrawlResult>;
+  generateBusinessIdentity: (websiteText: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  generateSnsPlan: (identityData: any) => Promise<{ success: boolean; content?: string; error?: string }>;
 }
 
 
@@ -956,6 +1029,10 @@ const electronHandler = {
   // ========================================================================
   web: {
     fetchContent: (url: string) => ipcRenderer.invoke('web-fetch-content', url),
+    crawlHomepage: (url: string) => ipcRenderer.invoke('web-crawl-homepage', url),
+    crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => ipcRenderer.invoke('web-crawl-multiple-pages', url, options),
+    generateBusinessIdentity: (websiteText: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText),
+    generateSnsPlan: (identityData: any) => ipcRenderer.invoke('ai-search-generate-sns-plan', identityData),
   } as WebUtilitiesAPI,
   
   // ========================================================================
@@ -1089,6 +1166,8 @@ const electronHandler = {
     listSnsPlans: (snapshotId: string) => ipcRenderer.invoke('sqlite-business-identity-list-sns-plans', snapshotId),
     saveSnsPlans: (snapshotId: string, plans: BusinessIdentitySnsPlanInput[]) =>
       ipcRenderer.invoke('sqlite-business-identity-save-sns-plans', { snapshotId, plans }),
+    updateAnalysisResults: (snapshotId: string, seoAnalysis: any, sslAnalysis: any) =>
+      ipcRenderer.invoke('sqlite-business-identity-update-analysis-results', snapshotId, seoAnalysis, sslAnalysis),
   } as BusinessIdentityAPI,
   
   // ========================================================================
@@ -1392,6 +1471,7 @@ const electronHandler = {
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
     openInstagramWithProfile: (options: {
+      planId?: string;
       profilePath?: string;
       profileDirectory?: string;
       profileRoot?: string;

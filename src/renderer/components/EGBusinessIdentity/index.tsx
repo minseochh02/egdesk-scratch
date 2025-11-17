@@ -1,213 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCalendarAlt, faGlobe, faMagic } from '../../utils/fontAwesomeIcons';
+import { faCalendarAlt } from '../../utils/fontAwesomeIcons';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { chatWithGemma } from '../../lib/gemmaClient';
-import BusinessIdentityScheduledDemo, { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
-import './EGBusinessIdentity.css';
+import { AIService } from '../../services/ai-service';
+import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import type { AIKey } from '../AIKeysManager/types';
+import { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
 import { buildInstagramStructuredPrompt } from './instagramPrompt';
+import './EGBusinessIdentity.css';
 
-const BUSINESS_IDENTITY_SYSTEM_PROMPT = `You are a structured-data generator. Always answer by returning strictly valid JSON that matches this schema:
+// Components
+import { IdentityKickoff } from './IdentityKickoff';
+import { ScheduledPosts } from './ScheduledPosts';
+import { AIKeySelector } from './AIKeySelector';
 
-{
-  "source": {
-    "url": string,
-    "title": string,
-    "status": number,
-    "language": string | null,
-    "description": string | null,
-    "wordCount": number,
-    "keywords": string[],
-    "excerpt": string | null
-  },
-  "identity": {
-    "coreIdentity": string,
-    "brandCategory": string,
-    "targetAudience": string,
-    "signatureProof": string,
-    "toneVoice": string
-  },
-  "recommendedActions": [
-    {
-      "label": string,
-      "detail": string
-    }
-  ]
-}
-
-Rules:
-- Emit only JSON (no markdown, prose, or explanations).
-- Populate null where data is unavailable.
-- Keep strings concise (≤ 280 chars when possible).
-- Limit keywords to the top 5 ranked terms.`;
-
-const SNS_PLAN_SYSTEM_PROMPT = `You are an SNS marketing planner. Always respond with strictly valid JSON matching:
-
-{
-  "snsPlan": [
-    {
-      "channel": "Instagram" | "Twitter" | "LinkedIn" | "Blog" | string,
-      "title": string,
-      "summary": string,
-      "cadence": {
-        "type": "daily" | "weekly" | "monthly" | "custom",
-        "dayOfWeek": number | null,
-        "dayOfMonth": number | null,
-        "customDays": number | null,
-        "time": string
-      },
-      "topics": string[],
-      "assets": {
-        "mediaStyle": string,
-        "copyGuidelines": string,
-        "cta": string,
-        "extraNotes": string | null
-      }
-    }
-  ]
-}
-
-Rules:
-- Emit only JSON (no prose).
-- Provide at least 3 plan entries across multiple channels when possible.
-- Keep strings concise (≤ 200 chars).`;
+// Types and utilities
+import type { IdentitySnapshot, SnsPlanEntry, StoredSnsPlan, IdentityLocationState } from './types';
+import { getBrandKeyFromValue, mapSnsPlanEntriesToStorage } from './utils';
+import { mapStoredPlanToEntry } from './snsPlanHelpers';
+import { runSEOAnalysis, runSSLAnalysis } from './analysisHelpers';
 
 const BUSINESS_IDENTITY_URL_KEY = 'businessIdentityUrl';
-
-interface IdentitySnapshot {
-  id: string;
-  brandKey: string;
-  sourceUrl: string | null;
-  identityJson: string;
-  createdAt: string | Date;
-}
-
-interface SnsPlanEntry {
-  channel: string;
-  title: string;
-  summary: string;
-  cadence: {
-    type: 'daily' | 'weekly' | 'monthly' | 'custom' | string;
-    dayOfWeek: number | null;
-    dayOfMonth: number | null;
-    customDays: number | null;
-    time: string;
-  };
-  topics: string[];
-  assets: {
-    mediaStyle?: string;
-    copyGuidelines?: string;
-    cta?: string;
-    extraNotes?: string | null;
-  };
-}
-
-interface SnsPlanEntry {
-  channel: string;
-  title: string;
-  summary: string;
-  cadence: {
-    type: 'daily' | 'weekly' | 'monthly' | 'custom' | string;
-    dayOfWeek: number | null;
-    dayOfMonth: number | null;
-    customDays: number | null;
-    time: string;
-  };
-  topics: string[];
-  assets: {
-    mediaStyle?: string;
-    copyGuidelines?: string;
-    cta?: string;
-    extraNotes?: string | null;
-  };
-}
-
-interface StoredSnsPlan {
-  id: string;
-  snapshotId: string;
-  channel: string;
-  title: string;
-  cadenceType: string;
-  cadenceValue: number | null;
-  dayOfWeek: number | null;
-  dayOfMonth: number | null;
-  scheduledTime: string;
-  topicsJson: string;
-  assetsJson: string | null;
-}
-
-const DEFAULT_SNS_PLAN_TIME = '09:00';
-
-type IdentityLocationState = {
-  bypassPreviewAutoRedirect?: boolean;
-};
-
-const normalizeCadenceType = (value?: string): 'daily' | 'weekly' | 'monthly' | 'custom' => {
-  if (!value) return 'custom';
-  const normalized = value.toLowerCase();
-  if (normalized === 'daily' || normalized === 'weekly' || normalized === 'monthly' || normalized === 'custom') {
-    return normalized;
-  }
-  return 'custom';
-};
-
-const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-
-const normalizeTimeString = (value?: string): string => {
-  if (!value) return DEFAULT_SNS_PLAN_TIME;
-  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return DEFAULT_SNS_PLAN_TIME;
-  const hours = Math.min(23, Math.max(0, parseInt(match[1], 10)));
-  const minutes = Math.min(59, Math.max(0, parseInt(match[2], 10)));
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-};
-
-const buildAssetsPayload = (plan: SnsPlanEntry): Record<string, any> | null => {
-  const assets: Record<string, any> = {
-    mediaStyle: plan.assets?.mediaStyle,
-    copyGuidelines: plan.assets?.copyGuidelines,
-    cta: plan.assets?.cta,
-    extraNotes: plan.assets?.extraNotes ?? null,
-    summary: plan.summary,
-  };
-
-  const entries = Object.entries(assets).filter(
-    ([, value]) => value !== undefined && value !== null && value !== ''
-  );
-
-  if (entries.length === 0) {
-    return null;
-  }
-
-  return entries.reduce<Record<string, any>>((acc, [key, value]) => {
-    acc[key] = value;
-    return acc;
-  }, {});
-};
-
-const mapSnsPlanEntriesToStorage = (
-  snapshotId: string,
-  plans: SnsPlanEntry[]
-): BusinessIdentitySnsPlanInput[] =>
-  plans.map((plan, index) => {
-    const topics = Array.isArray(plan.topics)
-      ? plan.topics.filter((topic) => typeof topic === 'string' && topic.trim().length > 0)
-      : [];
-
-    return {
-      snapshotId,
-      channel: plan.channel?.trim() || `Channel ${index + 1}`,
-      title: plan.title?.trim() || `Plan ${index + 1}`,
-      cadenceType: normalizeCadenceType(plan.cadence?.type),
-      cadenceValue: isFiniteNumber(plan.cadence?.customDays) ? plan.cadence?.customDays ?? null : null,
-      dayOfWeek: isFiniteNumber(plan.cadence?.dayOfWeek) ? plan.cadence?.dayOfWeek ?? null : null,
-      dayOfMonth: isFiniteNumber(plan.cadence?.dayOfMonth) ? plan.cadence?.dayOfMonth ?? null : null,
-      scheduledTime: normalizeTimeString(plan.cadence?.time),
-      topics,
-      assets: buildAssetsPayload(plan),
-      enabled: true,
-    };
-  });
 
 const EGBusinessIdentity: React.FC = () => {
   const navigate = useNavigate();
@@ -224,15 +37,59 @@ const EGBusinessIdentity: React.FC = () => {
   const [storedPlanLoaded, setStoredPlanLoaded] = useState(false);
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramPassword, setInstagramPassword] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false);
 
-  const getBrandKeyFromValue = useCallback((value: string) => {
-    try {
-      const parsed = new URL(value.startsWith('http') ? value : `https://${value}`);
-      return parsed.hostname?.toLowerCase() || parsed.toString();
-    } catch {
-      return value.trim().toLowerCase();
-    }
-  }, []);
+  // AI Key selection state
+  const [aiKeysState, setAiKeysState] = useState(aiKeysStore.getState());
+  const [selectedGoogleKey, setSelectedGoogleKey] = useState<AIKey | null>(null);
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
+  const [showKeyDropdown, setShowKeyDropdown] = useState(false);
+
+  const googleKeys = useMemo(
+    () => aiKeysState.keys.filter((key) => key.providerId === 'google' && key.isActive),
+    [aiKeysState.keys]
+  );
+
+  // Configure AI with selected key
+  const configureAI = useCallback(
+    async (key?: AIKey | null) => {
+      const apiKey = key?.fields?.apiKey || '';
+      const defaultModel = 'gemini-2.5-flash';
+
+      if (!apiKey) {
+        console.warn('Cannot configure Gemini API without an active Google AI key.');
+        setIsConfigured(false);
+        setConnectionStatus('disconnected');
+        return false;
+      }
+
+      setConnectionStatus('checking');
+
+      try {
+        const success = await AIService.configure({
+          apiKey,
+          model: defaultModel,
+        });
+
+        if (success) {
+          setIsConfigured(true);
+          setConnectionStatus('connected');
+        } else {
+          setIsConfigured(false);
+          setConnectionStatus('error');
+        }
+
+        return success;
+      } catch (error) {
+        console.error('Error configuring AI client:', error);
+        setIsConfigured(false);
+        setConnectionStatus('error');
+        return false;
+      }
+    },
+    []
+  );
 
   const parsedIdentity = useMemo(() => {
     if (!identitySnapshot?.identityJson) return null;
@@ -242,62 +99,6 @@ const EGBusinessIdentity: React.FC = () => {
       return null;
     }
   }, [identitySnapshot]);
-
-  const parseStoredTopics = (topicsJson: string): string[] => {
-    try {
-      const parsed = JSON.parse(topicsJson);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((topic) => typeof topic === 'string' && topic.trim().length > 0);
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  };
-
-  const parseStoredAssets = (assetsJson: string | null): {
-    mediaStyle?: string;
-    copyGuidelines?: string;
-    cta?: string;
-    extraNotes?: string | null;
-    summary?: string;
-  } => {
-    if (!assetsJson) {
-      return {};
-    }
-    try {
-      const parsed = JSON.parse(assetsJson);
-      if (parsed && typeof parsed === 'object') {
-        return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return {};
-  };
-
-  const mapStoredPlanToEntry = (plan: StoredSnsPlan): SnsPlanEntry => {
-    const assets = parseStoredAssets(plan.assetsJson);
-    return {
-      channel: plan.channel,
-      title: plan.title,
-      summary: typeof assets.summary === 'string' ? assets.summary : '',
-      cadence: {
-        type: normalizeCadenceType(plan.cadenceType),
-        dayOfWeek: isFiniteNumber(plan.dayOfWeek) ? plan.dayOfWeek : null,
-        dayOfMonth: isFiniteNumber(plan.dayOfMonth) ? plan.dayOfMonth : null,
-        customDays: isFiniteNumber(plan.cadenceValue) ? plan.cadenceValue : null,
-        time: normalizeTimeString(plan.scheduledTime),
-      },
-      topics: parseStoredTopics(plan.topicsJson),
-      assets: {
-        mediaStyle: typeof assets.mediaStyle === 'string' ? assets.mediaStyle : undefined,
-        copyGuidelines: typeof assets.copyGuidelines === 'string' ? assets.copyGuidelines : undefined,
-        cta: typeof assets.cta === 'string' ? assets.cta : undefined,
-        extraNotes: typeof assets.extraNotes === 'string' ? assets.extraNotes : null,
-      },
-    };
-  };
 
   const fetchStoredSnsPlans = useCallback(async (snapshotId: string): Promise<SnsPlanEntry[] | null> => {
     try {
@@ -351,7 +152,7 @@ const EGBusinessIdentity: React.FC = () => {
         setStoredPlanLoaded(true);
       }
     },
-    [fetchStoredSnsPlans, getBrandKeyFromValue]
+    [fetchStoredSnsPlans]
   );
 
   useEffect(() => {
@@ -384,18 +185,17 @@ const EGBusinessIdentity: React.FC = () => {
 
   const generateSnsPlan = useCallback(async (identityData: any): Promise<SnsPlanEntry[] | null> => {
     try {
-      const planPrompt = [
-        'Using the following business identity JSON, create a multi-channel SNS marketing plan.',
-        'Identity JSON:',
-        JSON.stringify(identityData, null, 2),
-      ].join('\n');
+      if (!isConfigured) {
+        throw new Error('AI is not configured. Please select a Google AI key.');
+      }
 
-      const snsPlanResult = await chatWithGemma(planPrompt, [], {
-        stream: false,
-        systemPrompt: SNS_PLAN_SYSTEM_PROMPT,
-      });
+      const result = await window.electron.web.generateSnsPlan(identityData);
 
-      const jsonMatch = snsPlanResult.content.match(/\{[\s\S]*\}/);
+      if (!result.success || !result.content) {
+        throw new Error(result.error || 'SNS plan generation failed.');
+      }
+
+      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error('SNS plan response missing JSON.');
       }
@@ -411,7 +211,7 @@ const EGBusinessIdentity: React.FC = () => {
       );
       return null;
     }
-  }, []);
+  }, [isConfigured]);
 
   const persistSnsPlans = useCallback(async (snapshotId: string, plans: SnsPlanEntry[]) => {
     if (!window.electron?.businessIdentity?.saveSnsPlans) {
@@ -442,10 +242,11 @@ const EGBusinessIdentity: React.FC = () => {
       try {
         const structuredPrompt = buildInstagramStructuredPrompt(task, parsedIdentity);
         const result = await window.electron.debug.openInstagramWithProfile({
+          planId: task.planId, // Pass SQLite plan ID for execution tracking
           username: instagramUsername.trim(),
           password: instagramPassword,
           structuredPrompt,
-        });
+        } as Parameters<typeof window.electron.debug.openInstagramWithProfile>[0]);
         if (!result?.success) {
           setPlanError(result?.error || 'Instagram test post failed. Check automation logs.');
           return;
@@ -458,7 +259,7 @@ const EGBusinessIdentity: React.FC = () => {
         );
       }
     },
-    [parsedIdentity]
+    [parsedIdentity, instagramUsername, instagramPassword]
   );
 
   useEffect(() => {
@@ -485,49 +286,70 @@ const EGBusinessIdentity: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch website content
-      const fetchResult = await window.electron.web.fetchContent(parsed.toString());
-      if (!fetchResult?.success || !fetchResult.content) {
-        setError(fetchResult?.error || '웹사이트를 읽어오는 데 실패했습니다.');
+      // Crawl multiple pages for comprehensive business identity analysis
+      console.log('[EGBusinessIdentity] Starting multi-page crawl for business identity...');
+      const crawlResult = await window.electron.web.crawlMultiplePages(parsed.toString(), { maxPages: 5 });
+      if (!crawlResult?.success || !crawlResult.combinedContent) {
+        setError(crawlResult?.error || '웹사이트를 크롤링하는 데 실패했습니다.');
+        setLoading(false);
         return;
       }
 
-      // Build website context text for AI
+      console.log('[EGBusinessIdentity] Multi-page crawl completed:', {
+        pagesCrawled: crawlResult.combinedContent.pagesCrawled,
+        totalWords: crawlResult.combinedContent.totalWordCount,
+        domain: crawlResult.domain,
+      });
+
+      // Build website context text for AI using combined content from multiple pages
       const websiteText = [
-        fetchResult.content.title ? `Title: ${fetchResult.content.title}` : '',
-        fetchResult.content.description ? `Description: ${fetchResult.content.description}` : '',
-        fetchResult.content.text ? `Content: ${fetchResult.content.text}` : '',
+        `Domain: ${crawlResult.domain}`,
+        `Pages Crawled: ${crawlResult.combinedContent.pagesCrawled}`,
+        `Total Word Count: ${crawlResult.combinedContent.totalWordCount}`,
+        crawlResult.siteStructure?.commonPages
+          ? `Discovered Pages: ${Object.entries(crawlResult.siteStructure.commonPages)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(', ')}`
+          : '',
+        '',
+        'Combined Content from Multiple Pages:',
+        crawlResult.combinedContent.text || '',
       ]
         .filter(Boolean)
         .join('\n\n');
 
       // Call AI to generate identity data
-      const aiResult = await chatWithGemma(
-        'Analyze this website and generate the business identity data in the required JSON format.',
-        [],
-        {
-          stream: false,
-          websiteContext: websiteText,
-          systemPrompt: BUSINESS_IDENTITY_SYSTEM_PROMPT,
-        }
-      );
+      if (!isConfigured) {
+        setError('AI is not configured. Please select a Google AI key.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[EGBusinessIdentity] Generating business identity from crawled content...');
+      const aiResult = await window.electron.web.generateBusinessIdentity(websiteText);
+      if (!aiResult.success || !aiResult.content) {
+        setError(aiResult.error || 'AI 응답 생성에 실패했습니다.');
+        setLoading(false);
+        return;
+      }
+      const aiResultContent = aiResult.content;
 
       // Parse JSON response
       let identityData;
       try {
-        const jsonMatch = aiResult.content.match(/\{[\s\S]*\}/);
+        const jsonMatch = aiResultContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           identityData = JSON.parse(jsonMatch[0]);
         } else {
           throw new Error('No JSON found in AI response');
         }
       } catch (parseError) {
-        console.error('Failed to parse AI response:', parseError, aiResult.content);
+        console.error('Failed to parse AI response:', parseError, aiResultContent);
         setError('AI 응답을 파싱하는 데 실패했습니다. 다시 시도해주세요.');
         return;
       }
 
-      console.info('[EGBusinessIdentity] AI raw response:', aiResult.content);
+      console.info('[EGBusinessIdentity] AI raw response:', aiResultContent);
       console.info('[EGBusinessIdentity] Parsed identity data:', identityData);
 
       let snapshotId: string | undefined;
@@ -543,14 +365,15 @@ const EGBusinessIdentity: React.FC = () => {
           sourceUrl: parsed.toString(),
           rawInput: websiteText,
           identityJson: JSON.stringify(identityData),
-          aiProvider: 'gemma',
-          aiModel: 'gemma-client',
+          aiProvider: 'gemini',
+          aiModel: 'gemini-2.5-flash',
         });
         if (!snapshotResult.success || !snapshotResult.data?.id) {
           throw new Error(snapshotResult.error || 'Failed to save business identity snapshot.');
         }
         snapshotId = snapshotResult.data.id;
         setIdentitySnapshot(snapshotResult.data);
+        setIsEditMode(false); // Exit edit mode after successful generation
         console.info('[EGBusinessIdentity] Snapshot saved:', snapshotResult.data?.id ?? 'unknown');
         console.info('[EGBusinessIdentity] Generating SNS plan with identity data:', identityData);
         snsPlanData = await generateSnsPlan(identityData);
@@ -579,15 +402,107 @@ const EGBusinessIdentity: React.FC = () => {
         return;
       }
 
+      // Run SEO and SSL checks after SNS plan generation
+      console.info('[EGBusinessIdentity] Starting SEO and SSL analysis...');
+      let seoAnalysis = null;
+      let sslAnalysis = null;
+      try {
+        const [seoResult, sslResult] = await Promise.allSettled([
+          runSEOAnalysis(parsed.toString()),
+          runSSLAnalysis(parsed.toString()),
+        ]);
+
+        seoAnalysis = seoResult.status === 'fulfilled' ? seoResult.value : null;
+        sslAnalysis = sslResult.status === 'fulfilled' ? sslResult.value : null;
+
+        if (seoAnalysis?.success) {
+          console.info('[EGBusinessIdentity] SEO analysis completed:', seoAnalysis.scores);
+        } else {
+          console.warn('[EGBusinessIdentity] SEO analysis failed:', seoAnalysis?.error);
+        }
+
+        if (sslAnalysis?.success) {
+          console.info('[EGBusinessIdentity] SSL analysis completed:', sslAnalysis.result?.grade);
+        } else {
+          console.warn('[EGBusinessIdentity] SSL analysis failed:', sslAnalysis?.error);
+        }
+
+        // Store analysis results in snapshot
+        if (snapshotId && (seoAnalysis || sslAnalysis)) {
+          try {
+            console.info('[EGBusinessIdentity] Saving analysis results to database...');
+            const saveResult = await window.electron.businessIdentity.updateAnalysisResults(
+              snapshotId,
+              seoAnalysis,
+              sslAnalysis
+            );
+            if (saveResult.success) {
+              console.info('[EGBusinessIdentity] Analysis results saved successfully');
+            } else {
+              console.warn('[EGBusinessIdentity] Failed to save analysis results:', saveResult.error);
+            }
+          } catch (analysisSaveError) {
+            console.error('[EGBusinessIdentity] Failed to save analysis results:', analysisSaveError);
+            // Don't fail the entire flow if analysis storage fails
+          }
+        }
+      } catch (analysisError) {
+        console.error('[EGBusinessIdentity] Analysis error:', analysisError);
+        // Don't fail the entire flow if analysis fails
+      }
+
+      // Create a compatible source object from the crawl result
+      // Use the homepage page if available, otherwise create a summary
+      const homepagePage = crawlResult.pages?.find((p) => p.pageType === 'homepage');
+      const source = homepagePage
+        ? {
+            url: homepagePage.url,
+            finalUrl: homepagePage.url,
+            status: homepagePage.metadata.status,
+            contentType: 'text/html',
+            language: homepagePage.metadata.language || null,
+            title: homepagePage.title,
+            description: homepagePage.description,
+            html: '', // Not needed for preview
+            text: homepagePage.content.text,
+            textPreview: homepagePage.content.text.slice(0, 800),
+            wordCount: homepagePage.content.wordCount,
+            fetchedAt: homepagePage.metadata.fetchedAt,
+          }
+        : {
+            url: crawlResult.baseUrl,
+            finalUrl: crawlResult.baseUrl,
+            status: 200,
+            contentType: 'text/html',
+            language: null,
+            title: null,
+            description: null,
+            html: '',
+            text: crawlResult.combinedContent.text,
+            textPreview: crawlResult.combinedContent.text.slice(0, 800),
+            wordCount: crawlResult.combinedContent.totalWordCount,
+            fetchedAt: new Date().toISOString(),
+          };
+
       // Navigate to preview with the data
       navigate('/egbusiness-identity/preview', {
         state: {
-          source: fetchResult.content,
+          source,
           identityData,
-          rawAiResponse: aiResult.content,
+          rawAiResponse: aiResultContent,
           mode: 'ai',
           snapshotId,
           snsPlan: snsPlanData,
+          crawlMetadata: {
+            pagesCrawled: crawlResult.combinedContent.pagesCrawled,
+            totalWords: crawlResult.combinedContent.totalWordCount,
+            domain: crawlResult.domain,
+            siteStructure: crawlResult.siteStructure,
+          },
+          analysisResults: {
+            seo: seoAnalysis,
+            ssl: sslAnalysis,
+          },
         },
       });
     } catch (err) {
@@ -603,7 +518,83 @@ const EGBusinessIdentity: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [generateSnsPlan, getBrandKeyFromValue, navigate, persistSnsPlans, persistUrl, url]);
+  }, [generateSnsPlan, isConfigured, navigate, persistSnsPlans, persistUrl, url]);
+
+  // Subscribe to AI keys store and configure on mount
+  useEffect(() => {
+    const unsubscribe = aiKeysStore.subscribe(setAiKeysState);
+    checkConfiguration();
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Auto-select first Google key if available
+  useEffect(() => {
+    if (googleKeys.length === 0) {
+      if (selectedGoogleKey !== null) {
+        setSelectedGoogleKey(null);
+      }
+      setIsConfigured(false);
+      setConnectionStatus('disconnected');
+      return;
+    }
+
+    if (!selectedGoogleKey || !googleKeys.some((key) => key.id === selectedGoogleKey.id)) {
+      const nextKey = googleKeys[0];
+      setSelectedGoogleKey(nextKey);
+      configureAI(nextKey);
+    }
+  }, [googleKeys, selectedGoogleKey, configureAI]);
+
+  const checkConfiguration = async () => {
+    setConnectionStatus('checking');
+    const configured = await AIService.isConfigured();
+    setIsConfigured(configured);
+    setConnectionStatus(configured ? 'connected' : 'disconnected');
+  };
+
+  const handleKeySelection = (key: AIKey) => {
+    setSelectedGoogleKey(key);
+    configureAI(key);
+    setShowKeyDropdown(false);
+  };
+
+  const toggleKeyDropdown = () => {
+    setShowKeyDropdown(!showKeyDropdown);
+  };
+
+  const getConnectionStatusIcon = () => {
+    switch (connectionStatus) {
+      case 'checking': return '🔄';
+      case 'connected': return '🟢';
+      case 'disconnected': return '🔴';
+      case 'error': return '❌';
+      default: return '🔴';
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'checking':
+        return 'Checking connection...';
+      case 'connected':
+        return `Connected with ${selectedGoogleKey?.name || 'Google AI'}`;
+      case 'disconnected':
+        return 'No Google AI key available';
+      case 'error':
+        return 'Connection error';
+      default:
+        return 'Disconnected';
+    }
+  };
+
+  // Set edit mode when navigating from preview with bypassPreviewAutoRedirect
+  useEffect(() => {
+    if (bypassPreviewAutoRedirect) {
+      setIsEditMode(true);
+    }
+  }, [bypassPreviewAutoRedirect]);
 
   useEffect(() => {
     if (location.pathname === '/egbusiness-identity/preview') {
@@ -639,96 +630,28 @@ const EGBusinessIdentity: React.FC = () => {
     bypassPreviewAutoRedirect,
   ]);
 
-  const renderIdentitySummary = () => {
-    if (!identitySnapshot || !parsedIdentity) return null;
-    const identity = parsedIdentity.identity || {};
-    const recommendedActions = Array.isArray(parsedIdentity.recommendedActions)
-      ? parsedIdentity.recommendedActions
-      : [];
-    return (
-      <div className="egbusiness-identity__summary-card">
-        <div className="egbusiness-identity__summary-header">
-          <div>
-            <h2>Current Business Identity</h2>
-            {identitySnapshot.sourceUrl && (
-              <p className="egbusiness-identity__hint">Source: {identitySnapshot.sourceUrl}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setIdentitySnapshot(null);
-              setSnsPlan(null);
-              setStoredPlanLoaded(false);
-            }}
-          >
-            Generate New Identity
-          </button>
-        </div>
-        <div className="egbusiness-identity__summary-grid">
-          <div>
-            <h4>Core Identity</h4>
-            <p>{identity.coreIdentity || '—'}</p>
-          </div>
-          <div>
-            <h4>Brand Category</h4>
-            <p>{identity.brandCategory || '—'}</p>
-          </div>
-          <div>
-            <h4>Target Audience</h4>
-            <p>{identity.targetAudience || '—'}</p>
-          </div>
-          <div>
-            <h4>Tone & Voice</h4>
-            <p>{identity.toneVoice || '—'}</p>
-          </div>
-        </div>
-        {recommendedActions.length > 0 && (
-          <div className="egbusiness-identity__summary-actions">
-            <h4>Recommended Actions</h4>
-            <ul>
-              {recommendedActions.map((action: any, idx: number) => (
-                <li key={`${action.label}-${idx}`}>
-                  <strong>{action.label}</strong>
-                  <span>{action.detail}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {snsPlan && snsPlan.length > 0 && (
-          <div className="egbusiness-identity__summary-plan">
-            <h4>SNS Plan</h4>
-            <div className="egbusiness-identity__summary-plan-grid">
-              {snsPlan.map((plan, idx) => (
-                <div key={`${plan.channel}-${idx}`} className="egbusiness-identity__summary-plan-card">
-                  <div className="egbusiness-identity__summary-plan-header">
-                    <span>{plan.channel}</span>
-                    <strong>{plan.title}</strong>
-                  </div>
-                  <p>{plan.summary}</p>
-                  <div className="egbusiness-identity__summary-plan-meta">
-                    <span>Cadence: {plan.cadence?.type || 'custom'}</span>
-                    {plan.cadence?.dayOfWeek !== null && plan.cadence?.dayOfWeek !== undefined && (
-                      <span>Day: {plan.cadence.dayOfWeek}</span>
-                    )}
-                    {plan.cadence?.time && <span>Time: {plan.cadence.time}</span>}
-                  </div>
-                  {plan.topics?.length > 0 && (
-                    <div className="egbusiness-identity__summary-plan-topics">
-                      {plan.topics.map((topic) => (
-                        <span key={topic}>{topic}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  const handleGenerateNew = () => {
+    setIdentitySnapshot(null);
+    setSnsPlan(null);
+    setStoredPlanLoaded(false);
+    setIsEditMode(true);
   };
+
+  const handleGoBack = useCallback(() => {
+    if (!identitySnapshot || !parsedIdentity) {
+      return;
+    }
+    navigate('/egbusiness-identity/preview', {
+      state: {
+        source: parsedIdentity.source,
+        identityData: parsedIdentity,
+        rawAiResponse: identitySnapshot.identityJson,
+        mode: 'ai',
+        snapshotId: identitySnapshot.id,
+        snsPlan,
+      },
+    });
+  }, [identitySnapshot, parsedIdentity, snsPlan, navigate]);
 
   return (
     <div className="egbusiness-identity demo">
@@ -740,131 +663,77 @@ const EGBusinessIdentity: React.FC = () => {
             start shaping your identity brief instantly.
           </p>
         </div>
+        <AIKeySelector
+          googleKeys={googleKeys}
+          selectedGoogleKey={selectedGoogleKey}
+          connectionStatus={connectionStatus}
+          showKeyDropdown={showKeyDropdown}
+          onToggleDropdown={toggleKeyDropdown}
+          onKeySelection={handleKeySelection}
+          getConnectionStatusIcon={getConnectionStatusIcon}
+          getConnectionStatusText={getConnectionStatusText}
+        />
       </header>
 
-      <div className="egbusiness-identity__tabs">
-        <button
-          type="button"
-          className={`egbusiness-identity__tab${activeTab === 'kickoff' ? ' is-active' : ''}`}
-          onClick={() => setActiveTab('kickoff')}
-        >
-          Identity Kickoff
-        </button>
-        <button
-          type="button"
-          className={`egbusiness-identity__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
-          onClick={() => setActiveTab('scheduled')}
-        >
-          Scheduled Posts
-        </button>
-      </div>
-
-      {activeTab === 'kickoff' ? (
-        <>
-          <section className="egbusiness-identity__panel eg-business-identity__panel--primary">
-        <div className="egbusiness-identity__panel-heading">
-          <span className="egbusiness-identity__icon">
-            <FontAwesomeIcon icon={faGlobe} />
-          </span>
-          <div>
-            <h2>Paste your flagship URL</h2>
-            <p>We&apos;ll scan the page, capture the tone, and suggest the first draft of your business identity.</p>
-          </div>
+      {!isEditMode && (
+        <div className="egbusiness-identity__tabs">
+          <button
+            type="button"
+            className={`egbusiness-identity__tab${activeTab === 'kickoff' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('kickoff')}
+          >
+            Identity Kickoff
+          </button>
+          <button
+            type="button"
+            className={`egbusiness-identity__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('scheduled')}
+          >
+            Scheduled Posts
+          </button>
         </div>
+      )}
 
-        {identitySnapshot && parsedIdentity ? (
-          renderIdentitySummary()
-        ) : (
-          <div className="egbusiness-identity__input-block">
-            <label htmlFor="brand-url">Website URL</label>
-            <div className="egbusiness-identity__control">
-              <input
-                id="brand-url"
-                type="url"
-                placeholder="https://your-company.com"
-                inputMode="url"
-                autoComplete="off"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !loading) {
-                    handleGenerate();
-                  }
-                }}
-              />
-              <button type="button" onClick={handleGenerate} disabled={loading}>
-                <FontAwesomeIcon icon={faMagic} />
-                {loading ? 'Analyzing…' : 'Generate'}
-              </button>
-            </div>
-            <p className="egbusiness-identity__hint">
-              Tip: choose the page that best explains your mission (landing page, manifesto, or investor letter).
-            </p>
-            {error && <p className="egbusiness-identity__error">{error}</p>}
-            {planError && <p className="egbusiness-identity__error">{planError}</p>}
-            {loading && !error && (
-              <p className="egbusiness-identity__status">
-                웹사이트를 불러오고 있습니다. 잠시만 기다려주세요…
-              </p>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="egbusiness-identity__panel egbusiness-identity__panel--secondary">
-        <h3>What happens next?</h3>
-        <ol>
-          <li>We capture keywords, tone, and structure from the page.</li>
-          <li>The AI drafts your positioning, voice principles, and content pillars.</li>
-          <li>You review, tweak, and launch automated social goals from one place.</li>
-        </ol>
-      </section>
-        </>
+      {isEditMode || activeTab === 'kickoff' ? (
+        <IdentityKickoff
+          url={url}
+          onUrlChange={setUrl}
+          onGenerate={handleGenerate}
+          loading={loading}
+          error={error}
+          planError={planError}
+          isConfigured={isConfigured}
+          identitySnapshot={isEditMode ? null : identitySnapshot}
+          parsedIdentity={isEditMode ? null : parsedIdentity}
+          snsPlan={snsPlan}
+          onGenerateNew={handleGenerateNew}
+          isEditMode={isEditMode}
+          onGoBack={isEditMode && identitySnapshot && parsedIdentity ? handleGoBack : undefined}
+        />
       ) : (
-        <section className="egbusiness-identity__panel egbusiness-identity__panel--scheduled">
-          <div className="egbusiness-identity__panel-heading">
-            <span className="egbusiness-identity__icon">
-              <FontAwesomeIcon icon={faCalendarAlt} />
-            </span>
-            <div>
-              <h2>Schedule Identity Deliverables</h2>
-              <p>Plan recurring content tasks aligned with your business identity strategy.</p>
-            </div>
-          </div>
-          <p className="egbusiness-identity__hint">
-            Start from these Cursor-themed example cadences or replace them with your own. Automated scheduling is
-            coming soon.
-          </p>
-          <div className="egbusiness-identity__credentials">
-            <div>
-              <label htmlFor="instagram-username">Instagram Username</label>
-              <input
-                id="instagram-username"
-                type="text"
-                autoComplete="username"
-                placeholder="username"
-                value={instagramUsername}
-                onChange={(event) => setInstagramUsername(event.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="instagram-password">Instagram Password</label>
-              <input
-                id="instagram-password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="password"
-                value={instagramPassword}
-                onChange={(event) => setInstagramPassword(event.target.value)}
-              />
-            </div>
-          </div>
-          <BusinessIdentityScheduledDemo onTestPost={handleTestScheduledPost} />
-        </section>
+        <ScheduledPosts
+          instagramUsername={instagramUsername}
+          instagramPassword={instagramPassword}
+          onInstagramUsernameChange={setInstagramUsername}
+          onInstagramPasswordChange={setInstagramPassword}
+          onTestPost={handleTestScheduledPost}
+          onToggleSchedule={(task, isActive) => {
+            console.log(`[EGBusinessIdentity] Toggle schedule for ${task.id}: ${isActive ? 'active' : 'paused'}`);
+            // TODO: Implement schedule toggle logic (save to SQLite, start/stop scheduler)
+          }}
+          hasAccountForChannel={(channel) => {
+            // For Instagram, check if credentials are stored
+            if (channel.toLowerCase() === 'instagram') {
+              return instagramUsername.trim().length > 0 && instagramPassword.trim().length > 0;
+            }
+            // For other channels, check SQLite accounts (if API available)
+            // TODO: Implement check for other channels via SQLite accounts table
+            return false;
+          }}
+        />
       )}
     </div>
   );
 };
 
 export default EGBusinessIdentity;
-

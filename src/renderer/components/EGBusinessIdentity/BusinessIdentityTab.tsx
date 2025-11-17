@@ -6,6 +6,9 @@ import './EGBusinessIdentityResultDemo.css';
 import type { WebsiteContentSummary } from '../../main/preload';
 import BusinessIdentityScheduledDemo, { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
 import { buildInstagramStructuredPrompt } from './instagramPrompt';
+import { SEOAnalysisDisplay } from './SEOAnalysisDisplay';
+import { SSLAnalysisDisplay } from './SSLAnalysisDisplay';
+import type { SEOAnalysisResult, SSLAnalysisResult } from './analysisHelpers';
 
 interface IdentityBlock {
   title: string;
@@ -277,6 +280,7 @@ const mapSnsPlanToScheduledTasks = (plans?: SnsPlanEntry[]): BusinessIdentitySch
 
     return {
       id: `${idBase}-${index}`,
+      planId: plan.planId, // Preserve SQLite plan ID
       channel: plan.channel?.trim() || 'Custom Channel',
       title: plan.title?.trim() || `Plan ${index + 1}`,
       summary: plan.summary?.trim() || 'No summary available.',
@@ -310,15 +314,23 @@ const BusinessIdentityTab: React.FC = () => {
     return undefined;
   }, [location.state]);
 
-  const { identityData, rawAiResponse, snsPlan } = useMemo<{
+  const { identityData, rawAiResponse, snsPlan, analysisResults } = useMemo<{
     identityData?: IdentityData;
     rawAiResponse?: string;
     snsPlan?: SnsPlanEntry[];
+    analysisResults?: {
+      seo?: SEOAnalysisResult | null;
+      ssl?: SSLAnalysisResult | null;
+    };
   }>(() => {
     const maybeState = location.state as {
       identityData?: IdentityData;
       rawAiResponse?: string;
       snsPlan?: SnsPlanEntry[];
+      analysisResults?: {
+        seo?: SEOAnalysisResult | null;
+        ssl?: SSLAnalysisResult | null;
+      };
     } | undefined;
     if (!maybeState) {
       return {};
@@ -330,7 +342,8 @@ const BusinessIdentityTab: React.FC = () => {
     const raw = typeof maybeState.rawAiResponse === 'string' ? maybeState.rawAiResponse : undefined;
     const plan =
       Array.isArray(maybeState.snsPlan) && maybeState.snsPlan.length > 0 ? maybeState.snsPlan : undefined;
-    return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan };
+    const analysis = maybeState.analysisResults || {};
+    return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan, analysisResults: analysis };
   }, [location.state]);
 
   const insights = useMemo<IdentityInsights>(() => {
@@ -346,6 +359,20 @@ const BusinessIdentityTab: React.FC = () => {
     return mapSnsPlanToScheduledTasks(snsPlan);
   }, [snsPlan]);
   const hasStoredSnsPlan = scheduledTasks.length > 0;
+
+  // Check if account exists for a channel
+  const hasAccountForChannel = useCallback(
+    (channel: string): boolean => {
+      // For Instagram, check if credentials are stored
+      if (channel.toLowerCase() === 'instagram') {
+        return instagramUsername.trim().length > 0 && instagramPassword.trim().length > 0;
+      }
+      // For other channels, check SQLite accounts (if API available)
+      // TODO: Implement check for other channels via SQLite accounts table
+      return false;
+    },
+    [instagramUsername, instagramPassword]
+  );
 
   useEffect(() => {
     const loadStoredCredentials = async () => {
@@ -411,6 +438,7 @@ const BusinessIdentityTab: React.FC = () => {
       try {
         const structuredPrompt = buildInstagramStructuredPrompt(task, identityData);
         const result = await window.electron.debug.openInstagramWithProfile({
+          planId: task.planId, // Pass SQLite plan ID for execution tracking
           username: instagramUsername.trim(),
           password: instagramPassword,
           structuredPrompt,
@@ -436,13 +464,37 @@ const BusinessIdentityTab: React.FC = () => {
           <p className="egbusiness-identity-result__eyebrow">Business Identity</p>
           <h1>{businessTitle}</h1>
           {businessSubtitle && (
-            <p className="egbusiness-identity-result__subtitle">{businessSubtitle}</p>
+            <p className="egbusiness-identity-result__subtitle">
+              {businessSubtitle}
+              {analysisResults && (
+                <span className="egbusiness-identity-result__score-badges">
+                  {analysisResults.seo?.success && analysisResults.seo.scores && (
+                    <span 
+                      className="egbusiness-identity-result__score-badge egbusiness-identity-result__score-badge--seo"
+                      title={`SEO Score: ${analysisResults.seo.scores.average}/100`}
+                    >
+                      SEO {analysisResults.seo.scores.average}
+                    </span>
+                  )}
+                  {analysisResults.ssl?.success && analysisResults.ssl.result?.grade && (
+                    <span 
+                      className="egbusiness-identity-result__score-badge egbusiness-identity-result__score-badge--ssl"
+                      title={`SSL Grade: ${analysisResults.ssl.result.grade.grade} (${analysisResults.ssl.result.grade.score}/100)`}
+                    >
+                      SSL {analysisResults.ssl.result.grade.grade}
+                    </span>
+                  )}
+                </span>
+              )}
+            </p>
           )}
         </div>
         <div className="egbusiness-identity-result__edit-bar">
           <button
             type="button"
-            onClick={() => navigate('/egbusiness-identity')}
+            onClick={() => navigate('/egbusiness-identity', {
+              state: { bypassPreviewAutoRedirect: true }
+            })}
           >
             <FontAwesomeIcon icon={faEdit} />
             Edit Identity
@@ -468,57 +520,6 @@ const BusinessIdentityTab: React.FC = () => {
 
       {activeTab === 'identity' ? (
         <>
-          {insights.sourceMeta && (
-            <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--meta">
-              <div className="egbusiness-identity-result__panel-header">
-                <span className="egbusiness-identity-result__icon">
-                  <FontAwesomeIcon icon={faMagic} />
-                </span>
-                <div>
-                  <h2>Source snapshot</h2>
-                  <p>The text below is what the AI will use as grounding context.</p>
-                </div>
-              </div>
-              <div className="egbusiness-identity-result__meta-grid">
-                <div>
-                  <strong>Title</strong>
-                  <p>{insights.sourceMeta.title}</p>
-                </div>
-                <div>
-                  <strong>Status</strong>
-                  <p>{insights.sourceMeta.status}</p>
-                </div>
-                <div>
-                  <strong>Language</strong>
-                  <p>{insights.sourceMeta.language || 'unknown'}</p>
-                </div>
-                <div>
-                  <strong>Word count</strong>
-                  <p>{insights.sourceMeta.wordCount.toLocaleString()}</p>
-                </div>
-                <div>
-                  <strong>Top keywords</strong>
-                  <p>
-                    {insights.sourceMeta.keywords.length > 0
-                      ? insights.sourceMeta.keywords.join(', ')
-                      : 'Pending AI classification'}
-                  </p>
-                </div>
-                {insights.sourceMeta.description && (
-                  <div className="egbusiness-identity-result__meta-span">
-                    <strong>Meta description</strong>
-                    <p>{insights.sourceMeta.description}</p>
-                  </div>
-                )}
-              </div>
-              {insights.sourceMeta.preview && (
-                <div className="egbusiness-identity-result__meta-preview">
-                  <strong>Page excerpt</strong>
-                  <p>{insights.sourceMeta.preview}</p>
-                </div>
-              )}
-            </section>
-          )}
 
           <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--summary">
             <div className="egbusiness-identity-result__panel-header">
@@ -560,6 +561,14 @@ const BusinessIdentityTab: React.FC = () => {
               ))}
             </ul>
           </section>
+
+          {/* SEO and SSL Analysis Results */}
+          {analysisResults && (
+            <>
+              <SEOAnalysisDisplay seoAnalysis={analysisResults.seo || null} />
+              <SSLAnalysisDisplay sslAnalysis={analysisResults.ssl || null} />
+            </>
+          )}
 
           {/* SNS plan grid removed; use Scheduled Posts tab instead */}
         </>
@@ -628,6 +637,11 @@ const BusinessIdentityTab: React.FC = () => {
           <BusinessIdentityScheduledDemo
             tasks={hasStoredSnsPlan ? scheduledTasks : undefined}
             onTestPost={handleTestScheduledPost}
+            onToggleSchedule={(task, isActive) => {
+              console.log(`[BusinessIdentityTab] Toggle schedule for ${task.id}: ${isActive ? 'active' : 'paused'}`);
+              // TODO: Implement schedule toggle logic (save to SQLite, start/stop scheduler)
+            }}
+            hasAccountForChannel={hasAccountForChannel}
           />
         </section>
       )}

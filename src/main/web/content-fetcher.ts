@@ -1,5 +1,13 @@
 import { URL } from 'url';
 
+export interface FormField {
+  name?: string;
+  type?: string;
+  label?: string;
+  placeholder?: string;
+  required?: boolean;
+}
+
 export interface WebsiteContent {
   url: string;
   finalUrl: string;
@@ -13,6 +21,9 @@ export interface WebsiteContent {
   textPreview: string;
   wordCount: number;
   fetchedAt: string;
+  isFormPage?: boolean;
+  formFields?: FormField[];
+  formCount?: number;
 }
 
 export interface FetchWebsiteContentOptions {
@@ -175,7 +186,33 @@ export async function fetchWebsiteContent(
     const title = extractTitle(cleanedHtml);
     const description = extractDescription(cleanedHtml);
     const language = extractLanguage(cleanedHtml);
-    const text = htmlToPlainText(cleanedHtml);
+    
+    // Detect and extract form information
+    const formInfo = extractFormInfo(cleanedHtml);
+    const isFormPage = formInfo.isFormPage;
+    const formFields = formInfo.fields;
+    const formCount = formInfo.formCount;
+    
+    // For form pages, extract form field information as text
+    let text = htmlToPlainText(cleanedHtml);
+    
+    // If it's primarily a form page, enhance text with form field info
+    if (isFormPage && formFields.length > 0) {
+      const formFieldsText = formFields
+        .map((field) => {
+          const parts: string[] = [];
+          if (field.label) parts.push(`Label: ${field.label}`);
+          if (field.placeholder) parts.push(`Placeholder: ${field.placeholder}`);
+          if (field.name) parts.push(`Field: ${field.name} (${field.type || 'text'})`);
+          if (field.required) parts.push('Required');
+          return parts.join(' | ');
+        })
+        .join('\n');
+      
+      // Prepend form field information to the text
+      text = `Contact Form Fields:\n${formFieldsText}\n\n---\n\n${text}`;
+    }
+    
     const textPreview = text.slice(0, 800).trim();
     const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
 
@@ -194,6 +231,9 @@ export async function fetchWebsiteContent(
         textPreview,
         wordCount,
         fetchedAt: new Date().toISOString(),
+        isFormPage,
+        formFields,
+        formCount,
       },
     };
   } catch (error) {
@@ -236,7 +276,15 @@ function stripUnwantedTags(html: string): string {
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '');
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+    // Remove navigation elements (but keep their text content)
+    .replace(/<nav\b[^>]*>/gi, '<div>')
+    .replace(/<\/nav>/gi, '</div>')
+    // Remove header/footer but keep content
+    .replace(/<header\b[^>]*>/gi, '<div>')
+    .replace(/<\/header>/gi, '</div>')
+    .replace(/<footer\b[^>]*>/gi, '<div>')
+    .replace(/<\/footer>/gi, '</div>');
 }
 
 function extractTitle(html: string): string | null {
@@ -266,30 +314,105 @@ function extractLanguage(html: string): string | null {
 function htmlToPlainText(html: string): string {
   if (!html) return '';
 
-  const withLineBreaks = html
-    .replace(/<(?:br|hr)\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|section|article|header|footer|li|h[1-6])>/gi, '\n');
+  // Try to extract main content first (prioritize semantic HTML5 elements)
+  let contentHtml = html;
+  
+  // Look for main content areas (main, article, or content containers)
+  // Use a more robust approach that handles nested tags
+  let mainContentMatch: RegExpMatchArray | null = null;
+  
+  // Try <main> tag first (most semantic)
+  mainContentMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+  
+  // Try <article> tag
+  if (!mainContentMatch) {
+    mainContentMatch = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+  }
+  
+  // Try content containers by class or id
+  if (!mainContentMatch) {
+    const contentDivRegex = /<div[^>]*(?:class|id)=["'][^"']*(?:content|main|post|entry|body)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i;
+    mainContentMatch = html.match(contentDivRegex);
+  }
+  
+  if (mainContentMatch && mainContentMatch[1] && mainContentMatch[1].trim().length > 100) {
+    // Use main content area if found and has substantial content
+    contentHtml = mainContentMatch[1];
+  } else {
+    // Remove common non-content areas before processing
+    contentHtml = html
+      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+      .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+      // Remove common navigation/header patterns
+      .replace(/<div[^>]*(?:class|id)=["'][^"']*(?:nav|menu|header|footer|sidebar)[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, '');
+  }
 
-  const withoutTags = withLineBreaks.replace(/<[^>]+>/g, ' ');
-  const decoded = decodeEntities(withoutTags);
+  // First, handle block-level elements that should create line breaks
+  let processed = contentHtml
+    // Replace block-level closing tags with newlines
+    .replace(/<\/(p|div|section|article|main|aside|li|h[1-6]|tr|td|th|blockquote|pre|address|dl|dt|dd|ul|ol)>/gi, '\n')
+    // Replace self-closing block elements
+    .replace(/<(?:br|hr)\s*\/?>/gi, '\n')
+    // Replace opening block elements that might have content before them
+    .replace(/<(p|div|section|article|main|aside|li|h[1-6]|blockquote|pre|address)[^>]*>/gi, '\n')
+    // Remove list markers and navigation links (common patterns)
+    .replace(/<a\b[^>]*class=["'][^"']*nav[^"']*["'][^>]*>[\s\S]*?<\/a>/gi, '')
+    .replace(/<a\b[^>]*class=["'][^"']*menu[^"']*["'][^>]*>[\s\S]*?<\/a>/gi, '');
+
+  // Remove all remaining HTML tags (including self-closing, comments, etc.)
+  processed = processed
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags (should already be removed, but just in case)
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '') // Remove style tags (should already be removed, but just in case)
+    .replace(/<!--[\s\S]*?-->/g, '') // Remove HTML comments
+    .replace(/<[^>]+>/g, ' '); // Remove all remaining tags
+
+  // Decode HTML entities
+  const decoded = decodeEntities(processed);
+  
+  // Normalize whitespace more aggressively
   const normalized = normalizeWhitespace(decoded);
 
   return normalized;
 }
 
 function normalizeWhitespace(input: string): string {
-  return input.replace(/\r?\n+/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return input
+    .replace(/\r?\n+/g, '\n') // Normalize line breaks
+    .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs
+    .replace(/\n[ \t]+/g, '\n') // Remove leading whitespace on lines
+    .replace(/[ \t]+\n/g, '\n') // Remove trailing whitespace on lines
+    .replace(/\n{3,}/g, '\n\n') // Limit consecutive newlines
+    .replace(/^\s+|\s+$/gm, '') // Trim each line
+    .trim(); // Trim the whole string
 }
 
 function decodeEntities(text: string): string {
-  return text
+  // First decode numeric entities (decimal and hex)
+  let decoded = text
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+  // Then decode named entities (order matters - &amp; must be last)
+  decoded = decoded
     .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
+    .replace(/&ensp;/gi, ' ')
+    .replace(/&emsp;/gi, ' ')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
     .replace(/&#39;/gi, "'")
-    .replace(/&hellip;/gi, '…');
+    .replace(/&hellip;/gi, '…')
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&copy;/gi, '©')
+    .replace(/&reg;/gi, '®')
+    .replace(/&trade;/gi, '™')
+    .replace(/&amp;/gi, '&'); // Must be last to avoid double-decoding
+
+  return decoded;
 }
 
 async function readResponseBody(response: Response, maxBytes: number): Promise<string> {
@@ -330,6 +453,83 @@ function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
   }
 
   return result;
+}
+
+/**
+ * Extract form information from HTML
+ */
+function extractFormInfo(html: string): {
+  isFormPage: boolean;
+  formCount: number;
+  fields: FormField[];
+} {
+  // Count forms
+  const formMatches = html.match(/<form\b[^>]*>/gi);
+  const formCount = formMatches ? formMatches.length : 0;
+  
+  const fields: FormField[] = [];
+  
+  if (formCount === 0) {
+    return { isFormPage: false, formCount: 0, fields: [] };
+  }
+  
+  // Extract all input, textarea, and select elements
+  const inputRegex = /<(input|textarea|select)\b([^>]*)>/gi;
+  let match;
+  
+  while ((match = inputRegex.exec(html)) !== null) {
+    const tagName = match[1].toLowerCase();
+    const attributes = match[2];
+    
+    const field: FormField = {
+      type: tagName === 'input' ? extractAttribute(attributes, 'type') || 'text' : tagName,
+      name: extractAttribute(attributes, 'name') || undefined,
+      label: undefined,
+      placeholder: extractAttribute(attributes, 'placeholder') || undefined,
+      required: /required/i.test(attributes),
+    };
+    
+    // Try to find associated label
+    if (field.name) {
+      // Look for <label for="fieldName"> or <label><input name="fieldName">
+      const labelRegex = new RegExp(
+        `<label[^>]*(?:for=["']${field.name}["']|>[^<]*<[^>]*name=["']${field.name}["'])[^>]*>([\\s\\S]*?)<\\/label>`,
+        'i'
+      );
+      const labelMatch = html.match(labelRegex);
+      if (labelMatch && labelMatch[1]) {
+        const labelText = htmlToPlainText(labelMatch[1]).trim();
+        if (labelText) {
+          field.label = labelText;
+        }
+      }
+    }
+    
+    // Only add fields that have some identifying information
+    if (field.name || field.label || field.placeholder) {
+      fields.push(field);
+    }
+  }
+  
+  // Determine if this is primarily a form page
+  // A page is considered a form page if:
+  // 1. It has at least one form AND
+  // 2. It has at least 3 form fields AND
+  // 3. The text content (excluding form fields) is relatively small
+  const textContent = htmlToPlainText(html.replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, ''));
+  const textWordCount = textContent.split(/\s+/).filter(Boolean).length;
+  const isFormPage = formCount > 0 && fields.length >= 3 && textWordCount < 200;
+  
+  return { isFormPage, formCount, fields };
+}
+
+/**
+ * Extract attribute value from HTML attributes string
+ */
+function extractAttribute(attributes: string, attrName: string): string | null {
+  const regex = new RegExp(`${attrName}=["']([^"']+)["']`, 'i');
+  const match = attributes.match(regex);
+  return match ? match[1] : null;
 }
 
 export function extractTopKeywords(text: string, max = 5): string[] {

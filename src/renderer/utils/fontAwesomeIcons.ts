@@ -132,6 +132,7 @@ export {
 // Additional utility icons
 export {
   faChartBar,
+  faChartLine,
   faExternalLinkAlt,
   faQuestion,
   faRefresh,
