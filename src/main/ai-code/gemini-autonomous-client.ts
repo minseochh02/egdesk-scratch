@@ -7,6 +7,7 @@
 import { GoogleGenerativeAI, GenerationConfig, Content, Part, FunctionCall, Tool } from '@google/generative-ai';
 import { ipcMain } from 'electron';
 const { v4: uuidv4 } = require('uuid');
+import { fetch as undiciFetch, Agent } from 'undici';
 import { toolRegistry } from './tool-executor';
 import { loopDetectionService } from './loop-detection';
 import { projectContextBridge } from './project-context-bridge';
@@ -310,7 +311,14 @@ export class AutonomousGeminiClient implements AIClientService {
         timestamp: new Date()
       };
 
-      const response = await fetch('http://localhost:11434/api/chat', {
+      // Use undici fetch with increased headers timeout (5 minutes) for Ollama
+      // Ollama can take time to respond, especially with large models or heavy workloads
+      const agent = new Agent({
+        headersTimeout: timeoutMs, // Use the timeout from options (default 5 minutes)
+        bodyTimeout: timeoutMs,
+      });
+
+      const response = await undiciFetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller?.signal,
@@ -318,7 +326,8 @@ export class AutonomousGeminiClient implements AIClientService {
           model: normalizedModel,
           messages: this.ollamaChatHistory,
           stream: true,
-        })
+        }),
+        dispatcher: agent,
       });
 
       if (!response.ok) {
