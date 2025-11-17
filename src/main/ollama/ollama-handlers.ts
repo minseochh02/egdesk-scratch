@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { fetch as undiciFetch, Agent } from 'undici';
 import { ollamaManager } from './installer';
 
 export function registerOllamaHandlers(): void {
@@ -92,7 +93,14 @@ export function registerOllamaHandlers(): void {
         ];
       }
 
-      const response = await fetch('http://localhost:11434/api/chat', {
+      // Use undici fetch with increased headers timeout (5 minutes) for Ollama
+      // Ollama can take time to respond, especially with large models or heavy workloads
+      const agent = new Agent({
+        headersTimeout: 300000, // 5 minutes
+        bodyTimeout: 300000, // 5 minutes
+      });
+
+      const response = await undiciFetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,6 +108,7 @@ export function registerOllamaHandlers(): void {
           messages: enrichedMessages,
           stream,
         }),
+        dispatcher: agent,
       });
 
       if (!response.ok) {
