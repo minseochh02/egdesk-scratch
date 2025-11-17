@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faCalendarAlt, faMagic, faRocket } from '../../utils/fontAwesomeIcons';
+import { faEdit, faCalendarAlt, faMagic, faRocket } from '../../utils/fontAwesomeIcons';
 import './EGBusinessIdentityResultDemo.css';
 import type { WebsiteContentSummary } from '../../main/preload';
 import BusinessIdentityScheduledDemo, { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
@@ -191,12 +191,117 @@ function buildInsightsFromIdentityData(
   };
 }
 
-const ResultDemo: React.FC = () => {
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const normalizePlanCadenceType = (value?: string): 'daily' | 'weekly' | 'monthly' | 'custom' => {
+  if (!value) {
+    return 'custom';
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === 'daily' || normalized === 'weekly' || normalized === 'monthly' || normalized === 'custom') {
+    return normalized;
+  }
+  return 'custom';
+};
+
+const toTaskFrequency = (value?: string): BusinessIdentityScheduledTask['schedule']['frequency'] => {
+  const normalized = normalizePlanCadenceType(value);
+  if (normalized === 'daily' || normalized === 'weekly') {
+    return normalized;
+  }
+  return 'custom';
+};
+
+const formatDayLabel = (
+  plan: SnsPlanEntry,
+  frequency: BusinessIdentityScheduledTask['schedule']['frequency']
+): string => {
+  if (frequency === 'daily') {
+    return 'Every day';
+  }
+  if (frequency === 'weekly' && typeof plan.cadence?.dayOfWeek === 'number') {
+    return DAY_NAMES[plan.cadence.dayOfWeek] ?? 'Weekly cadence';
+  }
+  if (typeof plan.cadence?.dayOfMonth === 'number') {
+    return `Day ${plan.cadence.dayOfMonth} each month`;
+  }
+  if (typeof plan.cadence?.customDays === 'number' && plan.cadence.customDays > 0) {
+    return `Every ${plan.cadence.customDays} days`;
+  }
+  return 'Custom cadence';
+};
+
+const formatTimeLabel = (time?: string): string => {
+  if (!time) {
+    return '09:00 AM';
+  }
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return time;
+  }
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const period = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) {
+    hours = 12;
+  }
+  return `${hours}:${minutes} ${period}`;
+};
+
+const pickTaskFormat = (plan: SnsPlanEntry): string => {
+  const mediaStyle = plan.assets?.mediaStyle?.trim();
+  const copyGuidelines = plan.assets?.copyGuidelines?.trim();
+  if (mediaStyle) {
+    return mediaStyle;
+  }
+  if (copyGuidelines) {
+    return copyGuidelines;
+  }
+  return plan.summary || 'Review SNS plan details to customize this task.';
+};
+
+const mapSnsPlanToScheduledTasks = (plans?: SnsPlanEntry[]): BusinessIdentityScheduledTask[] => {
+  if (!Array.isArray(plans) || plans.length === 0) {
+    return [];
+  }
+
+  return plans.map((plan, index) => {
+    const frequency = toTaskFrequency(plan.cadence?.type);
+    const topics = Array.isArray(plan.topics)
+      ? plan.topics
+          .map((topic) => (typeof topic === 'string' ? topic.trim() : ''))
+          .filter((topic) => topic.length > 0)
+      : [];
+    const idBase = plan.title?.trim() || plan.channel?.trim() || `sns-plan-${index + 1}`;
+
+    return {
+      id: `${idBase}-${index}`,
+      channel: plan.channel?.trim() || 'Custom Channel',
+      title: plan.title?.trim() || `Plan ${index + 1}`,
+      summary: plan.summary?.trim() || 'No summary available.',
+      schedule: {
+        frequency,
+        dayLabel: formatDayLabel(plan, frequency),
+        time: formatTimeLabel(plan.cadence?.time),
+      },
+      topics: topics.length > 0 ? topics : ['Custom topic'],
+      format: pickTaskFormat(plan),
+      notes: plan.assets?.extraNotes || plan.assets?.cta || undefined,
+    };
+  });
+};
+
+const INSTAGRAM_CREDENTIALS_KEY = 'businessIdentityInstagramCredentials';
+
+const BusinessIdentityTab: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'identity' | 'scheduled'>('identity');
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramPassword, setInstagramPassword] = useState('');
+  const [credentialsStatus, setCredentialsStatus] = useState<string | null>(null);
+  const [credentialsSaving, setCredentialsSaving] = useState(false);
   const source = useMemo<WebsiteContentSummary | undefined>(() => {
     const maybeState = location.state as { source?: WebsiteContentSummary } | undefined;
     if (maybeState && maybeState.source && typeof maybeState.source === 'object') {
@@ -228,20 +333,66 @@ const ResultDemo: React.FC = () => {
     return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan };
   }, [location.state]);
 
-  const displayMode = useMemo<'ai' | 'demo'>(() => {
-    const maybeState = location.state as { mode?: string } | undefined;
-    if (maybeState?.mode === 'ai' || maybeState?.mode === 'demo') {
-      return maybeState.mode;
-    }
-    return identityData ? 'ai' : 'demo';
-  }, [identityData, location.state]);
-
   const insights = useMemo<IdentityInsights>(() => {
     if (identityData) {
       return buildInsightsFromIdentityData(identityData, source);
     }
     return buildInsightsFromSource(source);
   }, [identityData, source]);
+
+  const businessTitle = insights.sourceMeta?.title || 'Identity Brief';
+  const businessSubtitle = insights.sourceMeta?.url ? `Based on ${insights.sourceMeta.url}` : undefined;
+  const scheduledTasks = useMemo<BusinessIdentityScheduledTask[]>(() => {
+    return mapSnsPlanToScheduledTasks(snsPlan);
+  }, [snsPlan]);
+  const hasStoredSnsPlan = scheduledTasks.length > 0;
+
+  useEffect(() => {
+    const loadStoredCredentials = async () => {
+      try {
+        if (!window.electron?.store?.get) return;
+        const stored = await window.electron.store.get(INSTAGRAM_CREDENTIALS_KEY);
+        if (stored && typeof stored === 'object') {
+          const maybeUsername = (stored as { username?: unknown }).username;
+          const maybePassword = (stored as { password?: unknown }).password;
+          if (typeof maybeUsername === 'string') {
+            setInstagramUsername(maybeUsername);
+          }
+          if (typeof maybePassword === 'string') {
+            setInstagramPassword(maybePassword);
+          }
+        }
+      } catch (err) {
+        console.warn('[BusinessIdentityTab] Failed to load Instagram credentials:', err);
+      }
+    };
+    loadStoredCredentials();
+  }, []);
+
+  const handleSaveInstagramCredentials = useCallback(async () => {
+    if (!window.electron?.store?.set) {
+      setCredentialsStatus('Storage bridge unavailable in this build.');
+      return;
+    }
+    if (!instagramUsername.trim() || !instagramPassword.trim()) {
+      setCredentialsStatus('Username and password are required.');
+      return;
+    }
+    setCredentialsSaving(true);
+    setCredentialsStatus(null);
+    try {
+      await window.electron.store.set(INSTAGRAM_CREDENTIALS_KEY, {
+        username: instagramUsername.trim(),
+        password: instagramPassword,
+      });
+      setCredentialsStatus('Saved locally.');
+    } catch (err) {
+      console.error('[BusinessIdentityTab] Failed to save Instagram credentials:', err);
+      setCredentialsStatus('Failed to save credentials.');
+    } finally {
+      setCredentialsSaving(false);
+    }
+  }, [instagramPassword, instagramUsername]);
 
   const handleTestScheduledPost = useCallback(
     async (task: BusinessIdentityScheduledTask) => {
@@ -280,42 +431,24 @@ const ResultDemo: React.FC = () => {
 
   return (
     <div className="egbusiness-identity-result">
-      <header className="egbusiness-identity-result__header">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-        >
-          <FontAwesomeIcon icon={faArrowLeft} />
-          Back
-        </button>
-        <div className="egbusiness-identity-result__headline">
-          <div>
-            <h1>Identity Brief Preview</h1>
-            <p>
-              {insights.sourceMeta ? (
-                <>
-                  Based on <strong>{insights.sourceMeta.url}</strong>. This view shows what the AI has available
-                  after reading your flagship page.
-                </>
-              ) : (
-                <>
-                  Based on <strong>https://cursor.sh</strong>. This demo shows how the AI summarises Cursor’s
-                  positioning, voice, and go-to-market focus before you approve anything.
-                </>
-              )}
-            </p>
-          </div>
-          <span
-            className={`egbusiness-identity-result__tag ${
-              displayMode === 'ai'
-                ? 'egbusiness-identity-result__tag--ai'
-                : 'egbusiness-identity-result__tag--demo'
-            }`}
-          >
-            {displayMode === 'ai' ? 'AI generated' : 'Demo sample'}
-          </span>
+      <div className="egbusiness-identity-result__title-bar">
+        <div>
+          <p className="egbusiness-identity-result__eyebrow">Business Identity</p>
+          <h1>{businessTitle}</h1>
+          {businessSubtitle && (
+            <p className="egbusiness-identity-result__subtitle">{businessSubtitle}</p>
+          )}
         </div>
-      </header>
+        <div className="egbusiness-identity-result__edit-bar">
+          <button
+            type="button"
+            onClick={() => navigate('/egbusiness-identity')}
+          >
+            <FontAwesomeIcon icon={faEdit} />
+            Edit Identity
+          </button>
+        </div>
+      </div>
       <div className="egbusiness-identity-result__tabs">
         <button
           type="button"
@@ -407,23 +540,6 @@ const ResultDemo: React.FC = () => {
             </div>
           </section>
 
-          {rawAiResponse && (
-            <section className="egbusiness-identity-result__panel">
-              <div className="egbusiness-identity-result__panel-header">
-                <span className="egbusiness-identity-result__icon">
-                  <FontAwesomeIcon icon={faMagic} />
-                </span>
-                <div>
-                  <h2>Debug · AI raw response</h2>
-                  <p>Inspect the exact JSON the assistant returned.</p>
-                </div>
-              </div>
-              <pre className="egbusiness-identity-result__raw">
-                {rawAiResponse}
-              </pre>
-            </section>
-          )}
-
           <section className="egbusiness-identity-result__panel">
             <div className="egbusiness-identity-result__panel-header">
               <span className="egbusiness-identity-result__icon">
@@ -445,50 +561,7 @@ const ResultDemo: React.FC = () => {
             </ul>
           </section>
 
-          {snsPlan && (
-            <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--sns-plan">
-              <div className="egbusiness-identity-result__panel-header">
-                <span className="egbusiness-identity-result__icon">
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                </span>
-                <div>
-                  <h2>SNS plan</h2>
-                  <p>Channel-ready cadences generated from this identity.</p>
-                </div>
-              </div>
-              <div className="egbusiness-identity-result__sns-plan-grid">
-                {snsPlan.map((plan) => (
-                  <article key={`${plan.channel}-${plan.title}`} className="egbusiness-identity-result__sns-plan-card">
-                    <header>
-                      <span>{plan.channel}</span>
-                      <strong>{plan.title}</strong>
-                    </header>
-                    <p>{plan.summary}</p>
-                    <div className="egbusiness-identity-result__sns-plan-meta">
-                      <span>Cadence: {plan.cadence?.type || 'custom'}</span>
-                      {plan.cadence?.dayOfWeek !== null && plan.cadence?.dayOfWeek !== undefined && (
-                        <span>Day: {plan.cadence.dayOfWeek}</span>
-                      )}
-                      {plan.cadence?.time && <span>Time: {plan.cadence.time}</span>}
-                    </div>
-                    {plan.topics?.length > 0 && (
-                      <div className="egbusiness-identity-result__sns-plan-topics">
-                        {plan.topics.map((topic) => (
-                          <span key={topic}>{topic}</span>
-                        ))}
-                      </div>
-                    )}
-                    {plan.assets?.cta && (
-                      <div className="egbusiness-identity-result__sns-plan-assets">
-                        <strong>CTA</strong>
-                        <p>{plan.assets.cta}</p>
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
+          {/* SNS plan grid removed; use Scheduled Posts tab instead */}
         </>
       ) : (
         <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--scheduled">
@@ -502,41 +575,67 @@ const ResultDemo: React.FC = () => {
             </div>
           </div>
           <p className="egbusiness-identity-result__hint">
-            These Cursor-themed demos will soon sync with the SNS plan cards above so you can approve, edit, and
-            publish in one view.
+            {hasStoredSnsPlan
+              ? 'These tasks are generated from your stored SNS plan.'
+              : 'No SNS plan found for this identity yet. Showing demo tasks as placeholders.'}
           </p>
-          <div className="egbusiness-identity__credentials">
+          <div className="egbusiness-identity__credentials-card">
             <div>
-              <label htmlFor="result-instagram-username">Instagram Username</label>
-              <input
-                id="result-instagram-username"
-                type="text"
-                autoComplete="username"
-                placeholder="username"
-                value={instagramUsername}
-                onChange={(event) => setInstagramUsername(event.target.value)}
-              />
+              <h3>Instagram automation login</h3>
+              <p>
+                Stored securely on this device only. Required to trigger Playwright for test posts.
+              </p>
             </div>
-            <div>
-              <label htmlFor="result-instagram-password">Instagram Password</label>
-              <input
-                id="result-instagram-password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="password"
-                value={instagramPassword}
-                onChange={(event) => setInstagramPassword(event.target.value)}
-              />
+            <div className="egbusiness-identity__credentials">
+              <div>
+                <label htmlFor="result-instagram-username">Instagram Username</label>
+                <input
+                  id="result-instagram-username"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="username"
+                  value={instagramUsername}
+                  onChange={(event) => setInstagramUsername(event.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="result-instagram-password">Instagram Password</label>
+                <input
+                  id="result-instagram-password"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="password"
+                  value={instagramPassword}
+                  onChange={(event) => setInstagramPassword(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="egbusiness-identity__credentials-actions">
+              <button
+                type="button"
+                onClick={handleSaveInstagramCredentials}
+                disabled={
+                  credentialsSaving || !instagramUsername.trim() || !instagramPassword.trim()
+                }
+              >
+                {credentialsSaving ? 'Saving…' : 'Save credentials'}
+              </button>
+              {credentialsStatus && (
+                <span className="egbusiness-identity__credentials-status">{credentialsStatus}</span>
+              )}
             </div>
           </div>
-          <BusinessIdentityScheduledDemo onTestPost={handleTestScheduledPost} />
+          <BusinessIdentityScheduledDemo
+            tasks={hasStoredSnsPlan ? scheduledTasks : undefined}
+            onTestPost={handleTestScheduledPost}
+          />
         </section>
       )}
     </div>
   );
 };
 
-export default ResultDemo;
+export default BusinessIdentityTab;
 
 // ========================================================================
 // Helper functions

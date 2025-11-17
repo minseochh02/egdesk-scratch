@@ -8,7 +8,7 @@ import {
 } from '../../utils/fontAwesomeIcons';
 import { faHashtag } from '@fortawesome/free-solid-svg-icons/faHashtag';
 
-export type BusinessIdentityChannel = 'Instagram' | 'Twitter' | 'LinkedIn' | 'Blog';
+export type BusinessIdentityChannel = 'Instagram' | 'Twitter' | 'LinkedIn' | 'Blog' | string;
 
 export interface BusinessIdentityScheduledTask {
   id: string;

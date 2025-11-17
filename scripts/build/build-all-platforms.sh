@@ -71,6 +71,22 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+ENV_FILE=".env"
+
+# Load environment variables from .env if present
+load_env() {
+    if [ -f "$ENV_FILE" ]; then
+        print_status "Loading environment variables from $ENV_FILE"
+        # shellcheck disable=SC1090
+        set -a
+        source "$ENV_FILE"
+        set +a
+        print_success "Environment variables loaded"
+    else
+        print_warning "No $ENV_FILE file found; relying on current shell environment"
+    fi
+}
+
 # Check if we're in the right directory
 if [ ! -f "package.json" ]; then
     print_error "Please run this script from the project root directory"
@@ -347,6 +363,8 @@ done
 # Main execution
 main() {
     echo ""
+    
+    load_env
     
     if [ "$SHOW_RESULTS" = true ]; then
         show_results
