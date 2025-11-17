@@ -3,7 +3,7 @@ import {
   generateInstagramContent,
   GeneratedInstagramContent,
   InstagramContentPlan,
-} from "./instagram/generate-instagram-content";
+} from "./business-identity/sns/instagram/generate-text-content";
 
 export interface PostOptions {
   imagePath: string;
@@ -12,7 +12,7 @@ export interface PostOptions {
   waitAfterShare?: number; // milliseconds to wait after clicking Share
 }
 
-export type { InstagramContentPlan, GeneratedInstagramContent } from "./instagram/generate-instagram-content";
+export type { InstagramContentPlan, GeneratedInstagramContent } from "./business-identity/sns/instagram/generate-text-content";
 
 /**
  * Instagram post upload function
@@ -64,12 +64,17 @@ export async function createInstagramPost(
 async function resolveCaption(
   options: PostOptions
 ): Promise<{ caption: string; generated?: GeneratedInstagramContent }> {
+  console.log('[resolveCaption] Resolving caption, has caption:', !!options.caption, 'has structuredPrompt:', !!options.structuredPrompt);
+  
   if (options.caption && options.caption.trim().length > 0) {
     return { caption: options.caption.trim() };
   }
 
   if (options.structuredPrompt) {
+    console.log('[resolveCaption] Calling generateInstagramContent with structuredPrompt...');
     const generated = await generateInstagramContent(options.structuredPrompt);
+    console.log('[resolveCaption] Generated content:', { hasCaption: !!generated.caption, captionLength: generated.caption?.length });
+    
     if (!generated.caption || generated.caption.trim().length === 0) {
       throw new Error("AI generation did not return an Instagram caption.");
     }

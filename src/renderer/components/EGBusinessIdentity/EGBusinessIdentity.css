@@ -18,9 +18,17 @@
 
 .egbusiness-identity__header {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
-  max-width: 680px;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.egbusiness-identity__header > div:first-child {
+  flex: 1;
+  min-width: 300px;
 }
 
 .egbusiness-identity__intro {
@@ -107,6 +115,39 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.egbusiness-identity__edit-mode-header {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.egbusiness-identity__go-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.6);
+  color: #cbd5f5;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+}
+
+.egbusiness-identity__go-back-button:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #f8fafc;
+  transform: translateX(-2px);
+}
+
+.egbusiness-identity__go-back-button:active {
+  transform: translateX(-2px) translateY(1px);
 }
 
 .egbusiness-identity__input-block label {
@@ -423,6 +464,7 @@
 .egbusiness-identity__scheduled-demo-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 10px;
 }
 
@@ -437,12 +479,55 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .egbusiness-identity__scheduled-demo-actions button:hover {
   border-color: rgba(129, 140, 248, 0.85);
   background: rgba(99, 102, 241, 0.35);
   color: #f8fafc;
+}
+
+.egbusiness-identity__scheduled-demo-action-toggle {
+  background: rgba(34, 197, 94, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  color: #86efac !important;
+}
+
+.egbusiness-identity__scheduled-demo-action-toggle:hover {
+  background: rgba(34, 197, 94, 0.3) !important;
+  border-color: rgba(34, 197, 94, 0.7) !important;
+  color: #bbf7d0 !important;
+}
+
+.egbusiness-identity__scheduled-demo-action-toggle[title*="Pause"] {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+  color: #fca5a5 !important;
+}
+
+.egbusiness-identity__scheduled-demo-action-toggle[title*="Pause"]:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+  border-color: rgba(239, 68, 68, 0.7) !important;
+  color: #fecaca !important;
+}
+
+.egbusiness-identity__scheduled-demo-action-test {
+  background: rgba(79, 70, 229, 0.25) !important;
+}
+
+.egbusiness-identity__scheduled-demo-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.egbusiness-identity__scheduled-demo-actions button:disabled:hover {
+  background: inherit !important;
+  border-color: inherit !important;
+  color: inherit !important;
 }
 
 .egbusiness-identity__panel--secondary h3 {
@@ -466,9 +551,155 @@
   padding-left: 6px;
 }
 
+/* Key Selector Styles */
+.egbusiness-identity__key-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 8px;
+}
+
+.egbusiness-identity__key-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(17, 24, 39, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.egbusiness-identity__key-info:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.egbusiness-identity__key-icon {
+  font-size: 14px;
+  color: #60a5fa;
+}
+
+.egbusiness-identity__key-label {
+  font-weight: 500;
+  color: #cbd5f5;
+}
+
+.egbusiness-identity__key-name {
+  font-weight: 500;
+  color: #f8fafc;
+  min-width: 120px;
+}
+
+.egbusiness-identity__connection-status {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.egbusiness-identity__dropdown-icon {
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.2s ease;
+  margin-left: 4px;
+}
+
+.egbusiness-identity__dropdown-icon.open {
+  color: #60a5fa;
+  transform: rotate(180deg);
+}
+
+.egbusiness-identity__key-info:hover .egbusiness-identity__dropdown-icon {
+  color: #60a5fa;
+}
+
+/* Key Dropdown */
+.egbusiness-identity__key-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  margin-top: 4px;
+  min-width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.egbusiness-identity__key-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.egbusiness-identity__key-option:last-child {
+  border-bottom: none;
+}
+
+.egbusiness-identity__key-option:hover {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.egbusiness-identity__key-option.selected {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.egbusiness-identity__key-option-icon {
+  font-size: 12px;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.egbusiness-identity__key-option-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 12px;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.egbusiness-identity__key-option-check {
+  font-size: 14px;
+  color: #60a5fa;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
 @media (max-width: 768px) {
   .egbusiness-identity {
     padding: 24px 20px 40px;
+  }
+
+  .egbusiness-identity__header {
+    flex-direction: column;
+  }
+
+  .egbusiness-identity__key-selector {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .egbusiness-identity__key-dropdown {
+    right: 0;
+    left: 0;
+    min-width: auto;
   }
 
   .egbusiness-identity__panel {

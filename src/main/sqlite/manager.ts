@@ -1216,6 +1216,18 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-business-identity-update-analysis-results', async (event, snapshotId: string, seoAnalysis: any, sslAnalysis: any) => {
+      try {
+        this.getBusinessIdentityManager().updateAnalysisResults(snapshotId, seoAnalysis, sslAnalysis);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
     ipcMain.handle(
       'sqlite-business-identity-save-sns-plans',
       async (
