@@ -36,3 +36,4 @@ client_secret_862784563181-30ua334k8egt3ufiivo273ldmbi9pqbb.apps.googleuserconte
 gmail-tokens.json
 
 .env
+.env.production

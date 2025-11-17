@@ -80,16 +80,41 @@ async function dismissLoginInfoPrompt(page: Page): Promise<void> {
   }
 }
 
+async function dismissCookieBanner(page: Page): Promise<void> {
+  const buttonMatchers = [
+    /allow essential cookies/i,
+    /allow all cookies/i,
+    /accept all/i,
+    /accept necessary/i,
+    /only allow essential/i,
+    /reject non-essential/i,
+  ];
+
+  try {
+    for (const matcher of buttonMatchers) {
+      const button = page.getByRole("button", { name: matcher });
+      if ((await button.count()) > 0) {
+        await button.first().click();
+        await page.waitForTimeout(500);
+        return;
+      }
+    }
+  } catch {
+    // Banner either not present or already dismissed.
+  }
+}
+
 async function performInstagramLogin(page: Page, credentials: Credentials): Promise<void> {
-  await page.goto(INSTAGRAM_HOME_URL, { waitUntil: "load", timeout: 60_000 });
+  await page.goto(INSTAGRAM_HOME_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await dismissCookieBanner(page);
 
   const idInput = page.locator("[name=username]");
   const pwInput = page.locator("[type=password]");
   const loginButton = page.locator("[type=submit]");
 
-  await idInput.waitFor({ state: "visible", timeout: 30_000 });
-  await pwInput.waitFor({ state: "visible", timeout: 30_000 });
-  await loginButton.waitFor({ state: "visible", timeout: 30_000 });
+  await idInput.waitFor({ state: "visible", timeout: 45_000 });
+  await pwInput.waitFor({ state: "visible", timeout: 45_000 });
+  await loginButton.waitFor({ state: "visible", timeout: 45_000 });
 
   await idInput.fill(credentials.username);
   await pwInput.fill(credentials.password);

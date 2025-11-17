@@ -138,6 +138,10 @@ interface StoredSnsPlan {
 
 const DEFAULT_SNS_PLAN_TIME = '09:00';
 
+type IdentityLocationState = {
+  bypassPreviewAutoRedirect?: boolean;
+};
+
 const normalizeCadenceType = (value?: string): 'daily' | 'weekly' | 'monthly' | 'custom' => {
   if (!value) return 'custom';
   const normalized = value.toLowerCase();
@@ -208,6 +212,8 @@ const mapSnsPlanEntriesToStorage = (
 const EGBusinessIdentity: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const locationState = (location.state as IdentityLocationState | null) ?? null;
+  const bypassPreviewAutoRedirect = Boolean(locationState?.bypassPreviewAutoRedirect);
   const [activeTab, setActiveTab] = useState<'kickoff' | 'scheduled'>('kickoff');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -603,6 +609,9 @@ const EGBusinessIdentity: React.FC = () => {
     if (location.pathname === '/egbusiness-identity/preview') {
       return;
     }
+    if (bypassPreviewAutoRedirect) {
+      return;
+    }
     if (!storedPlanLoaded) {
       return;
     }
@@ -620,7 +629,15 @@ const EGBusinessIdentity: React.FC = () => {
         snsPlan,
       },
     });
-  }, [identitySnapshot, navigate, parsedIdentity, snsPlan, storedPlanLoaded, location.pathname]);
+  }, [
+    identitySnapshot,
+    navigate,
+    parsedIdentity,
+    snsPlan,
+    storedPlanLoaded,
+    location.pathname,
+    bypassPreviewAutoRedirect,
+  ]);
 
   const renderIdentitySummary = () => {
     if (!identitySnapshot || !parsedIdentity) return null;

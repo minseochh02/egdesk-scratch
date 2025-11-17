@@ -146,10 +146,7 @@ export async function fetchWebsiteContent(
       }
       return {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unexpected network error while fetching website.',
+        error: formatNetworkError(error),
       };
     } finally {
       clearTimeout(timeout);
@@ -202,12 +199,36 @@ export async function fetchWebsiteContent(
   } catch (error) {
     return {
       success: false,
-      error:
-        error instanceof Error
-          ? error.message || 'Failed to fetch website content.'
-          : 'Failed to fetch website content.',
+      error: formatNetworkError(error, 'Failed to fetch website content.'),
     };
   }
+}
+
+function formatNetworkError(error: unknown, fallback = 'Unexpected network error while fetching website.'): string {
+  if (error instanceof Error) {
+    const details: string[] = [];
+    if (error.message) {
+      details.push(error.message);
+    }
+    // Capture common Node.js network error codes (e.g., ENOTFOUND, ECONNRESET)
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code) {
+      details.push(`code=${code}`);
+    }
+    const cause = (error as { cause?: unknown })?.cause;
+    if (cause && typeof cause === 'object' && cause !== null) {
+      const causeCode = (cause as NodeJS.ErrnoException).code;
+      if (causeCode) {
+        details.push(`cause=${causeCode}`);
+      }
+      const causeMessage = (cause as { message?: string }).message;
+      if (causeMessage && causeMessage !== error.message) {
+        details.push(`causeMessage=${causeMessage}`);
+      }
+    }
+    return details.length ? details.join(' | ') : fallback;
+  }
+  return fallback;
 }
 
 function stripUnwantedTags(html: string): string {

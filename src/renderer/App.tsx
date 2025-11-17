@@ -34,7 +34,7 @@ import './App.css';
 import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 import EGChatting from './components/EGChatting';
 import EGBusinessIdentity from './components/EGBusinessIdentity';
-import ResultDemo from './components/EGBusinessIdentity/ResultDemo';
+import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -809,51 +809,83 @@ function RouteWindowBoundsManager() {
   const location = useLocation();
   const originalBoundsRef = useRef<any | null>(null);
   const wasInHomepageEditorRef = useRef<boolean>(false);
+  const warnedMainWindowBridgeRef = useRef(false);
+  const warnedBrowserWindowBridgeRef = useRef(false);
 
   useEffect(() => {
+    let isUnmounted = false;
+
     (async () => {
+      const electronBridge = (window as any)?.electron;
+      const mainWindowBridge = electronBridge?.mainWindow;
+
+      if (!mainWindowBridge?.getBounds || !mainWindowBridge?.setBounds) {
+        if (!warnedMainWindowBridgeRef.current) {
+          console.warn(
+            '[RouteWindowBoundsManager] mainWindow bridge unavailable; window resizing will be skipped.',
+          );
+          warnedMainWindowBridgeRef.current = true;
+        }
+        return;
+      }
+
       const isInHomepageEditor = location.pathname.startsWith('/homepage-editor');
       if (isInHomepageEditor && !wasInHomepageEditorRef.current) {
         try {
-          const result = await window.electron.mainWindow.getBounds();
-          if (result?.success && result.bounds) {
+          const result = await mainWindowBridge.getBounds();
+          if (!isUnmounted && result?.success && result.bounds) {
             originalBoundsRef.current = result.bounds;
           }
         } catch (e) {
           console.warn('Failed to capture main window bounds on enter:', e);
         }
-        wasInHomepageEditorRef.current = true;
+        if (!isUnmounted) {
+          wasInHomepageEditorRef.current = true;
+        }
       }
 
       if (!isInHomepageEditor && wasInHomepageEditorRef.current) {
         try {
-          // Close any localhost preview windows opened by AI Chat
-          try {
-            const list = await (window as any).electron.browserWindow.getAllLocalhostWindows();
-            if (list?.success && Array.isArray(list.windows)) {
-              for (const win of list.windows) {
-                try {
-                  await (window as any).electron.browserWindow.closeWindow(win.windowId);
-                } catch (e) {
-                  console.warn('Failed to close localhost window:', e);
+          const browserWindowBridge = electronBridge?.browserWindow;
+          if (browserWindowBridge?.getAllLocalhostWindows && browserWindowBridge?.closeWindow) {
+            try {
+              const list = await browserWindowBridge.getAllLocalhostWindows();
+              if (list?.success && Array.isArray(list.windows)) {
+                for (const win of list.windows) {
+                  try {
+                    await browserWindowBridge.closeWindow(win.windowId);
+                  } catch (e) {
+                    console.warn('Failed to close localhost window:', e);
+                  }
                 }
               }
+            } catch (e) {
+              console.warn('Failed to enumerate localhost windows:', e);
             }
-          } catch (e) {
-            console.warn('Failed to enumerate localhost windows:', e);
+          } else if (!warnedBrowserWindowBridgeRef.current) {
+            console.warn(
+              '[RouteWindowBoundsManager] browserWindow bridge unavailable; preview windows may stay open.',
+            );
+            warnedBrowserWindowBridgeRef.current = true;
           }
 
           const bounds = originalBoundsRef.current;
           if (bounds) {
-            await window.electron.mainWindow.setBounds(bounds);
+            await mainWindowBridge.setBounds(bounds);
           }
         } catch (e) {
           console.warn('Failed to restore main window bounds on leave:', e);
         }
-        wasInHomepageEditorRef.current = false;
-        originalBoundsRef.current = null;
+        if (!isUnmounted) {
+          wasInHomepageEditorRef.current = false;
+          originalBoundsRef.current = null;
+        }
       }
     })();
+
+    return () => {
+      isUnmounted = true;
+    };
   }, [location.pathname]);
 
   return null;
@@ -868,7 +900,6 @@ function AppContent() {
   const [isEnsuringOllama, setIsEnsuringOllama] = useState(false);
   const [gemmaStatus, setGemmaStatus] = useState<'idle' | 'checking' | 'pulling' | 'ready' | 'error'>('idle');
   const [gemmaMessage, setGemmaMessage] = useState<string | null>(null);
-  const gemmaEnsureRequested = useRef(false);
 
   const checkOllamaStatus = useCallback(async () => {
     if (!(window as any)?.electron?.ollama?.checkInstalled) {
@@ -949,19 +980,14 @@ function AppContent() {
 
   useEffect(() => {
     if (ollamaStatus === 'installed') {
-      if (!gemmaEnsureRequested.current) {
-        gemmaEnsureRequested.current = true;
-        ensureGemmaModel();
-      }
+      ensureGemmaModel();
     } else {
-      gemmaEnsureRequested.current = false;
       setGemmaStatus('idle');
       setGemmaMessage(null);
     }
   }, [ollamaStatus, ensureGemmaModel]);
 
   const handleEnsureGemma = useCallback(async () => {
-    gemmaEnsureRequested.current = true;
     await ensureGemmaModel();
   }, [ensureGemmaModel]);
 
@@ -982,7 +1008,6 @@ function AppContent() {
       if (!result.success || !result.installed) {
         setOllamaMessage(result.error || result.message || 'Ollama is not ready yet.');
       } else {
-        gemmaEnsureRequested.current = true;
         await ensureGemmaModel();
       }
     } catch (error: any) {
@@ -1099,7 +1124,7 @@ function AppContent() {
             <Route path="/mcp-server" element={<MCPServer />} />
             <Route path="/egchatting" element={<EGChatting />} />
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
-            <Route path="/egbusiness-identity/preview" element={<ResultDemo />} />
+            <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

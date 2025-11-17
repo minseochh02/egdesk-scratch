@@ -309,7 +309,11 @@
     "extraResources": [
       "./assets/**",
       "./php-bundle/**",
-      "./scripts/**"
+      "./scripts/**",
+      {
+        "from": ".env.production",
+        "to": ".env"
+      }
     ],
     "publish": {
       "provider": "github",
