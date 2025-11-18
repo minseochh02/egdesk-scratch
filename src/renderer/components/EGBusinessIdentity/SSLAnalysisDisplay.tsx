@@ -5,9 +5,10 @@
 
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShieldAlt } from '../../utils/fontAwesomeIcons';
+import { faShieldAlt, faExternalLinkAlt } from '../../utils/fontAwesomeIcons';
 import type { SSLAnalysisResult } from './analysisHelpers';
 import type { SecurityGrade } from '../../services/sslAnalysisService';
+import { HTMLReportService } from '../../services/htmlReportService';
 import './EGBusinessIdentityResultDemo.css';
 
 interface SSLAnalysisDisplayProps {
@@ -156,6 +157,80 @@ export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnaly
               <strong>Score:</strong> {securityHeaders.score}/100
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Report Button */}
+      {result && (
+        <div className="egbusiness-identity-result__analysis-footer">
+          <button
+            type="button"
+            className="egbusiness-identity-result__report-button"
+            onClick={async () => {
+              try {
+                if (!result) {
+                  console.error('[SSLAnalysisDisplay] No analysis result available');
+                  return;
+                }
+
+                // Generate HTML report content
+                const htmlContent = HTMLReportService.generateHTMLReport(result, sslAnalysis.url);
+                
+                // Save to a temporary file in the output directory
+                const timestamp = Date.now();
+                const sanitizedUrl = sslAnalysis.url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+                const fileName = `ssl-security-report-${sanitizedUrl}-${timestamp}.html`;
+                
+                // Use the same output directory as Lighthouse reports (output/ relative to cwd)
+                const outputPath = `output/${fileName}`;
+                
+                if (window.electron?.fileSystem?.writeFile && window.electron?.invoke) {
+                  // Get absolute path first
+                  const absolutePath = await window.electron.invoke('get-absolute-output-path', outputPath).catch(() => null);
+                  
+                  if (absolutePath) {
+                    const writeResult = await window.electron.fileSystem.writeFile(absolutePath, htmlContent);
+                    
+                    if (writeResult.success) {
+                      // Open the file
+                      if (window.electron?.shell?.openPath) {
+                        const openResult = await window.electron.shell.openPath(absolutePath);
+                        if (!openResult.success) {
+                          console.error('[SSLAnalysisDisplay] Failed to open report:', openResult.error);
+                          // Fallback: open in modal
+                          HTMLReportService.openHTMLReport(result, sslAnalysis.url);
+                        }
+                      } else {
+                        // Fallback: open in browser
+                        window.open(`file://${absolutePath}`, '_blank');
+                      }
+                    } else {
+                      console.error('[SSLAnalysisDisplay] Failed to save report:', writeResult.error);
+                      // Fallback: open in modal
+                      HTMLReportService.openHTMLReport(result, sslAnalysis.url);
+                    }
+                  } else {
+                    // Fallback: open in modal if we can't get absolute path
+                    HTMLReportService.openHTMLReport(result, sslAnalysis.url);
+                  }
+                } else {
+                  // Fallback: open in modal if we can't save to file
+                  HTMLReportService.openHTMLReport(result, sslAnalysis.url);
+                }
+              } catch (error) {
+                console.error('[SSLAnalysisDisplay] Error opening report:', error);
+                // Fallback: open in modal
+                if (result) {
+                  HTMLReportService.openHTMLReport(result, sslAnalysis.url);
+                } else {
+                  alert(`Error opening report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+              }
+            }}
+          >
+            <FontAwesomeIcon icon={faExternalLinkAlt} />
+            <span>Open Full Security Report</span>
+          </button>
         </div>
       )}
     </section>

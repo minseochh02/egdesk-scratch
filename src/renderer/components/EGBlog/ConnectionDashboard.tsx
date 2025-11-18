@@ -67,17 +67,19 @@ interface ConnectionDashboardProps {
   onTestConnection?: (connection: BlogConnection) => void;
   onRefresh?: () => void;
   onBack?: () => void;
+  initialTab?: 'scheduled' | 'posts' | 'media' | 'comments' | 'settings';
 }
 
 const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
   connection,
   onTestConnection,
   onRefresh,
-  onBack
+  onBack,
+  initialTab
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'testing'>('connected');
-  const [activeTab, setActiveTab] = useState<'scheduled' | 'posts' | 'media' | 'comments' | 'settings'>('scheduled');
+  const [activeTab, setActiveTab] = useState<'scheduled' | 'posts' | 'media' | 'comments' | 'settings'>(initialTab || 'scheduled');
   const [stats, setStats] = useState({
     totalPosts: 0,
     publishedPosts: 0,
@@ -91,6 +93,13 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
   useEffect(() => {
     loadConnectionStats();
   }, [connection.id]);
+
+  // Update activeTab when initialTab changes (from navigation)
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const loadConnectionStats = async () => {
     try {
@@ -434,7 +443,9 @@ const ConnectionDashboard: React.FC<ConnectionDashboardProps> = ({
             <p className="eg-blog-connection-dashboard-connection-type">{getConnectionTypeName(connection)}</p>
             <div className="eg-blog-connection-dashboard-connection-status">
               <SiteStatusChecker 
-                url={connection.url}
+                url={connection.type === 'naver' && !connection.url 
+                  ? `https://blog.naver.com/${connection.username}` 
+                  : connection.url || ''}
                 onStatusChange={(status) => {
                   if (status === 'online') {
                     setConnectionStatus('connected');

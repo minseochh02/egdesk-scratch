@@ -11,7 +11,8 @@ import {
   faGlobe,
   faDesktop,
   faComments,
-  faBuilding,
+  faFingerprint,
+  faShare,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -29,6 +30,25 @@ const LandingPage: React.FC = () => {
 
           {/* Action Cards */}
           <div className="egdesk-landing-action-cards">
+            <Link
+              to="/egbusiness-identity"
+              className="egdesk-landing-action-card egdesk-landing-identity-card"
+            >
+              <div className="egdesk-landing-card-icon egdesk-landing-identity-icon">
+                <FontAwesomeIcon icon={faFingerprint} />
+              </div>
+              <h3 className="egdesk-landing-card-title">EG Business Identity</h3>
+              <p className="egdesk-landing-card-description">
+                브랜드 자산과 웹사이트를 연결하여 AI가 즉시 브랜드 아이덴티티와 소셜 전략을 설계하도록
+                해보세요.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">브랜드 허브</span>
+                <span className="egdesk-landing-feature-tag">AI 아이덴티티</span>
+                <span className="egdesk-landing-feature-tag">소셜 로드맵</span>
+              </div>
+            </Link>
+
             <Link to="/egdesktop" className="egdesk-landing-action-card egdesk-landing-desktop-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faDesktop} />
@@ -44,27 +64,8 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link
-              to="/egbusiness-identity"
-              className="egdesk-landing-action-card egdesk-landing-identity-card"
-            >
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faBuilding} />
-              </div>
-              <h3 className="egdesk-landing-card-title">EG Business Identity</h3>
-              <p className="egdesk-landing-card-description">
-                브랜드 자산과 웹사이트를 연결하여 AI가 즉시 브랜드 아이덴티티와 소셜 전략을 설계하도록
-                해보세요.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">브랜드 허브</span>
-                <span className="egdesk-landing-feature-tag">AI 아이덴티티</span>
-                <span className="egdesk-landing-feature-tag">소셜 로드맵</span>
-              </div>
-            </Link>
-
             <Link to="/egchatting" className="egdesk-landing-action-card egdesk-landing-chat-card">
-              <div className="egdesk-landing-card-icon">
+              <div className="egdesk-landing-card-icon egdesk-landing-chat-icon">
                 <FontAwesomeIcon icon={faComments} />
               </div>
               <h3 className="egdesk-landing-card-title">EG Chatting</h3>
@@ -105,6 +106,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">AI 글쓰기</span>
                 <span className="egdesk-landing-feature-tag">자동 일정</span>
                 <span className="egdesk-landing-feature-tag">콘텐츠 계획</span>
+              </div>
+            </Link>
+
+            <Link to="/social-media" className="egdesk-landing-action-card egdesk-landing-social-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faShare} />
+              </div>
+              <h3 className="egdesk-landing-card-title">EG Social Media</h3>
+              <p className="egdesk-landing-card-description">
+                소셜 미디어 계정을 연결하고 AI로 콘텐츠를 생성하여 자동으로 게시하세요. 인스타그램, 트위터 등을 관리하세요.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">소셜 자동화</span>
+                <span className="egdesk-landing-feature-tag">AI 콘텐츠</span>
+                <span className="egdesk-landing-feature-tag">일정 관리</span>
               </div>
             </Link>
 

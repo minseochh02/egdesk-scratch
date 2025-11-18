@@ -76,23 +76,35 @@ export function registerSEOHandlers() {
           const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
           const reportName = `lighthouse-${sanitizedUrl}-${timestamp}`;
 
-          await playAudit({
-            page,
-            port: debugPort,
-            opts: { locale: 'ko' },
-            thresholds: {
-              performance: 50,
-              accessibility: 50,
-              'best-practices': 50,
-              seo: 50,
-              pwa: 50,
-            },
-            reports: {
-              formats: { html: true, json: true },
-              name: reportName,
-              directory: outputDir,
-            },
-          });
+          // Run Lighthouse audit - catch threshold errors but still generate reports
+          try {
+            await playAudit({
+              page,
+              port: debugPort,
+              opts: { locale: 'ko' },
+              thresholds: {
+                performance: 0, // Lower threshold to avoid blocking on performance issues
+                accessibility: 50,
+                'best-practices': 50,
+                seo: 50,
+                pwa: 0, // PWA is often not applicable, so don't block on it
+              },
+              reports: {
+                formats: { html: true, json: true },
+                name: reportName,
+                directory: outputDir,
+              },
+            });
+          } catch (thresholdError: any) {
+            // If thresholds fail, the report is still generated, so we can continue
+            // Log the warning but don't fail the entire analysis
+            if (thresholdError?.message?.includes('threshold')) {
+              console.warn(`⚠️ Lighthouse thresholds not met for ${url}, but report generated:`, thresholdError.message);
+            } else {
+              // Re-throw if it's a different error
+              throw thresholdError;
+            }
+          }
 
           // Generate PDF: expand sections and print
           try {

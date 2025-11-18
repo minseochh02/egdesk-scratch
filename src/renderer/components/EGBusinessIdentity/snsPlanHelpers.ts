@@ -59,6 +59,9 @@ export const mapStoredPlanToEntry = (plan: StoredSnsPlan): SnsPlanEntry => {
       cta: typeof assets.cta === 'string' ? assets.cta : undefined,
       extraNotes: typeof assets.extraNotes === 'string' ? assets.extraNotes : null,
     },
+    connectionId: plan.connectionId ?? null,
+    connectionName: plan.connectionName ?? null,
+    connectionType: plan.connectionType ?? null,
   };
 };
 

@@ -633,6 +633,10 @@ export interface IElectronAPI {
 
   ollama: OllamaAPI;
 
+  shell: {
+    openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

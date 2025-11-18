@@ -1393,8 +1393,18 @@ export class WordPressHandler {
     // Check WordPress site status
     ipcMain.handle('wp-check-site-status', async (event, url: string) => {
       try {
+        // Validate URL parameter
+        if (!url || typeof url !== 'string' || url.trim().length === 0) {
+          return {
+            success: false,
+            status: 'offline',
+            error: 'Invalid URL provided',
+          };
+        }
+
         // Create a proper URL
-        const siteUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
+        const normalizedUrl = url.trim();
+        const siteUrl = new URL(normalizedUrl.startsWith('http') ? normalizedUrl : `https://${normalizedUrl}`);
         
         // Use node-fetch or built-in fetch (Node.js 18+) with redirect following
         const controller = new AbortController();

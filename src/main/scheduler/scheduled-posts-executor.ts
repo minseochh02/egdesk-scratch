@@ -55,9 +55,15 @@ export class ScheduledPostsExecutor {
     // Schedule all enabled posts
     await this.scheduleAllPosts();
     
-    // Set up periodic check for new/updated posts
+    // Set up periodic check for new/updated posts with error handling
     this.executionInterval = setInterval(async () => {
-      await this.checkAndUpdateSchedules();
+      try {
+        await this.checkAndUpdateSchedules();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`❌ Error in periodic schedule check: ${errorMessage}`);
+        // Don't let periodic check errors crash the scheduler
+      }
     }, 60000); // Check every minute
   }
 
@@ -149,6 +155,10 @@ export class ScheduledPostsExecutor {
         );
         return;
       }
+      // Instagram and YouTube are now supported
+      if (normalizedType === 'instagram' || normalizedType === 'youtube' || normalizedType === 'yt') {
+        // Allow these to be scheduled
+      }
 
       // Cancel existing job if it exists
       if (this.scheduledJobs.has(post.id)) {
@@ -163,10 +173,39 @@ export class ScheduledPostsExecutor {
         return;
       }
 
-      // Schedule the job
+      // Schedule the job with error handling
       const job = schedule.scheduleJob(cronExpression, async () => {
-        console.log(`🚀 Executing scheduled post: ${post.title}`);
-        await this.executeScheduledPost(post);
+        try {
+          console.log(`🚀 Executing scheduled post: ${post.title}`);
+          await this.executeScheduledPost(post);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('TIMEDOUT');
+          const isNetworkError = errorMessage.includes('fetch failed') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
+          
+          console.error(`\n❌ ===== SCHEDULED POST EXECUTION ERROR =====`);
+          console.error(`📝 Post: ${post.title}`);
+          console.error(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+          console.error(`⏰ Scheduled Time: ${post.scheduledTime}`);
+          console.error(`❌ Error Type: ${isTimeout ? 'TIMEOUT' : isNetworkError ? 'NETWORK_ERROR' : 'EXECUTION_ERROR'}`);
+          console.error(`📄 Error Message: ${errorMessage}`);
+          
+          // Update failure statistics
+          try {
+            await this.updateRunStatistics(
+              post.id, 
+              false, 
+              null, 
+              `${isTimeout ? 'Timeout' : isNetworkError ? 'Network' : 'Execution'} error: ${errorMessage}`
+            );
+            console.log(`📊 Failure statistics updated`);
+          } catch (updateError) {
+            console.error(`❌ Failed to update failure statistics:`, updateError);
+          }
+          
+          // Don't re-throw - let the scheduler continue running
+          console.error(`⚠️ Post execution failed, but scheduler will continue running`);
+        }
       });
 
       if (job) {
@@ -225,6 +264,10 @@ export class ScheduledPostsExecutor {
       await this.executeWordPressScheduledPost(post);
     } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
       await this.executeNaverScheduledPost(post);
+    } else if (normalizedType === 'instagram') {
+      await this.executeInstagramScheduledPost(post);
+    } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
+      await this.executeYouTubeScheduledPost(post);
     } else if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
       console.log(
         `Skipping Business Identity scheduled post "${post.title}" — automation not yet implemented.`,
@@ -287,11 +330,26 @@ export class ScheduledPostsExecutor {
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
       console.log(`🖼️ Images: ${blogContent.images?.length || 0}`);
 
-      // Step 5: Upload to WordPress
+      // Step 5: Upload to WordPress with error handling
       console.log(`\n📤 Step 5: Uploading to WordPress...`);
-      const postUrl = await this.uploadToWordPress(blogContent);
-      console.log(`✅ Successfully uploaded to WordPress`);
-      console.log(`🔗 Post URL: ${postUrl}`);
+      let postUrl: string;
+      try {
+        postUrl = await this.uploadToWordPress(blogContent);
+        console.log(`✅ Successfully uploaded to WordPress`);
+        console.log(`🔗 Post URL: ${postUrl}`);
+      } catch (uploadError) {
+        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+        const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT');
+        const isNetworkError = errorMessage.includes('fetch failed') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
+        
+        console.error(`❌ WordPress upload failed: ${errorMessage}`);
+        if (isTimeout) {
+          throw new Error(`WordPress upload timed out. The site may be slow or unreachable. Please check your WordPress site connection.`);
+        } else if (isNetworkError) {
+          throw new Error(`WordPress upload network error. Please check your WordPress site URL and network connection.`);
+        }
+        throw uploadError;
+      }
 
       // Step 6: Update run statistics
       console.log(`\n📊 Step 6: Updating run statistics...`);
@@ -387,12 +445,29 @@ export class ScheduledPostsExecutor {
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
       console.log(`🖼️ Images: ${blogContent.images?.length || 0}`);
 
-      // Step 5: Upload to Naver Blog
+      // Step 5: Upload to Naver Blog with error handling
       console.log(`\n📤 Step 5: Uploading to Naver Blog...`);
       const imagePaths = blogContent.images?.map((img: any) => img.filePath).filter(Boolean) || []; // Get all image paths
-      const postUrl = await this.uploadToNaverBlog(blogContent, connection, imagePaths);
-      console.log(`✅ Successfully uploaded to Naver Blog`);
-      console.log(`🔗 Post URL: ${postUrl}`);
+      let postUrl: string;
+      try {
+        postUrl = await Promise.race([
+          this.uploadToNaverBlog(blogContent, connection, imagePaths),
+          new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error('Naver Blog upload timeout after 300 seconds')), 300000)
+          )
+        ]);
+        console.log(`✅ Successfully uploaded to Naver Blog`);
+        console.log(`🔗 Post URL: ${postUrl}`);
+      } catch (uploadError) {
+        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+        const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('Timeout');
+        
+        console.error(`❌ Naver Blog upload failed: ${errorMessage}`);
+        if (isTimeout) {
+          throw new Error(`Naver Blog upload timed out. The browser automation may be slow or the site may be unreachable.`);
+        }
+        throw uploadError;
+      }
 
       // Step 6: Update run statistics
       console.log(`\n📊 Step 6: Updating run statistics...`);
@@ -437,6 +512,148 @@ export class ScheduledPostsExecutor {
   }
 
   /**
+   * Execute an Instagram scheduled post
+   */
+  private async executeInstagramScheduledPost(post: any): Promise<void> {
+    const startTime = Date.now();
+    try {
+      // Ensure topics are loaded for scheduled (cron) executions
+      if (!post.topics || post.topics.length === 0) {
+        const topics = await this.sqliteManager.getScheduledPostsManager().getScheduledPostTopics(post.id);
+        post.topics = Array.isArray(topics) ? topics.map((t: any) => t.topicName) : [];
+      }
+    } catch (loadTopicsError) {
+      console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
+    }
+    
+    console.log(`\n🚀 ===== STARTING INSTAGRAM SCHEDULED POST EXECUTION =====`);
+    console.log(`📝 Post: ${post.title}`);
+    console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+    console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
+    console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
+    console.log(`🔄 Frequency: ${post.frequencyType} (${post.frequencyValue})`);
+    console.log(`📊 Run Count: ${post.runCount || 0}`);
+    console.log(`✅ Success Count: ${post.successCount || 0}`);
+    console.log(`❌ Failure Count: ${post.failureCount || 0}`);
+    console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    try {
+      // Step 1: Get connection details
+      console.log(`\n🔍 Step 1: Getting connection details...`);
+      const connection = await this.getConnection(post.connectionId, post.connectionName, post.connectionType);
+      if (!connection) {
+        throw new Error(`${post.connectionType} connection not found: ${post.connectionName}`);
+      }
+      console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
+
+      // Step 2: Set up environment variables
+      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
+      console.log(`✅ Environment variables configured`);
+
+      // Step 3: Select topic for content generation
+      console.log(`\n📝 Step 3: Selecting topic for content generation...`);
+      const selectedTopic = this.selectTopicForGeneration(post.topics);
+      console.log(`✅ Selected topic: ${selectedTopic}`);
+
+      // Step 4: Generate Instagram content
+      console.log(`\n🤖 Step 4: Generating Instagram content...`);
+      const { createBusinessIdentityInstagramPost } = await import('../business-identity/sns/instagram/index');
+      const { generateInstagramContent } = await import('../business-identity/sns/instagram/generate-text-content');
+      
+      // Create structured prompt from topic
+      const structuredPrompt = {
+        identityBrief: {
+          brandName: connection.name,
+          brandDescription: selectedTopic,
+        },
+        planBrief: {
+          channel: 'Instagram',
+          contentGoal: selectedTopic,
+        },
+      };
+
+      // Generate content first to get caption and image prompt
+      const generatedContent = await generateInstagramContent(structuredPrompt);
+      console.log(`✅ Instagram content generated successfully`);
+      console.log(`📝 Caption length: ${generatedContent.caption?.length || 0} characters`);
+      console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
+
+      // Step 5: Post to Instagram
+      console.log(`\n📤 Step 5: Posting to Instagram...`);
+      const result = await createBusinessIdentityInstagramPost({
+        username: connection.username,
+        password: connection.password,
+        structuredPrompt,
+        planId: post.planId, // If available from SNS plan
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to post to Instagram');
+      }
+
+      console.log(`✅ Successfully posted to Instagram`);
+      if (result.executionId) {
+        console.log(`📊 Execution ID: ${result.executionId}`);
+      }
+
+      // Step 6: Update run statistics
+      console.log(`\n📊 Step 6: Updating run statistics...`);
+      await this.updateRunStatistics(post.id, true, 'Instagram post published');
+      console.log(`✅ Run statistics updated`);
+
+      // Step 7: Calculate next run time
+      console.log(`\n⏰ Step 7: Calculating next run time...`);
+      const nextRun = this.calculateNextRunTime(post);
+      if (nextRun) {
+        await this.updateNextRunTime(post.id, nextRun);
+        console.log(`✅ Next run scheduled for: ${nextRun}`);
+      } else {
+        console.log(`⚠️ No next run time calculated (post may be disabled or completed)`);
+      }
+
+      const executionTime = Date.now() - startTime;
+      console.log(`\n🎉 ===== INSTAGRAM SCHEDULED POST EXECUTION COMPLETED =====`);
+      console.log(`✅ Post "${post.title}" executed successfully`);
+      console.log(`⏱️ Execution time: ${executionTime}ms`);
+      console.log(`🕐 Completed at: ${new Date().toISOString()}`);
+      
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`\n💥 ===== INSTAGRAM SCHEDULED POST EXECUTION FAILED =====`);
+      console.error(`❌ Post "${post.title}" failed to execute`);
+      console.error(`⏱️ Execution time: ${executionTime}ms`);
+      console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+      console.error(`📄 Error details:`, error);
+      
+      // Update failure statistics
+      try {
+        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        console.log(`📊 Failure statistics updated`);
+      } catch (updateError) {
+        console.error(`❌ Failed to update failure statistics:`, updateError);
+      }
+      
+      throw error; // Re-throw to be caught by the caller
+    }
+  }
+
+  /**
+   * Execute a YouTube scheduled post
+   */
+  private async executeYouTubeScheduledPost(post: any): Promise<void> {
+    const startTime = Date.now();
+    console.log(`\n🚀 ===== STARTING YOUTUBE SCHEDULED POST EXECUTION =====`);
+    console.log(`📝 Post: ${post.title}`);
+    console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+    console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
+    console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    // TODO: Implement YouTube posting when handler is created
+    throw new Error('YouTube scheduled posts not yet implemented');
+  }
+
+  /**
    * Get connection details from storage based on connection type
    */
   private async getConnection(connectionId: string, connectionName: string, connectionType: string): Promise<any> {
@@ -464,6 +681,17 @@ export class ScheduledPostsExecutor {
         console.log(`🔍 Looking for Naver connection: ID=${connectionId}, Name=${connectionName}`);
         console.log(`🔍 Available Naver connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
+      } else if (connectionType === 'instagram') {
+        // Get Instagram connections from store (stored via instagram-handler)
+        const { getStore } = require('../storage');
+        const store = getStore();
+        const storeConnections = store.get('instagramConnections', []);
+        console.log(`🔍 Looking for Instagram connection: ID=${connectionId}, Name=${connectionName}`);
+        console.log(`🔍 Available Instagram connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
+        connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
+      } else if (connectionType === 'youtube' || connectionType === 'yt') {
+        // TODO: Get YouTube connections when handler is implemented
+        throw new Error('YouTube connections not yet implemented');
       }
       
       if (!connection) {
@@ -704,15 +932,44 @@ export class ScheduledPostsExecutor {
       const generateOutline = require('../ai-blog/generate-outline').default;
       const generateImages = require('../ai-blog/generate-images').default;
       
-      // Generate blog outline
+      // Generate blog outline with timeout handling
       console.log(`📝 Generating blog outline...`);
-      const outline = await generateOutline(topic);
-      console.log(`✅ Blog outline generated`);
+      let outline;
+      try {
+        outline = await Promise.race([
+          generateOutline(topic),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
+          )
+        ]);
+        console.log(`✅ Blog outline generated`);
+      } catch (outlineError) {
+        const errorMessage = outlineError instanceof Error ? outlineError.message : String(outlineError);
+        console.error(`❌ Blog outline generation failed: ${errorMessage}`);
+        throw new Error(`Failed to generate blog outline: ${errorMessage}`);
+      }
       
-      // Generate images
+      // Generate images with timeout handling
       console.log(`🎨 Generating images...`);
-      const blogContentWithImages = await generateImages(outline);
-      console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      let blogContentWithImages;
+      try {
+        blogContentWithImages = await Promise.race([
+          generateImages(outline),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
+          )
+        ]);
+        console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      } catch (imageError) {
+        const errorMessage = imageError instanceof Error ? imageError.message : String(imageError);
+        console.error(`❌ Image generation failed: ${errorMessage}`);
+        // Fallback: return content without images
+        console.log(`⚠️ Continuing with blog content without images`);
+        blogContentWithImages = {
+          ...outline,
+          images: []
+        };
+      }
       
       // For Naver Blog, we need to save images locally and add filePath
       if (blogContentWithImages.images && blogContentWithImages.images.length > 0) {
@@ -760,15 +1017,44 @@ export class ScheduledPostsExecutor {
       // Import the blog generation functions
       const generateOutline = require('../ai-blog/generate-outline').default;
       
-      // Generate blog outline
+      // Generate blog outline with timeout handling
       console.log(`📝 Generating blog outline...`);
-      const outline = await generateOutline(topic);
-      console.log(`✅ Blog outline generated`);
+      let outline;
+      try {
+        outline = await Promise.race([
+          generateOutline(topic),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
+          )
+        ]);
+        console.log(`✅ Blog outline generated`);
+      } catch (outlineError) {
+        const errorMessage = outlineError instanceof Error ? outlineError.message : String(outlineError);
+        console.error(`❌ Blog outline generation failed: ${errorMessage}`);
+        throw new Error(`Failed to generate blog outline: ${errorMessage}`);
+      }
       
-      // Generate images directly without WordPress upload
+      // Generate images directly without WordPress upload with timeout handling
       console.log(`🎨 Generating images for Naver Blog...`);
-      const blogContentWithImages = await this.generateImagesForNaver(outline);
-      console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      let blogContentWithImages;
+      try {
+        blogContentWithImages = await Promise.race([
+          this.generateImagesForNaver(outline),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
+          )
+        ]);
+        console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      } catch (imageError) {
+        const errorMessage = imageError instanceof Error ? imageError.message : String(imageError);
+        console.error(`❌ Image generation failed: ${errorMessage}`);
+        // Fallback: return content without images
+        console.log(`⚠️ Continuing with blog content without images`);
+        blogContentWithImages = {
+          ...outline,
+          images: []
+        };
+      }
       
       return blogContentWithImages;
     } catch (error) {
@@ -946,10 +1232,14 @@ export class ScheduledPostsExecutor {
       // Import the WordPress upload function (it's the default export)
       const createPost = require('../wordpress/generate-and-upload-blog').default;
       
-      // Upload to WordPress
-      const postUrl = await createPost(blogContent);
+      // Wrap upload in timeout handling
+      const postUrl = await Promise.race([
+        createPost(blogContent),
+        new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('WordPress upload timeout after 60 seconds')), 60000)
+        )
+      ]);
       console.log(`✅ WordPress upload completed: ${postUrl}`);
-      
       return postUrl;
     } catch (error) {
       console.error(`❌ Error uploading to WordPress:`, error);

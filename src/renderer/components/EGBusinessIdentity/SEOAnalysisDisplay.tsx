@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChartLine } from '../../utils/fontAwesomeIcons';
+import { faChartLine, faExternalLinkAlt } from '../../utils/fontAwesomeIcons';
 import type { SEOAnalysisResult } from './analysisHelpers';
 import './EGBusinessIdentityResultDemo.css';
 
@@ -96,9 +96,30 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
       {seoAnalysis.reportPath && (
         <div className="egbusiness-identity-result__analysis-footer">
-          <p className="egbusiness-identity-result__hint">
-            Full Lighthouse report available at: {seoAnalysis.reportPath}
-          </p>
+          <button
+            type="button"
+            className="egbusiness-identity-result__report-button"
+            onClick={async () => {
+              try {
+                if (window.electron?.shell?.openPath) {
+                  const result = await window.electron.shell.openPath(seoAnalysis.reportPath!);
+                  if (!result.success) {
+                    console.error('[SEOAnalysisDisplay] Failed to open report:', result.error);
+                    alert(`Failed to open report: ${result.error || 'Unknown error'}`);
+                  }
+                } else {
+                  // Fallback: try to open in default browser
+                  window.open(`file://${seoAnalysis.reportPath}`, '_blank');
+                }
+              } catch (error) {
+                console.error('[SEOAnalysisDisplay] Error opening report:', error);
+                alert(`Error opening report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            }}
+          >
+            <FontAwesomeIcon icon={faExternalLinkAlt} />
+            <span>Open Full Lighthouse Report</span>
+          </button>
         </div>
       )}
     </section>

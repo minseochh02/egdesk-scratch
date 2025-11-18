@@ -1,13 +1,53 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCalendarAlt,
   faClock,
   faInfoCircle,
   faTag,
+  faUser,
+  faExternalLinkAlt,
 } from '../../utils/fontAwesomeIcons';
 import { faHashtag } from '@fortawesome/free-solid-svg-icons/faHashtag';
 import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
+import AccountSelector from './AccountSelector';
+
+// Import image format utility (we'll need to expose this from main process or create a renderer version)
+// For now, we'll create a simple helper function
+const getImageFormatForChannel = (channel: string): string | null => {
+  const normalized = channel.toLowerCase().trim();
+  
+  if (normalized.includes('instagram')) {
+    return '1:1';
+  }
+  if (normalized.includes('twitter') || normalized === 'x') {
+    return '16:9';
+  }
+  if (normalized.includes('facebook') || normalized === 'fb') {
+    return '16:9';
+  }
+  if (normalized.includes('youtube') || normalized === 'yt') {
+    return '16:9';
+  }
+  if (normalized.includes('tiktok') || normalized === 'tt') {
+    return '9:16';
+  }
+  if (normalized.includes('wordpress') || normalized === 'wp') {
+    return '16:9';
+  }
+  if (normalized.includes('naver')) {
+    return '16:9';
+  }
+  if (normalized.includes('tistory')) {
+    return '16:9';
+  }
+  if (normalized === 'blog') {
+    return '16:9';
+  }
+  
+  return null;
+};
 
 export type BusinessIdentityChannel = 'Instagram' | 'Twitter' | 'LinkedIn' | 'Blog' | string;
 
@@ -26,6 +66,9 @@ export interface BusinessIdentityScheduledTask {
   format: string;
   notes?: string;
   isActive?: boolean; // Whether the schedule is currently active/running
+  connectionId?: string | null;
+  connectionName?: string | null;
+  connectionType?: string | null;
 }
 
 export const businessIdentityDemoTasks: BusinessIdentityScheduledTask[] = [
@@ -91,9 +134,14 @@ export interface BusinessIdentityScheduledDemoProps {
   tasks?: BusinessIdentityScheduledTask[];
   renderTask?: (task: BusinessIdentityScheduledTask) => React.ReactNode;
   onTaskSelect?: (task: BusinessIdentityScheduledTask) => void;
-  onTestPost?: (task: BusinessIdentityScheduledTask) => void;
+  onTestPost?: (task: BusinessIdentityScheduledTask, credentials?: { username: string; password: string }) => void;
   onToggleSchedule?: (task: BusinessIdentityScheduledTask, isActive: boolean) => void;
-  hasAccountForChannel?: (channel: string) => boolean; // Check if account exists for a channel
+  onAccountChange?: (task: BusinessIdentityScheduledTask, connectionId: string | null, connectionName: string | null, connectionType: string | null) => void;
+  onInstagramCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void;
+  onBlogCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void;
+  onCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void; // Generic credentials change for all channels
+  hasAccountForChannel?: (channel: string, task?: BusinessIdentityScheduledTask) => boolean; // Check if account exists for a channel
+  getAvailableConnections?: (channel: string) => Promise<Array<{ id: string; name: string; type: string }>>; // Get available connections for a channel
 }
 
 const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps> = ({
@@ -102,8 +150,14 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
   onTaskSelect,
   onTestPost,
   onToggleSchedule,
+  onAccountChange,
+  onInstagramCredentialsChange,
+  onBlogCredentialsChange,
+  onCredentialsChange,
   hasAccountForChannel,
+  getAvailableConnections,
 }) => {
+  const navigate = useNavigate();
   const items = tasks?.length ? tasks : businessIdentityDemoTasks;
   
   // Track active state for each task (defaults to false if not provided)
@@ -114,6 +168,39 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
     });
     return initialState;
   });
+
+  // Track credentials per task for all channels
+  const [taskCredentials, setTaskCredentials] = useState<Record<string, { username: string; password: string; url?: string }>>({});
+  
+  // Track Instagram credentials per task (for backward compatibility)
+  const [instagramCredentials, setInstagramCredentials] = useState<Record<string, { username: string; password: string }>>({});
+  
+  // Track blog credentials per task (for backward compatibility)
+  const [blogCredentials, setBlogCredentials] = useState<Record<string, { username: string; password: string }>>({});
+  
+  // Helper function to check if a channel is WordPress
+  const isWordPressChannel = (channel: string): boolean => {
+    const normalized = channel.toLowerCase().trim();
+    return normalized.includes('wordpress') || normalized === 'wp';
+  };
+  
+  // Helper function to check if a channel is a blog channel
+  const isBlogChannel = (channel: string): boolean => {
+    const normalized = channel.toLowerCase().trim();
+    return normalized.includes('wordpress') || 
+           normalized.includes('naver') || 
+           normalized.includes('tistory') || 
+           normalized === 'blog' ||
+           normalized === 'wp';
+  };
+
+  // Helper function to check if a channel is a social media channel (Instagram, YouTube)
+  const isSocialMediaChannel = (channel: string): boolean => {
+    const normalized = channel.toLowerCase().trim();
+    return normalized.includes('instagram') || 
+           normalized.includes('youtube') || 
+           normalized === 'yt';
+  };
 
   // Sync task states when tasks change
   useEffect(() => {
@@ -192,17 +279,75 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
             </div>
           </section>
 
+          <section className="egbusiness-identity__scheduled-demo-account">
+            <FontAwesomeIcon icon={faUser} />
+            <div className="egbusiness-identity__instagram-credentials">
+              {/* AccountSelector for blog platforms (WordPress, Naver, Tistory) and social media (Instagram, YouTube) */}
+              {(isBlogChannel(task.channel) || isSocialMediaChannel(task.channel)) && (
+                <AccountSelector
+                  task={task}
+                  onAccountChange={onAccountChange}
+                  getAvailableConnections={getAvailableConnections}
+                />
+              )}
+              {/* Username and password inputs for unsupported channels */}
+              {!isBlogChannel(task.channel) && !isSocialMediaChannel(task.channel) && (
+                <>
+                  <input
+                    type="text"
+                    placeholder={`${task.channel} username`}
+                    value={taskCredentials[task.id]?.username || ''}
+                    onChange={(e) => {
+                      const newCreds = { ...taskCredentials[task.id], username: e.target.value };
+                      setTaskCredentials({ ...taskCredentials, [task.id]: newCreds });
+                      // Call generic handler first, then specific handlers for backward compatibility
+                      onCredentialsChange?.(task, newCreds.username, newCreds.password || '');
+                      if (task.channel.toLowerCase() === 'instagram') {
+                        onInstagramCredentialsChange?.(task, newCreds.username, newCreds.password || '');
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="egbusiness-identity__instagram-input"
+                  />
+                  <input
+                    type="password"
+                    placeholder={`${task.channel} password`}
+                    value={taskCredentials[task.id]?.password || ''}
+                    onChange={(e) => {
+                      const newCreds = { ...taskCredentials[task.id], password: e.target.value };
+                      setTaskCredentials({ ...taskCredentials, [task.id]: newCreds });
+                      // Call generic handler first, then specific handlers for backward compatibility
+                      onCredentialsChange?.(task, newCreds.username || '', newCreds.password);
+                      if (task.channel.toLowerCase() === 'instagram') {
+                        onInstagramCredentialsChange?.(task, newCreds.username || '', newCreds.password);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="egbusiness-identity__instagram-input"
+                  />
+                </>
+              )}
+            </div>
+          </section>
+
           <footer>
-            <p className="egbusiness-identity__scheduled-demo-format">{task.format}</p>
+            <div className="egbusiness-identity__scheduled-demo-format-container">
+              <p className="egbusiness-identity__scheduled-demo-format">{task.format}</p>
+              {getImageFormatForChannel(task.channel) && (
+                <span className="egbusiness-identity__image-format-badge">
+                  {getImageFormatForChannel(task.channel)} format
+                </span>
+              )}
+            </div>
             {task.notes && <p className="egbusiness-identity__scheduled-demo-notes">{task.notes}</p>}
             <div className="egbusiness-identity__scheduled-demo-actions">
               <button
                 type="button"
                 className="egbusiness-identity__scheduled-demo-action-toggle"
                 onClick={(event) => handleToggleSchedule(task, event)}
-                disabled={hasAccountForChannel ? !hasAccountForChannel(task.channel) : false}
+                disabled={hasAccountForChannel ? !hasAccountForChannel(task.channel, task) : false}
                 title={
-                  hasAccountForChannel && !hasAccountForChannel(task.channel)
+                  hasAccountForChannel && !hasAccountForChannel(task.channel, task)
                     ? `No ${task.channel} account configured. Please add account credentials first.`
                     : taskStates[task.id]
                       ? 'Pause schedule'
@@ -215,17 +360,68 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
               <button
                 type="button"
                 className="egbusiness-identity__scheduled-demo-action-test"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (onTestPost) {
-                    onTestPost(task);
-                  } else {
-                    console.info('[BusinessIdentityScheduledDemo] Test Post clicked:', task.id);
-                  }
-                }}
+                     onClick={(event) => {
+                       event.stopPropagation();
+                       if (onTestPost) {
+                         // Use generic credentials for all channels
+                         const creds = taskCredentials[task.id];
+                         onTestPost(task, creds);
+                       } else {
+                         console.info('[BusinessIdentityScheduledDemo] Test Post clicked:', task.id);
+                       }
+                     }}
               >
                 Test Post
               </button>
+              {isBlogChannel(task.channel) && task.connectionId && task.connectionType && (
+                <button
+                  type="button"
+                  className="egbusiness-identity__scheduled-demo-action-dashboard"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate('/blog-connector', {
+                      state: {
+                        connectionId: task.connectionId,
+                        connectionName: task.connectionName,
+                        connectionType: task.connectionType,
+                        activeTab: 'scheduled'
+                      }
+                    });
+                  }}
+                  title="Open Scheduled Posts"
+                >
+                  <FontAwesomeIcon icon={faExternalLinkAlt} />
+                  <span>Scheduled Posts</span>
+                </button>
+              )}
+              {isSocialMediaChannel(task.channel) && (
+                <button
+                  type="button"
+                  className="egbusiness-identity__scheduled-demo-action-dashboard"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    // If connection info is available, navigate to specific connection dashboard
+                    // Otherwise, navigate to general social media dashboard
+                    if (task.connectionId && task.connectionType) {
+                      navigate('/social-media', {
+                        state: {
+                          connectionId: task.connectionId,
+                          connectionName: task.connectionName,
+                          connectionType: task.connectionType,
+                          activeTab: 'scheduled'
+                        }
+                      });
+                    } else {
+                      // Navigate to social media dashboard without specific connection
+                      navigate('/social-media');
+                    }
+                  }}
+                  title={task.connectionId && task.connectionType ? "Open Social Media Dashboard" : "Go to Social Media Dashboard"}
+                >
+                  <FontAwesomeIcon icon={faExternalLinkAlt} />
+                  <span>Dashboard</span>
+                </button>
+              )}
             </div>
           </footer>
         </article>

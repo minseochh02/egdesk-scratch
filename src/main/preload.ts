@@ -223,6 +223,18 @@ export interface NaverConnection {
 }
 
 /**
+ * Instagram connection configuration
+ */
+export interface InstagramConnection {
+  id?: string;
+  name: string;
+  username: string;
+  password: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
  * User application preferences
  */
 export interface UserPreferences {
@@ -450,6 +462,43 @@ export interface NaverAPI {
 }
 
 /**
+ * Instagram API for managing connections
+ */
+export interface InstagramAPI {
+  // Connection management
+  saveConnection: (connection: InstagramConnection) => Promise<{
+    success: boolean;
+    connection?: InstagramConnection;
+    connections?: InstagramConnection[];
+    error?: string;
+  }>;
+  getConnections: () => Promise<{
+    success: boolean;
+    connections?: InstagramConnection[];
+    error?: string;
+  }>;
+  deleteConnection: (connectionId: string) => Promise<{
+    success: boolean;
+    connections?: InstagramConnection[];
+    error?: string;
+  }>;
+  updateConnection: (
+    connectionId: string,
+    updates: Partial<InstagramConnection>,
+  ) => Promise<{
+    success: boolean;
+    connection?: InstagramConnection;
+    connections?: InstagramConnection[];
+    error?: string;
+  }>;
+  testConnection: (connection: InstagramConnection) => Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>;
+}
+
+/**
  * Scheduled posts management API
  */
 export interface ScheduledPostsAPI {
@@ -497,6 +546,12 @@ export interface BusinessIdentityAPI {
     snapshotId: string,
     seoAnalysis: any,
     sslAnalysis: any,
+  ) => Promise<{ success: boolean; error?: string }>;
+  updateSnsPlanConnection: (
+    planId: string,
+    connectionId: string | null,
+    connectionName: string | null,
+    connectionType: string | null,
   ) => Promise<{ success: boolean; error?: string }>;
 }
 
@@ -947,7 +1002,7 @@ export interface WebUtilitiesAPI {
   fetchContent: (url: string) => Promise<WebsiteContentFetchResult>;
   crawlHomepage: (url: string) => Promise<HomepageCrawlResult>;
   crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => Promise<MultiPageCrawlResult>;
-  generateBusinessIdentity: (websiteText: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  generateBusinessIdentity: (websiteText: string, rootUrl?: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   generateSnsPlan: (identityData: any) => Promise<{ success: boolean; content?: string; error?: string }>;
 }
 
@@ -1031,7 +1086,7 @@ const electronHandler = {
     fetchContent: (url: string) => ipcRenderer.invoke('web-fetch-content', url),
     crawlHomepage: (url: string) => ipcRenderer.invoke('web-crawl-homepage', url),
     crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => ipcRenderer.invoke('web-crawl-multiple-pages', url, options),
-    generateBusinessIdentity: (websiteText: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText),
+    generateBusinessIdentity: (websiteText: string, rootUrl?: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText, rootUrl),
     generateSnsPlan: (identityData: any) => ipcRenderer.invoke('ai-search-generate-sns-plan', identityData),
   } as WebUtilitiesAPI,
   
@@ -1137,6 +1192,27 @@ const electronHandler = {
   } as NaverAPI,
   
   // ========================================================================
+  // INSTAGRAM MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Instagram connection management API
+   */
+  instagram: {
+    saveConnection: (connection: InstagramConnection) =>
+      ipcRenderer.invoke('instagram-save-connection', connection),
+    getConnections: () => ipcRenderer.invoke('instagram-get-connections'),
+    deleteConnection: (connectionId: string) =>
+      ipcRenderer.invoke('instagram-delete-connection', connectionId),
+    updateConnection: (
+      connectionId: string,
+      updates: Partial<InstagramConnection>,
+    ) => ipcRenderer.invoke('instagram-update-connection', connectionId, updates),
+    testConnection: (connection: InstagramConnection) =>
+      ipcRenderer.invoke('instagram-test-connection', connection),
+  } as InstagramAPI,
+  
+  // ========================================================================
   // SCHEDULED POSTS MANAGEMENT
   // ========================================================================
   
@@ -1168,6 +1244,8 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-business-identity-save-sns-plans', { snapshotId, plans }),
     updateAnalysisResults: (snapshotId: string, seoAnalysis: any, sslAnalysis: any) =>
       ipcRenderer.invoke('sqlite-business-identity-update-analysis-results', snapshotId, seoAnalysis, sslAnalysis),
+    updateSnsPlanConnection: (planId: string, connectionId: string | null, connectionName: string | null, connectionType: string | null) =>
+      ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-connection', planId, connectionId, connectionName, connectionType),
   } as BusinessIdentityAPI,
   
   // ========================================================================
@@ -1635,6 +1713,13 @@ auth: {
     };
   },
 },
+
+  // ========================================================================
+  // SHELL UTILITIES
+  // ========================================================================
+  shell: {
+    openPath: (filePath: string) => ipcRenderer.invoke('shell-open-path', filePath),
+  },
 
   // ========================================================================
   // GENERIC IPC INVOKE METHOD

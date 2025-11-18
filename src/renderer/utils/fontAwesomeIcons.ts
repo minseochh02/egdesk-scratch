@@ -116,6 +116,7 @@ export {
   faShieldAlt,
   faLock,
   faUnlock,
+  faFingerprint,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Development and technical icons

@@ -7,6 +7,8 @@ export interface IdentitySnapshot {
   brandKey: string;
   sourceUrl: string | null;
   identityJson: string;
+  seoAnalysisJson?: string | null;
+  sslAnalysisJson?: string | null;
   createdAt: string | Date;
 }
 
@@ -29,6 +31,9 @@ export interface SnsPlanEntry {
     cta?: string;
     extraNotes?: string | null;
   };
+  connectionId?: string | null;
+  connectionName?: string | null;
+  connectionType?: string | null;
 }
 
 export interface StoredSnsPlan {
@@ -43,6 +48,9 @@ export interface StoredSnsPlan {
   scheduledTime: string;
   topicsJson: string;
   assetsJson: string | null;
+  connectionId: string | null;
+  connectionName: string | null;
+  connectionType: string | null;
 }
 
 export interface BusinessIdentitySnsPlanInput {
@@ -56,6 +64,9 @@ export interface BusinessIdentitySnsPlanInput {
   scheduledTime: string;
   topics: string[];
   assets?: Record<string, any> | null;
+  connectionId?: string | null;
+  connectionName?: string | null;
+  connectionType?: string | null;
   enabled?: boolean;
 }
 

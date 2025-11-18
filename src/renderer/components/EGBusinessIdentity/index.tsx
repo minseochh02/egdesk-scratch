@@ -16,7 +16,7 @@ import { AIKeySelector } from './AIKeySelector';
 
 // Types and utilities
 import type { IdentitySnapshot, SnsPlanEntry, StoredSnsPlan, IdentityLocationState } from './types';
-import { getBrandKeyFromValue, mapSnsPlanEntriesToStorage } from './utils';
+import { getBrandKeyFromValue, mapSnsPlanEntriesToStorage, handleBlogScheduleToggle, isBlogChannel } from './utils';
 import { mapStoredPlanToEntry } from './snsPlanHelpers';
 import { runSEOAnalysis, runSSLAnalysis } from './analysisHelpers';
 
@@ -326,7 +326,8 @@ const EGBusinessIdentity: React.FC = () => {
       }
 
       console.log('[EGBusinessIdentity] Generating business identity from crawled content...');
-      const aiResult = await window.electron.web.generateBusinessIdentity(websiteText);
+      // Pass the root URL to ensure source.url uses the homepage, not subpages
+      const aiResult = await window.electron.web.generateBusinessIdentity(websiteText, parsed.toString());
       if (!aiResult.success || !aiResult.content) {
         setError(aiResult.error || 'AI 응답 생성에 실패했습니다.');
         setLoading(false);
@@ -610,6 +611,26 @@ const EGBusinessIdentity: React.FC = () => {
       return;
     }
 
+    // Parse analysis results from snapshot if available
+    let analysisResults: { seo?: any; ssl?: any } | undefined;
+    if (identitySnapshot.seoAnalysisJson || identitySnapshot.sslAnalysisJson) {
+      analysisResults = {};
+      if (identitySnapshot.seoAnalysisJson) {
+        try {
+          analysisResults.seo = JSON.parse(identitySnapshot.seoAnalysisJson);
+        } catch (e) {
+          console.warn('[EGBusinessIdentity] Failed to parse SEO analysis:', e);
+        }
+      }
+      if (identitySnapshot.sslAnalysisJson) {
+        try {
+          analysisResults.ssl = JSON.parse(identitySnapshot.sslAnalysisJson);
+        } catch (e) {
+          console.warn('[EGBusinessIdentity] Failed to parse SSL analysis:', e);
+        }
+      }
+    }
+
     navigate('/egbusiness-identity/preview', {
       state: {
         source: parsedIdentity.source,
@@ -618,6 +639,7 @@ const EGBusinessIdentity: React.FC = () => {
         mode: 'ai',
         snapshotId: identitySnapshot.id,
         snsPlan,
+        analysisResults,
       },
     });
   }, [
@@ -717,9 +739,23 @@ const EGBusinessIdentity: React.FC = () => {
           onInstagramUsernameChange={setInstagramUsername}
           onInstagramPasswordChange={setInstagramPassword}
           onTestPost={handleTestScheduledPost}
-          onToggleSchedule={(task, isActive) => {
+          onToggleSchedule={async (task, isActive) => {
             console.log(`[EGBusinessIdentity] Toggle schedule for ${task.id}: ${isActive ? 'active' : 'paused'}`);
-            // TODO: Implement schedule toggle logic (save to SQLite, start/stop scheduler)
+            
+            // Handle blog channels (WordPress, Naver, Tistory)
+            if (isBlogChannel(task.channel)) {
+              const result = await handleBlogScheduleToggle(task, isActive, snsPlan ?? undefined);
+              if (result.success) {
+                console.log(`[EGBusinessIdentity] Schedule ${isActive ? 'activated' : 'deactivated'} successfully`);
+                // Optionally show a success message to the user
+              } else {
+                console.error(`[EGBusinessIdentity] Failed to toggle schedule:`, result.error);
+                alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
+              }
+            } else {
+              // For non-blog channels (Instagram, etc.), just log for now
+              console.log(`[EGBusinessIdentity] Schedule toggle for ${task.channel} not yet implemented`);
+            }
           }}
           hasAccountForChannel={(channel) => {
             // For Instagram, check if credentials are stored

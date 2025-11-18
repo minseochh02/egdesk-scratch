@@ -9,6 +9,9 @@ import { buildInstagramStructuredPrompt } from './instagramPrompt';
 import { SEOAnalysisDisplay } from './SEOAnalysisDisplay';
 import { SSLAnalysisDisplay } from './SSLAnalysisDisplay';
 import type { SEOAnalysisResult, SSLAnalysisResult } from './analysisHelpers';
+import { handleBlogScheduleToggle, isBlogChannel } from './utils';
+import { mapStoredPlanToEntry } from './snsPlanHelpers';
+import type { SnsPlanEntry, StoredSnsPlan } from './types';
 
 interface IdentityBlock {
   title: string;
@@ -292,6 +295,9 @@ const mapSnsPlanToScheduledTasks = (plans?: SnsPlanEntry[]): BusinessIdentitySch
       topics: topics.length > 0 ? topics : ['Custom topic'],
       format: pickTaskFormat(plan),
       notes: plan.assets?.extraNotes || plan.assets?.cta || undefined,
+      connectionId: plan.connectionId ?? null,
+      connectionName: plan.connectionName ?? null,
+      connectionType: plan.connectionType ?? null,
     };
   });
 };
@@ -306,12 +312,85 @@ const BusinessIdentityTab: React.FC = () => {
   const [instagramPassword, setInstagramPassword] = useState('');
   const [credentialsStatus, setCredentialsStatus] = useState<string | null>(null);
   const [credentialsSaving, setCredentialsSaving] = useState(false);
+  const [loadedAnalysisResults, setLoadedAnalysisResults] = useState<{
+    seo?: SEOAnalysisResult | null;
+    ssl?: SSLAnalysisResult | null;
+  } | null>(null);
+  const [loadedSnsPlans, setLoadedSnsPlans] = useState<SnsPlanEntry[] | null>(null);
+  
   const source = useMemo<WebsiteContentSummary | undefined>(() => {
     const maybeState = location.state as { source?: WebsiteContentSummary } | undefined;
     if (maybeState && maybeState.source && typeof maybeState.source === 'object') {
       return maybeState.source;
     }
     return undefined;
+  }, [location.state]);
+
+  // Fetch analysis results and SNS plans from database if snapshotId is present
+  useEffect(() => {
+    const fetchData = async () => {
+      const maybeState = location.state as { snapshotId?: string } | undefined;
+      const snapshotId = maybeState?.snapshotId;
+      
+      if (!snapshotId || !window.electron?.businessIdentity?.getSnapshot) {
+        setLoadedAnalysisResults(null);
+        setLoadedSnsPlans(null);
+        return;
+      }
+
+      try {
+        // Fetch snapshot for analysis results
+        const response = await window.electron.businessIdentity.getSnapshot(snapshotId);
+        if (response.success && response.data) {
+          const snapshot = response.data;
+          const analysis: {
+            seo?: SEOAnalysisResult | null;
+            ssl?: SSLAnalysisResult | null;
+          } = {};
+
+          // Parse SEO analysis
+          if (snapshot.seoAnalysisJson) {
+            try {
+              analysis.seo = JSON.parse(snapshot.seoAnalysisJson);
+            } catch (e) {
+              console.warn('[BusinessIdentityTab] Failed to parse SEO analysis JSON:', e);
+              analysis.seo = null;
+            }
+          }
+
+          // Parse SSL analysis
+          if (snapshot.sslAnalysisJson) {
+            try {
+              analysis.ssl = JSON.parse(snapshot.sslAnalysisJson);
+            } catch (e) {
+              console.warn('[BusinessIdentityTab] Failed to parse SSL analysis JSON:', e);
+              analysis.ssl = null;
+            }
+          }
+
+          setLoadedAnalysisResults(analysis);
+        } else {
+          setLoadedAnalysisResults(null);
+        }
+
+        // Fetch SNS plans
+        if (window.electron?.businessIdentity?.listSnsPlans) {
+          const plansResponse = await window.electron.businessIdentity.listSnsPlans(snapshotId);
+          if (plansResponse.success && plansResponse.data && Array.isArray(plansResponse.data)) {
+            const plans = plansResponse.data.map((plan: StoredSnsPlan) => mapStoredPlanToEntry(plan));
+            setLoadedSnsPlans(plans);
+          } else {
+            setLoadedSnsPlans(null);
+          }
+        }
+      } catch (error) {
+        console.error('[BusinessIdentityTab] Error fetching data:', error);
+        setLoadedAnalysisResults(null);
+        setLoadedSnsPlans(null);
+      }
+    };
+
+    fetchData();
   }, [location.state]);
 
   const { identityData, rawAiResponse, snsPlan, analysisResults } = useMemo<{
@@ -331,6 +410,7 @@ const BusinessIdentityTab: React.FC = () => {
         seo?: SEOAnalysisResult | null;
         ssl?: SSLAnalysisResult | null;
       };
+      snapshotId?: string;
     } | undefined;
     if (!maybeState) {
       return {};
@@ -340,11 +420,17 @@ const BusinessIdentityTab: React.FC = () => {
         ? maybeState.identityData
         : undefined;
     const raw = typeof maybeState.rawAiResponse === 'string' ? maybeState.rawAiResponse : undefined;
-    const plan =
-      Array.isArray(maybeState.snsPlan) && maybeState.snsPlan.length > 0 ? maybeState.snsPlan : undefined;
-    const analysis = maybeState.analysisResults || {};
+    
+    // Use loaded SNS plans if available, otherwise fall back to location.state
+    const plan = loadedSnsPlans && loadedSnsPlans.length > 0
+      ? loadedSnsPlans
+      : (Array.isArray(maybeState.snsPlan) && maybeState.snsPlan.length > 0 ? maybeState.snsPlan : undefined);
+    
+    // Use analysis results from location.state if available, otherwise use loaded results
+    const analysis = maybeState.analysisResults || loadedAnalysisResults || {};
+    
     return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan, analysisResults: analysis };
-  }, [location.state]);
+  }, [location.state, loadedAnalysisResults, loadedSnsPlans]);
 
   const insights = useMemo<IdentityInsights>(() => {
     if (identityData) {
@@ -360,18 +446,87 @@ const BusinessIdentityTab: React.FC = () => {
   }, [snsPlan]);
   const hasStoredSnsPlan = scheduledTasks.length > 0;
 
+  // Track credentials per task for all channels
+  const [taskCredentials, setTaskCredentials] = useState<Record<string, { username: string; password: string; url?: string }>>({});
+  
+  // Track Instagram credentials per task (for backward compatibility)
+  const [taskInstagramCredentials, setTaskInstagramCredentials] = useState<Record<string, { username: string; password: string }>>({});
+  const [taskBlogCredentials, setTaskBlogCredentials] = useState<Record<string, { username: string; password: string }>>({});
+
   // Check if account exists for a channel
   const hasAccountForChannel = useCallback(
-    (channel: string): boolean => {
-      // For Instagram, check if credentials are stored
-      if (channel.toLowerCase() === 'instagram') {
-        return instagramUsername.trim().length > 0 && instagramPassword.trim().length > 0;
+    (channel: string, task?: BusinessIdentityScheduledTask): boolean => {
+      const normalized = channel.toLowerCase().trim();
+      
+      // For blog channels (WordPress, Naver, Tistory, Blog), check connection info
+      if (normalized.includes('wordpress') || normalized.includes('naver') || normalized.includes('tistory') || normalized === 'blog' || normalized === 'wp') {
+        if (task) {
+          // Get the latest task data from scheduledTasks to ensure we have the most up-to-date connection info
+          const latestTask = scheduledTasks.find(t => t.id === task.id || (t.planId && t.planId === task.planId));
+          const taskToCheck = latestTask || task;
+          
+          // Check if connection is selected (connectionId, connectionName, connectionType)
+          const hasConnection = taskToCheck.connectionId && taskToCheck.connectionName && taskToCheck.connectionType;
+          if (hasConnection) {
+            return true;
+          }
+          
+          // Fallback: check if credentials are stored (backward compatibility)
+          const creds = taskBlogCredentials[task.id];
+          if (creds?.username?.trim().length > 0 && creds?.password?.trim().length > 0) {
+            return true;
+          }
+        }
+        return false;
       }
+      
+      // For social media channels (Instagram, YouTube), check connection info
+      if (normalized.includes('instagram') || normalized.includes('youtube') || normalized === 'yt') {
+        if (task) {
+          // Get the latest task data from scheduledTasks to ensure we have the most up-to-date connection info
+          const latestTask = scheduledTasks.find(t => t.id === task.id || (t.planId && t.planId === task.planId));
+          const taskToCheck = latestTask || task;
+          
+          // Check if connection is selected (connectionId, connectionName, connectionType)
+          const hasConnection = taskToCheck.connectionId && taskToCheck.connectionName && taskToCheck.connectionType;
+          if (hasConnection) {
+            return true;
+          }
+          
+          // Fallback: check if credentials are stored (backward compatibility)
+          if (normalized.includes('instagram')) {
+            const creds = taskInstagramCredentials[task.id];
+            if (creds?.username?.trim().length > 0 && creds?.password?.trim().length > 0) {
+              return true;
+            }
+            // Fallback to old global credentials for backward compatibility
+            if (instagramUsername.trim().length > 0 && instagramPassword.trim().length > 0) {
+              return true;
+            }
+          } else {
+            const creds = taskCredentials[task.id];
+            if (creds?.username?.trim().length > 0 && creds?.password?.trim().length > 0) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+      
+      // For other channels, check generic credentials
+      if (task) {
+        const creds = taskCredentials[task.id];
+        const hasBasicCreds = creds?.username?.trim().length > 0 && creds?.password?.trim().length > 0;
+        if (hasBasicCreds) {
+          return true;
+        }
+      }
+      
       // For other channels, check SQLite accounts (if API available)
       // TODO: Implement check for other channels via SQLite accounts table
       return false;
     },
-    [instagramUsername, instagramPassword]
+    [instagramUsername, instagramPassword, taskCredentials, taskInstagramCredentials, taskBlogCredentials, scheduledTasks]
   );
 
   useEffect(() => {
@@ -588,58 +743,160 @@ const BusinessIdentityTab: React.FC = () => {
               ? 'These tasks are generated from your stored SNS plan.'
               : 'No SNS plan found for this identity yet. Showing demo tasks as placeholders.'}
           </p>
-          <div className="egbusiness-identity__credentials-card">
-            <div>
-              <h3>Instagram automation login</h3>
-              <p>
-                Stored securely on this device only. Required to trigger Playwright for test posts.
-              </p>
-            </div>
-            <div className="egbusiness-identity__credentials">
-              <div>
-                <label htmlFor="result-instagram-username">Instagram Username</label>
-                <input
-                  id="result-instagram-username"
-                  type="text"
-                  autoComplete="username"
-                  placeholder="username"
-                  value={instagramUsername}
-                  onChange={(event) => setInstagramUsername(event.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="result-instagram-password">Instagram Password</label>
-                <input
-                  id="result-instagram-password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="password"
-                  value={instagramPassword}
-                  onChange={(event) => setInstagramPassword(event.target.value)}
-                />
-              </div>
-            </div>
-            <div className="egbusiness-identity__credentials-actions">
-              <button
-                type="button"
-                onClick={handleSaveInstagramCredentials}
-                disabled={
-                  credentialsSaving || !instagramUsername.trim() || !instagramPassword.trim()
-                }
-              >
-                {credentialsSaving ? 'Saving…' : 'Save credentials'}
-              </button>
-              {credentialsStatus && (
-                <span className="egbusiness-identity__credentials-status">{credentialsStatus}</span>
-              )}
-            </div>
-          </div>
           <BusinessIdentityScheduledDemo
             tasks={hasStoredSnsPlan ? scheduledTasks : undefined}
             onTestPost={handleTestScheduledPost}
-            onToggleSchedule={(task, isActive) => {
+            onToggleSchedule={async (task, isActive) => {
               console.log(`[BusinessIdentityTab] Toggle schedule for ${task.id}: ${isActive ? 'active' : 'paused'}`);
-              // TODO: Implement schedule toggle logic (save to SQLite, start/stop scheduler)
+              
+              // Handle blog channels (WordPress, Naver, Tistory)
+              if (isBlogChannel(task.channel)) {
+                const result = await handleBlogScheduleToggle(task, isActive, snsPlan);
+                if (result.success) {
+                  console.log(`[BusinessIdentityTab] Schedule ${isActive ? 'activated' : 'deactivated'} successfully`);
+                  // Optionally show a success message to the user
+                } else {
+                  console.error(`[BusinessIdentityTab] Failed to toggle schedule:`, result.error);
+                  alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
+                }
+              } else {
+                // For non-blog channels (Instagram, etc.), just log for now
+                console.log(`[BusinessIdentityTab] Schedule toggle for ${task.channel} not yet implemented`);
+              }
+            }}
+            onCredentialsChange={(task, username, password) => {
+              setTaskCredentials(prev => ({
+                ...prev,
+                [task.id]: { username, password }
+              }));
+            }}
+            onInstagramCredentialsChange={(task, username, password) => {
+              setTaskInstagramCredentials(prev => ({
+                ...prev,
+                [task.id]: { username, password }
+              }));
+              // Also update generic credentials for backward compatibility
+              setTaskCredentials(prev => ({
+                ...prev,
+                [task.id]: { username, password }
+              }));
+            }}
+            onBlogCredentialsChange={(task, username, password) => {
+              setTaskBlogCredentials(prev => ({
+                ...prev,
+                [task.id]: { username, password }
+              }));
+              // Also update generic credentials for backward compatibility
+              setTaskCredentials(prev => ({
+                ...prev,
+                [task.id]: { username, password }
+              }));
+            }}
+            onAccountChange={async (task, connectionId, connectionName, connectionType) => {
+              console.log('[BusinessIdentityTab] onAccountChange called:', {
+                taskId: task.id,
+                planId: task.planId,
+                connectionId,
+                connectionName,
+                connectionType,
+              });
+              
+              if (!task.planId) {
+                console.warn('[BusinessIdentityTab] Cannot update account: planId missing');
+                return;
+              }
+              try {
+                // Update the plan in the database
+                const result = await window.electron.businessIdentity.updateSnsPlanConnection(
+                  task.planId,
+                  connectionId,
+                  connectionName,
+                  connectionType
+                );
+                console.log('[BusinessIdentityTab] updateSnsPlanConnection result:', result);
+                
+                if (result.success) {
+                  console.log('[BusinessIdentityTab] Account updated successfully');
+                  
+                  // Reload SNS plans from database to get updated connection info
+                  const maybeState = location.state as { snapshotId?: string } | undefined;
+                  const snapshotId = maybeState?.snapshotId;
+                  if (snapshotId && window.electron?.businessIdentity?.listSnsPlans) {
+                    const plansResponse = await window.electron.businessIdentity.listSnsPlans(snapshotId);
+                    console.log('[BusinessIdentityTab] Reloaded SNS plans:', plansResponse);
+                    if (plansResponse.success && plansResponse.data && Array.isArray(plansResponse.data)) {
+                      const plans = plansResponse.data.map((plan: StoredSnsPlan) => mapStoredPlanToEntry(plan));
+                      console.log('[BusinessIdentityTab] Parsed plans with connections:', plans.map(p => ({
+                        title: p.title,
+                        connectionId: p.connectionId,
+                        connectionName: p.connectionName,
+                        connectionType: p.connectionType,
+                      })));
+                      setLoadedSnsPlans(plans);
+                    }
+                  }
+                } else {
+                  console.error('[BusinessIdentityTab] Failed to update account:', result.error);
+                }
+              } catch (error) {
+                console.error('[BusinessIdentityTab] Error updating account:', error);
+              }
+            }}
+            getAvailableConnections={async (channel: string) => {
+              const connections: Array<{ id: string; name: string; type: string }> = [];
+              const normalized = channel.toLowerCase().trim();
+              
+              if (normalized.includes('wordpress') || normalized === 'wp') {
+                try {
+                  const wpResult = await window.electron.wordpress.getConnections();
+                  if (wpResult.success && wpResult.connections) {
+                    connections.push(
+                      ...wpResult.connections.map((conn: any) => ({
+                        id: conn.id,
+                        name: conn.name,
+                        type: 'wordpress',
+                      }))
+                    );
+                  }
+                } catch (error) {
+                  console.error('[BusinessIdentityTab] Error loading WordPress connections:', error);
+                }
+              } else if (normalized.includes('naver')) {
+                try {
+                  const naverResult = await window.electron.naver.getConnections();
+                  if (naverResult.success && naverResult.connections) {
+                    connections.push(
+                      ...naverResult.connections.map((conn: any) => ({
+                        id: conn.id,
+                        name: conn.name,
+                        type: 'naver',
+                      }))
+                    );
+                  }
+                } catch (error) {
+                  console.error('[BusinessIdentityTab] Error loading Naver connections:', error);
+                }
+              } else if (normalized.includes('instagram')) {
+                try {
+                  const instagramResult = await window.electron.instagram.getConnections();
+                  if (instagramResult.success && instagramResult.connections) {
+                    connections.push(
+                      ...instagramResult.connections.map((conn: any) => ({
+                        id: conn.id,
+                        name: conn.name,
+                        type: 'instagram',
+                      }))
+                    );
+                  }
+                } catch (error) {
+                  console.error('[BusinessIdentityTab] Error loading Instagram connections:', error);
+                }
+              } else if (normalized.includes('youtube') || normalized === 'yt') {
+                // TODO: Implement YouTube connections loading when handler is created
+                console.warn('[BusinessIdentityTab] YouTube connections not yet implemented');
+              }
+              
+              return connections;
             }}
             hasAccountForChannel={hasAccountForChannel}
           />

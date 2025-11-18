@@ -1074,6 +1074,7 @@
 }
 
 .eg-blog-scheduled-posts-last-run .stat-label {
+  font-size: 0.7rem;
   color: #6b7280;
   font-weight: 500;
   text-transform: uppercase;
@@ -1081,6 +1082,7 @@
 }
 
 .eg-blog-scheduled-posts-last-run .stat-value {
+  font-size: 0.8rem;
   color: #1f2937;
   font-weight: 600;
 }
