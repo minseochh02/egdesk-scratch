@@ -9,7 +9,7 @@ import { buildInstagramStructuredPrompt } from './instagramPrompt';
 import { SEOAnalysisDisplay } from './SEOAnalysisDisplay';
 import { SSLAnalysisDisplay } from './SSLAnalysisDisplay';
 import type { SEOAnalysisResult, SSLAnalysisResult } from './analysisHelpers';
-import { handleBlogScheduleToggle, isBlogChannel } from './utils';
+import { handleBlogScheduleToggle, handleSocialMediaScheduleToggle, isBlogChannel, isSocialMediaChannel } from './utils';
 import { mapStoredPlanToEntry } from './snsPlanHelpers';
 import type { SnsPlanEntry, StoredSnsPlan } from './types';
 
@@ -759,8 +759,18 @@ const BusinessIdentityTab: React.FC = () => {
                   console.error(`[BusinessIdentityTab] Failed to toggle schedule:`, result.error);
                   alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
                 }
+              } else if (isSocialMediaChannel(task.channel)) {
+                // Handle social media channels (Instagram, YouTube)
+                const result = await handleSocialMediaScheduleToggle(task, isActive, snsPlan);
+                if (result.success) {
+                  console.log(`[BusinessIdentityTab] Schedule ${isActive ? 'activated' : 'deactivated'} successfully`);
+                  // Optionally show a success message to the user
+                } else {
+                  console.error(`[BusinessIdentityTab] Failed to toggle schedule:`, result.error);
+                  alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
+                }
               } else {
-                // For non-blog channels (Instagram, etc.), just log for now
+                // For other channels, just log for now
                 console.log(`[BusinessIdentityTab] Schedule toggle for ${task.channel} not yet implemented`);
               }
             }}

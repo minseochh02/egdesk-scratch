@@ -38,6 +38,16 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
     }
   }, [task.channel, getAvailableConnections]);
 
+  // Reload connections when task.connectionId changes to ensure we have the latest connection info
+  useEffect(() => {
+    if (task.connectionId && getAvailableConnections) {
+      const isSupportedPlatform = /wordpress|naver|tistory|instagram|youtube/i.test(task.channel);
+      if (isSupportedPlatform) {
+        loadConnections();
+      }
+    }
+  }, [task.connectionId, task.channel, getAvailableConnections]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -206,6 +216,15 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
     ? connections.find(c => c.id === task.connectionId)
     : null;
 
+  // Display connection name: prefer found connection, fallback to task.connectionName, then default text
+  const displayName = selectedConnection
+    ? selectedConnection.name
+    : (task.connectionId && task.connectionName)
+    ? task.connectionName
+    : (connections.length === 0)
+    ? 'Add account'
+    : 'Select account';
+
   return (
     <div className="egbusiness-identity__account-selector" ref={dropdownRef}>
       <button
@@ -218,13 +237,7 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
         disabled={loading}
       >
         <FontAwesomeIcon icon={faUser} />
-        <span>
-          {selectedConnection
-            ? selectedConnection.name
-            : connections.length === 0
-            ? 'Add account'
-            : 'Select account'}
-        </span>
+        <span>{displayName}</span>
         <FontAwesomeIcon icon={faChevronDown} className={isOpen ? 'open' : ''} />
       </button>
       

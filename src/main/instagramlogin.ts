@@ -35,8 +35,25 @@ interface RunOptions {
   post?: PostInput;
 }
 
-const DEFAULT_LAUNCH_ARGS = ["--disable-gpu"];
-const DEFAULT_HEADLESS = true;
+const DEFAULT_LAUNCH_ARGS = [
+  "--disable-blink-features=AutomationControlled", // Hide automation flags
+  "--disable-features=IsolateOrigins,site-per-process",
+  "--disable-web-security",
+  "--disable-features=VizDisplayCompositor",
+  "--disable-dev-shm-usage",
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-accelerated-2d-canvas",
+  "--no-first-run",
+  "--no-zygote",
+  "--disable-notifications",
+  "--disable-infobars",
+  "--window-size=1920,1080",
+  "--start-maximized",
+];
+// Default to NON-headless for Instagram to avoid detection
+// Set INSTAGRAM_HEADLESS=true to run headless (not recommended for Instagram)
+const DEFAULT_HEADLESS = process.env.INSTAGRAM_HEADLESS === 'true' ? true : false;
 const PLAYWRIGHT_CHROME_CHANNEL = process.env.PLAYWRIGHT_CHROME_CHANNEL || "chrome";
 const CHROME_EXECUTABLE_PATH =
   typeof process.env.CHROME_EXECUTABLE_PATH === "string" && process.env.CHROME_EXECUTABLE_PATH.trim().length > 0
@@ -44,6 +61,7 @@ const CHROME_EXECUTABLE_PATH =
     : undefined;
 const LOGIN_SETTLE_DELAY_MS = 1000;
 const INSTAGRAM_HOME_URL = "https://www.instagram.com/";
+const INSTAGRAM_LOGIN_URL = "https://www.instagram.com/accounts/login/"; // Direct login URL
 
 function resolveCredentials(options: LoginOptions = {}): Credentials {
   const username = options.username ?? process.env.INSTAGRAM_USERNAME;
@@ -105,31 +123,151 @@ async function dismissCookieBanner(page: Page): Promise<void> {
 }
 
 async function performInstagramLogin(page: Page, credentials: Credentials): Promise<void> {
-  await page.goto(INSTAGRAM_HOME_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  console.log('[performInstagramLogin] Navigating to Instagram login page...');
+  // Navigate directly to login page instead of home page - this is more reliable
+  await page.goto(INSTAGRAM_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  console.log('[performInstagramLogin] Page loaded, URL:', page.url());
+  
+  // Wait a bit for page to fully render
+  await page.waitForTimeout(2000);
+  
+  // Take screenshot for debugging
+  try {
+    const screenshotPath = `/tmp/instagram_login_step1_${Date.now()}.png`;
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`[performInstagramLogin] Screenshot saved: ${screenshotPath}`);
+  } catch (e) {
+    console.error('[performInstagramLogin] Could not take screenshot:', e);
+  }
+  
   await dismissCookieBanner(page);
 
   const idInput = page.locator("[name=username]");
   const pwInput = page.locator("[type=password]");
   const loginButton = page.locator("[type=submit]");
 
-  await idInput.waitFor({ state: "visible", timeout: 45_000 });
+  console.log('[performInstagramLogin] Waiting for login form elements...');
+  
+  try {
+    await idInput.waitFor({ state: "visible", timeout: 45_000 });
+    console.log('[performInstagramLogin] Username input found');
+  } catch (error) {
+    console.error('[performInstagramLogin] Failed to find username input');
+    console.log('[performInstagramLogin] Current URL:', page.url());
+    console.log('[performInstagramLogin] Page title:', await page.title());
+    
+    // Take screenshot on failure
+    try {
+      const screenshotPath = `/tmp/instagram_login_failed_${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      console.log(`[performInstagramLogin] Failure screenshot saved: ${screenshotPath}`);
+    } catch (e) {
+      console.error('[performInstagramLogin] Could not take failure screenshot:', e);
+    }
+    
+    // Check if we're being blocked
+    const bodyText = await page.locator('body').textContent().catch(() => '');
+    if (bodyText.toLowerCase().includes('suspicious activity') || 
+        bodyText.toLowerCase().includes('verify') ||
+        bodyText.toLowerCase().includes('captcha')) {
+      throw new Error('Instagram is showing a verification or CAPTCHA page. This account may be flagged for suspicious activity. Try logging in manually first or use a different account.');
+    }
+    
+    throw new Error(`Instagram login page not loading correctly. URL: ${page.url()}`);
+  }
+  
   await pwInput.waitFor({ state: "visible", timeout: 45_000 });
+  console.log('[performInstagramLogin] Password input found');
   await loginButton.waitFor({ state: "visible", timeout: 45_000 });
+  console.log('[performInstagramLogin] Login button found');
 
+  // Fill inputs with slight delays to mimic human behavior
+  console.log('[performInstagramLogin] Filling username...');
+  await idInput.click(); // Click first to focus
+  await page.waitForTimeout(300);
   await idInput.fill(credentials.username);
+  await page.waitForTimeout(500);
+  
+  console.log('[performInstagramLogin] Filling password...');
+  await pwInput.click(); // Click first to focus
+  await page.waitForTimeout(300);
   await pwInput.fill(credentials.password);
+  await page.waitForTimeout(800);
 
-  await page.waitForTimeout(LOGIN_SETTLE_DELAY_MS);
+  console.log('[performInstagramLogin] Clicking login button...');
   await loginButton.click();
 
-  await page.waitForURL((url) => url.href.startsWith(INSTAGRAM_HOME_URL), {
-    timeout: 60_000,
-  });
+  // Wait for navigation after login
+  console.log('[performInstagramLogin] Waiting for navigation after login...');
+  try {
+    await page.waitForURL((url) => url.href.startsWith(INSTAGRAM_HOME_URL), {
+      timeout: 60_000,
+    });
+    console.log('[performInstagramLogin] Navigation successful, URL:', page.url());
+  } catch (error) {
+    console.error('[performInstagramLogin] Navigation timeout. Current URL:', page.url());
+    console.log('[performInstagramLogin] Page title:', await page.title());
+    
+    // Take screenshot for debugging
+    try {
+      const screenshotPath = `/tmp/instagram_after_login_${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      console.log(`[performInstagramLogin] Post-login screenshot saved: ${screenshotPath}`);
+    } catch (e) {
+      console.error('[performInstagramLogin] Could not take screenshot:', e);
+    }
+    
+    // Check if we're on a challenge/verification page
+    const bodyText = await page.locator('body').textContent().catch(() => '');
+    if (bodyText.toLowerCase().includes('challenge') || 
+        bodyText.toLowerCase().includes('verify') ||
+        bodyText.toLowerCase().includes('suspicious') ||
+        bodyText.toLowerCase().includes('try again')) {
+      throw new Error('Instagram is requesting additional verification. This may be due to suspicious activity detection. Please log in manually first to complete any verification steps.');
+    }
+    
+    // Check if login failed due to wrong credentials
+    if (bodyText.toLowerCase().includes('incorrect') || 
+        bodyText.toLowerCase().includes('wrong password') ||
+        bodyText.toLowerCase().includes('user not found')) {
+      throw new Error('Instagram login failed: Incorrect username or password.');
+    }
+    
+    throw error;
+  }
+  
   await dismissLoginInfoPrompt(page);
-  await page
-    .locator("[aria-label='New post']")
-    .first()
-    .waitFor({ state: "visible", timeout: 60_000 });
+  
+  // Wait for home page to fully load by checking for multiple possible "New post" button selectors
+  console.log('[performInstagramLogin] Waiting for home page to load...');
+  const possibleSelectors = [
+    "[aria-label='New post']",
+    "[aria-label='New Post']",
+    "[aria-label='Create']",
+    "svg[aria-label='New post']",
+    "svg[aria-label='New Post']",
+    "svg[aria-label='Create']",
+    "a[href='#'][role='link']", // Generic home page indicator
+  ];
+
+  let buttonFound = false;
+  for (const selector of possibleSelectors) {
+    try {
+      const element = page.locator(selector).first();
+      await element.waitFor({ state: "visible", timeout: 10_000 });
+      console.log(`[performInstagramLogin] Found element with selector: ${selector}`);
+      buttonFound = true;
+      break;
+    } catch (e) {
+      // Try next selector
+    }
+  }
+
+  if (!buttonFound) {
+    console.warn('[performInstagramLogin] Could not find New post button, but login may have succeeded');
+    // Wait a bit for the page to settle
+    await page.waitForTimeout(3000);
+  }
 }
 
 function resolvePostOptions(options: PostInput = {}): PostOptions {
@@ -244,8 +382,86 @@ async function createContext(): Promise<{
   page: Page;
 }> {
   const browser = await launchChromeBrowser();
-  const context = await browser.newContext();
+  
+  // Create context with realistic settings to avoid detection
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    viewport: { width: 1920, height: 1080 },
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+    deviceScaleFactor: 2, // Retina display
+    hasTouch: false,
+    isMobile: false,
+  });
+  
+  // Add extra headers to look more like a real browser
+  await context.setExtraHTTPHeaders({
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0',
+  });
+  
   const page = await context.newPage();
+  
+  // Comprehensive anti-detection script
+  await page.addInitScript(() => {
+    // Remove webdriver flag
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined,
+    });
+    
+    // Mock chrome object
+    (window as any).chrome = {
+      runtime: {},
+    };
+    
+    // Mock permissions
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters: any) => (
+      parameters.name === 'notifications' ?
+        Promise.resolve({ state: 'prompt' } as PermissionStatus) :
+        originalQuery(parameters)
+    );
+    
+    // Override plugins
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => {
+        return [
+          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+          { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+        ];
+      },
+    });
+    
+    // Override languages
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['en-US', 'en'],
+    });
+    
+    // Add platform info
+    Object.defineProperty(navigator, 'platform', {
+      get: () => 'MacIntel',
+    });
+    
+    // Mock hardware concurrency
+    Object.defineProperty(navigator, 'hardwareConcurrency', {
+      get: () => 8,
+    });
+    
+    // Mock device memory
+    Object.defineProperty(navigator, 'deviceMemory', {
+      get: () => 8,
+    });
+  });
 
   return { browser, context, page };
 }

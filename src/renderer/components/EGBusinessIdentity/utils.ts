@@ -100,8 +100,167 @@ export function isBlogChannel(channel: string): boolean {
 }
 
 /**
- * Handle schedule toggle for blog channels - creates or toggles scheduled posts
+ * Check if a channel is a social media platform (Instagram, YouTube)
  */
+export function isSocialMediaChannel(channel: string): boolean {
+  const normalized = channel.toLowerCase().trim();
+  return normalized.includes('instagram') || normalized.includes('youtube') || normalized === 'yt';
+}
+
+/**
+ * Map social media channel to connection type
+ */
+export function mapSocialMediaChannelToConnectionType(channel: string): 'instagram' | 'youtube' | null {
+  const normalized = channel.toLowerCase().trim();
+  if (normalized.includes('instagram')) {
+    return 'instagram';
+  }
+  if (normalized.includes('youtube') || normalized === 'yt') {
+    return 'youtube';
+  }
+  return null;
+}
+
+/**
+ * Convert SNS plan to scheduled post data for social media channels
+ */
+function convertSnsPlanToSocialMediaScheduledPost(
+  plan: SnsPlanEntry,
+  connectionId: string,
+  connectionName: string,
+  connectionType: 'instagram' | 'youtube'
+): import('../../main/sqlite/scheduled-posts').CreateScheduledPostData {
+  const { mapCadenceToFrequency } = require('./snsPlanToScheduledPost');
+  const { frequencyType, frequencyValue } = mapCadenceToFrequency(
+    plan.cadence?.type || 'custom',
+    plan.cadence?.customDays
+  );
+
+  return {
+    title: plan.title,
+    connectionId,
+    connectionName,
+    connectionType,
+    scheduledTime: plan.cadence?.time || '09:00',
+    frequencyType,
+    frequencyValue,
+    weeklyDay: plan.cadence?.dayOfWeek ?? undefined,
+    monthlyDay: plan.cadence?.dayOfMonth ?? undefined,
+    topics: Array.isArray(plan.topics) ? plan.topics : [],
+  };
+}
+
+/**
+ * Handle schedule toggle for social media channels (Instagram, YouTube)
+ */
+export async function handleSocialMediaScheduleToggle(
+  task: import('./BusinessIdentityScheduledDemo').BusinessIdentityScheduledTask,
+  isActive: boolean,
+  snsPlan?: SnsPlanEntry[]
+): Promise<{ success: boolean; error?: string; scheduledPostId?: string }> {
+  // Only handle social media channels
+  if (!isSocialMediaChannel(task.channel)) {
+    return { success: false, error: 'This function only handles social media channels' };
+  }
+
+  try {
+    // Find the matching SNS plan entry first (it has the most up-to-date connection info)
+    const planEntry = snsPlan?.find((p) => p.planId === task.planId || p.title === task.title);
+    if (!planEntry) {
+      return { success: false, error: 'SNS plan entry not found' };
+    }
+
+    // Use connection info from plan entry (most up-to-date) or fall back to task
+    const connectionId = planEntry.connectionId || task.connectionId;
+    const connectionName = planEntry.connectionName || task.connectionName;
+    const connectionType = planEntry.connectionType || task.connectionType;
+
+    // Check if connection is selected
+    if (!connectionId || !connectionName || !connectionType) {
+      console.log('[handleSocialMediaScheduleToggle] Missing connection info:', {
+        planEntry: {
+          connectionId: planEntry.connectionId,
+          connectionName: planEntry.connectionName,
+          connectionType: planEntry.connectionType,
+        },
+        task: {
+          connectionId: task.connectionId,
+          connectionName: task.connectionName,
+          connectionType: task.connectionType,
+        },
+      });
+      return { success: false, error: 'Please select a social media account first' };
+    }
+
+    // Normalize connection type
+    const normalizedConnectionType = mapSocialMediaChannelToConnectionType(task.channel);
+    if (!normalizedConnectionType) {
+      return { success: false, error: 'Invalid connection type for channel' };
+    }
+
+    // Check if a scheduled post already exists for this connection and title
+    const planTitle = planEntry.title || task.title;
+    const existingPostsResult = await window.electron.scheduledPosts.getByConnection(connectionId);
+    const existingPost = existingPostsResult.success && existingPostsResult.data
+      ? existingPostsResult.data.find((post: any) => post.title === planTitle)
+      : null;
+
+    if (isActive) {
+      // Activate: Create or enable scheduled post
+      if (existingPost) {
+        // Update existing scheduled post
+        const updateResult = await window.electron.scheduledPosts.toggle(existingPost.id, true);
+        if (updateResult.success) {
+          return { success: true, scheduledPostId: existingPost.id };
+        } else {
+          return { success: false, error: updateResult.error || 'Failed to enable scheduled post' };
+        }
+      } else {
+        // Create new scheduled post
+        const scheduledPostData = convertSnsPlanToSocialMediaScheduledPost(
+          planEntry,
+          connectionId,
+          connectionName,
+          normalizedConnectionType
+        );
+
+        // Get active AI key if available
+        const aiKeyId = null; // TODO: Get from active AI key selector if needed
+
+        const createResult = await window.electron.scheduledPosts.create({
+          ...scheduledPostData,
+          aiKeyId,
+        });
+
+        if (createResult.success) {
+          return { success: true, scheduledPostId: createResult.data?.id };
+        } else {
+          return { success: false, error: createResult.error || 'Failed to create scheduled post' };
+        }
+      }
+    } else {
+      // Deactivate: Disable scheduled post
+      if (existingPost) {
+        const toggleResult = await window.electron.scheduledPosts.toggle(existingPost.id, false);
+        if (toggleResult.success) {
+          return { success: true, scheduledPostId: existingPost.id };
+        } else {
+          return { success: false, error: toggleResult.error || 'Failed to disable scheduled post' };
+        }
+      } else {
+        // No existing post to disable
+        return { success: true };
+      }
+    }
+  } catch (error) {
+    console.error('[handleSocialMediaScheduleToggle] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
 export async function handleBlogScheduleToggle(
   task: import('./BusinessIdentityScheduledDemo').BusinessIdentityScheduledTask,
   isActive: boolean,
