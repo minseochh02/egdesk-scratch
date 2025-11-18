@@ -1,0 +1,595 @@
+/* Social Media Connection List Styles - Matching EGBlogging */
+.social-media-connection-list {
+  padding: 24px;
+  background-color: #ffffff;
+  min-height: 100vh;
+}
+
+.social-media-connection-list-header {
+  margin-bottom: 32px;
+  text-align: center;
+  position: relative;
+}
+
+.social-media-connection-list-header-actions {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.social-media-connection-list-return-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.social-media-connection-list-return-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.social-media-connection-list-return-btn svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(180deg);
+}
+
+.social-media-connection-list-header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.social-media-connection-list-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.social-media-connection-list-header p {
+  font-size: 16px;
+  color: #6b7280;
+}
+
+.social-media-connection-list-add-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.social-media-connection-list-add-btn:hover {
+  transform: translateY(-51%);
+  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
+}
+
+/* Loading State */
+.social-media-connection-list-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.social-media-connection-list-loading-state .social-media-connection-list-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e5e7eb;
+  border-top: 4px solid #f5576c;
+  border-radius: 50%;
+  animation: social-media-connection-list-spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes social-media-connection-list-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.social-media-connection-list-loading-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.social-media-connection-list-loading-state svg {
+  font-size: 40px;
+  color: #f5576c;
+  margin-bottom: 16px;
+  animation: social-media-connection-list-spin 1s linear infinite;
+}
+
+/* Error State */
+.social-media-connection-list-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.social-media-connection-list-error-state svg {
+  font-size: 48px;
+  color: #ef4444;
+  margin-bottom: 16px;
+}
+
+.social-media-connection-list-error-state h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.social-media-connection-list-error-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+.social-media-connection-list-retry-btn {
+  padding: 12px 24px;
+  background: #f5576c;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.social-media-connection-list-retry-btn:hover {
+  background: #e4405f;
+  transform: translateY(-1px);
+}
+
+/* Empty State */
+.social-media-connection-list-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.social-media-connection-list-empty-state svg {
+  font-size: 64px;
+  color: #9ca3af;
+  margin-bottom: 24px;
+}
+
+.social-media-connection-list-empty-state h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+
+.social-media-connection-list-empty-state p {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+/* Connections Grid */
+.social-media-connection-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Connection Card */
+.social-media-connection-list-card {
+  background: white !important;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.social-media-connection-list-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #f5576c, #f093fb);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.social-media-connection-list-card:hover::before {
+  transform: scaleX(1);
+}
+
+.social-media-connection-list-card:hover {
+  border-color: #f5576c;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.social-media-connection-list-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.social-media-connection-list-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.social-media-connection-list-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.social-media-connection-list-icon svg {
+  color: white !important;
+}
+
+.social-media-connection-list-icon img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.social-media-connection-list-icon img:not([src$=".svg"]) {
+  filter: brightness(0) invert(1);
+}
+
+.social-media-connection-list-icon img[src$=".svg"] {
+  filter: brightness(0) invert(1);
+}
+
+.social-media-connection-list-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.social-media-connection-list-status-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.social-media-connection-list-status-indicator-success {
+  background-color: #10b981;
+  color: white;
+}
+
+.social-media-connection-list-status-indicator-error {
+  background-color: #ef4444;
+  color: white;
+}
+
+.social-media-connection-list-status-indicator-warning {
+  background-color: #f59e0b;
+  color: white;
+}
+
+.social-media-connection-list-status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+/* Connection Info */
+.social-media-connection-list-info h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a1a !important;
+  margin-bottom: 8px;
+}
+
+.social-media-connection-list-card-type {
+  font-size: 14px;
+  color: #6b7280 !important;
+  margin-bottom: 16px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.social-media-connection-list-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.social-media-connection-list-detail-item {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  gap: 8px;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.social-media-connection-list-detail-item svg {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.social-media-connection-list-detail-text {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  justify-content: space-between;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.social-media-connection-list-detail-label {
+  font-weight: 600;
+  color: #374151;
+  text-decoration: underline;
+  text-decoration-color: #e5e7eb;
+  text-underline-offset: 4px;
+  transition: all 0.3s ease;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.social-media-connection-list-detail-item:hover .social-media-connection-list-detail-label {
+  text-decoration-color: #f5576c;
+  text-decoration-thickness: 2px;
+}
+
+.social-media-connection-list-detail-value {
+  color: #6b7280;
+  word-break: break-all;
+  font-weight: 500;
+  text-align: right;
+  flex: 1;
+  margin-left: 16px;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-value {
+  color: #374151 !important;
+  font-weight: 500;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-label {
+  color: #1f2937 !important;
+  font-weight: 600;
+  text-decoration-color: #e5e7eb !important;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-item:hover .social-media-connection-list-detail-label {
+  text-decoration-color: #f5576c !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-item {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-text {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.social-media-connection-list-card {
+  background: white !important;
+  color: #1a1a1a !important;
+}
+
+.social-media-connection-list-card * {
+  color: inherit !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-value {
+  color: #374151 !important;
+}
+
+.social-media-connection-list-card .social-media-connection-list-detail-label {
+  color: #1f2937 !important;
+}
+
+.social-media-connection-list-card h3 {
+  color: #1a1a1a !important;
+}
+
+/* Connection Actions */
+.social-media-connection-list-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.social-media-connection-list-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.social-media-connection-list-action-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.social-media-connection-list-view-btn {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.social-media-connection-list-view-btn:hover {
+  background: #e0f2fe;
+  transform: translateY(-1px);
+}
+
+.social-media-connection-list-edit-btn {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.social-media-connection-list-edit-btn:hover {
+  background: #bfdbfe;
+  transform: translateY(-1px);
+}
+
+.social-media-connection-list-delete-btn {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.social-media-connection-list-delete-btn:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .social-media-connection-list-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .social-media-connection-list {
+    padding: 16px;
+  }
+  
+  .social-media-connection-list-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .social-media-connection-list-card {
+    padding: 20px;
+  }
+  
+  .social-media-connection-list-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .social-media-connection-list-action-btn {
+    flex: 1;
+    min-width: 80px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .social-media-connection-list-header h1 {
+    font-size: 24px;
+  }
+  
+  .social-media-connection-list-card {
+    padding: 16px;
+  }
+  
+  .social-media-connection-list-info h3 {
+    font-size: 18px;
+  }
+  
+  .social-media-connection-list-detail-item {
+    font-size: 13px;
+    gap: 6px;
+  }
+  
+  .social-media-connection-list-detail-label {
+    min-width: 30px;
+    text-underline-offset: 3px;
+  }
+  
+  .social-media-connection-list-detail-value {
+    margin-left: 8px;
+    font-size: 12px;
+  }
+}

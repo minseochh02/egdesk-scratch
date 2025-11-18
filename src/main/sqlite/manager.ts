@@ -1228,6 +1228,18 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-business-identity-update-sns-plan-connection', async (event, planId: string, connectionId: string | null, connectionName: string | null, connectionType: string | null) => {
+      try {
+        this.getBusinessIdentityManager().updatePlanConnection(planId, connectionId, connectionName, connectionType);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
     ipcMain.handle(
       'sqlite-business-identity-save-sns-plans',
       async (

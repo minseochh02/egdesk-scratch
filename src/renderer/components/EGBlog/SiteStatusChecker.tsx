@@ -37,6 +37,18 @@ const SiteStatusChecker: React.FC<SiteStatusCheckerProps> = ({
 
   const checkSiteStatus = async () => {
     try {
+      // Only validate that URL exists - let the main process handle detailed validation
+      if (!url) {
+        console.warn('⚠️ No URL provided to site status checker');
+        setSiteStatus({
+          status: 'offline',
+          lastChecked: new Date().toISOString(),
+          error: 'No URL provided'
+        });
+        onStatusChange?.('offline');
+        return;
+      }
+
       console.log('🔍 Starting site status check for URL:', url);
       setSiteStatus(prev => ({ ...prev, status: 'checking' }));
       onStatusChange?.('checking');
@@ -85,12 +97,23 @@ const SiteStatusChecker: React.FC<SiteStatusCheckerProps> = ({
 
 
   useEffect(() => {
-    checkSiteStatus();
-    
-    // Set up periodic checking every 30 seconds
-    const interval = setInterval(checkSiteStatus, 30000);
-    
-    return () => clearInterval(interval);
+    // Only check if URL exists - let checkSiteStatus handle validation
+    if (url) {
+      checkSiteStatus();
+      
+      // Set up periodic checking every 30 seconds
+      const interval = setInterval(checkSiteStatus, 30000);
+      
+      return () => clearInterval(interval);
+    } else {
+      // Set offline status if URL is missing
+      setSiteStatus({
+        status: 'offline',
+        lastChecked: new Date().toISOString(),
+        error: 'No URL provided'
+      });
+      onStatusChange?.('offline');
+    }
   }, [url]);
 
   const getStatusIcon = () => {

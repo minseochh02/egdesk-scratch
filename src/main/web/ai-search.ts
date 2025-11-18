@@ -20,11 +20,13 @@ function getGoogleApiKey(): string | null {
   try {
     const store = getStore?.();
     if (!store) {
+      console.warn('[AISearch] Store not available');
       return null;
     }
 
     const aiKeys = store.get('ai-keys', []);
     if (!Array.isArray(aiKeys)) {
+      console.warn('[AISearch] AI keys not found or not an array');
       return null;
     }
 
@@ -34,16 +36,26 @@ function getGoogleApiKey(): string | null {
       aiKeys.find((k: any) => k?.providerId === 'google' && k?.isActive) ??
       aiKeys.find((k: any) => k?.providerId === 'google');
 
+    if (preferred) {
+      console.log('[AISearch] Selected API key:', preferred.name || 'unnamed', 'ID:', preferred.id);
+    } else {
+      console.warn('[AISearch] No Google API key found in store');
+    }
+
     const apiKey = preferred?.fields?.apiKey;
     if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+      const keyPreview = `${apiKey.trim().substring(0, 8)}...${apiKey.trim().substring(apiKey.trim().length - 4)}`;
+      console.log('[AISearch] Using API key:', keyPreview);
       return apiKey.trim();
     }
 
     // Fallback to environment variable
     if (process.env.GEMINI_API_KEY && typeof process.env.GEMINI_API_KEY === 'string') {
+      console.log('[AISearch] Using API key from environment variable');
       return process.env.GEMINI_API_KEY.trim();
     }
 
+    console.warn('[AISearch] No valid API key found');
     return null;
   } catch (error) {
     console.error('[AISearch] Failed to get API key from store:', error);
@@ -55,7 +67,8 @@ function getGoogleApiKey(): string | null {
  * Generate business identity from website content
  */
 export async function generateBusinessIdentity(
-  websiteText: string
+  websiteText: string,
+  rootUrl?: string
 ): Promise<AISearchResult> {
   try {
     const apiKey = getGoogleApiKey();
@@ -184,13 +197,15 @@ export async function generateBusinessIdentity(
       },
     });
 
+    const rootUrlInstruction = rootUrl ? `\n\nIMPORTANT: The source.url field must be set to the root/homepage URL: ${rootUrl}. Do not use URLs from subpages like /contact, /about, etc.` : '';
+    
     const prompt = `You are a structured-data generator. Analyze this website and generate the business identity data in the required JSON format.
 
 Rules:
 - Emit only JSON (no markdown, prose, or explanations).
 - Populate null where data is unavailable.
 - Keep strings concise (≤ 280 chars when possible).
-- Limit keywords to the top 5 ranked terms.
+- Limit keywords to the top 5 ranked terms.${rootUrlInstruction}
 
 Website Context:
 ${websiteText}`;
@@ -202,6 +217,13 @@ ${websiteText}`;
     // Parse and validate JSON
     try {
       const parsed = JSON.parse(text);
+      
+      // Override source.url to always use root URL if provided
+      if (rootUrl && parsed.source) {
+        parsed.source.url = rootUrl;
+        console.log('[AISearch] Overriding source.url to root URL:', rootUrl);
+      }
+      
       // Return as stringified JSON to match the expected interface
       return {
         success: true,
@@ -216,9 +238,26 @@ ${websiteText}`;
     }
   } catch (error) {
     console.error('[AISearch] Error generating business identity:', error);
+    
+    // Extract more user-friendly error messages from API errors
+    let errorMessage = 'Unknown error occurred';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for quota/rate limit errors
+      if (error.message.includes('429') || error.message.includes('quota') || error.message.includes('Quota exceeded')) {
+        const apiKey = getGoogleApiKey();
+        const keyPreview = apiKey ? `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}` : 'none';
+        console.error('[AISearch] API quota exceeded. Using API key:', keyPreview);
+        errorMessage = 'API quota exceeded. Please check your Gemini API plan and billing details, or try using a different API key.';
+      } else if (error.message.includes('401') || error.message.includes('403')) {
+        errorMessage = 'API authentication failed. Please check your Google AI API key.';
+      }
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: errorMessage,
     };
   }
 }
@@ -227,7 +266,8 @@ ${websiteText}`;
  * Generate SNS plan from business identity data
  */
 export async function generateSnsPlan(
-  identityData: any
+  identityData: any,
+  availableBlogPlatforms?: string[]
 ): Promise<AISearchResult> {
   try {
     const apiKey = getGoogleApiKey();
@@ -252,7 +292,9 @@ export async function generateSnsPlan(
             properties: {
               channel: {
                 type: SchemaType.STRING,
-                description: 'SNS channel (Instagram, Twitter, LinkedIn, Blog, etc.)',
+                description: availableBlogPlatforms && availableBlogPlatforms.length > 0
+                  ? `SNS channel. Available platforms ONLY: ${availableBlogPlatforms.join(', ')}, Instagram, YouTube. CRITICAL: Use exact platform names (e.g., "WordPress", "Naver Blog") - these will be matched to user's blog connections. Do NOT use generic "Blog". DO NOT use LinkedIn, Twitter, Facebook, TikTok, or any other platforms.`
+                  : 'SNS channel. Available platforms ONLY: Instagram, YouTube, WordPress, Naver Blog. DO NOT use LinkedIn, Twitter, Facebook, TikTok, or any other platforms.',
                 nullable: false,
               },
               title: {
@@ -345,12 +387,21 @@ export async function generateSnsPlan(
       },
     });
 
+    // Build available platforms context
+    let platformContext = '';
+    if (availableBlogPlatforms && availableBlogPlatforms.length > 0) {
+      platformContext = `\n\nAvailable Blog Platforms: ${availableBlogPlatforms.join(', ')}\nIMPORTANT: When creating blog content plans, use the exact platform name (e.g., "WordPress", "Naver Blog") instead of the generic term "Blog".`;
+    }
+
     const planPrompt = `You are an SNS marketing planner. Using the following business identity JSON, create a multi-channel SNS marketing plan.
 
 Rules:
 - Emit only JSON (no prose).
 - Provide at least 3 plan entries across multiple channels when possible.
 - Keep strings concise (≤ 200 chars).
+- Available platforms ONLY: Instagram, YouTube, WordPress, Naver Blog.
+- For blog platforms, use exact names: "WordPress" or "Naver Blog" (not generic "Blog").
+- DO NOT use LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}
 
 Identity JSON:
 ${JSON.stringify(identityData, null, 2)}`;
@@ -376,9 +427,26 @@ ${JSON.stringify(identityData, null, 2)}`;
     }
   } catch (error) {
     console.error('[AISearch] Error generating SNS plan:', error);
+    
+    // Extract more user-friendly error messages from API errors
+    let errorMessage = 'Unknown error occurred';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for quota/rate limit errors
+      if (error.message.includes('429') || error.message.includes('quota') || error.message.includes('Quota exceeded')) {
+        const apiKey = getGoogleApiKey();
+        const keyPreview = apiKey ? `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}` : 'none';
+        console.error('[AISearch] API quota exceeded. Using API key:', keyPreview);
+        errorMessage = 'API quota exceeded. Please check your Gemini API plan and billing details, or try using a different API key.';
+      } else if (error.message.includes('401') || error.message.includes('403')) {
+        errorMessage = 'API authentication failed. Please check your Google AI API key.';
+      }
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: errorMessage,
     };
   }
 }

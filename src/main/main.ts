@@ -19,6 +19,7 @@ import { resolveHtmlPath } from './util';
 import { autonomousGeminiClient } from './ai-code/gemini-autonomous-client';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { NaverHandler } from './naver/naver-handler';
+import { InstagramHandler } from './instagram/instagram-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
@@ -115,6 +116,7 @@ if (!envLoaded) {
 }
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
+let instagramHandler: InstagramHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
 // Tunnel functionality removed
@@ -530,9 +532,9 @@ const createWindow = async () => {
       });
 
       // AI Search handlers for business identity
-      ipcMain.handle('ai-search-generate-business-identity', async (_event, websiteText: string) => {
+      ipcMain.handle('ai-search-generate-business-identity', async (_event, websiteText: string, rootUrl?: string) => {
         try {
-          return await generateBusinessIdentity(websiteText);
+          return await generateBusinessIdentity(websiteText, rootUrl);
         } catch (error) {
           console.error('❌ Failed to generate business identity:', error);
           return {
@@ -547,7 +549,11 @@ const createWindow = async () => {
 
       ipcMain.handle('ai-search-generate-sns-plan', async (_event, identityData: any) => {
         try {
-          return await generateSnsPlan(identityData);
+          // Get available blog platforms from user's connections
+          const { getAvailableBlogPlatforms } = require('./web/get-available-blog-platforms');
+          const availableBlogPlatforms = await getAvailableBlogPlatforms();
+          console.log('[main] Available blog platforms for SNS plan:', availableBlogPlatforms);
+          return await generateSnsPlan(identityData, availableBlogPlatforms);
         } catch (error) {
           console.error('❌ Failed to generate SNS plan:', error);
           return {
@@ -627,29 +633,41 @@ const createWindow = async () => {
                 
                 const reportName = `lighthouse-report-${Date.now()}`;
                 
-                await playAudit({
-                  page: page,
-                  port: debugPort,
-                  // Set Lighthouse report locale to Korean
-                  opts: {
-                    locale: 'ko',
-                  },
-                  thresholds: {
-                    performance: 50,
-                    accessibility: 50,
-                    'best-practices': 50,
-                    seo: 50,
-                    pwa: 50,
-                  },
-                  reports: {
-                    formats: {
-                      html: true,
-                      json: true,
+                // Run Lighthouse audit - catch threshold errors but still generate reports
+                try {
+                  await playAudit({
+                    page: page,
+                    port: debugPort,
+                    // Set Lighthouse report locale to Korean
+                    opts: {
+                      locale: 'ko',
                     },
-                    name: reportName,
-                    directory: './output/',
-                  },
-                });
+                    thresholds: {
+                      performance: 0, // Lower threshold to avoid blocking on performance issues
+                      accessibility: 50,
+                      'best-practices': 50,
+                      seo: 50,
+                      pwa: 0, // PWA is often not applicable, so don't block on it
+                    },
+                    reports: {
+                      formats: {
+                        html: true,
+                        json: true,
+                      },
+                      name: reportName,
+                      directory: './output/',
+                    },
+                  });
+                } catch (thresholdError: any) {
+                  // If thresholds fail, the report is still generated, so we can continue
+                  // Log the warning but don't fail the entire analysis
+                  if (thresholdError?.message?.includes('threshold')) {
+                    console.warn(`⚠️ Lighthouse thresholds not met, but report generated:`, thresholdError.message);
+                  } else {
+                    // Re-throw if it's a different error
+                    throw thresholdError;
+                  }
+                }
                 
                 console.log('🔍 [DEBUG] Lighthouse audit completed successfully');
                 console.log('🔍 [DEBUG] Reports saved to ./output/ directory');
@@ -843,29 +861,40 @@ const createWindow = async () => {
               const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
               const reportName = `lighthouse-${sanitizedUrl}-${timestamp}`;
               
-              // Run Lighthouse audit
-              await playAudit({
-                page: page,
-                port: debugPort,
-                opts: {
-                  locale: 'ko',
-                },
-                thresholds: {
-                  performance: 50,
-                  accessibility: 50,
-                  'best-practices': 50,
-                  seo: 50,
-                  pwa: 50,
-                },
-                reports: {
-                  formats: {
-                    html: true,
-                    json: true,
+              // Run Lighthouse audit - catch threshold errors but still generate reports
+              try {
+                await playAudit({
+                  page: page,
+                  port: debugPort,
+                  opts: {
+                    locale: 'ko',
                   },
-                  name: reportName,
-                  directory: outputDir,
-                },
-              });
+                  thresholds: {
+                    performance: 0, // Lower threshold to avoid blocking on performance issues
+                    accessibility: 50,
+                    'best-practices': 50,
+                    seo: 50,
+                    pwa: 0, // PWA is often not applicable, so don't block on it
+                  },
+                  reports: {
+                    formats: {
+                      html: true,
+                      json: true,
+                    },
+                    name: reportName,
+                    directory: outputDir,
+                  },
+                });
+              } catch (thresholdError: any) {
+                // If thresholds fail, the report is still generated, so we can continue
+                // Log the warning but don't fail the entire analysis
+                if (thresholdError?.message?.includes('threshold')) {
+                  console.warn(`⚠️ Lighthouse thresholds not met, but report generated:`, thresholdError.message);
+                } else {
+                  // Re-throw if it's a different error
+                  throw thresholdError;
+                }
+              }
               
               console.log(`✅ Lighthouse audit completed for: ${url}`);
               
@@ -2719,6 +2748,10 @@ const createWindow = async () => {
     naverHandler = new NaverHandler(store);
     naverHandler.registerHandlers();
 
+    // Initialize Instagram handler with the store
+    instagramHandler = new InstagramHandler(store);
+    instagramHandler.registerHandlers();
+
     // Register SQLite IPC handlers (database already initialized earlier)
     try {
       const sqliteManager = getSQLiteManager();
@@ -2818,6 +2851,40 @@ const createWindow = async () => {
   mainWindow.webContents.setWindowOpenHandler((edata) => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
+  });
+
+  // Open local file path
+  ipcMain.handle('shell-open-path', async (_event, filePath: string) => {
+    try {
+      await shell.openPath(filePath);
+      return { success: true };
+    } catch (error) {
+      console.error('[shell-open-path] Error opening file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Get current working directory
+  ipcMain.handle('get-cwd', async () => {
+    return process.cwd();
+  });
+
+  // Get absolute path for output file
+  ipcMain.handle('get-absolute-output-path', async (_event, relativePath: string) => {
+    const path = require('path');
+    const fs = require('fs');
+    const absolutePath = path.join(process.cwd(), relativePath);
+    
+    // Ensure output directory exists
+    const outputDir = path.dirname(absolutePath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    return absolutePath;
   });
 
   // Remove this if your app does not use auto updates

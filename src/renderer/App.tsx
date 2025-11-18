@@ -24,6 +24,7 @@ import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
+import { EGSocialMedia } from './components/EGSocialMedia';
 import MCPServer from './components/MCPServer/MCPServer';
 import EGDesktopControl from './components/EGDesktop/EGDesktopControl';
 import SignInPage from './components/Auth/SignInPage';
@@ -1558,6 +1559,14 @@ function AppContent() {
               element={
                 <ErrorBoundary>
                   <EGBlogging />
+                </ErrorBoundary>
+              } 
+            />
+            <Route 
+              path="/social-media" 
+              element={
+                <ErrorBoundary>
+                  <EGSocialMedia />
                 </ErrorBoundary>
               } 
             />

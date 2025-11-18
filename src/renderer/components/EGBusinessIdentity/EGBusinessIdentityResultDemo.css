@@ -442,7 +442,35 @@
 }
 
 .egbusiness-identity-result__analysis-footer {
-  margin-top: 8px;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.egbusiness-identity-result__report-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  color: #93c5fd;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.egbusiness-identity-result__report-button:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #bfdbfe;
+}
+
+.egbusiness-identity-result__report-button:active {
+  background: rgba(59, 130, 246, 0.2);
+  transform: translateY(1px);
 }
 
 /* SSL Analysis Styles */

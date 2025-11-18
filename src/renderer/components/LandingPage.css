@@ -160,6 +160,14 @@
   background: linear-gradient(90deg, #ff9500, #ff6b00);
 }
 
+.egdesk-landing-social-card:hover {
+  border-color: #f5576c;
+}
+
+.egdesk-landing-social-card:hover::before {
+  background: linear-gradient(90deg, #f5576c, #f093fb);
+}
+
 .egdesk-landing-security-card:hover {
   border-color: #ff3b30;
 }
@@ -182,6 +190,22 @@
 
 .egdesk-landing-seo-card:hover::before {
   background: linear-gradient(90deg, #007aff, #34c759);
+}
+
+.egdesk-landing-identity-card:hover {
+  border-color: #9c27b0;
+}
+
+.egdesk-landing-identity-card:hover::before {
+  background: linear-gradient(90deg, #9c27b0, #673ab7);
+}
+
+.egdesk-landing-chat-card:hover {
+  border-color: #00bcd4;
+}
+
+.egdesk-landing-chat-card:hover::before {
+  background: linear-gradient(90deg, #00bcd4, #0097a7);
 }
 
 .egdesk-landing-card-icon {
@@ -208,6 +232,10 @@
   background: linear-gradient(135deg, #ff9500, #ff6b00);
 }
 
+.egdesk-landing-social-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #f5576c, #f093fb);
+}
+
 .egdesk-landing-security-card .egdesk-landing-card-icon {
   background: linear-gradient(135deg, #ff3b30, #ff2d92);
 }
@@ -218,6 +246,14 @@
 
 .egdesk-landing-seo-card .egdesk-landing-card-icon {
   background: linear-gradient(135deg, #007aff, #34c759);
+}
+
+.egdesk-landing-identity-card .egdesk-landing-identity-icon {
+  background: linear-gradient(135deg, #9c27b0, #673ab7);
+}
+
+.egdesk-landing-chat-card .egdesk-landing-chat-icon {
+  background: linear-gradient(135deg, #00bcd4, #0097a7);
 }
 
 .egdesk-landing-card-title {
@@ -264,6 +300,11 @@
   color: #ff9500;
 }
 
+.egdesk-landing-social-card:hover .egdesk-landing-feature-tag {
+  background: #ffe6f0;
+  color: #f5576c;
+}
+
 .egdesk-landing-security-card:hover .egdesk-landing-feature-tag {
   background: #ffe6e6;
   color: #ff3b30;
@@ -277,6 +318,16 @@
 .egdesk-landing-seo-card:hover .egdesk-landing-feature-tag {
   background: #e6f3ff;
   color: #007aff;
+}
+
+.egdesk-landing-identity-card:hover .egdesk-landing-feature-tag {
+  background: #f3e5f5;
+  color: #9c27b0;
+}
+
+.egdesk-landing-chat-card:hover .egdesk-landing-feature-tag {
+  background: #e0f7fa;
+  color: #00bcd4;
 }
 
 /* Additional Options */
