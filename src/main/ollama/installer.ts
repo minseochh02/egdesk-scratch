@@ -20,13 +20,30 @@ class OllamaManager implements OllamaInstaller {
       const response = await fetch('http://localhost:11434/api/tags');
       return response.ok;
     } catch {
-      // If fetch fails, try checking if binary exists
-      try {
+      // Server not responding, return false (even if app is installed)
+      return false;
+    }
+  }
+
+  /**
+   * Check if Ollama app is installed (but not necessarily running)
+   */
+  async isOllamaAppInstalled(): Promise<boolean> {
+    const platform = process.platform;
+    
+    try {
+      if (platform === 'darwin') {
+        // Check for macOS app
+        await execAsync('test -d /Applications/Ollama.app');
+        return true;
+      } else if (platform === 'linux' || platform === 'win32') {
+        // Check for CLI binary
         await execAsync('ollama --version');
         return true;
-      } catch {
-        return false;
       }
+      return false;
+    } catch {
+      return false;
     }
   }
 
@@ -78,31 +95,152 @@ class OllamaManager implements OllamaInstaller {
   private async installMacOS(): Promise<boolean> {
     console.log('Installing Ollama on macOS...');
     
+    // Check macOS version first
+    let macOSVersion = '0.0.0';
     try {
-      // Download the installer
-      const downloadPath = '/tmp/Ollama.zip';
-      await execAsync(
-        `curl -L https://ollama.com/download/Ollama-darwin.zip -o ${downloadPath}`
+      const { stdout } = await execAsync('sw_vers -productVersion');
+      macOSVersion = stdout.trim();
+      console.log('macOS version:', macOSVersion);
+      
+      const [major, minor] = macOSVersion.split('.').map(Number);
+      const isMacOS14Plus = major >= 14 || (major === 13); // macOS 13+ might work
+      const isOldMacOS = major < 12; // macOS 11 or older
+      
+      if (isOldMacOS) {
+        console.log('⚠️  Detected older macOS version. Ollama.app requires macOS 14+, will try Homebrew CLI instead.');
+      }
+    } catch (error) {
+      console.warn('Could not detect macOS version:', error);
+    }
+
+    // Method 1: Try Homebrew (most reliable, especially for older macOS)
+    try {
+      console.log('Attempting to install via Homebrew...');
+      const { stdout: brewCheck } = await execAsync('which brew');
+      if (brewCheck.trim()) {
+        console.log('Homebrew found, installing Ollama CLI...');
+        
+        // Fix Homebrew issues first if needed
+        try {
+          console.log('Checking Homebrew health...');
+          await execAsync('brew --version');
+        } catch (brewError) {
+          console.warn('Homebrew might need repair, attempting to fix...');
+          // Skip the fix for now, just try to install
+        }
+        
+        const { stdout, stderr } = await execAsync('brew install ollama', { timeout: 300000 }); // 5 min timeout
+        console.log('Homebrew installation output:', stdout);
+        if (stderr) console.warn('Homebrew stderr:', stderr);
+        
+        // Start Ollama service
+        console.log('Starting Ollama service...');
+        try {
+          await execAsync('brew services start ollama');
+          console.log('Ollama service started via Homebrew');
+          // Wait for service to start
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          return true;
+        } catch (serviceError) {
+          console.warn('Could not start Ollama service automatically:', serviceError);
+          // Try to start it manually in background
+          try {
+            await execAsync('nohup ollama serve > /dev/null 2>&1 &');
+            console.log('Started Ollama manually in background');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return true;
+          } catch (manualError) {
+            console.error('Could not start Ollama manually:', manualError);
+          }
+        }
+        
+        return true;
+      }
+    } catch (error: any) {
+      console.log('Homebrew installation failed:', error?.message || error);
+      // Continue to fallback method
+    }
+    
+    // Method 2: Download and install .dmg file (official method)
+    try {
+      console.log('Attempting to download Ollama .dmg installer...');
+      const downloadPath = '/tmp/Ollama.dmg';
+      
+      // Download the .dmg file
+      console.log('Downloading from https://ollama.com/download/mac...');
+      const { stdout: curlOutput, stderr: curlError } = await execAsync(
+        `curl -L -f --progress-bar https://ollama.com/download/mac -o ${downloadPath} 2>&1 || curl -L -f --progress-bar https://ollama.com/download/Ollama-darwin.dmg -o ${downloadPath} 2>&1`
       );
       
-      // Unzip
-      await execAsync(`unzip -o ${downloadPath} -d /tmp`);
+      if (curlError && !curlError.includes('progress')) {
+        console.error('Download error:', curlError);
+      }
       
-      // Move to Applications (requires password)
-      await execAsync(
-        `osascript -e 'do shell script "cp -R /tmp/Ollama.app /Applications/" with administrator privileges'`
+      // Check if file was downloaded
+      try {
+        await execAsync(`test -f ${downloadPath}`);
+      } catch {
+        throw new Error('Downloaded file not found. The download URL may have changed.');
+      }
+      
+      // Mount the .dmg (let hdiutil auto-mount to avoid permission issues)
+      console.log('Mounting .dmg file...');
+      const { stdout: mountOutput } = await execAsync(
+        `hdiutil attach ${downloadPath} -nobrowse`
       );
+      
+      // Parse mount path from hdiutil output
+      // Output format: /dev/diskXsY   Apple_HFS   /Volumes/Ollama
+      const lines = mountOutput.trim().split('\n');
+      const mountLine = lines.find(line => line.includes('/Volumes/'));
+      if (!mountLine) {
+        throw new Error('Could not find mount point in hdiutil output');
+      }
+      
+      const mountPath = mountLine.split('\t').pop()?.trim();
+      if (!mountPath) {
+        throw new Error('Could not parse mount path from hdiutil output');
+      }
+      
+      console.log('Mounted at:', mountPath);
+      
+      // Copy to Applications (requires admin password via osascript)
+      console.log('Copying Ollama.app to Applications (admin password required)...');
+      await execAsync(
+        `osascript -e 'do shell script "cp -R ${mountPath.replace(/"/g, '\\"')}/Ollama.app /Applications/" with administrator privileges'`
+      );
+      console.log('Copy completed successfully');
+      
+      // Unmount the .dmg
+      console.log('Unmounting .dmg...');
+      await execAsync(`hdiutil detach "${mountPath}" -quiet || true`);
+      
+      // Clean up downloaded file
+      await execAsync(`rm -f ${downloadPath}`);
       
       // Start Ollama
+      console.log('Starting Ollama.app...');
       await execAsync('open /Applications/Ollama.app');
       
-      // Clean up
-      await execAsync(`rm ${downloadPath}`);
+      // Wait a moment for the app to start
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       console.log('macOS installation complete');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('macOS installation failed:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        stdout: error?.stdout,
+        stderr: error?.stderr,
+        code: error?.code,
+      });
+      
+      // Provide helpful error message
+      if (error?.message?.includes('password') || error?.code === 1) {
+        console.error('Installation may have been cancelled or password was incorrect');
+      }
+      
       return false;
     }
   }
@@ -149,17 +287,49 @@ class OllamaManager implements OllamaInstaller {
    * Main function: Check if installed, if not, ask user and install
    */
   async ensureOllama(): Promise<boolean> {
-    // 1. Check if already installed
-    const isInstalled = await this.checkInstalled();
+    // 1. Check if already running
+    const isRunning = await this.checkInstalled();
     
-    if (isInstalled) {
+    if (isRunning) {
       console.log('✅ Ollama is already installed and running');
       return true;
     }
 
+    // 2. Check if Ollama is installed but just not running
+    const appInstalled = await this.isOllamaAppInstalled();
+    
+    if (appInstalled) {
+      console.log('Ollama is installed but not running. Attempting to start...');
+      
+      const started = await this.startOllama();
+      if (started) {
+        console.log('✅ Ollama started successfully');
+        return true;
+      }
+      
+      // If start failed, ask user what to do
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Try to Start Again', 'Reinstall', 'Cancel'],
+        defaultId: 0,
+        title: 'Ollama Not Running',
+        message: 'Ollama is installed but could not be started.',
+        detail: 'Would you like to try starting it again, or reinstall?',
+      });
+      
+      if (result.response === 0) {
+        // Try to start again
+        return await this.startOllama();
+      } else if (result.response === 2) {
+        // User cancelled
+        return false;
+      }
+      // Fall through to reinstall (response === 1)
+    }
+
     console.log('Ollama not found, need to install...');
 
-    // 2. Ask user permission
+    // 3. Ask user permission to install
     const result = await dialog.showMessageBox({
       type: 'question',
       buttons: ['Install Ollama', 'Cancel'],
@@ -174,7 +344,7 @@ class OllamaManager implements OllamaInstaller {
       return false;
     }
 
-    // 3. Install
+    // 4. Install
     const installed = await this.install();
 
     if (!installed) {
@@ -185,13 +355,13 @@ class OllamaManager implements OllamaInstaller {
       return false;
     }
 
-    // 4. Wait for Ollama to start and verify
+    // 5. Wait for Ollama to start and verify
     console.log('Waiting for Ollama to start...');
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    const isRunning = await this.checkInstalled();
+    const finalCheck = await this.checkInstalled();
     
-    if (isRunning) {
+    if (finalCheck) {
       await dialog.showMessageBox({
         type: 'info',
         title: 'Success',
@@ -218,16 +388,43 @@ class OllamaManager implements OllamaInstaller {
     
     try {
       if (platform === 'darwin') {
-        await execAsync('open /Applications/Ollama.app');
+        // Try Homebrew service first (works on any macOS version)
+        try {
+          console.log('Attempting to start Ollama via Homebrew service...');
+          await execAsync('brew services start ollama');
+          console.log('Started Ollama via Homebrew service');
+        } catch (brewError) {
+          console.log('Homebrew service not available, trying other methods...');
+          
+          // Try CLI in background
+          try {
+            console.log('Attempting to start Ollama CLI in background...');
+            await execAsync('nohup ollama serve > /tmp/ollama.log 2>&1 &');
+            console.log('Started Ollama CLI in background');
+          } catch (cliError) {
+            // Try opening the app (only works on macOS 14+)
+            console.log('Attempting to open Ollama.app...');
+            await execAsync('open /Applications/Ollama.app');
+          }
+        }
       } else if (platform === 'win32') {
         await execAsync('start ollama');
       } else if (platform === 'linux') {
-        await execAsync('ollama serve &');
+        await execAsync('nohup ollama serve > /tmp/ollama.log 2>&1 &');
       }
       
       // Wait for server to start
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return await this.checkInstalled();
+      console.log('Waiting for Ollama server to become ready...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      const isReady = await this.checkInstalled();
+      if (isReady) {
+        console.log('✅ Ollama server is now ready');
+      } else {
+        console.warn('⚠️  Ollama may still be starting up...');
+      }
+      
+      return isReady;
     } catch (error) {
       console.error('Failed to start Ollama:', error);
       return false;
