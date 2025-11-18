@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import ScheduledPostsTab from '../EGBlog/components/ScheduledPostsTab';
 import { 
   faGlobe, 
   faUser, 
@@ -185,11 +186,12 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
     switch (activeTab) {
       case 'scheduled':
         return (
-          <div className="social-media-connection-dashboard-tab-content">
-            <h4>Scheduled Posts</h4>
-            <p>Manage your scheduled social media posts here.</p>
-            {/* TODO: Implement ScheduledPostsTab component */}
-          </div>
+          <ScheduledPostsTab
+            connectionId={connection.id}
+            connectionName={connection.name}
+            connectionType={connection.type}
+            onStatsUpdate={loadConnectionStats}
+          />
         );
       case 'posts':
         return (
