@@ -97,71 +97,114 @@ class OllamaManager implements OllamaInstaller {
     
     // Check macOS version first
     let macOSVersion = '0.0.0';
+    let isMacOS11 = false;
     try {
       const { stdout } = await execAsync('sw_vers -productVersion');
       macOSVersion = stdout.trim();
       console.log('macOS version:', macOSVersion);
       
-      const [major, minor] = macOSVersion.split('.').map(Number);
-      const isMacOS14Plus = major >= 14 || (major === 13); // macOS 13+ might work
-      const isOldMacOS = major < 12; // macOS 11 or older
+      const [major] = macOSVersion.split('.').map(Number);
+      isMacOS11 = major === 11;
       
-      if (isOldMacOS) {
-        console.log('⚠️  Detected older macOS version. Ollama.app requires macOS 14+, will try Homebrew CLI instead.');
+      if (isMacOS11) {
+        console.log('⚠️  Detected macOS 11. Ollama versions 0.3.13+ do not support macOS 11.');
+        console.log('Will attempt to install Ollama 0.3.12 (last compatible version) via Homebrew.');
+      } else if (major < 12) {
+        console.log('⚠️  Detected older macOS version. Will try Homebrew CLI installation.');
       }
     } catch (error) {
       console.warn('Could not detect macOS version:', error);
     }
 
-    // Method 1: Try Homebrew (most reliable, especially for older macOS)
-    try {
-      console.log('Attempting to install via Homebrew...');
-      const { stdout: brewCheck } = await execAsync('which brew');
-      if (brewCheck.trim()) {
-        console.log('Homebrew found, installing Ollama CLI...');
+    // Method 1: For macOS 11, download specific compatible version
+    if (isMacOS11) {
+      console.log('Installing Ollama 0.3.12 (last version compatible with macOS 11)...');
+      try {
+        const downloadPath = '/tmp/Ollama-0.3.12.zip';
+        const downloadUrl = 'https://github.com/ollama/ollama/releases/download/v0.3.12/Ollama-darwin.zip';
         
-        // Fix Homebrew issues first if needed
-        try {
-          console.log('Checking Homebrew health...');
-          await execAsync('brew --version');
-        } catch (brewError) {
-          console.warn('Homebrew might need repair, attempting to fix...');
-          // Skip the fix for now, just try to install
-        }
+        console.log('Downloading Ollama 0.3.12 from GitHub...');
+        await execAsync(`curl -L -f --progress-bar "${downloadUrl}" -o ${downloadPath}`);
         
-        const { stdout, stderr } = await execAsync('brew install ollama', { timeout: 300000 }); // 5 min timeout
-        console.log('Homebrew installation output:', stdout);
-        if (stderr) console.warn('Homebrew stderr:', stderr);
+        // Check if file was downloaded
+        await execAsync(`test -f ${downloadPath}`);
+        console.log('Download complete, extracting...');
         
-        // Start Ollama service
-        console.log('Starting Ollama service...');
-        try {
-          await execAsync('brew services start ollama');
-          console.log('Ollama service started via Homebrew');
-          // Wait for service to start
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          return true;
-        } catch (serviceError) {
-          console.warn('Could not start Ollama service automatically:', serviceError);
-          // Try to start it manually in background
-          try {
-            await execAsync('nohup ollama serve > /dev/null 2>&1 &');
-            console.log('Started Ollama manually in background');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            return true;
-          } catch (manualError) {
-            console.error('Could not start Ollama manually:', manualError);
-          }
-        }
+        // Unzip to temp directory
+        await execAsync(`unzip -o ${downloadPath} -d /tmp/ollama-install`);
         
+        // Remove existing incompatible version if present
+        console.log('Removing existing Ollama.app if present...');
+        await execAsync('rm -rf /Applications/Ollama.app || true');
+        
+        // Copy to Applications with admin privileges
+        console.log('Installing Ollama.app (admin password required)...');
+        await execAsync(
+          `osascript -e 'do shell script "cp -R /tmp/ollama-install/Ollama.app /Applications/" with administrator privileges'`
+        );
+        
+        // Clean up
+        await execAsync(`rm -rf ${downloadPath} /tmp/ollama-install`);
+        
+        // Start Ollama
+        console.log('Starting Ollama 0.3.12...');
+        await execAsync('open /Applications/Ollama.app');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        console.log('✅ Ollama 0.3.12 installed successfully for macOS 11');
         return true;
+      } catch (error: any) {
+        console.error('Failed to install Ollama 0.3.12:', error);
+        console.error('Error details:', {
+          message: error?.message,
+          stdout: error?.stdout,
+          stderr: error?.stderr,
+        });
+        // Fall through to try other methods
       }
-    } catch (error: any) {
-      console.log('Homebrew installation failed:', error?.message || error);
-      // Continue to fallback method
     }
     
-    // Method 2: Download and install .dmg file (official method)
+    // Method 2: Try Homebrew (for macOS 12+)
+    if (!isMacOS11) {
+      try {
+        console.log('Attempting to install via Homebrew...');
+        const { stdout: brewCheck } = await execAsync('which brew');
+        if (brewCheck.trim()) {
+          console.log('Homebrew found, installing Ollama CLI...');
+          
+          const { stdout, stderr } = await execAsync('brew install ollama', { timeout: 300000 }); // 5 min timeout
+          console.log('Homebrew installation output:', stdout);
+          if (stderr) console.warn('Homebrew stderr:', stderr);
+          
+          // Start Ollama service
+          console.log('Starting Ollama service...');
+          try {
+            await execAsync('brew services start ollama');
+            console.log('Ollama service started via Homebrew');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return true;
+          } catch (serviceError) {
+            console.warn('Could not start Ollama service automatically:', serviceError);
+            // Try to start it manually in background
+            try {
+              await execAsync('nohup ollama serve > /tmp/ollama.log 2>&1 &');
+              console.log('Started Ollama manually in background');
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              return true;
+            } catch (manualError) {
+              console.error('Could not start Ollama manually:', manualError);
+            }
+          }
+          
+          return true;
+        }
+      } catch (error: any) {
+        console.log('Homebrew installation failed:', error?.message || error);
+        // Continue to fallback method
+      }
+    }
+    
+    // Method 3: Download and install .dmg file (fallback for latest version on macOS 12+)
     try {
       console.log('Attempting to download Ollama .dmg installer...');
       const downloadPath = '/tmp/Ollama.dmg';
