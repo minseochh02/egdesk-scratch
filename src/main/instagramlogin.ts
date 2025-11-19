@@ -1,6 +1,8 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { app } from "electron";
 
 import { chromium, Browser, BrowserContext, Page, LaunchOptions } from "playwright";
 
@@ -133,7 +135,12 @@ async function performInstagramLogin(page: Page, credentials: Credentials): Prom
   
   // Take screenshot for debugging
   try {
-    const screenshotPath = `/tmp/instagram_login_step1_${Date.now()}.png`;
+    const tempDir = app?.getPath?.('temp') || os.tmpdir();
+    const screenshotDir = path.join(tempDir, 'egdesk-instagram-screenshots');
+    if (!fs.existsSync(screenshotDir)) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+    }
+    const screenshotPath = path.join(screenshotDir, `instagram_login_step1_${Date.now()}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`[performInstagramLogin] Screenshot saved: ${screenshotPath}`);
   } catch (e) {
@@ -158,7 +165,12 @@ async function performInstagramLogin(page: Page, credentials: Credentials): Prom
     
     // Take screenshot on failure
     try {
-      const screenshotPath = `/tmp/instagram_login_failed_${Date.now()}.png`;
+      const tempDir = app?.getPath?.('temp') || os.tmpdir();
+      const screenshotDir = path.join(tempDir, 'egdesk-instagram-screenshots');
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
+      }
+      const screenshotPath = path.join(screenshotDir, `instagram_login_failed_${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       console.log(`[performInstagramLogin] Failure screenshot saved: ${screenshotPath}`);
     } catch (e) {
@@ -210,7 +222,12 @@ async function performInstagramLogin(page: Page, credentials: Credentials): Prom
     
     // Take screenshot for debugging
     try {
-      const screenshotPath = `/tmp/instagram_after_login_${Date.now()}.png`;
+      const tempDir = app?.getPath?.('temp') || os.tmpdir();
+      const screenshotDir = path.join(tempDir, 'egdesk-instagram-screenshots');
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
+      }
+      const screenshotPath = path.join(screenshotDir, `instagram_after_login_${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       console.log(`[performInstagramLogin] Post-login screenshot saved: ${screenshotPath}`);
     } catch (e) {

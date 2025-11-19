@@ -185,7 +185,6 @@ export async function fetchWebsiteContent(
     const cleanedHtml = stripUnwantedTags(html);
     const title = extractTitle(cleanedHtml);
     const description = extractDescription(cleanedHtml);
-    const language = extractLanguage(cleanedHtml);
     
     // Detect and extract form information
     const formInfo = extractFormInfo(cleanedHtml);
@@ -195,6 +194,9 @@ export async function fetchWebsiteContent(
     
     // For form pages, extract form field information as text
     let text = htmlToPlainText(cleanedHtml);
+    
+    // Extract language after we have the text content for better detection
+    const language = extractLanguage(cleanedHtml, response.headers, text);
     
     // If it's primarily a form page, enhance text with form field info
     if (isFormPage && formFields.length > 0) {
@@ -305,10 +307,122 @@ function extractDescription(html: string): string | null {
   return null;
 }
 
-function extractLanguage(html: string): string | null {
-  const match = html.match(META_LANG_REGEX);
-  if (!match) return null;
-  return match[1]?.trim() ?? null;
+/**
+ * Extract language from multiple sources with fallback to content-based detection
+ * Priority:
+ * 1. HTML lang attribute
+ * 2. HTTP Content-Language header
+ * 3. Content-based detection (Korean character patterns)
+ */
+function extractLanguage(
+  html: string,
+  headers?: Headers,
+  textContent?: string
+): string | null {
+  // 1. Check HTML lang attribute
+  const htmlMatch = html.match(META_LANG_REGEX);
+  if (htmlMatch && htmlMatch[1]) {
+    const lang = htmlMatch[1].trim().toLowerCase();
+    if (lang) {
+      return normalizeLanguageCode(lang);
+    }
+  }
+
+  // 2. Check HTTP Content-Language header
+  if (headers) {
+    const contentLanguage = headers.get('content-language');
+    if (contentLanguage) {
+      // Content-Language can be like "ko-KR" or "ko, en;q=0.9"
+      const lang = contentLanguage.split(',')[0].trim().split('-')[0].toLowerCase();
+      if (lang) {
+        return normalizeLanguageCode(lang);
+      }
+    }
+  }
+
+  // 3. Content-based detection (fallback)
+  if (textContent) {
+    const detectedLang = detectLanguageFromContent(textContent);
+    if (detectedLang) {
+      return detectedLang;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Normalize language codes to standard format (e.g., "ko-KR" -> "ko", "en-US" -> "en")
+ */
+function normalizeLanguageCode(lang: string): string {
+  // Extract primary language code (before hyphen)
+  const primary = lang.split('-')[0].toLowerCase();
+  
+  // Map common variations
+  const langMap: Record<string, string> = {
+    'kr': 'ko', // Korean
+    'jp': 'ja', // Japanese
+    'cn': 'zh', // Chinese
+  };
+
+  return langMap[primary] || primary;
+}
+
+/**
+ * Detect language from content using character patterns
+ * Specifically optimized for Korean (Hangul) detection
+ */
+function detectLanguageFromContent(text: string): string | null {
+  if (!text || text.length === 0) {
+    return null;
+  }
+
+  // Sample a reasonable chunk of text for analysis (first 5000 chars)
+  const sample = text.slice(0, 5000);
+  
+  // Count Korean (Hangul) characters
+  // Hangul syllables: AC00-D7AF (가-힣)
+  // Hangul Jamo: 1100-11FF (initial consonants), 3130-318F (compatibility)
+  const hangulRegex = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
+  const hangulMatches = sample.match(hangulRegex);
+  const hangulCount = hangulMatches ? hangulMatches.length : 0;
+  
+  // Count total characters (excluding whitespace and punctuation)
+  const totalChars = sample.replace(/[\s\p{P}]/gu, '').length;
+  
+  if (totalChars === 0) {
+    return null;
+  }
+
+  // If more than 30% of characters are Hangul, likely Korean
+  const hangulRatio = hangulCount / totalChars;
+  if (hangulRatio > 0.3) {
+    return 'ko';
+  }
+
+  // Check for common Korean words/patterns
+  const koreanPatterns = [
+    /[가-힣]{2,}/g, // Korean words (2+ characters)
+    /입니다|입니다\.|입니다!/g, // Common Korean sentence endings
+    /합니다|합니다\.|합니다!/g,
+    /있습니다|있습니다\.|있습니다!/g,
+  ];
+
+  let koreanPatternMatches = 0;
+  for (const pattern of koreanPatterns) {
+    const matches = sample.match(pattern);
+    if (matches) {
+      koreanPatternMatches += matches.length;
+    }
+  }
+
+  // If we find multiple Korean sentence patterns, likely Korean
+  if (koreanPatternMatches >= 3) {
+    return 'ko';
+  }
+
+  // Default to null if we can't confidently detect
+  return null;
 }
 
 function htmlToPlainText(html: string): string {

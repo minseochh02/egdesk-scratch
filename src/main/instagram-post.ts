@@ -67,7 +67,16 @@ export async function createInstagramPost(
     
     // Take screenshot for debugging
     try {
-      const screenshotPath = `/tmp/instagram_debug_${Date.now()}.png`;
+      const { app } = require('electron');
+      const os = require('os');
+      const fs = require('fs');
+      const path = require('path');
+      const tempDir = app?.getPath?.('temp') || os.tmpdir();
+      const screenshotDir = path.join(tempDir, 'egdesk-instagram-screenshots');
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
+      }
+      const screenshotPath = path.join(screenshotDir, `instagram_debug_${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath });
       console.log(`[createInstagramPost] Screenshot saved to: ${screenshotPath}`);
     } catch (e) {
