@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import ScheduledPostsTab from '../EGBlog/components/ScheduledPostsTab';
+import SettingsTab from './components/SettingsTab';
 import { 
   faGlobe, 
   faUser, 
@@ -16,7 +17,7 @@ import {
   faComments,
   faSettings
 } from '../../utils/fontAwesomeIcons';
-import { faInstagram as faInstagramBrand } from '@fortawesome/free-brands-svg-icons';
+import { faInstagram as faInstagramBrand, faYoutube, faFacebook } from '@fortawesome/free-brands-svg-icons';
 // TODO: Import Instagram thumbnail when provided
 // import instagramIcon from '../../../../assets/instagram.svg';
 import './SocialMediaConnectionDashboard.css';
@@ -127,6 +128,12 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
     if (connection.type === 'instagram') {
       return faInstagramBrand;
     }
+    if (connection.type === 'youtube') {
+      return faYoutube;
+    }
+    if (connection.type === 'facebook') {
+      return faFacebook;
+    }
     // TODO: Add icons for other platforms
     return faGlobe;
   };
@@ -145,6 +152,12 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
     if (connection.type === 'instagram') {
       return '#E4405F';
     }
+    if (connection.type === 'youtube') {
+      return '#FF0000';
+    }
+    if (connection.type === 'facebook') {
+      return '#1877F2';
+    }
     // TODO: Add colors for other platforms
     return '#6b7280';
   };
@@ -153,6 +166,12 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
     if (connection.type === 'instagram') {
       return 'linear-gradient(135deg, #E4405F 0%, #C13584 100%)';
     }
+    if (connection.type === 'youtube') {
+      return 'linear-gradient(135deg, #FF0000 0%, #CC0000 100%)';
+    }
+    if (connection.type === 'facebook') {
+      return 'linear-gradient(135deg, #1877F2 0%, #0e5fc7 100%)';
+    }
     // TODO: Add gradients for other platforms
     return 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)';
   };
@@ -160,6 +179,12 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
   const getConnectionTypeName = (connection: SocialMediaConnection) => {
     if (connection.type === 'instagram') {
       return 'Instagram';
+    }
+    if (connection.type === 'youtube') {
+      return 'YouTube';
+    }
+    if (connection.type === 'facebook') {
+      return 'Facebook';
     }
     // TODO: Add names for other platforms
     return 'Unknown';
@@ -196,26 +221,38 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
       case 'posts':
         return (
           <div className="social-media-connection-dashboard-tab-content">
-            <h4>Posts</h4>
-            <p>View and manage your published posts.</p>
-            {/* TODO: Implement PostsTab component */}
+            <div className="social-media-coming-soon">
+              <div className="social-media-coming-soon-icon">
+                <FontAwesomeIcon icon={faFileAlt} />
+              </div>
+              <h4>Posts</h4>
+              <p>View and manage your published posts.</p>
+              <p className="social-media-coming-soon-message">Coming Soon</p>
+            </div>
           </div>
         );
       case 'analytics':
         return (
           <div className="social-media-connection-dashboard-tab-content">
-            <h4>Analytics</h4>
-            <p>View insights and analytics for your account.</p>
-            {/* TODO: Implement AnalyticsTab component */}
+            <div className="social-media-coming-soon">
+              <div className="social-media-coming-soon-icon">
+                <FontAwesomeIcon icon={faChartBar} />
+              </div>
+              <h4>Analytics</h4>
+              <p>View insights and analytics for your account.</p>
+              <p className="social-media-coming-soon-message">Coming Soon</p>
+            </div>
           </div>
         );
       case 'settings':
         return (
-          <div className="social-media-connection-dashboard-tab-content">
-            <h4>Settings</h4>
-            <p>Manage your connection settings.</p>
-            {/* TODO: Implement SettingsTab component */}
-          </div>
+          <SettingsTab
+            connectionId={connection.id}
+            connectionName={connection.name}
+            connectionType={connection.type}
+            onStatsUpdate={loadConnectionStats}
+            onConnectionDeleted={onBack}
+          />
         );
       default:
         return null;

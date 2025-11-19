@@ -149,17 +149,188 @@ async function performInstagramLogin(page: Page, credentials: Credentials): Prom
   
   await dismissCookieBanner(page);
 
-  const idInput = page.locator("[name=username]");
-  const pwInput = page.locator("[type=password]");
-  const loginButton = page.locator("[type=submit]");
-
   console.log('[performInstagramLogin] Waiting for login form elements...');
   
+  // Try to find login form inputs using multiple selector strategies
+  // Instagram has multiple login page layouts that appear randomly
+  let idInput, pwInput, loginButton;
+  let foundLayout = false;
+  
+  // Strategy 1: Old Instagram login page (name="username", type="password", type="submit")
+  console.log('[performInstagramLogin] Trying Strategy 1 (old layout)...');
   try {
-    await idInput.waitFor({ state: "visible", timeout: 45_000 });
-    console.log('[performInstagramLogin] Username input found');
-  } catch (error) {
-    console.error('[performInstagramLogin] Failed to find username input');
+    const oldIdInput = page.locator("[name=username]");
+    await oldIdInput.waitFor({ state: "visible", timeout: 5000 });
+    idInput = oldIdInput;
+    pwInput = page.locator("[type=password]");
+    loginButton = page.locator("[type=submit]");
+    foundLayout = true;
+    console.log('[performInstagramLogin] ✅ Old layout detected');
+  } catch {
+    console.log('[performInstagramLogin] Old layout not found, trying Strategy 2...');
+  }
+  
+  // Strategy 2: New Instagram login page (placeholder-based, aria-label)
+  if (!foundLayout) {
+    console.log('[performInstagramLogin] Trying Strategy 2 (new layout)...');
+    try {
+      // New page uses placeholders like "Mobile number, username or email"
+      const newIdSelectors = [
+        'input[placeholder*="Mobile number"]',
+        'input[placeholder*="username"]',
+        'input[placeholder*="email"]',
+        'input[aria-label*="username"]',
+        'input[aria-label*="email"]',
+        'input[name="username"]',
+        'input[autocomplete="username"]',
+      ];
+      
+      let foundInput = null;
+      for (const selector of newIdSelectors) {
+        try {
+          const input = page.locator(selector).first();
+          if (await input.count() > 0 && await input.isVisible({ timeout: 1000 }).catch(() => false)) {
+            foundInput = input;
+            console.log(`[performInstagramLogin] Found username input with selector: ${selector}`);
+            break;
+          }
+        } catch (e) {
+          // Continue to next selector
+        }
+      }
+      
+      if (foundInput) {
+        idInput = foundInput;
+        
+        // Find password input
+        const pwSelectors = [
+          'input[placeholder*="Password"]',
+          'input[type="password"]',
+          'input[aria-label*="Password"]',
+          'input[name="password"]',
+          'input[autocomplete="current-password"]',
+        ];
+        
+        for (const selector of pwSelectors) {
+          try {
+            const input = page.locator(selector).first();
+            if (await input.count() > 0 && await input.isVisible({ timeout: 1000 }).catch(() => false)) {
+              pwInput = input;
+              console.log(`[performInstagramLogin] Found password input with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            // Continue
+          }
+        }
+        
+        // Find login button
+        const buttonSelectors = [
+          'button:has-text("Log in")',
+          'button:has-text("Log In")',
+          'button[type="submit"]',
+          'div[role="button"]:has-text("Log in")',
+          'button:has-text("Sign in")',
+        ];
+        
+        for (const selector of buttonSelectors) {
+          try {
+            const button = page.locator(selector).first();
+            if (await button.count() > 0 && await button.isVisible({ timeout: 1000 }).catch(() => false)) {
+              loginButton = button;
+              console.log(`[performInstagramLogin] Found login button with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            // Continue
+          }
+        }
+        
+        if (idInput && pwInput && loginButton) {
+          foundLayout = true;
+          console.log('[performInstagramLogin] ✅ New layout detected');
+        }
+      }
+    } catch (e) {
+      console.log('[performInstagramLogin] Strategy 2 failed:', e);
+    }
+  }
+  
+  // Strategy 3: Fallback - search all input fields
+  if (!foundLayout) {
+    console.log('[performInstagramLogin] Trying Strategy 3 (fallback - search all inputs)...');
+    try {
+      // Get all input elements
+      const allInputs = await page.locator('input').all();
+      console.log(`[performInstagramLogin] Found ${allInputs.length} input elements on page`);
+      
+      for (const input of allInputs) {
+        try {
+          const type = await input.getAttribute('type').catch(() => '');
+          const name = await input.getAttribute('name').catch(() => '');
+          const placeholder = await input.getAttribute('placeholder').catch(() => '');
+          const ariaLabel = await input.getAttribute('aria-label').catch(() => '');
+          const isVisible = await input.isVisible().catch(() => false);
+          
+          if (isVisible) {
+            console.log(`[performInstagramLogin] Input: type="${type}", name="${name}", placeholder="${placeholder}", aria-label="${ariaLabel}"`);
+            
+            // Check if this is a username/email field
+            if (!idInput && (
+              type === 'text' || type === 'email' || 
+              placeholder?.toLowerCase().includes('username') ||
+              placeholder?.toLowerCase().includes('email') ||
+              placeholder?.toLowerCase().includes('mobile') ||
+              ariaLabel?.toLowerCase().includes('username') ||
+              name === 'username'
+            )) {
+              idInput = input;
+              console.log('[performInstagramLogin] Identified username input');
+            }
+            
+            // Check if this is a password field
+            if (!pwInput && type === 'password') {
+              pwInput = input;
+              console.log('[performInstagramLogin] Identified password input');
+            }
+          }
+        } catch (e) {
+          // Continue
+        }
+      }
+      
+      // Find login button
+      const allButtons = await page.locator('button, div[role="button"]').all();
+      for (const button of allButtons) {
+        try {
+          const text = await button.textContent().catch(() => '');
+          const isVisible = await button.isVisible().catch(() => false);
+          
+          if (isVisible && (
+            text?.toLowerCase().includes('log in') ||
+            text?.toLowerCase().includes('sign in')
+          )) {
+            loginButton = button;
+            console.log(`[performInstagramLogin] Identified login button: "${text}"`);
+            break;
+          }
+        } catch (e) {
+          // Continue
+        }
+      }
+      
+      if (idInput && pwInput && loginButton) {
+        foundLayout = true;
+        console.log('[performInstagramLogin] ✅ Fallback strategy succeeded');
+      }
+    } catch (e) {
+      console.error('[performInstagramLogin] Strategy 3 failed:', e);
+    }
+  }
+  
+  // If we still couldn't find the login form, fail
+  if (!foundLayout || !idInput || !pwInput || !loginButton) {
+    console.error('[performInstagramLogin] Failed to find all login form elements');
     console.log('[performInstagramLogin] Current URL:', page.url());
     console.log('[performInstagramLogin] Page title:', await page.title());
     
@@ -185,28 +356,31 @@ async function performInstagramLogin(page: Page, credentials: Credentials): Prom
       throw new Error('Instagram is showing a verification or CAPTCHA page. This account may be flagged for suspicious activity. Try logging in manually first or use a different account.');
     }
     
-    throw new Error(`Instagram login page not loading correctly. URL: ${page.url()}`);
+    throw new Error(`Instagram login page not loading correctly. Could not find login form elements. URL: ${page.url()}`);
   }
   
-  await pwInput.waitFor({ state: "visible", timeout: 45_000 });
-  console.log('[performInstagramLogin] Password input found');
-  await loginButton.waitFor({ state: "visible", timeout: 45_000 });
-  console.log('[performInstagramLogin] Login button found');
+  console.log('[performInstagramLogin] ✅ All login form elements found');
 
   // Fill inputs with slight delays to mimic human behavior
   console.log('[performInstagramLogin] Filling username...');
+  await idInput.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
   await idInput.click(); // Click first to focus
   await page.waitForTimeout(300);
   await idInput.fill(credentials.username);
   await page.waitForTimeout(500);
   
   console.log('[performInstagramLogin] Filling password...');
+  await pwInput.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
   await pwInput.click(); // Click first to focus
   await page.waitForTimeout(300);
   await pwInput.fill(credentials.password);
   await page.waitForTimeout(800);
 
   console.log('[performInstagramLogin] Clicking login button...');
+  await loginButton.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
   await loginButton.click();
 
   // Wait for navigation after login

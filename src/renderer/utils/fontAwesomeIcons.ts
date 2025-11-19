@@ -85,6 +85,7 @@ export {
   faComments,
   faShare,
   faLink,
+  faHeart,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Media icons

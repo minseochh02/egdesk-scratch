@@ -266,6 +266,8 @@ export class ScheduledPostsExecutor {
       await this.executeNaverScheduledPost(post);
     } else if (normalizedType === 'instagram') {
       await this.executeInstagramScheduledPost(post);
+    } else if (normalizedType === 'facebook' || normalizedType === 'fb') {
+      await this.executeFacebookScheduledPost(post);
     } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
       await this.executeYouTubeScheduledPost(post);
     } else if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
@@ -551,26 +553,88 @@ export class ScheduledPostsExecutor {
       this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
       console.log(`✅ Environment variables configured`);
 
-      // Step 3: Select topic for content generation
-      console.log(`\n📝 Step 3: Selecting topic for content generation...`);
+      // Step 3: Fetch business identity data if planId is available
+      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      let businessIdentity: any = null;
+      let snsPlan: any = null;
+      
+      if ((post as any).planId) {
+        try {
+          const biManager = this.sqliteManager.getBusinessIdentityManager();
+          const plan = biManager.getPlan((post as any).planId);
+          
+          if (plan) {
+            snsPlan = plan;
+            console.log(`✅ Found SNS plan: ${plan.title}`);
+            
+            // Fetch the business identity snapshot
+            const snapshot = biManager.getSnapshot(plan.snapshotId);
+            if (snapshot && snapshot.identityJson) {
+              try {
+                businessIdentity = JSON.parse(snapshot.identityJson);
+                console.log(`✅ Business identity loaded for brand: ${businessIdentity?.source?.title || 'Unknown'}`);
+              } catch (parseError) {
+                console.warn('[executeInstagramScheduledPost] Failed to parse identity JSON:', parseError);
+              }
+            } else {
+              console.warn('[executeInstagramScheduledPost] No identity snapshot found for plan');
+            }
+          } else {
+            console.warn('[executeInstagramScheduledPost] SNS plan not found for planId:', (post as any).planId);
+          }
+        } catch (error) {
+          console.warn('[executeInstagramScheduledPost] Failed to fetch business identity:', error);
+        }
+      } else {
+        console.log('⚠️ No planId provided, using minimal identity data');
+      }
+
+      // Step 4: Select topic for content generation
+      console.log(`\n📝 Step 4: Selecting topic for content generation...`);
       const selectedTopic = this.selectTopicForGeneration(post.topics);
       console.log(`✅ Selected topic: ${selectedTopic}`);
 
-      // Step 4: Generate Instagram content
-      console.log(`\n🤖 Step 4: Generating Instagram content...`);
+      // Step 5: Generate Instagram content with full identity context
+      console.log(`\n🤖 Step 5: Generating Instagram content...`);
       const { createBusinessIdentityInstagramPost } = await import('../business-identity/sns/instagram/index');
       const { generateInstagramContent } = await import('../business-identity/sns/instagram/generate-text-content');
       
-      // Create structured prompt from topic
+      // Build structured prompt with business identity (similar to frontend buildInstagramStructuredPrompt)
+      const identityPayload = businessIdentity?.identity
+        ? {
+            brandName: businessIdentity?.source?.title || connection.name,
+            coreIdentity: businessIdentity.identity.coreIdentity,
+            brandCategory: businessIdentity.identity.brandCategory,
+            targetAudience: businessIdentity.identity.targetAudience,
+            toneVoice: businessIdentity.identity.toneVoice,
+            signatureProof: businessIdentity.identity.signatureProof,
+            keywords: businessIdentity?.source?.keywords?.slice(0, 10),
+            proofPoints: businessIdentity.identity.proofPoints,
+          }
+        : {
+            brandName: connection.name,
+            brandDescription: selectedTopic,
+          };
+
+      const recommendedCta =
+        Array.isArray(businessIdentity?.recommendedActions) && businessIdentity?.recommendedActions.length > 0
+          ? businessIdentity?.recommendedActions[0]?.detail
+          : undefined;
+
       const structuredPrompt = {
-        identityBrief: {
-          brandName: connection.name,
-          brandDescription: selectedTopic,
-        },
-        planBrief: {
+        identity: identityPayload,
+        plan: {
           channel: 'Instagram',
+          title: snsPlan?.title || post.title || 'Scheduled Post',
+          summary: snsPlan?.summary || selectedTopic,
+          topics: post.topics || [selectedTopic],
+          cta: recommendedCta,
           contentGoal: selectedTopic,
         },
+        contentGoal: `Create an Instagram post about: ${selectedTopic}`,
+        visualBrief: snsPlan?.format || 'Professional, engaging visual',
+        preferredHashtags: businessIdentity?.source?.keywords?.slice(0, 15) || [],
+        extraInstructions: 'Generate engaging Instagram content with hook, body, CTA, and relevant hashtags.',
       };
 
       // Generate content first to get caption and image prompt
@@ -579,8 +643,8 @@ export class ScheduledPostsExecutor {
       console.log(`📝 Caption length: ${generatedContent.caption?.length || 0} characters`);
       console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
 
-      // Step 5: Post to Instagram
-      console.log(`\n📤 Step 5: Posting to Instagram...`);
+      // Step 6: Post to Instagram
+      console.log(`\n📤 Step 6: Posting to Instagram...`);
       const result = await createBusinessIdentityInstagramPost({
         username: connection.username,
         password: connection.password,
@@ -639,18 +703,436 @@ export class ScheduledPostsExecutor {
   }
 
   /**
+   * Execute a Facebook scheduled post
+   */
+  private async executeFacebookScheduledPost(post: any): Promise<void> {
+    const startTime = Date.now();
+    
+    // Ensure topics are loaded for scheduled (cron) executions
+    try {
+      if (!post.topics || post.topics.length === 0) {
+        const topics = await this.sqliteManager.getScheduledPostsManager().getScheduledPostTopics(post.id);
+        post.topics = Array.isArray(topics) ? topics.map((t: any) => t.topicName) : [];
+      }
+    } catch (loadTopicsError) {
+      console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
+    }
+    
+    console.log(`\n🚀 ===== STARTING FACEBOOK SCHEDULED POST EXECUTION =====`);
+    console.log(`📝 Post: ${post.title}`);
+    console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+    console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
+    console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
+    console.log(`🔄 Frequency: ${post.frequencyType} (${post.frequencyValue})`);
+    console.log(`📊 Run Count: ${post.runCount || 0}`);
+    console.log(`✅ Success Count: ${post.successCount || 0}`);
+    console.log(`❌ Failure Count: ${post.failureCount || 0}`);
+
+    console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    try {
+      // Step 1: Get connection details
+      console.log(`\n🔍 Step 1: Getting connection details...`);
+      const connection = await this.getConnection(post.connectionId, post.connectionName, post.connectionType);
+      if (!connection) {
+        throw new Error(`${post.connectionType} connection not found: ${post.connectionName}`);
+      }
+      console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
+
+      // Step 2: Set up environment variables
+      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
+      console.log(`✅ Environment variables configured`);
+
+      // Step 3: Fetch business identity data if planId is available
+      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      let businessIdentity: any = null;
+      let snsPlan: any = null;
+      
+      if ((post as any).planId) {
+        try {
+          const biManager = this.sqliteManager.getBusinessIdentityManager();
+          const plan = biManager.getPlan((post as any).planId);
+          
+          if (plan) {
+            snsPlan = plan;
+            console.log(`✅ Found SNS plan: ${plan.title}`);
+            
+            // Fetch the business identity snapshot
+            const snapshot = biManager.getSnapshot(plan.snapshotId);
+            if (snapshot && snapshot.identityJson) {
+              try {
+                businessIdentity = JSON.parse(snapshot.identityJson);
+                console.log(`✅ Business identity loaded for brand: ${businessIdentity?.source?.title || 'Unknown'}`);
+              } catch (parseError) {
+                console.warn('[executeFacebookScheduledPost] Failed to parse identity JSON:', parseError);
+              }
+            } else {
+              console.warn('[executeFacebookScheduledPost] No identity snapshot found for plan');
+            }
+          } else {
+            console.warn('[executeFacebookScheduledPost] SNS plan not found for planId:', (post as any).planId);
+          }
+        } catch (error) {
+          console.warn('[executeFacebookScheduledPost] Failed to fetch business identity:', error);
+        }
+      } else {
+        console.log('⚠️ No planId provided, using minimal identity data');
+      }
+
+      // Step 4: Select topic for content generation
+      console.log(`\n📝 Step 4: Selecting topic for content generation...`);
+      const selectedTopic = this.selectTopicForGeneration(post.topics);
+      console.log(`✅ Selected topic: ${selectedTopic}`);
+
+      // Step 5: Generate Facebook content with full identity context
+      console.log(`\n🤖 Step 5: Generating Facebook content...`);
+      const { generateFacebookContent } = await import('../business-identity/sns/facebook/generate-text-content');
+      const { getAuthenticatedPage } = await import('../facebooklogin');
+      const { createFacebookPost } = await import('../facebook-post');
+      
+      // Build structured prompt with business identity
+      const identityPayload = businessIdentity?.identity
+        ? {
+            brandName: businessIdentity?.source?.title || connection.name,
+            coreIdentity: businessIdentity.identity.coreIdentity,
+            brandCategory: businessIdentity.identity.brandCategory,
+            targetAudience: businessIdentity.identity.targetAudience,
+            toneVoice: businessIdentity.identity.toneVoice,
+            signatureProof: businessIdentity.identity.signatureProof,
+            keywords: businessIdentity?.source?.keywords?.slice(0, 10),
+            proofPoints: businessIdentity.identity.proofPoints,
+          }
+        : {
+            brandName: connection.name,
+            brandDescription: selectedTopic,
+          };
+
+      const recommendedCta =
+        Array.isArray(businessIdentity?.recommendedActions) && businessIdentity?.recommendedActions.length > 0
+          ? businessIdentity?.recommendedActions[0]?.detail
+          : undefined;
+
+      const structuredPrompt = {
+        identity: identityPayload,
+        plan: {
+          channel: 'Facebook',
+          title: snsPlan?.title || post.title || 'Scheduled Post',
+          summary: snsPlan?.summary || selectedTopic,
+          topics: post.topics || [selectedTopic],
+          cta: recommendedCta,
+          contentGoal: selectedTopic,
+        },
+        contentGoal: `Create a Facebook post about: ${selectedTopic}`,
+        visualBrief: snsPlan?.format || 'Professional, engaging visual',
+        preferredHashtags: businessIdentity?.source?.keywords?.slice(0, 3) || [], // Facebook uses fewer hashtags
+        extraInstructions: 'Generate authentic Facebook content that feels conversational and genuine.',
+      };
+
+      // Generate content first to get text and image prompt
+      const generatedContent = await generateFacebookContent(structuredPrompt);
+      console.log(`✅ Facebook content generated successfully`);
+      console.log(`📝 Post text length: ${generatedContent.text?.length || 0} characters`);
+      console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
+
+      // Step 6: Post to Facebook
+      console.log(`\n📤 Step 6: Posting to Facebook...`);
+      
+      // Get authenticated Facebook page
+      const authContext = await getAuthenticatedPage({
+        username: connection.username,
+        password: connection.password,
+      });
+
+      try {
+        // Create Facebook post
+        await createFacebookPost(authContext.page, {
+          text: generatedContent.text,
+          imagePath: undefined, // TODO: Generate image if imagePrompt is available
+          waitAfterPost: 10000,
+        });
+
+        console.log(`✅ Facebook post published successfully`);
+
+        // Wait a moment for post to be fully processed
+        await authContext.page.waitForTimeout(2000);
+
+        // Bring page to front briefly so user can see the success
+        try {
+          await authContext.page.bringToFront();
+          await authContext.page.waitForTimeout(1000);
+        } catch (bringError) {
+          console.warn('[executeFacebookScheduledPost] Failed to bring Playwright page to front:', bringError);
+        }
+
+        console.log('[executeFacebookScheduledPost] Facebook post created successfully. Closing browser...');
+
+        // Close the browser after successful post
+        try {
+          await authContext.close();
+          console.log('[executeFacebookScheduledPost] Browser closed successfully');
+        } catch (closeError) {
+          console.warn('[executeFacebookScheduledPost] Failed to close browser after successful post:', closeError);
+        }
+      } catch (postError) {
+        // Make sure to close browser on error
+        try {
+          await authContext.close();
+        } catch (closeError) {
+          console.warn('[executeFacebookScheduledPost] Failed to close browser after error:', closeError);
+        }
+        throw postError;
+      }
+
+      // Update success statistics
+      const executionTime = Date.now() - startTime;
+      await this.updateRunStatistics(post.id, true, new Date(), null);
+      
+      console.log(`\n✅ ===== FACEBOOK SCHEDULED POST EXECUTION COMPLETED =====`);
+      console.log(`📝 Post "${post.title}" executed successfully`);
+      console.log(`⏱️ Execution time: ${executionTime}ms`);
+      console.log(`🕐 Completed at: ${new Date().toISOString()}`);
+      
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`\n💥 ===== FACEBOOK SCHEDULED POST EXECUTION FAILED =====`);
+      console.error(`❌ Post "${post.title}" failed to execute`);
+      console.error(`⏱️ Execution time: ${executionTime}ms`);
+      console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+      console.error(`📄 Error details:`, error);
+      
+      // Update failure statistics
+      try {
+        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        console.log(`📊 Failure statistics updated`);
+      } catch (updateError) {
+        console.error(`❌ Failed to update failure statistics:`, updateError);
+      }
+      
+      throw error; // Re-throw to be caught by the caller
+    }
+  }
+
+  /**
    * Execute a YouTube scheduled post
    */
   private async executeYouTubeScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    
+    // Ensure topics are loaded for scheduled (cron) executions
+    try {
+      if (!post.topics || post.topics.length === 0) {
+        const topics = await this.sqliteManager.getScheduledPostsManager().getScheduledPostTopics(post.id);
+        post.topics = Array.isArray(topics) ? topics.map((t: any) => t.topicName) : [];
+      }
+    } catch (loadTopicsError) {
+      console.warn('⚠️ Could not load topics for scheduled post, continuing:', loadTopicsError);
+    }
+    
     console.log(`\n🚀 ===== STARTING YOUTUBE SCHEDULED POST EXECUTION =====`);
     console.log(`📝 Post: ${post.title}`);
     console.log(`🔗 Connection: ${post.connectionName} (${post.connectionType})`);
+    console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
     console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
     
-    // TODO: Implement YouTube posting when handler is created
-    throw new Error('YouTube scheduled posts not yet implemented');
+    try {
+      // Step 1: Get connection details
+      console.log(`\n🔍 Step 1: Getting connection details...`);
+      const connection = await this.getConnection(post.connectionId, post.connectionName, post.connectionType);
+      if (!connection) {
+        throw new Error(`${post.connectionType} connection not found: ${post.connectionName}`);
+      }
+      console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
+
+      // Step 2: Set up environment variables
+      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
+      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
+      console.log(`✅ Environment variables configured`);
+
+      // Step 3: Fetch business identity data if planId is available
+      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      let businessIdentity: any = null;
+      let snsPlan: any = null;
+      
+      if ((post as any).planId) {
+        try {
+          const biManager = this.sqliteManager.getBusinessIdentityManager();
+          const plan = biManager.getPlan((post as any).planId);
+          
+          if (plan) {
+            snsPlan = plan;
+            console.log(`✅ Found SNS plan: ${plan.title}`);
+            
+            // Fetch the business identity snapshot
+            const snapshot = biManager.getSnapshot(plan.snapshotId);
+            if (snapshot && snapshot.identityJson) {
+              try {
+                businessIdentity = JSON.parse(snapshot.identityJson);
+                console.log(`✅ Business identity loaded for brand: ${businessIdentity?.source?.title || 'Unknown'}`);
+              } catch (parseError) {
+                console.warn('[executeYouTubeScheduledPost] Failed to parse identity JSON:', parseError);
+              }
+            } else {
+              console.warn('[executeYouTubeScheduledPost] No identity snapshot found for plan');
+            }
+          } else {
+            console.warn('[executeYouTubeScheduledPost] SNS plan not found for planId:', (post as any).planId);
+          }
+        } catch (error) {
+          console.warn('[executeYouTubeScheduledPost] Failed to fetch business identity:', error);
+        }
+      } else {
+        console.log('⚠️ No planId provided, using minimal identity data');
+      }
+
+      // Step 4: Select topic for content generation
+      console.log(`\n📝 Step 4: Selecting topic for content generation...`);
+      const selectedTopic = this.selectTopicForGeneration(post.topics);
+      console.log(`✅ Selected topic: ${selectedTopic}`);
+
+      // Step 5: Generate YouTube content with full identity context
+      console.log(`\n🤖 Step 5: Generating YouTube content...`);
+      const { generateYouTubeContent } = await import('../youtube/generate-youtube-content');
+      const { getAuthenticatedPage } = await import('../youtubelogin');
+      const { createYouTubePost } = await import('../youtube-post');
+      
+      // Build structured prompt with business identity
+      const identityPayload = businessIdentity?.identity
+        ? {
+            brandName: businessIdentity?.source?.title || connection.name,
+            coreIdentity: businessIdentity.identity.coreIdentity,
+            brandCategory: businessIdentity.identity.brandCategory,
+            targetAudience: businessIdentity.identity.targetAudience,
+            toneVoice: businessIdentity.identity.toneVoice,
+            signatureProof: businessIdentity.identity.signatureProof,
+            keywords: businessIdentity?.source?.keywords?.slice(0, 10),
+            proofPoints: businessIdentity.identity.proofPoints,
+          }
+        : {
+            brandName: connection.name,
+            brandDescription: selectedTopic,
+          };
+
+      const structuredPrompt = {
+        identity: identityPayload,
+        plan: {
+          channel: 'YouTube',
+          title: snsPlan?.title || post.title || 'Scheduled Video',
+          summary: snsPlan?.summary || selectedTopic,
+          topics: post.topics || [selectedTopic],
+          contentGoal: selectedTopic,
+        },
+        contentGoal: `Create a YouTube video about: ${selectedTopic}`,
+        visualBrief: snsPlan?.format || 'Professional video content',
+        preferredHashtags: businessIdentity?.source?.keywords?.slice(0, 10) || [],
+        extraInstructions: 'Generate engaging YouTube video metadata with title, description, and relevant tags.',
+      };
+
+      // Generate content first to get title, description, and tags
+      const generatedContent = await generateYouTubeContent(structuredPrompt);
+      console.log(`✅ YouTube content generated successfully`);
+      console.log(`📝 Title: ${generatedContent.title || 'None'}`);
+      console.log(`📄 Description length: ${generatedContent.description?.length || 0} characters`);
+      console.log(`🏷️ Tags: ${generatedContent.tags?.join(', ') || 'None'}`);
+
+      // Step 6: Upload video to YouTube
+      console.log(`\n📤 Step 6: Uploading video to YouTube...`);
+      
+      // Check if video path is provided
+      if (!post.videoPath) {
+        throw new Error('Video path is required for YouTube scheduled posts');
+      }
+
+      // Get authenticated YouTube page using Chrome profile (recommended) or credentials
+      const loginOptions: any = {};
+      
+      if (connection.chromeUserDataDir && connection.chromeExecutablePath) {
+        // Use Chrome profile approach (recommended - avoids CAPTCHA/2FA)
+        console.log('[executeYouTubeScheduledPost] Using Chrome user data directory (persistent session)...');
+        loginOptions.chromeUserDataDir = connection.chromeUserDataDir;
+        loginOptions.chromeExecutablePath = connection.chromeExecutablePath;
+      } else if (connection.username && connection.password) {
+        // Fallback to automated login (may hit CAPTCHA/2FA)
+        console.log('[executeYouTubeScheduledPost] Using automated login (may encounter CAPTCHA/2FA)...');
+        loginOptions.username = connection.username;
+        loginOptions.password = connection.password;
+      } else {
+        throw new Error('YouTube connection must have either chromeUserDataDir+chromeExecutablePath OR username+password');
+      }
+
+      const authContext = await getAuthenticatedPage(loginOptions);
+
+      try {
+        // Create YouTube post
+        await createYouTubePost(authContext.page, {
+          videoPath: post.videoPath,
+          title: generatedContent.title,
+          description: generatedContent.description,
+          tags: generatedContent.tags,
+          visibility: (post as any).visibility || 'public',
+          waitAfterPublish: 30000,
+        });
+
+        console.log(`✅ YouTube video uploaded successfully`);
+
+        // Wait a moment for upload to be fully processed
+        await authContext.page.waitForTimeout(2000);
+
+        // Bring page to front briefly so user can see the success
+        try {
+          await authContext.page.bringToFront();
+          await authContext.page.waitForTimeout(1000);
+        } catch (bringError) {
+          console.warn('[executeYouTubeScheduledPost] Failed to bring Playwright page to front:', bringError);
+        }
+
+        console.log('[executeYouTubeScheduledPost] YouTube video uploaded successfully. Closing browser...');
+
+        // Close the browser after successful upload
+        try {
+          await authContext.close();
+          console.log('[executeYouTubeScheduledPost] Browser closed successfully');
+        } catch (closeError) {
+          console.warn('[executeYouTubeScheduledPost] Failed to close browser after successful upload:', closeError);
+        }
+      } catch (postError) {
+        // Make sure to close browser on error
+        try {
+          await authContext.close();
+        } catch (closeError) {
+          console.warn('[executeYouTubeScheduledPost] Failed to close browser after error:', closeError);
+        }
+        throw postError;
+      }
+
+      // Update success statistics
+      const executionTime = Date.now() - startTime;
+      await this.updateRunStatistics(post.id, true, new Date(), null);
+      
+      console.log(`\n✅ ===== YOUTUBE SCHEDULED POST EXECUTION COMPLETED =====`);
+      console.log(`📝 Post "${post.title}" executed successfully`);
+      console.log(`⏱️ Execution time: ${executionTime}ms`);
+      console.log(`🕐 Completed at: ${new Date().toISOString()}`);
+      
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`\n💥 ===== YOUTUBE SCHEDULED POST EXECUTION FAILED =====`);
+      console.error(`❌ Post "${post.title}" failed to execute`);
+      console.error(`⏱️ Execution time: ${executionTime}ms`);
+      console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+      console.error(`📄 Error details:`, error);
+      
+      // Update failure statistics
+      try {
+        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        console.log(`📊 Failure statistics updated`);
+      } catch (updateError) {
+        console.error(`❌ Failed to update failure statistics:`, updateError);
+      }
+      
+      throw error; // Re-throw to be caught by the caller
+    }
   }
 
   /**
@@ -689,9 +1171,22 @@ export class ScheduledPostsExecutor {
         console.log(`🔍 Looking for Instagram connection: ID=${connectionId}, Name=${connectionName}`);
         console.log(`🔍 Available Instagram connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
+      } else if (connectionType === 'facebook' || connectionType === 'fb') {
+        // Get Facebook connections from store (stored via facebook-handler)
+        const { getStore } = require('../storage');
+        const store = getStore();
+        const storeConnections = store.get('facebookConnections', []);
+        console.log(`🔍 Looking for Facebook connection: ID=${connectionId}, Name=${connectionName}`);
+        console.log(`🔍 Available Facebook connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
+        connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
       } else if (connectionType === 'youtube' || connectionType === 'yt') {
-        // TODO: Get YouTube connections when handler is implemented
-        throw new Error('YouTube connections not yet implemented');
+        // Get YouTube connections from store (stored via youtube-handler)
+        const { getStore } = require('../storage');
+        const store = getStore();
+        const storeConnections = store.get('youtubeConnections', []);
+        console.log(`🔍 Looking for YouTube connection: ID=${connectionId}, Name=${connectionName}`);
+        console.log(`🔍 Available YouTube connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
+        connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
       }
       
       if (!connection) {

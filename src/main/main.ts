@@ -20,6 +20,8 @@ import { autonomousGeminiClient } from './ai-code/gemini-autonomous-client';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { NaverHandler } from './naver/naver-handler';
 import { InstagramHandler } from './instagram/instagram-handler';
+import { YouTubeHandler } from './youtube/youtube-handler';
+import { FacebookHandler } from './facebook/facebook-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
@@ -117,6 +119,8 @@ if (!envLoaded) {
 let wordpressHandler: WordPressHandler;
 let naverHandler: NaverHandler;
 let instagramHandler: InstagramHandler;
+let youtubeHandler: YouTubeHandler;
+let facebookHandler: FacebookHandler;
 let localServerManager: LocalServerManager;
 let electronApiServer: any = null;
 // Tunnel functionality removed
@@ -2095,6 +2099,314 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize Automation:', error);
     }
 
+    // YouTube video upload test handler
+    try {
+      ipcMain.handle('test-youtube-upload', async (_event, opts?: {
+        username?: string;
+        password?: string;
+        chromeUserDataDir?: string;
+        chromeExecutablePath?: string;
+        videoPath: string;
+        title: string;
+        description?: string;
+        tags?: string[];
+        visibility?: 'public' | 'unlisted' | 'private';
+      }) => {
+        try {
+          if (!opts) {
+            return { success: false, error: 'Options are required' };
+          }
+
+          const { username, password, chromeUserDataDir, chromeExecutablePath, videoPath, title, description, tags, visibility } = opts;
+
+          // Validate authentication method
+          const useChromeProfile = !!(chromeUserDataDir && chromeExecutablePath);
+          const useCredentials = !!(username && password);
+
+          if (!useChromeProfile && !useCredentials) {
+            return { 
+              success: false, 
+              error: 'Either Chrome profile (chromeUserDataDir + chromeExecutablePath) OR username + password is required' 
+            };
+          }
+
+          if (!videoPath) {
+            return { success: false, error: 'Video file path is required' };
+          }
+
+          if (!title) {
+            return { success: false, error: 'Video title is required' };
+          }
+
+          // Check if video file exists
+          if (!fs.existsSync(videoPath)) {
+            return { success: false, error: `Video file not found at path: ${videoPath}` };
+          }
+
+          console.log('[test-youtube-upload] Starting YouTube video upload test...');
+          console.log('[test-youtube-upload] Authentication method:', useChromeProfile ? 'Chrome Profile' : 'Username/Password');
+          console.log('[test-youtube-upload] Video path:', videoPath);
+          console.log('[test-youtube-upload] Title:', title);
+          console.log('[test-youtube-upload] Visibility:', visibility || 'public');
+
+          // Import YouTube functions dynamically
+          const { getAuthenticatedPage } = await import('./youtubelogin');
+          const { createYouTubePost } = await import('./youtube-post');
+
+          // Get authenticated YouTube page
+          const loginOptions: any = {};
+          if (useChromeProfile) {
+            loginOptions.chromeUserDataDir = chromeUserDataDir;
+            loginOptions.chromeExecutablePath = chromeExecutablePath;
+            console.log('[test-youtube-upload] Using Chrome profile:', chromeUserDataDir);
+          } else {
+            loginOptions.username = username;
+            loginOptions.password = password;
+            console.log('[test-youtube-upload] Using username/password authentication');
+          }
+
+          const authContext = await getAuthenticatedPage(loginOptions);
+
+          try {
+            // Create YouTube post
+            await createYouTubePost(authContext.page, {
+              videoPath,
+              title,
+              description,
+              tags,
+              visibility: visibility || 'public',
+              waitAfterPublish: 30000,
+            });
+
+            // Wait a moment before closing
+            await authContext.page.waitForTimeout(2000);
+
+            // Close the browser
+            await authContext.close();
+
+            return {
+              success: true,
+              message: 'YouTube video upload test completed successfully',
+            };
+          } catch (error) {
+            console.error('[test-youtube-upload] Error during upload:', error);
+            try {
+              await authContext.close();
+            } catch (closeError) {
+              console.warn('[test-youtube-upload] Failed to close browser:', closeError);
+            }
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error during YouTube upload',
+            };
+          }
+        } catch (error) {
+          console.error('[test-youtube-upload] Failed:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize YouTube upload test handler:', error);
+    }
+
+    // YouTube video file picker handler
+    try {
+      ipcMain.handle('pick-video-file', async () => {
+        try {
+          const parentWindow = BrowserWindow.getFocusedWindow() ?? mainWindow ?? null;
+
+          const dialogOptions: Electron.OpenDialogOptions = {
+            title: 'Select Video File',
+            buttonLabel: 'Select Video',
+            properties: ['openFile'],
+            filters: [
+              { name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] },
+              { name: 'All Files', extensions: ['*'] },
+            ],
+          };
+
+          const result = parentWindow
+            ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+            : await dialog.showOpenDialog(dialogOptions);
+
+          if (result.canceled || !result.filePaths?.length) {
+            return {
+              success: false,
+              canceled: true,
+            };
+          }
+
+          return {
+            success: true,
+            filePath: result.filePaths[0],
+          };
+        } catch (error) {
+          console.error('[YouTube] Failed to pick video file:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to pick video file.'
+                : 'Failed to pick video file.',
+          };
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize YouTube video file picker handler:', error);
+    }
+
+    // Image file picker handler (for Facebook, Instagram, etc.)
+    try {
+      ipcMain.handle('pick-image-file', async () => {
+        try {
+          const parentWindow = BrowserWindow.getFocusedWindow() ?? mainWindow ?? null;
+
+          const dialogOptions: Electron.OpenDialogOptions = {
+            title: 'Select Image File',
+            buttonLabel: 'Select Image',
+            properties: ['openFile'],
+            filters: [
+              { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] },
+              { name: 'All Files', extensions: ['*'] },
+            ],
+          };
+
+          const result = parentWindow
+            ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+            : await dialog.showOpenDialog(dialogOptions);
+
+          if (result.canceled || !result.filePaths?.length) {
+            return {
+              success: false,
+              canceled: true,
+            };
+          }
+
+          return {
+            success: true,
+            filePath: result.filePaths[0],
+          };
+        } catch (error) {
+          console.error('[Facebook/Instagram] Failed to pick image file:', error);
+          return {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message || 'Failed to pick image file.'
+                : 'Failed to pick image file.',
+          };
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize image file picker handler:', error);
+    }
+
+    // Facebook post test handler
+    try {
+      ipcMain.handle('test-facebook-post', async (_event, opts?: {
+        username: string;
+        password: string;
+        imagePath?: string;
+        text?: string;
+      }) => {
+        try {
+          if (!opts) {
+            return { success: false, error: 'Options are required' };
+          }
+
+          const { username, password, imagePath, text } = opts;
+
+          if (!username || !password) {
+            return { success: false, error: 'Facebook username and password are required' };
+          }
+
+          if (!text && !imagePath) {
+            return { success: false, error: 'Either text or image path is required for Facebook post' };
+          }
+
+          // Check if image file exists if provided
+          if (imagePath) {
+            const fs = require('fs');
+            if (!fs.existsSync(imagePath)) {
+              return { success: false, error: `Image file not found at path: ${imagePath}` };
+            }
+          }
+
+          console.log('[test-facebook-post] Starting Facebook post test...');
+          console.log('[test-facebook-post] Has image:', !!imagePath);
+          console.log('[test-facebook-post] Has text:', !!text);
+
+          // Import Facebook functions dynamically
+          const { getAuthenticatedPage } = await import('./facebooklogin');
+          const { createFacebookPost } = await import('./facebook-post');
+
+          // Get authenticated Facebook page
+          const authContext = await getAuthenticatedPage({
+            username,
+            password,
+          });
+
+          try {
+            // Create Facebook post
+            await createFacebookPost(authContext.page, {
+              imagePath,
+              text,
+              waitAfterPost: 10000,
+            });
+
+            // Wait a moment for post to be fully processed
+            await authContext.page.waitForTimeout(2000);
+
+            // Bring page to front briefly so user can see the success
+            try {
+              await authContext.page.bringToFront();
+              await authContext.page.waitForTimeout(1000);
+            } catch (bringError) {
+              console.warn('[test-facebook-post] Failed to bring Playwright page to front:', bringError);
+            }
+
+            console.log('[test-facebook-post] Facebook post created successfully. Closing browser...');
+
+            // Close the browser after successful post
+            try {
+              await authContext.close();
+              console.log('[test-facebook-post] Browser closed successfully');
+            } catch (closeError) {
+              console.warn('[test-facebook-post] Failed to close browser after successful post:', closeError);
+            }
+
+            return {
+              success: true,
+              message: 'Facebook post test completed successfully',
+            };
+          } catch (error) {
+            console.error('[test-facebook-post] Error during post:', error);
+            try {
+              await authContext.close();
+              console.log('[test-facebook-post] Browser closed after error');
+            } catch (closeError) {
+              console.warn('[test-facebook-post] Failed to close browser:', closeError);
+            }
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error during Facebook post',
+            };
+          }
+        } catch (error) {
+          console.error('[test-facebook-post] Failed:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize Facebook post test handler:', error);
+    }
+
     // Initialize central SQLite manager ONCE - all other services will use this singleton
     let sqliteInitialized = false;
     try {
@@ -2751,6 +3063,14 @@ const createWindow = async () => {
     // Initialize Instagram handler with the store
     instagramHandler = new InstagramHandler(store);
     instagramHandler.registerHandlers();
+
+    // Initialize YouTube handler with the store
+    youtubeHandler = new YouTubeHandler(store);
+    youtubeHandler.registerHandlers();
+
+    // Initialize Facebook handler with the store
+    facebookHandler = new FacebookHandler(store);
+    facebookHandler.registerHandlers();
 
     // Register SQLite IPC handlers (database already initialized earlier)
     try {

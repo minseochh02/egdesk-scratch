@@ -1,0 +1,186 @@
+.youtube-connection-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.youtube-connection-form {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.youtube-connection-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.youtube-connection-form-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.youtube-connection-form-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: #6b7280;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.youtube-connection-form-close:hover {
+  color: #1f2937;
+  background: #f3f4f6;
+}
+
+.youtube-connection-form-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.youtube-connection-form-body {
+  padding: 24px;
+}
+
+.youtube-connection-form-field {
+  margin-bottom: 24px;
+}
+
+.youtube-connection-form-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.youtube-connection-form-field label .required {
+  color: #ef4444;
+}
+
+.youtube-connection-form-field label .optional {
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.youtube-connection-form-field input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1f2937;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.youtube-connection-form-field input:focus {
+  outline: none;
+  border-color: #FF0000;
+  box-shadow: 0 0 0 3px rgba(255, 0, 0, 0.1);
+}
+
+.youtube-connection-form-field input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.youtube-connection-form-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ef4444;
+}
+
+.youtube-connection-form-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.youtube-connection-form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.youtube-connection-form-cancel,
+.youtube-connection-form-submit {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+}
+
+.youtube-connection-form-cancel {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.youtube-connection-form-cancel:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.youtube-connection-form-submit {
+  background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%);
+  color: #ffffff;
+}
+
+.youtube-connection-form-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #CC0000 0%, #FF0000 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
+}
+
+.youtube-connection-form-cancel:disabled,
+.youtube-connection-form-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+

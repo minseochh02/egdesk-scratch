@@ -461,14 +461,27 @@ async function createPostWithPlaywright(options: {
       };
     }
 
-    // Bring page to front
+    // Wait a moment for post to be fully processed
+    await page.waitForTimeout(2000);
+
+    // Bring page to front briefly so user can see the success
     try {
       await page.bringToFront();
+      await page.waitForTimeout(1000);
     } catch (bringError) {
       console.warn('[BusinessIdentityInstagram] Failed to bring Playwright page to front:', bringError);
     }
 
-    console.log('[BusinessIdentityInstagram] Instagram post created successfully via Playwright session.');
+    console.log('[BusinessIdentityInstagram] Instagram post created successfully via Playwright session. Closing browser...');
+    
+    // Close the browser after successful post
+    try {
+      await authSession.close();
+      console.log('[BusinessIdentityInstagram] Browser closed successfully');
+    } catch (closeError) {
+      console.warn('[BusinessIdentityInstagram] Failed to close browser after successful post:', closeError);
+    }
+
     return {
       success: true,
       automation: 'playwright',
@@ -616,15 +629,26 @@ async function createPostWithChromeProfile(options: {
     };
   }
 
-  // Bring page to front
+  // Wait a moment for post to be fully processed
+  await page.waitForTimeout(2000);
+
+  // Bring page to front briefly so user can see the success
   try {
     await page.bringToFront();
+    await page.waitForTimeout(1000);
   } catch (bringError) {
     console.warn('[BusinessIdentityInstagram] Failed to bring page to front:', bringError);
   }
 
-  console.log('[BusinessIdentityInstagram] Instagram post created successfully.');
-  // Note: Browser is left running so user can interact with the window
+  console.log('[BusinessIdentityInstagram] Instagram post created successfully. Closing browser...');
+  
+  // Close the browser after successful post
+  try {
+    await browser.close();
+    console.log('[BusinessIdentityInstagram] Browser closed successfully');
+  } catch (closeError) {
+    console.warn('[BusinessIdentityInstagram] Failed to close browser after successful post:', closeError);
+  }
 
   return {
     success: true,

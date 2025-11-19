@@ -3,6 +3,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faInstagram, faFacebook, faYoutube } from '@fortawesome/free-brands-svg-icons';
 import { faGlobe, faCheck, faArrowRight, faPlus } from '../../utils/fontAwesomeIcons';
 import InstagramConnectionForm from './components/InstagramConnectionForm';
+import YouTubeConnectionForm from './components/YouTubeConnectionForm';
+import FacebookConnectionForm from './components/FacebookConnectionForm';
 import './SocialMediaConnector.css';
 
 interface SocialMediaPlatform {
@@ -24,6 +26,8 @@ interface SocialMediaConnectorProps {
 const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConnectionList }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('');
   const [showInstagramForm, setShowInstagramForm] = useState(false);
+  const [showYouTubeForm, setShowYouTubeForm] = useState(false);
+  const [showFacebookForm, setShowFacebookForm] = useState(false);
 
   const platforms: SocialMediaPlatform[] = [
     {
@@ -55,9 +59,9 @@ const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConne
       icon: faFacebook,
       color: '#1877F2',
       gradient: 'linear-gradient(135deg, #1877F2 0%, #0e5fc7 100%)',
-      isAvailable: false,
+      isAvailable: true,
       features: ['Page Management', 'Automated Posting', 'Insights'],
-      status: 'coming-soon'
+      status: 'available'
     }
   ];
 
@@ -67,6 +71,10 @@ const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConne
     // Show appropriate form based on platform
     if (platformId === 'instagram') {
       setShowInstagramForm(true);
+    } else if (platformId === 'youtube') {
+      setShowYouTubeForm(true);
+    } else if (platformId === 'facebook') {
+      setShowFacebookForm(true);
     } else {
       // TODO: Add forms for other platforms
       console.log('Selected platform:', platformId);
@@ -75,6 +83,22 @@ const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConne
 
   const handleInstagramSuccess = (connection: any) => {
     console.log('Instagram connection saved:', connection);
+    // Navigate to connection list to show the new connection
+    if (onShowConnectionList) {
+      onShowConnectionList();
+    }
+  };
+
+  const handleYouTubeSuccess = (connection: any) => {
+    console.log('YouTube connection saved:', connection);
+    // Navigate to connection list to show the new connection
+    if (onShowConnectionList) {
+      onShowConnectionList();
+    }
+  };
+
+  const handleFacebookSuccess = (connection: any) => {
+    console.log('Facebook connection saved:', connection);
     // Navigate to connection list to show the new connection
     if (onShowConnectionList) {
       onShowConnectionList();
@@ -144,6 +168,20 @@ const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConne
         <InstagramConnectionForm
           onClose={() => setShowInstagramForm(false)}
           onSuccess={handleInstagramSuccess}
+        />
+      )}
+
+      {showYouTubeForm && (
+        <YouTubeConnectionForm
+          onClose={() => setShowYouTubeForm(false)}
+          onSuccess={handleYouTubeSuccess}
+        />
+      )}
+
+      {showFacebookForm && (
+        <FacebookConnectionForm
+          onClose={() => setShowFacebookForm(false)}
+          onSuccess={handleFacebookSuccess}
         />
       )}
     </>

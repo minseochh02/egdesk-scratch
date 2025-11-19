@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowRight, faPlus, faEdit, faTrash, faSpinner, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faCircleCheck } from '../../utils/fontAwesomeIcons';
-import { faInstagram as faInstagramBrand } from '@fortawesome/free-brands-svg-icons';
+import { faInstagram as faInstagramBrand, faYoutube, faFacebook } from '@fortawesome/free-brands-svg-icons';
 import './SocialMediaConnectionList.css';
 
 interface SocialMediaConnection {
@@ -60,8 +60,39 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
         console.warn('Failed to load Instagram connections:', err);
       }
 
-      // TODO: Load YouTube connections when handler is implemented
-      // TODO: Load Facebook connections when implemented
+      // Load YouTube connections
+      try {
+        const youtubeResult = await window.electron.youtube.getConnections();
+        if (youtubeResult.success && youtubeResult.connections) {
+          const youtubeConnections = youtubeResult.connections.map(conn => ({
+            id: conn.id || '',
+            name: conn.name,
+            type: 'youtube' as const,
+            username: conn.username,
+            createdAt: conn.createdAt || new Date().toISOString(),
+          }));
+          allConnections.push(...youtubeConnections);
+        }
+      } catch (err) {
+        console.warn('Failed to load YouTube connections:', err);
+      }
+
+      // Load Facebook connections
+      try {
+        const facebookResult = await window.electron.facebook.getConnections();
+        if (facebookResult.success && facebookResult.connections) {
+          const facebookConnections = facebookResult.connections.map(conn => ({
+            id: conn.id || '',
+            name: conn.name,
+            type: 'facebook' as const,
+            username: conn.username,
+            createdAt: conn.createdAt || new Date().toISOString(),
+          }));
+          allConnections.push(...facebookConnections);
+        }
+      } catch (err) {
+        console.warn('Failed to load Facebook connections:', err);
+      }
 
       setConnections(allConnections);
     } catch (err) {
@@ -109,6 +140,12 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
     if (connection.type === 'instagram') {
       return faInstagramBrand;
     }
+    if (connection.type === 'youtube') {
+      return faYoutube;
+    }
+    if (connection.type === 'facebook') {
+      return faFacebook;
+    }
     // TODO: Add icons for other platforms
     return faGlobe;
   };
@@ -117,11 +154,26 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
     if (connection.type === 'instagram') {
       return 'linear-gradient(135deg, #E4405F 0%, #C13584 100%)';
     }
+    if (connection.type === 'youtube') {
+      return 'linear-gradient(135deg, #FF0000 0%, #CC0000 100%)';
+    }
+    if (connection.type === 'facebook') {
+      return 'linear-gradient(135deg, #1877F2 0%, #0e5fc7 100%)';
+    }
     // TODO: Add colors for other platforms
     return '#667eea';
   };
 
   const getConnectionTypeName = (connection: SocialMediaConnection): string => {
+    if (connection.type === 'instagram') {
+      return 'Instagram';
+    }
+    if (connection.type === 'youtube') {
+      return 'YouTube';
+    }
+    if (connection.type === 'facebook') {
+      return 'Facebook';
+    }
     return connection.type.charAt(0).toUpperCase() + connection.type.slice(1);
   };
 
