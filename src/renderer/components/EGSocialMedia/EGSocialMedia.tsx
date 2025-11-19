@@ -69,11 +69,30 @@ const EGSocialMedia: React.FC = () => {
           }
         }
       } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
-        // TODO: Implement YouTube connection loading when handler is created
-        console.warn('YouTube connection loading not yet implemented');
+        const youtubeResult = await window.electron.youtube.getConnections();
+        if (youtubeResult.success && youtubeResult.connections) {
+          const connection = youtubeResult.connections.find(conn => conn.id === connectionId);
+          if (connection) {
+            return {
+              ...connection,
+              type: 'youtube' as const
+            };
+          }
+        }
+        return null;
+      } else if (normalizedType === 'facebook' || normalizedType === 'fb') {
+        const facebookResult = await window.electron.facebook.getConnections();
+        if (facebookResult.success && facebookResult.connections) {
+          const connection = facebookResult.connections.find(conn => conn.id === connectionId);
+          if (connection) {
+            return {
+              ...connection,
+              type: 'facebook' as const
+            };
+          }
+        }
         return null;
       }
-      // TODO: Implement Facebook connection type
       return null;
     } catch (err) {
       console.error('Failed to load connection:', err);

@@ -229,6 +229,20 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [multiPageCrawlUrl, setMultiPageCrawlUrl] = useState('');
   const [multiPageCrawlResults, setMultiPageCrawlResults] = useState<any>(null);
   const [maxPages, setMaxPages] = useState(5);
+  const [youtubeUsername, setYoutubeUsername] = useState('');
+  const [youtubePassword, setYoutubePassword] = useState('');
+  const [youtubeVideoPath, setYoutubeVideoPath] = useState('');
+  const [youtubeTitle, setYoutubeTitle] = useState('');
+  const [youtubeDescription, setYoutubeDescription] = useState('');
+  const [youtubeTags, setYoutubeTags] = useState('');
+  const [youtubeVisibility, setYoutubeVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
+  const [youtubeChromeUserDataDir, setYoutubeChromeUserDataDir] = useState('');
+  const [youtubeChromeExecutablePath, setYoutubeChromeExecutablePath] = useState('');
+  const [youtubeUseChromeProfile, setYoutubeUseChromeProfile] = useState(false);
+  const [facebookUsername, setFacebookUsername] = useState('');
+  const [facebookPassword, setFacebookPassword] = useState('');
+  const [facebookImagePath, setFacebookImagePath] = useState('');
+  const [facebookText, setFacebookText] = useState('');
 
   if (!isOpen) return null;
 
@@ -1090,6 +1104,387 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </div>
             </div>
           )}
+
+          {/* YouTube Video Upload Test Section */}
+          <div>
+            <h3 style={{ color: '#FF0000', marginBottom: '10px' }}>YouTube Video Upload Test</h3>
+            
+            {/* Authentication Method Toggle */}
+            <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '4px', border: '1px solid #444' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fff', cursor: 'pointer', marginBottom: '10px' }}>
+                <input
+                  type="checkbox"
+                  checked={youtubeUseChromeProfile}
+                  onChange={(e) => setYoutubeUseChromeProfile(e.target.checked)}
+                  style={{ transform: 'scale(1.2)' }}
+                />
+                <span style={{ fontWeight: 'bold' }}>Use Chrome Profile (Recommended - avoids CAPTCHA/2FA)</span>
+              </label>
+              <p style={{ color: '#888', fontSize: '12px', margin: '5px 0 0 0', paddingLeft: '28px' }}>
+                {youtubeUseChromeProfile 
+                  ? 'Use an existing Chrome profile that is already logged into Google/YouTube. More reliable and avoids authentication issues.'
+                  : 'Use username/password for automated login (may encounter CAPTCHA or 2FA).'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              {youtubeUseChromeProfile ? (
+                <>
+                  {/* Chrome Profile Paths */}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Chrome User Data Directory (e.g., C:\\Users\\User\\AppData\\Local\\Google\\Chrome\\User Data)"
+                      value={youtubeChromeUserDataDir}
+                      onChange={(e) => setYoutubeChromeUserDataDir(e.target.value)}
+                      style={{ 
+                        padding: '8px', 
+                        borderRadius: '4px', 
+                        border: '1px solid #444', 
+                        backgroundColor: '#2a2a2a', 
+                        color: '#fff',
+                        flex: 1
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Chrome Executable Path (e.g., C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe)"
+                      value={youtubeChromeExecutablePath}
+                      onChange={(e) => setYoutubeChromeExecutablePath(e.target.value)}
+                      style={{ 
+                        padding: '8px', 
+                        borderRadius: '4px', 
+                        border: '1px solid #444', 
+                        backgroundColor: '#2a2a2a', 
+                        color: '#fff',
+                        flex: 1
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Username/Password */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <input
+                      type="text"
+                      placeholder="YouTube Username/Email"
+                      value={youtubeUsername}
+                      onChange={(e) => setYoutubeUsername(e.target.value)}
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                    />
+                    <input
+                      type="password"
+                      placeholder="YouTube Password"
+                      value={youtubePassword}
+                      onChange={(e) => setYoutubePassword(e.target.value)}
+                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                    />
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Video File Path (click Browse to select)"
+                  value={youtubeVideoPath}
+                  onChange={(e) => setYoutubeVideoPath(e.target.value)}
+                  readOnly
+                  style={{ 
+                    padding: '8px', 
+                    borderRadius: '4px', 
+                    border: '1px solid #444', 
+                    backgroundColor: '#2a2a2a', 
+                    color: '#fff',
+                    flex: 1,
+                    cursor: 'not-allowed'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const result = await (window as any).electron.debug.pickVideoFile();
+                      if (result?.success && result?.filePath) {
+                        setYoutubeVideoPath(result.filePath);
+                        const addDebugLog = (message: string) => {
+                          setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                        };
+                        addDebugLog(`📁 Selected video file: ${result.filePath}`);
+                      }
+                    } catch (error) {
+                      console.error('Failed to pick video file:', error);
+                      alert(`Failed to pick video file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    }
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Video Title"
+                value={youtubeTitle}
+                onChange={(e) => setYoutubeTitle(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <textarea
+                placeholder="Video Description (optional)"
+                value={youtubeDescription}
+                onChange={(e) => setYoutubeDescription(e.target.value)}
+                rows={3}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', resize: 'vertical' }}
+              />
+              <input
+                type="text"
+                placeholder="Tags (comma-separated, optional)"
+                value={youtubeTags}
+                onChange={(e) => setYoutubeTags(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <label style={{ color: '#fff', fontSize: '12px' }}>Visibility:</label>
+                <select
+                  value={youtubeVisibility}
+                  onChange={(e) => setYoutubeVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', flex: 1 }}
+                >
+                  <option value="public">Public</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="private">Private</option>
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                // Validation based on authentication method
+                if (youtubeUseChromeProfile) {
+                  if (!youtubeChromeUserDataDir.trim() || !youtubeChromeExecutablePath.trim()) {
+                    alert('Please enter Chrome user data directory and executable path');
+                    return;
+                  }
+                } else {
+                  if (!youtubeUsername.trim() || !youtubePassword.trim()) {
+                    alert('Please enter YouTube username and password');
+                    return;
+                  }
+                }
+                
+                if (!youtubeVideoPath.trim()) {
+                  alert('Please enter video file path');
+                  return;
+                }
+                if (!youtubeTitle.trim()) {
+                  alert('Please enter video title');
+                  return;
+                }
+
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+
+                addDebugLog('Starting YouTube video upload test...');
+                
+                try {
+                  addDebugLog('🎬 Launching YouTube video upload automation...');
+                  
+                  const tagsArray = youtubeTags.trim() 
+                    ? youtubeTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+                    : undefined;
+
+                  const uploadOptions: any = {
+                    videoPath: youtubeVideoPath.trim(),
+                    title: youtubeTitle.trim(),
+                    description: youtubeDescription.trim() || undefined,
+                    tags: tagsArray,
+                    visibility: youtubeVisibility,
+                  };
+
+                  // Add authentication method
+                  if (youtubeUseChromeProfile) {
+                    addDebugLog('🔐 Using Chrome profile authentication (recommended)...');
+                    uploadOptions.chromeUserDataDir = youtubeChromeUserDataDir.trim();
+                    uploadOptions.chromeExecutablePath = youtubeChromeExecutablePath.trim();
+                  } else {
+                    addDebugLog('🔐 Using username/password authentication...');
+                    uploadOptions.username = youtubeUsername.trim();
+                    uploadOptions.password = youtubePassword.trim();
+                  }
+
+                  const result = await (window as any).electron.debug.testYouTubeUpload(uploadOptions);
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ YouTube upload failed: ${result?.error || 'Unknown error'}`);
+                    console.error('YouTube upload failed:', result?.error);
+                    alert(`YouTube upload failed${result?.error ? `: ${result.error}` : ''}`);
+                  } else {
+                    addDebugLog('✅ YouTube upload automation launched successfully');
+                    console.log('YouTube upload result:', result);
+                    alert('YouTube upload automation launched. Check the Playwright window to review the upload process.');
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ YouTube upload error: ${e?.message || e}`);
+                  console.error('YouTube upload error:', e);
+                  alert(`YouTube upload error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#FF0000',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Test YouTube Video Upload
+            </button>
+          </div>
+
+          {/* Facebook Post Test Section */}
+          <div>
+            <h3 style={{ color: '#1877F2', marginBottom: '10px' }}>Facebook Post Test</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Facebook Email/Phone/Username"
+                  value={facebookUsername}
+                  onChange={(e) => setFacebookUsername(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="password"
+                  placeholder="Facebook Password"
+                  value={facebookPassword}
+                  onChange={(e) => setFacebookPassword(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Image File Path (optional, click Browse to select)"
+                  value={facebookImagePath}
+                  onChange={(e) => setFacebookImagePath(e.target.value)}
+                  readOnly
+                  style={{ 
+                    padding: '8px', 
+                    borderRadius: '4px', 
+                    border: '1px solid #444', 
+                    backgroundColor: '#2a2a2a', 
+                    color: '#fff',
+                    flex: 1,
+                    cursor: 'not-allowed'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const result = await (window as any).electron.debug.pickImageFile();
+                      if (result?.success && result?.filePath) {
+                        setFacebookImagePath(result.filePath);
+                        const addDebugLog = (message: string) => {
+                          setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                        };
+                        addDebugLog(`📁 Selected image file: ${result.filePath}`);
+                      }
+                    } catch (error) {
+                      console.error('Failed to pick image file:', error);
+                      alert(`Failed to pick image file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    }
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+              <textarea
+                placeholder="Post Text (optional)"
+                value={facebookText}
+                onChange={(e) => setFacebookText(e.target.value)}
+                rows={4}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', resize: 'vertical' }}
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!facebookUsername.trim() || !facebookPassword.trim()) {
+                  alert('Please enter Facebook username and password');
+                  return;
+                }
+                if (!facebookText.trim() && !facebookImagePath.trim()) {
+                  alert('Please enter post text or select an image');
+                  return;
+                }
+
+                const addDebugLog = (message: string) => {
+                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+                };
+
+                addDebugLog('Starting Facebook post test...');
+                
+                try {
+                  addDebugLog('📘 Launching Facebook post automation...');
+                  
+                  const result = await (window as any).electron.debug.testFacebookPost({
+                    username: facebookUsername.trim(),
+                    password: facebookPassword.trim(),
+                    imagePath: facebookImagePath.trim() || undefined,
+                    text: facebookText.trim() || undefined,
+                  });
+                  
+                  if (!result?.success) {
+                    addDebugLog(`❌ Facebook post failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Facebook post failed:', result?.error);
+                    alert(`Facebook post failed${result?.error ? `: ${result.error}` : ''}`);
+                  } else {
+                    addDebugLog('✅ Facebook post automation launched successfully');
+                    console.log('Facebook post result:', result);
+                    alert('Facebook post automation launched. Check the Playwright window to review the post process.');
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Facebook post error: ${e?.message || e}`);
+                  console.error('Facebook post error:', e);
+                  alert(`Facebook post error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#1877F2',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Test Facebook Post
+            </button>
+          </div>
 
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (

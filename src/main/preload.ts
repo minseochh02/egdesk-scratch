@@ -234,6 +234,33 @@ export interface InstagramConnection {
   updatedAt?: string;
 }
 
+export interface YouTubeConnection {
+  id?: string;
+  name: string;
+  username?: string; // Optional - not needed if using chromeUserDataDir
+  password?: string; // Optional - not needed if using chromeUserDataDir
+  /** Chrome user data directory path - recommended approach to avoid CAPTCHA/2FA */
+  chromeUserDataDir?: string;
+  /** Chrome executable path - required if using chromeUserDataDir */
+  chromeExecutablePath?: string;
+  channelId?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FacebookConnection {
+  id?: string;
+  name: string;
+  username: string;
+  password: string;
+  pageId?: string;
+  accessToken?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /**
  * User application preferences
  */
@@ -492,6 +519,86 @@ export interface InstagramAPI {
     error?: string;
   }>;
   testConnection: (connection: InstagramConnection) => Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>;
+  fetchPosts: (
+    connectionId: string,
+    options?: { limit?: number; useGraphAPI?: boolean }
+  ) => Promise<{
+    success: boolean;
+    posts?: any[];
+    error?: string;
+  }>;
+}
+
+/**
+ * YouTube connection management API
+ */
+export interface YouTubeAPI {
+  saveConnection: (connection: YouTubeConnection) => Promise<{
+    success: boolean;
+    connection?: YouTubeConnection;
+    connections?: YouTubeConnection[];
+    error?: string;
+  }>;
+  getConnections: () => Promise<{
+    success: boolean;
+    connections?: YouTubeConnection[];
+    error?: string;
+  }>;
+  deleteConnection: (connectionId: string) => Promise<{
+    success: boolean;
+    connections?: YouTubeConnection[];
+    error?: string;
+  }>;
+  updateConnection: (
+    connectionId: string,
+    updates: Partial<YouTubeConnection>,
+  ) => Promise<{
+    success: boolean;
+    connection?: YouTubeConnection;
+    connections?: YouTubeConnection[];
+    error?: string;
+  }>;
+  testConnection: (connection: YouTubeConnection) => Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>;
+}
+
+/**
+ * Facebook connection management API
+ */
+export interface FacebookAPI {
+  saveConnection: (connection: FacebookConnection) => Promise<{
+    success: boolean;
+    connection?: FacebookConnection;
+    connections?: FacebookConnection[];
+    error?: string;
+  }>;
+  getConnections: () => Promise<{
+    success: boolean;
+    connections?: FacebookConnection[];
+    error?: string;
+  }>;
+  deleteConnection: (connectionId: string) => Promise<{
+    success: boolean;
+    connections?: FacebookConnection[];
+    error?: string;
+  }>;
+  updateConnection: (
+    connectionId: string,
+    updates: Partial<FacebookConnection>,
+  ) => Promise<{
+    success: boolean;
+    connection?: FacebookConnection;
+    connections?: FacebookConnection[];
+    error?: string;
+  }>;
+  testConnection: (connection: FacebookConnection) => Promise<{
     success: boolean;
     message?: string;
     error?: string;
@@ -1210,7 +1317,51 @@ const electronHandler = {
     ) => ipcRenderer.invoke('instagram-update-connection', connectionId, updates),
     testConnection: (connection: InstagramConnection) =>
       ipcRenderer.invoke('instagram-test-connection', connection),
+    fetchPosts: (connectionId: string, options?: { limit?: number; useGraphAPI?: boolean }) =>
+      ipcRenderer.invoke('instagram-fetch-posts', connectionId, options),
   } as InstagramAPI,
+  
+  // ========================================================================
+  // YOUTUBE MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * YouTube connection management API
+   */
+  youtube: {
+    saveConnection: (connection: YouTubeConnection) =>
+      ipcRenderer.invoke('youtube-save-connection', connection),
+    getConnections: () => ipcRenderer.invoke('youtube-get-connections'),
+    deleteConnection: (connectionId: string) =>
+      ipcRenderer.invoke('youtube-delete-connection', connectionId),
+    updateConnection: (
+      connectionId: string,
+      updates: Partial<YouTubeConnection>,
+    ) => ipcRenderer.invoke('youtube-update-connection', connectionId, updates),
+    testConnection: (connection: YouTubeConnection) =>
+      ipcRenderer.invoke('youtube-test-connection', connection),
+  } as YouTubeAPI,
+  
+  // ========================================================================
+  // FACEBOOK MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Facebook connection management API
+   */
+  facebook: {
+    saveConnection: (connection: FacebookConnection) =>
+      ipcRenderer.invoke('facebook-save-connection', connection),
+    getConnections: () => ipcRenderer.invoke('facebook-get-connections'),
+    deleteConnection: (connectionId: string) =>
+      ipcRenderer.invoke('facebook-delete-connection', connectionId),
+    updateConnection: (
+      connectionId: string,
+      updates: Partial<FacebookConnection>,
+    ) => ipcRenderer.invoke('facebook-update-connection', connectionId, updates),
+    testConnection: (connection: FacebookConnection) =>
+      ipcRenderer.invoke('facebook-test-connection', connection),
+  } as FacebookAPI,
   
   // ========================================================================
   // SCHEDULED POSTS MANAGEMENT
@@ -1561,6 +1712,25 @@ const electronHandler = {
       waitAfterShare?: number;
       structuredPrompt?: Record<string, any> | string;
     }) => ipcRenderer.invoke('open-instagram-with-profile', options),
+    testYouTubeUpload: (options: {
+      username?: string;
+      password?: string;
+      chromeUserDataDir?: string;
+      chromeExecutablePath?: string;
+      videoPath: string;
+      title: string;
+      description?: string;
+      tags?: string[];
+      visibility?: 'public' | 'unlisted' | 'private';
+    }) => ipcRenderer.invoke('test-youtube-upload', options),
+    pickVideoFile: () => ipcRenderer.invoke('pick-video-file'),
+    pickImageFile: () => ipcRenderer.invoke('pick-image-file'),
+    testFacebookPost: (options: {
+      username: string;
+      password: string;
+      imagePath?: string;
+      text?: string;
+    }) => ipcRenderer.invoke('test-facebook-post', options),
     pickChromeProfileFolder: () => ipcRenderer.invoke('pick-chrome-profile-folder'),
     listChromeProfiles: () => ipcRenderer.invoke('list-chrome-profiles'),
     crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),

@@ -148,8 +148,17 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
           password: formData.password,
         });
       } else if (normalized.includes('youtube') || normalized === 'yt') {
-        // TODO: Implement YouTube connection saving when handler is created
-        throw new Error('YouTube connection saving not yet implemented');
+        result = await window.electron.youtube.saveConnection({
+          name: formData.name,
+          username: formData.username,
+          password: formData.password,
+        });
+      } else if (normalized.includes('facebook') || normalized === 'fb') {
+        result = await window.electron.facebook.saveConnection({
+          name: formData.name,
+          username: formData.username,
+          password: formData.password,
+        });
       } else {
         throw new Error('Unsupported platform');
       }

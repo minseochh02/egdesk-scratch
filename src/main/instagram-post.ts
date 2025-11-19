@@ -113,8 +113,58 @@ export async function createInstagramPost(
   await shareButton.waitFor({ state: "visible", timeout: 30_000 });
   await shareButton.click();
 
-  // Wait for the upload to complete
-  await page.waitForTimeout(waitAfterShare);
+  // Wait for the upload to complete and check for success confirmation
+  console.log('[createInstagramPost] Waiting for post to be shared...');
+  
+  // Wait for either success confirmation or timeout
+  try {
+    // Try to detect success by checking if we navigated away from /create/ page
+    // This is the most reliable indicator that the post was shared
+    const initialUrl = page.url();
+    const maxWaitTime = Math.min(waitAfterShare, 30000); // Cap at 30 seconds
+    
+    let postShared = false;
+    const startTime = Date.now();
+    
+    // Poll for URL change or success message
+    while (Date.now() - startTime < maxWaitTime && !postShared) {
+      try {
+        const currentUrl = page.url();
+        // If we navigated away from /create/ page, post was likely shared
+        if (!currentUrl.includes('/create/') && currentUrl !== initialUrl) {
+          postShared = true;
+          console.log('[createInstagramPost] Detected navigation away from create page - post likely shared');
+          break;
+        }
+        
+        // Check for success messages
+        const successMessage1 = await page.locator('text=Your post has been shared').count().catch(() => 0);
+        const successMessage2 = await page.locator('text=Post shared').count().catch(() => 0);
+        if (successMessage1 > 0 || successMessage2 > 0) {
+          postShared = true;
+          console.log('[createInstagramPost] Detected success message');
+          break;
+        }
+      } catch (e) {
+        // Continue polling
+      }
+      
+      await page.waitForTimeout(500); // Poll every 500ms
+    }
+    
+    // Additional wait to ensure post is fully processed
+    await page.waitForTimeout(2000);
+    
+    if (postShared) {
+      console.log('[createInstagramPost] Post shared successfully');
+    } else {
+      console.log('[createInstagramPost] Post upload completed (timeout reached)');
+    }
+  } catch (error) {
+    console.warn('[createInstagramPost] Could not confirm post success, but continuing:', error);
+    // Still wait a bit even if we can't confirm
+    await page.waitForTimeout(3000);
+  }
 
   return generated;
 }

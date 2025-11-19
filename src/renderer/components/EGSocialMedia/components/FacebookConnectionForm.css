@@ -1,0 +1,186 @@
+.facebook-connection-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.facebook-connection-form {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.facebook-connection-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.facebook-connection-form-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.facebook-connection-form-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: #6b7280;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.facebook-connection-form-close:hover {
+  color: #1f2937;
+  background: #f3f4f6;
+}
+
+.facebook-connection-form-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.facebook-connection-form-body {
+  padding: 24px;
+}
+
+.facebook-connection-form-field {
+  margin-bottom: 24px;
+}
+
+.facebook-connection-form-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.facebook-connection-form-field label .required {
+  color: #ef4444;
+}
+
+.facebook-connection-form-field label .optional {
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.facebook-connection-form-field input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1f2937;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.facebook-connection-form-field input:focus {
+  outline: none;
+  border-color: #1877F2;
+  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+}
+
+.facebook-connection-form-field input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.facebook-connection-form-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ef4444;
+}
+
+.facebook-connection-form-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.facebook-connection-form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.facebook-connection-form-cancel,
+.facebook-connection-form-submit {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+}
+
+.facebook-connection-form-cancel {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.facebook-connection-form-cancel:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.facebook-connection-form-submit {
+  background: linear-gradient(135deg, #1877F2 0%, #0e5fc7 100%);
+  color: #ffffff;
+}
+
+.facebook-connection-form-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0e5fc7 0%, #1877F2 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+}
+
+.facebook-connection-form-cancel:disabled,
+.facebook-connection-form-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
