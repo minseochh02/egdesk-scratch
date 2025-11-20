@@ -31,12 +31,12 @@ const getCertificateStatusClass = (status: string): string => {
 
 const getCertificateStatusKorean = (status: string): string => {
   switch (status) {
-    case 'valid': return '유효함';
-    case 'expired': return '만료됨';
-    case 'self-signed': return '자체 서명';
-    case 'invalid': return '유효하지 않음';
-    case 'error': return '오류';
-    default: return '알 수 없음';
+    case 'valid': return 'Valid';
+    case 'expired': return 'Expired';
+    case 'self-signed': return 'Self-signed';
+    case 'invalid': return 'Invalid';
+    case 'error': return 'Error';
+    default: return 'Unknown';
   }
 };
 
@@ -102,7 +102,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleAnalyze = async () => {
     if (!websiteUrl.trim()) {
-      alert('웹블로그 URL을 입력해주세요');
+      alert('Please enter a blog URL');
       return;
     }
 
@@ -139,8 +139,8 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
       }
       
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다';
-      setAnalysisResult(`${websiteUrl} 분석 중 오류: ${errorMessage}`);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      setAnalysisResult(`Error analyzing ${websiteUrl}: ${errorMessage}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -158,35 +158,35 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
   const handleOpenHTMLReport = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹블로그를 분석해주세요');
+      alert('Please analyze the blog first');
       return;
     }
 
     try {
       HTMLReportService.openHTMLReport(completeAnalysis, websiteUrl);
     } catch (error) {
-      console.error('HTML 보고서 생성 중 오류:', error);
-      alert('HTML 보고서 생성 중 오류가 발생했습니다');
+      console.error('Error generating HTML report:', error);
+      alert('An error occurred while generating the HTML report');
     }
   };
 
   const handleSaveHTMLReport = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹블로그를 분석해주세요');
+      alert('Please analyze the blog first');
       return;
     }
 
     try {
       HTMLReportService.saveHTMLReport(completeAnalysis, websiteUrl);
     } catch (error) {
-      console.error('HTML 보고서 저장 중 오류:', error);
-      alert('HTML 보고서 저장 중 오류가 발생했습니다');
+      console.error('Error saving HTML report:', error);
+      alert('An error occurred while saving the HTML report');
     }
   };
 
   const handleDownloadText = () => {
     if (!completeAnalysis) {
-      alert('먼저 웹블로그를 분석해주세요');
+      alert('Please analyze the blog first');
       return;
     }
 
@@ -195,7 +195,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `SSL_보안분석_${websiteUrl.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+    link.download = `SSL_Security_Analysis_${websiteUrl.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -227,7 +227,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
   };
 
   const handleDeleteAnalysis = async (analysisId: string) => {
-    if (confirm('이 분석을 삭제하시겠습니까?')) {
+    if (confirm('Do you want to delete this analysis?')) {
       try {
         await SSLAnalysisStorageService.deleteAnalysis(analysisId);
         await loadAnalysisHistory();
@@ -237,7 +237,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
         }
       } catch (error) {
         console.error('Error deleting analysis:', error);
-        alert('분석 삭제 중 오류가 발생했습니다');
+        alert('An error occurred while deleting the analysis');
       }
     }
   };
@@ -262,14 +262,14 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `SSL_분석_내역_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `SSL_Analysis_History_${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting analyses:', error);
-      alert('분석 내역 내보내기 중 오류가 발생했습니다');
+      alert('An error occurred while exporting the analysis history');
     }
   };
 
@@ -278,8 +278,8 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
       <div className="ssl-analyzer-scroll">
         <div className="ssl-analyzer">
           <div className="ssl-analyzer-header">
-            <h1>블로그 보안 분석</h1>
-            <p>웹블로그의 SSL 인증서와 보안 설정을 분석합니다</p>
+            <h1>Blog Security Analysis</h1>
+            <p>Analyze SSL certificates and security settings of your blog</p>
           </div>
 
           <div className="ssl-analyzer-input-section">
@@ -289,7 +289,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                 value={websiteUrl}
                 onChange={handleUrlChange}
                 onKeyPress={handleKeyPress}
-                placeholder="웹블로그 URL을 입력하세요 (예: https://example.com)"
+                placeholder="Enter blog URL (e.g., https://example.com)"
                 className="url-input"
                 disabled={isAnalyzing}
               />
@@ -298,7 +298,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                 disabled={isAnalyzing || !websiteUrl.trim()}
                 className="analyze-button"
               >
-                {isAnalyzing ? '분석 중...' : '이 웹블로그 분석하기'}
+                {isAnalyzing ? 'Analyzing...' : 'Analyze This Blog'}
               </button>
             </div>
             
@@ -306,14 +306,14 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
               <button
                 onClick={handleShowHistory}
                 className="history-button"
-                title="분석 내역 보기"
+                title="View Analysis History"
               >
-                📊 분석 내역 ({analysisHistory.length})
+                📊 Analysis History ({analysisHistory.length})
               </button>
               {analysisStats && (
                 <div className="stats-summary">
-                  <span>평균 점수: {analysisStats.averageScore}/100</span>
-                  <span>총 분석: {analysisStats.totalAnalyses}개</span>
+                  <span>Average Score: {analysisStats.averageScore}/100</span>
+                  <span>Total Analyses: {analysisStats.totalAnalyses}</span>
                 </div>
               )}
             </div>
@@ -322,28 +322,28 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
           {analysisResult && (
             <div className="ssl-analyzer-result">
               <div className="result-header">
-                <h3>분석 결과</h3>
+                <h3>Analysis Results</h3>
                  <div className="download-buttons">
                    <button
                      onClick={handleOpenHTMLReport}
                      className="download-button html-button"
-                     title="HTML 보고서 미리보기"
+                     title="Preview HTML Report"
                    >
-                     👁️ 미리보기
+                     👁️ Preview
                    </button>
                    <button
                      onClick={handleSaveHTMLReport}
                      className="download-button html-save-button"
-                     title="HTML 보고서 저장"
+                     title="Save HTML Report"
                    >
-                     💾 HTML 저장
+                     💾 Save HTML
                    </button>
                    <button
                      onClick={handleDownloadText}
                      className="download-button text-button"
-                     title="텍스트 보고서 다운로드"
+                     title="Download Text Report"
                    >
-                     📝 텍스트 다운로드
+                     📝 Download Text
                    </button>
                  </div>
               </div>
@@ -361,7 +361,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                   <div className="issues-summary">
                     {securityGrade.criticalIssues.length > 0 && (
                       <div className="issue-category critical">
-                        <h4>🚨 치명적 문제점 ({securityGrade.criticalIssues.length})</h4>
+                        <h4>🚨 Critical Issues ({securityGrade.criticalIssues.length})</h4>
                         <ul>
                           {securityGrade.criticalIssues.map((issue, index) => (
                             <li key={index}>{issue}</li>
@@ -372,7 +372,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                     
                     {securityGrade.highIssues.length > 0 && (
                       <div className="issue-category high">
-                        <h4>⚠️ 높은 우선순위 ({securityGrade.highIssues.length})</h4>
+                        <h4>⚠️ High Priority ({securityGrade.highIssues.length})</h4>
                         <ul>
                           {securityGrade.highIssues.map((issue, index) => (
                             <li key={index}>{issue}</li>
@@ -383,7 +383,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                     
                     {securityGrade.mediumIssues.length > 0 && (
                       <div className="issue-category medium">
-                        <h4>🔶 중간 우선순위 ({securityGrade.mediumIssues.length})</h4>
+                        <h4>🔶 Medium Priority ({securityGrade.mediumIssues.length})</h4>
                         <ul>
                           {securityGrade.mediumIssues.map((issue, index) => (
                             <li key={index}>{issue}</li>
@@ -394,7 +394,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                     
                     {securityGrade.lowIssues.length > 0 && (
                       <div className="issue-category low">
-                        <h4>🔸 낮은 우선순위 ({securityGrade.lowIssues.length})</h4>
+                        <h4>🔸 Low Priority ({securityGrade.lowIssues.length})</h4>
                         <ul>
                           {securityGrade.lowIssues.map((issue, index) => (
                             <li key={index}>{issue}</li>
@@ -412,39 +412,39 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
               
               {accessibilityData && (
                 <div className="analysis-details">
-                  <h4>웹블로그 접근성</h4>
+                  <h4>Blog Accessibility</h4>
                   <div className="detail-grid">
                     <div className="detail-item">
-                      <span className="detail-label">웹블로그 상태:</span>
+                      <span className="detail-label">Blog Status:</span>
                       <span className={`detail-value ${accessibilityData.accessible ? 'success' : 'error'}`}>
-                        {accessibilityData.accessible ? '✅ 접근 가능' : '❌ 접근 불가'}
+                        {accessibilityData.accessible ? '✅ Accessible' : '❌ Not Accessible'}
                       </span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">SSL 상태:</span>
+                      <span className="detail-label">SSL Status:</span>
                       <span className={`detail-value ${accessibilityData.hasSSL ? 'success' : 'error'}`}>
-                        {accessibilityData.hasSSL ? '🔒 SSL 사용 가능' : '❌ SSL 없음'}
+                        {accessibilityData.hasSSL ? '🔒 SSL Available' : '❌ No SSL'}
                       </span>
                     </div>
                     {accessibilityData.connectionDetails && (
                       <>
                         <div className="detail-item">
-                          <span className="detail-label">연결 시간:</span>
+                          <span className="detail-label">Connection Time:</span>
                           <span className="detail-value">{accessibilityData.connectionDetails.connectionTime}ms</span>
                         </div>
                         <div className="detail-item">
-                          <span className="detail-label">호스트명:</span>
+                          <span className="detail-label">Hostname:</span>
                           <span className="detail-value">{accessibilityData.connectionDetails.hostname}</span>
                         </div>
                         <div className="detail-item">
-                          <span className="detail-label">포트:</span>
+                          <span className="detail-label">Port:</span>
                           <span className="detail-value">{accessibilityData.connectionDetails.port}</span>
                         </div>
                       </>
                     )}
                     {accessibilityData.error && (
                       <div className="detail-item error-item">
-                        <span className="detail-label">오류:</span>
+                        <span className="detail-label">Error:</span>
                         <span className="detail-value error-text">{accessibilityData.error}</span>
                       </div>
                     )}
@@ -454,42 +454,42 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
               {certificateData && certificateData.certificateInfo && (
                 <div className="analysis-details">
-                  <h4>SSL 인증서 상세 정보</h4>
+                  <h4>SSL Certificate Details</h4>
                   <div className="detail-grid">
                     <div className="detail-item">
-                      <span className="detail-label">인증서 상태:</span>
+                      <span className="detail-label">Certificate Status:</span>
                       <span className={`detail-value ${getCertificateStatusClass(certificateData.certificateStatus)}`}>
                         {getCertificateStatusIcon(certificateData.certificateStatus)} {getCertificateStatusKorean(certificateData.certificateStatus)}
                       </span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">주체:</span>
+                      <span className="detail-label">Subject:</span>
                       <span className="detail-value">{certificateData.certificateInfo.subject}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">발급자:</span>
+                      <span className="detail-label">Issuer:</span>
                       <span className="detail-value">{certificateData.certificateInfo.issuer}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">유효 시작일:</span>
+                      <span className="detail-label">Valid From:</span>
                       <span className="detail-value">{new Date(certificateData.certificateInfo.validFrom).toLocaleDateString()}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">유효 종료일:</span>
+                      <span className="detail-label">Valid Until:</span>
                       <span className="detail-value">{new Date(certificateData.certificateInfo.validTo).toLocaleDateString()}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">만료까지 남은 일수:</span>
+                      <span className="detail-label">Days Until Expiry:</span>
                       <span className={`detail-value ${certificateData.certificateInfo.daysUntilExpiry < 30 ? 'warning' : 'success'}`}>
-                        {certificateData.certificateInfo.daysUntilExpiry}일
+                        {certificateData.certificateInfo.daysUntilExpiry} days
                       </span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">일련번호:</span>
+                      <span className="detail-label">Serial Number:</span>
                       <span className="detail-value">{certificateData.certificateInfo.serialNumber}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">지문:</span>
+                      <span className="detail-label">Fingerprint:</span>
                       <span className="detail-value">{certificateData.certificateInfo.fingerprint}</span>
                     </div>
                   </div>
@@ -498,18 +498,18 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
               {securityGrade && (
                 <div className="analysis-details security-grade-section">
-                  <h4>보안 등급</h4>
+                  <h4>Security Grade</h4>
                   <div className="security-grade">
                     <div className={`grade-display ${getGradeClass(securityGrade.grade)}`}>
                       <div className="grade-letter">{securityGrade.grade}</div>
-                      <div className="grade-score">{securityGrade.score}/100점</div>
+                      <div className="grade-score">{securityGrade.score}/100</div>
                       <div className="grade-description">{securityGrade.description}</div>
                     </div>
                     
                     <div className="issues-summary">
                       {securityGrade.criticalIssues.length > 0 && (
                         <div className="issue-category critical">
-                          <h5>🚨 심각한 문제 ({securityGrade.criticalIssues.length}개)</h5>
+                          <h5>🚨 Critical Issues ({securityGrade.criticalIssues.length})</h5>
                           <ul>
                             {securityGrade.criticalIssues.map((issue, index) => (
                               <li key={index}>{issue}</li>
@@ -520,7 +520,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                       
                       {securityGrade.highIssues.length > 0 && (
                         <div className="issue-category high">
-                          <h5>⚠️ 높은 위험 ({securityGrade.highIssues.length}개)</h5>
+                          <h5>⚠️ High Risk ({securityGrade.highIssues.length})</h5>
                           <ul>
                             {securityGrade.highIssues.map((issue, index) => (
                               <li key={index}>{issue}</li>
@@ -531,7 +531,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                       
                       {securityGrade.mediumIssues.length > 0 && (
                         <div className="issue-category medium">
-                          <h5>🟡 중간 위험 ({securityGrade.mediumIssues.length}개)</h5>
+                          <h5>🟡 Medium Risk ({securityGrade.mediumIssues.length})</h5>
                           <ul>
                             {securityGrade.mediumIssues.map((issue, index) => (
                               <li key={index}>{issue}</li>
@@ -542,7 +542,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                       
                       {securityGrade.lowIssues.length > 0 && (
                         <div className="issue-category low">
-                          <h5>🔵 낮은 위험 ({securityGrade.lowIssues.length}개)</h5>
+                          <h5>🔵 Low Risk ({securityGrade.lowIssues.length})</h5>
                           <ul>
                             {securityGrade.lowIssues.map((issue, index) => (
                               <li key={index}>{issue}</li>
@@ -557,61 +557,61 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
               {businessImpact && (
                 <div className="analysis-details business-impact-section">
-                  <h4>비즈니스 영향 분석</h4>
+                  <h4>Business Impact Analysis</h4>
                   <div className="business-impact">
                     <div className="impact-summary">
                       <div className="impact-item">
-                        <span className="impact-label">연간 예상 손실:</span>
-                        <span className="impact-value loss">{businessImpact.annualLoss.toLocaleString()}원</span>
+                        <span className="impact-label">Annual Estimated Loss:</span>
+                        <span className="impact-value loss">${businessImpact.annualLoss.toLocaleString()}</span>
                       </div>
                       <div className="impact-item">
-                        <span className="impact-label">보안 손실률:</span>
+                        <span className="impact-label">Security Loss Rate:</span>
                         <span className="impact-value">{businessImpact.securityLossRate * 100}%</span>
                       </div>
                       <div className="impact-item">
-                        <span className="impact-label">SEO 순위 하락:</span>
+                        <span className="impact-label">SEO Ranking Drop:</span>
                         <span className="impact-value">{businessImpact.seoRankingLoss}%</span>
                       </div>
                       <div className="impact-item">
-                        <span className="impact-label">고객 신뢰도 손상:</span>
+                        <span className="impact-label">Customer Trust Damage:</span>
                         <span className="impact-value">{businessImpact.customerTrustLoss}%</span>
                       </div>
                       <div className="impact-item">
-                        <span className="impact-label">브랜드 이미지:</span>
+                        <span className="impact-label">Brand Image:</span>
                         <span className="impact-value">{businessImpact.brandImageImpact}</span>
                       </div>
                     </div>
                     
                     <div className="investment-analysis">
-                      <h5>투자 분석</h5>
+                      <h5>Investment Analysis</h5>
                       <div className="investment-grid">
                         <div className="investment-item">
-                          <span className="investment-label">권장 투자비용:</span>
-                          <span className="investment-value">{businessImpact.investmentCost.toLocaleString()}원</span>
+                          <span className="investment-label">Recommended Investment Cost:</span>
+                          <span className="investment-value">${businessImpact.investmentCost.toLocaleString()}</span>
                         </div>
                         <div className="investment-item">
-                          <span className="investment-label">연간 순이익:</span>
+                          <span className="investment-label">Annual Net Profit:</span>
                           <span className={`investment-value ${businessImpact.netBenefit > 0 ? 'positive' : 'negative'}`}>
-                            {businessImpact.netBenefit.toLocaleString()}원
+                            ${businessImpact.netBenefit.toLocaleString()}
                           </span>
                         </div>
                         <div className="investment-item">
-                          <span className="investment-label">투자 대비 효과:</span>
+                          <span className="investment-label">ROI:</span>
                           <span className={`investment-value roi ${businessImpact.roi > 10 ? 'high' : businessImpact.roi > 5 ? 'medium' : 'low'}`}>
-                            {businessImpact.roi.toFixed(1)}배 ROI
+                            {businessImpact.roi.toFixed(1)}x ROI
                           </span>
                         </div>
                       </div>
                       
                       <div className="roi-conclusion">
                         {businessImpact.roi > 10 ? (
-                          <div className="conclusion high">✅ 즉시 투자 권장 (높은 ROI)</div>
+                          <div className="conclusion high">✅ Immediate Investment Recommended (High ROI)</div>
                         ) : businessImpact.roi > 5 ? (
-                          <div className="conclusion medium">✅ 투자 권장 (양호한 ROI)</div>
+                          <div className="conclusion medium">✅ Investment Recommended (Good ROI)</div>
                         ) : businessImpact.roi > 0 ? (
-                          <div className="conclusion low">⚠️ 신중한 검토 필요</div>
+                          <div className="conclusion low">⚠️ Careful Review Needed</div>
                         ) : (
-                          <div className="conclusion none">❌ 투자 효과 미미</div>
+                          <div className="conclusion none">❌ Minimal Investment Effect</div>
                         )}
                       </div>
                     </div>
@@ -621,9 +621,9 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
               {securityHeadersData && (
                 <div className="analysis-details">
-                  <h4>보안 헤더 분석</h4>
+                  <h4>Security Headers Analysis</h4>
                   <div className="security-score">
-                    <span className="detail-label">보안 점수:</span>
+                    <span className="detail-label">Security Score:</span>
                     <span className={`detail-value ${getSecurityScoreClass(securityHeadersData.securityScore)}`}>
                       {securityHeadersData.securityScore}/100
                     </span>
@@ -634,11 +634,11 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                       <div key={index} className={`header-item ${header.present ? 'present' : 'missing'}`}>
                         <div className="header-name">
                           {header.present ? '✅' : '❌'} {header.name}
-                          {header.recommended && <span className="recommended-tag">권장</span>}
+                          {header.recommended && <span className="recommended-tag">Recommended</span>}
                         </div>
                         <div className="header-description">{header.description}</div>
                         {header.present && header.value && (
-                          <div className="header-value">값: {header.value}</div>
+                          <div className="header-value">Value: {header.value}</div>
                         )}
                       </div>
                     ))}
@@ -646,7 +646,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
                   {securityHeadersData.missingHeaders.length > 0 && (
                     <div className="missing-headers">
-                      <h5>누락된 권장 헤더:</h5>
+                      <h5>Missing Recommended Headers:</h5>
                       <ul>
                         {securityHeadersData.missingHeaders.map((header, index) => (
                           <li key={index}>{header}</li>
@@ -657,7 +657,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
 
                   {securityHeadersData.recommendations.length > 0 && (
                     <div className="recommendations">
-                      <h5>권장사항:</h5>
+                      <h5>Recommendations:</h5>
                       <ul>
                         {securityHeadersData.recommendations.map((rec, index) => (
                           <li key={index}>{rec}</li>
@@ -675,14 +675,14 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
             <div className="history-modal-overlay">
               <div className="history-modal">
                 <div className="history-modal-header">
-                  <h2>SSL 분석 내역</h2>
+                  <h2>SSL Analysis History</h2>
                   <div className="history-actions">
                     <div className="search-group">
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="검색..."
+                        placeholder="Search..."
                         className="search-input"
                       />
                       <button onClick={handleSearchAnalyses} className="search-button">
@@ -690,7 +690,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                       </button>
                     </div>
                     <button onClick={handleExportAnalyses} className="export-button">
-                      📤 내보내기
+                      📤 Export
                     </button>
                     <button onClick={handleHideHistory} className="close-button">
                       ✕
@@ -702,19 +702,19 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                   {analysisStats && (
                     <div className="history-stats">
                       <div className="stat-item">
-                        <span className="stat-label">총 분석 수:</span>
+                        <span className="stat-label">Total Analyses:</span>
                         <span className="stat-value">{analysisStats.totalAnalyses}</span>
                       </div>
                       <div className="stat-item">
-                        <span className="stat-label">평균 점수:</span>
+                        <span className="stat-label">Average Score:</span>
                         <span className="stat-value">{analysisStats.averageScore}/100</span>
                       </div>
                       <div className="stat-item">
-                        <span className="stat-label">등급 분포:</span>
+                        <span className="stat-label">Grade Distribution:</span>
                         <div className="grade-distribution">
                           {Object.entries(analysisStats.gradeDistribution).map(([grade, count]) => (
                             <span key={grade} className="grade-stat">
-                              {grade}: {count}개
+                              {grade}: {count}
                             </span>
                           ))}
                         </div>
@@ -725,7 +725,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                   <div className="analysis-list">
                     {analysisHistory.length === 0 ? (
                       <div className="no-analyses">
-                        <p>분석 내역이 없습니다.</p>
+                        <p>No analysis history available.</p>
                       </div>
                     ) : (
                       analysisHistory.map((analysis) => {
@@ -741,7 +741,7 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                                 <span className="analysis-date">{summary.date}</span>
                                 {summary.hasIssues && (
                                   <span className="issues-indicator">
-                                    ⚠️ {summary.criticalIssues}개 문제
+                                    ⚠️ {summary.criticalIssues} issues
                                   </span>
                                 )}
                               </div>
@@ -760,16 +760,16 @@ const SSLAnalyzer: React.FC<SSLAnalyzerProps> = () => {
                               <button
                                 onClick={() => handleSelectAnalysis(analysis)}
                                 className="select-button"
-                                title="이 분석 보기"
+                                title="View this analysis"
                               >
-                                👁️ 보기
+                                👁️ View
                               </button>
                               <button
                                 onClick={() => handleDeleteAnalysis(analysis.id)}
                                 className="delete-button"
-                                title="이 분석 삭제"
+                                title="Delete this analysis"
                               >
-                                🗑️ 삭제
+                                🗑️ Delete
                               </button>
                             </div>
                           </div>

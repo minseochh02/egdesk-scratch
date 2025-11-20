@@ -107,7 +107,7 @@ export const IdentityKickoff: React.FC<IdentityKickoffProps> = ({
             {planError && <p className="egbusiness-identity__error">{planError}</p>}
             {loading && !error && (
               <p className="egbusiness-identity__status">
-                웹사이트를 불러오고 있습니다. 잠시만 기다려주세요…
+                Loading website. Please wait...
               </p>
             )}
           </div>

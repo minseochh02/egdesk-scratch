@@ -317,39 +317,39 @@ export class SSLAnalysisService {
    * Generate a human-readable report from the accessibility analysis
    */
   static generateAccessibilityReport(result: WebsiteAccessibilityResult): string {
-    let report = `🔍 SSL 분석 보고서\n`;
-    report += `📅 생성일: ${new Date(result.timestamp).toLocaleString()}\n\n`;
+    let report = `🔍 SSL Analysis Report\n`;
+    report += `📅 Generated: ${new Date(result.timestamp).toLocaleString()}\n\n`;
     
     if (result.accessible && result.hasSSL) {
-      report += `✅ 웹블로그 상태: 접근 가능\n`;
-      report += `🔒 SSL 상태: 사용 가능\n`;
+      report += `✅ Blog Status: Accessible\n`;
+      report += `🔒 SSL Status: Available\n`;
       
       if (result.connectionDetails) {
-        report += `\n📊 연결 상세 정보:\n`;
-        report += `   • 호스트명: ${result.connectionDetails.hostname}\n`;
-        report += `   • 포트: ${result.connectionDetails.port}\n`;
-        report += `   • 연결 시간: ${result.connectionDetails.connectionTime}ms\n`;
-        report += `   • 프로토콜: ${result.connectionDetails.protocol || 'HTTPS'}\n`;
+        report += `\n📊 Connection Details:\n`;
+        report += `   • Hostname: ${result.connectionDetails.hostname}\n`;
+        report += `   • Port: ${result.connectionDetails.port}\n`;
+        report += `   • Connection Time: ${result.connectionDetails.connectionTime}ms\n`;
+        report += `   • Protocol: ${result.connectionDetails.protocol || 'HTTPS'}\n`;
       }
       
-      report += `\n🎯 다음 단계: SSL 인증서 분석 준비 완료\n`;
+      report += `\n🎯 Next Step: Ready for SSL certificate analysis\n`;
     } else {
-      report += `❌ 웹블로그 상태: 접근 불가\n`;
-      report += `🔒 SSL 상태: ${result.hasSSL ? '사용 가능' : '사용 불가'}\n`;
+      report += `❌ Blog Status: Not Accessible\n`;
+      report += `🔒 SSL Status: ${result.hasSSL ? 'Available' : 'Not Available'}\n`;
       
       if (result.error) {
-        report += `\n⚠️ 오류 상세 정보:\n`;
+        report += `\n⚠️ Error Details:\n`;
         report += `   ${result.error}\n`;
       }
       
       if (result.connectionDetails) {
-        report += `\n📊 연결 상세 정보:\n`;
-        report += `   • 호스트명: ${result.connectionDetails.hostname}\n`;
-        report += `   • 포트: ${result.connectionDetails.port}\n`;
-        report += `   • 연결 시간: ${result.connectionDetails.connectionTime}ms\n`;
+        report += `\n📊 Connection Details:\n`;
+        report += `   • Hostname: ${result.connectionDetails.hostname}\n`;
+        report += `   • Port: ${result.connectionDetails.port}\n`;
+        report += `   • Connection Time: ${result.connectionDetails.connectionTime}ms\n`;
       }
       
-      report += `\n🚫 SSL 분석을 진행할 수 없습니다 - 웹블로그에 접근할 수 없습니다\n`;
+      report += `\n🚫 Cannot proceed with SSL analysis - Blog is not accessible\n`;
     }
     
     return report;
@@ -359,46 +359,46 @@ export class SSLAnalysisService {
    * Generate a human-readable report from the certificate analysis
    */
   static generateCertificateReport(result: SSLCertificateResult): string {
-    let report = `🔒 SSL 인증서 분석 보고서\n`;
-    report += `📅 생성일: ${new Date(result.timestamp).toLocaleString()}\n\n`;
+    let report = `🔒 SSL Certificate Analysis Report\n`;
+    report += `📅 Generated: ${new Date(result.timestamp).toLocaleString()}\n\n`;
     
     if (result.certificateInfo) {
       const cert = result.certificateInfo;
       
-      report += `📋 인증서 상세 정보:\n`;
-      report += `   • 주체: ${cert.subject}\n`;
-      report += `   • 발급자: ${cert.issuer}\n`;
-      report += `   • 유효 시작일: ${new Date(cert.validFrom).toLocaleDateString()}\n`;
-      report += `   • 유효 종료일: ${new Date(cert.validTo).toLocaleDateString()}\n`;
-      report += `   • 일련번호: ${cert.serialNumber}\n`;
-      report += `   • 지문: ${cert.fingerprint}\n`;
-      report += `   • 만료까지 남은 일수: ${cert.daysUntilExpiry}일\n\n`;
+      report += `📋 Certificate Details:\n`;
+      report += `   • Subject: ${cert.subject}\n`;
+      report += `   • Issuer: ${cert.issuer}\n`;
+      report += `   • Valid From: ${new Date(cert.validFrom).toLocaleDateString()}\n`;
+      report += `   • Valid Until: ${new Date(cert.validTo).toLocaleDateString()}\n`;
+      report += `   • Serial Number: ${cert.serialNumber}\n`;
+      report += `   • Fingerprint: ${cert.fingerprint}\n`;
+      report += `   • Days Until Expiry: ${cert.daysUntilExpiry} days\n\n`;
       
       // Status analysis
       switch (result.certificateStatus) {
         case 'valid':
-          report += `✅ 인증서 상태: 유효함\n`;
-          report += `🎯 이 인증서는 올바르게 구성되어 있고 신뢰할 수 있습니다\n`;
+          report += `✅ Certificate Status: Valid\n`;
+          report += `🎯 This certificate is properly configured and trustworthy\n`;
           break;
         case 'expired':
-          report += `❌ 인증서 상태: 만료됨\n`;
-          report += `⚠️ 이 인증서는 만료되었으며 갱신이 필요합니다\n`;
+          report += `❌ Certificate Status: Expired\n`;
+          report += `⚠️ This certificate has expired and needs to be renewed\n`;
           break;
         case 'self-signed':
-          report += `⚠️ 인증서 상태: 자체 서명\n`;
-          report += `🔒 이 인증서는 브라우저에서 신뢰되지 않습니다\n`;
+          report += `⚠️ Certificate Status: Self-signed\n`;
+          report += `🔒 This certificate is not trusted by browsers\n`;
           break;
         case 'invalid':
-          report += `❌ 인증서 상태: 유효하지 않음\n`;
-          report += `🚫 이 인증서에는 구성 문제가 있습니다\n`;
+          report += `❌ Certificate Status: Invalid\n`;
+          report += `🚫 This certificate has configuration issues\n`;
           break;
         case 'error':
-          report += `❌ 인증서 상태: 오류\n`;
-          report += `🚫 인증서를 분석할 수 없습니다\n`;
+          report += `❌ Certificate Status: Error\n`;
+          report += `🚫 Cannot analyze certificate\n`;
           break;
       }
     } else if (result.error) {
-      report += `❌ 오류: ${result.error}\n`;
+      report += `❌ Error: ${result.error}\n`;
     }
     
     return report;
@@ -420,8 +420,8 @@ export class SSLAnalysisService {
           headers: [],
           missingHeaders: [],
           securityScore: 0,
-          recommendations: ['웹블로그에 접근할 수 없어 보안 헤더를 분석할 수 없습니다'],
-          error: '웹블로그에 접근할 수 없습니다',
+          recommendations: ['Cannot analyze security headers - blog is not accessible'],
+          error: 'Blog is not accessible',
           timestamp
         };
       }
@@ -447,8 +447,8 @@ export class SSLAnalysisService {
         headers: [],
         missingHeaders: [],
         securityScore: 0,
-        recommendations: ['보안 헤더 분석 중 오류가 발생했습니다'],
-        error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다',
+        recommendations: ['An error occurred while analyzing security headers'],
+        error: error instanceof Error ? error.message : 'An unknown error occurred',
         timestamp
       };
     }
@@ -507,7 +507,7 @@ export class SSLAnalysisService {
       value: headers['strict-transport-security'] || '',
       present: !!headers['strict-transport-security'],
       recommended: true,
-      description: 'HTTPS 강제 사용 및 쿠키 보안 강화'
+      description: 'Enforce HTTPS and strengthen cookie security'
     });
 
     // CSP (Content Security Policy)
@@ -516,7 +516,7 @@ export class SSLAnalysisService {
       value: headers['content-security-policy'] || '',
       present: !!headers['content-security-policy'],
       recommended: true,
-      description: 'XSS 공격 방지 및 리소스 로딩 제어'
+      description: 'Prevent XSS attacks and control resource loading'
     });
 
     // X-Frame-Options
@@ -525,7 +525,7 @@ export class SSLAnalysisService {
       value: headers['x-frame-options'] || '',
       present: !!headers['x-frame-options'],
       recommended: true,
-      description: '클릭재킹 공격 방지'
+      description: 'Prevent clickjacking attacks'
     });
 
     // X-Content-Type-Options
@@ -534,7 +534,7 @@ export class SSLAnalysisService {
       value: headers['x-content-type-options'] || '',
       present: !!headers['x-content-type-options'],
       recommended: true,
-      description: 'MIME 타입 스니핑 방지'
+      description: 'Prevent MIME type sniffing'
     });
 
     // X-XSS-Protection
@@ -543,7 +543,7 @@ export class SSLAnalysisService {
       value: headers['x-xss-protection'] || '',
       present: !!headers['x-xss-protection'],
       recommended: true,
-      description: 'XSS 필터 활성화'
+      description: 'Enable XSS filter'
     });
 
     // Referrer-Policy
@@ -552,7 +552,7 @@ export class SSLAnalysisService {
       value: headers['referrer-policy'] || '',
       present: !!headers['referrer-policy'],
       recommended: true,
-      description: '리퍼러 정보 제어'
+      description: 'Control referrer information'
     });
 
     // Permissions-Policy
@@ -561,7 +561,7 @@ export class SSLAnalysisService {
       value: headers['permissions-policy'] || '',
       present: !!headers['permissions-policy'],
       recommended: false,
-      description: '브라우저 기능 접근 제어 (선택사항)'
+      description: 'Control browser feature access (optional)'
     });
 
     return securityHeaders;
@@ -595,29 +595,29 @@ export class SSLAnalysisService {
     const recommendations: string[] = [];
 
     if (missingHeaders.length === 0) {
-      recommendations.push('모든 권장 보안 헤더가 설정되어 있습니다!');
+      recommendations.push('All recommended security headers are configured!');
       return recommendations;
     }
 
     missingHeaders.forEach(headerName => {
       switch (headerName) {
         case 'Strict-Transport-Security':
-          recommendations.push('HSTS 헤더를 추가하여 HTTPS 강제 사용을 설정하세요');
+          recommendations.push('Add HSTS header to enforce HTTPS usage');
           break;
         case 'Content-Security-Policy':
-          recommendations.push('CSP 헤더를 추가하여 XSS 공격을 방지하세요');
+          recommendations.push('Add CSP header to prevent XSS attacks');
           break;
         case 'X-Frame-Options':
-          recommendations.push('X-Frame-Options 헤더를 추가하여 클릭재킹을 방지하세요');
+          recommendations.push('Add X-Frame-Options header to prevent clickjacking');
           break;
         case 'X-Content-Type-Options':
-          recommendations.push('X-Content-Type-Options: nosniff 헤더를 추가하세요');
+          recommendations.push('Add X-Content-Type-Options: nosniff header');
           break;
         case 'X-XSS-Protection':
-          recommendations.push('X-XSS-Protection 헤더를 추가하여 XSS 필터를 활성화하세요');
+          recommendations.push('Add X-XSS-Protection header to enable XSS filter');
           break;
         case 'Referrer-Policy':
-          recommendations.push('Referrer-Policy 헤더를 추가하여 리퍼러 정보를 제어하세요');
+          recommendations.push('Add Referrer-Policy header to control referrer information');
           break;
       }
     });
@@ -629,26 +629,26 @@ export class SSLAnalysisService {
    * Generate a human-readable report from the security headers analysis
    */
   static generateSecurityHeadersReport(result: SecurityHeadersResult): string {
-    let report = `🛡️ 보안 헤더 분석 보고서\n`;
-    report += `📅 생성일: ${new Date(result.timestamp).toLocaleString()}\n\n`;
+    let report = `🛡️ Security Headers Analysis Report\n`;
+    report += `📅 Generated: ${new Date(result.timestamp).toLocaleString()}\n\n`;
     
-    report += `📊 보안 점수: ${result.securityScore}/100\n\n`;
+    report += `📊 Security Score: ${result.securityScore}/100\n\n`;
     
     if (result.headers.length > 0) {
-      report += `📋 보안 헤더 상태:\n`;
+      report += `📋 Security Headers Status:\n`;
       result.headers.forEach(header => {
         const status = header.present ? '✅' : '❌';
-        const recommended = header.recommended ? ' (권장)' : ' (선택)';
+        const recommended = header.recommended ? ' (Recommended)' : ' (Optional)';
         report += `   ${status} ${header.name}${recommended}\n`;
         if (header.present && header.value) {
-          report += `      값: ${header.value}\n`;
+          report += `     Value: ${header.value}\n`;
         }
-        report += `      설명: ${header.description}\n\n`;
+        report += `     Description: ${header.description}\n\n`;
       });
     }
     
     if (result.missingHeaders.length > 0) {
-      report += `⚠️ 누락된 권장 헤더:\n`;
+      report += `⚠️ Missing Recommended Headers:\n`;
       result.missingHeaders.forEach(header => {
         report += `   • ${header}\n`;
       });
@@ -656,14 +656,14 @@ export class SSLAnalysisService {
     }
     
     if (result.recommendations.length > 0) {
-      report += `💡 권장사항:\n`;
+      report += `💡 Recommendations:\n`;
       result.recommendations.forEach(rec => {
         report += `   • ${rec}\n`;
       });
     }
     
     if (result.error) {
-      report += `\n❌ 오류: ${result.error}\n`;
+      report += `\n❌ Error: ${result.error}\n`;
     }
     
     return report;
@@ -686,11 +686,11 @@ export class SSLAnalysisService {
 
     // Step 1: Basic SSL and accessibility checks (SSL_Analyzer.md criteria)
     if (!accessibility.accessible) {
-      criticalIssues.push('웹블로그에 접근할 수 없습니다');
+      criticalIssues.push('Blog is not accessible');
       return {
         grade: 'F',
         score: 0,
-        description: '웹블로그에 접근할 수 없어 분석할 수 없습니다',
+        description: 'Cannot analyze - blog is not accessible',
         criticalIssues,
         highIssues,
         mediumIssues,
@@ -699,11 +699,11 @@ export class SSLAnalysisService {
     }
 
     if (!accessibility.hasSSL) {
-      criticalIssues.push('HTTPS 서비스가 없습니다');
+      criticalIssues.push('HTTPS service is not available');
       return {
         grade: 'F',
         score: 0,
-        description: 'HTTPS 서비스가 없어 심각한 보안 문제가 있습니다',
+        description: 'No HTTPS service - serious security issue',
         criticalIssues,
         highIssues,
         mediumIssues,
@@ -713,11 +713,11 @@ export class SSLAnalysisService {
 
     // Step 2: Certificate analysis (SSL_Analyzer.md criteria)
     if (certificate.certificateStatus === 'expired') {
-      criticalIssues.push('SSL 인증서가 만료되었습니다');
+      criticalIssues.push('SSL certificate has expired');
       return {
         grade: 'F',
         score: 0,
-        description: '만료된 SSL 인증서로 인해 심각한 보안 문제가 있습니다',
+        description: 'Expired SSL certificate - serious security issue',
         criticalIssues,
         highIssues,
         mediumIssues,
@@ -728,15 +728,15 @@ export class SSLAnalysisService {
     // Base score calculation according to SSL_Analyzer.md
     if (certificate.certificateStatus === 'self-signed') {
       baseScore = 30; // D등급
-      highIssues.push('자체 서명된 SSL 인증서를 사용하고 있습니다');
+      highIssues.push('Using self-signed SSL certificate');
     } else if (certificate.certificateStatus === 'valid') {
       baseScore = 80; // B등급
     } else if (certificate.certificateStatus === 'invalid') {
       baseScore = 30; // Treat invalid as self-signed for scoring
-      highIssues.push('유효하지 않은 SSL 인증서를 사용하고 있습니다');
+      highIssues.push('Using invalid SSL certificate');
     } else {
       baseScore = 0; // Error case
-      criticalIssues.push('SSL 인증서 분석에 실패했습니다');
+      criticalIssues.push('Failed to analyze SSL certificate');
     }
 
     // Step 3: Security headers analysis (SSL_Analyzer.md criteria)
@@ -760,27 +760,27 @@ export class SSLAnalysisService {
 
     // Issue classification based on SSL_Analyzer.md
     if (certificate.certificateInfo && certificate.certificateInfo.daysUntilExpiry < 30) {
-      mediumIssues.push(`SSL 인증서가 ${certificate.certificateInfo.daysUntilExpiry}일 후 만료됩니다`);
+      mediumIssues.push(`SSL certificate expires in ${certificate.certificateInfo.daysUntilExpiry} days`);
     }
 
     // Specific header issues classification (based on risk matrix - all Medium severity)
     if (missingHeaders.includes('Strict-Transport-Security')) {
-      mediumIssues.push('HSTS 헤더가 누락되어 HTTPS 강제 사용이 설정되지 않았습니다');
+      mediumIssues.push('HSTS header missing - HTTPS enforcement not configured');
     }
     if (missingHeaders.includes('Content-Security-Policy')) {
-      mediumIssues.push('CSP 헤더가 누락되어 XSS 공격에 취약합니다');
+      mediumIssues.push('CSP header missing - vulnerable to XSS attacks');
     }
     if (missingHeaders.includes('X-Frame-Options')) {
-      mediumIssues.push('X-Frame-Options 헤더가 누락되어 클릭재킹에 취약합니다');
+      mediumIssues.push('X-Frame-Options header missing - vulnerable to clickjacking');
     }
     if (missingHeaders.includes('X-Content-Type-Options')) {
-      mediumIssues.push('X-Content-Type-Options 헤더가 누락되어 MIME 타입 스니핑에 취약합니다');
+      mediumIssues.push('X-Content-Type-Options header missing - vulnerable to MIME type sniffing');
     }
     if (missingHeaders.includes('X-XSS-Protection')) {
-      mediumIssues.push('X-XSS-Protection 헤더가 누락되어 XSS 필터가 비활성화되어 있습니다');
+      mediumIssues.push('X-XSS-Protection header missing - XSS filter disabled');
     }
     if (missingHeaders.includes('Referrer-Policy')) {
-      mediumIssues.push('Referrer-Policy 헤더가 누락되어 리퍼러 정보가 노출될 수 있습니다');
+      mediumIssues.push('Referrer-Policy header missing - referrer information may be exposed');
     }
 
     // Final grade determination based on SSL_Analyzer.md scoring
@@ -789,22 +789,22 @@ export class SSLAnalysisService {
 
     if (baseScore >= 95) {
       grade = 'A+';
-      description = '완벽한 보안 설정입니다';
+      description = 'Perfect security configuration';
     } else if (baseScore >= 90) {
       grade = 'A';
-      description = '우수한 보안 수준입니다';
+      description = 'Excellent security level';
     } else if (baseScore >= 80) {
       grade = 'B';
-      description = '양호한 보안 수준입니다';
+      description = 'Good security level';
     } else if (baseScore >= 70) {
       grade = 'C';
-      description = '보통 수준의 보안입니다';
+      description = 'Average security level';
     } else if (baseScore >= 50) {
       grade = 'D';
-      description = '보안 개선이 필요합니다';
+      description = 'Security improvement needed';
     } else {
       grade = 'F';
-      description = '심각한 보안 문제가 있습니다';
+      description = 'Serious security issues';
     }
 
     return {
@@ -822,14 +822,14 @@ export class SSLAnalysisService {
    * Generate a comprehensive security grade report
    */
   static generateSecurityGradeReport(grade: SecurityGrade): string {
-    let report = `🏆 보안 등급 분석 보고서\n`;
-    report += `📅 생성일: ${new Date().toLocaleString()}\n\n`;
+    let report = `🏆 Security Grade Analysis Report\n`;
+    report += `📅 Generated: ${new Date().toLocaleString()}\n\n`;
     
-    report += `🎯 최종 보안 등급: ${grade.grade} (${grade.score}/100점)\n`;
-    report += `📝 평가: ${grade.description}\n\n`;
+    report += `🎯 Final Security Grade: ${grade.grade} (${grade.score}/100)\n`;
+    report += `📝 Assessment: ${grade.description}\n\n`;
     
     if (grade.criticalIssues.length > 0) {
-      report += `🚨 치명적 문제점:\n`;
+      report += `🚨 Critical Issues:\n`;
       grade.criticalIssues.forEach(issue => {
         report += `   • ${issue}\n`;
       });
@@ -837,7 +837,7 @@ export class SSLAnalysisService {
     }
     
     if (grade.highIssues.length > 0) {
-      report += `⚠️ 높은 우선순위 문제점:\n`;
+      report += `⚠️ High Priority Issues:\n`;
       grade.highIssues.forEach(issue => {
         report += `   • ${issue}\n`;
       });
@@ -845,7 +845,7 @@ export class SSLAnalysisService {
     }
     
     if (grade.mediumIssues.length > 0) {
-      report += `🔶 중간 우선순위 문제점:\n`;
+      report += `🔶 Medium Priority Issues:\n`;
       grade.mediumIssues.forEach(issue => {
         report += `   • ${issue}\n`;
       });
@@ -853,7 +853,7 @@ export class SSLAnalysisService {
     }
     
     if (grade.lowIssues.length > 0) {
-      report += `🔸 낮은 우선순위 문제점:\n`;
+      report += `🔸 Low Priority Issues:\n`;
       grade.lowIssues.forEach(issue => {
         report += `   • ${issue}\n`;
       });
@@ -861,7 +861,7 @@ export class SSLAnalysisService {
     }
     
     if (grade.criticalIssues.length === 0 && grade.highIssues.length === 0) {
-      report += `✅ 심각한 보안 문제가 발견되지 않았습니다!\n`;
+      report += `✅ No serious security issues found!\n`;
     }
     
     return report;
@@ -882,19 +882,19 @@ export class SSLAnalysisService {
     const businessImpact = this.calculateBusinessImpact(grade);
     
     // Generate combined report
-    let combinedReport = `🔍 완전한 SSL 보안 분석\n`;
-    combinedReport += `📅 생성일: ${new Date().toLocaleString()}\n`;
-    combinedReport += `🌐 웹블로그: ${url}\n\n`;
+    let combinedReport = `🔍 Complete SSL Security Analysis\n`;
+    combinedReport += `📅 Generated: ${new Date().toLocaleString()}\n`;
+    combinedReport += `🌐 Blog: ${url}\n\n`;
     
-    combinedReport += `=== 보안 등급 ===\n`;
+    combinedReport += `=== Security Grade ===\n`;
     combinedReport += this.generateSecurityGradeReport(grade);
-    combinedReport += `\n\n=== 비즈니스 영향 분석 ===\n`;
+    combinedReport += `\n\n=== Business Impact Analysis ===\n`;
     combinedReport += businessImpact.report;
-    combinedReport += `\n\n=== 웹블로그 접근성 ===\n`;
+    combinedReport += `\n\n=== Blog Accessibility ===\n`;
     combinedReport += this.generateAccessibilityReport(accessibility);
-    combinedReport += `\n\n=== SSL 인증서 분석 ===\n`;
+    combinedReport += `\n\n=== SSL Certificate Analysis ===\n`;
     combinedReport += this.generateCertificateReport(certificate);
-    combinedReport += `\n\n=== 보안 헤더 분석 ===\n`;
+    combinedReport += `\n\n=== Security Headers Analysis ===\n`;
     combinedReport += this.generateSecurityHeadersReport(securityHeaders);
     
     return {
@@ -930,43 +930,43 @@ export class SSLAnalysisService {
         securityLossRate = 0.50; // 50% 손실
         seoRankingLoss = 40; // 40% 하락
         customerTrustLoss = 90; // 90% 손상
-        brandImageImpact = '심각한 손상';
+        brandImageImpact = 'Severe Damage';
         break;
       case 'D':
-        securityLossRate = 0.30; // 30% 손실
-        seoRankingLoss = 30; // 30% 하락
-        customerTrustLoss = 70; // 70% 손상
-        brandImageImpact = '상당한 손상';
+        securityLossRate = 0.30; // 30% loss
+        seoRankingLoss = 30; // 30% drop
+        customerTrustLoss = 70; // 70% damage
+        brandImageImpact = 'Significant Damage';
         break;
       case 'C':
-        securityLossRate = 0.20; // 20% 손실
-        seoRankingLoss = 25; // 25% 하락
-        customerTrustLoss = 50; // 50% 손상
-        brandImageImpact = '중간 손상';
+        securityLossRate = 0.20; // 20% loss
+        seoRankingLoss = 25; // 25% drop
+        customerTrustLoss = 50; // 50% damage
+        brandImageImpact = 'Moderate Damage';
         break;
       case 'B':
-        securityLossRate = 0.10; // 10% 손실
-        seoRankingLoss = 15; // 15% 하락
-        customerTrustLoss = 30; // 30% 손상
-        brandImageImpact = '경미한 손상';
+        securityLossRate = 0.10; // 10% loss
+        seoRankingLoss = 15; // 15% drop
+        customerTrustLoss = 30; // 30% damage
+        brandImageImpact = 'Minor Damage';
         break;
       case 'A':
-        securityLossRate = 0.05; // 5% 손실
-        seoRankingLoss = 5; // 5% 하락
-        customerTrustLoss = 10; // 10% 손상
-        brandImageImpact = '최소 손상';
+        securityLossRate = 0.05; // 5% loss
+        seoRankingLoss = 5; // 5% drop
+        customerTrustLoss = 10; // 10% damage
+        brandImageImpact = 'Minimal Damage';
         break;
       case 'A+':
-        securityLossRate = 0.02; // 2% 손실
-        seoRankingLoss = 0; // 하락 없음
-        customerTrustLoss = 5; // 5% 손상
-        brandImageImpact = '거의 없음';
+        securityLossRate = 0.02; // 2% loss
+        seoRankingLoss = 0; // no drop
+        customerTrustLoss = 5; // 5% damage
+        brandImageImpact = 'Almost None';
         break;
       default:
         securityLossRate = 0.50;
         seoRankingLoss = 40;
         customerTrustLoss = 90;
-        brandImageImpact = '심각한 손상';
+        brandImageImpact = 'Severe Damage';
     }
 
     // 연간 손실액 계산
@@ -1024,32 +1024,32 @@ export class SSLAnalysisService {
    * Generate business impact report
    */
   static generateBusinessImpactReport(impact: BusinessImpactResult): string {
-    let report = `\n=== 비즈니스 영향 분석 ===\n`;
-    report += `월 방문자: ${impact.monthlyVisitors.toLocaleString()}명\n`;
-    report += `전환율: ${(impact.conversionRate * 100).toFixed(1)}%\n`;
-    report += `주문 전환율: ${(impact.orderConversionRate * 100).toFixed(1)}%\n`;
-    report += `평균 주문금액: ${impact.averageOrderValue.toLocaleString()}원\n`;
-    report += `보안 손실률: ${(impact.securityLossRate * 100).toFixed(1)}%\n\n`;
+    let report = `\n=== Business Impact Analysis ===\n`;
+    report += `Monthly Visitors: ${impact.monthlyVisitors.toLocaleString()}\n`;
+    report += `Conversion Rate: ${(impact.conversionRate * 100).toFixed(1)}%\n`;
+    report += `Order Conversion Rate: ${(impact.orderConversionRate * 100).toFixed(1)}%\n`;
+    report += `Average Order Value: $${impact.averageOrderValue.toLocaleString()}\n`;
+    report += `Security Loss Rate: ${(impact.securityLossRate * 100).toFixed(1)}%\n\n`;
 
-    report += `💰 손실 분석:\n`;
-    report += `연간 예상 손실: ${impact.annualLoss.toLocaleString()}원\n`;
-    report += `SEO 순위 하락: ${impact.seoRankingLoss}%\n`;
-    report += `고객 신뢰도 손상: ${impact.customerTrustLoss}%\n`;
-    report += `브랜드 이미지: ${impact.brandImageImpact}\n\n`;
+    report += `💰 Loss Analysis:\n`;
+    report += `Annual Estimated Loss: $${impact.annualLoss.toLocaleString()}\n`;
+    report += `SEO Ranking Drop: ${impact.seoRankingLoss}%\n`;
+    report += `Customer Trust Damage: ${impact.customerTrustLoss}%\n`;
+    report += `Brand Image: ${impact.brandImageImpact}\n\n`;
 
-    report += `💡 투자 분석:\n`;
-    report += `권장 투자비용: ${impact.investmentCost.toLocaleString()}원\n`;
-    report += `연간 순이익: ${impact.netBenefit.toLocaleString()}원\n`;
-    report += `투자 대비 효과: ${impact.roi.toFixed(1)}배 ROI\n\n`;
+    report += `💡 Investment Analysis:\n`;
+    report += `Recommended Investment Cost: $${impact.investmentCost.toLocaleString()}\n`;
+    report += `Annual Net Profit: $${impact.netBenefit.toLocaleString()}\n`;
+    report += `ROI: ${impact.roi.toFixed(1)}x\n\n`;
 
     if (impact.roi > 10) {
-      report += `✅ 결론: 즉시 투자 권장 (높은 ROI)\n`;
+      report += `✅ Conclusion: Immediate Investment Recommended (High ROI)\n`;
     } else if (impact.roi > 5) {
-      report += `✅ 결론: 투자 권장 (양호한 ROI)\n`;
+      report += `✅ Conclusion: Investment Recommended (Good ROI)\n`;
     } else if (impact.roi > 0) {
-      report += `⚠️ 결론: 신중한 검토 필요\n`;
+      report += `⚠️ Conclusion: Careful Review Needed\n`;
     } else {
-      report += `❌ 결론: 투자 효과 미미\n`;
+      report += `❌ Conclusion: Minimal Investment Effect\n`;
     }
 
     return report;

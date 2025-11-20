@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "description": "EGDesk - 태화트랜스 WordPress Management Desktop Application",
+  "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
     "wordpress",
@@ -23,7 +23,7 @@
   },
   "license": "MIT",
   "author": {
-    "name": "태화트랜스",
+    "name": "Taesung",
     "email": "contact@taesung.com",
     "url": "https://taesung.com"
   },

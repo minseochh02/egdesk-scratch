@@ -99,7 +99,10 @@ export default function AuthButton() {
   return (
     <div className="auth-button-container">
       <button
-        onClick={() => setShowMenu(!showMenu)}
+        onClick={() => {
+          console.log('AuthButton: Toggling menu, current state:', showMenu);
+          setShowMenu(!showMenu);
+        }}
         className="auth-button auth-user"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -111,7 +114,13 @@ export default function AuthButton() {
 
       {showMenu && (
         <>
-          <div className="menu-backdrop" onClick={() => setShowMenu(false)}></div>
+          <div 
+            className="menu-backdrop" 
+            onClick={() => {
+              console.log('AuthButton: Closing menu via backdrop');
+              setShowMenu(false);
+            }}
+          ></div>
           <div className="auth-menu">
             <div className="auth-menu-header">
               <p className="user-email-full">{user.email}</p>
@@ -134,8 +143,13 @@ export default function AuthButton() {
 
             <button
               onClick={async () => {
-                await signOut();
-                setShowMenu(false);
+                try {
+                  setShowMenu(false);
+                  await signOut();
+                } catch (error) {
+                  console.error('Sign out failed:', error);
+                  alert(`Sign out failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
               }}
               className="auth-menu-item auth-signout"
             >

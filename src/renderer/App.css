@@ -114,7 +114,7 @@ body {
   align-items: center;
   position: relative;
   z-index: 1000;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .navigation-bar.narrow {
@@ -242,13 +242,13 @@ body {
 }
 
 /* Refresh button specific styling */
-.toolbar-btn[title="새로고침"] {
+.toolbar-btn[title="Refresh"] {
   background-color: #f8f9fa;
   border-color: #28a745;
   color: #28a745;
 }
 
-.toolbar-btn[title="새로고침"]:hover {
+.toolbar-btn[title="Refresh"]:hover {
   background-color: #28a745;
   color: #ffffff;
   border-color: #28a745;

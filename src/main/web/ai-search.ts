@@ -293,8 +293,8 @@ export async function generateSnsPlan(
               channel: {
                 type: SchemaType.STRING,
                 description: availableBlogPlatforms && availableBlogPlatforms.length > 0
-                  ? `SNS channel. Available platforms ONLY: ${availableBlogPlatforms.join(', ')}, Instagram, YouTube. CRITICAL: Use exact platform names (e.g., "WordPress", "Naver Blog") - these will be matched to user's blog connections. Do NOT use generic "Blog". DO NOT use LinkedIn, Twitter, Facebook, TikTok, or any other platforms.`
-                  : 'SNS channel. Available platforms ONLY: Instagram, YouTube, WordPress, Naver Blog. DO NOT use LinkedIn, Twitter, Facebook, TikTok, or any other platforms.',
+                  ? `SNS channel. Available platforms ONLY: ${availableBlogPlatforms.join(', ')}, Instagram. CRITICAL: Use exact platform names (e.g., "WordPress", "Naver Blog") - these will be matched to user's blog connections. Do NOT use generic "Blog". DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, or any other platforms.`
+                  : 'SNS channel. Available platforms ONLY: Instagram, WordPress, Naver Blog. DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, or any other platforms.',
                 nullable: false,
               },
               title: {
@@ -399,9 +399,9 @@ Rules:
 - Emit only JSON (no prose).
 - Provide at least 3 plan entries across multiple channels when possible.
 - Keep strings concise (≤ 200 chars).
-- Available platforms ONLY: Instagram, YouTube, WordPress, Naver Blog.
+- Available platforms ONLY: Instagram, WordPress, Naver Blog.
 - For blog platforms, use exact names: "WordPress" or "Naver Blog" (not generic "Blog").
-- DO NOT use LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}
+- DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}
 
 Identity JSON:
 ${JSON.stringify(identityData, null, 2)}`;

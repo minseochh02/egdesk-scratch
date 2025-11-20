@@ -19,8 +19,8 @@ const EGDesktopControl: React.FC = () => {
           <FontAwesomeIcon icon={faDesktop} />
         </div>
         <div className="egdesktop-header-content">
-          <h2 className="egdesktop-control-title">EGDesktop 제어판</h2>
-          <p className="egdesktop-control-subtitle">데스크톱 환경 설정 및 관리</p>
+          <h2 className="egdesktop-control-title">EGDesktop Control Panel</h2>
+          <p className="egdesktop-control-subtitle">Desktop environment settings and management</p>
         </div>
       </div>
 
@@ -32,11 +32,11 @@ const EGDesktopControl: React.FC = () => {
               <FontAwesomeIcon icon={faPowerOff} />
             </div>
             <div className="egdesktop-section-info">
-              <h3 className="egdesktop-section-title">데스크톱 활성화</h3>
+              <h3 className="egdesktop-section-title">Desktop Activation</h3>
               <p className="egdesktop-section-description">
                 {isEnabled
-                  ? 'EGDesktop이 현재 실행 중입니다'
-                  : 'EGDesktop이 현재 비활성화되어 있습니다'}
+                  ? 'EGDesktop is currently running'
+                  : 'EGDesktop is currently disabled'}
               </p>
             </div>
           </div>
@@ -59,16 +59,16 @@ const EGDesktopControl: React.FC = () => {
               <FontAwesomeIcon icon={faCog} />
             </div>
             <div className="egdesktop-section-info">
-              <h3 className="egdesktop-section-title">추가 설정</h3>
+              <h3 className="egdesktop-section-title">Additional Settings</h3>
             </div>
           </div>
 
           {/* Auto Start Toggle */}
           <div className="egdesktop-setting-item">
             <div className="egdesktop-setting-info">
-              <h4 className="egdesktop-setting-title">자동 시작</h4>
+              <h4 className="egdesktop-setting-title">Auto Start</h4>
               <p className="egdesktop-setting-description">
-                시스템 시작 시 EGDesktop 자동 실행
+                Auto-start EGDesktop on system boot
               </p>
             </div>
             <label className="egdesktop-toggle-switch small">
@@ -85,9 +85,9 @@ const EGDesktopControl: React.FC = () => {
           {/* Notifications Toggle */}
           <div className="egdesktop-setting-item">
             <div className="egdesktop-setting-info">
-              <h4 className="egdesktop-setting-title">알림</h4>
+              <h4 className="egdesktop-setting-title">Notifications</h4>
               <p className="egdesktop-setting-description">
-                데스크톱 이벤트 및 업데이트 알림 받기
+                Receive notifications for desktop events and updates
               </p>
             </div>
             <label className="egdesktop-toggle-switch small">
@@ -105,13 +105,13 @@ const EGDesktopControl: React.FC = () => {
         {/* Status Information */}
         <div className="egdesktop-status-info">
           <div className="egdesktop-status-item">
-            <span className="egdesktop-status-label">상태:</span>
+            <span className="egdesktop-status-label">Status:</span>
             <span className={`egdesktop-status-value ${isEnabled ? 'active' : 'inactive'}`}>
-              {isEnabled ? '활성' : '비활성'}
+              {isEnabled ? 'Active' : 'Inactive'}
             </span>
           </div>
           <div className="egdesktop-status-item">
-            <span className="egdesktop-status-label">버전:</span>
+            <span className="egdesktop-status-label">Version:</span>
             <span className="egdesktop-status-value">1.0.0</span>
           </div>
         </div>

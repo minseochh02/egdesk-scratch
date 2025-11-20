@@ -632,7 +632,6 @@ const createWindow = async () => {
                 
                 // Use playwright-lighthouse for proper integration
                 console.log('🔍 [DEBUG] Using playwright-lighthouse...');
-                
                 const { playAudit } = require('playwright-lighthouse');
                 
                 const reportName = `lighthouse-report-${Date.now()}`;
