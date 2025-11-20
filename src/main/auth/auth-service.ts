@@ -434,7 +434,8 @@ export class AuthService {
           }
 
           // Focus the window
-          if (mainWindow) {
+          const mainWindow = getMainWindow();
+          if (mainWindow && !mainWindow.isDestroyed()) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.focus();
           }

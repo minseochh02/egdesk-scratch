@@ -1039,9 +1039,11 @@ export class ScheduledPostsExecutor {
       // Step 6: Upload video to YouTube
       console.log(`\n📤 Step 6: Uploading video to YouTube...`);
       
-      // Check if video path is provided
+      // If video path is not provided, we'll auto-generate a YouTube Short
       if (!post.videoPath) {
-        throw new Error('Video path is required for YouTube scheduled posts');
+        console.log('📹 No video path provided - will auto-generate YouTube Short');
+      } else {
+        console.log(`📹 Using provided video path: ${post.videoPath}`);
       }
 
       // Get authenticated YouTube page using Chrome profile (recommended) or credentials
@@ -1065,13 +1067,18 @@ export class ScheduledPostsExecutor {
 
       try {
         // Create YouTube post
+        // If videoPath is not provided, generate a short video automatically using company info and prompts
+        console.log(`📹 ${post.videoPath ? 'Using provided video' : 'Auto-generating YouTube Short from company info and prompts...'}`);
+        
         await createYouTubePost(authContext.page, {
-          videoPath: post.videoPath,
+          videoPath: post.videoPath, // Optional - will generate if not provided
           title: generatedContent.title,
           description: generatedContent.description,
           tags: generatedContent.tags,
           visibility: (post as any).visibility || 'public',
           waitAfterPublish: 30000,
+          generateVideo: !post.videoPath, // Generate video if path not provided
+          structuredPrompt: structuredPrompt, // Pass structuredPrompt with company info for video generation
         });
 
         console.log(`✅ YouTube video uploaded successfully`);

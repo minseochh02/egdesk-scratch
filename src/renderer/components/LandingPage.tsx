@@ -25,7 +25,7 @@ const LandingPage: React.FC = () => {
         {/* Main Content */}
         <div className="egdesk-landing-content">
           <div className="egdesk-landing-welcome-section">
-            <h2 className="egdesk-landing-welcome-title">EGDesk에 오신 것을 환영합니다!</h2>
+            <h2 className="egdesk-landing-welcome-title">Welcome to EGDesk!</h2>
           </div>
 
           {/* Action Cards */}
@@ -37,15 +37,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon egdesk-landing-identity-icon">
                 <FontAwesomeIcon icon={faFingerprint} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG Business Identity</h3>
+              <h3 className="egdesk-landing-card-title">Business Identity</h3>
               <p className="egdesk-landing-card-description">
-                브랜드 자산과 웹사이트를 연결하여 AI가 즉시 브랜드 아이덴티티와 소셜 전략을 설계하도록
-                해보세요.
+                Connect your brand assets and website to let AI instantly design your brand identity and social strategy.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">브랜드 허브</span>
-                <span className="egdesk-landing-feature-tag">AI 아이덴티티</span>
-                <span className="egdesk-landing-feature-tag">소셜 로드맵</span>
+                <span className="egdesk-landing-feature-tag">Brand Hub</span>
+                <span className="egdesk-landing-feature-tag">AI Identity</span>
+                <span className="egdesk-landing-feature-tag">Social Roadmap</span>
               </div>
             </Link>
 
@@ -53,14 +52,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faDesktop} />
               </div>
-              <h3 className="egdesk-landing-card-title">EGDesktop</h3>
+              <h3 className="egdesk-landing-card-title">Desktop</h3>
               <p className="egdesk-landing-card-description">
-                통합 데스크톱 환경에서 모든 EGDesk 기능을 한눈에 관리하고 제어하세요.
+                Manage and control all EGDesk features at a glance in an integrated desktop environment.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">통합 관리</span>
-                <span className="egdesk-landing-feature-tag">대시보드</span>
-                <span className="egdesk-landing-feature-tag">중앙 제어</span>
+                <span className="egdesk-landing-feature-tag">Unified Management</span>
+                <span className="egdesk-landing-feature-tag">Dashboard</span>
+                <span className="egdesk-landing-feature-tag">Central Control</span>
               </div>
             </Link>
 
@@ -68,14 +67,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon egdesk-landing-chat-icon">
                 <FontAwesomeIcon icon={faComments} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG Chatting</h3>
+              <h3 className="egdesk-landing-card-title">Chatting</h3>
               <p className="egdesk-landing-card-description">
-                팀과 실시간으로 협업하고 AI 어시스턴트와 대화하며 프로젝트를 빠르게 진행하세요.
+                Collaborate with your team in real-time, chat with AI assistants, and move projects forward quickly.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">실시간 협업</span>
-                <span className="egdesk-landing-feature-tag">AI 어시스트</span>
-                <span className="egdesk-landing-feature-tag">멀티 탭</span>
+                <span className="egdesk-landing-feature-tag">Real-time Collaboration</span>
+                <span className="egdesk-landing-feature-tag">AI Assistant</span>
+                <span className="egdesk-landing-feature-tag">Multi-tab</span>
               </div>
             </Link>
 
@@ -83,14 +82,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faCog} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG Coding</h3>
+              <h3 className="egdesk-landing-card-title">Coding</h3>
               <p className="egdesk-landing-card-description">
-                AI 도움으로 홈페이지를 효율적으로 관리하고 수정하세요. 콘텐츠 생성과 편집을 자동화하세요.
+                Efficiently manage and edit your homepage with AI assistance. Automate content creation and editing.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">AI 관리</span>
-                <span className="egdesk-landing-feature-tag">자동 편집</span>
-                <span className="egdesk-landing-feature-tag">콘텐츠 생성</span>
+                <span className="egdesk-landing-feature-tag">AI Management</span>
+                <span className="egdesk-landing-feature-tag">Auto Edit</span>
+                <span className="egdesk-landing-feature-tag">Content Generation</span>
               </div>
             </Link>
 
@@ -98,14 +97,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faCalendarAlt} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG Blogging</h3>
+              <h3 className="egdesk-landing-card-title">Blogging</h3>
               <p className="egdesk-landing-card-description">
-                AI 도움으로 블로그 콘텐츠를 계획하고 일정을 잡으세요. 자동 포스팅과 콘텐츠 관리를 설정하세요.
+                Plan blog content and schedule posts with AI assistance. Set up automated posting and content management.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">AI 글쓰기</span>
-                <span className="egdesk-landing-feature-tag">자동 일정</span>
-                <span className="egdesk-landing-feature-tag">콘텐츠 계획</span>
+                <span className="egdesk-landing-feature-tag">AI Writing</span>
+                <span className="egdesk-landing-feature-tag">Auto Schedule</span>
+                <span className="egdesk-landing-feature-tag">Content Planning</span>
               </div>
             </Link>
 
@@ -113,14 +112,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faShare} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG Social Media</h3>
+              <h3 className="egdesk-landing-card-title">Social Media</h3>
               <p className="egdesk-landing-card-description">
-                소셜 미디어 계정을 연결하고 AI로 콘텐츠를 생성하여 자동으로 게시하세요. 인스타그램, 트위터 등을 관리하세요.
+                Connect social media accounts and generate content with AI to automatically post. Manage Instagram, Twitter, and more.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">소셜 자동화</span>
-                <span className="egdesk-landing-feature-tag">AI 콘텐츠</span>
-                <span className="egdesk-landing-feature-tag">일정 관리</span>
+                <span className="egdesk-landing-feature-tag">Social Automation</span>
+                <span className="egdesk-landing-feature-tag">AI Content</span>
+                <span className="egdesk-landing-feature-tag">Schedule Management</span>
               </div>
             </Link>
 
@@ -128,14 +127,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faShieldAlt} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG SSL-Checker</h3>
+              <h3 className="egdesk-landing-card-title">SSL-Checker</h3>
               <p className="egdesk-landing-card-description">
-                웹블로그의 SSL 인증서와 보안 상태를 분석하여 안전한 블로그 운영을 보장하세요.
+                Analyze SSL certificates and security status of your blog to ensure safe blog operation.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">SSL 분석</span>
-                <span className="egdesk-landing-feature-tag">보안 검사</span>
-                <span className="egdesk-landing-feature-tag">취약점 탐지</span>
+                <span className="egdesk-landing-feature-tag">SSL Analysis</span>
+                <span className="egdesk-landing-feature-tag">Security Check</span>
+                <span className="egdesk-landing-feature-tag">Vulnerability Detection</span>
               </div>
             </Link>
 
@@ -143,14 +142,14 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faGlobe} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG SEO-Analyzer</h3>
+              <h3 className="egdesk-landing-card-title">SEO-Analyzer</h3>
               <p className="egdesk-landing-card-description">
-                웹사이트의 SEO 성능을 분석하고 검색 엔진 최적화를 위한 개선 방안을 제시하세요.
+                Analyze your website's SEO performance and provide improvement suggestions for search engine optimization.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">SEO 분석</span>
-                <span className="egdesk-landing-feature-tag">키워드 최적화</span>
-                <span className="egdesk-landing-feature-tag">성능 개선</span>
+                <span className="egdesk-landing-feature-tag">SEO Analysis</span>
+                <span className="egdesk-landing-feature-tag">Keyword Optimization</span>
+                <span className="egdesk-landing-feature-tag">Performance Improvement</span>
               </div>
             </Link>
 
@@ -158,25 +157,25 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faServer} />
               </div>
-              <h3 className="egdesk-landing-card-title">EG MCP Server</h3>
+              <h3 className="egdesk-landing-card-title">MCP Server</h3>
               <p className="egdesk-landing-card-description">
-                MCP(Model Context Protocol) 서버를 등록하고 관리하여 AI 모델과의 연결을 설정하세요.
+                Register and manage MCP (Model Context Protocol) servers to establish connections with AI models.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">서버 등록</span>
-                <span className="egdesk-landing-feature-tag">AI 연결</span>
-                <span className="egdesk-landing-feature-tag">프로토콜 관리</span>
+                <span className="egdesk-landing-feature-tag">Server Registration</span>
+                <span className="egdesk-landing-feature-tag">AI Connection</span>
+                <span className="egdesk-landing-feature-tag">Protocol Management</span>
               </div>
             </Link>
           </div>
 
           {/* Additional Options */}
           <div className="egdesk-landing-additional-options">
-            <h3 className="egdesk-landing-options-title">도구 모음</h3>
+            <h3 className="egdesk-landing-options-title">Tools</h3>
             <div className="egdesk-landing-options-grid">
               <Link to="/ai-keys" className="egdesk-landing-option-item">
                 <FontAwesomeIcon icon={faRocket} />
-                <span>API 키 관리</span>
+                <span>API Key Management</span>
               </Link>
             </div>
           </div>

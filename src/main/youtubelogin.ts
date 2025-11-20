@@ -6,52 +6,6 @@ import { app } from "electron";
 
 import { chromium, Browser, BrowserContext, Page, LaunchOptions } from "playwright";
 
-// Optimize Playwright for bundled Electron apps
-// In bundled apps, Playwright can be slow due to:
-// 1. ASAR archive access when loading browser binaries
-// 2. Browser binary discovery taking longer
-// 3. Dynamic require() calls being slower
-// Solution: Set environment variables to help Playwright find browsers faster
-if (app && app.isPackaged) {
-  // In production/bundled app, try to use system Chrome if available
-  // This avoids Playwright needing to download/manage its own browsers
-  const possibleChromePaths = [
-    // macOS
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    // Windows
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    // Linux
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-  ];
-  
-  // Check if system Chrome exists and set as default
-  for (const chromePath of possibleChromePaths) {
-    try {
-      if (fs.existsSync(chromePath)) {
-        process.env.CHROME_EXECUTABLE_PATH = chromePath;
-        console.log('[youtubelogin] Using system Chrome for better performance:', chromePath);
-        break;
-      }
-    } catch (e) {
-      // Continue checking
-    }
-  }
-  
-  // Set Playwright to use faster browser discovery
-  // This reduces the time Playwright spends looking for browsers
-  if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    // Use a local cache directory that's not in ASAR
-    const cacheDir = app.getPath('userData');
-    const playwrightCache = path.join(cacheDir, '.playwright');
-    process.env.PLAYWRIGHT_BROWSERS_PATH = playwrightCache;
-    console.log('[youtubelogin] Set Playwright browsers cache path:', playwrightCache);
-  }
-}
-
 import { createYouTubePost, YouTubePostOptions, YouTubeContentPlan } from "./youtube-post";
 
 type CloseFn = () => Promise<void>;

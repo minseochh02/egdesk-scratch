@@ -4,15 +4,23 @@ import {
   GeneratedYouTubeContent,
   YouTubeContentPlan,
 } from "./youtube/generate-youtube-content";
+import {
+  generateYouTubeShortVideo,
+  YouTubeVideoGenerationOptions,
+} from "./youtube/generate-youtube-video";
 
 export interface YouTubePostOptions {
-  videoPath: string;
+  videoPath?: string; // Optional - will generate video if not provided and structuredPrompt is available
   title?: string;
   description?: string;
   tags?: string[];
   structuredPrompt?: YouTubeContentPlan;
   visibility?: 'public' | 'unlisted' | 'private';
   waitAfterPublish?: number; // milliseconds to wait after clicking Publish
+  /** Generate a short video if videoPath is not provided */
+  generateVideo?: boolean;
+  /** Video generation options */
+  videoGenerationOptions?: YouTubeVideoGenerationOptions;
 }
 
 export type { YouTubeContentPlan, GeneratedYouTubeContent } from "./youtube/generate-youtube-content";
@@ -25,8 +33,50 @@ export async function createYouTubePost(
   page: Page,
   options: YouTubePostOptions
 ): Promise<GeneratedYouTubeContent | undefined> {
-  const { videoPath, visibility = 'public', waitAfterPublish = 30000 } = options;
+  const { visibility = 'public', waitAfterPublish = 30000, generateVideo = false } = options;
   const { title, description, tags, generated } = await resolveVideoMetadata(options);
+
+  // Generate video if videoPath is not provided and generateVideo is true
+  let videoPath = options.videoPath;
+  if (!videoPath && (generateVideo || options.structuredPrompt)) {
+    console.log('[createYouTubePost] Generating short video...');
+    try {
+      // Convert script to string if it's an object
+      let scriptText: string;
+      if (generated?.script) {
+        if (typeof generated.script === 'string') {
+          scriptText = generated.script;
+        } else {
+          // If script is an object, convert to string
+          const scriptObj = generated.script as any;
+          scriptText = [
+            scriptObj.hook,
+            scriptObj.intro,
+            Array.isArray(scriptObj.body) ? scriptObj.body.join(' ') : scriptObj.body,
+            scriptObj.outro,
+            scriptObj.cta,
+          ].filter(Boolean).join(' ');
+        }
+      } else {
+        scriptText = description || title || 'YouTube Short';
+      }
+      
+      videoPath = await generateYouTubeShortVideo({
+        script: scriptText,
+        title: title || 'New Video',
+        duration: 7, // 7 seconds for short-style video
+        ...options.videoGenerationOptions,
+      });
+      console.log('[createYouTubePost] Video generated:', videoPath);
+    } catch (error) {
+      console.error('[createYouTubePost] Failed to generate video:', error);
+      throw new Error(`Failed to generate video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  if (!videoPath) {
+    throw new Error('videoPath is required. Either provide videoPath or enable generateVideo with structuredPrompt.');
+  }
 
   console.log('[createYouTubePost] Starting YouTube video upload...');
   console.log('[createYouTubePost] Video path:', videoPath);
@@ -399,8 +449,76 @@ export async function createYouTubePost(
   // Upload the video file
   console.log('[createYouTubePost] Uploading video file...');
   try {
+    // Wait a moment before setting file to ensure UI is ready
+    await page.waitForTimeout(1000);
+    
+    // Set the file input
     await fileInput.setInputFiles(videoPath);
     console.log('[createYouTubePost] Video file selected');
+    
+    // Wait for upload to actually start (YouTube shows upload progress)
+    // This prevents the modal from getting stuck in "greyed out" state
+    console.log('[createYouTubePost] Waiting for upload to start...');
+    let uploadStarted = false;
+    const uploadStartTimeout = 30000; // 30 seconds to start upload
+    const uploadStartTime = Date.now();
+    
+    while (Date.now() - uploadStartTime < uploadStartTimeout && !uploadStarted) {
+      try {
+        // Check for upload progress indicators (means upload has started)
+        const progressIndicators = [
+          'span.progress-label',
+          '[class*="progress"]',
+          'text=Uploading',
+          'text=업로드 중', // Korean: Uploading
+          'text=Upload',
+          'text=업로드', // Korean: Upload
+        ];
+        
+        for (const selector of progressIndicators) {
+          const element = page.locator(selector).first();
+          if (await element.count() > 0) {
+            const text = await element.textContent().catch(() => '');
+            if (text && (text.toLowerCase().includes('upload') || text.includes('업로드'))) {
+              uploadStarted = true;
+              console.log('[createYouTubePost] Upload started - progress indicator found:', text);
+              break;
+            }
+          }
+        }
+        
+        // Also check if modal is no longer greyed out (check for enabled inputs)
+        const titleInput = page.locator('ytcp-video-title input, ytcp-video-title textarea, ytcp-video-title div[contenteditable]').first();
+        if (await titleInput.count() > 0) {
+          const isEnabled = await titleInput.isEnabled().catch(() => false);
+          if (isEnabled) {
+            uploadStarted = true;
+            console.log('[createYouTubePost] Upload started - form fields are enabled');
+            break;
+          }
+        }
+        
+        // Check if "링크 생성 중..." (Link generating...) appears (this means upload is processing)
+        const linkGenerating = page.locator('text=링크 생성 중, text=Link generating, text=Generating link').first();
+        if (await linkGenerating.count() > 0) {
+          uploadStarted = true;
+          console.log('[createYouTubePost] Upload started - link generation detected');
+          break;
+        }
+        
+      } catch (e) {
+        // Continue checking
+      }
+      
+      if (!uploadStarted) {
+        await page.waitForTimeout(2000); // Check every 2 seconds
+      }
+    }
+    
+    if (!uploadStarted) {
+      console.warn('[createYouTubePost] Upload may not have started, but continuing to wait for completion...');
+    }
+    
   } catch (error) {
     console.error('[createYouTubePost] Failed to set video file:', error);
     throw new Error(`Failed to upload video file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -460,6 +578,51 @@ export async function createYouTubePost(
           }
         }
 
+        // Check if modal is stuck in "링크 생성 중..." (Link generating...) state
+        // If stuck for too long, it might indicate an issue
+        const linkGenerating = page.locator('text=링크 생성 중, text=Link generating, text=Generating link').first();
+        const isLinkGenerating = await linkGenerating.count() > 0;
+        
+        if (isLinkGenerating) {
+          const elapsedTime = Date.now() - startTime;
+          // If stuck in "link generating" for more than 2 minutes, might be an issue
+          if (elapsedTime > 120000) {
+            console.warn('[createYouTubePost] Stuck in "link generating" state for over 2 minutes, but continuing to wait...');
+          }
+        }
+
+        // Check for YouTube video URL link - this appears when upload is complete and video is processed
+        // This is the most reliable indicator that the video is ready for form filling
+        const videoUrlLink = page.locator('a.style-scope.ytcp-video-info, a[href*="youtu.be"], a[href*="youtube.com/watch"]').first();
+        if (await videoUrlLink.count() > 0) {
+          const isVisible = await videoUrlLink.isVisible({ timeout: 2000 }).catch(() => false);
+          if (isVisible) {
+            // Verify it contains a YouTube URL
+            try {
+              const href = await videoUrlLink.getAttribute('href').catch(() => '');
+              if (href && (href.includes('youtu.be') || href.includes('youtube.com/watch'))) {
+                uploadComplete = true;
+                console.log('[createYouTubePost] YouTube video URL link appeared - upload and processing complete:', href);
+                break;
+              }
+            } catch (e) {
+              // Continue checking
+            }
+          }
+        }
+        
+        // Also check if "링크 생성 중..." has disappeared and been replaced with actual link
+        // This means link generation completed
+        if (isLinkGenerating) {
+          // Check if link generating text is gone and URL link appeared
+          const linkGeneratingVisible = await linkGenerating.isVisible({ timeout: 1000 }).catch(() => false);
+          if (!linkGeneratingVisible && await videoUrlLink.count() > 0) {
+            uploadComplete = true;
+            console.log('[createYouTubePost] Link generation completed - URL link appeared');
+            break;
+          }
+        }
+
         // Also check if the title input field is available (indicates upload is complete)
         const titleInputCheck = page.locator('xpath=/html/body/ytcp-uploads-dialog/tp-yt-paper-dialog/div/ytcp-animatable[1]/ytcp-ve/ytcp-video-metadata-editor/div/ytcp-video-metadata-editor-basics/div[1]/ytcp-video-title/div/ytcp-social-suggestions-textbox/ytcp-form-input-container/div[1]/div[2]/div/ytcp-social-suggestion-input/div').first();
         if (await titleInputCheck.count() > 0) {
@@ -503,7 +666,25 @@ export async function createYouTubePost(
   }
 
   // Wait for the details form to appear (title, description, etc.)
-  // YouTube shows this after the video is uploaded
+  // YouTube shows this after the video is uploaded and processed
+  // First, wait for the YouTube video URL link to appear (most reliable indicator)
+  console.log('[createYouTubePost] Waiting for YouTube video URL link (indicates upload complete)...');
+  
+  try {
+    const videoUrlLink = page.locator('a.style-scope.ytcp-video-info, a[href*="youtu.be"], a[href*="youtube.com/watch"]').first();
+    await videoUrlLink.waitFor({ state: 'visible', timeout: 600000 }); // 10 minutes max for upload
+    
+    // Verify it contains a YouTube URL
+    const href = await videoUrlLink.getAttribute('href').catch(() => '');
+    if (href && (href.includes('youtu.be') || href.includes('youtube.com/watch'))) {
+      console.log('[createYouTubePost] ✅ YouTube video URL detected - upload complete:', href);
+    } else {
+      console.log('[createYouTubePost] Video URL link found but href is invalid, continuing anyway...');
+    }
+  } catch (error) {
+    console.warn('[createYouTubePost] Video URL link not found within timeout, but continuing with form filling...', error);
+  }
+
   console.log('[createYouTubePost] Waiting for video details form...');
   
   const titleInputSelectors = [
@@ -517,7 +698,7 @@ export async function createYouTubePost(
   ];
 
   let titleInput = null;
-  let maxWaitTime = 120000; // 2 minutes for video to start processing
+  let maxWaitTime = 120000; // 2 minutes for title input to appear (after upload is complete)
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitTime && !titleInput) {

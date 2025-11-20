@@ -207,7 +207,7 @@ const EGBusinessIdentity: React.FC = () => {
     } catch (err) {
       console.error('[EGBusinessIdentity] SNS plan generation failed:', err);
       setPlanError(
-        err instanceof Error ? err.message || 'SNS 계획 생성에 실패했습니다.' : 'SNS 계획 생성에 실패했습니다.',
+        err instanceof Error ? err.message || 'Failed to generate SNS plan.' : 'Failed to generate SNS plan.',
       );
       return null;
     }
@@ -273,7 +273,7 @@ const EGBusinessIdentity: React.FC = () => {
   const handleGenerate = useCallback(async () => {
     const trimmed = url.trim();
     if (!trimmed) {
-      setError('먼저 웹사이트 URL을 입력해주세요.');
+      setError('Please enter a website URL first.');
       return;
     }
 
@@ -290,7 +290,7 @@ const EGBusinessIdentity: React.FC = () => {
       console.log('[EGBusinessIdentity] Starting multi-page crawl for business identity...');
       const crawlResult = await window.electron.web.crawlMultiplePages(parsed.toString(), { maxPages: 5 });
       if (!crawlResult?.success || !crawlResult.combinedContent) {
-        setError(crawlResult?.error || '웹사이트를 크롤링하는 데 실패했습니다.');
+        setError(crawlResult?.error || 'Failed to crawl the website.');
         setLoading(false);
         return;
       }
@@ -329,7 +329,7 @@ const EGBusinessIdentity: React.FC = () => {
       // Pass the root URL to ensure source.url uses the homepage, not subpages
       const aiResult = await window.electron.web.generateBusinessIdentity(websiteText, parsed.toString());
       if (!aiResult.success || !aiResult.content) {
-        setError(aiResult.error || 'AI 응답 생성에 실패했습니다.');
+        setError(aiResult.error || 'Failed to generate AI response.');
         setLoading(false);
         return;
       }
@@ -346,7 +346,7 @@ const EGBusinessIdentity: React.FC = () => {
         }
       } catch (parseError) {
         console.error('Failed to parse AI response:', parseError, aiResultContent);
-        setError('AI 응답을 파싱하는 데 실패했습니다. 다시 시도해주세요.');
+        setError('Failed to parse AI response. Please try again.');
         return;
       }
 
@@ -397,8 +397,8 @@ const EGBusinessIdentity: React.FC = () => {
         console.error('[EGBusinessIdentity] Failed to persist snapshot:', storageError);
         setError(
           storageError instanceof Error
-            ? storageError.message || '비즈니스 아이덴티티를 저장하지 못했습니다.'
-            : '비즈니스 아이덴티티를 저장하지 못했습니다.',
+            ? storageError.message || 'Failed to save business identity.'
+            : 'Failed to save business identity.',
         );
         return;
       }
@@ -508,12 +508,12 @@ const EGBusinessIdentity: React.FC = () => {
       });
     } catch (err) {
       if (err instanceof TypeError) {
-        setError('유효한 웹사이트 주소를 입력해주세요 (예: https://example.com).');
+        setError('Please enter a valid website address (e.g., https://example.com).');
       } else {
         setError(
           err instanceof Error
-            ? err.message || '웹사이트를 불러오는 중 문제가 발생했습니다.'
-            : '웹사이트를 불러오는 중 문제가 발생했습니다.',
+            ? err.message || 'An error occurred while loading the website.'
+            : 'An error occurred while loading the website.',
         );
       }
     } finally {

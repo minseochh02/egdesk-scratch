@@ -66,7 +66,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         overflowY: 'auto'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ color: '#fff', margin: 0 }}>지원 및 도움말</h2>
+          <h2 style={{ color: '#fff', margin: 0 }}>Support & Help</h2>
           <button
             onClick={onClose}
             style={{
@@ -85,17 +85,17 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Contact Information */}
           <div>
-            <h3 style={{ color: '#4CAF50', marginBottom: '10px', fontSize: '18px' }}>📧 연락처</h3>
+            <h3 style={{ color: '#4CAF50', marginBottom: '10px', fontSize: '18px' }}>📧 Contact</h3>
             <div style={{ color: '#ccc', lineHeight: '1.6' }}>
-              <p style={{ margin: '8px 0' }}>이메일: support@egdesk.com</p>
-              <p style={{ margin: '8px 0' }}>전화: 02-1234-5678</p>
-              <p style={{ margin: '8px 0' }}>운영 시간: 평일 09:00 - 18:00</p>
+              <p style={{ margin: '8px 0' }}>Email: support@egdesk.com</p>
+              <p style={{ margin: '8px 0' }}>Phone: 02-1234-5678</p>
+              <p style={{ margin: '8px 0' }}>Hours: Weekdays 09:00 - 18:00</p>
             </div>
           </div>
 
           {/* Documentation */}
           <div>
-            <h3 style={{ color: '#2196F3', marginBottom: '10px', fontSize: '18px' }}>📚 문서 및 가이드</h3>
+            <h3 style={{ color: '#2196F3', marginBottom: '10px', fontSize: '18px' }}>📚 Documentation & Guides</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 onClick={() => window.open('https://docs.egdesk.com', '_blank')}
@@ -112,7 +112,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
               >
-                📖 사용자 가이드
+                📖 User Guide
               </button>
               <button
                 onClick={() => window.open('https://docs.egdesk.com/api', '_blank')}
@@ -129,7 +129,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
               >
-                🔌 API 문서
+                🔌 API Documentation
               </button>
               <button
                 onClick={() => window.open('https://docs.egdesk.com/faq', '_blank')}
@@ -146,14 +146,14 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
               >
-                ❓ 자주 묻는 질문
+                ❓ Frequently Asked Questions
               </button>
             </div>
           </div>
 
           {/* Community */}
           <div>
-            <h3 style={{ color: '#FF9800', marginBottom: '10px', fontSize: '18px' }}>💬 커뮤니티</h3>
+            <h3 style={{ color: '#FF9800', marginBottom: '10px', fontSize: '18px' }}>💬 Community</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 onClick={() => window.open('https://community.egdesk.com', '_blank')}
@@ -170,7 +170,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
               >
-                🌐 커뮤니티 포럼
+                🌐 Community Forum
               </button>
               <button
                 onClick={() => window.open('https://github.com/egdesk', '_blank')}
@@ -187,14 +187,14 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
               >
-                💻 GitHub 이슈
+                💻 GitHub Issues
               </button>
             </div>
           </div>
 
           {/* Version Info */}
           <div>
-            <h3 style={{ color: '#9C27B0', marginBottom: '10px', fontSize: '18px' }}>ℹ️ 버전 정보</h3>
+            <h3 style={{ color: '#9C27B0', marginBottom: '10px', fontSize: '18px' }}>ℹ️ Version Info</h3>
             <div style={{ 
               backgroundColor: '#2a2a2a', 
               padding: '12px', 
@@ -203,8 +203,8 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk 버전: 1.0.0</p>
-              <p style={{ margin: '4px 0' }}>빌드: 2025.10.30</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.0</p>
+              <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
         </div>
@@ -1565,14 +1565,14 @@ function NavigationBar({
             className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faHome} />
-            {!isNarrow && <span>홈</span>}
+            {!isNarrow && <span>Home</span>}
           </Link>
           <Link
             to="/homepage-editor"
             className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faCog} />
-            {!isNarrow && <span>EG Coding</span>}
+            {!isNarrow && <span>Coding</span>}
           </Link>
           {/* Legacy BlogManager navigation - replaced by Blog Connector */}
           {/* <Link
@@ -1587,35 +1587,35 @@ function NavigationBar({
             className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faGlobe} />
-            {!isNarrow && <span>EG Blogging</span>}
+            {!isNarrow && <span>Blogging</span>}
           </Link>
           <Link
             to="/ssl-analyzer"
             className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faShieldAlt} />
-            {!isNarrow && <span>EG SSL-Checker</span>}
+            {!isNarrow && <span>SSL-Checker</span>}
           </Link>
           <Link
             to="/seo-analyzer"
             className={`nav-link ${location.pathname === '/seo-analyzer' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faGlobe} />
-            {!isNarrow && <span>EG SEO-Analyzer</span>}
+            {!isNarrow && <span>SEO-Analyzer</span>}
           </Link>
           <Link
             to="/ai-keys"
             className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faRobot} />
-            {!isNarrow && <span>API 키 관리</span>}
+            {!isNarrow && <span>API Keys</span>}
           </Link>
           <Link
             to="/mcp-server"
             className={`nav-link ${location.pathname === '/mcp-server' ? 'active' : ''}`}
           >
             <FontAwesomeIcon icon={faServer} />
-            {!isNarrow && <span>EG MCP Server</span>}
+            {!isNarrow && <span>MCP Server</span>}
           </Link>
           <button
             className="nav-link"
@@ -1630,10 +1630,10 @@ function NavigationBar({
             className="nav-link"
             onClick={() => setShowSupportModal(true)}
             style={{ cursor: 'pointer' }}
-            title="지원 및 도움말"
+            title="Support & Help"
           >
             <FontAwesomeIcon icon={faQuestion} />
-            {!isNarrow && <span>지원</span>}
+            {!isNarrow && <span>Support</span>}
           </button>
 
         </nav>
