@@ -5,16 +5,17 @@
 
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChartLine, faExternalLinkAlt, faSync } from '../../utils/fontAwesomeIcons';
+import { faChartLine, faExternalLinkAlt, faSync, faSpinner } from '../../utils/fontAwesomeIcons';
 import type { SEOAnalysisResult } from './analysisHelpers';
 import './EGBusinessIdentityResultDemo.css';
 
 interface SEOAnalysisDisplayProps {
   seoAnalysis: SEOAnalysisResult | null;
   onRetry?: () => void;
+  isRetrying?: boolean;
 }
 
-export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnalysis, onRetry }) => {
+export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnalysis, onRetry, isRetrying = false }) => {
   if (!seoAnalysis) {
     return null;
   }
@@ -62,9 +63,10 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
               type="button"
               className="egbusiness-identity-result__retry-button"
               onClick={onRetry}
+              disabled={isRetrying}
             >
-              <FontAwesomeIcon icon={faSync} />
-              <span>Retry Analysis</span>
+              <FontAwesomeIcon icon={isRetrying ? faSpinner : faSync} spin={isRetrying} />
+              <span>{isRetrying ? 'Retrying...' : 'Retry Analysis'}</span>
             </button>
           ) : (
             <p className="egbusiness-identity-result__error-hint" style={{ marginTop: '8px', fontSize: '12px', opacity: 0.7 }}>
@@ -159,10 +161,11 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
               type="button"
               className="egbusiness-identity-result__retry-button"
               onClick={onRetry}
+              disabled={isRetrying}
               style={{ marginTop: 0 }}
             >
-              <FontAwesomeIcon icon={faSync} />
-              <span>Retry Analysis</span>
+              <FontAwesomeIcon icon={isRetrying ? faSpinner : faSync} spin={isRetrying} />
+              <span>{isRetrying ? 'Retrying...' : 'Retry Analysis'}</span>
             </button>
           )}
       {seoAnalysis.reportPath && (
