@@ -566,9 +566,9 @@ const createWindow = async () => {
       });
 
       // AI Search handlers for business identity
-      ipcMain.handle('ai-search-generate-business-identity', async (_event, websiteText: string, rootUrl?: string) => {
+      ipcMain.handle('ai-search-generate-business-identity', async (_event, websiteText: string, rootUrl?: string, language?: string) => {
         try {
-          return await generateBusinessIdentity(websiteText, rootUrl);
+          return await generateBusinessIdentity(websiteText, rootUrl, language);
         } catch (error) {
           console.error('❌ Failed to generate business identity:', error);
           return {

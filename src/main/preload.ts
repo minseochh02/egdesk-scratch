@@ -1109,7 +1109,7 @@ export interface WebUtilitiesAPI {
   fetchContent: (url: string) => Promise<WebsiteContentFetchResult>;
   crawlHomepage: (url: string) => Promise<HomepageCrawlResult>;
   crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => Promise<MultiPageCrawlResult>;
-  generateBusinessIdentity: (websiteText: string, rootUrl?: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  generateBusinessIdentity: (websiteText: string, rootUrl?: string, language?: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   generateSnsPlan: (identityData: any) => Promise<{ success: boolean; content?: string; error?: string }>;
 }
 
@@ -1193,7 +1193,7 @@ const electronHandler = {
     fetchContent: (url: string) => ipcRenderer.invoke('web-fetch-content', url),
     crawlHomepage: (url: string) => ipcRenderer.invoke('web-crawl-homepage', url),
     crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => ipcRenderer.invoke('web-crawl-multiple-pages', url, options),
-    generateBusinessIdentity: (websiteText: string, rootUrl?: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText, rootUrl),
+    generateBusinessIdentity: (websiteText: string, rootUrl?: string, language?: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText, rootUrl, language),
     generateSnsPlan: (identityData: any) => ipcRenderer.invoke('ai-search-generate-sns-plan', identityData),
   } as WebUtilitiesAPI,
   

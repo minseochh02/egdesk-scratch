@@ -301,9 +301,35 @@ const EGBusinessIdentity: React.FC = () => {
         domain: crawlResult.domain,
       });
 
+      // Extract primary language from crawled pages (use most common language, or homepage language)
+      const getPrimaryLanguage = (pages: any[]): string | null => {
+        if (!pages || pages.length === 0) return null;
+        
+        // Try to get homepage language first
+        const homepage = pages.find(p => p.pageType === 'homepage');
+        if (homepage?.metadata?.language) {
+          return homepage.metadata.language;
+        }
+        
+        // Count language occurrences and return most common
+        const langCounts: Record<string, number> = {};
+        pages.forEach(page => {
+          const lang = page.metadata?.language;
+          if (lang) {
+            langCounts[lang] = (langCounts[lang] || 0) + 1;
+          }
+        });
+        
+        const mostCommonLang = Object.entries(langCounts).sort((a, b) => b[1] - a[1])[0];
+        return mostCommonLang ? mostCommonLang[0] : null;
+      };
+
+      const primaryLanguage = getPrimaryLanguage(crawlResult.pages || []);
+
       // Build website context text for AI using combined content from multiple pages
       const websiteText = [
         `Domain: ${crawlResult.domain}`,
+        primaryLanguage ? `Primary Language: ${primaryLanguage}` : '',
         `Pages Crawled: ${crawlResult.combinedContent.pagesCrawled}`,
         `Total Word Count: ${crawlResult.combinedContent.totalWordCount}`,
         crawlResult.siteStructure?.commonPages
@@ -327,7 +353,7 @@ const EGBusinessIdentity: React.FC = () => {
 
       console.log('[EGBusinessIdentity] Generating business identity from crawled content...');
       // Pass the root URL to ensure source.url uses the homepage, not subpages
-      const aiResult = await window.electron.web.generateBusinessIdentity(websiteText, parsed.toString());
+      const aiResult = await window.electron.web.generateBusinessIdentity(websiteText, parsed.toString(), primaryLanguage || undefined);
       if (!aiResult.success || !aiResult.content) {
         setError(aiResult.error || 'Failed to generate AI response.');
         setLoading(false);
