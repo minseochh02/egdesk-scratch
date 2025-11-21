@@ -563,6 +563,38 @@
   color: #e74c3c;
 }
 
+.result-error-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.result-error-message {
+  margin-bottom: 4px;
+}
+
+.result-retry-button {
+  padding: 6px 12px;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-weight: 500;
+}
+
+.result-retry-button:hover {
+  background-color: #2980b9;
+}
+
+.result-retry-button:active {
+  background-color: #21618c;
+  transform: translateY(1px);
+}
+
 @media (max-width: 768px) {
   .egseo-analyzer {
     padding: 1rem;

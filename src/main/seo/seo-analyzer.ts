@@ -68,9 +68,41 @@ export function registerSEOHandlers() {
           });
 
           const page = await context.newPage();
-          await page.goto(url, { waitUntil: 'networkidle' });
-          await page.waitForLoadState('networkidle');
+          
+          // Navigate with better error handling
+          try {
+            await page.goto(url, { 
+              waitUntil: 'load',
+              timeout: 60000 // 60 second timeout
+            });
+            
+            // Wait for network to be idle (but don't fail if it times out)
+            try {
+              await page.waitForLoadState('networkidle', { timeout: 10000 });
+            } catch (networkIdleError) {
+              console.warn(`⚠️ Network idle timeout for ${url} (page may still be loading)`);
+              // Continue anyway - page is loaded even if network isn't idle
+            }
+            
           await page.waitForTimeout(2000);
+            
+            // Verify we're not stuck at about:blank
+            const currentUrl = page.url();
+            if (currentUrl === 'about:blank' || currentUrl.startsWith('about:')) {
+              console.error(`❌ Navigation failed for ${url} - still at ${currentUrl}`);
+              // Try navigation again
+              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              const retryUrl = page.url();
+              if (retryUrl === 'about:blank' || retryUrl.startsWith('about:')) {
+                throw new Error(`Failed to navigate away from about:blank for ${url}`);
+              }
+            }
+          } catch (navigationError) {
+            const currentUrl = page.url();
+            console.error(`❌ Navigation error for ${url}:`, navigationError);
+            console.error(`❌ Current page URL: ${currentUrl}`);
+            throw navigationError;
+          }
 
           const timestamp = Date.now();
           const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);

@@ -225,8 +225,8 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
               <div className="social-media-coming-soon-icon">
                 <FontAwesomeIcon icon={faFileAlt} />
               </div>
-              <h4>Posts</h4>
-              <p>View and manage your published posts.</p>
+            <h4>Posts</h4>
+            <p>View and manage your published posts.</p>
               <p className="social-media-coming-soon-message">Coming Soon</p>
             </div>
           </div>
@@ -238,8 +238,8 @@ const SocialMediaConnectionDashboard: React.FC<SocialMediaConnectionDashboardPro
               <div className="social-media-coming-soon-icon">
                 <FontAwesomeIcon icon={faChartBar} />
               </div>
-              <h4>Analytics</h4>
-              <p>View insights and analytics for your account.</p>
+            <h4>Analytics</h4>
+            <p>View insights and analytics for your account.</p>
               <p className="social-media-coming-soon-message">Coming Soon</p>
             </div>
           </div>

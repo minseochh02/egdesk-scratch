@@ -5,17 +5,75 @@
 
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChartLine, faExternalLinkAlt } from '../../utils/fontAwesomeIcons';
+import { faChartLine, faExternalLinkAlt, faSync } from '../../utils/fontAwesomeIcons';
 import type { SEOAnalysisResult } from './analysisHelpers';
 import './EGBusinessIdentityResultDemo.css';
 
 interface SEOAnalysisDisplayProps {
   seoAnalysis: SEOAnalysisResult | null;
+  onRetry?: () => void;
 }
 
-export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnalysis }) => {
-  if (!seoAnalysis || !seoAnalysis.success || !seoAnalysis.scores) {
+export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnalysis, onRetry }) => {
+  if (!seoAnalysis) {
     return null;
+  }
+
+  // Show error state with retry button
+  // Check both success flag and whether scores exist
+  const hasError = !seoAnalysis.success || !seoAnalysis.scores;
+  
+  if (hasError) {
+    console.log('[SEOAnalysisDisplay] Showing error state:', {
+      success: seoAnalysis.success,
+      hasScores: !!seoAnalysis.scores,
+      error: seoAnalysis.error,
+      hasRetryHandler: !!onRetry
+    });
+    const isTimeout = seoAnalysis.error?.toLowerCase().includes('timeout') || 
+                     seoAnalysis.error?.toLowerCase().includes('connect timeout') ||
+                     seoAnalysis.error?.toLowerCase().includes('connection timeout');
+    
+    return (
+      <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--analysis">
+        <div className="egbusiness-identity-result__panel-header">
+          <span className="egbusiness-identity-result__icon">
+            <FontAwesomeIcon icon={faChartLine} />
+          </span>
+          <div>
+            <h2>SEO Analysis</h2>
+            <p>Lighthouse performance metrics for your website</p>
+          </div>
+        </div>
+
+        <div className="egbusiness-identity-result__error-state">
+          <div className="egbusiness-identity-result__error-icon">❌</div>
+          <div className="egbusiness-identity-result__error-message">
+            <h4>Analysis Failed</h4>
+            <p>{seoAnalysis.error || 'Unknown error occurred during SEO analysis'}</p>
+            {isTimeout && (
+              <p className="egbusiness-identity-result__error-hint">
+                The analysis timed out. This may be due to slow network or server response. Please try again.
+              </p>
+            )}
+          </div>
+          {onRetry ? (
+            <button
+              type="button"
+              className="egbusiness-identity-result__retry-button"
+              onClick={onRetry}
+            >
+              <FontAwesomeIcon icon={faSync} />
+              <span>Retry Analysis</span>
+            </button>
+          ) : (
+            <p className="egbusiness-identity-result__error-hint" style={{ marginTop: '8px', fontSize: '12px', opacity: 0.7 }}>
+              Retry functionality not available
+            </p>
+          )}
+        </div>
+      </section>
+    );
   }
 
   const { scores } = seoAnalysis;
@@ -94,8 +152,20 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
         </div>
       </div>
 
+      <div className="egbusiness-identity-result__analysis-footer">
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {onRetry && (
+            <button
+              type="button"
+              className="egbusiness-identity-result__retry-button"
+              onClick={onRetry}
+              style={{ marginTop: 0 }}
+            >
+              <FontAwesomeIcon icon={faSync} />
+              <span>Retry Analysis</span>
+            </button>
+          )}
       {seoAnalysis.reportPath && (
-        <div className="egbusiness-identity-result__analysis-footer">
           <button
             type="button"
             className="egbusiness-identity-result__report-button"
@@ -120,8 +190,9 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
             <FontAwesomeIcon icon={faExternalLinkAlt} />
             <span>Open Full Lighthouse Report</span>
           </button>
+          )}
         </div>
-      )}
+      </div>
     </section>
   );
 };
