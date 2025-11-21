@@ -16,6 +16,7 @@ import {
   faCog,
   faServer,
   faQuestion,
+  faShare,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -1588,6 +1589,13 @@ function NavigationBar({
           >
             <FontAwesomeIcon icon={faGlobe} />
             {!isNarrow && <span>Blogging</span>}
+          </Link>
+          <Link
+            to="/social-media"
+            className={`nav-link ${location.pathname === '/social-media' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faShare} />
+            {!isNarrow && <span>SNS Manager</span>}
           </Link>
           <Link
             to="/ssl-analyzer"
