@@ -245,7 +245,19 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
         <article
           key={task.id}
           className="egbusiness-identity__scheduled-demo-card"
-          onClick={() => onTaskSelect?.(task)}
+          onClick={(e) => {
+            // Don't trigger task selection if clicking on interactive elements
+            const target = e.target as HTMLElement;
+            if (
+              target.closest('.egbusiness-identity__account-selector') ||
+              target.closest('button') ||
+              target.closest('input') ||
+              target.closest('a')
+            ) {
+              return;
+            }
+            onTaskSelect?.(task);
+          }}
         >
           <header>
             <div className="egbusiness-identity__scheduled-demo-channel">

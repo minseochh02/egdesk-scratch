@@ -48,6 +48,7 @@ const META_DESCRIPTION_REGEX =
 const META_OG_DESCRIPTION_REGEX =
   /<meta\s+(?:name|property)=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i;
 const META_LANG_REGEX = /<html[^>]*lang=["']([^"']+)["']/i;
+const META_LANGUAGE_REGEX = /<meta[^>]*(?:name=["']language["']|http-equiv=["']content-language["'])[^>]*content=["']([^"']+)["']/i;
 
 const STOP_WORDS = new Set(
   [
@@ -357,16 +358,90 @@ function extractDescription(html: string): string | null {
 /**
  * Extract language from multiple sources with fallback to content-based detection
  * Priority:
- * 1. HTML lang attribute
- * 2. HTTP Content-Language header
- * 3. Content-based detection (Korean character patterns)
+ * 1. Content-based detection (most reliable for actual content)
+ * 2. HTML lang attribute
+ * 3. Meta language tags
+ * 4. HTTP Content-Language header
  */
 function extractLanguage(
   html: string,
   headers?: Headers,
   textContent?: string
 ): string | null {
-  // 1. Check HTML lang attribute
+  // 1. Content-based detection (highest priority - checks actual content)
+  // This overrides metadata if content doesn't match, especially when metadata incorrectly says "en"
+  if (textContent && textContent.trim().length > 0) {
+    const detectedLang = detectLanguageFromContent(textContent);
+    if (detectedLang) {
+      // Always trust content-based detection if it finds a non-English language
+      // Many websites have incorrect metadata (e.g., lang="en" but content is Korean)
+      const metadataLang = getLanguageFromMetadata(html, headers);
+      
+      if (metadataLang && metadataLang !== detectedLang) {
+        // If metadata says "en" but content is clearly another language, always trust content
+        if (metadataLang === 'en' && detectedLang !== 'en') {
+          console.log(`[Language Detection] Metadata says "${metadataLang}" but content suggests "${detectedLang}", trusting content`);
+          return detectedLang;
+        }
+        // If content detection is confident (high score), prefer it over metadata
+        // For now, always prefer content detection when it finds a non-English language
+        if (detectedLang !== 'en') {
+          console.log(`[Language Detection] Content-based detection found "${detectedLang}" (metadata: "${metadataLang}"), trusting content`);
+          return detectedLang;
+        }
+      }
+      
+      // If content detection found a language, use it
+      console.log(`[Language Detection] Content-based detection found: "${detectedLang}"`);
+      return detectedLang;
+    }
+  }
+
+  // 2. Check HTML lang attribute (fallback if content detection didn't find anything)
+  const htmlMatch = html.match(META_LANG_REGEX);
+  if (htmlMatch && htmlMatch[1]) {
+    const lang = htmlMatch[1].trim().toLowerCase();
+    if (lang) {
+      const normalizedLang = normalizeLanguageCode(lang);
+      console.log(`[Language Detection] HTML lang attribute: "${normalizedLang}"`);
+      return normalizedLang;
+    }
+  }
+
+  // 3. Check meta language tags
+  const metaMatch = html.match(META_LANGUAGE_REGEX);
+  if (metaMatch && metaMatch[1]) {
+    const lang = metaMatch[1].trim().toLowerCase();
+    if (lang) {
+      const normalizedLang = normalizeLanguageCode(lang);
+      console.log(`[Language Detection] Meta language tag: "${normalizedLang}"`);
+      return normalizedLang;
+    }
+  }
+
+  // 4. Check HTTP Content-Language header
+  if (headers) {
+    const contentLanguage = headers.get('content-language');
+    if (contentLanguage) {
+      // Content-Language can be like "ko-KR" or "ko, en;q=0.9"
+      const lang = contentLanguage.split(',')[0].trim().split('-')[0].toLowerCase();
+      if (lang) {
+        const normalizedLang = normalizeLanguageCode(lang);
+        console.log(`[Language Detection] Content-Language header: "${normalizedLang}"`);
+        return normalizedLang;
+      }
+    }
+  }
+
+  console.log(`[Language Detection] No language detected`);
+  return null;
+}
+
+/**
+ * Extract language from metadata (HTML lang, meta tags, headers)
+ */
+function getLanguageFromMetadata(html: string, headers?: Headers): string | null {
+  // Check HTML lang attribute
   const htmlMatch = html.match(META_LANG_REGEX);
   if (htmlMatch && htmlMatch[1]) {
     const lang = htmlMatch[1].trim().toLowerCase();
@@ -375,23 +450,23 @@ function extractLanguage(
     }
   }
 
-  // 2. Check HTTP Content-Language header
+  // Check meta language tags
+  const metaMatch = html.match(META_LANGUAGE_REGEX);
+  if (metaMatch && metaMatch[1]) {
+    const lang = metaMatch[1].trim().toLowerCase();
+    if (lang) {
+      return normalizeLanguageCode(lang);
+    }
+  }
+
+  // Check HTTP Content-Language header
   if (headers) {
     const contentLanguage = headers.get('content-language');
     if (contentLanguage) {
-      // Content-Language can be like "ko-KR" or "ko, en;q=0.9"
       const lang = contentLanguage.split(',')[0].trim().split('-')[0].toLowerCase();
       if (lang) {
         return normalizeLanguageCode(lang);
       }
-    }
-  }
-
-  // 3. Content-based detection (fallback)
-  if (textContent) {
-    const detectedLang = detectLanguageFromContent(textContent);
-    if (detectedLang) {
-      return detectedLang;
     }
   }
 
@@ -416,56 +491,162 @@ function normalizeLanguageCode(lang: string): string {
 }
 
 /**
- * Detect language from content using character patterns
- * Specifically optimized for Korean (Hangul) detection
+ * Detect language from content using character patterns and script detection
+ * Supports multiple languages: Korean, Japanese, Chinese, Arabic, Russian, etc.
  */
 function detectLanguageFromContent(text: string): string | null {
   if (!text || text.length === 0) {
     return null;
   }
 
-  // Sample a reasonable chunk of text for analysis (first 5000 chars)
-  const sample = text.slice(0, 5000);
-  
-  // Count Korean (Hangul) characters
-  // Hangul syllables: AC00-D7AF (가-힣)
-  // Hangul Jamo: 1100-11FF (initial consonants), 3130-318F (compatibility)
-  const hangulRegex = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
-  const hangulMatches = sample.match(hangulRegex);
-  const hangulCount = hangulMatches ? hangulMatches.length : 0;
+  // Sample a reasonable chunk of text for analysis (first 10000 chars for better accuracy)
+  const sample = text.slice(0, 10000);
   
   // Count total characters (excluding whitespace and punctuation)
-  const totalChars = sample.replace(/[\s\p{P}]/gu, '').length;
+  const totalChars = sample.replace(/[\s\p{P}\p{N}]/gu, '').length;
   
   if (totalChars === 0) {
     return null;
   }
 
-  // If more than 30% of characters are Hangul, likely Korean
-  const hangulRatio = hangulCount / totalChars;
-  if (hangulRatio > 0.3) {
-    return 'ko';
-  }
+  // Language detection scores
+  const scores: Record<string, number> = {};
 
-  // Check for common Korean words/patterns
+  // 1. Korean (Hangul) detection
+  const hangulRegex = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
+  const hangulMatches = sample.match(hangulRegex);
+  const hangulCount = hangulMatches ? hangulMatches.length : 0;
+  const hangulRatio = hangulCount / totalChars;
+  
+  // Lower threshold for Korean detection (20% instead of 30%)
+  // Also check if we have any Hangul at all (even small amounts suggest Korean)
+  if (hangulRatio > 0.2 || (hangulCount > 5 && hangulRatio > 0.1)) {
+    scores.ko = hangulRatio;
+  }
+  
+  // Korean sentence patterns (more comprehensive)
   const koreanPatterns = [
     /[가-힣]{2,}/g, // Korean words (2+ characters)
-    /입니다|입니다\.|입니다!/g, // Common Korean sentence endings
-    /합니다|합니다\.|합니다!/g,
-    /있습니다|있습니다\.|있습니다!/g,
+    /입니다|합니다|있습니다|됩니다|입니다\.|합니다\.|있습니다\.|됩니다\./g, // Common Korean sentence endings
+    /[은는이가을를의와과도만부터까지에서로]/g, // Korean particles
+    /[이다|이다\.|이다!]/g, // Copula
+    /[하고|와|과]/g, // Conjunctions
   ];
-
   let koreanPatternMatches = 0;
   for (const pattern of koreanPatterns) {
     const matches = sample.match(pattern);
-    if (matches) {
-      koreanPatternMatches += matches.length;
-    }
+    if (matches) koreanPatternMatches += matches.length;
+  }
+  
+  // Lower threshold for pattern matching (2 instead of 3)
+  if (koreanPatternMatches >= 2) {
+    scores.ko = (scores.ko || 0) + 0.4; // Higher weight for patterns
+  }
+  
+  // If we have significant Hangul content, boost Korean score
+  if (hangulCount > 10) {
+    scores.ko = (scores.ko || 0) + 0.2;
   }
 
-  // If we find multiple Korean sentence patterns, likely Korean
-  if (koreanPatternMatches >= 3) {
-    return 'ko';
+  // 2. Japanese (Hiragana, Katakana, Kanji) detection
+  const hiraganaRegex = /[\u3040-\u309F]/g; // Hiragana
+  const katakanaRegex = /[\u30A0-\u30FF]/g; // Katakana
+  const kanjiRegex = /[\u4E00-\u9FAF]/g; // Kanji (shared with Chinese)
+  const hiraganaCount = (sample.match(hiraganaRegex) || []).length;
+  const katakanaCount = (sample.match(katakanaRegex) || []).length;
+  const kanjiCount = (sample.match(kanjiRegex) || []).length;
+  const japaneseChars = hiraganaCount + katakanaCount;
+  const japaneseRatio = japaneseChars / totalChars;
+  if (japaneseRatio > 0.2 || (hiraganaCount > 10 && katakanaCount > 5)) {
+    scores.ja = japaneseRatio + (kanjiCount > 0 ? 0.2 : 0);
+  }
+  // Japanese particles
+  const japanesePatterns = [/[はがをにで]/g, /です|ます|でした|ました/g];
+  let japanesePatternMatches = 0;
+  for (const pattern of japanesePatterns) {
+    const matches = sample.match(pattern);
+    if (matches) japanesePatternMatches += matches.length;
+  }
+  if (japanesePatternMatches >= 3) {
+    scores.ja = (scores.ja || 0) + 0.3;
+  }
+
+  // 3. Chinese (Simplified/Traditional) detection
+  const chineseRegex = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g;
+  const chineseCount = (sample.match(chineseRegex) || []).length;
+  const chineseRatio = chineseCount / totalChars;
+  // If high Chinese characters and no/little Hiragana/Katakana, likely Chinese
+  if (chineseRatio > 0.3 && japaneseRatio < 0.1) {
+    scores.zh = chineseRatio;
+  }
+
+  // 4. Arabic detection
+  const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+  const arabicCount = (sample.match(arabicRegex) || []).length;
+  const arabicRatio = arabicCount / totalChars;
+  if (arabicRatio > 0.3) {
+    scores.ar = arabicRatio;
+  }
+
+  // 5. Russian/Cyrillic detection
+  const cyrillicRegex = /[\u0400-\u04FF]/g;
+  const cyrillicCount = (sample.match(cyrillicRegex) || []).length;
+  const cyrillicRatio = cyrillicCount / totalChars;
+  if (cyrillicRatio > 0.3) {
+    scores.ru = cyrillicRatio;
+  }
+
+  // 6. Thai detection
+  const thaiRegex = /[\u0E00-\u0E7F]/g;
+  const thaiCount = (sample.match(thaiRegex) || []).length;
+  const thaiRatio = thaiCount / totalChars;
+  if (thaiRatio > 0.3) {
+    scores.th = thaiRatio;
+  }
+
+  // 7. Vietnamese detection (uses Latin with diacritics)
+  const vietnameseRegex = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/g;
+  const vietnameseCount = (sample.match(vietnameseRegex) || []).length;
+  const vietnameseRatio = vietnameseCount / totalChars;
+  if (vietnameseRatio > 0.15) {
+    scores.vi = vietnameseRatio;
+  }
+
+  // 8. Spanish detection (common words)
+  const spanishWords = /\b(el|la|los|las|de|del|en|un|una|es|son|con|por|para|que|este|esta|estos|estas)\b/gi;
+  const spanishMatches = sample.match(spanishWords);
+  if (spanishMatches && spanishMatches.length > 10) {
+    scores.es = spanishMatches.length / 100;
+  }
+
+  // 9. French detection (common words and accents)
+  const frenchRegex = /[àâäéèêëïîôùûüÿç]/g;
+  const frenchCount = (sample.match(frenchRegex) || []).length;
+  const frenchWords = /\b(le|la|les|de|du|des|un|une|est|sont|avec|pour|que|ce|cette|ces)\b/gi;
+  const frenchMatches = sample.match(frenchWords);
+  if (frenchCount > 20 || (frenchMatches && frenchMatches.length > 10)) {
+    scores.fr = (frenchCount / totalChars) + (frenchMatches ? frenchMatches.length / 100 : 0);
+  }
+
+  // 10. German detection
+  const germanWords = /\b(der|die|das|und|oder|ist|sind|mit|für|von|zu|auf|in|an)\b/gi;
+  const germanMatches = sample.match(germanWords);
+  if (germanMatches && germanMatches.length > 10) {
+    scores.de = germanMatches.length / 100;
+  }
+
+  // 11. Portuguese detection
+  const portugueseWords = /\b(o|a|os|as|de|do|da|dos|das|em|um|uma|é|são|com|por|para|que|este|esta|estes|estas)\b/gi;
+  const portugueseMatches = sample.match(portugueseWords);
+  if (portugueseMatches && portugueseMatches.length > 10) {
+    scores.pt = portugueseMatches.length / 100;
+  }
+
+  // Find the language with the highest score
+  const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  
+  if (sortedScores.length > 0 && sortedScores[0][1] > 0.2) {
+    return sortedScores[0][0];
   }
 
   // Default to null if we can't confidently detect

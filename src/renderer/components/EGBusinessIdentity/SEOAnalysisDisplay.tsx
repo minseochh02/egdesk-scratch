@@ -107,7 +107,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
       <div className="egbusiness-identity-result__analysis-grid">
         <div className="egbusiness-identity-result__analysis-card overall">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.average) }}>
-            {scores.average}
+            {Math.round(scores.average)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">Overall Score</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.average)}</div>
@@ -115,7 +115,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
         <div className="egbusiness-identity-result__analysis-card">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.performance) }}>
-            {scores.performance}
+            {Math.round(scores.performance)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">Performance</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.performance)}</div>
@@ -123,7 +123,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
         <div className="egbusiness-identity-result__analysis-card">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.accessibility) }}>
-            {scores.accessibility}
+            {Math.round(scores.accessibility)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">Accessibility</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.accessibility)}</div>
@@ -131,7 +131,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
         <div className="egbusiness-identity-result__analysis-card">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.bestPractices) }}>
-            {scores.bestPractices}
+            {Math.round(scores.bestPractices)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">Best Practices</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.bestPractices)}</div>
@@ -139,7 +139,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
         <div className="egbusiness-identity-result__analysis-card">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.seo) }}>
-            {scores.seo}
+            {Math.round(scores.seo)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">SEO</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.seo)}</div>
@@ -147,7 +147,7 @@ export const SEOAnalysisDisplay: React.FC<SEOAnalysisDisplayProps> = ({ seoAnaly
 
         <div className="egbusiness-identity-result__analysis-card">
           <div className="egbusiness-identity-result__analysis-score" style={{ color: getScoreColor(scores.pwa) }}>
-            {scores.pwa}
+            {Math.round(scores.pwa)}
           </div>
           <div className="egbusiness-identity-result__analysis-label">PWA</div>
           <div className="egbusiness-identity-result__analysis-status">{getScoreLabel(scores.pwa)}</div>

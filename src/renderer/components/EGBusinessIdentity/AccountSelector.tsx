@@ -55,9 +55,23 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
       }
     };
 
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        setShowAddForm(false);
+      }
+    };
+
     if (isOpen) {
+      // Use both mousedown and click to catch all scenarios
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('click', handleClickOutside);
+        document.removeEventListener('keydown', handleEscape);
+      };
     }
   }, [isOpen]);
 
@@ -251,7 +265,11 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
       </button>
       
       {isOpen && (
-        <div className="egbusiness-identity__account-selector-dropdown">
+        <div 
+          className="egbusiness-identity__account-selector-dropdown"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {showAddForm ? (
             <div className="egbusiness-identity__account-selector-add-form">
               <div className="egbusiness-identity__account-selector-form-header">
