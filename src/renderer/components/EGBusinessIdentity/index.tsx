@@ -86,7 +86,7 @@ const EGBusinessIdentity: React.FC = () => {
         setIsConfigured(false);
         setConnectionStatus('error');
         return false;
-      }
+    }
     },
     []
   );
@@ -698,22 +698,22 @@ const EGBusinessIdentity: React.FC = () => {
       </header>
 
       {!isEditMode && (
-        <div className="egbusiness-identity__tabs">
-          <button
-            type="button"
-            className={`egbusiness-identity__tab${activeTab === 'kickoff' ? ' is-active' : ''}`}
-            onClick={() => setActiveTab('kickoff')}
-          >
-            Identity Kickoff
-          </button>
-          <button
-            type="button"
-            className={`egbusiness-identity__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
-            onClick={() => setActiveTab('scheduled')}
-          >
-            Scheduled Posts
-          </button>
-        </div>
+      <div className="egbusiness-identity__tabs">
+        <button
+          type="button"
+          className={`egbusiness-identity__tab${activeTab === 'kickoff' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('kickoff')}
+        >
+          Identity Kickoff
+        </button>
+        <button
+          type="button"
+          className={`egbusiness-identity__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('scheduled')}
+        >
+          Scheduled Posts
+        </button>
+      </div>
       )}
 
       {isEditMode || activeTab === 'kickoff' ? (
@@ -732,7 +732,7 @@ const EGBusinessIdentity: React.FC = () => {
           isEditMode={isEditMode}
           onGoBack={isEditMode && identitySnapshot && parsedIdentity ? handleGoBack : undefined}
         />
-      ) : (
+        ) : (
         <ScheduledPosts
           instagramUsername={instagramUsername}
           instagramPassword={instagramPassword}

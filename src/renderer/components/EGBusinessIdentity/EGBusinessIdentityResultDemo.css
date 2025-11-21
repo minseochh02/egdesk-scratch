@@ -473,6 +473,78 @@
   transform: translateY(1px);
 }
 
+/* Error State Styles */
+.egbusiness-identity-result__error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+}
+
+.egbusiness-identity-result__error-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.egbusiness-identity-result__error-message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.egbusiness-identity-result__error-message h4 {
+  margin: 0;
+  font-size: 18px;
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.egbusiness-identity-result__error-message p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.egbusiness-identity-result__error-hint {
+  margin-top: 8px;
+  padding: 12px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 6px;
+  color: #fde047;
+  font-size: 13px;
+}
+
+.egbusiness-identity-result__retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  color: #86efac;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.egbusiness-identity-result__retry-button:hover {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #bbf7d0;
+}
+
+.egbusiness-identity-result__retry-button:active {
+  background: rgba(34, 197, 94, 0.2);
+  transform: translateY(1px);
+}
+
 /* SSL Analysis Styles */
 .egbusiness-identity-result__ssl-grade {
   display: flex;

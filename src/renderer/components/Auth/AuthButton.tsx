@@ -145,7 +145,7 @@ export default function AuthButton() {
               onClick={async () => {
                 try {
                   setShowMenu(false);
-                  await signOut();
+                await signOut();
                 } catch (error) {
                   console.error('Sign out failed:', error);
                   alert(`Sign out failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

@@ -58,7 +58,7 @@ export class ScheduledPostsExecutor {
     // Set up periodic check for new/updated posts with error handling
     this.executionInterval = setInterval(async () => {
       try {
-        await this.checkAndUpdateSchedules();
+      await this.checkAndUpdateSchedules();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`❌ Error in periodic schedule check: ${errorMessage}`);
@@ -337,8 +337,8 @@ export class ScheduledPostsExecutor {
       let postUrl: string;
       try {
         postUrl = await this.uploadToWordPress(blogContent);
-        console.log(`✅ Successfully uploaded to WordPress`);
-        console.log(`🔗 Post URL: ${postUrl}`);
+      console.log(`✅ Successfully uploaded to WordPress`);
+      console.log(`🔗 Post URL: ${postUrl}`);
       } catch (uploadError) {
         const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
         const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT');
@@ -458,8 +458,8 @@ export class ScheduledPostsExecutor {
             setTimeout(() => reject(new Error('Naver Blog upload timeout after 300 seconds')), 300000)
           )
         ]);
-        console.log(`✅ Successfully uploaded to Naver Blog`);
-        console.log(`🔗 Post URL: ${postUrl}`);
+      console.log(`✅ Successfully uploaded to Naver Blog`);
+      console.log(`🔗 Post URL: ${postUrl}`);
       } catch (uploadError) {
         const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
         const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('Timeout');
@@ -1444,7 +1444,7 @@ export class ScheduledPostsExecutor {
             setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
           )
         ]);
-        console.log(`✅ Blog outline generated`);
+      console.log(`✅ Blog outline generated`);
       } catch (outlineError) {
         const errorMessage = outlineError instanceof Error ? outlineError.message : String(outlineError);
         console.error(`❌ Blog outline generation failed: ${errorMessage}`);
@@ -1461,7 +1461,7 @@ export class ScheduledPostsExecutor {
             setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
           )
         ]);
-        console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
       } catch (imageError) {
         const errorMessage = imageError instanceof Error ? imageError.message : String(imageError);
         console.error(`❌ Image generation failed: ${errorMessage}`);
@@ -1529,7 +1529,7 @@ export class ScheduledPostsExecutor {
             setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
           )
         ]);
-        console.log(`✅ Blog outline generated`);
+      console.log(`✅ Blog outline generated`);
       } catch (outlineError) {
         const errorMessage = outlineError instanceof Error ? outlineError.message : String(outlineError);
         console.error(`❌ Blog outline generation failed: ${errorMessage}`);
@@ -1546,7 +1546,7 @@ export class ScheduledPostsExecutor {
             setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
           )
         ]);
-        console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
+      console.log(`✅ Images generated: ${blogContentWithImages.images?.length || 0}`);
       } catch (imageError) {
         const errorMessage = imageError instanceof Error ? imageError.message : String(imageError);
         console.error(`❌ Image generation failed: ${errorMessage}`);

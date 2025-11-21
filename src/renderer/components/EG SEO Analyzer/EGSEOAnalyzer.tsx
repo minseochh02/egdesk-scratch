@@ -398,7 +398,22 @@ const EGSEOAnalyzer: React.FC<EGSEOAnalyzerProps> = () => {
                             </div>
                           ) : (
                             <div className="result-status failed">
-                              ❌ {result.error || 'Failed'}
+                              <div className="result-error-info">
+                                <div className="result-error-message">❌ {result.error || 'Failed'}</div>
+                                {(result.error?.includes('Timeout') || result.error?.includes('timeout')) && (
+                                  <button
+                                    type="button"
+                                    className="result-retry-button"
+                                    onClick={async () => {
+                                      // Retry this specific URL
+                                      const urlsArray = [result.url];
+                                      await handleGenerateLighthouseReportsAuto(urlsArray);
+                                    }}
+                                  >
+                                    🔄 Retry
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>

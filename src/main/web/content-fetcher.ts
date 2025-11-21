@@ -137,9 +137,12 @@ export async function fetchWebsiteContent(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT);
 
-    let response: Response;
+    let response: Response | undefined;
+    let lastError: unknown;
+    const originalUrl = parsedUrl.toString();
+    
     try {
-      response = await fetch(parsedUrl.toString(), {
+      response = await fetch(originalUrl, {
         redirect: 'follow',
         signal: controller.signal,
         headers: {
@@ -149,7 +152,50 @@ export async function fetchWebsiteContent(
         },
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      lastError = error;
+      
+      // If it's a connection timeout on HTTPS and the domain doesn't have www,
+      // try with www subdomain as a fallback (some domains like quus.cloud have
+      // HTTPS issues on non-www but work fine with www)
+      if (
+        parsedUrl.protocol === 'https:' &&
+        !parsedUrl.hostname.startsWith('www.') &&
+        error instanceof Error
+      ) {
+        const cause = (error as { cause?: unknown })?.cause;
+        const causeError = cause as NodeJS.ErrnoException | undefined;
+        const isConnectionTimeout = 
+          causeError?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+          (error.message && error.message.includes('Connect Timeout'));
+        
+        if (isConnectionTimeout) {
+          // Try with www subdomain
+          const wwwUrl = new URL(originalUrl);
+          wwwUrl.hostname = 'www.' + wwwUrl.hostname;
+          
+          try {
+            console.log(`[content-fetcher] Retrying ${originalUrl} with www subdomain: ${wwwUrl.toString()}`);
+            response = await fetch(wwwUrl.toString(), {
+              redirect: 'follow',
+              signal: controller.signal,
+              headers: {
+                'User-Agent': options.userAgent ?? DEFAULT_USER_AGENT,
+                Accept:
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              },
+            });
+            // Success with www, continue with response
+          } catch (wwwError) {
+            // www also failed, fall through to return original error
+            lastError = wwwError;
+          }
+        }
+      }
+      
+      // If we still don't have a response, return the error
+      if (!response) {
+        clearTimeout(timeout);
+        if (lastError instanceof Error && lastError.name === 'AbortError') {
         return {
           success: false,
           error: 'Request timed out while fetching website.',
@@ -157,8 +203,9 @@ export async function fetchWebsiteContent(
       }
       return {
         success: false,
-        error: formatNetworkError(error),
+          error: formatNetworkError(lastError),
       };
+      }
     } finally {
       clearTimeout(timeout);
     }
@@ -221,8 +268,8 @@ export async function fetchWebsiteContent(
     return {
       success: true,
       content: {
-        url: parsedUrl.toString(),
-        finalUrl: response.url ?? parsedUrl.toString(),
+        url: originalUrl, // Preserve the original URL the user requested
+        finalUrl: response.url ?? originalUrl,
         status: response.status,
         contentType,
         language,

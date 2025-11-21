@@ -9,6 +9,7 @@ import { buildInstagramStructuredPrompt } from './instagramPrompt';
 import { SEOAnalysisDisplay } from './SEOAnalysisDisplay';
 import { SSLAnalysisDisplay } from './SSLAnalysisDisplay';
 import type { SEOAnalysisResult, SSLAnalysisResult } from './analysisHelpers';
+import { runSEOAnalysis, runSSLAnalysis } from './analysisHelpers';
 import { handleBlogScheduleToggle, handleSocialMediaScheduleToggle, isBlogChannel, isSocialMediaChannel } from './utils';
 import { mapStoredPlanToEntry } from './snsPlanHelpers';
 import type { SnsPlanEntry, StoredSnsPlan } from './types';
@@ -316,6 +317,10 @@ const BusinessIdentityTab: React.FC = () => {
     seo?: SEOAnalysisResult | null;
     ssl?: SSLAnalysisResult | null;
   } | null>(null);
+  const [retryAnalysisResults, setRetryAnalysisResults] = useState<{
+    seo?: SEOAnalysisResult | null;
+    ssl?: SSLAnalysisResult | null;
+  } | null>(null);
   const [loadedSnsPlans, setLoadedSnsPlans] = useState<SnsPlanEntry[] | null>(null);
   
   const source = useMemo<WebsiteContentSummary | undefined>(() => {
@@ -427,10 +432,11 @@ const BusinessIdentityTab: React.FC = () => {
       : (Array.isArray(maybeState.snsPlan) && maybeState.snsPlan.length > 0 ? maybeState.snsPlan : undefined);
     
     // Use analysis results from location.state if available, otherwise use loaded results
-    const analysis = maybeState.analysisResults || loadedAnalysisResults || {};
+    // Retry results override everything
+    const analysis = retryAnalysisResults || maybeState.analysisResults || loadedAnalysisResults || {};
     
     return { identityData: parsedIdentity, rawAiResponse: raw, snsPlan: plan, analysisResults: analysis };
-  }, [location.state, loadedAnalysisResults, loadedSnsPlans]);
+  }, [location.state, loadedAnalysisResults, loadedSnsPlans, retryAnalysisResults]);
 
   const insights = useMemo<IdentityInsights>(() => {
     if (identityData) {
@@ -438,6 +444,42 @@ const BusinessIdentityTab: React.FC = () => {
     }
     return buildInsightsFromSource(source);
   }, [identityData, source]);
+
+  // Get URL for retry functionality
+  const analysisUrl = useMemo(() => {
+    return source?.url || analysisResults?.seo?.url || analysisResults?.ssl?.url || null;
+  }, [source, analysisResults]);
+
+  // Retry handlers for SEO and SSL analysis
+  const handleRetrySEO = useCallback(async () => {
+    if (!analysisUrl) return;
+    
+    try {
+      const result = await runSEOAnalysis(analysisUrl);
+      setRetryAnalysisResults((prev) => ({
+        ...prev,
+        seo: result,
+      }));
+    } catch (error) {
+      console.error('[BusinessIdentityTab] SEO retry failed:', error);
+      alert(`Failed to retry SEO analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [analysisUrl]);
+
+  const handleRetrySSL = useCallback(async () => {
+    if (!analysisUrl) return;
+    
+    try {
+      const result = await runSSLAnalysis(analysisUrl);
+      setRetryAnalysisResults((prev) => ({
+        ...prev,
+        ssl: result,
+      }));
+    } catch (error) {
+      console.error('[BusinessIdentityTab] SSL retry failed:', error);
+      alert(`Failed to retry SSL analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [analysisUrl]);
 
   const businessTitle = insights.sourceMeta?.title || 'Identity Brief';
   const businessSubtitle = insights.sourceMeta?.url ? `Based on ${insights.sourceMeta.url}` : undefined;
@@ -718,10 +760,21 @@ const BusinessIdentityTab: React.FC = () => {
           </section>
 
           {/* SEO and SSL Analysis Results */}
-          {analysisResults && (
+          {/* Always show SEO and SSL displays if analysis was attempted (even if failed) */}
+          {(analysisResults?.seo !== undefined || analysisResults?.ssl !== undefined) && (
             <>
-              <SEOAnalysisDisplay seoAnalysis={analysisResults.seo || null} />
-              <SSLAnalysisDisplay sslAnalysis={analysisResults.ssl || null} />
+              {analysisResults.seo !== undefined && (
+                <SEOAnalysisDisplay 
+                  seoAnalysis={analysisResults.seo || null} 
+                  onRetry={handleRetrySEO}
+                />
+              )}
+              {analysisResults.ssl !== undefined && (
+                <SSLAnalysisDisplay 
+                  sslAnalysis={analysisResults.ssl || null} 
+                  onRetry={handleRetrySSL}
+                />
+              )}
             </>
           )}
 
