@@ -1,5 +1,5 @@
 import path from 'path';
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 
 export function registerSEOHandlers() {
   ipcMain.handle('generate-lighthouse-reports', async (event, { urls, proxy }) => {
@@ -7,7 +7,10 @@ export function registerSEOHandlers() {
       const { chromium } = require('playwright');
       const { playAudit } = require('playwright-lighthouse');
       const fs = require('fs');
-      const outputDir = path.join(process.cwd(), 'output');
+      // Use userData directory in production, cwd in development
+      const outputDir = app.isPackaged
+        ? path.join(app.getPath('userData'), 'output')
+        : path.join(process.cwd(), 'output');
 
       console.log(`🔍 Starting batch Lighthouse generation for ${urls.length} URLs...`);
 

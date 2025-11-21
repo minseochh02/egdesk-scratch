@@ -208,13 +208,13 @@ export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnaly
           <h4>Security Headers</h4>
           <div className="egbusiness-identity-result__headers-summary">
             <div>
-              <strong>Present:</strong> {securityHeaders.headers.present?.length || 0}
+              <strong>Present:</strong> {securityHeaders.headers.filter(h => h.present).length}
             </div>
             <div>
-              <strong>Missing:</strong> {securityHeaders.headers.missing?.length || 0}
+              <strong>Missing:</strong> {securityHeaders.missingHeaders?.length || 0}
             </div>
             <div>
-              <strong>Score:</strong> {securityHeaders.score}/100
+              <strong>Score:</strong> {Math.round(securityHeaders.securityScore || 0)}/100
             </div>
           </div>
         </div>

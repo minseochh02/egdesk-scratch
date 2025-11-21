@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowRight, faPlus, faEdit, faTrash, faSpinner, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faCircleCheck } from '../../utils/fontAwesomeIcons';
+import { faArrowRight, faPlus, faSpinner, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faCircleCheck } from '../../utils/fontAwesomeIcons';
 import { faInstagram as faInstagramBrand, faYoutube, faFacebook } from '@fortawesome/free-brands-svg-icons';
 import './SocialMediaConnectionList.css';
 
@@ -13,8 +13,6 @@ interface SocialMediaConnection {
 }
 
 interface SocialMediaConnectionListProps {
-  onEdit?: (connection: SocialMediaConnection) => void;
-  onDelete?: (connectionId: string) => void;
   onConnect?: (connection: SocialMediaConnection) => void;
   onView?: (connection: SocialMediaConnection) => void;
   onBack?: () => void;
@@ -22,8 +20,6 @@ interface SocialMediaConnectionListProps {
 }
 
 const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
-  onEdit,
-  onDelete,
   onConnect,
   onView,
   onBack,
@@ -103,30 +99,6 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
     }
   };
 
-  const handleDelete = async (connectionId: string, connectionType: string) => {
-    if (!confirm('Are you sure you want to delete this connection?')) {
-      return;
-    }
-
-    try {
-      if (connectionType === 'instagram') {
-        const result = await window.electron.instagram.deleteConnection(connectionId);
-        if (result.success) {
-          // Reload connections
-          await loadConnections();
-          if (onDelete) {
-            onDelete(connectionId);
-          }
-        } else {
-          throw new Error(result.error || 'Failed to delete connection');
-        }
-      }
-      // TODO: Handle other connection types
-    } catch (err) {
-      console.error('Failed to delete connection:', err);
-      alert(`Failed to delete connection: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
 
   const handleView = (connection: SocialMediaConnection) => {
     if (onView) {
@@ -370,28 +342,6 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
               </div>
             </div>
 
-            <div className="social-media-connection-list-actions">
-              <button 
-                className="social-media-connection-list-action-btn social-media-connection-list-edit-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit?.(connection);
-                }}
-              >
-                <FontAwesomeIcon icon={faEdit} />
-                <span>Edit</span>
-              </button>
-              <button 
-                className="social-media-connection-list-action-btn social-media-connection-list-delete-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(connection.id, connection.type);
-                }}
-              >
-                <FontAwesomeIcon icon={faTrash} />
-                <span>Delete</span>
-              </button>
-            </div>
           </div>
         ))}
       </div>

@@ -1,6 +1,23 @@
 // IPC handlers for Chrome browser automation and Lighthouse reports
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import path from 'path';
+import fs from 'fs';
+
+/**
+ * Get output directory path - uses userData in production, cwd in development
+ */
+function getOutputDir(): string {
+  const outputDir = app.isPackaged
+    ? path.join(app.getPath('userData'), 'output')
+    : path.join(process.cwd(), 'output');
+  
+  // Ensure directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+  
+  return outputDir;
+}
 
 /**
  * Helper function to normalize URL - tries www version if non-www fails
@@ -228,7 +245,8 @@ export function registerChromeHandlers(): void {
               console.log('📄 [DEBUG] Generating PDF with expanded sections...');
               
               // Load the generated HTML report
-              const htmlReportPath = `file://${path.join(process.cwd(), 'output', `${reportName}.html`)}`;
+              const outputDir = getOutputDir();
+              const htmlReportPath = `file://${path.join(outputDir, `${reportName}.html`)}`;
               const pdfPage = await context.newPage();
               
               await pdfPage.goto(htmlReportPath);
@@ -264,7 +282,7 @@ export function registerChromeHandlers(): void {
               await pdfPage.waitForTimeout(1000);
               
               // Generate PDF
-              const pdfPath = path.join(process.cwd(), 'output', `${reportName}.pdf`);
+              const pdfPath = path.join(outputDir, `${reportName}.pdf`);
               await pdfPage.pdf({
                 path: pdfPath,
                 format: 'A4',
@@ -341,11 +359,8 @@ export function registerChromeHandlers(): void {
         }
       }
       
-      // Create output directory if it doesn't exist
-      const outputDir = path.join(process.cwd(), 'output');
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+      // Get output directory (handles both dev and production)
+      const outputDir = getOutputDir();
       
       const results = [];
       const debugPort = Math.floor(Math.random() * 10000) + 9000;
@@ -659,12 +674,12 @@ export function registerChromeHandlers(): void {
           
           scores.push({
             url: jsonItem.url,
-            performance: perf * 100,
-            accessibility: a11y * 100,
-            bestPractices: bp * 100,
-            seo: seo * 100,
-            pwa: pwa * 100,
-            overall: ((perf + a11y + bp + seo) / 4) * 100
+            performance: Math.round(perf * 100),
+            accessibility: Math.round(a11y * 100),
+            bestPractices: Math.round(bp * 100),
+            seo: Math.round(seo * 100),
+            pwa: Math.round(pwa * 100),
+            overall: Math.round(((perf + a11y + bp + seo) / 4) * 100)
           });
           
           totalPerformance += perf;
@@ -676,12 +691,12 @@ export function registerChromeHandlers(): void {
         }
       }
       
-      const avgPerformance = validScoresCount > 0 ? (totalPerformance / validScoresCount) * 100 : 0;
-      const avgAccessibility = validScoresCount > 0 ? (totalAccessibility / validScoresCount) * 100 : 0;
-      const avgBestPractices = validScoresCount > 0 ? (totalBestPractices / validScoresCount) * 100 : 0;
-      const avgSEO = validScoresCount > 0 ? (totalSEO / validScoresCount) * 100 : 0;
-      const avgPWA = validScoresCount > 0 ? (totalPWA / validScoresCount) * 100 : 0;
-      const overallAverage = (avgPerformance + avgAccessibility + avgBestPractices + avgSEO) / 4;
+      const avgPerformance = validScoresCount > 0 ? Math.round((totalPerformance / validScoresCount) * 100) : 0;
+      const avgAccessibility = validScoresCount > 0 ? Math.round((totalAccessibility / validScoresCount) * 100) : 0;
+      const avgBestPractices = validScoresCount > 0 ? Math.round((totalBestPractices / validScoresCount) * 100) : 0;
+      const avgSEO = validScoresCount > 0 ? Math.round((totalSEO / validScoresCount) * 100) : 0;
+      const avgPWA = validScoresCount > 0 ? Math.round((totalPWA / validScoresCount) * 100) : 0;
+      const overallAverage = Math.round((avgPerformance + avgAccessibility + avgBestPractices + avgSEO) / 4);
       
       // Collect all recommendations
       const allRecommendations: any[] = [];

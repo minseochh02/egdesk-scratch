@@ -251,8 +251,6 @@ const EGSocialMedia: React.FC = () => {
       <div className="eg-social-media connection-list-view">
         <div className="eg-social-media-scroll">
           <SocialMediaConnectionList
-            onEdit={handleEditConnection}
-            onDelete={handleDeleteConnection}
             onConnect={handleViewConnection}
             onView={handleViewConnection}
             onBack={handleBackFromConnectionList}

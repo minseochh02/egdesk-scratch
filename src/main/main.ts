@@ -452,7 +452,10 @@ const createWindow = async () => {
           };
           
           // Create output directory if it doesn't exist
-          const outputDir = path.join(process.cwd(), 'output');
+          // Use userData directory in production, cwd in development
+          const outputDir = app.isPackaged
+            ? path.join(app.getPath('userData'), 'output')
+            : path.join(process.cwd(), 'output');
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
@@ -2186,7 +2189,11 @@ const createWindow = async () => {
   ipcMain.handle('get-absolute-output-path', async (_event, relativePath: string) => {
     const path = require('path');
     const fs = require('fs');
-    const absolutePath = path.join(process.cwd(), relativePath);
+    // Use userData directory in production, cwd in development
+    const baseDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'output')
+      : process.cwd();
+    const absolutePath = path.join(baseDir, relativePath);
     
     // Ensure output directory exists
     const outputDir = path.dirname(absolutePath);
