@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShieldAlt, faExternalLinkAlt, faSync } from '../../utils/fontAwesomeIcons';
+import { faShieldAlt, faExternalLinkAlt, faSync, faSpinner } from '../../utils/fontAwesomeIcons';
 import type { SSLAnalysisResult } from './analysisHelpers';
 import type { SecurityGrade } from '../../services/sslAnalysisService';
 import { HTMLReportService } from '../../services/htmlReportService';
@@ -14,6 +14,7 @@ import './EGBusinessIdentityResultDemo.css';
 interface SSLAnalysisDisplayProps {
   sslAnalysis: SSLAnalysisResult | null;
   onRetry?: () => void;
+  isRetrying?: boolean;
 }
 
 const getGradeClass = (grade: string): string => {
@@ -38,7 +39,7 @@ const getGradeColor = (grade: string): string => {
   return '#95a5a6';
 };
 
-export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnalysis, onRetry }) => {
+export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnalysis, onRetry, isRetrying = false }) => {
   if (!sslAnalysis) {
     return null;
   }
@@ -86,9 +87,10 @@ export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnaly
               type="button"
               className="egbusiness-identity-result__retry-button"
               onClick={onRetry}
+              disabled={isRetrying}
             >
-              <FontAwesomeIcon icon={faSync} />
-              <span>Retry Analysis</span>
+              <FontAwesomeIcon icon={isRetrying ? faSpinner : faSync} spin={isRetrying} />
+              <span>{isRetrying ? 'Retrying...' : 'Retry Analysis'}</span>
             </button>
           ) : (
             <p className="egbusiness-identity-result__error-hint" style={{ marginTop: '8px', fontSize: '12px', opacity: 0.7 }}>
@@ -227,10 +229,11 @@ export const SSLAnalysisDisplay: React.FC<SSLAnalysisDisplayProps> = ({ sslAnaly
                 type="button"
                 className="egbusiness-identity-result__retry-button"
                 onClick={onRetry}
+                disabled={isRetrying}
                 style={{ marginTop: 0 }}
               >
-                <FontAwesomeIcon icon={faSync} />
-                <span>Retry Analysis</span>
+                <FontAwesomeIcon icon={isRetrying ? faSpinner : faSync} spin={isRetrying} />
+                <span>{isRetrying ? 'Retrying...' : 'Retry Analysis'}</span>
               </button>
             )}
           <button

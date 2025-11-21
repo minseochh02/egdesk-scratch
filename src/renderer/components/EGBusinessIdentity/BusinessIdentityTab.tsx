@@ -322,6 +322,8 @@ const BusinessIdentityTab: React.FC = () => {
     ssl?: SSLAnalysisResult | null;
   } | null>(null);
   const [loadedSnsPlans, setLoadedSnsPlans] = useState<SnsPlanEntry[] | null>(null);
+  const [isRetryingSEO, setIsRetryingSEO] = useState(false);
+  const [isRetryingSSL, setIsRetryingSSL] = useState(false);
   
   const source = useMemo<WebsiteContentSummary | undefined>(() => {
     const maybeState = location.state as { source?: WebsiteContentSummary } | undefined;
@@ -452,34 +454,98 @@ const BusinessIdentityTab: React.FC = () => {
 
   // Retry handlers for SEO and SSL analysis
   const handleRetrySEO = useCallback(async () => {
-    if (!analysisUrl) return;
+    if (!analysisUrl || isRetryingSEO) return;
     
+    setIsRetryingSEO(true);
     try {
       const result = await runSEOAnalysis(analysisUrl);
-      setRetryAnalysisResults((prev) => ({
-        ...prev,
-        seo: result,
-      }));
+      // Preserve existing SSL analysis when updating SEO
+      setRetryAnalysisResults((prev) => {
+        // Get current SSL from prev, or from loadedAnalysisResults, or from location.state
+        const currentSSL = prev?.ssl || loadedAnalysisResults?.ssl || (location.state as any)?.analysisResults?.ssl;
+        return {
+          ...prev,
+          seo: result,
+          ssl: currentSSL, // Preserve SSL analysis
+        };
+      });
+      
+      // Save to SQLite if snapshotId exists
+      const maybeState = location.state as { snapshotId?: string } | undefined;
+      const snapshotId = maybeState?.snapshotId;
+      if (snapshotId && result.success && window.electron?.businessIdentity?.updateAnalysisResults) {
+        try {
+          // Get current SSL analysis to preserve it
+          const currentAnalysis = retryAnalysisResults || loadedAnalysisResults || {};
+          const saveResult = await window.electron.businessIdentity.updateAnalysisResults(
+            snapshotId,
+            result, // New SEO analysis
+            currentAnalysis.ssl || null // Preserve existing SSL analysis
+          );
+          if (saveResult.success) {
+            console.info('[BusinessIdentityTab] SEO retry results saved to SQLite successfully');
+          } else {
+            console.warn('[BusinessIdentityTab] Failed to save SEO retry results:', saveResult.error);
+          }
+        } catch (saveError) {
+          console.error('[BusinessIdentityTab] Error saving SEO retry results to SQLite:', saveError);
+          // Don't fail the retry if save fails
+        }
+      }
     } catch (error) {
       console.error('[BusinessIdentityTab] SEO retry failed:', error);
       alert(`Failed to retry SEO analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsRetryingSEO(false);
     }
-  }, [analysisUrl]);
+  }, [analysisUrl, location.state, retryAnalysisResults, loadedAnalysisResults, isRetryingSEO]);
 
   const handleRetrySSL = useCallback(async () => {
-    if (!analysisUrl) return;
+    if (!analysisUrl || isRetryingSSL) return;
     
+    setIsRetryingSSL(true);
     try {
       const result = await runSSLAnalysis(analysisUrl);
-      setRetryAnalysisResults((prev) => ({
-        ...prev,
-        ssl: result,
-      }));
+      // Preserve existing SEO analysis when updating SSL
+      setRetryAnalysisResults((prev) => {
+        // Get current SEO from prev, or from loadedAnalysisResults, or from location.state
+        const currentSEO = prev?.seo || loadedAnalysisResults?.seo || (location.state as any)?.analysisResults?.seo;
+        return {
+          ...prev,
+          seo: currentSEO, // Preserve SEO analysis
+          ssl: result,
+        };
+      });
+      
+      // Save to SQLite if snapshotId exists
+      const maybeState = location.state as { snapshotId?: string } | undefined;
+      const snapshotId = maybeState?.snapshotId;
+      if (snapshotId && result.success && window.electron?.businessIdentity?.updateAnalysisResults) {
+        try {
+          // Get current SEO analysis to preserve it
+          const currentAnalysis = retryAnalysisResults || loadedAnalysisResults || {};
+          const saveResult = await window.electron.businessIdentity.updateAnalysisResults(
+            snapshotId,
+            currentAnalysis.seo || null, // Preserve existing SEO analysis
+            result // New SSL analysis
+          );
+          if (saveResult.success) {
+            console.info('[BusinessIdentityTab] SSL retry results saved to SQLite successfully');
+          } else {
+            console.warn('[BusinessIdentityTab] Failed to save SSL retry results:', saveResult.error);
+          }
+        } catch (saveError) {
+          console.error('[BusinessIdentityTab] Error saving SSL retry results to SQLite:', saveError);
+          // Don't fail the retry if save fails
+        }
+      }
     } catch (error) {
       console.error('[BusinessIdentityTab] SSL retry failed:', error);
       alert(`Failed to retry SSL analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsRetryingSSL(false);
     }
-  }, [analysisUrl]);
+  }, [analysisUrl, location.state, retryAnalysisResults, loadedAnalysisResults, isRetryingSSL]);
 
   const businessTitle = insights.sourceMeta?.title || 'Identity Brief';
   const businessSubtitle = insights.sourceMeta?.url ? `Based on ${insights.sourceMeta.url}` : undefined;
@@ -764,15 +830,17 @@ const BusinessIdentityTab: React.FC = () => {
           {(analysisResults?.seo !== undefined || analysisResults?.ssl !== undefined) && (
             <>
               {analysisResults.seo !== undefined && (
-                <SEOAnalysisDisplay 
-                  seoAnalysis={analysisResults.seo || null} 
+                <SEOAnalysisDisplay
+                  seoAnalysis={analysisResults.seo || null}
                   onRetry={handleRetrySEO}
+                  isRetrying={isRetryingSEO}
                 />
               )}
               {analysisResults.ssl !== undefined && (
                 <SSLAnalysisDisplay 
                   sslAnalysis={analysisResults.ssl || null} 
                   onRetry={handleRetrySSL}
+                  isRetrying={isRetryingSSL}
                 />
               )}
             </>

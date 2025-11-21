@@ -175,6 +175,21 @@ export async function runSEOAnalysis(url: string): Promise<SEOAnalysisResult> {
 }
 
 /**
+ * Check if URL should retry with www subdomain
+ */
+function shouldRetryWithWww(url: string): boolean {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    // Only retry if URL doesn't already have www
+    return !urlObj.hostname.startsWith('www.');
+  } catch {
+    // If URL parsing fails, check string directly
+    return !url.includes('www.');
+  }
+}
+
+/**
  * Run SSL analysis
  */
 export async function runSSLAnalysis(url: string): Promise<SSLAnalysisResult> {
@@ -184,51 +199,60 @@ export async function runSSLAnalysis(url: string): Promise<SSLAnalysisResult> {
   try {
     console.log('[BusinessIdentity] Starting SSL analysis...');
     let result: OverallSecurityResult | null = null;
-    let shouldRetryWithWww = false;
+    let analysisFailed = false;
+    let errorMessage: string | undefined = undefined;
     
     try {
       result = await SSLAnalysisService.performCompleteAnalysis(url);
       
-      // Check if accessibility failed with a timeout/connection error
-      if (!result.accessibility.accessible && result.accessibility.error) {
-        if (shouldTryWwwFallback(url, result.accessibility.error)) {
-          shouldRetryWithWww = true;
-        }
+      // Check if analysis failed (accessibility failed or other issues)
+      if (!result.accessibility.accessible) {
+        analysisFailed = true;
+        errorMessage = result.accessibility.error;
+        console.warn(`[BusinessIdentity] SSL analysis failed for ${url}:`, errorMessage);
       }
     } catch (error) {
-      // If it's a timeout/connection error, try with www subdomain
-      if (shouldTryWwwFallback(url, error instanceof Error ? error.message : undefined)) {
-        shouldRetryWithWww = true;
-      } else {
-        throw error;
-      }
+      analysisFailed = true;
+      errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[BusinessIdentity] SSL analysis error for ${url}:`, errorMessage);
     }
     
-    // Retry with www if needed
-    if (shouldRetryWithWww) {
+    // If analysis failed and URL doesn't have www, retry with www subdomain
+    if (analysisFailed && shouldRetryWithWww(url)) {
       const wwwUrl = addWwwSubdomain(url);
       console.log(`[BusinessIdentity] SSL analysis failed for ${url}, retrying with www subdomain: ${wwwUrl}`);
       
       try {
         result = await SSLAnalysisService.performCompleteAnalysis(wwwUrl);
-        console.log(`[BusinessIdentity] SSL analysis succeeded with www subdomain`);
+        
+        // Check if the www version succeeded
+        if (result.accessibility.accessible) {
+          console.log(`[BusinessIdentity] SSL analysis succeeded with www subdomain`);
+        } else {
+          console.warn(`[BusinessIdentity] SSL analysis with www subdomain also failed:`, result.accessibility.error);
+          // Use the www result even if it failed, as it might have partial data
+        }
       } catch (wwwError) {
-        console.warn(`[BusinessIdentity] SSL analysis also failed with www subdomain:`, wwwError);
-        // If we had a result from the first attempt, use it; otherwise throw
+        console.warn(`[BusinessIdentity] SSL analysis with www subdomain threw error:`, wwwError);
+        // If we had a result from the first attempt, use it; otherwise we'll return error below
         if (!result) {
           throw wwwError;
         }
       }
     }
     
+    // If we still don't have a result, return error
     if (!result) {
-      throw new Error('SSL analysis failed and no result available');
+      throw new Error(errorMessage || 'SSL analysis failed and no result available');
     }
     
+    // Return success even if accessibility failed, as long as we have a result
+    // The UI will handle displaying the error state
     return {
-      success: true,
+      success: result.accessibility.accessible,
       url: originalUrl, // Preserve original URL in result
       result,
+      error: result.accessibility.accessible ? undefined : (result.accessibility.error || 'SSL analysis failed'),
       timestamp,
     };
   } catch (error) {

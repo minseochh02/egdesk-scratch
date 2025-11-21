@@ -380,10 +380,11 @@ export function registerChromeHandlers(): void {
       
       // Process each URL
       for (let i = 0; i < urls.length; i++) {
-        let url = urls[i];
+        const originalUrl = urls[i];
         
-        // Normalize URL - try www version for root domains
-        url = normalizeUrl(url);
+        // Normalize URL - try www version for root domains (for navigation only)
+        const normalizedUrl = normalizeUrl(originalUrl);
+        
         const urlResult: {
           url: string;
           success: boolean;
@@ -391,23 +392,27 @@ export function registerChromeHandlers(): void {
           error: string | null;
           index: number;
           total: number;
+          originalUrl?: string; // Preserve original URL
+          normalizedUrl?: string; // Track normalized URL used for navigation
         } = {
-          url,
+          url: originalUrl, // Keep original URL in result
           success: false,
           reportName: null,
           error: null,
           index: i + 1,
-          total: urls.length
+          total: urls.length,
+          originalUrl,
+          normalizedUrl: normalizedUrl !== originalUrl ? normalizedUrl : undefined
         };
         
         try {
-          console.log(`\n🔍 [${i + 1}/${urls.length}] Processing: ${url}`);
+          console.log(`\n🔍 [${i + 1}/${urls.length}] Processing: ${originalUrl}${normalizedUrl !== originalUrl ? ` (using ${normalizedUrl} for navigation)` : ''}`);
           
           // Send progress update to renderer
           event.sender.send('lighthouse-progress', {
             current: i + 1,
             total: urls.length,
-            url,
+            url: originalUrl, // Send original URL to renderer
             status: 'processing'
           });
           
@@ -423,8 +428,8 @@ export function registerChromeHandlers(): void {
             console.log(`⚠️ [DEBUG] [${i + 1}/${urls.length}] Step 2: Could not get initial URL:`, e);
           }
           
-          // Navigate to URL - use 'load' for more reliable navigation
-          console.log(`🔍 [DEBUG] [${i + 1}/${urls.length}] Step 3: Starting navigation to ${url}...`);
+          // Navigate to normalized URL - use 'load' for more reliable navigation
+          console.log(`🔍 [DEBUG] [${i + 1}/${urls.length}] Step 3: Starting navigation to ${normalizedUrl}...`);
           console.log(`🔍 [DEBUG] [${i + 1}/${urls.length}] Step 3: Navigation options:`, { waitUntil: 'load', timeout: 60000 });
           
           // Add a timeout monitor
@@ -445,12 +450,12 @@ export function registerChromeHandlers(): void {
           try {
             // Try domcontentloaded first (less strict, faster)
             console.log(`🔍 [DEBUG] [${i + 1}/${urls.length}] Attempting navigation with 'domcontentloaded'...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
             clearInterval(checkInterval);
             const finalUrl = page.url();
             console.log(`✅ [DEBUG] [${i + 1}/${urls.length}] Step 3: Navigation completed successfully`);
             console.log(`✅ [DEBUG] [${i + 1}/${urls.length}] Final page URL: ${finalUrl}`);
-            console.log(`✅ Navigated to: ${url}`);
+            console.log(`✅ Navigated to: ${normalizedUrl} (original: ${originalUrl})`);
           } catch (navError: any) {
             clearInterval(checkInterval);
             const errorUrl = page.url();
@@ -463,12 +468,12 @@ export function registerChromeHandlers(): void {
             if (errorUrl === 'about:blank' || errorUrl.startsWith('about:')) {
               console.log(`🔄 [DEBUG] [${i + 1}/${urls.length}] Attempting workaround for about:blank hang...`);
               try {
-                // Try navigating to about:blank first to "reset" the page
-                await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
-                await page.waitForTimeout(1000);
-                // Then try the actual URL with commit option
-                console.log(`🔄 [DEBUG] [${i + 1}/${urls.length}] Retrying navigation with 'commit' waitUntil...`);
-                await page.goto(url, { waitUntil: 'commit', timeout: 30000 });
+            // Try navigating to about:blank first to "reset" the page
+            await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(1000);
+            // Then try the actual URL with commit option
+            console.log(`🔄 [DEBUG] [${i + 1}/${urls.length}] Retrying navigation with 'commit' waitUntil...`);
+            await page.goto(normalizedUrl, { waitUntil: 'commit', timeout: 30000 });
                 const retryUrl = page.url();
                 console.log(`✅ [DEBUG] [${i + 1}/${urls.length}] Workaround succeeded! Final URL: ${retryUrl}`);
               } catch (retryError: any) {
@@ -490,9 +495,9 @@ export function registerChromeHandlers(): void {
             console.log(`⚠️ [DEBUG] [${i + 1}/${urls.length}] Step 4: Network idle timeout, continuing anyway`);
           }
           
-          // Generate unique report name
+          // Generate unique report name (use original URL for filename)
           const timestamp = Date.now();
-          const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+          const sanitizedUrl = originalUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
           const reportName = `lighthouse-${sanitizedUrl}-${timestamp}`;
           
           // Run Lighthouse audit - catch threshold errors but still generate reports
@@ -530,7 +535,7 @@ export function registerChromeHandlers(): void {
             }
           }
           
-          console.log(`✅ Lighthouse audit completed for: ${url}`);
+          console.log(`✅ Lighthouse audit completed for: ${originalUrl}`);
           
           // Generate PDF with expanded sections
           try {
@@ -579,11 +584,11 @@ export function registerChromeHandlers(): void {
           urlResult.success = true;
           urlResult.reportName = reportName;
           
-          // Send success update
+          // Send success update (use original URL)
           event.sender.send('lighthouse-progress', {
             current: i + 1,
             total: urls.length,
-            url,
+            url: originalUrl, // Send original URL
             status: 'completed',
             reportName
           });
@@ -591,14 +596,14 @@ export function registerChromeHandlers(): void {
           await page.close();
           
         } catch (error) {
-          console.error(`❌ Failed to process ${url}:`, error);
+          console.error(`❌ Failed to process ${originalUrl}:`, error);
           urlResult.error = error instanceof Error ? error.message : 'Unknown error';
           
-          // Send error update
+          // Send error update (use original URL)
           event.sender.send('lighthouse-progress', {
             current: i + 1,
             total: urls.length,
-            url,
+            url: originalUrl, // Send original URL
             status: 'failed',
             error: urlResult.error
           });
@@ -742,7 +747,8 @@ export function registerChromeHandlers(): void {
         if (googleKey?.fields?.apiKey) {
           const { GoogleGenerativeAI } = require('@google/generative-ai');
           const genAI = new GoogleGenerativeAI(googleKey.fields.apiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+          // Use gemini-2.0-flash-exp (newer model)
+          const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
           const prompt = `Analyze the following SEO issues found across multiple websites and provide a comprehensive explanation and recommendations:
 
