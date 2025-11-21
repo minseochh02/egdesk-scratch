@@ -369,22 +369,6 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
                 <FontAwesomeIcon icon={taskStates[task.id] ? faPause : faPlay} />
                 <span>{taskStates[task.id] ? 'Pause' : 'Start'}</span>
               </button>
-              <button
-                type="button"
-                className="egbusiness-identity__scheduled-demo-action-test"
-                     onClick={(event) => {
-                       event.stopPropagation();
-                       if (onTestPost) {
-                         // Use generic credentials for all channels
-                         const creds = taskCredentials[task.id];
-                         onTestPost(task, creds);
-                       } else {
-                         console.info('[BusinessIdentityScheduledDemo] Test Post clicked:', task.id);
-                       }
-                     }}
-              >
-                Test Post
-              </button>
               {isBlogChannel(task.channel) && task.connectionId && task.connectionType && (
                 <button
                   type="button"
