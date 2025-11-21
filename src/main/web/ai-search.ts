@@ -68,7 +68,8 @@ function getGoogleApiKey(): string | null {
  */
 export async function generateBusinessIdentity(
   websiteText: string,
-  rootUrl?: string
+  rootUrl?: string,
+  language?: string
 ): Promise<AISearchResult> {
   try {
     const apiKey = getGoogleApiKey();
@@ -199,13 +200,20 @@ export async function generateBusinessIdentity(
 
     const rootUrlInstruction = rootUrl ? `\n\nIMPORTANT: The source.url field must be set to the root/homepage URL: ${rootUrl}. Do not use URLs from subpages like /contact, /about, etc.` : '';
     
+    // Build language instruction
+    let languageInstruction = '';
+    if (language) {
+      const isNonEnglish = language && language.toLowerCase() !== 'en';
+      languageInstruction = `\n\nIMPORTANT: The website's primary language is "${language}". Use this information to understand the target audience's language and cultural context when analyzing the business identity, especially for targetAudience, toneVoice, and brandCategory fields.${isNonEnglish ? `\n\nCRITICAL: Since the website language is "${language}" (not English), ALL JSON field values (coreIdentity, brandCategory, targetAudience, signatureProof, toneVoice, recommendedActions, etc.) MUST be written in ${language}, not English. The JSON structure and field names remain in English, but all content/values must be in ${language}.` : ''}`;
+    }
+    
     const prompt = `You are a structured-data generator. Analyze this website and generate the business identity data in the required JSON format.
 
 Rules:
 - Emit only JSON (no markdown, prose, or explanations).
 - Populate null where data is unavailable.
 - Keep strings concise (≤ 280 chars when possible).
-- Limit keywords to the top 5 ranked terms.${rootUrlInstruction}
+- Limit keywords to the top 5 ranked terms.${rootUrlInstruction}${languageInstruction}
 
 Website Context:
 ${websiteText}`;
@@ -393,6 +401,14 @@ export async function generateSnsPlan(
       platformContext = `\n\nAvailable Blog Platforms: ${availableBlogPlatforms.join(', ')}\nIMPORTANT: When creating blog content plans, use the exact platform name (e.g., "WordPress", "Naver Blog") instead of the generic term "Blog".`;
     }
 
+    // Extract language from identity data
+    const language = identityData?.source?.language;
+    let languageInstruction = '';
+    if (language) {
+      const isNonEnglish = language && language.toLowerCase() !== 'en';
+      languageInstruction = `\n\nIMPORTANT: The website's primary language is "${language}". Use this information to understand the target audience's language and cultural context when creating the SNS marketing plan.${isNonEnglish ? `\n\nCRITICAL: Since the website language is "${language}" (not English), ALL JSON field values (title, summary, topics, mediaStyle, copyGuidelines, cta, extraNotes, etc.) MUST be written in ${language}, not English. The JSON structure and field names remain in English, but all content/values must be in ${language}.` : ''}`;
+    }
+
     const planPrompt = `You are an SNS marketing planner. Using the following business identity JSON, create a multi-channel SNS marketing plan.
 
 Rules:
@@ -401,7 +417,7 @@ Rules:
 - Keep strings concise (≤ 200 chars).
 - Available platforms ONLY: Instagram, WordPress, Naver Blog.
 - For blog platforms, use exact names: "WordPress" or "Naver Blog" (not generic "Blog").
-- DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}
+- DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}${languageInstruction}
 
 Identity JSON:
 ${JSON.stringify(identityData, null, 2)}`;
