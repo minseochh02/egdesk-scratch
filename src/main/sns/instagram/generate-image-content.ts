@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { getStore } from '../../../storage';
+import { getStore } from '../../storage';
 
 export interface GeneratedInstagramImage {
   filePath: string;

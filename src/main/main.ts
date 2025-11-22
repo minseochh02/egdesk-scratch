@@ -24,9 +24,9 @@ import { resolveHtmlPath } from './util';
 import { autonomousGeminiClient } from './ai-code/gemini-autonomous-client';
 import { WordPressHandler } from './wordpress/wordpress-handler';
 import { NaverHandler } from './naver/naver-handler';
-import { InstagramHandler } from './instagram/instagram-handler';
-import { YouTubeHandler } from './youtube/youtube-handler';
-import { FacebookHandler } from './facebook/facebook-handler';
+import { InstagramHandler } from './sns/instagram/instagram-handler';
+import { YouTubeHandler } from './sns/youtube/youtube-handler';
+import { FacebookHandler } from './sns/facebook/facebook-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
@@ -63,7 +63,7 @@ import { registerFileSystemHandlers } from './fs';
 import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
-import { registerNaverBlogHandlers } from './naver-blog-handlers';
+import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
@@ -91,8 +91,8 @@ import { fetchWebsiteContent } from './web/content-fetcher';
 import { crawlHomepageForBusinessIdentity } from './web/homepage-crawler';
 import { crawlMultiplePagesForBusinessIdentity } from './web/multi-page-crawler';
 import { generateBusinessIdentity, generateSnsPlan } from './web/ai-search';
-import { AuthContext } from './instagramlogin';
-import { createBusinessIdentityInstagramPost } from './business-identity/sns/instagram';
+import { AuthContext } from './sns/instagram/login';
+import { createBusinessIdentityInstagramPost } from './sns/instagram';
 
 const envCandidates = new Set<string>();
 
@@ -272,40 +272,6 @@ const createWindow = async () => {
         const { runShinhanAutomation } = require('./bank-automator');
         // Note: ROBOFLOW_API_KEY should be set in environment variables
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
-      });
-      ipcMain.handle('start-naver-blog-with-image', async (_event, opts?: { id?: string; password?: string; proxy?: string; title?: string; content?: string; tags?: string; includeDogImage?: boolean; dogImagePrompt?: string }) => {
-        try {
-          // Get the "egdesk" API key from store
-          const { getStore } = require('./storage');
-          const store = getStore();
-          const aiKeys = store.get('ai-keys', []);
-          const egdeskKey = aiKeys.find((key: any) => key.name === 'egdesk' && key.providerId === 'google' && key.fields?.apiKey);
-          
-          if (!egdeskKey) {
-            throw new Error('No "egdesk" API key found. Please configure a Google/Gemini API key with the name "egdesk" in the AI Keys Manager.');
-          }
-
-          // Set the API key as environment variable
-          process.env.GEMINI_API_KEY = egdeskKey.fields.apiKey;
-          console.log(`🔑 Using "egdesk" API key for Naver Blog automation`);
-
-          const { runNaverBlogAutomation } = require('./naver/browser-controller');
-          return await runNaverBlogAutomation(
-            {
-              username: opts?.id || '',
-              password: opts?.password || '',
-              proxyUrl: opts?.proxy
-            },
-            {
-              title: opts?.title || 'Test Title',
-              content: opts?.content || 'Test Content',
-              tags: opts?.tags || '#test'
-            }
-          );
-        } catch (error) {
-          console.error('❌ Naver Blog automation failed:', error);
-          return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
       });
       ipcMain.handle('launch-chrome', async () => {
         try {
@@ -1081,8 +1047,8 @@ const createWindow = async () => {
           console.log('[test-youtube-upload] Visibility:', visibility || 'public');
 
           // Import YouTube functions dynamically
-          const { getAuthenticatedPage } = await import('./youtubelogin.js');
-          const { createYouTubePost } = await import('./youtube-post.js');
+          const { getAuthenticatedPage } = await import('./sns/youtube/login.js');
+          const { createYouTubePost } = await import('./sns/youtube/youtube-post.js');
 
           // Get authenticated YouTube page
           const loginOptions: any = {};
@@ -1271,8 +1237,8 @@ const createWindow = async () => {
           console.log('[test-facebook-post] Has text:', !!text);
 
           // Import Facebook functions dynamically
-          const { getAuthenticatedPage } = await import('./facebooklogin.js');
-          const { createFacebookPost } = await import('./facebook-post.js');
+          const { getAuthenticatedPage } = await import('./sns/facebook/login.js');
+          const { createFacebookPost } = await import('./sns/facebook/facebook-post.js');
 
           // Get authenticated Facebook page
           const authContext = await getAuthenticatedPage({

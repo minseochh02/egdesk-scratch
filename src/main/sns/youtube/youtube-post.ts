@@ -3,11 +3,11 @@ import {
   generateYouTubeContent,
   GeneratedYouTubeContent,
   YouTubeContentPlan,
-} from "./youtube/generate-youtube-content";
+} from "./generate-youtube-content";
 import {
   generateYouTubeShortVideo,
   YouTubeVideoGenerationOptions,
-} from "./youtube/generate-youtube-video";
+} from "./generate-youtube-video";
 
 export interface YouTubePostOptions {
   videoPath?: string; // Optional - will generate video if not provided and structuredPrompt is available
@@ -23,7 +23,7 @@ export interface YouTubePostOptions {
   videoGenerationOptions?: YouTubeVideoGenerationOptions;
 }
 
-export type { YouTubeContentPlan, GeneratedYouTubeContent } from "./youtube/generate-youtube-content";
+export type { YouTubeContentPlan, GeneratedYouTubeContent } from "./generate-youtube-content";
 
 /**
  * YouTube video upload function using Playwright

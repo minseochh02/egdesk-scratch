@@ -3,7 +3,7 @@ import {
   generateInstagramContent,
   GeneratedInstagramContent,
   InstagramContentPlan,
-} from "./business-identity/sns/instagram/generate-text-content";
+} from "./generate-text-content";
 
 export interface PostOptions {
   imagePath: string;
@@ -12,7 +12,7 @@ export interface PostOptions {
   waitAfterShare?: number; // milliseconds to wait after clicking Share
 }
 
-export type { InstagramContentPlan, GeneratedInstagramContent } from "./business-identity/sns/instagram/generate-text-content";
+export type { InstagramContentPlan, GeneratedInstagramContent } from "./generate-text-content";
 
 /**
  * Instagram post upload function

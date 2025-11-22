@@ -7,17 +7,17 @@ import { Page } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { createInstagramPost, PostOptions } from '../../../instagram-post';
+import { createInstagramPost, PostOptions } from './instagram-post';
 import {
   generateInstagramContent,
   InstagramContentPlan,
   GeneratedInstagramContent,
 } from './generate-text-content';
 import { generateInstagramImage } from './generate-image-content';
-import { login as playwrightInstagramLogin, getAuthenticatedPage, loginWithPage } from '../../../instagramlogin';
-import type { AuthContext } from '../../../instagramlogin';
-import { getStore } from '../../../storage';
-import { getSQLiteManager } from '../../../sqlite/manager';
+import { login as playwrightInstagramLogin, getAuthenticatedPage, loginWithPage } from './login';
+import type { AuthContext } from './login';
+import { getStore } from '../../storage';
+import { getSQLiteManager } from '../../sqlite/manager';
 
 export interface BusinessIdentityInstagramPostOptions {
   /** SQLite plan ID for execution tracking */

@@ -4,7 +4,7 @@
  * Uses the generic AI search utility with Instagram-specific system prompt
  */
 
-import { aiSearch, AISearchOptions } from '../../../ai-code/ai-search';
+import { aiSearch, AISearchOptions } from '../../ai-code/ai-search';
 
 const INSTAGRAM_CONTENT_SYSTEM_PROMPT = `You are an elite Instagram social strategist.
 Always respond with strictly valid JSON that matches this schema:

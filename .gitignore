@@ -37,3 +37,6 @@ gmail-tokens.json
 
 .env
 .env.production
+
+# Playwright authentication state (contains sensitive session data)
+playwright/.auth/

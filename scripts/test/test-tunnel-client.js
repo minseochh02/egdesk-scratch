@@ -3,7 +3,7 @@
  * This connects to https://tunneling-service.onrender.com/
  */
 
-const { TunnelClient } = require('./dist-mcp/server.js'); // Adjust path if needed
+const { TunnelClient } = require('../../dist-mcp/server.js'); // Adjust path if needed
 const http = require('http');
 
 // Create a simple local HTTP server to test with

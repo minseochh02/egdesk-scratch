@@ -7,6 +7,8 @@ import {
 } from './html-to-smarteditor';
 import { clipboard } from 'electron';
 import path from 'path';
+import fs from 'fs';
+import mime from 'mime-types';
 // We'll use a simple UUID generator instead of importing uuid
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -810,6 +812,76 @@ async function findAndClickTextEditor(pageOrFrame: any, newPage: Page): Promise<
 }
 
 /**
+ * Copy image to clipboard using Playwright
+ */
+async function copyImageToClipboardWithPlaywright(imagePath: string, page: Page): Promise<boolean> {
+  try {
+    console.log(`📋 Copying image to clipboard using Playwright: ${imagePath}`);
+    
+    // Read the image file as buffer
+    const imageBuffer = await fs.promises.readFile(imagePath);
+    console.log(`📊 Image buffer size: ${imageBuffer.length} bytes`);
+    
+    // Get the MIME type from the file extension
+    const mimeType = mime.lookup(imagePath) || 'image/png';
+    console.log(`📄 MIME type: ${mimeType}`);
+    
+    // Use Playwright's clipboard API to set the image
+    const result = await page.evaluate(({ buffer, mimeType }: { buffer: number[], mimeType: string }) => {
+      return new Promise<{ success: boolean, error?: string }>((resolve) => {
+        console.log('🔍 Starting clipboard operation in browser context...');
+        console.log('Buffer length:', buffer.length);
+        console.log('MIME type:', mimeType);
+        
+        const reader = new FileReader();
+        reader.onload = () => {
+          console.log('📖 FileReader onload triggered');
+          if (reader.result) {
+            console.log('📦 Creating blob from result...');
+            const blob = new Blob([reader.result], { type: mimeType });
+            console.log('📋 Blob created, size:', blob.size);
+            
+            console.log('📝 Writing to clipboard...');
+            navigator.clipboard.write([
+              new ClipboardItem({
+                [mimeType]: blob
+              })
+            ]).then(() => {
+              console.log('✅ Clipboard write successful');
+              resolve({ success: true });
+            }).catch((error) => {
+              console.error('❌ Clipboard write failed:', error);
+              resolve({ success: false, error: error.message });
+            });
+          } else {
+            console.error('❌ FileReader result is null');
+            resolve({ success: false, error: 'FileReader result is null' });
+          }
+        };
+        reader.onerror = (error) => {
+          console.error('❌ FileReader error:', error);
+          resolve({ success: false, error: 'FileReader error' });
+        };
+        
+        console.log('🔄 Starting FileReader...');
+        reader.readAsArrayBuffer(new Blob([new Uint8Array(buffer)]));
+      });
+    }, { buffer: Array.from(imageBuffer), mimeType });
+    
+    if (result.success) {
+      console.log(`✅ Image copied to clipboard successfully using Playwright`);
+      return true;
+    } else {
+      console.error(`❌ Clipboard operation failed: ${result.error}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Failed to copy image to clipboard with Playwright:', error);
+    return false;
+  }
+}
+
+/**
  * Add image to blog post using clipboard paste
  * @param targetField - The original content field we typed content into
  */
@@ -818,7 +890,6 @@ async function addImageToBlog(pageOrFrame: any, newPage: Page, imagePath: string
     console.log('[NAVER] Adding image to blog post...');
     
     // Copy image to clipboard using Playwright
-    const { copyImageToClipboardWithPlaywright } = require('../ai-blog/generate-dog-image');
     const clipboardSuccess = await copyImageToClipboardWithPlaywright(imagePath, newPage);
     
     if (!clipboardSuccess) {
