@@ -14,6 +14,7 @@ interface IdentityKickoffProps {
   onUrlChange: (url: string) => void;
   onGenerate: () => void;
   loading: boolean;
+  snsPlanLoading: boolean;
   error: string | null;
   planError: string | null;
   isConfigured: boolean;
@@ -30,6 +31,7 @@ export const IdentityKickoff: React.FC<IdentityKickoffProps> = ({
   onUrlChange,
   onGenerate,
   loading,
+  snsPlanLoading,
   error,
   planError,
   isConfigured,
@@ -58,6 +60,7 @@ export const IdentityKickoff: React.FC<IdentityKickoffProps> = ({
             identitySnapshot={identitySnapshot}
             parsedIdentity={parsedIdentity}
             snsPlan={snsPlan}
+            snsPlanLoading={snsPlanLoading}
             onGenerateNew={onGenerateNew}
           />
         ) : (

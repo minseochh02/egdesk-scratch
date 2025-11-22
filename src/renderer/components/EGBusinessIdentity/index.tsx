@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCalendarAlt } from '../../utils/fontAwesomeIcons';
+import { faCalendarAlt, faBug } from '../../utils/fontAwesomeIcons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AIService } from '../../services/ai-service';
 import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
@@ -13,6 +13,7 @@ import './EGBusinessIdentity.css';
 import { IdentityKickoff } from './IdentityKickoff';
 import { ScheduledPosts } from './ScheduledPosts';
 import { AIKeySelector } from './AIKeySelector';
+import { SnsPlanDebugModal, DebugStep } from './SnsPlanDebugModal';
 
 // Types and utilities
 import type { IdentitySnapshot, SnsPlanEntry, StoredSnsPlan, IdentityLocationState } from './types';
@@ -30,11 +31,15 @@ const EGBusinessIdentity: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'kickoff' | 'scheduled'>('kickoff');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [snsPlanLoading, setSnsPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null);
   const [snsPlan, setSnsPlan] = useState<SnsPlanEntry[] | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [storedPlanLoaded, setStoredPlanLoaded] = useState(false);
+  const [debugSteps, setDebugSteps] = useState<DebugStep[]>([]);
+  const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
+  const [currentDebugStep, setCurrentDebugStep] = useState<string | undefined>();
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramPassword, setInstagramPassword] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
@@ -183,35 +188,172 @@ const EGBusinessIdentity: React.FC = () => {
     }
   }, []);
 
+  const addDebugStep = useCallback((step: Omit<DebugStep, 'timestamp'>) => {
+    setDebugSteps((prev) => [...prev, { ...step, timestamp: new Date() }]);
+  }, []);
+
+  const updateDebugStep = useCallback((stepName: string, updates: Partial<DebugStep>) => {
+    setDebugSteps((prev) =>
+      prev.map((step) => (step.step === stepName ? { ...step, ...updates } : step))
+    );
+  }, []);
+
   const generateSnsPlan = useCallback(async (identityData: any): Promise<SnsPlanEntry[] | null> => {
+    const stepId = 'generate-sns-plan';
     try {
+      addDebugStep({
+        step: '1. Pre-flight Check',
+        status: 'running',
+        message: 'Checking AI configuration...',
+      });
+      setCurrentDebugStep('1. Pre-flight Check');
+
       if (!isConfigured) {
-        throw new Error('AI is not configured. Please select a Google AI key.');
+        const error = 'AI is not configured. Please select a Google AI key.';
+        updateDebugStep('1. Pre-flight Check', {
+          status: 'error',
+          message: error,
+          error,
+        });
+        throw new Error(error);
       }
+
+      updateDebugStep('1. Pre-flight Check', {
+        status: 'success',
+        message: 'AI is configured. Proceeding with generation...',
+      });
+
+      addDebugStep({
+        step: '2. API Call Preparation',
+        status: 'running',
+        message: 'Preparing API request with identity data...',
+        details: {
+          identityDataKeys: Object.keys(identityData || {}),
+          hasIdentity: !!identityData?.identity,
+          hasSource: !!identityData?.source,
+        },
+      });
+      setCurrentDebugStep('2. API Call Preparation');
+
+      addDebugStep({
+        step: '3. API Request',
+        status: 'running',
+        message: 'Calling Gemini API to generate SNS plan...',
+      });
+      setCurrentDebugStep('3. API Request');
 
       const result = await window.electron.web.generateSnsPlan(identityData);
 
       if (!result.success || !result.content) {
-        throw new Error(result.error || 'SNS plan generation failed.');
+        const error = result.error || 'SNS plan generation failed.';
+        updateDebugStep('3. API Request', {
+          status: 'error',
+          message: `API call failed: ${error}`,
+          error,
+          details: result,
+        });
+        throw new Error(error);
       }
+
+      updateDebugStep('3. API Request', {
+        status: 'success',
+        message: `API call successful. Response length: ${result.content.length} characters`,
+        details: {
+          responseLength: result.content.length,
+          responsePreview: result.content.substring(0, 500),
+        },
+      });
+
+      addDebugStep({
+        step: '4. JSON Parsing',
+        status: 'running',
+        message: 'Extracting JSON from API response...',
+      });
+      setCurrentDebugStep('4. JSON Parsing');
 
       const jsonMatch = result.content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('SNS plan response missing JSON.');
+        const error = 'SNS plan response missing JSON.';
+        updateDebugStep('4. JSON Parsing', {
+          status: 'error',
+          message: error,
+          error,
+          details: {
+            responsePreview: result.content.substring(0, 1000),
+          },
+        });
+        throw new Error(error);
       }
+
+      updateDebugStep('4. JSON Parsing', {
+        status: 'success',
+        message: 'JSON found in response. Parsing...',
+        details: {
+          jsonLength: jsonMatch[0].length,
+        },
+      });
+
+      addDebugStep({
+        step: '5. Data Validation',
+        status: 'running',
+        message: 'Validating parsed JSON structure...',
+      });
+      setCurrentDebugStep('5. Data Validation');
+
       const parsed = JSON.parse(jsonMatch[0]);
       if (!Array.isArray(parsed?.snsPlan)) {
-        throw new Error('snsPlan array missing in response.');
+        const error = 'snsPlan array missing in response.';
+        updateDebugStep('5. Data Validation', {
+          status: 'error',
+          message: error,
+          error,
+          details: {
+            parsedKeys: Object.keys(parsed || {}),
+            parsed,
+          },
+        });
+        throw new Error(error);
       }
+
+      updateDebugStep('5. Data Validation', {
+        status: 'success',
+        message: `Validation successful. Found ${parsed.snsPlan.length} SNS plan entries.`,
+        details: {
+          planCount: parsed.snsPlan.length,
+          channels: parsed.snsPlan.map((p: any) => p.channel),
+        },
+      });
+
+      addDebugStep({
+        step: '6. Complete',
+        status: 'success',
+        message: `SNS plan generation completed successfully with ${parsed.snsPlan.length} entries.`,
+        details: {
+          plans: parsed.snsPlan,
+        },
+      });
+      setCurrentDebugStep(undefined);
+
       return parsed.snsPlan as SnsPlanEntry[];
     } catch (err) {
       console.error('[EGBusinessIdentity] SNS plan generation failed:', err);
-      setPlanError(
-        err instanceof Error ? err.message || 'Failed to generate SNS plan.' : 'Failed to generate SNS plan.',
-      );
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate SNS plan.';
+      setPlanError(errorMessage);
+      
+      // Update the current step to error if not already updated
+      if (currentDebugStep) {
+        updateDebugStep(currentDebugStep, {
+          status: 'error',
+          message: `Failed: ${errorMessage}`,
+          error: errorMessage,
+          details: err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
+        });
+      }
+      
+      setCurrentDebugStep(undefined);
       return null;
     }
-  }, [isConfigured]);
+  }, [isConfigured, addDebugStep, updateDebugStep, currentDebugStep]);
 
   const persistSnsPlans = useCallback(async (snapshotId: string, plans: SnsPlanEntry[]) => {
     if (!window.electron?.businessIdentity?.saveSnsPlans) {
@@ -280,6 +422,8 @@ const EGBusinessIdentity: React.FC = () => {
     try {
       setPlanError(null);
       setSnsPlan(null);
+      // Clear debug steps when starting a new identity analysis (new URL)
+      setDebugSteps([]);
       // Validate URL format early to give fast feedback
       const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
       await persistUrl(parsed.toString());
@@ -403,7 +547,17 @@ const EGBusinessIdentity: React.FC = () => {
         setIsEditMode(false); // Exit edit mode after successful generation
         console.info('[EGBusinessIdentity] Snapshot saved:', snapshotResult.data?.id ?? 'unknown');
         console.info('[EGBusinessIdentity] Generating SNS plan with identity data:', identityData);
-        snsPlanData = await generateSnsPlan(identityData);
+        setSnsPlanLoading(true);
+        setPlanError(null);
+        // Don't clear debug steps here - preserve them from previous generation
+        // They will be replaced by new debug steps if generateSnsPlan adds any
+        setCurrentDebugStep(undefined);
+        try {
+          snsPlanData = await generateSnsPlan(identityData);
+        } finally {
+          setSnsPlanLoading(false);
+          setCurrentDebugStep(undefined);
+        }
         if (!snsPlanData || snsPlanData.length === 0) {
           console.warn('[EGBusinessIdentity] SNS plan generation returned empty result.');
         } else {
@@ -748,6 +902,7 @@ const EGBusinessIdentity: React.FC = () => {
           onUrlChange={setUrl}
           onGenerate={handleGenerate}
           loading={loading}
+          snsPlanLoading={snsPlanLoading}
           error={error}
           planError={planError}
           isConfigured={isConfigured}
@@ -794,6 +949,33 @@ const EGBusinessIdentity: React.FC = () => {
           }}
         />
       )}
+
+      {/* Debug Button - Show when there are debug steps or when SNS plan fails */}
+      {/* Temporarily hidden */}
+      {false && (debugSteps.length > 0 || planError) && (
+        <button
+          type="button"
+          className="egbusiness-identity__debug-button"
+          onClick={() => setIsDebugModalOpen(true)}
+          title="View SNS Plan Generation Debug Info"
+        >
+          <FontAwesomeIcon icon={faBug} />
+          {planError ? 'View Error Details' : 'View Debug Log'}
+          {debugSteps.filter(s => s.status === 'error').length > 0 && (
+            <span className="egbusiness-identity__debug-error-badge">
+              {debugSteps.filter(s => s.status === 'error').length}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* Debug Modal */}
+      <SnsPlanDebugModal
+        isOpen={isDebugModalOpen}
+        onClose={() => setIsDebugModalOpen(false)}
+        steps={debugSteps}
+        currentStep={currentDebugStep}
+      />
     </div>
   );
 };

@@ -10,6 +10,7 @@ interface IdentitySummaryProps {
   identitySnapshot: IdentitySnapshot;
   parsedIdentity: any;
   snsPlan: SnsPlanEntry[] | null;
+  snsPlanLoading: boolean;
   onGenerateNew: () => void;
 }
 
@@ -17,6 +18,7 @@ export const IdentitySummary: React.FC<IdentitySummaryProps> = ({
   identitySnapshot,
   parsedIdentity,
   snsPlan,
+  snsPlanLoading,
   onGenerateNew,
 }) => {
   const identity = parsedIdentity.identity || {};
@@ -68,7 +70,15 @@ export const IdentitySummary: React.FC<IdentitySummaryProps> = ({
           </ul>
         </div>
       )}
-      {snsPlan && snsPlan.length > 0 && (
+      {snsPlanLoading ? (
+        <div className="egbusiness-identity__summary-plan">
+          <h4>SNS Plan</h4>
+          <div className="egbusiness-identity__summary-plan-loading">
+            <div className="egbusiness-identity__spinner"></div>
+            <p>Generating SNS plan from AI... Please wait.</p>
+          </div>
+        </div>
+      ) : snsPlan && snsPlan.length > 0 ? (
         <div className="egbusiness-identity__summary-plan">
           <h4>SNS Plan</h4>
           <div className="egbusiness-identity__summary-plan-grid">
@@ -97,7 +107,7 @@ export const IdentitySummary: React.FC<IdentitySummaryProps> = ({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
