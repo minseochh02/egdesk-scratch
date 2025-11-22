@@ -24,6 +24,9 @@ export function initializeEgChattingDatabase(): EgChattingInitResult {
     const dbPath = getEgChattingDatabasePath();
     const db = new Database(dbPath);
 
+    // Enable foreign keys
+    db.pragma('foreign_keys = ON');
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS egchatting_conversations (
         id TEXT PRIMARY KEY,
@@ -44,6 +47,32 @@ export function initializeEgChattingDatabase(): EgChattingInitResult {
         SET updated_at = CURRENT_TIMESTAMP
         WHERE id = NEW.id;
       END;
+
+      CREATE TABLE IF NOT EXISTS egchatting_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool', 'system')),
+        content TEXT,
+        
+        -- Tool call specific fields
+        tool_call_id TEXT,
+        tool_name TEXT,
+        tool_server_name TEXT, -- Which MCP server this tool belongs to
+        tool_args TEXT,        -- JSON string of arguments
+        tool_result TEXT,      -- JSON string or text of result
+        tool_status TEXT CHECK (tool_status IN ('pending', 'success', 'error') OR tool_status IS NULL),
+        
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        metadata TEXT,
+        
+        FOREIGN KEY (conversation_id) REFERENCES egchatting_conversations(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_egchatting_messages_conversation_id
+        ON egchatting_messages(conversation_id);
+        
+      CREATE INDEX IF NOT EXISTS idx_egchatting_messages_timestamp
+        ON egchatting_messages(timestamp);
     `);
 
     return {
@@ -57,4 +86,3 @@ export function initializeEgChattingDatabase(): EgChattingInitResult {
     return { success: false, error: message };
   }
 }
-
