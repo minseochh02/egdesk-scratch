@@ -208,6 +208,8 @@ const installExtensions = async () => {
 };
 
 
+import { registerEgChattingHandlers } from './sqlite/egchatting-service';
+
 const createWindow = async () => {
   // Initialize Electron Store first
   try {
@@ -599,6 +601,9 @@ const createWindow = async () => {
           };
         }
       });
+      
+      // Register EGChatting IPC handlers
+      registerEgChattingHandlers();
       
       // Chrome handlers moved to chrome-handlers.ts - see chrome-handlers.ts
 

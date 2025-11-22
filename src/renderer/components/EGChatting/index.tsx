@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { exampleEgChattingData } from './example';
 import './EGChatting.css';
 import { chatWithGemma, GemmaToolCall, OllamaChatMessage } from '../../lib/gemmaClient';
 
@@ -52,7 +51,20 @@ type ChatMessageEntry = OllamaChatMessage & {
   toolResponses?: ProcessedToolResponse[];
 };
 
-type ExampleServer = (typeof exampleEgChattingData.servers)[number];
+type ExampleServer = {
+  id: string;
+  name: string;
+  internal_name?: string;
+  description?: string;
+  connection_url?: string;
+  is_active: boolean;
+  tools: {
+    id: string;
+    tool_name: string;
+    description?: string;
+    input_schema?: unknown;
+  }[];
+};
 type ExampleTool = ExampleServer['tools'][number];
 
 const slugifyServerName = (value: string) =>
@@ -223,9 +235,119 @@ interface ToolCallEntry {
 
 const EGChatting: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const conversations = exampleEgChattingData.conversations;
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [activeConversationId, setActiveConversationId] = useState<string>(''); // Active conversation ID
+
+  const loadConversations = useCallback(async () => {
+    if (window.electron?.egChatting?.getConversations) {
+      try {
+        setLoadingConversations(true);
+        const loaded = await window.electron.egChatting.getConversations();
+        // Sort by updated_at desc
+        const sorted = loaded.sort((a: any, b: any) => 
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
+        setConversations(sorted);
+        
+        // If no active conversation and we have conversations, select the first one
+        if (!activeConversationId && sorted.length > 0) {
+          setActiveConversationId(sorted[0].id);
+        } else if (sorted.length === 0 && !activeConversationId) {
+          // Create a default conversation if none exist
+          const newConv = await window.electron.egChatting.createConversation('New Chat');
+          setConversations([newConv]);
+          setActiveConversationId(newConv.id);
+        }
+      } catch (error) {
+        console.error('Failed to load conversations:', error);
+      } finally {
+        setLoadingConversations(false);
+      }
+    } else {
+      // API not available
+      setConversations([]);
+      setLoadingConversations(false);
+    }
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  const handleNewChat = useCallback(async () => {
+    if (window.electron?.egChatting?.createConversation) {
+      try {
+        const newConv = await window.electron.egChatting.createConversation('New Chat');
+        setConversations(prev => [newConv, ...prev]);
+        setActiveConversationId(newConv.id);
+      } catch (error) {
+        console.error('Failed to create new conversation:', error);
+      }
+    }
+  }, []);
+
+  // Load messages for active conversation
+  useEffect(() => {
+    if (!activeConversationId || !window.electron?.egChatting?.getMessages) return;
+
+    const loadMessages = async () => {
+      try {
+        const dbMessages = await window.electron.egChatting.getMessages(activeConversationId);
+        
+        // Convert DB messages to ChatMessageEntry format
+        const entries: ChatMessageEntry[] = dbMessages.map((msg: any) => {
+          // Parse metadata if string
+          const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata || {};
+          
+          return {
+            role: msg.role as any,
+            content: msg.content || '',
+            displayContent: msg.content || '', // We might want to store display content separately or derive it
+            attachments: metadata.attachments || [],
+            toolResponses: msg.tool_call_id ? [{
+              id: msg.tool_call_id,
+              name: msg.tool_name,
+              serverName: msg.tool_server_name,
+              status: msg.tool_status === 'success' ? 'success' : 'error',
+              startedAt: msg.timestamp, // Approximation
+              args: typeof msg.tool_args === 'string' ? JSON.parse(msg.tool_args) : msg.tool_args || {},
+              result: typeof msg.tool_result === 'string' ? JSON.parse(msg.tool_result) : msg.tool_result,
+              error: msg.tool_status === 'error' ? 'Tool execution failed' : undefined
+            }] : undefined
+          };
+        });
+        
+        // Group tool calls with their assistant messages if needed, or just list them
+        // For this simple implementation, we'll just map them directly.
+        // Ideally, we should group tool calls that belong to the same "turn".
+        // But since our DB schema stores them as separate "messages" (with role='tool'?), 
+        // actually, the schema has tool fields on the message itself.
+        // Wait, the schema allows `role` to be 'tool'. 
+        // If it's a tool call *request* from assistant, it usually comes with the assistant message.
+        // If it's a tool *response*, it's a separate message with role='tool'.
+        
+        // Let's look at how `saveTurnToSQLite` did it in the AI client:
+        // It saved messages.
+        
+        // In EGChatting, `chatMessages` state is `ChatMessageEntry[]`.
+        // `ChatMessageEntry` has `toolResponses`.
+        
+        // Let's stick to the current `chatMessages` structure for now.
+        // When we load from DB, we need to reconstruct this.
+        // A simplification: Just treat every DB row as a message entry.
+        
+        setChatMessages(entries);
+      } catch (error) {
+        console.error('Failed to load messages:', error);
+      }
+    };
+
+    loadMessages();
+  }, [activeConversationId]);
+
   const defaultServers = useMemo<MCPServerListItem[]>(
-    () => exampleEgChattingData.servers.map(mapExampleServerToListItem),
+    () => [],
     []
   );
   const defaultServersLookup = useMemo(() => {
@@ -241,9 +363,6 @@ const EGChatting: React.FC = () => {
   }, [defaultServers]);
   const [servers, setServers] = useState<MCPServerListItem[]>(defaultServers);
   const [activatingServers, setActivatingServers] = useState<Record<string, boolean>>({});
-  const [activeConversationId, setActiveConversationId] = useState(
-    () => conversations[0]?.id ?? ''
-  );
   const [sidePanelTab, setSidePanelTab] = useState<'filesystem' | 'servers'>('filesystem');
   const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({});
   const [fileSystemNodes, setFileSystemNodes] = useState<FileSystemNode[]>([]);
@@ -316,8 +435,19 @@ const EGChatting: React.FC = () => {
         return null;
       }
 
+      // Skip Gmail service account connections - they're not MCP servers
+      // Gmail service accounts have email addresses like @xxx.iam.gserviceaccount.com
+      if (server.name.includes('@') && server.name.includes('.iam.gserviceaccount.com')) {
+        return null;
+      }
+
       const normalizedBaseUrl = normalizeConnectionUrl(server.connection_url);
       if (!normalizedBaseUrl) {
+        return null;
+      }
+
+      // Skip if the connection URL looks like a Gmail service account email
+      if (normalizedBaseUrl.includes('@') && normalizedBaseUrl.includes('.iam.gserviceaccount.com')) {
         return null;
       }
 
@@ -448,6 +578,73 @@ const EGChatting: React.FC = () => {
     }
 
     try {
+      // First, query the HTTP server to discover enabled MCP servers
+      let discoveredServers: any[] = [];
+      let httpServerPort: number | null = null;
+      let workingHostname: string = 'localhost'; // Default to localhost, fallback to 127.0.0.1
+      try {
+        const httpServerStatus = await electronApi.httpsServer?.status();
+        if (httpServerStatus?.isRunning && httpServerStatus?.port) {
+          httpServerPort = httpServerStatus.port;
+          
+          // Try both localhost and 127.0.0.1 (Windows sometimes has issues with localhost)
+          const hostnames = ['localhost', '127.0.0.1'];
+          const endpoints = ['/', '/mcp'];
+          
+          for (const hostname of hostnames) {
+            const baseUrl = `http://${hostname}:${httpServerPort}`;
+            let found = false;
+            
+            // Try both / and /mcp endpoints
+            for (const endpoint of endpoints) {
+              try {
+                const url = `${baseUrl}${endpoint}`;
+                console.log(`[EGChatting] Attempting to discover MCP servers from: ${url}`);
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                
+                const response = await fetch(url, { 
+                  method: 'GET',
+                  signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                  const data = await response.json();
+                  if (data.success && Array.isArray(data.servers)) {
+                    discoveredServers = data.servers;
+                    workingHostname = hostname; // Store which hostname worked
+                    console.log(`[EGChatting] Discovered ${discoveredServers.length} MCP servers from HTTP server (${hostname}):`, discoveredServers.map((s: any) => s.name));
+                    found = true;
+                    break; // Found servers, no need to try other endpoint
+                  }
+                } else {
+                  console.debug(`[EGChatting] HTTP ${response.status} from ${url}`);
+                }
+              } catch (err) {
+                if (err instanceof Error && err.name === 'AbortError') {
+                  console.warn(`[EGChatting] Timeout fetching from ${baseUrl}${endpoint}`);
+                } else {
+                  console.debug(`[EGChatting] Failed to fetch from ${baseUrl}${endpoint}:`, err);
+                }
+              }
+            }
+            
+            if (found) break; // Found servers, no need to try other hostname
+          }
+          
+          if (discoveredServers.length === 0) {
+            console.warn(`[EGChatting] Could not discover MCP servers. Server status: running=${httpServerStatus.isRunning}, port=${httpServerPort}`);
+          }
+        } else {
+          console.debug(`[EGChatting] HTTP server not running. Status:`, httpServerStatus);
+        }
+      } catch (err) {
+        console.error('[EGChatting] Failed to check HTTP server status for MCP discovery:', err);
+      }
+
       const [connectionsResult, configuredServersResult] = await Promise.all([
         electronApi.mcpConfig.connections
           .get()
@@ -471,6 +668,33 @@ const EGChatting: React.FC = () => {
       }
 
       const normalizedServersMap = new Map<string, MCPServerListItem>();
+
+      // Process discovered servers from HTTP server (filesystem, file-conversion, etc.)
+      if (discoveredServers.length > 0) {
+        const baseUrl = httpServerPort 
+          ? `http://${workingHostname}:${httpServerPort}`
+          : `http://${workingHostname}:8080`;
+
+        discoveredServers.forEach((server: any) => {
+          const serverName = typeof server.name === 'string' ? server.name : 'unknown';
+          const id = toServerIdFromName(serverName);
+          const internalName = serverName.toLowerCase();
+          
+          // Connection URL should be just the base URL - callMcpTool will add the service slug
+          // This prevents duplication like /filesystem/filesystem/tools/call
+          const connectionUrl = baseUrl;
+
+          normalizedServersMap.set(id, {
+            id,
+            name: serverName.charAt(0).toUpperCase() + serverName.slice(1).replace(/-/g, ' '),
+            description: typeof server.description === 'string' ? server.description : `${serverName} MCP server`,
+            connection_url: connectionUrl,
+            is_active: server.status === 'active' || true,
+            tools: [],
+            internalName,
+          });
+        });
+      }
 
       if (fetchedServers && Array.isArray(configuredServersResult?.servers)) {
         configuredServersResult.servers.forEach((server: any, index: number) => {
@@ -515,6 +739,13 @@ const EGChatting: React.FC = () => {
 
       if (fetchedConnections && Array.isArray(connectionsResult?.connections)) {
         connectionsResult.connections.forEach((connection: any, index: number) => {
+          // Skip Gmail service account connections - they're not MCP servers
+          const connectionName = typeof connection?.name === 'string' ? connection.name : '';
+          if (connectionName.includes('@') && connectionName.includes('.iam.gserviceaccount.com')) {
+            console.debug('[EGChatting] Skipping Gmail service account connection:', connectionName);
+            return; // Skip this connection
+          }
+
           const connectionType =
             typeof connection?.type === 'string'
               ? connection.type.toLowerCase()
@@ -524,24 +755,23 @@ const EGChatting: React.FC = () => {
               ? toServerIdFromName(connectionType)
               : null;
 
-          const connectionName =
-            typeof connection?.name === 'string'
-              ? connection.name
-              : connectionType
+          const finalConnectionName =
+            connectionName ||
+            (connectionType
               ? `${connectionType} server`
-              : `Connection ${index + 1}`;
+              : `Connection ${index + 1}`);
 
           const id =
             normalizedTypeId ??
             (typeof connection?.id === 'string'
               ? connection.id
-              : toServerIdFromName(connectionName));
+              : toServerIdFromName(finalConnectionName));
 
           const description =
             typeof connection?.description === 'string'
               ? connection.description
               : connectionType
-              ? `${connectionName} MCP connection`
+              ? `${finalConnectionName} MCP connection`
               : undefined;
 
           const accessLevel = connection?.accessLevel;
@@ -579,7 +809,7 @@ const EGChatting: React.FC = () => {
 
           normalizedServersMap.set(id, {
             id,
-            name: connectionName,
+            name: finalConnectionName,
             description,
             connection_url: connectionUrl,
             is_active: isActive,
@@ -1577,6 +1807,22 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
     };
 
     setChatMessages((prev) => [...prev, userMessage]);
+    
+    // Save user message to DB
+    if (window.electron?.egChatting?.addMessage && activeConversationId) {
+      window.electron.egChatting.addMessage({
+        conversation_id: activeConversationId,
+        role: 'user',
+        content: promptForModel,
+        metadata: { attachments }
+      }).catch(console.error);
+      
+      // Update conversation title if it's the first message or just update timestamp
+      window.electron.egChatting.updateConversation(activeConversationId, {
+        title: prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '')
+      }).catch(console.error);
+    }
+
     setChatInput('');
     setPendingAttachments([]);
 
@@ -1591,6 +1837,11 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
         for (const call of toolCalls) {
           const execution = await executeToolCall(call, attachmentFiles, attachmentPathMap);
           executedTools.push(execution);
+          
+          // Save tool execution to DB (as a separate message or part of assistant message?)
+          // The schema supports tool fields on a message. 
+          // If we have multiple tools, we might need multiple rows or store them in metadata.
+          // For now, let's store the main assistant response first.
         }
       }
 
@@ -1620,6 +1871,60 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
       };
 
       setChatMessages((prev) => [...prev, assistantMessage]);
+      
+      // Save assistant message to DB
+      if (window.electron?.egChatting?.addMessage && activeConversationId) {
+        // If we have tool responses, we might want to store them.
+        // Since our DB schema has single tool fields (tool_name, etc), 
+        // and we might have multiple tools, let's store them in metadata for now to be safe,
+        // or create separate messages for each tool execution if we want to be strict.
+        // But to match `ChatMessageEntry`, let's save the main message with metadata.
+        
+        // However, the user specifically asked for "complete with mcp tool called from which server".
+        // So we should try to use the schema fields if possible.
+        // If there's just one tool, we use the columns. If multiple, we might need to use metadata or multiple rows.
+        
+        if (allToolResponses.length > 0) {
+            // Save the text response first if it exists
+            if (assistantContent) {
+                 await window.electron.egChatting.addMessage({
+                    conversation_id: activeConversationId,
+                    role: 'assistant',
+                    content: assistantContent
+                });
+            }
+            
+            // Save each tool execution as a separate "tool" role message (or assistant message with tool fields)
+            for (const tool of allToolResponses) {
+                await window.electron.egChatting.addMessage({
+                    conversation_id: activeConversationId,
+                    role: 'assistant', // or 'tool'? Schema says 'tool' is allowed.
+                    // Usually 'tool' role is for the OUTPUT of the tool.
+                    // The assistant's REQUEST is 'assistant' with tool_calls.
+                    // But here we have the result.
+                    // Let's use 'assistant' for the entry that shows the tool result in UI.
+                    content: `Executed ${tool.name}`,
+                    tool_name: tool.name,
+                    tool_server_name: tool.serverName,
+                    tool_args: tool.args,
+                    tool_result: tool.result,
+                    tool_status: tool.status === 'success' ? 'success' : 'error',
+                    metadata: { 
+                        isToolResponse: true,
+                        displayContent: toolSummary // Store summary if needed
+                    }
+                });
+            }
+        } else {
+            // Standard text response
+            await window.electron.egChatting.addMessage({
+                conversation_id: activeConversationId,
+                role: 'assistant',
+                content: combinedContent
+            });
+        }
+      }
+      
     } catch (error) {
       console.error('Chat error:', error);
       setOllamaError(error instanceof Error ? error.message : 'Chat failed');
@@ -1719,7 +2024,9 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
 
   const chatHistory = useMemo<ChatHistoryItem[]>(() => {
     return conversations.map((conversation) => {
-      const lastMessage = conversation.messages[conversation.messages.length - 1];
+      // Conversations from database don't have messages property - messages are loaded separately
+      const messages = conversation.messages && Array.isArray(conversation.messages) ? conversation.messages : [];
+      const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
       return {
         id: conversation.id,
         title: conversation.title,
@@ -1743,76 +2050,25 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
     }));
   }, [conversations, activeConversation]);
 
+  // Tool calls are now stored within chatMessages, not in a separate array
+  // These useMemo hooks are kept for compatibility but return empty arrays since
+  // tool calls are displayed directly from chatMessages.toolResponses
   const toolCallEntries = useMemo<ToolCallEntry[]>(() => {
-    if (!activeConversation) return [];
-
-    return activeConversation.toolCalls.map((toolCall) => {
-      const linkedMessage = activeConversation.messages.find(
-        (message) => message.id === toolCall.message_id
-      );
-
-      const serverName = serverLookup[toolCall.server_id]?.name ?? toolCall.server_id;
-      const inputPreview = JSON.stringify(toolCall.input_params, null, 2);
-      const outputPreview = toolCall.output_result
-        ? JSON.stringify(toolCall.output_result, null, 2)
-        : undefined;
-
-      return {
-        id: toolCall.id,
-        toolName: toolCall.tool_name,
-        serverName,
-        status: toolCall.status,
-        startedAt: new Date(toolCall.started_at).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
-        completedAt: toolCall.completed_at
-          ? new Date(toolCall.completed_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })
-          : undefined,
-        triggerMessage: linkedMessage?.content,
-        inputPreview,
-        outputPreview,
-      };
-    });
-  }, [activeConversation, serverLookup]);
+    // Tool calls are now part of chatMessages, not a separate array
+    return [];
+  }, []);
 
   const toolCallsByMessageId = useMemo<Record<string, ToolCallEntry[]>>(() => {
-    if (!activeConversation) return {};
+    // Tool calls are now part of chatMessages, not a separate array
+    return {};
+  }, []);
 
-    return activeConversation.toolCalls.reduce<Record<string, ToolCallEntry[]>>((acc, toolCall) => {
-      const entry = toolCallEntries.find((candidate) => candidate.id === toolCall.id);
-      if (!entry) return acc;
-      if (!acc[toolCall.message_id]) acc[toolCall.message_id] = [];
-      acc[toolCall.message_id].push(entry);
-      return acc;
-    }, {});
-  }, [activeConversation, toolCallEntries]);
-
+  // Messages are now in chatMessages state, not in activeConversation
+  // This useMemo is kept for compatibility but we use chatMessages directly in the render
   const messages = useMemo<ChatMessage[]>(() => {
-    if (!activeConversation) return [];
-
-    return activeConversation.messages.map((message) => ({
-      id: message.id,
-      author:
-        message.role === 'user'
-          ? 'You'
-          : message.role === 'assistant'
-          ? 'EG Assistant'
-          : ('Teammate' as ChatParticipant),
-      content: message.content,
-      timestamp: new Date(message.created_at).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      isOwn: message.role === 'user',
-      toolCalls: toolCallsByMessageId[message.id] ?? [],
-    }));
-  }, [activeConversation, toolCallsByMessageId]);
+    // Messages are now in chatMessages state, not in activeConversation.messages
+    return [];
+  }, []);
 
   const accountName = useMemo(() => {
     if (!user) return 'Guest';
@@ -1854,7 +2110,7 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
           <div className="eg-chatting__sidebar-scroll">
             <header className="eg-chatting__sidebar-header">
               <h1>EG Chatting</h1>
-              <button className="eg-chatting__new-chat">New Chat</button>
+              <button className="eg-chatting__new-chat" onClick={handleNewChat}>New Chat</button>
             </header>
 
             <div className="eg-chatting__sidebar-search">

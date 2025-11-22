@@ -906,6 +906,19 @@ export interface AIChatDataAPI {
 }
 
 /**
+ * EGChatting data management API
+ */
+export interface EgChattingAPI {
+  getConversations: () => Promise<any[]>;
+  createConversation: (title: string, summary?: string) => Promise<any>;
+  deleteConversation: (id: string) => Promise<boolean>;
+  updateConversation: (id: string, updates: any) => Promise<boolean>;
+  getMessages: (conversationId: string) => Promise<any[]>;
+  addMessage: (message: any) => Promise<any>;
+  deleteMessage: (id: string) => Promise<boolean>;
+}
+
+/**
  * Backup management API
  */
 export interface BackupAPI {
@@ -1651,6 +1664,22 @@ const electronHandler = {
     cleanupOldData: (daysToKeep?: number) => ipcRenderer.invoke('ai-chat-cleanup-old-data', daysToKeep),
     clearAllData: () => ipcRenderer.invoke('ai-chat-clear-all-data'),
   } as AIChatDataAPI,
+
+  /**
+   * EGChatting data management API
+   */
+  egChatting: {
+    // Conversations
+    getConversations: () => ipcRenderer.invoke('egchatting-get-conversations'),
+    createConversation: (title: string, summary?: string) => ipcRenderer.invoke('egchatting-create-conversation', title, summary),
+    deleteConversation: (id: string) => ipcRenderer.invoke('egchatting-delete-conversation', id),
+    updateConversation: (id: string, updates: any) => ipcRenderer.invoke('egchatting-update-conversation', id, updates),
+    
+    // Messages
+    getMessages: (conversationId: string) => ipcRenderer.invoke('egchatting-get-messages', conversationId),
+    addMessage: (message: any) => ipcRenderer.invoke('egchatting-add-message', message),
+    deleteMessage: (id: string) => ipcRenderer.invoke('egchatting-delete-message', id),
+  },
   
   /**
    * Backup management API
