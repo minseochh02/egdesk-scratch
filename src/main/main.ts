@@ -208,7 +208,7 @@ const installExtensions = async () => {
 };
 
 
-import { registerEgChattingHandlers } from './sqlite/egchatting-service';
+import { registerEgChattingHandlers, initializeEgChattingService } from './sqlite/egchatting-service';
 
 const createWindow = async () => {
   // Initialize Electron Store first
@@ -601,6 +601,16 @@ const createWindow = async () => {
           };
         }
       });
+
+      // Initialize EGChatting database before registering handlers
+      console.log('[main] Initializing EGChatting database...');
+      const egChattingInitResult = initializeEgChattingService();
+      if (egChattingInitResult.success) {
+        console.log('[main] ✅ EGChatting database initialized successfully');
+      } else {
+        console.error('[main] ❌ Failed to initialize EGChatting database:', egChattingInitResult.error);
+        // Continue anyway - handlers will return empty arrays if DB is not available
+      }
       
       // Register EGChatting IPC handlers
       registerEgChattingHandlers();

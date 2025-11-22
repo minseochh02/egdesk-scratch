@@ -278,14 +278,19 @@ export async function generateSnsPlan(
   availableBlogPlatforms?: string[]
 ): Promise<AISearchResult> {
   try {
+    console.log('[AISearch] Starting SNS plan generation...');
+    console.log('[AISearch] Identity data keys:', identityData ? Object.keys(identityData) : 'null');
+    
     const apiKey = getGoogleApiKey();
     if (!apiKey) {
+      console.error('[AISearch] No API key found');
       return {
         success: false,
         error: 'AI is not configured. Please configure a Google AI key first.',
       };
     }
 
+    console.log('[AISearch] API key found, initializing Gemini...');
     const genAI = new GoogleGenerativeAI(apiKey);
 
     // Define schema for SNS plan
@@ -387,7 +392,7 @@ export async function generateSnsPlan(
     };
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema as any,
@@ -422,13 +427,24 @@ Rules:
 Identity JSON:
 ${JSON.stringify(identityData, null, 2)}`;
 
+    console.log('[AISearch] Sending request to Gemini API...');
+    console.log('[AISearch] Prompt length:', planPrompt.length);
+    
     const result = await model.generateContent(planPrompt);
     const response = result.response;
     const text = response.text();
 
+    console.log('[AISearch] Received response from API');
+    console.log('[AISearch] Response length:', text.length);
+    console.log('[AISearch] Response preview (first 500 chars):', text.substring(0, 500));
+
     // Parse and validate JSON
     try {
       const parsed = JSON.parse(text);
+      console.log('[AISearch] JSON parsed successfully');
+      console.log('[AISearch] Parsed keys:', Object.keys(parsed));
+      console.log('[AISearch] SNS plan entries:', Array.isArray(parsed.snsPlan) ? parsed.snsPlan.length : 'not an array');
+      
       // Return as stringified JSON to match the expected interface
       return {
         success: true,
@@ -436,13 +452,34 @@ ${JSON.stringify(identityData, null, 2)}`;
       };
     } catch (parseError) {
       console.error('[AISearch] Failed to parse JSON response:', parseError);
+      console.error('[AISearch] Raw response text:', text);
       return {
         success: false,
-        error: 'AI response was not valid JSON',
+        error: `AI response was not valid JSON: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`,
       };
     }
   } catch (error) {
     console.error('[AISearch] Error generating SNS plan:', error);
+    
+    // Enhanced error logging
+    if (error instanceof Error) {
+      console.error('[AISearch] Error name:', error.name);
+      console.error('[AISearch] Error message:', error.message);
+      console.error('[AISearch] Error stack:', error.stack);
+      
+      // Check for network errors
+      if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('ENOTFOUND')) {
+        console.error('[AISearch] Network error detected - possible connectivity issue');
+      }
+      
+      // Check for API errors
+      if (error.message.includes('429') || error.message.includes('quota')) {
+        console.error('[AISearch] API quota exceeded');
+      }
+      if (error.message.includes('401') || error.message.includes('403')) {
+        console.error('[AISearch] API authentication failed');
+      }
+    }
     
     // Extract more user-friendly error messages from API errors
     let errorMessage = 'Unknown error occurred';
