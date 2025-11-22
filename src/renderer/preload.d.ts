@@ -357,16 +357,6 @@ export interface IElectronAPI {
       clickedPoint?: any;
       screenshotPath?: string;
     }>;
-    startNaverBlogWithImage(
-      id?: string,
-      password?: string,
-      proxy?: string,
-      title?: string,
-      content?: string,
-      tags?: string,
-      includeDogImage?: boolean,
-      dogImagePrompt?: string,
-    ): Promise<{ success: boolean; error?: string }>;
     launchChrome(): Promise<{ success: boolean; error?: string }>;
     launchChromeWithUrl(
       url: string,

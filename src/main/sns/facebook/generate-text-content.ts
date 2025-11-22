@@ -4,7 +4,7 @@
  * Uses the generic AI search utility with Facebook-specific system prompt
  */
 
-import { aiSearch, AISearchOptions } from '../../../ai-code/ai-search';
+import { aiSearch, AISearchOptions } from '../../ai-code/ai-search';
 
 const FACEBOOK_CONTENT_SYSTEM_PROMPT = `You are an expert Facebook content strategist.
 Always respond with strictly valid JSON that matches this schema:

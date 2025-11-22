@@ -1,4 +1,4 @@
-import retryWithBackoff from "../ai-blog/retry";
+import retryWithBackoff from "../../ai-blog/retry";
 
 const YOUTUBE_CONTENT_SYSTEM_PROMPT = `You are an elite YouTube content strategist and scriptwriter.
 Always respond with strictly valid JSON that matches this schema:

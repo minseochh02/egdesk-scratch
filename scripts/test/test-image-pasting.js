@@ -7,7 +7,7 @@
  * that properly handles image buffers and pasting.
  */
 
-const { generateDogImage, copyImageToClipboardWithPlaywright } = require('../src/main/ai-blog/generate-dog-image');
+const { generateDogImage, copyImageToClipboardWithPlaywright } = require('../../src/main/ai-blog/generate-dog-image');
 
 async function testImagePasting() {
   console.log('🐕 Testing improved image pasting functionality...\n');

@@ -596,8 +596,8 @@ export class ScheduledPostsExecutor {
 
       // Step 5: Generate Instagram content with full identity context
       console.log(`\n🤖 Step 5: Generating Instagram content...`);
-      const { createBusinessIdentityInstagramPost } = await import('../business-identity/sns/instagram/index');
-      const { generateInstagramContent } = await import('../business-identity/sns/instagram/generate-text-content');
+      const { createBusinessIdentityInstagramPost } = await import('../sns/instagram/index');
+      const { generateInstagramContent } = await import('../sns/instagram/generate-text-content');
       
       // Build structured prompt with business identity (similar to frontend buildInstagramStructuredPrompt)
       const identityPayload = businessIdentity?.identity
@@ -787,9 +787,9 @@ export class ScheduledPostsExecutor {
 
       // Step 5: Generate Facebook content with full identity context
       console.log(`\n🤖 Step 5: Generating Facebook content...`);
-      const { generateFacebookContent } = await import('../business-identity/sns/facebook/generate-text-content');
-      const { getAuthenticatedPage } = await import('../facebooklogin');
-      const { createFacebookPost } = await import('../facebook-post');
+      const { generateFacebookContent } = await import('../sns/facebook/generate-text-content');
+      const { getAuthenticatedPage } = await import('../sns/facebook/login');
+      const { createFacebookPost } = await import('../sns/facebook/facebook-post');
       
       // Build structured prompt with business identity
       const identityPayload = businessIdentity?.identity
@@ -993,9 +993,9 @@ export class ScheduledPostsExecutor {
 
       // Step 5: Generate YouTube content with full identity context
       console.log(`\n🤖 Step 5: Generating YouTube content...`);
-      const { generateYouTubeContent } = await import('../youtube/generate-youtube-content');
-      const { getAuthenticatedPage } = await import('../youtubelogin');
-      const { createYouTubePost } = await import('../youtube-post');
+      const { generateYouTubeContent } = await import('../sns/youtube/generate-youtube-content');
+      const { getAuthenticatedPage } = await import('../sns/youtube/login');
+      const { createYouTubePost } = await import('../sns/youtube/youtube-post');
       
       // Build structured prompt with business identity
       const identityPayload = businessIdentity?.identity

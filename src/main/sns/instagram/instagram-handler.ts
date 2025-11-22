@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { Page } from 'playwright';
-import { getAuthenticatedPage } from '../instagramlogin';
+import { getAuthenticatedPage } from './login';
 
 export interface InstagramConnection {
   id?: string;

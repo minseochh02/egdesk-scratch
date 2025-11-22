@@ -1725,7 +1725,6 @@ const electronHandler = {
   debug: {
     startAutomation: (id?: string, pw?: string, proxy?: string, title?: string, content?: string, tags?: string) => ipcRenderer.invoke('start-automation', { id, pw, proxy, title, content, tags }),
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
-    startNaverBlogWithImage: (id?: string, password?: string, proxy?: string, title?: string, content?: string, tags?: string, includeDogImage?: boolean, dogImagePrompt?: string) => ipcRenderer.invoke('start-naver-blog-with-image', { id, password, proxy, title, content, tags, includeDogImage, dogImagePrompt }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
     openInstagramWithProfile: (options: {
