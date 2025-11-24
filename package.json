@@ -14,13 +14,13 @@
     "hot",
     "reload"
   ],
-  "homepage": "https://github.com/taesung/egdesk#readme",
+  "homepage": "https://github.com/minseochh02/egdesk-scratch#readme",
   "bugs": {
-    "url": "https://github.com/taesung/egdesk/issues"
+    "url": "https://github.com/minseochh02/egdesk-scratch/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/taesung/egdesk.git"
+    "url": "git+https://github.com/minseochh02/egdesk-scratch.git"
   },
   "license": "MIT",
   "author": {
@@ -311,8 +311,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "taesung",
-      "repo": "egdesk"
+      "owner": "minseochh02",
+      "repo": "egdesk-scratch"
     }
   },
   "collective": {
