@@ -306,6 +306,158 @@
   transform: translateY(-1px);
 }
 
+/* Provider Sections */
+.provider-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.provider-section {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  animation: providerSectionSlideIn 0.5s ease-out;
+}
+
+.provider-section:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.provider-section:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.provider-section:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.provider-section:nth-child(n+4) {
+  animation-delay: 0.4s;
+}
+
+.provider-section:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  border-color: #d1d5db;
+}
+
+@keyframes providerSectionSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.provider-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.provider-section-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.provider-section-icon {
+  width: 48px;
+  height: 48px;
+  background: white;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.provider-section:hover .provider-section-icon {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.provider-fa-icon {
+  font-size: 1.5rem;
+}
+
+.provider-section-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-section-name {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.provider-section-description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.provider-section-stats {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.provider-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.provider-stat:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.provider-stat-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.provider-stat-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.provider-keys-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 24px 24px;
+}
+
 /* Keys List */
 .keys-list {
   display: grid;
@@ -313,13 +465,15 @@
 }
 
 .key-card {
-  background: white;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid transparent;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
   transition: all 0.2s ease;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
 .key-card:hover {
@@ -329,23 +483,35 @@
 
 .key-card.selected {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background: #eff6ff;
 }
 
 .key-card.active {
-  border-left: 3px solid #10b981;
+  border-left: 4px solid #10b981;
 }
 
 .key-card.inactive {
-  border-left: 3px solid #6b7280;
-  opacity: 0.7;
+  border-left: 4px solid #9ca3af;
+  opacity: 0.85;
+}
+
+.key-card.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
 }
 
 .key-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  gap: 16px;
 }
 
 .key-provider {
@@ -389,12 +555,13 @@
 }
 
 .key-content {
-  margin-bottom: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .key-name {
-  margin: 0 0 6px 0;
-  font-size: 1rem;
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
   font-weight: 600;
   color: #1f2937;
 }
@@ -420,20 +587,25 @@
 
 .key-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .ai-keys-action-btn {
   border: 1px solid #d1d5db;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  background: white;
 }
 
 .ai-keys-action-btn:hover {
@@ -831,6 +1003,17 @@
   font-size: 0.9rem;
 }
 
+.warning-text {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 /* Loading */
 .loading-container {
   display: flex;
@@ -936,7 +1119,55 @@
   }
 }
 
+@media (max-width: 768px) {
+  .provider-section-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  
+  .provider-section-stats {
+    justify-content: center;
+  }
+  
+  .provider-keys-list {
+    padding: 12px 16px 16px 16px;
+  }
+}
+
 @media (max-width: 480px) {
+  .provider-section-header {
+    padding: 16px;
+  }
+  
+  .provider-section-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .provider-section-icon {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .provider-fa-icon {
+    font-size: 1.2rem;
+  }
+  
+  .provider-section-name {
+    font-size: 1.2rem;
+  }
+  
+  .provider-section-stats {
+    width: 100%;
+    justify-content: space-around;
+  }
+  
+  .provider-stat {
+    flex: 1;
+  }
+  
   .key-header {
     flex-direction: column;
     align-items: flex-start;

@@ -124,7 +124,7 @@ export const AIKeysManager: React.FC = () => {
   };
 
   const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ko-KR', {
+    return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -145,12 +145,32 @@ export const AIKeysManager: React.FC = () => {
     return state.keys.filter((key) => key.providerId === providerId);
   };
 
+  // Group keys by provider
+  const getProvidersWithKeys = () => {
+    const providerMap = new Map<string, AIKey[]>();
+    
+    state.keys.forEach((key) => {
+      if (!providerMap.has(key.providerId)) {
+        providerMap.set(key.providerId, []);
+      }
+      providerMap.get(key.providerId)!.push(key);
+    });
+
+    return Array.from(providerMap.entries())
+      .map(([providerId, keys]) => ({
+        provider: getProviderInfo(providerId),
+        keys,
+      }))
+      .filter((item) => item.provider) // Filter out providers that don't exist
+      .sort((a, b) => (a.provider?.name || '').localeCompare(b.provider?.name || ''));
+  };
+
   if (state.isLoading && state.keys.length === 0) {
     return (
       <div className="ai-keys-manager">
         <div className="loading-container">
           <div className="spinner" />
-          <p>AI 키를 불러오는 중...</p>
+          <p>Loading AI keys...</p>
         </div>
       </div>
     );
@@ -166,22 +186,22 @@ export const AIKeysManager: React.FC = () => {
               <FontAwesomeIcon icon={faRobot} className="header-icon" />
             </div>
             <div className="title-content">
-              <h1>API 키 관리</h1>
-              <p>AI 서비스 API 키와 설정을 관리하세요</p>
+              <h1>API Key Management</h1>
+              <p>Manage AI service API keys and settings</p>
             </div>
           </div>
           <div className="header-stats">
             <div className="header-stat">
               <span className="stat-number">{state.keys.length}</span>
-              <span className="stat-label">전체 키</span>
+              <span className="stat-label">Total Keys</span>
             </div>
             <div className="header-stat">
               <span className="stat-number">{getActiveKeysCount()}</span>
-              <span className="stat-label">활성</span>
+              <span className="stat-label">Active</span>
             </div>
             <div className="header-stat">
               <span className="stat-number">{new Set(state.keys.map((k) => k.providerId)).size}</span>
-              <span className="stat-label">제공업체</span>
+              <span className="stat-label">Providers</span>
             </div>
           </div>
         </div>
@@ -194,7 +214,7 @@ export const AIKeysManager: React.FC = () => {
           onClick={() => setShowAddDialog(true)}
         >
           <FontAwesomeIcon icon={faPlus} className="btn-icon" />
-          <span>새 API 키 추가</span>
+          <span>Add New API Key</span>
         </button>
       </div>
 
@@ -218,161 +238,185 @@ export const AIKeysManager: React.FC = () => {
             <div className="empty-icon">
               <FontAwesomeIcon icon={faKey} className="ai-keys-manager-icon" />
             </div>
-            <h3>AI 키가 없습니다</h3>
-            <p>첫 번째 AI 서비스 API 키를 추가하여 시작하세요</p>
+            <h3>No AI Keys</h3>
+            <p>Add your first AI service API key to get started</p>
             <button
               className="add-first-key-btn"
               onClick={() => setShowAddDialog(true)}
             >
-              <FontAwesomeIcon icon={faPlus} className="ai-keys-manager-icon" /> 키 추가
+              <FontAwesomeIcon icon={faPlus} className="ai-keys-manager-icon" /> Add Key
             </button>
           </div>
         ) : (
-          <div className="keys-list">
-            {state.keys.map((key) => {
-              const provider = getProviderInfo(key.providerId);
+          <div className="provider-sections">
+            {getProvidersWithKeys().map(({ provider, keys }) => {
+              if (!provider) return null;
+              
+              const activeKeysCount = keys.filter((k) => k.isActive).length;
+              
               return (
-                <div key={key.id}>
-                  <div
-                    className={`key-card ${key.isActive ? 'active' : 'inactive'} ${
-                      state.selectedKeyId === key.id ? 'selected' : ''
-                    }`}
-                    onClick={() => aiKeysStore.setSelectedKey(key.id)}
-                  >
-                    <div className="key-header">
-                      <div className="key-provider">
-                        <span
-                          className="provider-icon"
-                          style={{ color: provider?.color }}
-                        >
-                          <FontAwesomeIcon 
-                            icon={getProviderIcon(provider?.icon || 'faRobot')} 
-                            className="provider-fa-icon" 
-                          />
-                        </span>
-                        <span className="provider-name">{provider?.name}</span>
-                      </div>
-                      <div className="key-status">
-                        <span
-                          className={`status-badge ${key.isActive ? 'active' : 'inactive'}`}
-                        >
-                          {key.isActive ? '활성' : '비활성'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="key-content">
-                      <h3 className="key-name">{key.name}</h3>
-                      <div className="key-meta">
-                        <span className="meta-item">
-                          <span className="meta-label">생성:</span>
-                          {formatDate(key.createdAt)}
-                        </span>
-                        {key.lastUsed && (
-                          <span className="meta-item">
-                            <span className="meta-label">사용:</span>
-                            {formatDate(key.lastUsed)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="key-actions">
-                      <button
-                        className={`ai-keys-action-btn test-btn ${testingKeyId === key.id ? 'testing' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTestKey(key.id);
-                        }}
-                        title="연결 테스트"
-                        disabled={testingKeyId === key.id}
-                      >
-                        {testingKeyId === key.id ? (
-                          <FontAwesomeIcon icon={faClock} className="ai-keys-manager-icon" />
-                        ) : (
-                          <FontAwesomeIcon icon={faFlask} className="ai-keys-manager-icon" />
-                        )}
-                        {testingKeyId === key.id ? '테스트 중...' : '테스트'}
-                      </button>
-                      <button
-                        className="ai-keys-action-btn edit-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingKey(key);
-                        }}
-                        title="키 편집"
-                      >
-                        <FontAwesomeIcon icon={faEdit} className="ai-keys-manager-icon" />
-                      </button>
-                      <button
-                        className={`ai-keys-action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleActive(key.id);
-                        }}
-                        title={key.isActive ? '비활성화' : '활성화'}
+                <div key={provider.id} className="provider-section">
+                  <div className="provider-section-header">
+                    <div className="provider-section-title">
+                      <span
+                        className="provider-section-icon"
+                        style={{ color: provider.color }}
                       >
                         <FontAwesomeIcon 
-                          icon={key.isActive ? faPause : faPlay} 
-                          className="ai-keys-manager-icon" 
+                          icon={getProviderIcon(provider.icon || 'faRobot')} 
+                          className="provider-fa-icon" 
                         />
-                      </button>
-                      <button
-                        className="ai-keys-action-btn delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowDeleteConfirm(key.id);
-                        }}
-                        title="키 삭제"
-                      >
-                        <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" />
-                      </button>
+                      </span>
+                      <div className="provider-section-info">
+                        <h2 className="provider-section-name">{provider.name}</h2>
+                        <p className="provider-section-description">{provider.description}</p>
+                      </div>
+                    </div>
+                    <div className="provider-section-stats">
+                      <span className="provider-stat">
+                        <span className="provider-stat-number">{keys.length}</span>
+                        <span className="provider-stat-label">Keys</span>
+                      </span>
+                      <span className="provider-stat">
+                        <span className="provider-stat-number">{activeKeysCount}</span>
+                        <span className="provider-stat-label">Active</span>
+                      </span>
                     </div>
                   </div>
-
-                  {/* Test Result Display */}
-                  {testResults[key.id] && (
-                    <div
-                      className={`test-result ${testResults[key.id].success ? 'success' : 'error'}`}
-                    >
-                      <div className="test-result-header">
-                        <span className="test-result-icon">
-                          {testResults[key.id].success ? (
-                            <FontAwesomeIcon icon={faCheck} className="ai-keys-manager-icon" />
-                          ) : (
-                            <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
-                          )}
-                        </span>
-                        <span className="test-result-message">
-                          {testResults[key.id].message}
-                        </span>
-                        <button
-                          className="test-result-close"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTestResults((prev) => {
-                              const newResults = { ...prev };
-                              delete newResults[key.id];
-                              return newResults;
-                            });
-                          }}
+                  
+                  <div className="provider-keys-list">
+                    {keys.map((key) => (
+                      <div key={key.id}>
+                        <div
+                          className={`key-card ${key.isActive ? 'active' : 'inactive'} ${
+                            state.selectedKeyId === key.id ? 'selected' : ''
+                          }`}
+                          onClick={() => aiKeysStore.setSelectedKey(key.id)}
                         >
-                          <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
-                        </button>
-                      </div>
-                      {testResults[key.id].details && (
-                        <div className="test-result-details">
-                          <pre>
-                            {JSON.stringify(
-                              testResults[key.id].details,
-                              null,
-                              2,
-                            )}
-                          </pre>
+                          <div className="key-header">
+                            <div className="key-content">
+                              <h3 className="key-name">{key.name}</h3>
+                              <div className="key-meta">
+                                <span className="meta-item">
+                                  <span className="meta-label">Created:</span>
+                                  {formatDate(key.createdAt)}
+                                </span>
+                                {key.lastUsed && (
+                                  <span className="meta-item">
+                                    <span className="meta-label">Used:</span>
+                                    {formatDate(key.lastUsed)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="key-status">
+                              <span
+                                className={`status-badge ${key.isActive ? 'active' : 'inactive'}`}
+                              >
+                                {key.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="key-actions">
+                            <button
+                              className={`ai-keys-action-btn test-btn ${testingKeyId === key.id ? 'testing' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTestKey(key.id);
+                              }}
+                              title="Test Connection"
+                              disabled={testingKeyId === key.id}
+                            >
+                              {testingKeyId === key.id ? (
+                                <FontAwesomeIcon icon={faClock} className="ai-keys-manager-icon" />
+                              ) : (
+                                <FontAwesomeIcon icon={faFlask} className="ai-keys-manager-icon" />
+                              )}
+                              {testingKeyId === key.id ? 'Testing...' : 'Test'}
+                            </button>
+                            <button
+                              className="ai-keys-action-btn edit-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingKey(key);
+                              }}
+                              title="Edit Key"
+                            >
+                              <FontAwesomeIcon icon={faEdit} className="ai-keys-manager-icon" />
+                            </button>
+                            <button
+                              className={`ai-keys-action-btn toggle-btn ${key.isActive ? 'deactivate' : 'activate'}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleActive(key.id);
+                              }}
+                              title={key.isActive ? 'Deactivate' : 'Activate'}
+                            >
+                              <FontAwesomeIcon 
+                                icon={key.isActive ? faPause : faPlay} 
+                                className="ai-keys-manager-icon" 
+                              />
+                            </button>
+                            <button
+                              className="ai-keys-action-btn delete-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDeleteConfirm(key.id);
+                              }}
+                              title="Delete Key"
+                            >
+                              <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" />
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+
+                        {/* Test Result Display */}
+                        {testResults[key.id] && (
+                          <div
+                            className={`test-result ${testResults[key.id].success ? 'success' : 'error'}`}
+                          >
+                            <div className="test-result-header">
+                              <span className="test-result-icon">
+                                {testResults[key.id].success ? (
+                                  <FontAwesomeIcon icon={faCheck} className="ai-keys-manager-icon" />
+                                ) : (
+                                  <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
+                                )}
+                              </span>
+                              <span className="test-result-message">
+                                {testResults[key.id].message}
+                              </span>
+                              <button
+                                className="test-result-close"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTestResults((prev) => {
+                                    const newResults = { ...prev };
+                                    delete newResults[key.id];
+                                    return newResults;
+                                  });
+                                }}
+                              >
+                                <FontAwesomeIcon icon={faTimes} className="ai-keys-manager-icon" />
+                              </button>
+                            </div>
+                            {testResults[key.id].details && (
+                              <div className="test-result-details">
+                                <pre>
+                                  {JSON.stringify(
+                                    testResults[key.id].details,
+                                    null,
+                                    2,
+                                  )}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -409,15 +453,15 @@ export const AIKeysManager: React.FC = () => {
           <div className="dialog-content">
             <div className="dialog-header">
               <h3>
-                <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" /> AI 키 삭제
+                <FontAwesomeIcon icon={faTrash} className="ai-keys-manager-icon" /> Delete AI Key
               </h3>
             </div>
             <div className="dialog-body">
               <p>
-                이 AI 키를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                Are you sure you want to delete this AI key? This action cannot be undone.
               </p>
               <p className="warning-text">
-                <strong>경고:</strong> 이 키를 삭제하면 관련된 모든 설정이 제거됩니다.
+                <strong>Warning:</strong> Deleting this key will remove all related settings.
               </p>
             </div>
             <div className="dialog-footer">
@@ -425,13 +469,13 @@ export const AIKeysManager: React.FC = () => {
                 className="button-secondary"
                 onClick={() => setShowDeleteConfirm(null)}
               >
-                취소
+                Cancel
               </button>
               <button
                 className="button-danger"
                 onClick={() => handleDeleteKey(showDeleteConfirm)}
               >
-                키 삭제
+                Delete Key
               </button>
             </div>
           </div>
