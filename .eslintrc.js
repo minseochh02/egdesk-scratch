@@ -1,6 +1,7 @@
 module.exports = {
   extends: 'erb',
   plugins: ['@typescript-eslint'],
+  ignorePatterns: ['dist-mcp/**', 'release/**', 'node_modules/**'],
   rules: {
     // A temporary hack related to IDE not resolving correct package.json
     'import/no-extraneous-dependencies': 'off',
