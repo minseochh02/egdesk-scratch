@@ -24,8 +24,8 @@ const configuration: webpack.Configuration = {
   target: 'electron-renderer',
 
   externals: [
-    'fsevents', 
-    'crypto-browserify', 
+    'fsevents',
+    'crypto-browserify',
     '@modelcontextprotocol/sdk',
     '@types/ws',
     'ws',
@@ -36,7 +36,7 @@ const configuration: webpack.Configuration = {
     'marked',
     'canvas',
     'pdfjs-dist',
-    'tesseract.js'
+    'tesseract.js',
   ],
 
   /**
