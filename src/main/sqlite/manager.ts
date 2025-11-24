@@ -1134,39 +1134,15 @@ export class SQLiteManager {
     // Get execution history for a scheduled post
     ipcMain.handle('sqlite-scheduled-posts-get-execution-history', async (event, id) => {
       try {
-        // For now, return mock data since we don't have execution history table yet
-        // This would be implemented with a proper execution_history table
-        const mockHistory = [
-          {
-            id: `exec_${Date.now()}_1`,
-            scheduledPostId: id,
-            status: 'success',
-            startedAt: new Date(Date.now() - 86400000), // 1 day ago
-            completedAt: new Date(Date.now() - 86400000 + 30000), // 30 seconds later
-            duration: 30000,
-            topics: ['Technology', 'AI', 'Programming'],
-            generatedContent: {
-              title: 'The Future of AI in Software Development',
-              excerpt: 'Exploring how artificial intelligence is revolutionizing the way we write code...',
-              wordCount: 1250,
-              imageCount: 3
-            },
-            blogPostId: '12345',
-            blogPostUrl: 'https://example.com/blog/the-future-of-ai'
-          },
-          {
-            id: `exec_${Date.now()}_2`,
-            scheduledPostId: id,
-            status: 'failure',
-            startedAt: new Date(Date.now() - 172800000), // 2 days ago
-            completedAt: new Date(Date.now() - 172800000 + 15000), // 15 seconds later
-            duration: 15000,
-            topics: ['Web Development', 'React'],
-            errorMessage: 'Failed to connect to WordPress API. Please check your connection settings.'
-          }
-        ];
+        if (!id) {
+          return {
+            success: false,
+            error: 'Scheduled post ID is required'
+          };
+        }
 
-        return { success: true, data: mockHistory };
+        const history = this.getScheduledPostsManager().getExecutionHistory(id);
+        return { success: true, data: history };
       } catch (error) {
         return {
           success: false,
@@ -1271,6 +1247,25 @@ export class SQLiteManager {
         }
         const plans = this.getBusinessIdentityManager().listPlans(snapshotId);
         return { success: true, data: plans };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    // Get execution history for an SNS plan
+    ipcMain.handle('sqlite-business-identity-list-sns-plan-executions', async (event, planId: string) => {
+      try {
+        if (!planId) {
+          return {
+            success: false,
+            error: 'Plan ID is required to list executions'
+          };
+        }
+        const executions = this.getBusinessIdentityManager().listExecutions(planId);
+        return { success: true, data: executions };
       } catch (error) {
         return {
           success: false,

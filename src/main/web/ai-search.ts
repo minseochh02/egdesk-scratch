@@ -6,6 +6,7 @@
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { getStore } from '../storage';
+import { generateTextWithAI } from '../gemini';
 
 export interface AISearchResult {
   success: boolean;
@@ -79,8 +80,6 @@ export async function generateBusinessIdentity(
         error: 'AI is not configured. Please configure a Google AI key first.',
       };
     }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
 
     // Define schema for business identity
     const schema = {
@@ -189,15 +188,6 @@ export async function generateBusinessIdentity(
       required: ['source', 'identity', 'recommendedActions'],
     };
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: schema as any,
-        temperature: 0.7,
-      },
-    });
-
     const rootUrlInstruction = rootUrl ? `\n\nIMPORTANT: The source.url field must be set to the root/homepage URL: ${rootUrl}. Do not use URLs from subpages like /contact, /about, etc.` : '';
     
     // Build language instruction
@@ -218,13 +208,20 @@ Rules:
 Website Context:
 ${websiteText}`;
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
+    const result = await generateTextWithAI({
+      prompt,
+      model: 'gemini-2.5-flash',
+      temperature: 0.7,
+      responseSchema: schema as any,
+      parseJson: true,
+      streaming: false,
+      useRetry: false,
+      package: 'generative-ai',
+    });
 
     // Parse and validate JSON
     try {
-      const parsed = JSON.parse(text);
+      const parsed = result.json || JSON.parse(result.text);
       
       // Override source.url to always use root URL if provided
       if (rootUrl && parsed.source) {
@@ -291,7 +288,6 @@ export async function generateSnsPlan(
     }
 
     console.log('[AISearch] API key found, initializing Gemini...');
-    const genAI = new GoogleGenerativeAI(apiKey);
 
     // Define schema for SNS plan
     const schema = {
@@ -391,15 +387,6 @@ export async function generateSnsPlan(
       required: ['snsPlan'],
     };
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: schema as any,
-        temperature: 0.7,
-      },
-    });
-
     // Build available platforms context
     let platformContext = '';
     if (availableBlogPlatforms && availableBlogPlatforms.length > 0) {
@@ -430,17 +417,24 @@ ${JSON.stringify(identityData, null, 2)}`;
     console.log('[AISearch] Sending request to Gemini API...');
     console.log('[AISearch] Prompt length:', planPrompt.length);
     
-    const result = await model.generateContent(planPrompt);
-    const response = result.response;
-    const text = response.text();
+    const result = await generateTextWithAI({
+      prompt: planPrompt,
+      model: 'gemini-2.5-flash',
+      temperature: 0.7,
+      responseSchema: schema as any,
+      parseJson: true,
+      streaming: false,
+      useRetry: false,
+      package: 'generative-ai',
+    });
 
     console.log('[AISearch] Received response from API');
-    console.log('[AISearch] Response length:', text.length);
-    console.log('[AISearch] Response preview (first 500 chars):', text.substring(0, 500));
+    console.log('[AISearch] Response length:', result.text.length);
+    console.log('[AISearch] Response preview (first 500 chars):', result.text.substring(0, 500));
 
     // Parse and validate JSON
     try {
-      const parsed = JSON.parse(text);
+      const parsed = result.json || JSON.parse(result.text);
       console.log('[AISearch] JSON parsed successfully');
       console.log('[AISearch] Parsed keys:', Object.keys(parsed));
       console.log('[AISearch] SNS plan entries:', Array.isArray(parsed.snsPlan) ? parsed.snsPlan.length : 'not an array');
@@ -452,7 +446,7 @@ ${JSON.stringify(identityData, null, 2)}`;
       };
     } catch (parseError) {
       console.error('[AISearch] Failed to parse JSON response:', parseError);
-      console.error('[AISearch] Raw response text:', text);
+      console.error('[AISearch] Raw response text:', result.text);
       return {
         success: false,
         error: `AI response was not valid JSON: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`,

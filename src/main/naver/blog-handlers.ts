@@ -45,7 +45,8 @@ export function registerNaverBlogHandlers(): void {
       return {
         success: result.success,
         imageGenerated: result.imageGenerated,
-        error: result.error
+        error: result.error,
+        blogUrl: result.blogUrl
       };
     } catch (error) {
       console.error('Error running Naver Blog automation:', error);

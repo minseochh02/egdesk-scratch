@@ -3,6 +3,7 @@
 
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
+import { generateSingleImage } from '../gemini';
 
 export class ScheduledPostsExecutor {
   private sqliteManager = getSQLiteManager();
@@ -285,6 +286,8 @@ export class ScheduledPostsExecutor {
    */
   private async executeWordPressScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date();
+    
     try {
       // Ensure topics are loaded for scheduled (cron) executions
       if (!post.topics || post.topics.length === 0) {
@@ -304,6 +307,9 @@ export class ScheduledPostsExecutor {
     console.log(`✅ Success Count: ${post.successCount || 0}`);
     console.log(`❌ Failure Count: ${post.failureCount || 0}`);
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    let blogContent: any = null;
+    let postUrl: string | null = null;
     
     try {
       // Step 1: Get connection details
@@ -326,7 +332,7 @@ export class ScheduledPostsExecutor {
 
       // Step 4: Generate blog content with images (WordPress supports images)
       console.log(`\n🤖 Step 4: Generating blog content...`);
-      const blogContent = await this.generateBlogContentWithImages(selectedTopic);
+      blogContent = await this.generateBlogContentWithImages(selectedTopic);
       console.log(`✅ Blog content generated successfully`);
       console.log(`📄 Title: ${blogContent.title}`);
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
@@ -334,7 +340,6 @@ export class ScheduledPostsExecutor {
 
       // Step 5: Upload to WordPress with error handling
       console.log(`\n📤 Step 5: Uploading to WordPress...`);
-      let postUrl: string;
       try {
         postUrl = await this.uploadToWordPress(blogContent);
       console.log(`✅ Successfully uploaded to WordPress`);
@@ -353,13 +358,38 @@ export class ScheduledPostsExecutor {
         throw uploadError;
       }
 
-      // Step 6: Update run statistics
-      console.log(`\n📊 Step 6: Updating run statistics...`);
+      // Step 6: Create execution history record with success
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'success',
+          startedAt,
+          completedAt,
+          duration,
+          blogPostUrl: postUrl,
+          topics: post.topics || [],
+          generatedContent: blogContent ? {
+            title: blogContent.title,
+            excerpt: blogContent.content?.substring(0, 200) || '',
+            wordCount: blogContent.content?.length || 0,
+            imageCount: blogContent.images?.length || 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+
+      // Step 7: Update run statistics
+      console.log(`\n📊 Step 7: Updating run statistics...`);
       await this.updateRunStatistics(post.id, true, postUrl);
       console.log(`✅ Run statistics updated`);
 
-      // Step 7: Calculate next run time
-      console.log(`\n⏰ Step 7: Calculating next run time...`);
+      // Step 8: Calculate next run time
+      console.log(`\n⏰ Step 8: Calculating next run time...`);
       const nextRun = this.calculateNextRunTime(post);
       if (nextRun) {
         await this.updateNextRunTime(post.id, nextRun);
@@ -377,15 +407,42 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       console.error(`\n💥 ===== WORDPRESS SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
       console.error(`📄 Error details:`, error);
       
+      // Create execution history record with failure
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'failure',
+          startedAt,
+          completedAt,
+          duration,
+          errorMessage,
+          topics: post.topics || [],
+          generatedContent: blogContent ? {
+            title: blogContent.title || '',
+            excerpt: blogContent.content?.substring(0, 200) || '',
+            wordCount: blogContent.content?.length || 0,
+            imageCount: blogContent.images?.length || 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+      
       // Update failure statistics
       try {
-        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        await this.updateRunStatistics(post.id, false, null, errorMessage);
         console.log(`📊 Failure statistics updated`);
       } catch (updateError) {
         console.error(`❌ Failed to update failure statistics:`, updateError);
@@ -400,6 +457,8 @@ export class ScheduledPostsExecutor {
    */
   private async executeNaverScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date();
+    
     try {
       // Ensure topics are loaded for scheduled (cron) executions
       if (!post.topics || post.topics.length === 0) {
@@ -419,6 +478,9 @@ export class ScheduledPostsExecutor {
     console.log(`✅ Success Count: ${post.successCount || 0}`);
     console.log(`❌ Failure Count: ${post.failureCount || 0}`);
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    let blogContent: any = null;
+    let postUrl: string | null = null;
     
     try {
       // Step 1: Get connection details
@@ -441,7 +503,7 @@ export class ScheduledPostsExecutor {
 
       // Step 4: Generate blog content with images for Naver Blog
       console.log(`\n🤖 Step 4: Generating blog content...`);
-      const blogContent = await this.generateBlogContentWithImagesForNaver(selectedTopic);
+      blogContent = await this.generateBlogContentWithImagesForNaver(selectedTopic);
       console.log(`✅ Blog content generated successfully`);
       console.log(`📄 Title: ${blogContent.title}`);
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
@@ -450,7 +512,6 @@ export class ScheduledPostsExecutor {
       // Step 5: Upload to Naver Blog with error handling
       console.log(`\n📤 Step 5: Uploading to Naver Blog...`);
       const imagePaths = blogContent.images?.map((img: any) => img.filePath).filter(Boolean) || []; // Get all image paths
-      let postUrl: string;
       try {
         postUrl = await Promise.race([
           this.uploadToNaverBlog(blogContent, connection, imagePaths),
@@ -471,13 +532,38 @@ export class ScheduledPostsExecutor {
         throw uploadError;
       }
 
-      // Step 6: Update run statistics
-      console.log(`\n📊 Step 6: Updating run statistics...`);
+      // Step 6: Create execution history record with success
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'success',
+          startedAt,
+          completedAt,
+          duration,
+          blogPostUrl: postUrl,
+          topics: post.topics || [],
+          generatedContent: blogContent ? {
+            title: blogContent.title,
+            excerpt: blogContent.content?.substring(0, 200) || '',
+            wordCount: blogContent.content?.length || 0,
+            imageCount: blogContent.images?.length || 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+
+      // Step 7: Update run statistics
+      console.log(`\n📊 Step 7: Updating run statistics...`);
       await this.updateRunStatistics(post.id, true, postUrl);
       console.log(`✅ Run statistics updated`);
 
-      // Step 7: Calculate next run time
-      console.log(`\n⏰ Step 7: Calculating next run time...`);
+      // Step 8: Calculate next run time
+      console.log(`\n⏰ Step 8: Calculating next run time...`);
       const nextRun = this.calculateNextRunTime(post);
       if (nextRun) {
         await this.updateNextRunTime(post.id, nextRun);
@@ -495,15 +581,42 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       console.error(`\n💥 ===== NAVER BLOG SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
       console.error(`📄 Error details:`, error);
       
+      // Create execution history record with failure
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'failure',
+          startedAt,
+          completedAt,
+          duration,
+          errorMessage,
+          topics: post.topics || [],
+          generatedContent: blogContent ? {
+            title: blogContent.title || '',
+            excerpt: blogContent.content?.substring(0, 200) || '',
+            wordCount: blogContent.content?.length || 0,
+            imageCount: blogContent.images?.length || 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+      
       // Update failure statistics
       try {
-        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        await this.updateRunStatistics(post.id, false, null, errorMessage);
         console.log(`📊 Failure statistics updated`);
       } catch (updateError) {
         console.error(`❌ Failed to update failure statistics:`, updateError);
@@ -518,6 +631,8 @@ export class ScheduledPostsExecutor {
    */
   private async executeInstagramScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date();
+    
     try {
       // Ensure topics are loaded for scheduled (cron) executions
       if (!post.topics || post.topics.length === 0) {
@@ -538,6 +653,8 @@ export class ScheduledPostsExecutor {
     console.log(`✅ Success Count: ${post.successCount || 0}`);
     console.log(`❌ Failure Count: ${post.failureCount || 0}`);
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    let generatedContent: any = null;
     
     try {
       // Step 1: Get connection details
@@ -638,7 +755,7 @@ export class ScheduledPostsExecutor {
       };
 
       // Generate content first to get caption and image prompt
-      const generatedContent = await generateInstagramContent(structuredPrompt);
+      generatedContent = await generateInstagramContent(structuredPrompt);
       console.log(`✅ Instagram content generated successfully`);
       console.log(`📝 Caption length: ${generatedContent.caption?.length || 0} characters`);
       console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
@@ -661,13 +778,37 @@ export class ScheduledPostsExecutor {
         console.log(`📊 Execution ID: ${result.executionId}`);
       }
 
-      // Step 6: Update run statistics
-      console.log(`\n📊 Step 6: Updating run statistics...`);
+      // Step 7: Create execution history record with success
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'success',
+          startedAt,
+          completedAt,
+          duration,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: post.title || '',
+            excerpt: generatedContent.caption?.substring(0, 200) || '',
+            wordCount: generatedContent.caption?.length || 0,
+            imageCount: generatedContent.imagePrompt ? 1 : 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+
+      // Step 8: Update run statistics
+      console.log(`\n📊 Step 8: Updating run statistics...`);
       await this.updateRunStatistics(post.id, true, 'Instagram post published');
       console.log(`✅ Run statistics updated`);
 
-      // Step 7: Calculate next run time
-      console.log(`\n⏰ Step 7: Calculating next run time...`);
+      // Step 9: Calculate next run time
+      console.log(`\n⏰ Step 9: Calculating next run time...`);
       const nextRun = this.calculateNextRunTime(post);
       if (nextRun) {
         await this.updateNextRunTime(post.id, nextRun);
@@ -684,15 +825,42 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       console.error(`\n💥 ===== INSTAGRAM SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
       console.error(`📄 Error details:`, error);
       
+      // Create execution history record with failure
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'failure',
+          startedAt,
+          completedAt,
+          duration,
+          errorMessage,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: post.title || '',
+            excerpt: generatedContent.caption?.substring(0, 200) || '',
+            wordCount: generatedContent.caption?.length || 0,
+            imageCount: generatedContent.imagePrompt ? 1 : 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+      
       // Update failure statistics
       try {
-        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        await this.updateRunStatistics(post.id, false, null, errorMessage);
         console.log(`📊 Failure statistics updated`);
       } catch (updateError) {
         console.error(`❌ Failed to update failure statistics:`, updateError);
@@ -707,6 +875,7 @@ export class ScheduledPostsExecutor {
    */
   private async executeFacebookScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date();
     
     // Ensure topics are loaded for scheduled (cron) executions
     try {
@@ -729,6 +898,8 @@ export class ScheduledPostsExecutor {
     console.log(`❌ Failure Count: ${post.failureCount || 0}`);
 
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    let generatedContent: any = null;
     
     try {
       // Step 1: Get connection details
@@ -830,7 +1001,7 @@ export class ScheduledPostsExecutor {
       };
 
       // Generate content first to get text and image prompt
-      const generatedContent = await generateFacebookContent(structuredPrompt);
+      generatedContent = await generateFacebookContent(structuredPrompt);
       console.log(`✅ Facebook content generated successfully`);
       console.log(`📝 Post text length: ${generatedContent.text?.length || 0} characters`);
       console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
@@ -884,7 +1055,31 @@ export class ScheduledPostsExecutor {
         throw postError;
       }
 
-      // Update success statistics
+      // Step 7: Create execution history record with success
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'success',
+          startedAt,
+          completedAt,
+          duration,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: post.title || '',
+            excerpt: generatedContent.text?.substring(0, 200) || '',
+            wordCount: generatedContent.text?.length || 0,
+            imageCount: generatedContent.imagePrompt ? 1 : 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+
+      // Step 8: Update success statistics
       const executionTime = Date.now() - startTime;
       await this.updateRunStatistics(post.id, true, new Date(), null);
       
@@ -895,15 +1090,42 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       console.error(`\n💥 ===== FACEBOOK SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
       console.error(`📄 Error details:`, error);
       
+      // Create execution history record with failure
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'failure',
+          startedAt,
+          completedAt,
+          duration,
+          errorMessage,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: post.title || '',
+            excerpt: generatedContent.text?.substring(0, 200) || '',
+            wordCount: generatedContent.text?.length || 0,
+            imageCount: generatedContent.imagePrompt ? 1 : 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+      
       // Update failure statistics
       try {
-        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        await this.updateRunStatistics(post.id, false, null, errorMessage);
         console.log(`📊 Failure statistics updated`);
       } catch (updateError) {
         console.error(`❌ Failed to update failure statistics:`, updateError);
@@ -918,6 +1140,7 @@ export class ScheduledPostsExecutor {
    */
   private async executeYouTubeScheduledPost(post: any): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date();
     
     // Ensure topics are loaded for scheduled (cron) executions
     try {
@@ -935,6 +1158,9 @@ export class ScheduledPostsExecutor {
     console.log(`📋 Topics: ${post.topics?.join(', ') || 'None'}`);
     console.log(`⏰ Scheduled Time: ${post.scheduledTime}`);
     console.log(`🕐 Execution started at: ${new Date().toISOString()}`);
+    
+    let generatedContent: any = null;
+    let videoUrl: string | null = null;
     
     try {
       // Step 1: Get connection details
@@ -1030,7 +1256,7 @@ export class ScheduledPostsExecutor {
       };
 
       // Generate content first to get title, description, and tags
-      const generatedContent = await generateYouTubeContent(structuredPrompt);
+      generatedContent = await generateYouTubeContent(structuredPrompt);
       console.log(`✅ YouTube content generated successfully`);
       console.log(`📝 Title: ${generatedContent.title || 'None'}`);
       console.log(`📄 Description length: ${generatedContent.description?.length || 0} characters`);
@@ -1113,7 +1339,32 @@ export class ScheduledPostsExecutor {
         throw postError;
       }
 
-      // Update success statistics
+      // Step 7: Create execution history record with success
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'success',
+          startedAt,
+          completedAt,
+          duration,
+          blogPostUrl: videoUrl || undefined,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: generatedContent.title || post.title || '',
+            excerpt: generatedContent.description?.substring(0, 200) || '',
+            wordCount: generatedContent.description?.length || 0,
+            imageCount: 0, // YouTube videos don't have images
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+
+      // Step 8: Update success statistics
       const executionTime = Date.now() - startTime;
       await this.updateRunStatistics(post.id, true, new Date(), null);
       
@@ -1124,15 +1375,42 @@ export class ScheduledPostsExecutor {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const completedAt = new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       console.error(`\n💥 ===== YOUTUBE SCHEDULED POST EXECUTION FAILED =====`);
       console.error(`❌ Post "${post.title}" failed to execute`);
       console.error(`⏱️ Execution time: ${executionTime}ms`);
       console.error(`🕐 Failed at: ${new Date().toISOString()}`);
       console.error(`📄 Error details:`, error);
       
+      // Create execution history record with failure
+      try {
+        const scheduledPostsManager = this.sqliteManager.getScheduledPostsManager();
+        scheduledPostsManager.createExecution({
+          scheduledPostId: post.id,
+          status: 'failure',
+          startedAt,
+          completedAt,
+          duration,
+          errorMessage,
+          topics: post.topics || [],
+          generatedContent: generatedContent ? {
+            title: generatedContent.title || post.title || '',
+            excerpt: generatedContent.description?.substring(0, 200) || '',
+            wordCount: generatedContent.description?.length || 0,
+            imageCount: 0,
+          } : undefined,
+        });
+        console.log(`📊 Created execution history record`);
+      } catch (execError) {
+        console.warn('⚠️ Failed to create execution history record:', execError);
+      }
+      
       // Update failure statistics
       try {
-        await this.updateRunStatistics(post.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+        await this.updateRunStatistics(post.id, false, null, errorMessage);
         console.log(`📊 Failure statistics updated`);
       } catch (updateError) {
         console.error(`❌ Failed to update failure statistics:`, updateError);
@@ -1569,10 +1847,6 @@ export class ScheduledPostsExecutor {
    * Generate images for Naver Blog (local files only, no WordPress upload)
    */
   private async generateImagesForNaver(parsedContent: any): Promise<any> {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
-    }
-    
     if (parsedContent.images && parsedContent.images.length > 0) {
       const fs = require('fs').promises;
       const path = require('path');
@@ -1582,7 +1856,7 @@ export class ScheduledPostsExecutor {
         const imageRequest = parsedContent.images[i];
         try {
           console.log(`🎨 Generating image ${i + 1}/${parsedContent.images.length}: ${imageRequest.description}`);
-          const images = await this.generateSingleImage(imageRequest.description, 1);
+          const images = await this.generateSingleImage(imageRequest.description, 1, { outputMimeType: 'image/png' });
           if (images.length > 0) {
             const generatedImage = images[0];
             
@@ -1631,71 +1905,14 @@ export class ScheduledPostsExecutor {
 
   /**
    * Generate a single image using Gemini AI
+   * @deprecated Use generateSingleImage from '../gemini' directly
    */
-  private async generateSingleImage(prompt: string, count = 1): Promise<any[]> {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
-    }
-    
-    const { GoogleGenAI } = await import('@google/genai');
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+  private async generateSingleImage(prompt: string, count = 1, options?: { outputMimeType?: 'image/jpeg' | 'image/png' }): Promise<any[]> {
+    const image = await generateSingleImage(prompt, {
+      useRetry: false, // No retry in scheduled executor to fail fast
+      outputMimeType: options?.outputMimeType || 'image/png', // Use PNG for Naver blog
     });
-
-    const config = {
-      responseModalities: ['IMAGE', 'TEXT'],
-    };
-
-    const model = 'gemini-2.5-flash-image-preview';
-    const contents = [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-    ];
-
-    const response = await ai.models.generateContentStream({
-      model,
-      config,
-      contents,
-    });
-
-    const generatedImages = [];
-    let fileIndex = 0;
-
-    for await (const chunk of response) {
-      if (!chunk.candidates || !chunk.candidates[0].content || !chunk.candidates[0].content.parts) {
-        continue;
-      }
-
-      if (chunk.candidates?.[0]?.content?.parts?.[0]?.inlineData) {
-        const fileName = `gemini_image_${Date.now()}_${fileIndex++}`;
-        const inlineData = chunk.candidates[0].content.parts[0].inlineData;
-        const mime = require('mime-types');
-        const fileExtension = mime.extension(inlineData.mimeType || 'image/png');
-        const buffer = Buffer.from(inlineData.data || '', 'base64');
-        
-        const imageData = {
-          fileName: `${fileName}.${fileExtension}`,
-          mimeType: inlineData.mimeType || 'image/png',
-          data: inlineData.data,
-          buffer: buffer,
-          size: buffer.length
-        };
-
-        generatedImages.push(imageData);
-        console.log(`✅ Generated image: ${imageData.fileName} (${imageData.size} bytes)`);
-      } else if (chunk.text) {
-        console.log('📝 Image generation response:', chunk.text);
-      }
-    }
-
-    console.log(`🎉 Generated ${generatedImages.length} image(s) successfully`);
-    return generatedImages;
+    return [image];
   }
 
   /**
@@ -1780,7 +1997,15 @@ export class ScheduledPostsExecutor {
       }
       
       console.log(`✅ Naver Blog upload completed successfully`);
-      return 'https://blog.naver.com'; // Naver doesn't return specific post URLs
+      
+      // Return the actual blog post URL if available, otherwise return generic blog URL
+      if (result.blogUrl) {
+        console.log(`🔗 Blog post URL: ${result.blogUrl}`);
+        return result.blogUrl;
+      } else {
+        console.warn('⚠️ Blog post URL not available, returning generic blog URL');
+        return 'https://blog.naver.com';
+      }
     } catch (error) {
       console.error(`❌ Error uploading to Naver Blog:`, error);
       throw error;

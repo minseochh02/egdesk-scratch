@@ -1,4 +1,4 @@
-import retryWithBackoff from "../../ai-blog/retry";
+import { generateTextWithAI } from '../../gemini';
 
 const YOUTUBE_CONTENT_SYSTEM_PROMPT = `You are an elite YouTube content strategist and scriptwriter.
 Always respond with strictly valid JSON that matches this schema:
@@ -94,59 +94,30 @@ export async function generateYouTubeContent(
   plan: YouTubeContentPlan,
   options: YouTubeGenerationOptions = {}
 ): Promise<GeneratedYouTubeContent> {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY environment variable is required to generate YouTube content.");
-  }
-
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-  });
-
   const model = options.model || process.env.GEMINI_YOUTUBE_MODEL || "gemini-2.5-flash";
   const maxTags = options.maxTags ?? 15;
   const maxTitleLength = options.maxTitleLength ?? 100;
   const maxDescriptionLength = options.maxDescriptionLength ?? 5000;
 
-  const config = {
-    responseMimeType: "application/json",
-    generationConfig: {
+  const result = await generateTextWithAI({
+    prompt: buildPromptFromPlan(plan),
+    systemPrompt: YOUTUBE_CONTENT_SYSTEM_PROMPT,
+    model,
       maxOutputTokens: 4096,
-    },
-    systemInstruction: [
-      {
-        text: YOUTUBE_CONTENT_SYSTEM_PROMPT,
-      },
-    ],
-  };
-
-  const contents = [
-    {
-      role: "user" as const,
-      parts: [
-        {
-          text: buildPromptFromPlan(plan),
-        },
-      ],
-    },
-  ];
-
-  const response = await retryWithBackoff(async () => {
-    return await ai.models.generateContentStream({
-      model,
-      config,
-      contents,
+    streaming: true,
+    useRetry: true,
+    maxRetries: 3,
+    retryBaseDelay: 1500,
+    package: 'genai',
+    parseJson: true,
     });
-  }, 3, 1500);
 
-  let raw = "";
-  for await (const chunk of response) {
-    if (typeof chunk.text === "string") {
-      raw += chunk.text;
-    }
+  if (!result.json) {
+    throw new Error('Failed to parse JSON response from AI');
   }
 
-  const parsed = parseYouTubeJson(raw);
+  const parsed = result.json;
+  const raw = result.raw;
 
   const title = enforceTitleLimit((parsed.title || "").trim(), maxTitleLength);
   const description = enforceDescriptionLimit((parsed.description || "").trim(), maxDescriptionLength);

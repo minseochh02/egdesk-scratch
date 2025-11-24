@@ -300,13 +300,15 @@ export function registerSEOHandlers() {
             .map(([category, issues]) => `${category}: ${Array.from(issues as Set<string>).join(', ')}`)
             .join('\n');
           const prompt = `당신은 SEO 전문가입니다. 웹사이트 분석 결과 발견된 다음 문제들을 SEO에 대해 전혀 모르는 일반 사용자가 이해할 수 있도록 쉽고 친절하게 설명해주세요:\n\n웹사이트 분석 점수:\n- 전체 평균: ${overallAverage}점\n- 성능: ${avgPerformance}점\n- 접근성: ${avgAccessibility}점\n- SEO: ${avgSEO}점\n\n발견된 주요 문제들:\n${issuesSummary}\n\n다음 형식으로 답변해주세요:\n1. 전체적인 상황 요약 (2-3문장)\n2. 각 카테고리별 문제점과 해결 방법을 쉽게 설명\n3. 우선순위가 높은 개선사항 3가지\n\n전문 용어는 피하고, 일반인도 이해할 수 있는 쉬운 말로 설명해주세요.`;
-          const { GoogleGenerativeAI } = await import('@google/generative-ai');
-          const genAI = new GoogleGenerativeAI(geminiApiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const result = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: prompt }] }] });
-          const response = result?.response;
-          const text = response ? await response.text() : '';
-          aiExplanation = text || '(AI 설명을 생성하지 못했습니다)';
+          const { generateTextWithAI } = await import('../gemini');
+          const result = await generateTextWithAI({
+            prompt,
+            model: 'gemini-2.5-flash',
+            streaming: false,
+            useRetry: false,
+            package: 'generative-ai',
+          });
+          aiExplanation = result.text || '(AI 설명을 생성하지 못했습니다)';
         } else {
           aiExplanation = '(AI 설명을 생성하려면 Google AI 키를 추가하거나 GEMINI_API_KEY 환경 변수를 설정하세요)';
         }
