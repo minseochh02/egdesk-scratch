@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowRight, faPlus, faSpinner, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faCircleCheck } from '../../utils/fontAwesomeIcons';
-import { faInstagram as faInstagramBrand, faYoutube, faFacebook } from '@fortawesome/free-brands-svg-icons';
+import { faArrowRight, faPlus, faSpinner, faGlobe, faUser, faCalendarAlt, faExclamationTriangle, faCircleCheck, faInstagram, faYoutube, faFacebook } from '../../utils/fontAwesomeIcons';
 import './SocialMediaConnectionList.css';
 
 interface SocialMediaConnection {
@@ -47,7 +46,7 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
             id: conn.id || '',
             name: conn.name,
             type: 'instagram' as const,
-            username: conn.username,
+            username: conn.username || '',
             createdAt: conn.createdAt || new Date().toISOString(),
           }));
           allConnections.push(...instagramConnections);
@@ -64,7 +63,7 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
             id: conn.id || '',
             name: conn.name,
             type: 'youtube' as const,
-            username: conn.username,
+            username: conn.username || '',
             createdAt: conn.createdAt || new Date().toISOString(),
           }));
           allConnections.push(...youtubeConnections);
@@ -81,7 +80,7 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
             id: conn.id || '',
             name: conn.name,
             type: 'facebook' as const,
-            username: conn.username,
+            username: conn.username || '',
             createdAt: conn.createdAt || new Date().toISOString(),
           }));
           allConnections.push(...facebookConnections);
@@ -110,7 +109,7 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
 
   const getConnectionIcon = (connection: SocialMediaConnection): any => {
     if (connection.type === 'instagram') {
-      return faInstagramBrand;
+      return faInstagram;
     }
     if (connection.type === 'youtube') {
       return faYoutube;
@@ -137,16 +136,17 @@ const SocialMediaConnectionList: React.FC<SocialMediaConnectionListProps> = ({
   };
 
   const getConnectionTypeName = (connection: SocialMediaConnection): string => {
-    if (connection.type === 'instagram') {
-      return 'Instagram';
+    switch (connection.type) {
+      case 'instagram':
+        return 'Instagram';
+      case 'youtube':
+        return 'YouTube';
+      case 'facebook':
+        return 'Facebook';
+      default:
+        // This should never happen, but TypeScript requires a default case
+        return 'Unknown';
     }
-    if (connection.type === 'youtube') {
-      return 'YouTube';
-    }
-    if (connection.type === 'facebook') {
-      return 'Facebook';
-    }
-    return connection.type.charAt(0).toUpperCase() + connection.type.slice(1);
   };
 
   const formatDate = (dateString: string) => {

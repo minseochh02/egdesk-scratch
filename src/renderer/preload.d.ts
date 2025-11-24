@@ -2,6 +2,10 @@ import type {
   AIServiceAPI,
   OllamaAPI,
   WebUtilitiesAPI,
+  InstagramAPI,
+  YouTubeAPI,
+  FacebookAPI,
+  NaverAPI,
 } from '../main/preload';
 
 export interface IElectronAPI {
@@ -214,6 +218,10 @@ export interface IElectronAPI {
     content?: string;
   }>;
 };
+  instagram: InstagramAPI;
+  youtube: YouTubeAPI;
+  facebook: FacebookAPI;
+  naver: NaverAPI;
   sync: {
     saveHistory(
       syncData: any,

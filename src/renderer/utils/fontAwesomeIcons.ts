@@ -20,6 +20,7 @@ export {
   faClock,
   faEye,
   faEyeSlash,
+  faFlag,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Feature icons
@@ -64,6 +65,7 @@ export {
   faSettings,
   faUser,
   faUsers,
+  faUserPlus,
   faSearch,
   faFilter,
   faSort,

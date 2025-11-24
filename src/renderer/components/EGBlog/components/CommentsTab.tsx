@@ -10,20 +10,14 @@ import {
   faTimesCircle,
   faExclamationTriangle,
   faTrash, 
-  faEdit, 
-  faExternalLinkAlt,
   faRefresh,
   faSearch,
-  faFilter,
   faSort,
   faChevronLeft,
   faChevronRight,
   faSpinner,
   faEye,
-  faReply,
-  faFlag,
-  faThumbsUp,
-  faThumbsDown
+  faFlag
 } from '../../../utils/fontAwesomeIcons';
 import './CommentsTab.css';
 
