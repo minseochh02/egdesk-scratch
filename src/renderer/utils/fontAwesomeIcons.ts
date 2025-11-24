@@ -151,6 +151,9 @@ export {
 // Brand icons
 export {
   faWordpress,
+  faInstagram,
+  faYoutube,
+  faFacebook,
 } from '@fortawesome/free-brands-svg-icons';
 
 // Homepage Editor specific icons (with aliases)

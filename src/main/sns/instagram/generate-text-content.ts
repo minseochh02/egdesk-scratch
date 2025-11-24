@@ -156,7 +156,7 @@ export async function generateInstagramContent(
     systemPrompt: INSTAGRAM_CONTENT_SYSTEM_PROMPT,
     userMessage: userPrompt,
     responseSchema,
-    model: options.model || process.env.GEMINI_INSTAGRAM_MODEL || 'gemini-2.0-flash-exp',
+    model: options.model || process.env.GEMINI_INSTAGRAM_MODEL || 'gemini-2.5-flash',
     temperature: 0.7,
     maxOutputTokens: 2048,
   });
