@@ -7,13 +7,11 @@ on:
 
 jobs:
   publish:
-    # if: ${{ github.repository_owner == 'electron-react-boilerplate' }}
-
     runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
-        os: [macos-latest]
+        os: [macos-latest, windows-latest]
 
     steps:
       - name: Checkout git repo
@@ -25,13 +23,28 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Create .env.production from secrets
+        run: |
+          echo "# Production Environment Variables" > .env.production
+          echo "# Generated automatically from GitHub Secrets during build" >> .env.production
+          echo "" >> .env.production
+          if [ -n "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env.production
+          fi
+          if [ -n "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env.production
+          fi
+        shell: bash
+        continue-on-error: true
+
       - name: Install and build
         run: |
           npm install
           npm run postinstall
           npm run build
 
-      - name: Publish releases
+      - name: Publish releases (macOS)
+        if: matrix.os == 'macos-latest'
         env:
           # The APPLE_* values are used for auto updates signing
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
@@ -40,6 +53,14 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           # This is used for uploading release assets to github
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          npm exec electron-builder -- --publish always --win --mac --linux
+          npm exec electron-builder -- --publish always --mac
+
+      - name: Publish releases (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          # This is used for uploading release assets to github
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          npm exec electron-builder -- --publish always --win
