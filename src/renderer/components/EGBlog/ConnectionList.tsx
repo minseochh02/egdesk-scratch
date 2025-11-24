@@ -20,6 +20,7 @@ interface WordPressConnection {
 interface NaverConnection {
   id: string;
   name: string;
+  url: string;
   username: string;
   password: string;
   createdAt: string;
@@ -82,9 +83,14 @@ const ConnectionList: React.FC<ConnectionListProps> = ({ onEdit, onDelete, onCon
         const naverResult = await window.electron.naver.getConnections();
         if (naverResult.success && naverResult.connections) {
           const naverConnections = naverResult.connections.map(conn => ({
-            ...conn,
+            id: conn.id || '',
+            name: conn.name,
+            username: conn.username,
+            password: conn.password,
             url: 'https://blog.naver.com', // Default Naver Blog URL
-            type: 'naver' as const
+            type: 'naver' as const,
+            createdAt: conn.createdAt || new Date().toISOString(),
+            updatedAt: conn.updatedAt || new Date().toISOString(),
           }));
           allConnections.push(...naverConnections);
         }

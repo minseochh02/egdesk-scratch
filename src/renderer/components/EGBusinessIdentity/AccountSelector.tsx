@@ -177,7 +177,7 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
         throw new Error('Unsupported platform');
       }
 
-      if (result.success && result.connection) {
+      if (result.success) {
         // Reload connections
         await loadConnections();
         
@@ -193,11 +193,21 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
           connectionType = 'youtube';
         }
         
-        handleSelect({
-          id: result.connection.id,
-          name: result.connection.name,
-          type: connectionType,
-        });
+        // Get the connection - either from result.connection or the last item in result.connections
+        // Type assertion needed because different APIs return different structures
+        const resultWithConnection = result as { connection?: any; connections?: any[] };
+        const savedConnection = resultWithConnection.connection || 
+          (resultWithConnection.connections && resultWithConnection.connections.length > 0 
+            ? resultWithConnection.connections[resultWithConnection.connections.length - 1] 
+            : null);
+        
+        if (savedConnection) {
+          handleSelect({
+            id: savedConnection.id || '',
+            name: savedConnection.name,
+            type: connectionType,
+          });
+        }
         
         // Reset form
         setFormData({ name: '', url: '', username: '', password: '' });

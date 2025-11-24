@@ -113,8 +113,10 @@ export async function runSEOAnalysis(url: string): Promise<SEOAnalysisResult> {
     }
 
     // Extract SEO scores from the result
-    // The result structure from seo-analyzer.ts returns scores object directly
-    const scores = result.scores;
+    // The result structure from chrome-handlers.ts returns scores object, but TypeScript type doesn't include it
+    // Use type assertion to access the actual return structure
+    const resultWithScores = result as { scores?: { overall?: number; performance?: number; accessibility?: number; bestPractices?: number; seo?: number; pwa?: number } };
+    const scores = resultWithScores.scores;
     
     return {
       success: true,
@@ -127,7 +129,7 @@ export async function runSEOAnalysis(url: string): Promise<SEOAnalysisResult> {
         pwa: scores.pwa || 0,
         average: scores.overall || 0,
       } : undefined,
-      reportPath: result.finalReportPath,
+      reportPath: (result as { finalReportPath?: string }).finalReportPath,
       timestamp,
     };
   } catch (error) {
@@ -138,10 +140,12 @@ export async function runSEOAnalysis(url: string): Promise<SEOAnalysisResult> {
       
       try {
         if (window.electron?.debug?.generateLighthouseReports) {
-          const result = await window.electron.debug.generateLighthouseReports([wwwUrl], undefined);
-          if (result?.success) {
+          const wwwResult = await window.electron.debug.generateLighthouseReports([wwwUrl], undefined);
+          if (wwwResult?.success) {
             console.log(`[BusinessIdentity] SEO analysis succeeded with www subdomain`);
-            const scores = result.scores;
+            // Use type assertion to access the actual return structure
+            const wwwResultWithScores = wwwResult as { scores?: { overall?: number; performance?: number; accessibility?: number; bestPractices?: number; seo?: number; pwa?: number }; finalReportPath?: string };
+            const scores = wwwResultWithScores.scores;
             return {
               success: true,
               url: originalUrl, // Preserve original URL
@@ -153,7 +157,7 @@ export async function runSEOAnalysis(url: string): Promise<SEOAnalysisResult> {
                 pwa: scores.pwa || 0,
                 average: scores.overall || 0,
               } : undefined,
-              reportPath: result.finalReportPath,
+              reportPath: wwwResultWithScores.finalReportPath,
               timestamp,
             };
           }

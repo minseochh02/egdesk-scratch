@@ -68,7 +68,7 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
       const result = await window.electron.permissions.get(serverKey);
       
       if (result.success) {
-        setPermissions(result.permissions);
+        setPermissions(result.permissions || []);
       } else {
         setError(result.error || 'Failed to load permissions');
       }

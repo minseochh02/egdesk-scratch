@@ -76,8 +76,14 @@ const EGBlogging: React.FC = () => {
           const connection = naverResult.connections.find(conn => conn.id === connectionId);
           if (connection) {
             return {
-              ...connection,
-              type: 'naver' as const
+              id: connection.id || '',
+              name: connection.name,
+              username: connection.username,
+              password: connection.password,
+              url: 'https://blog.naver.com', // Default Naver Blog URL
+              type: 'naver' as const,
+              createdAt: connection.createdAt || new Date().toISOString(),
+              updatedAt: connection.updatedAt || new Date().toISOString(),
             };
           }
         }
@@ -233,8 +239,6 @@ const EGBlogging: React.FC = () => {
         <div className="eg-blogging-scroll">
           <ConnectionDashboard
             connection={selectedConnection}
-            onEdit={handleEditConnection}
-            onDelete={handleDeleteConnection}
             onTestConnection={handleTestConnection}
             onRefresh={handleRefreshDashboard}
             onBack={handleBackFromDashboard}
