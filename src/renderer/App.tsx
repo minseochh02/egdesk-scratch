@@ -43,6 +43,19 @@ const GEMMA_MODEL_ID = 'gemma3:4b';
 function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null;
 
+  // Detect platform and get appropriate download link
+  const platform = typeof window !== 'undefined' && window.electron?.platform ? window.electron.platform : 'unknown';
+  const downloadUrl = platform === 'win32' 
+    ? 'https://www.distantdesktop.com/download/distant-desktop.exe'
+    : platform === 'darwin'
+    ? 'https://www.distantdesktop.com/download/macos/DistantDesktop.dmg'
+    : null;
+  const downloadLabel = platform === 'win32' 
+    ? 'Download for Windows'
+    : platform === 'darwin'
+    ? 'Download for macOS'
+    : 'Download';
+
   return (
     <div style={{
       position: 'fixed',
@@ -84,6 +97,32 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Download Section */}
+          {downloadUrl && (
+            <div>
+              <h3 style={{ color: '#FF5722', marginBottom: '10px', fontSize: '18px' }}>⬇️ Download</h3>
+              <button
+                onClick={() => window.open(downloadUrl, '_blank')}
+                style={{
+                  padding: '12px 20px',
+                  backgroundColor: '#FF5722',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  width: '100%',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E64A19'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#FF5722'}
+              >
+                {downloadLabel}
+              </button>
+            </div>
+          )}
+
           {/* Contact Information */}
           <div>
             <h3 style={{ color: '#4CAF50', marginBottom: '10px', fontSize: '18px' }}>📧 Contact</h3>
