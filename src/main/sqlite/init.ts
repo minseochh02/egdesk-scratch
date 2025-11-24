@@ -545,6 +545,25 @@ export function initializeScheduledPostsDatabaseSchema(db: Database.Database): v
     )
   `);
 
+  // Create scheduled_post_executions table for execution history
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_post_executions (
+      id TEXT PRIMARY KEY,
+      scheduled_post_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('success', 'failure', 'running')),
+      started_at DATETIME NOT NULL,
+      completed_at DATETIME,
+      duration INTEGER, -- in milliseconds
+      error_message TEXT,
+      blog_post_id TEXT,
+      blog_post_url TEXT,
+      topics_json TEXT, -- JSON array of topics
+      generated_content_json TEXT, -- JSON object with title, excerpt, wordCount, imageCount
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (scheduled_post_id) REFERENCES scheduled_posts(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes for better performance
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_connection_id ON scheduled_posts(connection_id);
@@ -553,6 +572,9 @@ export function initializeScheduledPostsDatabaseSchema(db: Database.Database): v
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_next_run ON scheduled_posts(next_run);
     CREATE INDEX IF NOT EXISTS idx_scheduled_posts_frequency_type ON scheduled_posts(frequency_type);
     CREATE INDEX IF NOT EXISTS idx_scheduled_post_topics_post_id ON scheduled_post_topics(scheduled_post_id);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_post_executions_post_id ON scheduled_post_executions(scheduled_post_id);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_post_executions_started_at ON scheduled_post_executions(started_at);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_post_executions_status ON scheduled_post_executions(status);
   `);
 
   // Create trigger for updated_at timestamp

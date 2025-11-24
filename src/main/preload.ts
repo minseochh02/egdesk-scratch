@@ -1406,6 +1406,7 @@ const electronHandler = {
     listSnsPlans: (snapshotId: string) => ipcRenderer.invoke('sqlite-business-identity-list-sns-plans', snapshotId),
     saveSnsPlans: (snapshotId: string, plans: BusinessIdentitySnsPlanInput[]) =>
       ipcRenderer.invoke('sqlite-business-identity-save-sns-plans', { snapshotId, plans }),
+    listSnsPlanExecutions: (planId: string) => ipcRenderer.invoke('sqlite-business-identity-list-sns-plan-executions', planId),
     updateAnalysisResults: (snapshotId: string, seoAnalysis: any, sslAnalysis: any) =>
       ipcRenderer.invoke('sqlite-business-identity-update-analysis-results', snapshotId, seoAnalysis, sslAnalysis),
     updateSnsPlanConnection: (planId: string, connectionId: string | null, connectionName: string | null, connectionType: string | null) =>

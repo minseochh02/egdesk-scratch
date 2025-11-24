@@ -43,6 +43,44 @@ export interface CreateScheduledPostData {
   topics: string[];
 }
 
+export interface ScheduledPostExecution {
+  id: string;
+  scheduledPostId: string;
+  status: 'success' | 'failure' | 'running';
+  startedAt: Date;
+  completedAt?: Date;
+  duration?: number; // in milliseconds
+  errorMessage?: string;
+  blogPostId?: string;
+  blogPostUrl?: string;
+  topics: string[];
+  generatedContent?: {
+    title: string;
+    excerpt: string;
+    wordCount: number;
+    imageCount: number;
+  };
+  createdAt: Date;
+}
+
+export interface CreateScheduledPostExecutionData {
+  scheduledPostId: string;
+  status: 'success' | 'failure' | 'running';
+  startedAt: Date;
+  completedAt?: Date;
+  duration?: number;
+  errorMessage?: string;
+  blogPostId?: string;
+  blogPostUrl?: string;
+  topics: string[];
+  generatedContent?: {
+    title: string;
+    excerpt: string;
+    wordCount: number;
+    imageCount: number;
+  };
+}
+
 /**
  * SQLite Scheduled Posts Manager
  * 
@@ -450,6 +488,93 @@ export class SQLiteScheduledPostsManager {
       console.error('Failed to update scheduled post next run time:', error);
       throw error;
     }
+  }
+
+  /**
+   * Create a new execution history record
+   */
+  createExecution(data: CreateScheduledPostExecutionData): ScheduledPostExecution {
+    const id = this.generateExecutionId();
+    const now = new Date();
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO scheduled_post_executions (
+        id, scheduled_post_id, status, started_at, completed_at, duration,
+        error_message, blog_post_id, blog_post_url, topics_json, generated_content_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      data.scheduledPostId,
+      data.status,
+      data.startedAt.toISOString(),
+      data.completedAt ? data.completedAt.toISOString() : null,
+      data.duration || null,
+      data.errorMessage || null,
+      data.blogPostId || null,
+      data.blogPostUrl || null,
+      JSON.stringify(data.topics || []),
+      data.generatedContent ? JSON.stringify(data.generatedContent) : null,
+      now.toISOString()
+    );
+
+    return this.getExecution(id)!;
+  }
+
+  /**
+   * Get execution history for a scheduled post
+   */
+  getExecutionHistory(scheduledPostId: string): ScheduledPostExecution[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_post_executions 
+      WHERE scheduled_post_id = ? 
+      ORDER BY started_at DESC
+    `);
+
+    const rows = stmt.all(scheduledPostId) as any[];
+    return rows.map(row => this.mapRowToExecution(row));
+  }
+
+  /**
+   * Get a single execution by ID
+   */
+  getExecution(id: string): ScheduledPostExecution | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_post_executions WHERE id = ?
+    `);
+
+    const row = stmt.get(id) as any;
+    if (!row) return null;
+
+    return this.mapRowToExecution(row);
+  }
+
+  /**
+   * Map database row to ScheduledPostExecution object
+   */
+  private mapRowToExecution(row: any): ScheduledPostExecution {
+    return {
+      id: row.id,
+      scheduledPostId: row.scheduled_post_id,
+      status: row.status,
+      startedAt: new Date(row.started_at),
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      duration: row.duration || undefined,
+      errorMessage: row.error_message || undefined,
+      blogPostId: row.blog_post_id || undefined,
+      blogPostUrl: row.blog_post_url || undefined,
+      topics: row.topics_json ? JSON.parse(row.topics_json) : [],
+      generatedContent: row.generated_content_json ? JSON.parse(row.generated_content_json) : undefined,
+      createdAt: new Date(row.created_at)
+    };
+  }
+
+  /**
+   * Generate a unique ID for executions
+   */
+  private generateExecutionId(): string {
+    return `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**

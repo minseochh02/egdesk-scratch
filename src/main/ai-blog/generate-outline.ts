@@ -1,5 +1,5 @@
-import retryWithBackoff from './retry';
 import { ParsedContent } from './index';
+import { generateTextWithAI } from '../gemini';
 
 /**
  * Generate structured blog content using Gemini AI with JSON output
@@ -7,30 +7,13 @@ import { ParsedContent } from './index';
  * @returns {Promise<Object>} - The generated blog content as a structured object
  */
 export default async function generateOutline(topic: string) {
-    if (!process.env.GEMINI_API_KEY) {
-        throw new Error('GEMINI_API_KEY environment variable is required');
-    }
     if (!topic) {
         throw new Error('Topic is required');
     }
-      
 
     console.log(`🤖 Generating structured blog content for topic: "${topic}"`);
   
-    // ESM-only project, must be loaded this way
-    const { GoogleGenAI } = await import('@google/genai');
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-    });
-  
-    const config = {
-      responseMimeType: 'application/json',
-      generationConfig: {
-        maxOutputTokens: 65536,
-      },
-      systemInstruction: [
-        {
-          text: `### Writing Rules
+    const systemPrompt = `### Writing Rules
   - **Use only HTML tags**: <strong>, <em>, <h2>~<h6> (H1 prohibited)
   - **Markdown prohibited**: **bold**, *italic* usage prohibited
   - Use only inline styles without HEAD, BODY tags
@@ -68,47 +51,30 @@ export default async function generateOutline(topic: string) {
   - Use proper HTML formatting for headings, paragraphs, and lists
   - Integrate keywords naturally without keyword stuffing
   - Make it SEO-friendly and user-friendly
-  - Include a compelling call-to-action at the end`,
-        }
-      ],
-    };
-  
-    const model = 'gemini-2.5-flash';
-    const contents = [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: topic,
-          },
-        ],
-      },
-    ];
-  
+  - Include a compelling call-to-action at the end`;
+
     try {
-      // Use retry logic for the API call
-      const response = await retryWithBackoff(async () => {
-        return await ai.models.generateContentStream({
-          model,
-          config,
-          contents,
-        });
-      }, 3, 2000); // 3 retries, 2 second base delay
-  
-      let fullContent = '';
-      for await (const chunk of response) {
-        fullContent += chunk.text;
-        console.log(chunk.text);
+      const result = await generateTextWithAI({
+        prompt: topic,
+        systemPrompt,
+        model: 'gemini-2.5-flash',
+        maxOutputTokens: 65536,
+        streaming: false, // Use non-streaming for structured output (prevents markdown wrapping)
+        useRetry: true,
+        maxRetries: 3,
+        retryBaseDelay: 2000,
+        package: 'genai',
+        parseJson: true,
+        // Note: responseSchema will be set via responseMimeType in the system prompt
+        // The structured output mode will be used automatically
+      });
+
+      if (!result.json) {
+        throw new Error('Failed to parse JSON response from AI');
       }
-  
-      // Parse the JSON response
-      const parsedContent = JSON.parse(fullContent);
+
+      const parsedContent = result.json as ParsedContent;
       console.log(`✅ Structured blog content generated successfully`);
-        //   console.log(`📝 Title: ${parsedContent.title}`);
-        //   console.log(`📄 Content length: ${parsedContent.content.length} characters`);
-        //   console.log(`🏷️  Tags: ${parsedContent.tags.join(', ')}`);
-        //   console.log(`📁 Categories: ${parsedContent.categories.join(', ')}`);
-        //   console.log(`🖼️  Images requested: ${parsedContent.images.length}`);
       
       return await generateUUIDforImages(parsedContent);
   

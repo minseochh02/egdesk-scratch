@@ -443,6 +443,7 @@ export interface IElectronAPI {
       snapshotId: string,
       plans: BusinessIdentitySnsPlanInput[],
     ) => Promise<{ success: boolean; data?: any; error?: string }>;
+    listSnsPlanExecutions: (planId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 

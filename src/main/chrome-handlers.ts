@@ -760,10 +760,7 @@ export function registerChromeHandlers(): void {
         }
 
         if (googleKey?.fields?.apiKey) {
-          const { GoogleGenerativeAI } = require('@google/generative-ai');
-          const genAI = new GoogleGenerativeAI(googleKey.fields.apiKey);
-          // Use gemini-2.0-flash-exp (newer model)
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+          const { generateTextWithAI } = require('../gemini');
 
           const prompt = `Analyze the following SEO issues found across multiple websites and provide a comprehensive explanation and recommendations:
 
@@ -782,8 +779,15 @@ Please provide:
 2. Prioritized recommendations for improvement
 3. Actionable steps to address these issues`;
 
-          const result = await model.generateContent(prompt);
-          aiExplanation = result.response.text();
+          const result = await generateTextWithAI({
+            prompt,
+            apiKey: googleKey.fields.apiKey,
+            model: 'gemini-2.5-flash',
+            streaming: false,
+            useRetry: false,
+            package: 'generative-ai',
+          });
+          aiExplanation = result.text;
         }
       } catch (aiError) {
         console.error('Failed to generate AI explanation:', aiError);

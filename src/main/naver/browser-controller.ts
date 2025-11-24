@@ -34,6 +34,7 @@ export interface BrowserControllerResult {
   success: boolean;
   error?: string;
   imageGenerated?: boolean;
+  blogUrl?: string;
 }
 
 /**
@@ -101,7 +102,9 @@ async function handleNaverLogin(page: Page, username: string, password: string):
     
     const loginButtonSelector = 'button[type="submit"], input[type="submit"], button#log.login';
     if (username && password) {
-      await page.click(loginButtonSelector).catch(() => {});
+      // Wait for login button to be ready
+      await page.waitForSelector(loginButtonSelector, { timeout: 10000 });
+      await page.click(loginButtonSelector);
       
       // Wait for login to complete - check for redirect or URL change
       try {
@@ -110,6 +113,28 @@ async function handleNaverLogin(page: Page, username: string, password: string):
       } catch (e) {
         // If URL doesn't change, wait for network to settle
         await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      }
+      
+      // Wait for cookies to be set (critical for session persistence)
+      console.log('[NAVER] Waiting for session cookies to be set...');
+      let cookiesSet = false;
+      for (let i = 0; i < 10; i++) {
+        await page.waitForTimeout(500);
+        const cookies = await page.context().cookies();
+        const hasNaverSession = cookies.some(cookie => 
+          cookie.name.includes('NID') || 
+          cookie.name.includes('SESSION') || 
+          (cookie.domain.includes('naver.com') && cookie.value.length > 10)
+        );
+        if (hasNaverSession) {
+          console.log('[NAVER] Session cookies detected');
+          cookiesSet = true;
+          break;
+        }
+      }
+      
+      if (!cookiesSet) {
+        console.warn('[NAVER] Warning: Session cookies not detected after login');
       }
       
       // Navigate to Naver Blog home after login
@@ -124,8 +149,15 @@ async function handleNaverLogin(page: Page, username: string, password: string):
         console.log('[NAVER] Network idle timeout on blog home, continuing...');
       });
       
-      // Additional wait to ensure page is ready
-      await page.waitForTimeout(2000);
+      // Additional wait to ensure page is ready and session is established
+      await page.waitForTimeout(3000);
+      
+      // Verify we're actually logged in by checking the page
+      const finalUrl = page.url();
+      if (finalUrl.includes('nidlogin.login')) {
+        console.error('[NAVER] Still on login page after login attempt');
+        return false;
+      }
       
       console.log('[NAVER] Login process completed, blog home page loaded');
       return true;
@@ -142,7 +174,41 @@ async function handleNaverLogin(page: Page, username: string, password: string):
  */
 async function isLoggedIn(page: Page): Promise<boolean> {
   try {
-    // Check for login button - if it exists, user is not logged in
+    // Wait a bit for page to stabilize
+    await page.waitForTimeout(1000);
+    
+    // Also check URL - if we're on login page, not logged in
+    const currentUrl = page.url();
+    if (currentUrl.includes('nidlogin.login')) {
+      console.log('[NAVER] On login page - user is not logged in');
+      return false;
+    }
+    
+    // Check for positive indicators of being logged in (more reliable)
+    const loggedInIndicators = [
+      'a[href*="blog.naver.com"]', // Blog links
+      '.area_user', // User area
+      '[class*="user"]', // User-related elements
+      'button:has-text("글쓰기")', // Write button (only visible when logged in)
+    ];
+    
+    for (const selector of loggedInIndicators) {
+      try {
+        const element = page.locator(selector).first();
+        const count = await element.count();
+        if (count > 0) {
+          const isVisible = await element.isVisible().catch(() => false);
+          if (isVisible) {
+            console.log(`[NAVER] Logged-in indicator found: ${selector}`);
+            return true;
+          }
+        }
+      } catch (e) {
+        // Continue to next indicator
+      }
+    }
+    
+    // Check for login button - if it exists and is visible, user is not logged in
     const loginButton = await page.locator('a.login_button, a[href*="nidlogin.login"], .login_common, .ugc_login_text').first();
     const loginButtonCount = await loginButton.count();
     
@@ -155,14 +221,20 @@ async function isLoggedIn(page: Page): Promise<boolean> {
       }
     }
     
-    // Also check URL - if we're on login page, not logged in
-    const currentUrl = page.url();
-    if (currentUrl.includes('nidlogin.login')) {
-      console.log('[NAVER] On login page - user is not logged in');
-      return false;
+    // Check cookies - if we have Naver session cookies, we're likely logged in
+    const cookies = await page.context().cookies();
+    const hasNaverSession = cookies.some(cookie => 
+      cookie.name.includes('NID') || 
+      cookie.name.includes('SESSION') || 
+      cookie.domain.includes('naver.com')
+    );
+    
+    if (hasNaverSession) {
+      console.log('[NAVER] Naver session cookies found - user appears to be logged in');
+      return true;
     }
     
-    console.log('[NAVER] User appears to be logged in');
+    console.log('[NAVER] User appears to be logged in (default assumption)');
     return true;
   } catch (error) {
     console.warn('[NAVER] Error checking login status:', error);
@@ -232,35 +304,75 @@ async function openBlogWritePage(
     
     if (!writeSelector) {
       console.error('[NAVER] Could not find write button with any selector');
-      // Fallback: try navigating directly to the write page URL
-      console.log('[NAVER] Attempting direct navigation to write page...');
+      // Fallback: try navigating directly to the write page URL on the SAME page first
+      console.log('[NAVER] Attempting direct navigation to write page on current page...');
       try {
-        const newPage = await context.newPage();
-        await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+        // Try using the existing page first (should have cookies)
+        await page.goto('https://blog.naver.com/GoBlogWrite.naver', { 
           waitUntil: 'domcontentloaded',
           timeout: 30000 
         });
         
-        // Check if login is required on the new page
-        await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
-        const newPageLoggedIn = await isLoggedIn(newPage);
-        if (!newPageLoggedIn && username && password) {
-          console.log('[NAVER] Login required on new page, attempting re-login...');
-          const reLoginSuccess = await handleNaverLogin(newPage, username, password);
+        // Wait for page to load
+        await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+        await page.waitForTimeout(2000); // Give time for any redirects
+        
+        // Check if login is required
+        const pageLoggedIn = await isLoggedIn(page);
+        if (!pageLoggedIn && username && password) {
+          console.log('[NAVER] Login required, attempting re-login on current page...');
+          const reLoginSuccess = await handleNaverLogin(page, username, password);
           if (reLoginSuccess) {
             // Navigate back to write page after re-login
-            await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+            await page.goto('https://blog.naver.com/GoBlogWrite.naver', { 
               waitUntil: 'domcontentloaded',
               timeout: 30000 
             });
+            await page.waitForTimeout(2000);
+          } else {
+            throw new Error('Re-login failed');
           }
         }
         
-        console.log('[NAVER] Direct navigation to write page successful');
-        return newPage;
+        console.log('[NAVER] Direct navigation to write page successful on current page');
+        return page;
       } catch (navError) {
-        console.error('[NAVER] Direct navigation also failed:', navError);
-        return null;
+        console.warn('[NAVER] Direct navigation on current page failed, trying new page:', navError);
+        // Only create new page if current page navigation fails
+        try {
+          const newPage = await context.newPage();
+          // Cookies are automatically shared via the same context, but verify
+          const cookies = await context.cookies();
+          console.log(`[NAVER] Context has ${cookies.length} cookies (should be shared with new page)`);
+          
+          await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          
+          // Check if login is required on the new page
+          await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
+          await newPage.waitForTimeout(2000);
+          const newPageLoggedIn = await isLoggedIn(newPage);
+          if (!newPageLoggedIn && username && password) {
+            console.log('[NAVER] Login required on new page, attempting re-login...');
+            const reLoginSuccess = await handleNaverLogin(newPage, username, password);
+            if (reLoginSuccess) {
+              // Navigate back to write page after re-login
+              await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+                waitUntil: 'domcontentloaded',
+                timeout: 30000 
+              });
+              await newPage.waitForTimeout(2000);
+            }
+          }
+          
+          console.log('[NAVER] Direct navigation to write page successful on new page');
+          return newPage;
+        } catch (newPageError) {
+          console.error('[NAVER] Direct navigation on new page also failed:', newPageError);
+          return null;
+        }
       }
     }
     
@@ -279,6 +391,13 @@ async function openBlogWritePage(
     await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
     console.log('[NAVER] New page loaded');
     
+    // Wait a bit for any redirects to complete
+    await newPage.waitForTimeout(2000);
+    
+    // Verify cookies are present (should be shared via context)
+    const cookies = await context.cookies();
+    console.log(`[NAVER] Context has ${cookies.length} cookies on new page`);
+    
     // Check if login is required on the new page
     const newPageLoggedIn = await isLoggedIn(newPage);
     if (!newPageLoggedIn) {
@@ -292,6 +411,7 @@ async function openBlogWritePage(
             timeout: 30000 
           });
           await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
+          await newPage.waitForTimeout(2000);
         } else {
           console.error('[NAVER] Re-login on new page failed');
           return null;
@@ -313,34 +433,67 @@ async function openBlogWritePage(
     console.error('[NAVER] Failed to open blog write page:', error);
     console.error('[NAVER] Error details:', error instanceof Error ? error.stack : error);
     
-    // Fallback: try direct navigation
+    // Fallback: try direct navigation on current page first, then new page
     try {
-      console.log('[NAVER] Attempting fallback: direct navigation to write page...');
-      const newPage = await context.newPage();
-      await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+      console.log('[NAVER] Attempting fallback: direct navigation to write page on current page...');
+      await page.goto('https://blog.naver.com/GoBlogWrite.naver', { 
         waitUntil: 'domcontentloaded',
         timeout: 30000 
       });
       
+      // Wait for page to stabilize
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+      await page.waitForTimeout(2000);
+      
       // Check if login is required
-      await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
-      const newPageLoggedIn = await isLoggedIn(newPage);
-      if (!newPageLoggedIn && username && password) {
-        console.log('[NAVER] Login required in fallback, attempting re-login...');
-        const reLoginSuccess = await handleNaverLogin(newPage, username, password);
+      const pageLoggedIn = await isLoggedIn(page);
+      if (!pageLoggedIn && username && password) {
+        console.log('[NAVER] Login required in fallback, attempting re-login on current page...');
+        const reLoginSuccess = await handleNaverLogin(page, username, password);
         if (reLoginSuccess) {
-          await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+          await page.goto('https://blog.naver.com/GoBlogWrite.naver', { 
             waitUntil: 'domcontentloaded',
             timeout: 30000 
           });
+          await page.waitForTimeout(2000);
         }
       }
       
-      console.log('[NAVER] Fallback direct navigation successful');
-      return newPage;
+      console.log('[NAVER] Fallback direct navigation successful on current page');
+      return page;
     } catch (fallbackError) {
-      console.error('[NAVER] Fallback navigation also failed:', fallbackError);
-      return null;
+      console.warn('[NAVER] Fallback on current page failed, trying new page:', fallbackError);
+      try {
+        const newPage = await context.newPage();
+        const cookies = await context.cookies();
+        console.log(`[NAVER] Context has ${cookies.length} cookies (should be shared with new page)`);
+        
+        await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+          waitUntil: 'domcontentloaded',
+          timeout: 30000 
+        });
+        
+        await newPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
+        await newPage.waitForTimeout(2000);
+        const newPageLoggedIn = await isLoggedIn(newPage);
+        if (!newPageLoggedIn && username && password) {
+          console.log('[NAVER] Login required in fallback on new page, attempting re-login...');
+          const reLoginSuccess = await handleNaverLogin(newPage, username, password);
+          if (reLoginSuccess) {
+            await newPage.goto('https://blog.naver.com/GoBlogWrite.naver', { 
+              waitUntil: 'domcontentloaded',
+              timeout: 30000 
+            });
+            await newPage.waitForTimeout(2000);
+          }
+        }
+        
+        console.log('[NAVER] Fallback direct navigation successful on new page');
+        return newPage;
+      } catch (newPageFallbackError) {
+        console.error('[NAVER] Fallback navigation on new page also failed:', newPageFallbackError);
+        return null;
+      }
     }
   }
 }
@@ -1386,9 +1539,9 @@ async function fillBlogContentFallback(pageOrFrame: any, newPage: Page, content:
 }
 
 /**
- * Publish the blog post
+ * Publish the blog post and return the post URL
  */
-async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean> {
+async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<{ success: boolean; url?: string }> {
   try {
     console.log('[NAVER] Publishing blog post...');
     
@@ -1488,7 +1641,46 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
               await newPage.waitForTimeout(3000);
               console.log('[NAVER] Final publish button clicked successfully');
               publishButtonFound = true;
-              break;
+              
+              // Wait for redirect to published post page
+              console.log('[NAVER] Waiting for redirect to published post...');
+              try {
+                // Wait for URL to change (indicating redirect to published post)
+                await newPage.waitForURL(/blog\.naver\.com\/[^\/]+\/\d+/, { timeout: 15000 });
+                const postUrl = newPage.url();
+                console.log(`[NAVER] Post published! URL: ${postUrl}`);
+                return { success: true, url: postUrl };
+              } catch (redirectError) {
+                // If no redirect detected, try to extract URL from current page
+                console.log('[NAVER] No redirect detected, checking current URL...');
+                await newPage.waitForTimeout(2000);
+                const currentUrl = newPage.url();
+                
+                // Check if we're on a post page (URL pattern: blog.naver.com/username/postId)
+                if (currentUrl.match(/blog\.naver\.com\/[^\/]+\/\d+/)) {
+                  console.log(`[NAVER] Post URL detected: ${currentUrl}`);
+                  return { success: true, url: currentUrl };
+                }
+                
+                // Try to find post link in the page
+                try {
+                  const postLink = await newPage.locator('a[href*="blog.naver.com"][href*="/"]').first();
+                  const linkCount = await postLink.count();
+                  if (linkCount > 0) {
+                    const href = await postLink.getAttribute('href');
+                    if (href && href.match(/blog\.naver\.com\/[^\/]+\/\d+/)) {
+                      const fullUrl = href.startsWith('http') ? href : `https://${href}`;
+                      console.log(`[NAVER] Post URL found in link: ${fullUrl}`);
+                      return { success: true, url: fullUrl };
+                    }
+                  }
+                } catch (linkError) {
+                  console.warn('[NAVER] Could not extract post URL from page links');
+                }
+                
+                console.warn('[NAVER] Could not determine post URL, but publish appears successful');
+                return { success: true };
+              }
             } else {
               console.log('[NAVER] Final publish button found but not enabled, trying next selector');
             }
@@ -1522,7 +1714,46 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
               await newPage.waitForTimeout(3000);
               console.log('[NAVER] Direct final publish button clicked successfully');
               publishButtonFound = true;
-              break;
+              
+              // Wait for redirect to published post page
+              console.log('[NAVER] Waiting for redirect to published post...');
+              try {
+                // Wait for URL to change (indicating redirect to published post)
+                await newPage.waitForURL(/blog\.naver\.com\/[^\/]+\/\d+/, { timeout: 15000 });
+                const postUrl = newPage.url();
+                console.log(`[NAVER] Post published! URL: ${postUrl}`);
+                return { success: true, url: postUrl };
+              } catch (redirectError) {
+                // If no redirect detected, try to extract URL from current page
+                console.log('[NAVER] No redirect detected, checking current URL...');
+                await newPage.waitForTimeout(2000);
+                const currentUrl = newPage.url();
+                
+                // Check if we're on a post page (URL pattern: blog.naver.com/username/postId)
+                if (currentUrl.match(/blog\.naver\.com\/[^\/]+\/\d+/)) {
+                  console.log(`[NAVER] Post URL detected: ${currentUrl}`);
+                  return { success: true, url: currentUrl };
+                }
+                
+                // Try to find post link in the page
+                try {
+                  const postLink = await newPage.locator('a[href*="blog.naver.com"][href*="/"]').first();
+                  const linkCount = await postLink.count();
+                  if (linkCount > 0) {
+                    const href = await postLink.getAttribute('href');
+                    if (href && href.match(/blog\.naver\.com\/[^\/]+\/\d+/)) {
+                      const fullUrl = href.startsWith('http') ? href : `https://${href}`;
+                      console.log(`[NAVER] Post URL found in link: ${fullUrl}`);
+                      return { success: true, url: fullUrl };
+                    }
+                  }
+                } catch (linkError) {
+                  console.warn('[NAVER] Could not extract post URL from page links');
+                }
+                
+                console.warn('[NAVER] Could not determine post URL, but publish appears successful');
+                return { success: true };
+              }
             } else {
               console.log('[NAVER] Direct final publish button found but not enabled, trying next selector');
             }
@@ -1554,10 +1785,37 @@ async function publishBlogPost(pageOrFrame: any, newPage: Page): Promise<boolean
       }
     }
 
-    return publishButtonFound;
+    if (publishButtonFound) {
+      // If we got here but didn't return earlier, try to extract URL anyway
+      console.log('[NAVER] Publish button clicked, attempting to extract URL...');
+      await newPage.waitForTimeout(3000);
+      
+      try {
+        // Wait for URL to change (indicating redirect to published post)
+        await newPage.waitForURL(/blog\.naver\.com\/[^\/]+\/\d+/, { timeout: 10000 });
+        const postUrl = newPage.url();
+        console.log(`[NAVER] Post published! URL: ${postUrl}`);
+        return { success: true, url: postUrl };
+      } catch (redirectError) {
+        // If no redirect detected, try to extract URL from current page
+        console.log('[NAVER] No redirect detected, checking current URL...');
+        const currentUrl = newPage.url();
+        
+        // Check if we're on a post page (URL pattern: blog.naver.com/username/postId)
+        if (currentUrl.match(/blog\.naver\.com\/[^\/]+\/\d+/)) {
+          console.log(`[NAVER] Post URL detected: ${currentUrl}`);
+          return { success: true, url: currentUrl };
+        }
+        
+        console.warn('[NAVER] Could not determine post URL, but publish appears successful');
+        return { success: true };
+      }
+    }
+
+    return { success: false };
   } catch (error) {
     console.error('[NAVER] Error publishing blog post:', error);
-    return false;
+    return { success: false };
   }
 }
 
@@ -1605,13 +1863,14 @@ export async function runNaverBlogAutomation(
     await fillBlogContent(pageOrFrame, newPage, content, imagePaths);
     
     // Publish blog post
-    const publishSuccess = await publishBlogPost(pageOrFrame, newPage);
+    const publishResult = await publishBlogPost(pageOrFrame, newPage);
     
-    if (publishSuccess) {
+    if (publishResult.success) {
       console.log('[NAVER] Naver Blog automation completed successfully');
       return {
         success: true,
-        imageGenerated: !!(imagePaths && imagePaths.length > 0)
+        imageGenerated: !!(imagePaths && imagePaths.length > 0),
+        blogUrl: publishResult.url
       };
     } else {
       throw new Error('Failed to publish blog post');
@@ -1624,9 +1883,15 @@ export async function runNaverBlogAutomation(
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   } finally {
-    // Keep browser open for debugging - comment out for production
-    // if (browser) {
-    //   await browser.close();
-    // }
+    // Close browser after automation completes
+    if (browser) {
+      try {
+        console.log('[NAVER] Closing browser...');
+        await browser.close();
+        console.log('[NAVER] Browser closed successfully');
+      } catch (closeError) {
+        console.warn('[NAVER] Error closing browser:', closeError instanceof Error ? closeError.message : 'Unknown error');
+      }
+    }
   }
 }
