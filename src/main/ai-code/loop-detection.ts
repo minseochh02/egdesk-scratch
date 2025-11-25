@@ -239,7 +239,7 @@ export class LoopDetectionService {
     }
 
     // Flag tools called too frequently
-    for (const [toolName, count] of toolCallFrequency.entries()) {
+    for (const [toolName, count] of Array.from(toolCallFrequency.entries())) {
       if (count > 5) {
         issues.push(`Tool '${toolName}' called ${count} times in recent history`);
         recommendations.push(`Consider if '${toolName}' is being used effectively`);
