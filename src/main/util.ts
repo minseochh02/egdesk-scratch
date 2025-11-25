@@ -38,15 +38,23 @@ export function resolveScriptPath(scriptRelativePath: string): string {
   }
   
   // Log the resolved path for debugging
+  const fileExists = fs.existsSync(scriptPath);
   console.log('Resolving script path:', {
     scriptRelativePath,
     appPath,
     scriptPath,
     isPackaged: app.isPackaged,
     platform: process.platform,
-    exists: fs.existsSync(scriptPath),
+    exists: fileExists,
     resourcesPath: process.resourcesPath
   });
+  
+  // Don't return a path if the file doesn't exist - this prevents ENOENT errors
+  if (!fileExists) {
+    console.warn(`⚠️ Script file not found: ${scriptRelativePath} at ${scriptPath}`);
+    // Return empty string or throw - but for now, return empty to prevent crashes
+    return '';
+  }
   
   return scriptPath;
 }
