@@ -5,6 +5,7 @@ import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
 import { WordPressDatabaseManager } from './wordpress';
 import { SQLiteScheduledPostsManager } from './scheduled-posts';
+import { SQLiteActivityManager } from './activity';
 import {
   SQLiteBusinessIdentityManager,
   CreateBusinessIdentitySnapshot,
@@ -28,6 +29,7 @@ export class SQLiteManager {
   private conversationsDb: Database.Database | null = null;
   private taskDb: Database.Database | null = null;
   private wordpressDb: Database.Database | null = null;
+  private activityDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -38,6 +40,7 @@ export class SQLiteManager {
   private wordpressManager: WordPressDatabaseManager | null = null;
   private scheduledPostsManager: SQLiteScheduledPostsManager | null = null;
   private businessIdentityManager: SQLiteBusinessIdentityManager | null = null;
+  private activityManager: SQLiteActivityManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -69,10 +72,12 @@ export class SQLiteManager {
       this.conversationsDb = result.conversationsDatabase!;
       this.taskDb = result.taskDatabase!;
       this.wordpressDb = result.wordpressDatabase!;
+      this.activityDb = result.activityDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
       this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
+      this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -92,7 +97,7 @@ export class SQLiteManager {
    * Check if SQLite is available and initialized
    */
   public isAvailable(): boolean {
-    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null;
+    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null && this.activityDb !== null;
   }
 
   /**
@@ -110,6 +115,7 @@ export class SQLiteManager {
     hasConversationsDb: boolean;
     hasTaskDb: boolean;
     hasWordPressDb: boolean;
+    hasActivityDb: boolean;
     error: string | null;
   } {
     return {
@@ -117,6 +123,7 @@ export class SQLiteManager {
       hasConversationsDb: this.conversationsDb !== null,
       hasTaskDb: this.taskDb !== null,
       hasWordPressDb: this.wordpressDb !== null,
+      hasActivityDb: this.activityDb !== null,
       error: this.initializationError
     };
   }
@@ -164,6 +171,11 @@ export class SQLiteManager {
         this.wordpressDb.close();
         this.wordpressDb = null;
       }
+
+      if (this.activityDb) {
+        this.activityDb.close();
+        this.activityDb = null;
+      }
       
       this.isInitialized = false;
       this.initializationError = null;
@@ -171,6 +183,7 @@ export class SQLiteManager {
       this.wordpressManager = null;
       this.scheduledPostsManager = null;
       this.businessIdentityManager = null;
+      this.activityManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
     } catch (error) {
@@ -182,7 +195,7 @@ export class SQLiteManager {
    * Ensure SQLite is initialized before operations
    */
   private ensureInitialized(): void {
-    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb) {
+    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb || !this.activityDb) {
       throw new Error(
         this.initializationError || 
         'SQLite Manager is not initialized. Please call initialize() first.'
@@ -220,6 +233,19 @@ export class SQLiteManager {
       this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb!);
     }
     return this.businessIdentityManager;
+  }
+
+  public getActivityDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.activityDb!;
+  }
+
+  public getActivityManager(): SQLiteActivityManager {
+    this.ensureInitialized();
+    if (!this.activityManager) {
+      this.activityManager = new SQLiteActivityManager(this.activityDb!);
+    }
+    return this.activityManager;
   }
 
   /**
@@ -482,6 +508,7 @@ export class SQLiteManager {
     this.registerWordPressHandlers();
     this.registerScheduledPostsHandlers();
     this.registerBusinessIdentityHandlers();
+    this.registerActivityHandlers();
   }
 
   /**
@@ -1270,6 +1297,37 @@ export class SQLiteManager {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+  }
+
+  /**
+   * Register activity log handlers
+   */
+  private registerActivityHandlers(): void {
+    // Create activity log
+    ipcMain.handle('sqlite-activity-create', async (event, logData) => {
+      try {
+        const log = this.getActivityManager().createActivity(logData);
+        return { success: true, data: log };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get recent activities
+    ipcMain.handle('sqlite-activity-get-recent', async (event, limit, offset, filters) => {
+      try {
+        const logs = this.getActivityManager().getRecentActivities(limit, offset, filters);
+        return { success: true, data: logs };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
         };
       }
     });

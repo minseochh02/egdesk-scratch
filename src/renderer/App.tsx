@@ -41,6 +41,35 @@ import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentit
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
 function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logFilter, setLogFilter] = useState<{ type?: string; status?: string }>({});
+  const [showLogViewer, setShowLogViewer] = useState(false);
+
+  // Fetch activity logs
+  const fetchActivityLogs = async () => {
+    if (!window.electron?.invoke) return;
+    
+    setIsLoadingLogs(true);
+    try {
+      const result = await window.electron.invoke('sqlite-activity-get-recent', 100, 0, logFilter);
+      if (result?.success && result?.data) {
+        setActivityLogs(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch activity logs:', error);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  // Load logs when modal opens and log viewer is shown
+  useEffect(() => {
+    if (isOpen && showLogViewer) {
+      fetchActivityLogs();
+    }
+  }, [isOpen, showLogViewer, logFilter]);
+
   if (!isOpen) return null;
 
   // Detect platform and get appropriate download link
@@ -246,6 +275,263 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.0</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
+          </div>
+
+          {/* Activity Log Viewer */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ color: '#00BCD4', margin: 0, fontSize: '18px' }}>📋 Activity Logs</h3>
+              <button
+                onClick={() => {
+                  setShowLogViewer(!showLogViewer);
+                  if (!showLogViewer) {
+                    fetchActivityLogs();
+                  }
+                }}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: showLogViewer ? '#00BCD4' : '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => !showLogViewer && (e.currentTarget.style.backgroundColor = '#333')}
+                onMouseLeave={(e) => !showLogViewer && (e.currentTarget.style.backgroundColor = '#2a2a2a')}
+              >
+                {showLogViewer ? 'Hide Logs' : 'View Logs'}
+              </button>
+            </div>
+
+            {showLogViewer && (
+              <div style={{
+                backgroundColor: '#1a1a1a',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                padding: '15px',
+                maxHeight: '400px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                {/* Filters */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <select
+                    value={logFilter.type || ''}
+                    onChange={(e) => setLogFilter({ ...logFilter, type: e.target.value || undefined })}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: '#2a2a2a',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      flex: 1,
+                      minWidth: '120px'
+                    }}
+                  >
+                    <option value="">All Types</option>
+                    <option value="user">User</option>
+                    <option value="system">System</option>
+                    <option value="error">Error</option>
+                    <option value="audit">Audit</option>
+                  </select>
+                  <select
+                    value={logFilter.status || ''}
+                    onChange={(e) => setLogFilter({ ...logFilter, status: e.target.value || undefined })}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: '#2a2a2a',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      flex: 1,
+                      minWidth: '120px'
+                    }}
+                  >
+                    <option value="">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="failure">Failure</option>
+                    <option value="pending">Pending</option>
+                    <option value="info">Info</option>
+                  </select>
+                  <button
+                    onClick={fetchActivityLogs}
+                    disabled={isLoadingLogs}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: '#4CAF50',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: isLoadingLogs ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      opacity: isLoadingLogs ? 0.6 : 1
+                    }}
+                  >
+                    {isLoadingLogs ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {/* Logs List */}
+                <div style={{
+                  backgroundColor: '#0a0a0a',
+                  border: '1px solid #333',
+                  borderRadius: '4px',
+                  padding: '10px',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  fontSize: '11px',
+                  fontFamily: 'monospace'
+                }}>
+                  {isLoadingLogs ? (
+                    <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                      Loading logs...
+                    </div>
+                  ) : activityLogs.length === 0 ? (
+                    <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                      No activity logs found
+                    </div>
+                  ) : (
+                    activityLogs.map((log, index) => {
+                      // Debug: log the structure on first render (remove in production)
+                      if (index === 0 && activityLogs.length > 0) {
+                        console.log('Sample activity log structure:', log);
+                      }
+
+                      const statusColor = 
+                        log.status === 'success' ? '#4CAF50' :
+                        log.status === 'failure' ? '#F44336' :
+                        log.status === 'pending' ? '#FF9800' :
+                        '#2196F3';
+                      
+                      const typeColor =
+                        log.type === 'error' ? '#F44336' :
+                        log.type === 'user' ? '#2196F3' :
+                        log.type === 'system' ? '#9C27B0' :
+                        '#00BCD4';
+
+                      // Parse timestamp - activity manager returns createdAt (camelCase) as ISO string
+                      const dateValue = log.createdAt || log.created_at;
+                      let timestamp = 'Unknown';
+                      
+                      if (dateValue) {
+                        try {
+                          const date = new Date(dateValue);
+                          if (!isNaN(date.getTime())) {
+                            timestamp = date.toLocaleString();
+                          } else {
+                            // If direct parsing fails, show raw value for debugging
+                            timestamp = String(dateValue);
+                          }
+                        } catch (e) {
+                          // Fallback: show raw value
+                          timestamp = String(dateValue);
+                        }
+                      }
+
+                      return (
+                        <div
+                          key={log.id || index}
+                          style={{
+                            marginBottom: '12px',
+                            padding: '10px',
+                            backgroundColor: '#1a1a1a',
+                            border: '1px solid #333',
+                            borderRadius: '4px',
+                            borderLeft: `3px solid ${statusColor}`
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '6px' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{
+                                padding: '2px 6px',
+                                backgroundColor: typeColor,
+                                color: '#fff',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                fontWeight: 'bold'
+                              }}>
+                                {log.type || 'unknown'}
+                              </span>
+                              <span style={{
+                                padding: '2px 6px',
+                                backgroundColor: statusColor,
+                                color: '#fff',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                fontWeight: 'bold'
+                              }}>
+                                {log.status || 'unknown'}
+                              </span>
+                              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '12px' }}>
+                                {log.action || 'unknown action'}
+                              </span>
+                            </div>
+                            <span style={{ color: '#888', fontSize: '10px', whiteSpace: 'nowrap' }}>
+                              {timestamp}
+                            </span>
+                          </div>
+                          
+                          {log.target && (
+                            <div style={{ color: '#ccc', marginBottom: '4px', fontSize: '11px' }}>
+                              <strong>Target:</strong> {log.target}
+                            </div>
+                          )}
+                          
+                          {log.errorMessage && (
+                            <div style={{
+                              color: '#F44336',
+                              marginBottom: '4px',
+                              padding: '6px',
+                              backgroundColor: '#2a1a1a',
+                              borderRadius: '3px',
+                              fontSize: '11px'
+                            }}>
+                              <strong>Error:</strong> {log.errorMessage}
+                            </div>
+                          )}
+                          
+                          {log.details && typeof log.details === 'object' && Object.keys(log.details).length > 0 && (
+                            <details style={{ marginTop: '6px' }}>
+                              <summary style={{ color: '#888', cursor: 'pointer', fontSize: '11px' }}>
+                                Details ({Object.keys(log.details).length} fields)
+                              </summary>
+                              <div style={{
+                                marginTop: '6px',
+                                padding: '8px',
+                                backgroundColor: '#0a0a0a',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                color: '#ccc',
+                                maxHeight: '150px',
+                                overflowY: 'auto'
+                              }}>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                  {JSON.stringify(log.details, null, 2)}
+                                </pre>
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Log Count */}
+                {!isLoadingLogs && activityLogs.length > 0 && (
+                  <div style={{ color: '#888', fontSize: '11px', textAlign: 'right' }}>
+                    Showing {activityLogs.length} log{activityLogs.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
