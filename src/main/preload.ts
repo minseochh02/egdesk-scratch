@@ -1921,6 +1921,38 @@ auth: {
   },
 
   // ========================================================================
+  // AUTO-UPDATER
+  // ========================================================================
+  /**
+   * Auto-updater API
+   */
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('app-updater-check'),
+    downloadUpdate: () => ipcRenderer.invoke('app-updater-download'),
+    quitAndInstall: () => ipcRenderer.invoke('app-updater-quit-and-install'),
+    onUpdateAvailable: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
+      ipcRenderer.on('update-available', subscription);
+      return () => ipcRenderer.removeListener('update-available', subscription);
+    },
+    onDownloadProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
+      ipcRenderer.on('update-download-progress', subscription);
+      return () => ipcRenderer.removeListener('update-download-progress', subscription);
+    },
+    onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
+      ipcRenderer.on('update-downloaded', subscription);
+      return () => ipcRenderer.removeListener('update-downloaded', subscription);
+    },
+    onUpdateError: (callback: (error: { message: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
+      ipcRenderer.on('update-error', subscription);
+      return () => ipcRenderer.removeListener('update-error', subscription);
+    },
+  },
+
+  // ========================================================================
   // GENERIC IPC INVOKE METHOD
   // ========================================================================
   /**

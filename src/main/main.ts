@@ -147,12 +147,118 @@ class AppUpdater {
   constructor() {
     log.transports.file.level = 'info';
     autoUpdater.logger = log;
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.autoDownload = false; // Don't auto-download, wait for user confirmation
+    
+    // Check for updates on startup (after a delay to not slow down app launch)
+    setTimeout(() => {
+      this.checkForUpdates();
+    }, 5000);
+
+    // Set up event handlers
+    this.setupUpdateHandlers();
+  }
+
+  private setupUpdateHandlers(): void {
+    // Update available - notify user
+    autoUpdater.on('update-available', (info) => {
+      log.info('Update available:', info.version);
+      this.notifyUpdateAvailable(info);
+    });
+
+    // Update not available
+    autoUpdater.on('update-not-available', (info) => {
+      log.info('Update not available. Current version is latest.');
+    });
+
+    // Download progress
+    autoUpdater.on('download-progress', (progressObj) => {
+      const percent = Math.round(progressObj.percent);
+      log.info(`Download progress: ${percent}%`);
+      this.notifyDownloadProgress(progressObj);
+    });
+
+    // Update downloaded - ready to install
+    autoUpdater.on('update-downloaded', (info) => {
+      log.info('Update downloaded:', info.version);
+      this.notifyUpdateDownloaded(info);
+    });
+
+    // Error handling
+    autoUpdater.on('error', (error) => {
+      log.error('Update error:', error);
+      this.notifyUpdateError(error);
+    });
+  }
+
+  public checkForUpdates(): void {
+    if (!app.isPackaged) {
+      log.info('Skipping update check in development mode');
+      return;
+    }
+    
+    log.info('Checking for updates...');
+    autoUpdater.checkForUpdates().catch((error) => {
+      log.error('Failed to check for updates:', error);
+    });
+  }
+
+  private notifyUpdateAvailable(info: { version: string; releaseDate: string; releaseNotes?: string }): void {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-available', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
+      });
+    }
+  }
+
+  private notifyDownloadProgress(progressObj: { percent: number; transferred: number; total: number }): void {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-download-progress', {
+        percent: Math.round(progressObj.percent),
+        transferred: progressObj.transferred,
+        total: progressObj.total,
+      });
+    }
+  }
+
+  private notifyUpdateDownloaded(info: { version: string; releaseDate: string; releaseNotes?: string }): void {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-downloaded', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
+      });
+    }
+  }
+
+  private notifyUpdateError(error: Error): void {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-error', {
+        message: error.message,
+      });
+    }
+  }
+
+  // Public method to download update (called from renderer)
+  public downloadUpdate(): void {
+    log.info('Downloading update...');
+    autoUpdater.downloadUpdate().catch((error) => {
+      log.error('Failed to download update:', error);
+      this.notifyUpdateError(error);
+    });
+  }
+
+  // Public method to quit and install (called from renderer)
+  public quitAndInstall(): void {
+    log.info('Quitting and installing update...');
+    autoUpdater.quitAndInstall();
   }
 }
 
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
+let appUpdater: AppUpdater | null = null;
 let scheduledPostsExecutor: ScheduledPostsExecutor;
 let handlersRegistered = false;
 
@@ -2185,9 +2291,33 @@ const createWindow = async () => {
     return absolutePath;
   });
 
-  // Remove this if your app does not use auto updates
-  // eslint-disable-next-line
-  new AppUpdater();
+  // Initialize auto-updater
+  appUpdater = new AppUpdater();
+
+  // Register IPC handlers for update controls
+  ipcMain.handle('app-updater-download', async () => {
+    if (appUpdater) {
+      appUpdater.downloadUpdate();
+      return { success: true };
+    }
+    return { success: false, error: 'Updater not initialized' };
+  });
+
+  ipcMain.handle('app-updater-quit-and-install', async () => {
+    if (appUpdater) {
+      appUpdater.quitAndInstall();
+      return { success: true };
+    }
+    return { success: false, error: 'Updater not initialized' };
+  });
+
+  ipcMain.handle('app-updater-check', async () => {
+    if (appUpdater) {
+      appUpdater.checkForUpdates();
+      return { success: true };
+    }
+    return { success: false, error: 'Updater not initialized' };
+  });
 };
 
 /**

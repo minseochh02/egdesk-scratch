@@ -37,6 +37,7 @@ import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 import EGChatting from './components/EGChatting';
 import EGBusinessIdentity from './components/EGBusinessIdentity';
 import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
+import { UpdateDialog } from './components/UpdateDialog';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -272,7 +273,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.0</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.1</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2275,6 +2276,7 @@ function AppContent() {
         )}
         <SupportModal isOpen={showSupportModal} onClose={() => setShowSupportModal(false)} />
         <DebugModal isOpen={showDebugModal} onClose={() => setShowDebugModal(false)} />
+        <UpdateDialog />
         <main className="main-content">
           <Routes>
             <Route path="/" element={<LandingPage />} />
