@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
+import { initializeActivityDatabaseSchema } from './activity';
 
 /**
  * SQLite Database Initialization
@@ -52,6 +53,16 @@ export function getDatabaseSize(dbPath: string): number {
     const taskDbPath = getTaskDatabasePath();
     return new Database(taskDbPath);
   }
+
+  export function getActivityDatabasePath(): string {
+    return path.join(app.getPath('userData'), 'database', 'activity.db');
+  }
+
+  export function getActivityDatabase(): Database.Database {
+    const activityDbPath = getActivityDatabasePath();
+    return new Database(activityDbPath);
+  }
+
   
 
 export interface DatabaseInitResult {
@@ -60,10 +71,12 @@ export interface DatabaseInitResult {
   conversationsDatabase?: Database.Database;
   taskDatabase?: Database.Database;
   wordpressDatabase?: Database.Database;
+  activityDatabase?: Database.Database;
   taskManager?: SQLiteTaskManager;
   conversationsDbPath?: string;
   taskDbPath?: string;
   wordpressDbPath?: string;
+  activityDbPath?: string;
 }
 
 /**
@@ -83,22 +96,26 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const conversationsDbPath = path.join(dataDir, 'conversations.db');
     const taskDbPath = path.join(dataDir, 'tasks.db');
     const wordpressDbPath = path.join(dataDir, 'wordpress.db');
+    const activityDbPath = path.join(dataDir, 'activity.db');
     
     console.log('🔍 Database paths:');
     console.log('  Data directory:', dataDir);
     console.log('  Conversations DB:', conversationsDbPath);
     console.log('  Task DB:', taskDbPath);
     console.log('  WordPress DB:', wordpressDbPath);
+    console.log('  Activity DB:', activityDbPath);
     
     const conversationsDb = new Database(conversationsDbPath);
     const taskDb = new Database(taskDbPath);
     const wordpressDb = new Database(wordpressDbPath);
+    const activityDb = new Database(activityDbPath);
     
     // Initialize database schemas
     initializeConversationsDatabaseSchema(conversationsDb);
     initializeTaskSchema(taskDb);
     initializeWordPressDatabaseSchema(wordpressDb);
     initializeScheduledPostsDatabaseSchema(wordpressDb); // Use wordpress DB for scheduled posts
+    initializeActivityDatabaseSchema(activityDb);
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
@@ -110,10 +127,12 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       conversationsDatabase: conversationsDb, 
       taskDatabase: taskDb,
       wordpressDatabase: wordpressDb,
+      activityDatabase: activityDb,
       taskManager, 
       conversationsDbPath,
       taskDbPath,
-      wordpressDbPath
+      wordpressDbPath,
+      activityDbPath
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

@@ -1948,8 +1948,9 @@ export class ScheduledPostsExecutor {
     try {
       console.log(`📤 Starting WordPress upload...`);
       
-      // Import the WordPress upload function (it's the default export)
-      const createPost = require('../wordpress/generate-and-upload-blog').default;
+      // Import the WordPress upload function - use createPost (named export) not constructBlog (default export)
+      // constructBlog expects a topic string and generates content, but we already have the content
+      const { createPost } = require('../wordpress/generate-and-upload-blog');
       
       // Wrap upload in timeout handling
       const postUrl = await Promise.race([
