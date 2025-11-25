@@ -312,7 +312,8 @@
     "publish": {
       "provider": "github",
       "owner": "minseochh02",
-      "repo": "egdesk-scratch"
+      "repo": "egdesk-scratch",
+      "releaseType": "release"
     }
   },
   "collective": {

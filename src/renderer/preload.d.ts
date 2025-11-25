@@ -636,6 +636,16 @@ export interface IElectronAPI {
     openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
 
+  updater: {
+    checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
+    downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+    quitAndInstall: () => Promise<{ success: boolean; error?: string }>;
+    onUpdateAvailable: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => () => void;
+    onDownloadProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => () => void;
+    onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => () => void;
+    onUpdateError: (callback: (error: { message: string }) => void) => () => void;
+  };
+
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 
