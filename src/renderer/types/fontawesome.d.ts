@@ -1,10 +1,10 @@
 declare module '@fortawesome/react-fontawesome' {
-  import { ComponentType } from 'react';
+  import { ComponentType, CSSProperties } from 'react';
   
   export interface FontAwesomeIconProps {
     icon: any;
     className?: string;
-    style?: React.CSSProperties;
+    style?: CSSProperties;
     title?: string;
     spin?: boolean;
     pulse?: boolean;
@@ -185,13 +185,12 @@ declare module '@fortawesome/free-solid-svg-icons' {
 }
 
 declare module '@fortawesome/free-regular-svg-icons' {
-  import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-  
   // Add regular icons as needed
+  // Icons will be of type IconDefinition from '@fortawesome/fontawesome-svg-core'
 }
 
 declare module '@fortawesome/free-brands-svg-icons' {
-  import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+  import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
   
   // Brand icons
   export const faWordpress: IconDefinition;
