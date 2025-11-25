@@ -232,24 +232,13 @@ export async function createBusinessIdentityInstagramPost(
   let altText: string | undefined;
 
   if (needsGemini) {
-    // Check for Google AI key in store (same logic as ai-search utility)
-    const store = getStore?.();
-    let hasGoogleKey = false;
+    // Get API key using the same logic as other parts of the codebase
+    const { getGoogleApiKey } = require('../../gemini');
+    const apiKeyInfo = getGoogleApiKey();
+    const apiKey = apiKeyInfo.apiKey;
     
-    if (store) {
-      const aiKeys = store.get('ai-keys', []);
-      if (Array.isArray(aiKeys)) {
-        hasGoogleKey = aiKeys.some(
-          (k: any) => k?.providerId === 'google' && k?.fields?.apiKey && typeof k.fields.apiKey === 'string' && k.fields.apiKey.trim().length > 0
-        );
-      }
-    }
-    
-    // Fallback to environment variable
-    const hasEnvKey = Boolean(process.env.GEMINI_API_KEY && typeof process.env.GEMINI_API_KEY === 'string');
-    
-    if (!hasGoogleKey && !hasEnvKey) {
-      const errorMsg = 'AI is not configured. Please configure a Google AI key first.';
+    if (!apiKey) {
+      const errorMsg = 'Google API key is required for Instagram content generation. Please provide an API key parameter, configure one in the AI Keys Manager, or set the GEMINI_API_KEY environment variable.';
       updateExecutionStatus(executionId, planId, 'failed', errorMsg);
       return {
         success: false,
@@ -264,7 +253,7 @@ export async function createBusinessIdentityInstagramPost(
       if (!structuredPrompt) {
         throw new Error('Structured prompt is required for content generation');
       }
-      generatedTextContent = await generateInstagramContent(structuredPrompt);
+      generatedTextContent = await generateInstagramContent(structuredPrompt, { apiKey });
       caption = generatedTextContent.caption;
       imagePrompt = generatedTextContent.imagePrompt;
       altText = generatedTextContent.altText;

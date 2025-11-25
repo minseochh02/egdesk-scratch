@@ -19,6 +19,8 @@ export interface AISearchOptions {
   temperature?: number;
   /** Maximum output tokens */
   maxOutputTokens?: number;
+  /** API key (if not provided, will be retrieved from store or env) */
+  apiKey?: string;
 }
 
 export interface AISearchResult {
@@ -42,6 +44,7 @@ export async function aiSearch(options: AISearchOptions): Promise<AISearchResult
     const result = await generateTextWithAI({
       prompt: options.userMessage,
       systemPrompt: options.systemPrompt,
+      apiKey: options.apiKey,
       model: options.model || 'gemini-2.5-flash',
       temperature: options.temperature ?? 0.7,
       maxOutputTokens: options.maxOutputTokens ?? 4096,

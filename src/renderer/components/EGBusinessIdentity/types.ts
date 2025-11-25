@@ -34,6 +34,7 @@ export interface SnsPlanEntry {
   connectionId?: string | null;
   connectionName?: string | null;
   connectionType?: string | null;
+  aiKeyId?: string | null;
 }
 
 export interface StoredSnsPlan {
@@ -51,6 +52,7 @@ export interface StoredSnsPlan {
   connectionId: string | null;
   connectionName: string | null;
   connectionType: string | null;
+  aiKeyId?: string | null;
 }
 
 export interface BusinessIdentitySnsPlanInput {
@@ -67,6 +69,7 @@ export interface BusinessIdentitySnsPlanInput {
   connectionId?: string | null;
   connectionName?: string | null;
   connectionType?: string | null;
+  aiKeyId?: string | null;
   enabled?: boolean;
 }
 

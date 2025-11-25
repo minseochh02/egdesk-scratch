@@ -41,6 +41,7 @@ export interface BusinessIdentitySnsPlan {
   connectionId: string | null;
   connectionName: string | null;
   connectionType: string | null;
+  aiKeyId?: string | null;
   enabled: boolean;
   lastRunAt?: Date;
   nextRunAt?: Date;
@@ -82,6 +83,7 @@ export interface CreateBusinessIdentitySnsPlan {
   connectionId?: string | null;
   connectionName?: string | null;
   connectionType?: string | null;
+  aiKeyId?: string | null;
   enabled?: boolean;
 }
 
@@ -205,6 +207,11 @@ export class SQLiteBusinessIdentityManager {
     } catch (e) {
       // Column already exists, ignore
     }
+    try {
+      this.db.exec(`ALTER TABLE business_identity_sns_plans ADD COLUMN ai_key_id TEXT`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
 
     const executionTable = `
       CREATE TABLE IF NOT EXISTS business_identity_sns_plan_executions (
@@ -319,9 +326,9 @@ export class SQLiteBusinessIdentityManager {
       INSERT INTO business_identity_sns_plans (
         id, snapshot_id, channel, title, cadence_type, cadence_value,
         day_of_week, day_of_month, scheduled_time, topics_json, assets_json,
-        connection_id, connection_name, connection_type,
+        connection_id, connection_name, connection_type, ai_key_id,
         enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       id,
@@ -338,6 +345,7 @@ export class SQLiteBusinessIdentityManager {
       data.connectionId ?? null,
       data.connectionName ?? null,
       data.connectionType ?? null,
+      data.aiKeyId ?? null,
       (data.enabled ?? true) ? 1 : 0,
       now,
       now
@@ -366,6 +374,19 @@ export class SQLiteBusinessIdentityManager {
       WHERE id = ?
     `);
     stmt.run(connectionId, connectionName, connectionType, now, planId);
+  }
+
+  updatePlanAIKey(
+    planId: string,
+    aiKeyId: string | null
+  ): void {
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      UPDATE business_identity_sns_plans
+      SET ai_key_id = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(aiKeyId, now, planId);
   }
 
   listPlans(snapshotId: string): BusinessIdentitySnsPlan[] {
@@ -468,6 +489,7 @@ export class SQLiteBusinessIdentityManager {
       connectionId: row.connection_id ?? null,
       connectionName: row.connection_name ?? null,
       connectionType: row.connection_type ?? null,
+      aiKeyId: row.ai_key_id ?? null,
       enabled: Boolean(row.enabled),
       lastRunAt: row.last_run_at ? new Date(row.last_run_at) : undefined,
       nextRunAt: row.next_run_at ? new Date(row.next_run_at) : undefined,

@@ -132,7 +132,10 @@ export async function generateImageWithAI(
   const apiKey = apiKeyInfo.apiKey;
 
   if (!apiKey) {
-    throw new Error('AI is not configured. Please configure a Google AI key first.');
+    throw new Error(
+      'Google API key is required for image generation. ' +
+      'Please provide an API key parameter, configure one in the AI Keys Manager, or set the GEMINI_API_KEY environment variable.'
+    );
   }
 
   // Store key info for error logging
@@ -434,7 +437,10 @@ export async function generateTextWithAI(
   const apiKey = apiKeyInfo.apiKey;
 
   if (!apiKey) {
-    throw new Error('AI is not configured. Please configure a Google AI key first.');
+    throw new Error(
+      'Google API key is required for text generation. ' +
+      'Please provide an API key parameter, configure one in the AI Keys Manager, or set the GEMINI_API_KEY environment variable.'
+    );
   }
 
   // Store key info for error logging

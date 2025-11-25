@@ -324,17 +324,24 @@ const EGBusinessIdentity: React.FC = () => {
         },
       });
 
+      // Add the selected API key ID to all generated plans
+      const plansWithApiKey: SnsPlanEntry[] = (parsed.snsPlan as SnsPlanEntry[]).map((plan) => ({
+        ...plan,
+        aiKeyId: selectedGoogleKey?.id ?? null,
+      }));
+
       addDebugStep({
         step: '6. Complete',
         status: 'success',
-        message: `SNS plan generation completed successfully with ${parsed.snsPlan.length} entries.`,
+        message: `SNS plan generation completed successfully with ${plansWithApiKey.length} entries.`,
         details: {
-          plans: parsed.snsPlan,
+          plans: plansWithApiKey,
+          aiKeyId: selectedGoogleKey?.id ?? null,
         },
       });
       setCurrentDebugStep(undefined);
 
-      return parsed.snsPlan as SnsPlanEntry[];
+      return plansWithApiKey;
     } catch (err) {
       console.error('[EGBusinessIdentity] SNS plan generation failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate SNS plan.';
@@ -353,7 +360,7 @@ const EGBusinessIdentity: React.FC = () => {
       setCurrentDebugStep(undefined);
       return null;
     }
-  }, [isConfigured, addDebugStep, updateDebugStep, currentDebugStep]);
+  }, [isConfigured, selectedGoogleKey, addDebugStep, updateDebugStep, currentDebugStep]);
 
   const persistSnsPlans = useCallback(async (snapshotId: string, plans: SnsPlanEntry[]) => {
     if (!window.electron?.businessIdentity?.saveSnsPlans) {

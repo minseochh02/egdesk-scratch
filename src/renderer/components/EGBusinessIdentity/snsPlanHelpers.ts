@@ -62,6 +62,7 @@ export const mapStoredPlanToEntry = (plan: StoredSnsPlan): SnsPlanEntry => {
     connectionId: plan.connectionId ?? null,
     connectionName: plan.connectionName ?? null,
     connectionType: plan.connectionType ?? null,
+    aiKeyId: plan.aiKeyId ?? null,
   };
 };
 

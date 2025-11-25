@@ -665,13 +665,8 @@ export class ScheduledPostsExecutor {
       }
       console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
 
-      // Step 2: Set up environment variables
-      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
-      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
-      console.log(`✅ Environment variables configured`);
-
-      // Step 3: Fetch business identity data if planId is available
-      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      // Step 2: Fetch business identity data if planId is available (before setting up env vars to get plan's aiKeyId)
+      console.log(`\n🔍 Step 2: Fetching business identity data...`);
       let businessIdentity: any = null;
       let snsPlan: any = null;
       
@@ -705,6 +700,12 @@ export class ScheduledPostsExecutor {
       } else {
         console.log('⚠️ No planId provided, using minimal identity data');
       }
+
+      // Step 3: Set up environment variables (use plan's aiKeyId if available, otherwise use post's)
+      console.log(`\n⚙️ Step 3: Setting up environment variables...`);
+      const aiKeyId = (snsPlan as any)?.aiKeyId || (post as any).aiKeyId || null;
+      this.setupEnvironmentVariables(connection, aiKeyId, post.connectionType);
+      console.log(`✅ Environment variables configured`);
 
       // Step 4: Select topic for content generation
       console.log(`\n📝 Step 4: Selecting topic for content generation...`);
@@ -754,8 +755,11 @@ export class ScheduledPostsExecutor {
         extraInstructions: 'Generate engaging Instagram content with hook, body, CTA, and relevant hashtags.',
       };
 
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
       // Generate content first to get caption and image prompt
-      generatedContent = await generateInstagramContent(structuredPrompt);
+      generatedContent = await generateInstagramContent(structuredPrompt, { apiKey });
       console.log(`✅ Instagram content generated successfully`);
       console.log(`📝 Caption length: ${generatedContent.caption?.length || 0} characters`);
       console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
@@ -910,13 +914,8 @@ export class ScheduledPostsExecutor {
       }
       console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
 
-      // Step 2: Set up environment variables
-      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
-      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
-      console.log(`✅ Environment variables configured`);
-
-      // Step 3: Fetch business identity data if planId is available
-      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      // Step 2: Fetch business identity data if planId is available (before setting up env vars to get plan's aiKeyId)
+      console.log(`\n🔍 Step 2: Fetching business identity data...`);
       let businessIdentity: any = null;
       let snsPlan: any = null;
       
@@ -950,6 +949,12 @@ export class ScheduledPostsExecutor {
       } else {
         console.log('⚠️ No planId provided, using minimal identity data');
       }
+
+      // Step 3: Set up environment variables (use plan's aiKeyId if available, otherwise use post's)
+      console.log(`\n⚙️ Step 3: Setting up environment variables...`);
+      const aiKeyId = (snsPlan as any)?.aiKeyId || (post as any).aiKeyId || null;
+      this.setupEnvironmentVariables(connection, aiKeyId, post.connectionType);
+      console.log(`✅ Environment variables configured`);
 
       // Step 4: Select topic for content generation
       console.log(`\n📝 Step 4: Selecting topic for content generation...`);
@@ -1001,7 +1006,10 @@ export class ScheduledPostsExecutor {
       };
 
       // Generate content first to get text and image prompt
-      generatedContent = await generateFacebookContent(structuredPrompt);
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
+      generatedContent = await generateFacebookContent(structuredPrompt, { apiKey });
       console.log(`✅ Facebook content generated successfully`);
       console.log(`📝 Post text length: ${generatedContent.text?.length || 0} characters`);
       console.log(`🖼️ Image prompt: ${generatedContent.imagePrompt || 'None'}`);
@@ -1171,13 +1179,8 @@ export class ScheduledPostsExecutor {
       }
       console.log(`✅ Connection found: ${connection.name} (${post.connectionType})`);
 
-      // Step 2: Set up environment variables
-      console.log(`\n⚙️ Step 2: Setting up environment variables...`);
-      this.setupEnvironmentVariables(connection, (post as any).aiKeyId || null, post.connectionType);
-      console.log(`✅ Environment variables configured`);
-
-      // Step 3: Fetch business identity data if planId is available
-      console.log(`\n🔍 Step 3: Fetching business identity data...`);
+      // Step 2: Fetch business identity data if planId is available (before setting up env vars to get plan's aiKeyId)
+      console.log(`\n🔍 Step 2: Fetching business identity data...`);
       let businessIdentity: any = null;
       let snsPlan: any = null;
       
@@ -1211,6 +1214,12 @@ export class ScheduledPostsExecutor {
       } else {
         console.log('⚠️ No planId provided, using minimal identity data');
       }
+
+      // Step 3: Set up environment variables (use plan's aiKeyId if available, otherwise use post's)
+      console.log(`\n⚙️ Step 3: Setting up environment variables...`);
+      const aiKeyId = (snsPlan as any)?.aiKeyId || (post as any).aiKeyId || null;
+      this.setupEnvironmentVariables(connection, aiKeyId, post.connectionType);
+      console.log(`✅ Environment variables configured`);
 
       // Step 4: Select topic for content generation
       console.log(`\n📝 Step 4: Selecting topic for content generation...`);
@@ -1256,7 +1265,10 @@ export class ScheduledPostsExecutor {
       };
 
       // Generate content first to get title, description, and tags
-      generatedContent = await generateYouTubeContent(structuredPrompt);
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
+      generatedContent = await generateYouTubeContent(structuredPrompt, { apiKey });
       console.log(`✅ YouTube content generated successfully`);
       console.log(`📝 Title: ${generatedContent.title || 'None'}`);
       console.log(`📄 Description length: ${generatedContent.description?.length || 0} characters`);
@@ -1712,12 +1724,15 @@ export class ScheduledPostsExecutor {
       const generateOutline = require('../ai-blog/generate-outline').default;
       const generateImages = require('../ai-blog/generate-images').default;
       
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
       // Generate blog outline with timeout handling
       console.log(`📝 Generating blog outline...`);
       let outline;
       try {
         outline = await Promise.race([
-          generateOutline(topic),
+          generateOutline(topic, apiKey),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
           )
@@ -1734,7 +1749,7 @@ export class ScheduledPostsExecutor {
       let blogContentWithImages;
       try {
         blogContentWithImages = await Promise.race([
-          generateImages(outline),
+          generateImages(outline, apiKey),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
           )
@@ -1797,12 +1812,15 @@ export class ScheduledPostsExecutor {
       // Import the blog generation functions
       const generateOutline = require('../ai-blog/generate-outline').default;
       
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
       // Generate blog outline with timeout handling
       console.log(`📝 Generating blog outline...`);
       let outline;
       try {
         outline = await Promise.race([
-          generateOutline(topic),
+          generateOutline(topic, apiKey),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Blog outline generation timeout after 120 seconds')), 120000)
           )
@@ -1819,7 +1837,7 @@ export class ScheduledPostsExecutor {
       let blogContentWithImages;
       try {
         blogContentWithImages = await Promise.race([
-          this.generateImagesForNaver(outline),
+          this.generateImagesForNaver(outline, apiKey),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
           )
@@ -1846,7 +1864,7 @@ export class ScheduledPostsExecutor {
   /**
    * Generate images for Naver Blog (local files only, no WordPress upload)
    */
-  private async generateImagesForNaver(parsedContent: any): Promise<any> {
+  private async generateImagesForNaver(parsedContent: any, apiKey?: string): Promise<any> {
     if (parsedContent.images && parsedContent.images.length > 0) {
       const fs = require('fs').promises;
       const path = require('path');
@@ -1856,7 +1874,7 @@ export class ScheduledPostsExecutor {
         const imageRequest = parsedContent.images[i];
         try {
           console.log(`🎨 Generating image ${i + 1}/${parsedContent.images.length}: ${imageRequest.description}`);
-          const images = await this.generateSingleImage(imageRequest.description, 1, { outputMimeType: 'image/png' });
+          const images = await this.generateSingleImage(imageRequest.description, 1, { apiKey, outputMimeType: 'image/png' });
           if (images.length > 0) {
             const generatedImage = images[0];
             
@@ -1907,8 +1925,9 @@ export class ScheduledPostsExecutor {
    * Generate a single image using Gemini AI
    * @deprecated Use generateSingleImage from '../gemini' directly
    */
-  private async generateSingleImage(prompt: string, count = 1, options?: { outputMimeType?: 'image/jpeg' | 'image/png' }): Promise<any[]> {
+  private async generateSingleImage(prompt: string, count = 1, options?: { apiKey?: string; outputMimeType?: 'image/jpeg' | 'image/png' }): Promise<any[]> {
     const image = await generateSingleImage(prompt, {
+      apiKey: options?.apiKey,
       useRetry: false, // No retry in scheduled executor to fail fast
       outputMimeType: options?.outputMimeType || 'image/png', // Use PNG for Naver blog
     });
@@ -1925,9 +1944,12 @@ export class ScheduledPostsExecutor {
       // Import only the blog outline generation function
       const generateOutline = require('../ai-blog/generate-outline').default;
       
+      // Get API key from environment (set by setupEnvironmentVariables)
+      const apiKey = process.env.GEMINI_API_KEY;
+      
       // Generate blog outline only (no images)
       console.log(`📝 Generating blog outline...`);
-      const outline = await generateOutline(topic);
+      const outline = await generateOutline(topic, apiKey);
       console.log(`✅ Blog outline generated`);
       
       // Return the outline without processing images

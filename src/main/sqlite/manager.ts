@@ -1243,6 +1243,18 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-business-identity-update-sns-plan-ai-key', async (event, planId: string, aiKeyId: string | null) => {
+      try {
+        this.getBusinessIdentityManager().updatePlanAIKey(planId, aiKeyId);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
     ipcMain.handle(
       'sqlite-business-identity-save-sns-plans',
       async (

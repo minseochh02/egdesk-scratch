@@ -88,6 +88,7 @@ export interface YouTubeGenerationOptions {
   maxTags?: number;
   maxTitleLength?: number;
   maxDescriptionLength?: number;
+  apiKey?: string;
 }
 
 export async function generateYouTubeContent(
@@ -102,6 +103,7 @@ export async function generateYouTubeContent(
   const result = await generateTextWithAI({
     prompt: buildPromptFromPlan(plan),
     systemPrompt: YOUTUBE_CONTENT_SYSTEM_PROMPT,
+    apiKey: options.apiKey,
     model,
       maxOutputTokens: 4096,
     streaming: true,

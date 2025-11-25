@@ -278,12 +278,15 @@ export async function generateSnsPlan(
     console.log('[AISearch] Starting SNS plan generation...');
     console.log('[AISearch] Identity data keys:', identityData ? Object.keys(identityData) : 'null');
     
-    const apiKey = getGoogleApiKey();
+    // Use the centralized getGoogleApiKey from gemini module
+    const { getGoogleApiKey: getGoogleApiKeyFromGemini } = require('../gemini');
+    const apiKeyInfo = getGoogleApiKeyFromGemini();
+    const apiKey = apiKeyInfo.apiKey;
     if (!apiKey) {
       console.error('[AISearch] No API key found');
       return {
         success: false,
-        error: 'AI is not configured. Please configure a Google AI key first.',
+        error: 'Google API key is required for SNS plan generation. Please provide an API key parameter, configure one in the AI Keys Manager, or set the GEMINI_API_KEY environment variable.',
       };
     }
 
@@ -419,6 +422,7 @@ ${JSON.stringify(identityData, null, 2)}`;
     
     const result = await generateTextWithAI({
       prompt: planPrompt,
+      apiKey,
       model: 'gemini-2.5-flash',
       temperature: 0.7,
       responseSchema: schema as any,

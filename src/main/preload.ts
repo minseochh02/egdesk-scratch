@@ -660,6 +660,10 @@ export interface BusinessIdentityAPI {
     connectionName: string | null,
     connectionType: string | null,
   ) => Promise<{ success: boolean; error?: string }>;
+  updateSnsPlanAIKey: (
+    planId: string,
+    aiKeyId: string | null,
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -1409,8 +1413,12 @@ const electronHandler = {
     listSnsPlanExecutions: (planId: string) => ipcRenderer.invoke('sqlite-business-identity-list-sns-plan-executions', planId),
     updateAnalysisResults: (snapshotId: string, seoAnalysis: any, sslAnalysis: any) =>
       ipcRenderer.invoke('sqlite-business-identity-update-analysis-results', snapshotId, seoAnalysis, sslAnalysis),
+    updateSnsPlanAIKey: (planId: string, aiKeyId: string | null) =>
+      ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
     updateSnsPlanConnection: (planId: string, connectionId: string | null, connectionName: string | null, connectionType: string | null) =>
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-connection', planId, connectionId, connectionName, connectionType),
+    updateSnsPlanAIKey: (planId: string, aiKeyId: string | null) =>
+      ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
   } as BusinessIdentityAPI,
   
   // ========================================================================
