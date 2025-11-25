@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -8,10 +8,13 @@ import {
   faTag,
   faUser,
   faExternalLinkAlt,
+  faKey,
 } from '../../utils/fontAwesomeIcons';
 import { faHashtag } from '@fortawesome/free-solid-svg-icons/faHashtag';
 import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 import AccountSelector from './AccountSelector';
+import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import type { AIKey } from '../AIKeysManager/types';
 
 // Import image format utility (we'll need to expose this from main process or create a renderer version)
 // For now, we'll create a simple helper function
@@ -69,6 +72,7 @@ export interface BusinessIdentityScheduledTask {
   connectionId?: string | null;
   connectionName?: string | null;
   connectionType?: string | null;
+  aiKeyId?: string | null;
 }
 
 export const businessIdentityDemoTasks: BusinessIdentityScheduledTask[] = [
@@ -137,6 +141,7 @@ export interface BusinessIdentityScheduledDemoProps {
   onTestPost?: (task: BusinessIdentityScheduledTask, credentials?: { username: string; password: string }) => void;
   onToggleSchedule?: (task: BusinessIdentityScheduledTask, isActive: boolean) => void;
   onAccountChange?: (task: BusinessIdentityScheduledTask, connectionId: string | null, connectionName: string | null, connectionType: string | null) => void;
+  onAIKeyChange?: (task: BusinessIdentityScheduledTask, aiKeyId: string | null) => void;
   onInstagramCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void;
   onBlogCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void;
   onCredentialsChange?: (task: BusinessIdentityScheduledTask, username: string, password: string) => void; // Generic credentials change for all channels
@@ -151,6 +156,7 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
   onTestPost,
   onToggleSchedule,
   onAccountChange,
+  onAIKeyChange,
   onInstagramCredentialsChange,
   onBlogCredentialsChange,
   onCredentialsChange,
@@ -159,6 +165,18 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
 }) => {
   const navigate = useNavigate();
   const items = tasks?.length ? tasks : businessIdentityDemoTasks;
+  
+  // Get AI keys from store
+  const [aiKeysState, setAiKeysState] = useState(aiKeysStore.getState());
+  const googleKeys = useMemo(
+    () => aiKeysState.keys.filter((key) => key.providerId === 'google' && key.isActive),
+    [aiKeysState.keys]
+  );
+
+  useEffect(() => {
+    const unsubscribe = aiKeysStore.subscribe(setAiKeysState);
+    return unsubscribe;
+  }, []);
   
   // Track active state for each task (defaults to false if not provided)
   const [taskStates, setTaskStates] = useState<Record<string, boolean>>(() => {
@@ -341,6 +359,31 @@ const BusinessIdentityScheduledDemo: React.FC<BusinessIdentityScheduledDemoProps
               )}
             </div>
           </section>
+
+          {/* AI Key Selector */}
+          {googleKeys.length > 0 && (
+            <section className="egbusiness-identity__scheduled-demo-ai-key">
+              <FontAwesomeIcon icon={faKey} />
+              <div className="egbusiness-identity__ai-key-selector">
+                <select
+                  value={task.aiKeyId || ''}
+                  onChange={(e) => {
+                    const aiKeyId = e.target.value || null;
+                    onAIKeyChange?.(task, aiKeyId);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="egbusiness-identity__ai-key-select"
+                >
+                  <option value="">Use default AI key</option>
+                  {googleKeys.map((key) => (
+                    <option key={key.id} value={key.id}>
+                      {key.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+          )}
 
           <footer>
             <div className="egbusiness-identity__scheduled-demo-format-container">

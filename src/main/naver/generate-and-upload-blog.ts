@@ -141,10 +141,11 @@ ipcMain.handle('generate-and-upload-naver-blog', async (event, params: {
     // Generate blog content
     console.log('\n🤖 Generating blog outline...');
     const topicText = selectedTopic.name || selectedTopic.topic;
-    const outline = await generateOutline(topicText);
+    const apiKey = aiSettings?.apiKey;
+    const outline = await generateOutline(topicText, apiKey);
     
     console.log('\n🎨 Generating images...');
-    const parsedContent = await generateImages(outline);
+    const parsedContent = await generateImages(outline, apiKey);
 
     // Prepare content for Naver Blog
     const title = parsedContent.title;
@@ -281,14 +282,14 @@ ipcMain.handle('generate-and-upload-naver-blog', async (event, params: {
 /**
  * Generate Naver Blog content (without uploading)
  */
-export default async function generateNaverBlogContent(topic: string): Promise<ParsedContent> {
+export default async function generateNaverBlogContent(topic: string, apiKey?: string): Promise<ParsedContent> {
   console.log(`🤖 Generating Naver Blog content for topic: ${topic}`);
   
   // Generate blog content with image markers
-  const blogContent = await generateStructuredBlogContent(topic);
+  const blogContent = await generateStructuredBlogContent(topic, apiKey);
   
   // Generate images
-  const blogContentWithImages = await generateImages(blogContent);
+  const blogContentWithImages = await generateImages(blogContent, apiKey);
   
   console.log(`✅ Naver Blog content generated successfully`);
   console.log(`📝 Title: ${blogContentWithImages.title}`);

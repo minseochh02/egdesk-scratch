@@ -3,7 +3,22 @@ import { ParsedContent, Image } from './index';
 import { WordPressHandler } from '../wordpress/wordpress-handler';
 import { generateSingleImage } from '../gemini';
 
-export default async function generateImages(parsedContent: ParsedContent) {
+export default async function generateImages(parsedContent: ParsedContent, apiKey?: string) {
+  // Validate API key availability if images need to be generated
+  if (parsedContent.images && parsedContent.images.length > 0) {
+    if (!apiKey) {
+      const { getGoogleApiKey } = require('../gemini');
+      const apiKeyInfo = getGoogleApiKey();
+      if (!apiKeyInfo.apiKey) {
+        throw new Error(
+          'Google API key is required for image generation. ' +
+          'Please provide an API key in the AI settings or configure one in the AI Keys Manager.'
+        );
+      }
+      apiKey = apiKeyInfo.apiKey;
+    }
+  }
+
   if (parsedContent.images && parsedContent.images.length > 0) {
     const generatedImages = [];
     
@@ -11,6 +26,7 @@ export default async function generateImages(parsedContent: ParsedContent) {
       const imageRequest = parsedContent.images[i];
       try {
         const generatedImage = await generateSingleImage(imageRequest.description, {
+          apiKey,
           useRetry: true,
           maxRetries: 3,
           retryBaseDelay: 2000,

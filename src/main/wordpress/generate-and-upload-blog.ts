@@ -137,10 +137,11 @@ ipcMain.handle('generate-and-upload-wordpress-blog', async (event, params: {
     // Generate blog content
     console.log('\n🤖 Generating blog outline...');
     const topicText = selectedTopic.name || selectedTopic.topic;
-    const outline = await generateOutline(topicText);
+    const apiKey = aiSettings?.apiKey;
+    const outline = await generateOutline(topicText, apiKey);
     
     console.log('\n🎨 Generating images...');
-    const parsedContent = await generateImages(outline);
+    const parsedContent = await generateImages(outline, apiKey);
 
     // Create task execution record
     const { v4: uuidv4 } = require('uuid');
@@ -226,7 +227,7 @@ ipcMain.handle('generate-and-upload-wordpress-blog', async (event, params: {
   }
 });
 
-export default async function constructBlog(topic: string) {
+export default async function constructBlog(topic: string, apiKey?: string) {
     const WORDPRESS_URL = process.env.WORDPRESS_URL;
     const WORDPRESS_USERNAME = process.env.WORDPRESS_USERNAME;
     const WORDPRESS_PASSWORD = process.env.WORDPRESS_PASSWORD;
@@ -236,10 +237,10 @@ export default async function constructBlog(topic: string) {
     }
 
     // generate blog content with image markers
-    const blogContent = await generateStructuredBlogContent(topic);
+    const blogContent = await generateStructuredBlogContent(topic, apiKey);
 
     // generate images and upload to wordpress
-    const blogContentWithImages = await generateImages(blogContent);
+    const blogContentWithImages = await generateImages(blogContent, apiKey);
 
     const baseUrl = WORDPRESS_URL.replace(/\/$/, '');
     const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;

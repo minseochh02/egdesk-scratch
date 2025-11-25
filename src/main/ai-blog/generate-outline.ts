@@ -4,11 +4,25 @@ import { generateTextWithAI } from '../gemini';
 /**
  * Generate structured blog content using Gemini AI with JSON output
  * @param {string} topic - The topic for the blog post
+ * @param {string} apiKey - Optional API key to use for generation
  * @returns {Promise<Object>} - The generated blog content as a structured object
  */
-export default async function generateOutline(topic: string) {
+export default async function generateOutline(topic: string, apiKey?: string) {
     if (!topic) {
         throw new Error('Topic is required');
+    }
+
+    // Validate API key availability
+    if (!apiKey) {
+      const { getGoogleApiKey } = require('../gemini');
+      const apiKeyInfo = getGoogleApiKey();
+      if (!apiKeyInfo.apiKey) {
+        throw new Error(
+          'Google API key is required for blog generation. ' +
+          'Please provide an API key in the AI settings or configure one in the AI Keys Manager.'
+        );
+      }
+      apiKey = apiKeyInfo.apiKey;
     }
 
     console.log(`🤖 Generating structured blog content for topic: "${topic}"`);
@@ -57,6 +71,7 @@ export default async function generateOutline(topic: string) {
       const result = await generateTextWithAI({
         prompt: topic,
         systemPrompt,
+        apiKey,
         model: 'gemini-2.5-flash',
         maxOutputTokens: 65536,
         streaming: false, // Use non-streaming for structured output (prevents markdown wrapping)

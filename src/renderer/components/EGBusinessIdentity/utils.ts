@@ -81,6 +81,7 @@ export const mapSnsPlanEntriesToStorage = (
       connectionId: plan.connectionId ?? null,
       connectionName: plan.connectionName ?? null,
       connectionType: plan.connectionType ?? null,
+      aiKeyId: plan.aiKeyId ?? null,
       enabled: true,
     };
   });
@@ -207,9 +208,16 @@ export async function handleSocialMediaScheduleToggle(
 
     if (isActive) {
       // Activate: Create or enable scheduled post
+      // Get AI key ID from task (most up-to-date from UI) or fall back to plan entry
+      const aiKeyId = task.aiKeyId ?? planEntry.aiKeyId ?? null;
+      
       if (existingPost) {
-        // Update existing scheduled post
+        // Update existing scheduled post (including AI key if changed)
         const updateResult = await window.electron.scheduledPosts.toggle(existingPost.id, true);
+        if (updateResult.success && aiKeyId !== null && aiKeyId !== (existingPost as any).aiKeyId) {
+          // Also update the AI key if it has changed
+          await window.electron.scheduledPosts.update(existingPost.id, { aiKeyId });
+        }
         if (updateResult.success) {
           return { success: true, scheduledPostId: existingPost.id };
         } else {
@@ -223,9 +231,6 @@ export async function handleSocialMediaScheduleToggle(
           connectionName,
           normalizedConnectionType
         );
-
-        // Get active AI key if available
-        const aiKeyId = null; // TODO: Get from active AI key selector if needed
 
         const createResult = await window.electron.scheduledPosts.create({
           ...scheduledPostData,
@@ -278,6 +283,11 @@ export async function handleBlogScheduleToggle(
       return { success: false, error: 'SNS plan entry not found' };
     }
 
+    // Update plan entry's aiKeyId if task has a newer value (from UI)
+    if (task.aiKeyId !== undefined && task.aiKeyId !== planEntry.aiKeyId) {
+      planEntry.aiKeyId = task.aiKeyId;
+    }
+
     // Use connection info from plan entry (most up-to-date) or fall back to task
     const connectionId = planEntry.connectionId || task.connectionId;
     const connectionName = planEntry.connectionName || task.connectionName;
@@ -310,9 +320,16 @@ export async function handleBlogScheduleToggle(
 
     if (isActive) {
       // Activate: Create or enable scheduled post
+      // Get AI key ID from task (most up-to-date from UI) or fall back to plan entry
+      const aiKeyId = task.aiKeyId ?? planEntry.aiKeyId ?? null;
+      
       if (existingPost) {
-        // Update existing scheduled post
+        // Update existing scheduled post (including AI key if changed)
         const updateResult = await window.electron.scheduledPosts.toggle(existingPost.id, true);
+        if (updateResult.success && aiKeyId !== null && aiKeyId !== (existingPost as any).aiKeyId) {
+          // Also update the AI key if it has changed
+          await window.electron.scheduledPosts.update(existingPost.id, { aiKeyId });
+        }
         if (updateResult.success) {
           return { success: true, scheduledPostId: existingPost.id };
         } else {
@@ -338,9 +355,6 @@ export async function handleBlogScheduleToggle(
         if (!scheduledPostData) {
           return { success: false, error: 'Failed to convert SNS plan to scheduled post format' };
         }
-
-        // Get active AI key if available
-        const aiKeyId = null; // TODO: Get from active AI key selector if needed
 
         const createResult = await window.electron.scheduledPosts.create({
           ...scheduledPostData,

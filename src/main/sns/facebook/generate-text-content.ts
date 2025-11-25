@@ -69,6 +69,7 @@ export interface FacebookGenerationOptions {
   model?: string;
   maxHashtags?: number;
   maxTextLength?: number;
+  apiKey?: string;
 }
 
 /**
@@ -131,6 +132,7 @@ export async function generateFacebookContent(
     systemPrompt: FACEBOOK_CONTENT_SYSTEM_PROMPT,
     userMessage: userPrompt,
     responseSchema,
+    apiKey: options.apiKey,
     model: options.model || process.env.GEMINI_FACEBOOK_MODEL || 'gemini-2.5-flash',
     temperature: 0.7,
     maxOutputTokens: 2048,

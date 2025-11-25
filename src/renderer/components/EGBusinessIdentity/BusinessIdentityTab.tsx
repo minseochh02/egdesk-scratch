@@ -299,6 +299,7 @@ const mapSnsPlanToScheduledTasks = (plans?: SnsPlanEntry[]): BusinessIdentitySch
       connectionId: plan.connectionId ?? null,
       connectionName: plan.connectionName ?? null,
       connectionType: plan.connectionType ?? null,
+      aiKeyId: plan.aiKeyId ?? null,
     };
   });
 };
@@ -549,10 +550,54 @@ const BusinessIdentityTab: React.FC = () => {
 
   const businessTitle = insights.sourceMeta?.title || 'Identity Brief';
   const businessSubtitle = insights.sourceMeta?.url ? `Based on ${insights.sourceMeta.url}` : undefined;
-  const scheduledTasks = useMemo<BusinessIdentityScheduledTask[]>(() => {
+  const baseScheduledTasks = useMemo<BusinessIdentityScheduledTask[]>(() => {
     return mapSnsPlanToScheduledTasks(snsPlan);
   }, [snsPlan]);
-  const hasStoredSnsPlan = scheduledTasks.length > 0;
+  const hasStoredSnsPlan = baseScheduledTasks.length > 0;
+
+  // Load scheduled posts to determine active state
+  const [scheduledPosts, setScheduledPosts] = useState<any[]>([]);
+  const [scheduledPostsLoaded, setScheduledPostsLoaded] = useState(false);
+
+  const loadScheduledPosts = useCallback(async () => {
+    try {
+      const result = await window.electron.scheduledPosts.getAll();
+      if (result.success && result.data) {
+        setScheduledPosts(result.data);
+      }
+    } catch (error) {
+      console.error('[BusinessIdentityTab] Failed to load scheduled posts:', error);
+    } finally {
+      setScheduledPostsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hasStoredSnsPlan) {
+      loadScheduledPosts();
+    }
+  }, [hasStoredSnsPlan, loadScheduledPosts]);
+
+  // Enrich tasks with active state from scheduled posts
+  const scheduledTasks = useMemo<BusinessIdentityScheduledTask[]>(() => {
+    if (!scheduledPostsLoaded || scheduledPosts.length === 0) {
+      return baseScheduledTasks;
+    }
+
+    return baseScheduledTasks.map((task) => {
+      // Find matching scheduled post by title and connection
+      const matchingPost = scheduledPosts.find((post: any) => {
+        const titleMatch = post.title === task.title;
+        const connectionMatch = task.connectionId && post.connectionId === task.connectionId;
+        return titleMatch && connectionMatch;
+      });
+
+      return {
+        ...task,
+        isActive: matchingPost ? matchingPost.enabled : false,
+      };
+    });
+  }, [baseScheduledTasks, scheduledPosts, scheduledPostsLoaded]);
 
   // Track credentials per task for all channels
   const [taskCredentials, setTaskCredentials] = useState<Record<string, { username: string; password: string; url?: string }>>({});
@@ -875,7 +920,8 @@ const BusinessIdentityTab: React.FC = () => {
                 const result = await handleBlogScheduleToggle(task, isActive, snsPlan);
                 if (result.success) {
                   console.log(`[BusinessIdentityTab] Schedule ${isActive ? 'activated' : 'deactivated'} successfully`);
-                  // Optionally show a success message to the user
+                  // Reload scheduled posts to update UI state
+                  await loadScheduledPosts();
                 } else {
                   console.error(`[BusinessIdentityTab] Failed to toggle schedule:`, result.error);
                   alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
@@ -885,7 +931,8 @@ const BusinessIdentityTab: React.FC = () => {
                 const result = await handleSocialMediaScheduleToggle(task, isActive, snsPlan);
                 if (result.success) {
                   console.log(`[BusinessIdentityTab] Schedule ${isActive ? 'activated' : 'deactivated'} successfully`);
-                  // Optionally show a success message to the user
+                  // Reload scheduled posts to update UI state
+                  await loadScheduledPosts();
                 } else {
                   console.error(`[BusinessIdentityTab] Failed to toggle schedule:`, result.error);
                   alert(`Failed to ${isActive ? 'activate' : 'deactivate'} schedule: ${result.error || 'Unknown error'}`);
@@ -971,6 +1018,69 @@ const BusinessIdentityTab: React.FC = () => {
                 }
               } catch (error) {
                 console.error('[BusinessIdentityTab] Error updating account:', error);
+              }
+            }}
+            onAIKeyChange={async (task, aiKeyId) => {
+              console.log('[BusinessIdentityTab] onAIKeyChange called:', {
+                taskId: task.id,
+                planId: task.planId,
+                aiKeyId,
+              });
+              
+              if (!task.planId) {
+                console.warn('[BusinessIdentityTab] Cannot update AI key: planId missing');
+                return;
+              }
+              try {
+                // Update the plan's AI key in the database
+                const result = await window.electron.businessIdentity.updateSnsPlanAIKey(
+                  task.planId,
+                  aiKeyId
+                );
+                console.log('[BusinessIdentityTab] updateSnsPlanAIKey result:', result);
+                
+                if (result.success) {
+                  console.log('[BusinessIdentityTab] AI key updated successfully');
+                  
+                  // Update any existing scheduled posts associated with this plan
+                  if (task.connectionId && task.title) {
+                    try {
+                      const postsResult = await window.electron.scheduledPosts.getByConnection(task.connectionId);
+                      if (postsResult.success && postsResult.data) {
+                        // Find scheduled posts that match this plan's title
+                        const matchingPosts = postsResult.data.filter((post: any) => post.title === task.title);
+                        console.log(`[BusinessIdentityTab] Found ${matchingPosts.length} scheduled post(s) to update`);
+                        
+                        // Update each matching scheduled post
+                        for (const post of matchingPosts) {
+                          await window.electron.scheduledPosts.update(post.id, { aiKeyId });
+                          console.log(`[BusinessIdentityTab] Updated scheduled post ${post.id} with new AI key`);
+                        }
+                      }
+                    } catch (updateError) {
+                      console.error('[BusinessIdentityTab] Error updating scheduled posts:', updateError);
+                      // Don't fail the whole operation if scheduled post update fails
+                    }
+                  }
+                  
+                  // Reload SNS plans from database to get updated AI key info
+                  const maybeState = location.state as { snapshotId?: string } | undefined;
+                  const snapshotId = maybeState?.snapshotId;
+                  if (snapshotId && window.electron?.businessIdentity?.listSnsPlans) {
+                    const plansResponse = await window.electron.businessIdentity.listSnsPlans(snapshotId);
+                    if (plansResponse.success && plansResponse.data && Array.isArray(plansResponse.data)) {
+                      const plans = plansResponse.data.map((plan: StoredSnsPlan) => mapStoredPlanToEntry(plan));
+                      setLoadedSnsPlans(plans);
+                    }
+                  }
+                  
+                  // Reload scheduled posts to reflect the updated AI key
+                  await loadScheduledPosts();
+                } else {
+                  console.error('[BusinessIdentityTab] Failed to update AI key:', result.error);
+                }
+              } catch (error) {
+                console.error('[BusinessIdentityTab] Error updating AI key:', error);
               }
             }}
             getAvailableConnections={async (channel: string) => {
