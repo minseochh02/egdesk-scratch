@@ -33,7 +33,7 @@ import {
 } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
-import RunningServersSection from './RunningServersSection';
+import RunningServersTabs from './RunningServersTabs';
 import TunnelAndServerConfig from './TunnelAndServerConfig';
 
 // Import GmailConnection type from GmailDashboard
@@ -138,6 +138,11 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [servers, setServers] = useState<RunningMCPServer[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Cloud servers state
+  const [cloudServers, setCloudServers] = useState<RunningMCPServer[]>([]);
+  const [cloudLoading, setCloudLoading] = useState<boolean>(true);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<RunningMCPServer | null>(null);
   const [showLogs, setShowLogs] = useState<boolean>(false);
   const [showDashboard, setShowDashboard] = useState<boolean>(false);
@@ -439,10 +444,111 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     }
   }, [isRefreshing]);
 
+  // Load cloud servers from Google Sheets
+  const loadCloudServers = useCallback(async (isManualRefresh = false) => {
+    try {
+      if (!isManualRefresh) {
+        setCloudLoading(true);
+      }
+      setCloudError(null);
+
+      // Google Sheets spreadsheet ID
+      const SPREADSHEET_ID = '1JPlm17KCvZmvQQ3J68He_xJxDVB_schN6TEP7W6dP0A';
+      // Use the CSV export format which is simpler and more reliable
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Google Sheets: ${response.statusText}`);
+      }
+
+      const csvText = await response.text();
+      
+      // Parse CSV (simple parser for name,description,url format)
+      const lines = csvText.split('\n').filter(line => line.trim());
+      
+      // Skip header row and parse data
+      const cloudServersList: RunningMCPServer[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        // Simple CSV parsing (handles quoted fields)
+        const fields: string[] = [];
+        let currentField = '';
+        let inQuotes = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            fields.push(currentField.trim());
+            currentField = '';
+          } else {
+            currentField += char;
+          }
+        }
+        fields.push(currentField.trim()); // Add last field
+        
+        const name = fields[0] || '';
+        const description = fields[1] || '';
+        const url = fields[2] || '';
+
+        // Only include rows with a name
+        if (!name) continue;
+
+        // Extract protocol and clean URL
+        const cleanUrl = url.trim();
+        const protocol = cleanUrl.startsWith('https') ? 'https' as const : 'http' as const;
+        
+        cloudServersList.push({
+          id: `cloud-${i}-${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`,
+          name: name,
+          type: 'custom' as const,
+          address: cleanUrl,
+          port: 0,
+          protocol: protocol,
+          status: 'running' as const,
+          uptime: 0,
+          memoryUsage: 0,
+          cpuUsage: 0,
+          lastActivity: new Date().toISOString(),
+          version: '1.0.0',
+          description: description || 'Cloud MCP Server',
+          accessLevel: {
+            level: 'public' as const,
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          healthCheck: {
+            status: 'unknown' as const,
+            lastCheck: new Date().toISOString(),
+            responseTime: 0
+          },
+          tools: [],
+          logs: []
+        });
+      }
+
+      setCloudServers(cloudServersList);
+      setCloudError(null);
+    } catch (err) {
+      console.error('Error loading cloud servers:', err);
+      setCloudError(err instanceof Error ? err.message : 'Failed to load cloud servers');
+      setCloudServers([]);
+    } finally {
+      setCloudLoading(false);
+    }
+  }, []);
+
   // Load servers on mount
   useEffect(() => {
     loadRunningServers();
-  }, [loadRunningServers]);
+    loadCloudServers();
+  }, [loadRunningServers, loadCloudServers]);
 
   const checkClaudeDesktopStatus = async () => {
     try {
@@ -1911,8 +2017,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         checkTunnelHealth={checkTunnelHealth}
       />
 
-      {/* Running Servers Section */}
-      <RunningServersSection
+      {/* Running Servers Tabs */}
+      <RunningServersTabs
         servers={servers}
         loading={loading}
         error={error}
@@ -1941,6 +2047,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         handleUnconfigureClaudeDesktop={handleUnconfigureClaudeDesktop}
         handleEditAccessLevel={handleEditAccessLevel}
         handleViewDashboard={handleViewDashboard}
+        cloudServers={cloudServers}
+        cloudLoading={cloudLoading}
+        cloudError={cloudError}
+        loadCloudServers={loadCloudServers}
       />
 
 

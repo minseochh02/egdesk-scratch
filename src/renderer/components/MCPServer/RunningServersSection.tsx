@@ -105,6 +105,7 @@ interface RunningServersSectionProps {
   handleUnconfigureClaudeDesktop: (server: RunningMCPServer) => Promise<void>;
   handleEditAccessLevel: (server: RunningMCPServer) => void;
   handleViewDashboard: (server: RunningMCPServer) => void;
+  hideHeader?: boolean;
 }
 
 const RunningServersSection: React.FC<RunningServersSectionProps> = ({
@@ -135,14 +136,17 @@ const RunningServersSection: React.FC<RunningServersSectionProps> = ({
   handleConfigureClaudeDesktop,
   handleUnconfigureClaudeDesktop,
   handleEditAccessLevel,
-  handleViewDashboard
+  handleViewDashboard,
+  hideHeader = false
 }) => {
   return (
     <div className="running-servers-section">
+      {!hideHeader && (
       <div className="section-header">
         <h2>Running MCP Servers</h2>
         <p>Monitor and manage your active MCP server connections</p>
       </div>
+      )}
 
       {loading && (
         <div className="loading-state">

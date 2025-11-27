@@ -1,0 +1,354 @@
+/* Running Servers Tabs Component Styles */
+.running-servers-tabs {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.running-servers-tabs-header {
+  padding: 0 24px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.running-servers-tabs-header h2 {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: white;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.running-servers-tabs-header p {
+  font-size: 16px;
+  color: white;
+  opacity: 0.9;
+  margin: 0;
+}
+
+/* Tabs Navigation */
+.running-servers-tabs-nav {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.running-servers-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  margin-bottom: -2px;
+}
+
+.running-servers-tab:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.running-servers-tab.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: transparent;
+  color: white;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.running-servers-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+}
+
+.running-servers-tab svg {
+  width: 16px;
+  height: 16px;
+}
+
+.running-servers-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.running-servers-tab.active .running-servers-tab-badge {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Tabs Content */
+.running-servers-tabs-content {
+  width: 100%;
+  min-height: 400px;
+}
+
+.running-servers-tab-panel {
+  width: 100%;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Empty State for Cloud Servers */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+  color: white;
+}
+
+.empty-state svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.5;
+  margin-bottom: 24px;
+}
+
+.empty-state h3 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  color: white;
+}
+
+.empty-state p {
+  font-size: 16px;
+  opacity: 0.8;
+  margin: 0;
+  max-width: 500px;
+}
+
+/* Cloud OAuth Section */
+.cloud-oauth-section {
+  margin-bottom: 32px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+.cloud-oauth-header {
+  margin-bottom: 20px;
+}
+
+.cloud-oauth-header h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+  margin: 0 0 8px 0;
+}
+
+.cloud-oauth-header p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+/* Cloud Auth Required Message */
+.cloud-auth-required {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+  color: white;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 16px;
+  margin-top: 24px;
+}
+
+.cloud-auth-required svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.7;
+  margin-bottom: 24px;
+  color: #f59e0b;
+}
+
+.cloud-auth-required h3 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  color: white;
+}
+
+.cloud-auth-required p {
+  font-size: 16px;
+  opacity: 0.9;
+  margin: 0;
+  max-width: 500px;
+}
+
+/* Cloud Templates Grid */
+.cloud-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 24px;
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.cloud-template-card {
+  width: 100%;
+}
+
+/* Cloud Template Create Card */
+.cloud-template-create-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  text-align: center;
+  min-height: 280px;
+  transition: all 0.3s ease;
+}
+
+.cloud-template-create-card:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.cloud-template-icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+  border-radius: 50%;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.cloud-template-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.9;
+}
+
+.cloud-template-create-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+  margin: 0 0 8px 0;
+}
+
+.cloud-template-create-card p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+.cloud-template-create-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.cloud-template-create-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #7c8ff0 0%, #8a5fb8 100%);
+}
+
+.cloud-template-create-button:active {
+  transform: translateY(0);
+}
+
+.cloud-template-create-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .running-servers-tabs-nav {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .running-servers-tab {
+    border-radius: 12px;
+    margin-bottom: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .running-servers-tab.active {
+    border-bottom-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .running-servers-tab.active::after {
+    display: none;
+  }
+
+  .running-servers-tabs-header h2 {
+    font-size: 24px;
+  }
+
+  .running-servers-tabs-header p {
+    font-size: 14px;
+  }
+}
+

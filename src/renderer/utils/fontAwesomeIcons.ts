@@ -156,6 +156,7 @@ export {
   faInstagram,
   faYoutube,
   faFacebook,
+  faGoogle,
 } from '@fortawesome/free-brands-svg-icons';
 
 // Homepage Editor specific icons (with aliases)

@@ -1131,6 +1131,43 @@ export interface WebUtilitiesAPI {
 }
 
 
+export interface WorkspaceAPI {
+  createSpreadsheet: (
+    title: string,
+  ) => Promise<{
+    success: boolean;
+    data?: { spreadsheetId: string; spreadsheetUrl: string };
+    error?: string;
+  }>;
+  addAppsScript: (
+    spreadsheetId: string,
+    scriptCode: string,
+    scriptTitle?: string,
+  ) => Promise<{
+    success: boolean;
+    data?: { scriptId: string };
+    error?: string;
+  }>;
+  createSpreadsheetWithScript: (
+    title: string,
+    scriptCode: string,
+    scriptTitle?: string,
+  ) => Promise<{
+    success: boolean;
+    data?: { spreadsheetId: string; spreadsheetUrl: string; scriptId: string };
+    error?: string;
+  }>;
+  getSpreadsheet: (
+    spreadsheetId: string,
+  ) => Promise<{ success: boolean; data?: any; error?: string }>;
+  executeScript: (
+    scriptId: string,
+    functionName: string,
+    parameters?: any[],
+  ) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
+
 
 // ============================================================================
 // ELECTRON HANDLER IMPLEMENTATION
@@ -1906,10 +1943,14 @@ sslCertificate: {
  */
 auth: {
   getSession: () => ipcRenderer.invoke('auth:get-session'),
-  signInWithGoogle: () => ipcRenderer.invoke('auth:sign-in-google'),
+    signInWithGoogle: (scopes?: string) => ipcRenderer.invoke('auth:sign-in-google', scopes),
   signInWithGithub: () => ipcRenderer.invoke('auth:sign-in-github'),
   signOut: () => ipcRenderer.invoke('auth:sign-out'),
   handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
+    getGoogleWorkspaceToken: () => ipcRenderer.invoke('auth:get-google-workspace-token'),
+  saveSession: (session: any) => ipcRenderer.invoke('auth:save-session', session),
+  callEdgeFunction: (options: { url: string; method?: string; body?: any; headers?: Record<string, string> }) =>
+    ipcRenderer.invoke('auth:call-edge-function', options),
   onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => {
     const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('auth:state-changed', subscription);
@@ -1920,6 +1961,19 @@ auth: {
     };
   },
 },
+  /**
+   * Google Workspace API
+   */
+  workspace: {
+    createSpreadsheet: (title: string) => ipcRenderer.invoke('workspace:create-spreadsheet', title),
+    addAppsScript: (spreadsheetId: string, scriptCode: string, scriptTitle?: string) =>
+      ipcRenderer.invoke('workspace:add-apps-script', spreadsheetId, scriptCode, scriptTitle),
+    createSpreadsheetWithScript: (title: string, scriptCode: string, scriptTitle?: string) =>
+      ipcRenderer.invoke('workspace:create-spreadsheet-with-script', title, scriptCode, scriptTitle),
+    getSpreadsheet: (spreadsheetId: string) => ipcRenderer.invoke('workspace:get-spreadsheet', spreadsheetId),
+    executeScript: (scriptId: string, functionName: string, parameters?: any[]) =>
+      ipcRenderer.invoke('workspace:execute-script', scriptId, functionName, parameters),
+  } as WorkspaceAPI,
 
   // ========================================================================
   // SHELL UTILITIES

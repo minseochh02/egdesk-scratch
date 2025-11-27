@@ -2308,6 +2308,8 @@ function AppContent() {
             <Route path="/egchatting" element={<EGChatting />} />
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
+            <Route 
+            />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />
