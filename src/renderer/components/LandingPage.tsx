@@ -13,6 +13,7 @@ import {
   faComments,
   faFingerprint,
   faShare,
+  faBuilding,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -165,6 +166,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Server Registration</span>
                 <span className="egdesk-landing-feature-tag">AI Connection</span>
                 <span className="egdesk-landing-feature-tag">Protocol Management</span>
+              </div>
+            </Link>
+
+            <Link to="/google-workspace" className="egdesk-landing-action-card egdesk-landing-workspace-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faBuilding} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Google Workspace Manager</h3>
+              <p className="egdesk-landing-card-description">
+                Manage your Google Workspace domain. Control users, monitor activity, and manage access across your organization.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">User Management</span>
+                <span className="egdesk-landing-feature-tag">Email Control</span>
+                <span className="egdesk-landing-feature-tag">Domain Administration</span>
               </div>
             </Link>
           </div>

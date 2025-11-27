@@ -8,6 +8,8 @@ interface StoredSession {
   expires_at?: number;
   expires_in?: number;
   user: User;
+  provider_token?: string; // Google OAuth provider token for API calls
+  provider_refresh_token?: string; // Google OAuth provider refresh token
 }
 
 export class AuthService {
@@ -71,9 +73,48 @@ export class AuthService {
       expires_at: session.expires_at,
       expires_in: session.expires_in,
       user: session.user,
+      // Save Google provider token if available (for Google API calls)
+      provider_token: (session as any).provider_token,
+      provider_refresh_token: (session as any).provider_refresh_token,
     };
     this.store.set('session', storedSession);
     this.currentSession = session;
+    
+    // Also save Google OAuth token separately if it's a Google provider token
+    // Check if user signed in with Google (either through provider_token or user metadata)
+    const isGoogleAuth = (session as any).provider_token || 
+                         session.user?.app_metadata?.provider === 'google' ||
+                         session.user?.identities?.some((id: any) => id.provider === 'google');
+    
+    if (isGoogleAuth) {
+      // Try to get provider token from various sources
+      const providerToken = (session as any).provider_token || 
+                           session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.access_token;
+      
+      if (providerToken) {
+        const googleToken = {
+          access_token: providerToken,
+          refresh_token: (session as any).provider_refresh_token || 
+                        session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token,
+          expires_at: session.expires_at,
+          scopes: (session as any).provider_scopes || [],
+          saved_at: Date.now(),
+        };
+        this.store.set('google_workspace_token', googleToken);
+        console.log('💾 Saved Google Workspace OAuth token to electron-store');
+      } else {
+        // Even without provider token, save session info for Google auth
+        // The Supabase access token can be used to get provider token via Supabase API
+        const googleToken = {
+          supabase_session: true,
+          expires_at: session.expires_at,
+          user_id: session.user?.id,
+          saved_at: Date.now(),
+        };
+        this.store.set('google_workspace_token', googleToken);
+        console.log('💾 Saved Google Workspace session info to electron-store (provider token will be retrieved via Supabase)');
+      }
+    }
   }
 
   /**
@@ -103,6 +144,7 @@ export class AuthService {
         return null;
       }
 
+      // Save refreshed session (this will also update google_workspace_token if it's Google auth)
       this.saveSession(data.session);
       return data.session;
     }
@@ -144,7 +186,7 @@ export class AuthService {
   /**
    * Sign in with OAuth provider
    */
-  async signInWithOAuth(provider: 'google' | 'github'): Promise<{ success: boolean; error?: string }> {
+  async signInWithOAuth(provider: 'google' | 'github', scopes?: string): Promise<{ success: boolean; error?: string }> {
     const supabase = this.getSupabase();
     if (!supabase) {
       return { success: false, error: 'Supabase not initialized. Check environment variables.' };
@@ -152,12 +194,19 @@ export class AuthService {
 
     try {
       // Use custom redirect URL for Electron
+      const options: any = {
+        skipBrowserRedirect: false,
+        redirectTo: 'egdesk://auth/callback',
+      };
+
+      // Add custom scopes if provided
+      if (scopes) {
+        options.scopes = scopes;
+      }
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: {
-          skipBrowserRedirect: false,
-          redirectTo: 'egdesk://auth/callback',
-        },
+        options,
       });
 
       if (error) {
@@ -197,6 +246,65 @@ export class AuthService {
       },
       title: 'Sign In',
       autoHideMenuBar: true,
+    });
+
+    // Listen for navigation to detect OAuth callback
+    this.oauthWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+      console.log('OAuth window navigating to:', navigationUrl);
+      
+      if (navigationUrl.startsWith('egdesk://auth/callback')) {
+        event.preventDefault();
+        console.log('Intercepted OAuth callback, handling and closing window...');
+        // Close window immediately
+        this.closeOAuthWindow();
+        // Handle callback (protocol handler will also catch it)
+        this.handleOAuthCallback(navigationUrl).then((result) => {
+          console.log('OAuth callback handled:', result);
+        });
+      }
+    });
+
+    // Also listen for redirects that don't trigger will-navigate
+    this.oauthWindow.webContents.on('did-navigate', (event, navigationUrl) => {
+      console.log('OAuth window navigated to:', navigationUrl);
+      
+      if (navigationUrl.startsWith('egdesk://auth/callback')) {
+        console.log('Detected OAuth callback in did-navigate, handling and closing window...');
+        // Close window immediately
+        this.closeOAuthWindow();
+        // Handle callback (protocol handler will also catch it)
+        this.handleOAuthCallback(navigationUrl).then((result) => {
+          console.log('OAuth callback handled:', result);
+        });
+      }
+    });
+
+    // Listen for page title updates (Google shows "approved" in title)
+    this.oauthWindow.webContents.on('page-title-updated', async (event, title) => {
+      console.log('OAuth window title updated:', title);
+      
+      // Check if we're on a callback page by checking the URL
+      const currentUrl = this.oauthWindow?.webContents.getURL();
+      if (currentUrl && currentUrl.includes('egdesk://auth/callback')) {
+        console.log('Detected callback in title update, handling and closing window...');
+        // Close window immediately
+        this.closeOAuthWindow();
+        // Handle callback (protocol handler will also catch it)
+        const result = await this.handleOAuthCallback(currentUrl);
+        console.log('OAuth callback handled:', result);
+      } else if (title.toLowerCase().includes('approved') || title.toLowerCase().includes('success')) {
+        // If title shows "approved" but URL hasn't changed yet, check URL after a short delay
+        setTimeout(() => {
+          const url = this.oauthWindow?.webContents.getURL();
+          if (url && url.includes('egdesk://auth/callback')) {
+            console.log('Detected callback after title update, handling and closing window...');
+            this.closeOAuthWindow();
+            this.handleOAuthCallback(url).then((result) => {
+              console.log('OAuth callback handled:', result);
+            });
+          }
+        }, 500);
+      }
     });
 
     // Load the OAuth URL
@@ -258,6 +366,15 @@ export class AuthService {
 
       if (data.session) {
         console.log('✅ Session established from implicit flow');
+        
+        // Extract provider token from URL if available (for Google OAuth)
+        const providerToken = hashParams.get('provider_token') || accessToken;
+        if (providerToken && providerToken !== accessToken) {
+          // Store provider token in session metadata
+          (data.session as any).provider_token = providerToken;
+          (data.session as any).provider_refresh_token = hashParams.get('provider_refresh_token') || refreshToken;
+        }
+        
         this.saveSession(data.session);
         
         // Close the OAuth window after successful auth
@@ -285,6 +402,18 @@ export class AuthService {
 
       if (data.session) {
         console.log('✅ Session established from PKCE flow');
+        
+        // Try to get provider token from user's identity
+        // Supabase stores provider tokens in user.identities
+        if (data.user?.identities && data.user.identities.length > 0) {
+          const googleIdentity = data.user.identities.find((id: any) => id.provider === 'google');
+          if (googleIdentity) {
+            // Provider token might be in identity metadata
+            (data.session as any).provider_token = googleIdentity.identity_data?.access_token;
+            (data.session as any).provider_refresh_token = googleIdentity.identity_data?.refresh_token;
+          }
+        }
+        
         this.saveSession(data.session);
         
         // Close the OAuth window after successful auth
@@ -319,7 +448,80 @@ export class AuthService {
     }
 
     this.clearSession();
+    // Also clear Google Workspace token
+    this.store.delete('google_workspace_token');
     return { success: true };
+  }
+
+  /**
+   * Get Google Workspace OAuth token from store
+   * Automatically refreshes if expired by checking Supabase session
+   */
+  async getGoogleWorkspaceToken(): Promise<{ access_token?: string; refresh_token?: string; expires_at?: number; scopes?: string[] } | null> {
+    const token = this.store.get('google_workspace_token') as any;
+    
+    if (!token) {
+      return null;
+    }
+
+    // Check if token is expired
+    const isExpired = token.expires_at && token.expires_at * 1000 < Date.now();
+    
+    if (isExpired) {
+      console.log('🔄 Google OAuth token expired, attempting to refresh via Supabase session...');
+      
+      try {
+        // Always try to get fresh token from Supabase session (even if not marked as supabase_session)
+        const supabase = this.getSupabase();
+        if (supabase) {
+          // Get current session (Supabase auto-refreshes if needed)
+          const { data: { session }, error } = await supabase.auth.getSession();
+          
+          if (!error && session) {
+            // Check if this is a Google auth session
+            const isGoogleAuth = 
+              session.user?.app_metadata?.provider === 'google' ||
+              session.user?.identities?.some((id: any) => id.provider === 'google');
+            
+            if (isGoogleAuth) {
+              // Try to get provider token from various sources
+              const providerToken = (session as any).provider_token || 
+                                   session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.access_token;
+              
+              if (providerToken) {
+                // Update token with new provider token from refreshed session
+                const updatedToken = {
+                  ...token,
+                  access_token: providerToken,
+                  refresh_token: (session as any).provider_refresh_token || 
+                                session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token || 
+                                token.refresh_token,
+                  expires_at: session.expires_at,
+                  scopes: (session as any).provider_scopes || token.scopes || [],
+                  saved_at: Date.now(),
+                };
+                this.store.set('google_workspace_token', updatedToken);
+                console.log('✅ Google OAuth token refreshed via Supabase session');
+                return updatedToken;
+              } else {
+                console.log('⚠️ Supabase session exists but no provider token found');
+              }
+            }
+          } else if (error) {
+            console.error('❌ Error getting Supabase session for refresh:', error);
+          }
+        }
+        
+        // If refresh didn't work, return the token anyway (might still work)
+        console.log('⚠️ Could not refresh Google OAuth token, returning existing token');
+        return token;
+      } catch (error) {
+        console.error('❌ Error refreshing Google OAuth token:', error);
+        return token; // Return expired token anyway
+      }
+    }
+
+    return token;
   }
 
   /**
@@ -347,8 +549,8 @@ export class AuthService {
     });
 
     // Sign in with Google
-    ipcMain.handle('auth:sign-in-google', async () => {
-      return await this.signInWithOAuth('google');
+    ipcMain.handle('auth:sign-in-google', async (_, scopes?: string) => {
+      return await this.signInWithOAuth('google', scopes);
     });
 
     // Sign in with GitHub
@@ -364,6 +566,74 @@ export class AuthService {
     // Handle OAuth callback
     ipcMain.handle('auth:handle-callback', async (_, url: string) => {
       return await this.handleOAuthCallback(url);
+    });
+
+    // Save session from renderer (for Supabase direct auth)
+    ipcMain.handle('auth:save-session', async (_, session: Session) => {
+      try {
+        this.saveSession(session);
+        return { success: true };
+      } catch (error: any) {
+        console.error('Error saving session:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    // Get Google Workspace token
+    ipcMain.handle('auth:get-google-workspace-token', async () => {
+      const token = await this.getGoogleWorkspaceToken();
+      return {
+        success: true,
+        token,
+      };
+    });
+
+    // Call Supabase Edge Function (from main process to avoid CORS)
+    ipcMain.handle('auth:call-edge-function', async (_, { url, method = 'POST', body, headers = {} }) => {
+      try {
+        const { session } = await this.getSession();
+        if (!session) {
+          return {
+            success: false,
+            error: 'No session found. Please sign in first.',
+          };
+        }
+
+        // Add user's JWT token to headers
+        const requestHeaders = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          ...headers,
+        };
+
+        const response = await fetch(url, {
+          method,
+          headers: requestHeaders,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        return {
+          success: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          data,
+          error: !response.ok ? (data.error || data.details?.message || response.statusText) : null,
+        };
+      } catch (error: any) {
+        console.error('Error calling edge function:', error);
+        return {
+          success: false,
+          error: error.message || 'Unknown error',
+        };
+      }
     });
 
     console.log('✅ Auth service handlers registered');

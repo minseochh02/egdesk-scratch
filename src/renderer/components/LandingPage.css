@@ -208,6 +208,14 @@
   background: linear-gradient(90deg, #00bcd4, #0097a7);
 }
 
+.egdesk-landing-workspace-card:hover {
+  border-color: #667eea;
+}
+
+.egdesk-landing-workspace-card:hover::before {
+  background: linear-gradient(90deg, #667eea, #764ba2);
+}
+
 .egdesk-landing-card-icon {
   width: 80px;
   height: 80px;
@@ -218,6 +226,10 @@
   margin-bottom: 24px;
   font-size: 32px;
   color: #ffffff;
+}
+
+.egdesk-landing-card-icon svg {
+  color: #ffffff !important;
 }
 
 .egdesk-landing-desktop-card .egdesk-landing-card-icon {
@@ -254,6 +266,10 @@
 
 .egdesk-landing-chat-card .egdesk-landing-chat-icon {
   background: linear-gradient(135deg, #00bcd4, #0097a7);
+}
+
+.egdesk-landing-workspace-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #667eea, #764ba2);
 }
 
 .egdesk-landing-card-title {
@@ -328,6 +344,11 @@
 .egdesk-landing-chat-card:hover .egdesk-landing-feature-tag {
   background: #e0f7fa;
   color: #00bcd4;
+}
+
+.egdesk-landing-workspace-card:hover .egdesk-landing-feature-tag {
+  background: #f0e6ff;
+  color: #667eea;
 }
 
 /* Additional Options */

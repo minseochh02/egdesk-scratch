@@ -2,6 +2,7 @@ import type {
   AIServiceAPI,
   OllamaAPI,
   WebUtilitiesAPI,
+  WorkspaceAPI,
   InstagramAPI,
   YouTubeAPI,
   FacebookAPI,
@@ -62,6 +63,7 @@ export interface IElectronAPI {
   };
 
   web: WebUtilitiesAPI;
+  workspace: WorkspaceAPI;
   wordpress: {
     saveConnection(
       connection: any,
@@ -623,10 +625,35 @@ export interface IElectronAPI {
       user: any | null;
       error?: string;
     }>;
-    signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+    signInWithGoogle: (scopes?: string) => Promise<{ success: boolean; error?: string }>;
     signInWithGithub: () => Promise<{ success: boolean; error?: string }>;
     signOut: () => Promise<{ success: boolean; error?: string }>;
     handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
+    getGoogleWorkspaceToken: () => Promise<{
+      success: boolean;
+      token: {
+        access_token?: string;
+        refresh_token?: string;
+        expires_at?: number;
+        scopes?: string[];
+        saved_at?: number;
+        supabase_session?: boolean;
+        user_id?: string;
+      } | null;
+    }>;
+    saveSession: (session: any) => Promise<{ success: boolean; error?: string }>;
+    callEdgeFunction: (options: {
+      url: string;
+      method?: string;
+      body?: any;
+      headers?: Record<string, string>;
+    }) => Promise<{
+      success: boolean;
+      status?: number;
+      statusText?: string;
+      data?: any;
+      error?: string;
+    }>;
     onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => () => void;
   };
 
