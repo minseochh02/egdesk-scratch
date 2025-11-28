@@ -453,6 +453,22 @@ export interface IElectronAPI {
     getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
     getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
     delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    getByScriptId: (scriptId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    updateScriptContent: (scriptId: string, scriptContent: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  };
+  
+  appsScriptTools: {
+    listFiles: (scriptId: string) => Promise<{ success: boolean; data?: Array<{name: string; type: string; hasSource: boolean}>; error?: string }>;
+    readFile: (scriptId: string, fileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>;
+    renameFile: (scriptId: string, oldFileName: string, newFileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  };
+    create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+    get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 
@@ -634,7 +650,9 @@ export interface IElectronAPI {
     }>;
     signInWithGoogle: (scopes?: string) => Promise<{ success: boolean; error?: string }>;
     signInWithGithub: () => Promise<{ success: boolean; error?: string }>;
-    signOut: () => Promise<{ success: boolean; error?: string }>;
+    signOut: (userId?: string) => Promise<{ success: boolean; error?: string }>;
+    getAllAccounts: () => Promise<{ success: boolean; accounts?: Array<{ userId: string; email: string; user: any }>; error?: string }>;
+    switchAccount: (userId: string) => Promise<{ success: boolean; session?: any; error?: string }>;
     handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
     getGoogleWorkspaceToken: () => Promise<{
       success: boolean;

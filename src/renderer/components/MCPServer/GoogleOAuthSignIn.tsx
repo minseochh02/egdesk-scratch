@@ -31,6 +31,8 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [signingIn, setSigningIn] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableAccounts, setAvailableAccounts] = useState<Array<{ userId: string; email: string; user: User }>>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState<boolean>(false);
   const [config, setConfig] = useState<SupabaseConfig>({
     url: null,
     anonKey: null
@@ -58,16 +60,20 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
           
           setSupabase(client);
           
-          // Check for existing session
+          // Check for existing session but don't auto-sign in
+          // This allows users to choose which account to use
           const { data: { session: existingSession }, error: sessionError } = await client.auth.getSession();
           
           if (sessionError) {
             console.error('Error getting session:', sessionError);
             setError(sessionError.message);
           } else if (existingSession) {
+            // Store the existing session but don't auto-sign in
+            // User can choose to use this account or sign in with a different one
             setSession(existingSession);
             setUser(existingSession.user);
-            onSignInSuccess?.(existingSession.user, existingSession);
+            // Don't call onSignInSuccess automatically - let user choose
+            console.log('Found existing session for:', existingSession.user.email, '- user can choose to use it or sign in with different account');
           }
         } else {
           setError('Supabase configuration not found. Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env file.');
@@ -82,6 +88,27 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
 
     loadConfig();
   }, [onSignInSuccess]);
+
+  // Load available accounts
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        setLoadingAccounts(true);
+        const result = await window.electron.auth.getAllAccounts();
+        if (result.success && result.accounts) {
+          setAvailableAccounts(result.accounts);
+        }
+      } catch (err) {
+        console.error('Error loading accounts:', err);
+      } finally {
+        setLoadingAccounts(false);
+      }
+    };
+
+    if (supabase) {
+      loadAccounts();
+    }
+  }, [supabase]);
 
   // Check for OAuth callback in URL hash (fallback)
   useEffect(() => {
@@ -125,6 +152,13 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
         setSigningIn(false);
         setError(null);
         onSignInSuccess?.(newSession.user, newSession);
+        
+        // Reload accounts list after successful sign-in
+        window.electron.auth.getAllAccounts().then((result) => {
+          if (result.success && result.accounts) {
+            setAvailableAccounts(result.accounts);
+          }
+        });
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
@@ -235,25 +269,62 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
     }
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (userId?: string) => {
     if (!supabase) {
       return;
     }
 
     try {
       setSigningIn(true);
-      const { error: signOutError } = await supabase.auth.signOut();
       
-      if (signOutError) {
-        throw signOutError;
+      // Sign out specific account or current session
+      const result = await window.electron.auth.signOut(userId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to sign out');
       }
       
-      setSession(null);
-      setUser(null);
+      // Reload accounts list
+      const accountsResult = await window.electron.auth.getAllAccounts();
+      if (accountsResult.success && accountsResult.accounts) {
+        setAvailableAccounts(accountsResult.accounts);
+      }
+      
+      // If signing out current session, clear local state
+      if (!userId) {
+        setSession(null);
+        setUser(null);
+      }
+      
       setSigningIn(false);
     } catch (err) {
       console.error('Error signing out:', err);
       setError(err instanceof Error ? err.message : 'Failed to sign out');
+      setSigningIn(false);
+    }
+  };
+
+  const handleSwitchAccount = async (userId: string) => {
+    try {
+      setSigningIn(true);
+      setError(null);
+      
+      const result = await window.electron.auth.switchAccount(userId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to switch account');
+      }
+      
+      if (result.session) {
+        setSession(result.session);
+        setUser(result.session.user);
+        onSignInSuccess?.(result.session.user, result.session);
+      }
+      
+      setSigningIn(false);
+    } catch (err) {
+      console.error('Error switching account:', err);
+      setError(err instanceof Error ? err.message : 'Failed to switch account');
       setSigningIn(false);
     }
   };
@@ -307,7 +378,7 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
           </div>
           <button
             className="google-oauth-sign-out-btn"
-            onClick={handleSignOut}
+            onClick={() => handleSignOut()}
             disabled={signingIn}
           >
             <FontAwesomeIcon icon={faTimes} />
@@ -322,6 +393,43 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
               <span>{error}</span>
             </div>
           )}
+          
+          {/* Show available accounts if any */}
+          {availableAccounts.length > 0 && (
+            <div className="google-oauth-accounts-list">
+              <p className="google-oauth-accounts-title">Available Accounts:</p>
+              {availableAccounts.map((account) => (
+                <div key={account.userId} className="google-oauth-account-item">
+                  <div className="google-oauth-account-info">
+                    <span className="google-oauth-account-email">{account.email}</span>
+                    {session?.user?.id === account.userId && (
+                      <span className="google-oauth-account-active">(Active)</span>
+                    )}
+                  </div>
+                  <div className="google-oauth-account-actions">
+                    {session?.user?.id !== account.userId ? (
+                      <button
+                        className="google-oauth-switch-btn"
+                        onClick={() => handleSwitchAccount(account.userId)}
+                        disabled={signingIn}
+                      >
+                        Use This Account
+                      </button>
+                    ) : null}
+                    <button
+                      className="google-oauth-remove-btn"
+                      onClick={() => handleSignOut(account.userId)}
+                      disabled={signingIn}
+                      title="Remove this account"
+                    >
+                      <FontAwesomeIcon icon={faTimes} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
           <button
             className="google-oauth-sign-in-btn"
             onClick={handleSignInWithGoogle}
@@ -335,7 +443,7 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
             ) : (
               <>
                 <span className="google-icon">G</span>
-                <span>Sign in with Google</span>
+                <span>Sign in with Google {availableAccounts.length > 0 ? '(Add Account)' : ''}</span>
               </>
             )}
           </button>

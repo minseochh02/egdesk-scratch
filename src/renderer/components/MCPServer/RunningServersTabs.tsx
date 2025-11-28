@@ -172,6 +172,13 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
               scopesType: typeof token.scopes
             });
             
+            // First check if token has access_token (required for Google API calls)
+            if (!token.access_token) {
+              console.log('⚠️ Token exists but no access_token - cannot use for API calls');
+              setHasValidOAuthToken(false);
+              return;
+            }
+            
             // If token has scopes, verify they match
             if (token.scopes) {
               let tokenScopes: string[] = [];
@@ -193,21 +200,23 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                 return;
               } else {
                 console.log('⚠️ Token exists but missing some required scopes');
-                // Still allow access since user is authenticated, but log warning
+                // Still allow access since user has access_token, but log warning
                 setHasValidOAuthToken(true);
                 return;
               }
             } else {
-              // Token exists but no scopes - still allow since user authenticated
-              console.log('⚠️ Token exists but no scopes stored - allowing access');
+              // Token exists with access_token but no scopes - allow access
+              console.log('⚠️ Token exists with access_token but no scopes stored - allowing access');
               setHasValidOAuthToken(true);
               return;
             }
           } else {
             // No token in store, but user is authenticated via Supabase
             // This happens when using GoogleOAuthSignIn component directly
-            console.log('✅ Google authenticated via Supabase (token may not be in store yet)');
-            setHasValidOAuthToken(true);
+            // However, we need an actual Google OAuth token for API calls, not just Supabase session
+            console.log('⚠️ Google authenticated via Supabase but no Google OAuth token found in store');
+            console.log('⚠️ User needs to sign in with Google to get OAuth token for API access');
+            setHasValidOAuthToken(false);
             return;
           }
         }
@@ -220,15 +229,9 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
       if (tokenResult.success && tokenResult.token) {
         const token = tokenResult.token;
         
-        // Check if token has access_token OR if it's a Supabase session
-        if (token.access_token || token.supabase_session) {
-          console.log('✅ Token found in electron-store');
-          
-          // If it's a Supabase session flag, allow access
-          if (token.supabase_session) {
-            setHasValidOAuthToken(true);
-            return;
-          }
+        // Check if token has access_token (required for Google API calls)
+        if (token.access_token) {
+          console.log('✅ Google OAuth token found in electron-store');
           
           // Check scopes if available
           if (token.scopes) {
@@ -434,6 +437,31 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
           throw new Error(copyResult.error || 'Failed to create spreadsheet copy');
         }
         
+        // Check for Apps Script error and prompt user
+        if (copyResult.data?.appsScriptError) {
+          const error = copyResult.data.appsScriptError;
+          console.warn('⚠️ Apps Script copy failed:', error);
+          
+          if (error.code === 'APPS_SCRIPT_API_DISABLED') {
+            const shouldOpenSettings = confirm(
+              `⚠️ ${error.message}\n\n` +
+              `This is required to create the server logic. You need to enable it in your Google Account settings.\n\n` +
+              `Click OK to open the settings page:\n${error.url}\n\n` +
+              `After enabling it, try creating the server again.`
+            );
+            
+            if (shouldOpenSettings && error.url) {
+              window.open(error.url, '_blank');
+            }
+            
+            // We don't save the incomplete copy to the database so user can retry
+            return;
+          } else {
+            // Show generic warning but proceed
+            alert(`⚠️ Warning: Apps Script could not be copied.\n\nError: ${error.message}\n\nThe server may not function correctly without its script logic.`);
+          }
+        }
+        
         console.log('✅ Spreadsheet copy created:', copyResult.data);
         
         if (!copyResult.data) {
@@ -449,6 +477,9 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
             spreadsheetUrl: copyResult.data.spreadsheetUrl,
             scriptId: copyResult.data.scriptId,
             scriptContent: data.content.appsScript || undefined,
+            metadata: {
+              serverName: template.name,
+            },
           });
           
           if (saveResult.success) {

@@ -261,6 +261,12 @@ export class GoogleWorkspaceService {
     spreadsheetId: string;
     spreadsheetUrl: string;
     scriptId?: string;
+    appsScriptError?: {
+      code: string;
+      message: string;
+      action?: string;
+      url?: string;
+    };
   }> {
     try {
       const auth = await this.initializeOAuthClient();
@@ -317,18 +323,39 @@ export class GoogleWorkspaceService {
 
       // Step 6: Add Apps Script if present
       let scriptId: string | undefined;
+      let appsScriptError: { code: string; message: string; action?: string; url?: string } | undefined;
+
       if (templateContent.appsScript && templateContent.appsScript.files) {
+        console.log('📜 Starting Apps Script creation...', {
+          platform: process.platform,
+          spreadsheetId: spreadsheetId,
+          hasFiles: !!templateContent.appsScript.files,
+          filesCount: templateContent.appsScript.files.length,
+          scriptId: templateContent.appsScript.scriptId,
+        });
         try {
           // Create Apps Script project
+          console.log('📜 Creating Apps Script project...', {
+            title: templateContent.appsScript.scriptId || 'Copied Script',
+            parentId: spreadsheetId,
+          });
           const createScriptResponse = await script.projects.create({
             requestBody: {
               title: templateContent.appsScript.scriptId || 'Copied Script',
               parentId: spreadsheetId,
             },
           });
+          
+          console.log('📜 Apps Script project create response:', {
+            hasScriptId: !!createScriptResponse.data?.scriptId,
+            scriptId: createScriptResponse.data?.scriptId,
+            status: createScriptResponse.status,
+            statusText: createScriptResponse.statusText,
+          });
 
           if (createScriptResponse.data.scriptId) {
             scriptId = createScriptResponse.data.scriptId;
+            console.log('📜 Apps Script project created successfully:', scriptId);
 
             // Update script content with all files from template
             const scriptFiles = templateContent.appsScript.files.map((file: any) => ({
@@ -338,6 +365,12 @@ export class GoogleWorkspaceService {
               functionSet: file.functionSet,
             }));
 
+            console.log('📜 Updating Apps Script content...', {
+              scriptId: scriptId,
+              filesCount: scriptFiles.length,
+              fileNames: scriptFiles.map((f: any) => f.name),
+            });
+
             await script.projects.updateContent({
               scriptId: scriptId,
               requestBody: {
@@ -346,9 +379,41 @@ export class GoogleWorkspaceService {
             });
 
             console.log(`✅ Copied Apps Script with ${scriptFiles.length} files`);
+          } else {
+            console.warn('⚠️ Apps Script project created but no scriptId returned:', createScriptResponse.data);
           }
         } catch (scriptError: any) {
-          console.warn('⚠️ Could not copy Apps Script:', scriptError.message);
+          // Check for the specific "User has not enabled the Apps Script API" error
+          const errorMessage = scriptError.message || '';
+          if (errorMessage.includes('User has not enabled the Apps Script API')) {
+            console.warn('⚠️ Apps Script API disabled by user');
+            appsScriptError = {
+              code: 'APPS_SCRIPT_API_DISABLED',
+              message: 'Google Apps Script API is disabled for your account.',
+              action: 'Enable Google Apps Script API',
+              url: 'https://script.google.com/home/usersettings',
+            };
+          } else {
+            // Log full error details for debugging (especially on Windows)
+            console.error('❌ Failed to copy Apps Script:', {
+              message: scriptError.message,
+              code: scriptError.code,
+              status: scriptError.response?.status,
+              statusText: scriptError.response?.statusText,
+              data: scriptError.response?.data,
+              errors: scriptError.errors,
+              stack: scriptError.stack,
+              platform: process.platform,
+              spreadsheetId: spreadsheetId,
+              hasFiles: !!templateContent.appsScript?.files,
+              filesCount: templateContent.appsScript?.files?.length || 0,
+            });
+            appsScriptError = {
+              code: scriptError.code || 'UNKNOWN_ERROR',
+              message: scriptError.message || 'Failed to copy Apps Script',
+            };
+          }
+          console.warn('⚠️ Continuing without Apps Script - it\'s optional');
           // Continue without Apps Script - it's optional
         }
       }
@@ -359,6 +424,7 @@ export class GoogleWorkspaceService {
         spreadsheetId,
         spreadsheetUrl,
         scriptId,
+        appsScriptError,
       };
     } catch (error: any) {
       console.error('Error copying template content:', error);
