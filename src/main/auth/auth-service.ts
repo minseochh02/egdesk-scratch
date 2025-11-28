@@ -132,21 +132,45 @@ export class AuthService {
       return null;
     }
 
-    // Check if session is expired
-    if (storedSession.expires_at && storedSession.expires_at < Date.now() / 1000) {
-      // Try to refresh the session
-      const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: storedSession.refresh_token,
+    const now = Date.now() / 1000;
+    const buffer = 5 * 60; // 5 minutes buffer to refresh before actual expiration
+    
+    // Check if session is expired or about to expire
+    if (!storedSession.expires_at || storedSession.expires_at < now + buffer) {
+      console.log('🔄 Session expired or about to expire, refreshing...', {
+        expiresAt: storedSession.expires_at,
+        now: now,
+        expired: storedSession.expires_at ? storedSession.expires_at < now : 'no expiry',
       });
+      
+      // Try to refresh the session
+      try {
+        const { data, error } = await supabase.auth.refreshSession({
+          refresh_token: storedSession.refresh_token,
+        });
 
-      if (error || !data.session) {
+        if (error) {
+          console.error('❌ Failed to refresh session:', error);
+          // If refresh fails, clear session
+          this.clearSession();
+          return null;
+        }
+
+        if (!data.session) {
+          console.error('❌ Refresh returned no session');
+          this.clearSession();
+          return null;
+        }
+
+        console.log('✅ Session refreshed successfully');
+        // Save refreshed session (this will also update google_workspace_token if it's Google auth)
+        this.saveSession(data.session);
+        return data.session;
+      } catch (error) {
+        console.error('❌ Exception during session refresh:', error);
         this.clearSession();
         return null;
       }
-
-      // Save refreshed session (this will also update google_workspace_token if it's Google auth)
-      this.saveSession(data.session);
-      return data.session;
     }
 
     // Session is still valid
@@ -182,12 +206,13 @@ export class AuthService {
       const expiresAt = this.currentSession.expires_at || 0;
       const buffer = 5 * 60; // 5 minutes buffer
       
+      // If session expires within the buffer time, refresh it
       if (expiresAt > now + buffer) {
         // Session is still valid, return it
-      return { session: this.currentSession, user: this.currentSession.user };
+        return { session: this.currentSession, user: this.currentSession.user };
       } else {
         // Session is expired or about to expire, clear cache and reload
-        console.log('🔄 Cached session expired, refreshing...');
+        console.log('🔄 Cached session expired or about to expire, refreshing...');
         this.currentSession = null;
       }
     }
@@ -485,53 +510,50 @@ export class AuthService {
       console.log('🔄 Google OAuth token expired, attempting to refresh via Supabase session...');
       
       try {
-        // Always try to get fresh token from Supabase session (even if not marked as supabase_session)
-        const supabase = this.getSupabase();
-        if (supabase) {
-          // Get current session (Supabase auto-refreshes if needed)
-          const { data: { session }, error } = await supabase.auth.getSession();
-          
-          if (!error && session) {
-            // Check if this is a Google auth session
-            const isGoogleAuth = 
-              session.user?.app_metadata?.provider === 'google' ||
-              session.user?.identities?.some((id: any) => id.provider === 'google');
-            
-            if (isGoogleAuth) {
-              // Try to get provider token from various sources
-              const providerToken = (session as any).provider_token || 
-                                   session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.access_token;
-              
-              if (providerToken) {
-                // Update token with new provider token from refreshed session
-                const updatedToken = {
-                  ...token,
-                  access_token: providerToken,
-                  refresh_token: (session as any).provider_refresh_token || 
-                                session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token || 
-                                token.refresh_token,
-                  expires_at: session.expires_at,
-                  scopes: (session as any).provider_scopes || token.scopes || [],
-                  saved_at: Date.now(),
-                };
-                this.store.set('google_workspace_token', updatedToken);
-                console.log('✅ Google OAuth token refreshed via Supabase session');
-                return updatedToken;
-              } else {
-                console.log('⚠️ Supabase session exists but no provider token found');
-              }
-            }
-          } else if (error) {
-            console.error('❌ Error getting Supabase session for refresh:', error);
-          }
+        // Get a fresh session (this will auto-refresh if needed)
+        const { session, user } = await this.getSession();
+        
+        if (!session) {
+          console.error('❌ No Supabase session available for Google token refresh');
+          return null; // Can't refresh without a session
         }
         
-        // If refresh didn't work, return the token anyway (might still work)
-        console.log('⚠️ Could not refresh Google OAuth token, returning existing token');
-        return token;
+        // Check if this is a Google auth session
+        const isGoogleAuth = 
+          session.user?.app_metadata?.provider === 'google' ||
+          session.user?.identities?.some((id: any) => id.provider === 'google');
+        
+        if (!isGoogleAuth) {
+          console.error('❌ Current session is not a Google auth session');
+          return null;
+        }
+        
+        // Try to get provider token from various sources
+        const providerToken = (session as any).provider_token || 
+                             session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.access_token;
+        
+        if (!providerToken) {
+          console.error('❌ No provider token found in refreshed session');
+          return null;
+        }
+        
+        // Update token with new provider token from refreshed session
+        const updatedToken = {
+          ...token,
+          access_token: providerToken,
+          refresh_token: (session as any).provider_refresh_token || 
+                        session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token || 
+                        token.refresh_token,
+          expires_at: session.expires_at,
+          scopes: (session as any).provider_scopes || token.scopes || [],
+          saved_at: Date.now(),
+        };
+        this.store.set('google_workspace_token', updatedToken);
+        console.log('✅ Google OAuth token refreshed via Supabase session');
+        return updatedToken;
       } catch (error) {
         console.error('❌ Error refreshing Google OAuth token:', error);
-        return token; // Return expired token anyway
+        return null; // Return null instead of expired token
       }
     }
 

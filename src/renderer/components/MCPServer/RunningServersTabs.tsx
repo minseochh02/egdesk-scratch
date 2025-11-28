@@ -4,9 +4,10 @@ import {
   faServer,
   faCloud,
   faSpinner,
-  faCopy
+  faCopy,
+  faCode
 } from '../../utils/fontAwesomeIcons';
-import { faPlus, faSync } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faSync, faTrash } from '@fortawesome/free-solid-svg-icons';
 import RunningServersSection, { 
   RunningMCPServer,
   AccessLevelConfig 
@@ -87,6 +88,9 @@ interface RunningServersTabsProps {
   cloudLoading?: boolean;
   cloudError?: string | null;
   loadCloudServers?: (isManualRefresh?: boolean) => Promise<void>;
+  
+  // Script editor navigation
+  onOpenScriptEditor?: (copyId?: string) => void;
 }
 
 type TabType = 'local' | 'cloud';
@@ -123,13 +127,15 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   cloudServers = [],
   cloudLoading = false,
   cloudError = null,
-  loadCloudServers
+  loadCloudServers,
+  onOpenScriptEditor
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('local');
   const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
   const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
   const [existingCopies, setExistingCopies] = useState<Map<string, string>>(new Map()); // templateId -> copyId
   const [loadingCopies, setLoadingCopies] = useState<boolean>(true);
+  const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
 
   // Check if OAuth token exists and has required scopes
   const checkOAuthToken = async () => {
@@ -258,21 +264,45 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     }
   };
 
-  // Load existing copies from electron-store
+  // Load existing copies from electron-store and database
   const loadExistingCopies = async () => {
     try {
       setLoadingCopies(true);
+      
+      // Load from electron-store (legacy) - merge with database
       const copies = await window.electron.store.get('cloud_mcp_server_copies');
+      const copiesMap = new Map<string, string>();
       if (copies && Array.isArray(copies)) {
-        const copiesMap = new Map<string, string>();
         copies.forEach((copy: { templateId: string; copyId: string }) => {
           if (copy.templateId && copy.copyId) {
             copiesMap.set(copy.templateId, copy.copyId);
           }
         });
-        setExistingCopies(copiesMap);
-        console.log('📦 Loaded existing copies:', copiesMap);
+        console.log('📦 Loaded existing copies from store:', copiesMap);
       }
+      
+      // Load from database - this is the primary source now
+      const dbResult = await window.electron.templateCopies.getAll(100, 0);
+      if (dbResult.success && dbResult.data) {
+        const scriptCopiesMap = new Map<string, string>();
+        dbResult.data.forEach((copy: any) => {
+          // Add all copies to existingCopies map (templateId -> copyId)
+          if (copy.templateId && copy.id) {
+            copiesMap.set(copy.templateId, copy.id);
+          }
+          
+          // Check if copy has script content
+          if (copy.scriptContent && copy.scriptContent.files && copy.scriptContent.files.length > 0) {
+            scriptCopiesMap.set(copy.templateId, copy.id);
+          }
+        });
+        setCopiesWithScript(scriptCopiesMap);
+        console.log('📦 Loaded copies with script content:', scriptCopiesMap);
+      }
+      
+      // Update existingCopies with all copies (from both store and database)
+      setExistingCopies(copiesMap);
+      console.log('📦 Total existing copies loaded:', copiesMap.size);
     } catch (error) {
       console.error('Error loading existing copies:', error);
     } finally {
@@ -410,6 +440,27 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
           throw new Error('No data returned from copy operation');
         }
         
+        // Save template copy to database
+        try {
+          const saveResult = await window.electron.templateCopies.create({
+            templateId: templateId,
+            templateScriptId: scriptID || undefined,
+            spreadsheetId: copyResult.data.spreadsheetId,
+            spreadsheetUrl: copyResult.data.spreadsheetUrl,
+            scriptId: copyResult.data.scriptId,
+            scriptContent: data.content.appsScript || undefined,
+          });
+          
+          if (saveResult.success) {
+            console.log('✅ Template copy saved to database:', saveResult.data);
+          } else {
+            console.warn('⚠️ Failed to save template copy to database:', saveResult.error);
+          }
+        } catch (saveError) {
+          console.error('❌ Error saving template copy to database:', saveError);
+          // Don't throw - continue even if save fails
+        }
+        
         // Show success message with link
         const message = `Template copied successfully!\n\n` +
           `Title: ${data.content.properties.title}\n` +
@@ -428,6 +479,30 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     } catch (error) {
       console.error('❌ Error creating template copy:', error);
       alert(`Failed to create template copy: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Handle delete template copy
+  const handleDeleteTemplateCopy = async (copyId: string, templateId: string) => {
+    if (!confirm('Are you sure you want to delete this template copy? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      console.log('🗑️ Deleting template copy:', copyId);
+      
+      const result = await window.electron.templateCopies.delete(copyId);
+      
+      if (result.success) {
+        console.log('✅ Template copy deleted successfully');
+        // Reload copies to update UI
+        await loadExistingCopies();
+      } else {
+        throw new Error(result.error || 'Failed to delete template copy');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting template copy:', error);
+      alert(`Failed to delete template copy: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -566,46 +641,6 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
               <div className="section-header">
                 <h2>Cloud Running MCP Servers</h2>
                 <p>Monitor and manage your cloud-hosted MCP server connections</p>
-                {hasValidOAuthToken && (
-                  <button
-                    onClick={async () => {
-                      // Test button - use first template if available
-                      if (cloudServers.length > 0) {
-                        const template = cloudServers[0];
-                        const extractSpreadsheetId = (url: string): string | null => {
-                          const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-                          return match ? match[1] : null;
-                        };
-                        const templateId = extractSpreadsheetId(template.address) || template.id || template.address;
-                        
-                        console.log('🧪 Test Edge Function - Template Details:', {
-                          templateName: template.name,
-                          templateAddress: template.address,
-                          extractedTemplateId: templateId,
-                          templateIdSource: extractSpreadsheetId(template.address) ? 'from URL' : (template.id ? 'from id' : 'from address'),
-                        });
-                        
-                        console.log('📤 Passing to Edge Function - Spreadsheet ID:', templateId);
-                        
-                        await handleCreateTemplateCopy(templateId, template);
-                      } else {
-                        alert('No templates available. Please wait for templates to load.');
-                      }
-                    }}
-                    style={{
-                      marginTop: '12px',
-                      padding: '8px 16px',
-                      background: '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                    }}
-                  >
-                    🧪 Test Edge Function (First Template)
-                  </button>
-                )}
               </div>
 
               {checkingOAuthToken && (
@@ -679,6 +714,8 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                         const templateId = extractSpreadsheetId(template.address) || template.id || template.address;
                         const hasCopy = existingCopies.has(templateId);
                         const copyId = existingCopies.get(templateId);
+                        const hasScriptContent = copiesWithScript.has(templateId);
+                        const scriptCopyId = copiesWithScript.get(templateId);
 
                         return (
                           <div key={template.id} className="cloud-template-card">
@@ -713,29 +750,51 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                                     </span>
                                   </div>
                                 </div>
-                                <div className="running-servers-card-metrics">
-                                  <div className="running-servers-metric">
+                                <div className="running-servers-card-metrics cloud-server-metrics">
+                                  <div className="running-servers-metric cloud-server-metric">
                                     <FontAwesomeIcon icon={faCloud} />
-                                    <span className="running-servers-metric-label">Template:</span>
-                                    <span className="running-servers-metric-value" style={{ 
-                                      fontSize: '12px', 
-                                      wordBreak: 'break-all',
-                                      maxWidth: '200px'
-                                    }}>
-                                      {template.address}
-                                    </span>
+                                    <div className="cloud-metric-content">
+                                      <span className="running-servers-metric-label">Template:</span>
+                                      <span className="running-servers-metric-value cloud-metric-value">
+                                        {template.address}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="running-servers-metric">
+                                  <div className="running-servers-metric cloud-server-metric">
                                     <FontAwesomeIcon icon={faCloud} />
-                                    <span className="running-servers-metric-label">Copy ID:</span>
-                                    <span className="running-servers-metric-value" style={{ 
-                                      fontSize: '12px', 
-                                      wordBreak: 'break-all',
-                                      maxWidth: '200px'
-                                    }}>
-                                      {copyId}
-                                    </span>
+                                    <div className="cloud-metric-content">
+                                      <span className="running-servers-metric-label">Copy ID:</span>
+                                      <span className="running-servers-metric-value cloud-metric-value">
+                                        {copyId}
+                                      </span>
+                                    </div>
                                   </div>
+                                </div>
+                                <div className="running-servers-card-actions">
+                                  {hasScriptContent && scriptCopyId && (
+                                    <button
+                                      className="view-script-button"
+                                      onClick={() => {
+                                        if (onOpenScriptEditor) {
+                                          onOpenScriptEditor(scriptCopyId);
+                                        }
+                                      }}
+                                      title="View script content in editor"
+                                    >
+                                      <FontAwesomeIcon icon={faCode} />
+                                      <span>View Script</span>
+                                    </button>
+                                  )}
+                                  {copyId && (
+                                    <button
+                                      className="delete-copy-button"
+                                      onClick={() => handleDeleteTemplateCopy(copyId, templateId)}
+                                      title="Delete this template copy (debug)"
+                                    >
+                                      <FontAwesomeIcon icon={faTrash} />
+                                      <span>Delete</span>
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             ) : (

@@ -11,6 +11,7 @@ import {
   CreateBusinessIdentitySnapshot,
   CreateBusinessIdentitySnsPlan,
 } from './business-identity';
+import { SQLiteTemplateCopiesManager } from './template-copies';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
 import { restartScheduledPostsExecutor } from '../scheduler/executor-instance';
@@ -30,6 +31,7 @@ export class SQLiteManager {
   private taskDb: Database.Database | null = null;
   private wordpressDb: Database.Database | null = null;
   private activityDb: Database.Database | null = null;
+  private cloudmcpDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -41,6 +43,7 @@ export class SQLiteManager {
   private scheduledPostsManager: SQLiteScheduledPostsManager | null = null;
   private businessIdentityManager: SQLiteBusinessIdentityManager | null = null;
   private activityManager: SQLiteActivityManager | null = null;
+  private templateCopiesManager: SQLiteTemplateCopiesManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -73,11 +76,13 @@ export class SQLiteManager {
       this.taskDb = result.taskDatabase!;
       this.wordpressDb = result.wordpressDatabase!;
       this.activityDb = result.activityDatabase!;
+      this.cloudmcpDb = result.cloudmcpDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
       this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
       this.activityManager = new SQLiteActivityManager(this.activityDb);
+      this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -97,7 +102,7 @@ export class SQLiteManager {
    * Check if SQLite is available and initialized
    */
   public isAvailable(): boolean {
-    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null && this.activityDb !== null;
+    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null && this.activityDb !== null && this.cloudmcpDb !== null;
   }
 
   /**
@@ -246,6 +251,14 @@ export class SQLiteManager {
       this.activityManager = new SQLiteActivityManager(this.activityDb!);
     }
     return this.activityManager;
+  }
+
+  public getTemplateCopiesManager(): SQLiteTemplateCopiesManager {
+    this.ensureInitialized();
+    if (!this.templateCopiesManager) {
+      this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb!);
+    }
+    return this.templateCopiesManager;
   }
 
   /**
@@ -509,6 +522,7 @@ export class SQLiteManager {
     this.registerScheduledPostsHandlers();
     this.registerBusinessIdentityHandlers();
     this.registerActivityHandlers();
+    this.registerTemplateCopiesHandlers();
   }
 
   /**
@@ -1336,6 +1350,79 @@ export class SQLiteManager {
       try {
         const logs = this.getActivityManager().getRecentActivities(limit, offset, filters);
         return { success: true, data: logs };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register template copies IPC handlers
+   */
+  private registerTemplateCopiesHandlers(): void {
+    // Create template copy
+    ipcMain.handle('sqlite-template-copies-create', async (event, copyData) => {
+      try {
+        const copy = this.getTemplateCopiesManager().createTemplateCopy(copyData);
+        return { success: true, data: copy };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get template copy by ID
+    ipcMain.handle('sqlite-template-copies-get', async (event, id) => {
+      try {
+        const copy = this.getTemplateCopiesManager().getTemplateCopy(id);
+        if (!copy) {
+          return { success: false, error: 'Template copy not found' };
+        }
+        return { success: true, data: copy };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get template copies by template ID
+    ipcMain.handle('sqlite-template-copies-get-by-template', async (event, templateId) => {
+      try {
+        const copies = this.getTemplateCopiesManager().getTemplateCopiesByTemplateId(templateId);
+        return { success: true, data: copies };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get all template copies
+    ipcMain.handle('sqlite-template-copies-get-all', async (event, limit, offset) => {
+      try {
+        const copies = this.getTemplateCopiesManager().getAllTemplateCopies(limit || 100, offset || 0);
+        return { success: true, data: copies };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete template copy
+    ipcMain.handle('sqlite-template-copies-delete', async (event, id) => {
+      try {
+        const deleted = this.getTemplateCopiesManager().deleteTemplateCopy(id);
+        return { success: deleted, data: { deleted } };
       } catch (error) {
         return {
           success: false,
