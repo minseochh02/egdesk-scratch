@@ -280,10 +280,11 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     }
   };
 
-  // Create template copy by calling Edge Function
-  const handleCreateTemplateCopy = async (templateId: string, template: RunningMCPServer) => {
-    try {
-      console.log('🚀 Creating template copy for:', templateId);
+        // Create template copy by calling Edge Function
+        const handleCreateTemplateCopy = async (templateId: string, template: RunningMCPServer) => {
+          try {
+            console.log('🚀 Creating template copy for:', templateId);
+            console.log('📋 Spreadsheet ID being sent to Edge Function:', templateId);
 
       // Get Supabase session token - need the user's JWT, not anon key
       const sessionResult = await window.electron.auth.getSession();
@@ -499,6 +500,16 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                           return match ? match[1] : null;
                         };
                         const templateId = extractSpreadsheetId(template.address) || template.id || template.address;
+                        
+                        console.log('🧪 Test Edge Function - Template Details:', {
+                          templateName: template.name,
+                          templateAddress: template.address,
+                          extractedTemplateId: templateId,
+                          templateIdSource: extractSpreadsheetId(template.address) ? 'from URL' : (template.id ? 'from id' : 'from address'),
+                        });
+                        
+                        console.log('📤 Passing to Edge Function - Spreadsheet ID:', templateId);
+                        
                         await handleCreateTemplateCopy(templateId, template);
                       } else {
                         alert('No templates available. Please wait for templates to load.');
