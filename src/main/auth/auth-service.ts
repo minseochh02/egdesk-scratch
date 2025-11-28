@@ -184,7 +184,7 @@ export class AuthService {
       
       if (expiresAt > now + buffer) {
         // Session is still valid, return it
-        return { session: this.currentSession, user: this.currentSession.user };
+      return { session: this.currentSession, user: this.currentSession.user };
       } else {
         // Session is expired or about to expire, clear cache and reload
         console.log('🔄 Cached session expired, refreshing...');
@@ -661,7 +661,6 @@ export class AuthService {
         });
 
         const responseText = await response.text();
-        console.log('📥 Response body (raw, first 500 chars):', responseText.substring(0, 500));
         
         let data;
         try {

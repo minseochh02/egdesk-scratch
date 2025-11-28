@@ -1165,6 +1165,13 @@ export interface WorkspaceAPI {
     functionName: string,
     parameters?: any[],
   ) => Promise<{ success: boolean; data?: any; error?: string }>;
+  copyTemplateContent: (
+    templateContent: any,
+  ) => Promise<{
+    success: boolean;
+    data?: { spreadsheetId: string; spreadsheetUrl: string; scriptId?: string };
+    error?: string;
+  }>;
 }
 
 
@@ -1973,6 +1980,8 @@ auth: {
     getSpreadsheet: (spreadsheetId: string) => ipcRenderer.invoke('workspace:get-spreadsheet', spreadsheetId),
     executeScript: (scriptId: string, functionName: string, parameters?: any[]) =>
       ipcRenderer.invoke('workspace:execute-script', scriptId, functionName, parameters),
+    copyTemplateContent: (templateContent: any) =>
+      ipcRenderer.invoke('workspace:copy-template-content', templateContent),
   } as WorkspaceAPI,
 
   // ========================================================================
