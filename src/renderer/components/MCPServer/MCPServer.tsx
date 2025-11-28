@@ -35,6 +35,7 @@ import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
 import RunningServersTabs from './RunningServersTabs';
 import TunnelAndServerConfig from './TunnelAndServerConfig';
+import CloudMCPServerEditor from './CloudMCPServerEditor';
 
 // Import GmailConnection type from GmailDashboard
 interface GmailConnection {
@@ -148,6 +149,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [showDashboard, setShowDashboard] = useState<boolean>(false);
   const [showAccessLevelModal, setShowAccessLevelModal] = useState<boolean>(false);
   const [editingServer, setEditingServer] = useState<RunningMCPServer | null>(null);
+  const [showScriptEditor, setShowScriptEditor] = useState<boolean>(false);
+  const [selectedEditorCopyId, setSelectedEditorCopyId] = useState<string | undefined>(undefined);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   
   // Tunnel registration modal state
@@ -2025,41 +2028,55 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         checkTunnelHealth={checkTunnelHealth}
       />
 
-      {/* Running Servers Tabs */}
-      <RunningServersTabs
-        servers={servers}
-        loading={loading}
-        error={error}
-        editingServerName={editingServerName}
-        editingServerNameValue={editingServerNameValue}
-        claudeDesktopStatus={claudeDesktopStatus}
-        supabaseConfig={supabaseConfig}
-        loadRunningServers={loadRunningServers}
-        setEditingServerNameValue={setEditingServerNameValue}
-        handleSaveServerName={handleSaveServerName}
-        handleCancelEditServerName={handleCancelEditServerName}
-        handleEditServerName={handleEditServerName}
-        formatUptime={formatUptime}
-        getStatusIcon={getStatusIcon}
-        getStatusColor={getStatusColor}
-        getAccessLevelIcon={getAccessLevelIcon}
-        getAccessLevelColor={getAccessLevelColor}
-        getAccessLevelDisplayName={getAccessLevelDisplayName}
-        generateMCPSchema={generateMCPSchema}
-        generateNetworkMCPSchema={generateNetworkMCPSchema}
-        generatePublicMCPSchema={generatePublicMCPSchema}
-        handleCopySchema={handleCopySchema}
-        handleCopyNetworkSchema={handleCopyNetworkSchema}
-        handleCopyPublicSchema={handleCopyPublicSchema}
-        handleConfigureClaudeDesktop={handleConfigureClaudeDesktop}
-        handleUnconfigureClaudeDesktop={handleUnconfigureClaudeDesktop}
-        handleEditAccessLevel={handleEditAccessLevel}
-        handleViewDashboard={handleViewDashboard}
-        cloudServers={cloudServers}
-        cloudLoading={cloudLoading}
-        cloudError={cloudError}
-        loadCloudServers={loadCloudServers}
-      />
+      {/* Conditionally render Script Editor or Running Servers Tabs */}
+      {showScriptEditor ? (
+        <CloudMCPServerEditor 
+          initialCopyId={selectedEditorCopyId}
+          onBack={() => {
+            setShowScriptEditor(false);
+            setSelectedEditorCopyId(undefined);
+          }}
+        />
+      ) : (
+        <RunningServersTabs
+          servers={servers}
+          loading={loading}
+          error={error}
+          editingServerName={editingServerName}
+          editingServerNameValue={editingServerNameValue}
+          claudeDesktopStatus={claudeDesktopStatus}
+          supabaseConfig={supabaseConfig}
+          loadRunningServers={loadRunningServers}
+          setEditingServerNameValue={setEditingServerNameValue}
+          handleSaveServerName={handleSaveServerName}
+          handleCancelEditServerName={handleCancelEditServerName}
+          handleEditServerName={handleEditServerName}
+          formatUptime={formatUptime}
+          getStatusIcon={getStatusIcon}
+          getStatusColor={getStatusColor}
+          getAccessLevelIcon={getAccessLevelIcon}
+          getAccessLevelColor={getAccessLevelColor}
+          getAccessLevelDisplayName={getAccessLevelDisplayName}
+          generateMCPSchema={generateMCPSchema}
+          generateNetworkMCPSchema={generateNetworkMCPSchema}
+          generatePublicMCPSchema={generatePublicMCPSchema}
+          handleCopySchema={handleCopySchema}
+          handleCopyNetworkSchema={handleCopyNetworkSchema}
+          handleCopyPublicSchema={handleCopyPublicSchema}
+          handleConfigureClaudeDesktop={handleConfigureClaudeDesktop}
+          handleUnconfigureClaudeDesktop={handleUnconfigureClaudeDesktop}
+          handleEditAccessLevel={handleEditAccessLevel}
+          handleViewDashboard={handleViewDashboard}
+          cloudServers={cloudServers}
+          cloudLoading={cloudLoading}
+          cloudError={cloudError}
+          loadCloudServers={loadCloudServers}
+          onOpenScriptEditor={(copyId?: string) => {
+            setSelectedEditorCopyId(copyId);
+            setShowScriptEditor(true);
+          }}
+        />
+      )}
 
 
       {/* Tunnel Registration Modal */}

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
 import { initializeActivityDatabaseSchema } from './activity';
+import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
 
 /**
  * SQLite Database Initialization
@@ -72,11 +73,13 @@ export interface DatabaseInitResult {
   taskDatabase?: Database.Database;
   wordpressDatabase?: Database.Database;
   activityDatabase?: Database.Database;
+  cloudmcpDatabase?: Database.Database;
   taskManager?: SQLiteTaskManager;
   conversationsDbPath?: string;
   taskDbPath?: string;
   wordpressDbPath?: string;
   activityDbPath?: string;
+  cloudmcpDbPath?: string;
 }
 
 /**
@@ -97,6 +100,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const taskDbPath = path.join(dataDir, 'tasks.db');
     const wordpressDbPath = path.join(dataDir, 'wordpress.db');
     const activityDbPath = path.join(dataDir, 'activity.db');
+    const cloudmcpDbPath = path.join(dataDir, 'cloudmcp.db');
     
     console.log('🔍 Database paths:');
     console.log('  Data directory:', dataDir);
@@ -104,11 +108,13 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     console.log('  Task DB:', taskDbPath);
     console.log('  WordPress DB:', wordpressDbPath);
     console.log('  Activity DB:', activityDbPath);
+    console.log('  CloudMCP DB:', cloudmcpDbPath);
     
     const conversationsDb = new Database(conversationsDbPath);
     const taskDb = new Database(taskDbPath);
     const wordpressDb = new Database(wordpressDbPath);
     const activityDb = new Database(activityDbPath);
+    const cloudmcpDb = new Database(cloudmcpDbPath);
     
     // Initialize database schemas
     initializeConversationsDatabaseSchema(conversationsDb);
@@ -116,6 +122,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeWordPressDatabaseSchema(wordpressDb);
     initializeScheduledPostsDatabaseSchema(wordpressDb); // Use wordpress DB for scheduled posts
     initializeActivityDatabaseSchema(activityDb);
+    initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
@@ -128,11 +135,13 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       taskDatabase: taskDb,
       wordpressDatabase: wordpressDb,
       activityDatabase: activityDb,
+      cloudmcpDatabase: cloudmcpDb,
       taskManager, 
       conversationsDbPath,
       taskDbPath,
       wordpressDbPath,
-      activityDbPath
+      activityDbPath,
+      cloudmcpDbPath
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

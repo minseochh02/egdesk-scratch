@@ -447,6 +447,13 @@ export interface IElectronAPI {
     ) => Promise<{ success: boolean; data?: any; error?: string }>;
     listSnsPlanExecutions: (planId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   };
+  templateCopies: {
+    create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+    get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 
       success: boolean; 

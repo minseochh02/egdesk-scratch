@@ -666,6 +666,14 @@ export interface BusinessIdentityAPI {
   ) => Promise<{ success: boolean; error?: string }>;
 }
 
+export interface TemplateCopiesAPI {
+  create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
 /**
  * Synchronization operations API
  */
@@ -1464,6 +1472,21 @@ const electronHandler = {
     updateSnsPlanAIKey: (planId: string, aiKeyId: string | null) =>
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
   } as BusinessIdentityAPI,
+  
+  // ========================================================================
+  // TEMPLATE COPIES MANAGEMENT
+  // ========================================================================
+  
+  /**
+   * Template copies management API
+   */
+  templateCopies: {
+    create: (data: any) => ipcRenderer.invoke('sqlite-template-copies-create', data),
+    get: (id: string) => ipcRenderer.invoke('sqlite-template-copies-get', id),
+    getByTemplate: (templateId: string) => ipcRenderer.invoke('sqlite-template-copies-get-by-template', templateId),
+    getAll: (limit?: number, offset?: number) => ipcRenderer.invoke('sqlite-template-copies-get-all', limit, offset),
+    delete: (id: string) => ipcRenderer.invoke('sqlite-template-copies-delete', id),
+  } as TemplateCopiesAPI,
   
   // ========================================================================
   // SYNCHRONIZATION MANAGEMENT

@@ -5,4 +5,5 @@ export { default as RunningServersSection } from './RunningServersSection';
 export { default as GoogleOAuthSignIn } from './GoogleOAuthSignIn';
 export { default as TunnelAndServerConfig } from './TunnelAndServerConfig';
 export { default as InviteManager } from './InviteManager';
+export { default as CloudMCPServerEditor } from './CloudMCPServerEditor';
 
