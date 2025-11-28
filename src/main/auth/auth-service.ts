@@ -175,10 +175,24 @@ export class AuthService {
    * Get current session
    */
   async getSession(): Promise<{ session: Session | null; user: User | null }> {
+    // Check if cached session exists and is still valid
     if (this.currentSession) {
-      return { session: this.currentSession, user: this.currentSession.user };
+      // Check if session is expired (with 5 minute buffer to refresh before actual expiration)
+      const now = Date.now() / 1000;
+      const expiresAt = this.currentSession.expires_at || 0;
+      const buffer = 5 * 60; // 5 minutes buffer
+      
+      if (expiresAt > now + buffer) {
+        // Session is still valid, return it
+        return { session: this.currentSession, user: this.currentSession.user };
+      } else {
+        // Session is expired or about to expire, clear cache and reload
+        console.log('🔄 Cached session expired, refreshing...');
+        this.currentSession = null;
+      }
     }
 
+    // Load session (will refresh if expired)
     const session = await this.loadSession();
     return { session, user: session?.user || null };
   }
@@ -591,33 +605,71 @@ export class AuthService {
     // Call Supabase Edge Function (from main process to avoid CORS)
     ipcMain.handle('auth:call-edge-function', async (_, { url, method = 'POST', body, headers = {} }) => {
       try {
+        console.log('📡 callEdgeFunction called:', { url, method, hasBody: !!body, headersKeys: Object.keys(headers) });
+        
         const { session } = await this.getSession();
         if (!session) {
+          console.error('❌ No session found in callEdgeFunction');
           return {
             success: false,
             error: 'No session found. Please sign in first.',
           };
         }
 
+        console.log('✅ Session found:', {
+          hasAccessToken: !!session.access_token,
+          tokenLength: session.access_token.length,
+          tokenPrefix: session.access_token.substring(0, 30) + '...',
+        });
+
         // Add user's JWT token to headers
         const requestHeaders = {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
-          ...headers,
+          ...headers, // This includes 'apikey' from the renderer
         };
 
+        console.log('📤 Request headers:', {
+          hasAuthorization: !!requestHeaders.Authorization,
+          hasApikey: !!requestHeaders.apikey,
+          authorizationLength: requestHeaders.Authorization?.length,
+          apikeyLength: requestHeaders.apikey?.length,
+        });
+
+        console.log('📤 Making fetch request to:', url);
+        
+        // Debug: Print exact curl command to replicate this request
+        const bodyString = body ? JSON.stringify(body) : '';
+        const curlCommand = `curl -X ${method} "${url}" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${session.access_token}" \\
+  -H "apikey: ${requestHeaders.apikey}" \\
+  ${bodyString ? `-d '${bodyString}'` : ''}`;
+        console.log('📋 CURL command to replicate this request:');
+        console.log(curlCommand);
+        
         const response = await fetch(url, {
           method,
           headers: requestHeaders,
           body: body ? JSON.stringify(body) : undefined,
         });
 
+        console.log('📥 Response received:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+        });
+
         const responseText = await response.text();
+        console.log('📥 Response body (raw, first 500 chars):', responseText.substring(0, 500));
+        
         let data;
         try {
           data = JSON.parse(responseText);
+          console.log('📥 Response body (parsed):', JSON.stringify(data).substring(0, 500));
         } catch {
           data = { raw: responseText };
+          console.log('⚠️ Could not parse response as JSON');
         }
 
         return {
@@ -628,7 +680,12 @@ export class AuthService {
           error: !response.ok ? (data.error || data.details?.message || response.statusText) : null,
         };
       } catch (error: any) {
-        console.error('Error calling edge function:', error);
+        console.error('❌ Error calling edge function:', error);
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        });
         return {
           success: false,
           error: error.message || 'Unknown error',
