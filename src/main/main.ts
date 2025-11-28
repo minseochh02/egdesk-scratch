@@ -88,6 +88,7 @@ import { getAuthService } from './auth/auth-service';
 import { ollamaManager } from './ollama/installer';
 import { registerOllamaHandlers } from './ollama/ollama-handlers';
 import { googleWorkspaceService } from './workspace';
+import { registerAppsScriptToolHandlers } from './ai-code/tool-executor';
 import { fetchWebsiteContent } from './web/content-fetcher';
 import { crawlHomepageForBusinessIdentity } from './web/homepage-crawler';
 import { crawlMultiplePagesForBusinessIdentity } from './web/multi-page-crawler';
@@ -2177,6 +2178,8 @@ const createWindow = async () => {
     // Register Google Workspace handlers
     googleWorkspaceService.registerIPCHandlers();
     
+    // Register AppsScript tool handlers
+    registerAppsScriptToolHandlers();
 
     // Mark handlers as fully registered AFTER all handlers are registered
     handlersRegistered = true;

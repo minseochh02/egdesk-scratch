@@ -99,8 +99,7 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
 
   // Check Ollama installation status on mount
   const checkOllamaStatus = useCallback(async () => {
-    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
-    if (!electronApi?.invoke) {
+    if (!window.electron) {
       console.warn('Electron API not available for Ollama check');
       return;
     }
@@ -109,15 +108,16 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     setOllamaError(null);
 
     try {
-      const { success, isInstalled } = await electronApi.invoke('ollama:check-installed');
-      if (success) {
-        setOllamaInstalled(isInstalled);
+      const result = await (window.electron as any).ollama.checkInstalled();
+      if (result.success) {
+        setOllamaInstalled(result.installed || false);
         
-        if (isInstalled) {
-          // List available models
-          const modelsResult = await electronApi.invoke('ollama:list-models');
-          if (modelsResult.success) {
-            setOllamaModels(modelsResult.models);
+        if (result.installed) {
+          // Note: We'll need to add listModels to OllamaAPI or use invoke
+          // For now, we'll check for Gemma model directly
+          const gemmaResult = await (window.electron as any).ollama.hasModel(GEMMA_MODEL);
+          if (gemmaResult.success && gemmaResult.exists) {
+            setOllamaModels([GEMMA_MODEL]);
           }
         }
       }
@@ -135,15 +135,14 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
 
   // Install Ollama if needed
   const handleInstallOllama = useCallback(async () => {
-    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
-    if (!electronApi?.invoke) return;
+    if (!window.electron) return;
 
     setOllamaLoading(true);
     setOllamaError(null);
 
     try {
-      const { success, ready } = await electronApi.invoke('ollama:ensure-installed');
-      if (success && ready) {
+      const result = await (window.electron as any).ollama.ensure();
+      if (result.success && result.installed) {
         setOllamaInstalled(true);
         await checkOllamaStatus();
       } else {
@@ -159,18 +158,17 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
 
   // Pull Gemma model
   const handlePullGemma = useCallback(async () => {
-    const electronApi = typeof window !== 'undefined' ? window.electron : undefined;
-    if (!electronApi?.invoke) return;
+    if (!window.electron) return;
 
     setIsPullingModel(true);
     setOllamaError(null);
 
     try {
-      const { success, pulled } = await electronApi.invoke('ollama:pull-model', GEMMA_MODEL);
-      if (success && pulled) {
+      const result = await (window.electron as any).ollama.pullModel(GEMMA_MODEL);
+      if (result.success) {
         await checkOllamaStatus();
       } else {
-        setOllamaError('Failed to pull Gemma model');
+        setOllamaError(result.error || 'Failed to pull Gemma model');
       }
     } catch (error) {
       console.error('Failed to pull Gemma model:', error);
@@ -210,9 +208,9 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     return file?.source || '';
   };
 
-  // Handle save - placeholder for Apps Script API integration
+  // Handle save - uses AppsScript tools
   const handleSave = async () => {
-    if (!selectedCopy || !selectedFile) {
+    if (!selectedCopy || !selectedFile || !selectedCopy.scriptId) {
       return;
     }
 
@@ -221,21 +219,24 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
       return;
     }
 
-    // TODO: Implement Apps Script API save functionality
-    // This will use the Apps Script API to update the script content
-    // Example:
-    // 1. Get the scriptId from selectedCopy
-    // 2. Use Google Apps Script API to update the file content
-    // 3. Handle success/error states
-    
-    console.log('Save clicked:', {
-      scriptId: selectedCopy.scriptId,
-      fileName: selectedFile,
-      contentLength: fileContent.length,
-    });
-    
-    // Placeholder - show alert for now
-    alert('Save functionality coming soon! This will update the Apps Script file using the Apps Script API.');
+    try {
+      const result = await window.electron.appsScriptTools.writeFile(
+        selectedCopy.scriptId,
+        selectedFile,
+        fileContent
+      );
+      
+      if (result.success) {
+        // Reload template copies to get updated content
+        await loadTemplateCopies();
+        alert('File saved successfully!');
+      } else {
+        alert(`Failed to save file: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      alert(`Error saving file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   // Format date
@@ -262,18 +263,32 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     const fileContent = getSelectedFileContent();
     const fileName = selectedFile || 'No file selected';
     const fileType = selectedCopy?.scriptContent?.files?.find(f => f.name === fileName)?.type || 'unknown';
+    const scriptId = selectedCopy?.scriptId;
 
     let codeContext = '';
     if (fileContent && fileContent.trim().length > 0) {
       codeContext = `\n\nCURRENT FILE CONTEXT:
 File Name: ${fileName}
 File Type: ${fileType}
+Script ID: ${scriptId || 'N/A'}
 File Content:
 \`\`\`${fileType === 'server_js' ? 'javascript' : fileType === 'html' ? 'html' : 'javascript'}
 ${fileContent.slice(0, 5000)}${fileContent.length > 5000 ? '\n... (truncated)' : ''}
 \`\`\`
 `;
     }
+
+    const toolsInfo = scriptId ? `
+AVAILABLE TOOLS:
+You can use these AppsScript tools to interact with the code:
+- apps_script_list_files: List all files in the AppsScript project (scriptId: ${scriptId})
+- apps_script_read_file: Read any file from the project
+- apps_script_write_file: Write/update file content
+- apps_script_partial_edit: Make targeted edits to files
+- apps_script_rename_file: Rename files
+
+The script content is stored in the EGDesk app's SQLite database (cloudmcp.db).
+` : '';
 
     return `You are an AI assistant helping a developer work with Google Apps Script code.
 
@@ -284,17 +299,21 @@ Your role:
 - Help identify and fix bugs
 - Generate code snippets when requested
 - Answer questions about Apps Script APIs and features
+- Use AppsScript tools to read, write, and modify files when needed
 
 ${codeContext}
 
+${toolsInfo}
+
 IMPORTANT:
 - When the user asks about code, refer to the current file context above
-- If they ask to modify code, provide the complete modified code block
+- If they ask to modify code, you can use the AppsScript tools to make changes directly
 - Always explain what changes you're making and why
 - Be concise but thorough in your explanations
 - If the file content is truncated, mention that you're working with a partial view
+- You have access to all files in the AppsScript project via tools
 
-Respond naturally and helpfully. If the user asks about code that isn't in the current context, let them know you need to see that code first.`;
+Respond naturally and helpfully. If the user asks about code that isn't in the current context, use the tools to read that file first.`;
   }, [selectedFile, selectedCopy]);
 
   // Handle chat send
@@ -433,7 +452,7 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                     <div className="copy-item-header">
                       <FontAwesomeIcon icon={faFileCode} />
                       <span className="copy-title">
-                        {copy.spreadsheetId.substring(0, 20)}...
+                        {(copy.metadata as any)?.serverName || copy.spreadsheetId.substring(0, 20) + '...'}
                       </span>
                     </div>
                     <div className="copy-item-meta">
@@ -539,11 +558,11 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                           <span>Open Spreadsheet</span>
                         </button>
                       )}
-                      {selectedFile && getSelectedFileContent() && (
+                      {selectedFile && getSelectedFileContent() && selectedCopy?.scriptId && (
                         <button
                           className="save-button"
                           onClick={handleSave}
-                          title="Save changes to Apps Script"
+                          title="Save changes to Apps Script (uses AppsScript tools)"
                         >
                           <FontAwesomeIcon icon={faSave} />
                           Save

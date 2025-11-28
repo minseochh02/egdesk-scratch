@@ -19,9 +19,10 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (scopes?: string) => Promise<void>;
   signInWithGithub: () => Promise<void>;
   signOut: () => Promise<void>;
+  switchAccount: (userId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,6 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => {},
   signInWithGithub: async () => {},
   signOut: async () => {},
+  switchAccount: async () => {},
 });
 
 export const useAuth = () => {
@@ -49,7 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     console.log('🔐 AuthContext: Initializing...');
     
-    // Get initial session
+    // Get initial session but don't auto-sign in
+    // This allows users to choose which account to use
     const initAuth = async () => {
       try {
         console.log('🔐 AuthContext: Fetching initial session...');
@@ -60,10 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           hasUser: !!result.user 
         });
         
+        // Don't auto-sign in - just check if a session exists
+        // User can choose to use it or sign in with a different account
         if (result.success && result.session) {
-          console.log('🔐 AuthContext: Setting initial session');
-          setSession(result.session);
-          setUser(result.user);
+          console.log('🔐 AuthContext: Found existing session for:', result.user?.email, '- user can choose to use it or sign in with different account');
+          // Don't set session/user automatically - let user choose
         }
       } catch (error) {
         console.error('🔐 AuthContext: Failed to get initial session:', error);
@@ -107,9 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (scopes?: string) => {
     try {
-      const result = await window.electron.auth.signInWithGoogle();
+      const result = await window.electron.auth.signInWithGoogle(scopes);
       if (!result.success) {
         console.error('Google sign-in failed:', result.error);
         throw new Error(result.error || 'Google sign-in failed');
@@ -149,6 +153,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const switchAccount = async (userId: string) => {
+    try {
+      const result = await window.electron.auth.switchAccount(userId);
+      if (result.success && result.session) {
+        setSession(result.session);
+        setUser(result.session.user);
+      } else {
+        console.error('Switch account failed:', result.error);
+        throw new Error(result.error || 'Switch account failed');
+      }
+    } catch (error: any) {
+      console.error('Error switching account:', error);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     session,
@@ -156,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithGoogle,
     signInWithGithub,
     signOut,
+    switchAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

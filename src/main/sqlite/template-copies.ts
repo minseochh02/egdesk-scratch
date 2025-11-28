@@ -88,6 +88,49 @@ export class SQLiteTemplateCopiesManager {
   }
 
   /**
+   * Get a template copy by script ID
+   */
+  getTemplateCopyByScriptId(scriptId: string): TemplateCopy | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM template_copies WHERE script_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    
+    const row = stmt.get(scriptId) as any;
+    
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      templateId: row.template_id,
+      templateScriptId: row.template_script_id,
+      spreadsheetId: row.spreadsheet_id,
+      spreadsheetUrl: row.spreadsheet_url,
+      scriptId: row.script_id,
+      scriptContent: row.script_content ? JSON.parse(row.script_content) : undefined,
+      createdAt: row.created_at,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+    };
+  }
+
+  /**
+   * Update template copy script content
+   */
+  updateTemplateCopyScriptContent(scriptId: string, scriptContent: any): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE template_copies 
+      SET script_content = ?
+      WHERE script_id = ?
+    `);
+    
+    const result = stmt.run(JSON.stringify(scriptContent), scriptId);
+    return result.changes > 0;
+  }
+
+  /**
    * Get all template copies for a specific template
    */
   getTemplateCopiesByTemplateId(templateId: string): TemplateCopy[] {

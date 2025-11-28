@@ -19,7 +19,12 @@ import {
   AnalyzeProjectTool,
   InitProjectTool,
   PartialEditTool,
-  MoveFileTool
+  MoveFileTool,
+  AppsScriptListFilesTool,
+  AppsScriptReadFileTool,
+  AppsScriptWriteFileTool,
+  AppsScriptPartialEditTool,
+  AppsScriptRenameFileTool
 } from './tools';
 
 
@@ -169,6 +174,110 @@ export class ToolRegistry {
           required: ['file_path', 'old_string', 'new_string']
         };
       
+      case 'apps_script_list_files':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            }
+          },
+          required: ['script_id']
+        };
+      
+      case 'apps_script_read_file':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            },
+            file_name: {
+              type: 'string',
+              description: 'The name of the file to read (e.g., "Code.gs", "MyFunction.gs")'
+            }
+          },
+          required: ['script_id', 'file_name']
+        };
+      
+      case 'apps_script_write_file':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            },
+            file_name: {
+              type: 'string',
+              description: 'The name of the file to write'
+            },
+            content: {
+              type: 'string',
+              description: 'The content to write to the file'
+            },
+            file_type: {
+              type: 'string',
+              description: 'Optional: File type (default: "SERVER_JS")'
+            }
+          },
+          required: ['script_id', 'file_name', 'content']
+        };
+      
+      case 'apps_script_partial_edit':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            },
+            file_name: {
+              type: 'string',
+              description: 'The name of the file to edit'
+            },
+            old_string: {
+              type: 'string',
+              description: 'The exact text to replace'
+            },
+            new_string: {
+              type: 'string',
+              description: 'The text to replace old_string with'
+            },
+            expected_replacements: {
+              type: 'number',
+              description: 'Number of occurrences to replace (default: 1)'
+            },
+            flexible_matching: {
+              type: 'boolean',
+              description: 'Whether to use flexible matching (default: true)'
+            }
+          },
+          required: ['script_id', 'file_name', 'old_string', 'new_string']
+        };
+      
+      case 'apps_script_rename_file':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            },
+            old_file_name: {
+              type: 'string',
+              description: 'The current name of the file'
+            },
+            new_file_name: {
+              type: 'string',
+              description: 'The new name for the file'
+            }
+          },
+          required: ['script_id', 'old_file_name', 'new_file_name']
+        };
+      
       default:
         return {
           type: 'object',
@@ -305,9 +414,103 @@ export class ToolRegistry {
     // Project Tools
     this.registerTool(new AnalyzeProjectTool());
     this.registerTool(new InitProjectTool());
+    
+    // AppsScript Tools
+    this.registerTool(new AppsScriptListFilesTool());
+    this.registerTool(new AppsScriptReadFileTool());
+    this.registerTool(new AppsScriptWriteFileTool());
+    this.registerTool(new AppsScriptPartialEditTool());
+    this.registerTool(new AppsScriptRenameFileTool());
   }
 }
 
 
 // Export singleton instance
 export const toolRegistry = new ToolRegistry();
+
+/**
+ * Register IPC handlers for AppsScript tools
+ */
+export function registerAppsScriptToolHandlers(): void {
+  const { ipcMain } = require('electron');
+  
+  // Import tools
+  const { AppsScriptListFilesTool } = require('./tools/apps-script-list-files');
+  const { AppsScriptReadFileTool } = require('./tools/apps-script-read-file');
+  const { AppsScriptWriteFileTool } = require('./tools/apps-script-write-file');
+  const { AppsScriptPartialEditTool } = require('./tools/apps-script-partial-edit');
+  const { AppsScriptRenameFileTool } = require('./tools/apps-script-rename-file');
+  
+  const listFilesTool = new AppsScriptListFilesTool();
+  const readFileTool = new AppsScriptReadFileTool();
+  const writeFileTool = new AppsScriptWriteFileTool();
+  const partialEditTool = new AppsScriptPartialEditTool();
+  const renameFileTool = new AppsScriptRenameFileTool();
+  
+  // List AppsScript files
+  ipcMain.handle('apps-script-list-files', async (event, scriptId: string) => {
+    try {
+      const result = await listFilesTool.execute({ scriptId });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Read AppsScript file
+  ipcMain.handle('apps-script-read-file', async (event, scriptId: string, fileName: string) => {
+    try {
+      const result = await readFileTool.execute({ scriptId, fileName });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Write AppsScript file
+  ipcMain.handle('apps-script-write-file', async (event, scriptId: string, fileName: string, content: string, fileType?: string) => {
+    try {
+      const result = await writeFileTool.execute({ scriptId, fileName, content, fileType });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Partial edit AppsScript file
+  ipcMain.handle('apps-script-partial-edit', async (event, scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => {
+    try {
+      const result = await partialEditTool.execute({ scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Rename AppsScript file
+  ipcMain.handle('apps-script-rename-file', async (event, scriptId: string, oldFileName: string, newFileName: string) => {
+    try {
+      const result = await renameFileTool.execute({ scriptId, oldFileName, newFileName });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  console.log('✅ AppsScript tool IPC handlers registered');
+}

@@ -77,6 +77,17 @@ export class AuthService {
       provider_token: (session as any).provider_token,
       provider_refresh_token: (session as any).provider_refresh_token,
     };
+    
+    // Store session with user ID as key for multi-account support
+    const userId = session.user?.id;
+    if (userId) {
+      const accounts = this.store.get('accounts', {}) as Record<string, StoredSession>;
+      accounts[userId] = storedSession;
+      this.store.set('accounts', accounts);
+      console.log(`💾 Saved session for account: ${session.user?.email} (${userId})`);
+    }
+    
+    // Also save as 'session' for backward compatibility (current active session)
     this.store.set('session', storedSession);
     this.currentSession = session;
     
@@ -190,9 +201,88 @@ export class AuthService {
   /**
    * Clear session from store
    */
-  private clearSession(): void {
+  private clearSession(userId?: string): void {
+    if (userId) {
+      // Remove specific account
+      const accounts = this.store.get('accounts', {}) as Record<string, StoredSession>;
+      delete accounts[userId];
+      this.store.set('accounts', accounts);
+      console.log(`🗑️ Removed account: ${userId}`);
+    }
+    
+    // Clear current session
     this.store.delete('session');
     this.currentSession = null;
+  }
+
+  /**
+   * Get all stored accounts
+   */
+  getAllAccounts(): Array<{ userId: string; email: string; user: User }> {
+    const accounts = this.store.get('accounts', {}) as Record<string, StoredSession>;
+    return Object.entries(accounts).map(([userId, session]) => ({
+      userId,
+      email: session.user?.email || 'Unknown',
+      user: session.user,
+    }));
+  }
+
+  /**
+   * Switch to a different account
+   */
+  async switchAccount(userId: string): Promise<{ success: boolean; error?: string; session?: Session }> {
+    try {
+      const accounts = this.store.get('accounts', {}) as Record<string, StoredSession>;
+      const accountSession = accounts[userId];
+      
+      if (!accountSession) {
+        return { success: false, error: 'Account not found' };
+      }
+
+      // Set this account as the current session
+      this.store.set('session', accountSession);
+      
+      // Load and refresh the session if needed
+      const supabase = this.getSupabase();
+      if (!supabase) {
+        return { success: false, error: 'Supabase not initialized' };
+      }
+
+      // Check if session needs refresh
+      const now = Date.now() / 1000;
+      const buffer = 5 * 60;
+      
+      if (!accountSession.expires_at || accountSession.expires_at < now + buffer) {
+        // Refresh the session
+        const { data, error } = await supabase.auth.refreshSession({
+          refresh_token: accountSession.refresh_token,
+        });
+
+        if (error || !data.session) {
+          return { success: false, error: error?.message || 'Failed to refresh session' };
+        }
+
+        this.saveSession(data.session);
+        this.currentSession = data.session;
+        return { success: true, session: data.session };
+      }
+
+      // Session is still valid
+      const session: Session = {
+        access_token: accountSession.access_token,
+        refresh_token: accountSession.refresh_token,
+        expires_at: accountSession.expires_at,
+        expires_in: accountSession.expires_in,
+        user: accountSession.user,
+        token_type: 'bearer',
+      };
+
+      this.currentSession = session;
+      return { success: true, session };
+    } catch (error: any) {
+      console.error('Error switching account:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   /**
@@ -236,6 +326,9 @@ export class AuthService {
       const options: any = {
         skipBrowserRedirect: false,
         redirectTo: 'egdesk://auth/callback',
+        queryParams: {
+          prompt: 'select_account',
+        },
       };
 
       // Add custom scopes if provided
@@ -476,7 +569,14 @@ export class AuthService {
   /**
    * Sign out
    */
-  async signOut(): Promise<{ success: boolean; error?: string }> {
+  async signOut(userId?: string): Promise<{ success: boolean; error?: string }> {
+    // If signing out a specific account, just remove it from storage
+    if (userId) {
+      this.clearSession(userId);
+      return { success: true };
+    }
+
+    // Sign out current session
     const supabase = this.getSupabase();
     
     if (supabase && this.currentSession) {
@@ -595,8 +695,24 @@ export class AuthService {
     });
 
     // Sign out
-    ipcMain.handle('auth:sign-out', async () => {
-      return await this.signOut();
+    ipcMain.handle('auth:sign-out', async (_, userId?: string) => {
+      return await this.signOut(userId);
+    });
+
+    // Get all accounts
+    ipcMain.handle('auth:get-all-accounts', async () => {
+      try {
+        const accounts = this.getAllAccounts();
+        return { success: true, accounts };
+      } catch (error: any) {
+        console.error('Error getting accounts:', error);
+        return { success: false, error: error.message, accounts: [] };
+      }
+    });
+
+    // Switch account
+    ipcMain.handle('auth:switch-account', async (_, userId: string) => {
+      return await this.switchAccount(userId);
     });
 
     // Handle OAuth callback

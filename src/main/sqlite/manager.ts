@@ -1430,6 +1430,35 @@ export class SQLiteManager {
         };
       }
     });
+
+    // Get template copy by script ID
+    ipcMain.handle('sqlite-template-copies-get-by-script-id', async (event, scriptId) => {
+      try {
+        const copy = this.getTemplateCopiesManager().getTemplateCopyByScriptId(scriptId);
+        if (!copy) {
+          return { success: false, error: 'Template copy not found for script ID' };
+        }
+        return { success: true, data: copy };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Update template copy script content
+    ipcMain.handle('sqlite-template-copies-update-script-content', async (event, scriptId, scriptContent) => {
+      try {
+        const updated = this.getTemplateCopiesManager().updateTemplateCopyScriptContent(scriptId, scriptContent);
+        return { success: updated, data: { updated } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
   }
 }
 

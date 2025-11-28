@@ -672,6 +672,16 @@ export interface TemplateCopiesAPI {
   getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getByScriptId: (scriptId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateScriptContent: (scriptId: string, scriptContent: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
+export interface AppsScriptToolsAPI {
+  listFiles: (scriptId: string) => Promise<{ success: boolean; data?: Array<{name: string; type: string; hasSource: boolean}>; error?: string }>;
+  readFile: (scriptId: string, fileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>;
+  renameFile: (scriptId: string, oldFileName: string, newFileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
 }
 
 /**
@@ -1177,7 +1187,17 @@ export interface WorkspaceAPI {
     templateContent: any,
   ) => Promise<{
     success: boolean;
-    data?: { spreadsheetId: string; spreadsheetUrl: string; scriptId?: string };
+    data?: {
+      spreadsheetId: string;
+      spreadsheetUrl: string;
+      scriptId?: string;
+      appsScriptError?: {
+        code: string;
+        message: string;
+        action?: string;
+        url?: string;
+      };
+    };
     error?: string;
   }>;
 }
@@ -1486,7 +1506,24 @@ const electronHandler = {
     getByTemplate: (templateId: string) => ipcRenderer.invoke('sqlite-template-copies-get-by-template', templateId),
     getAll: (limit?: number, offset?: number) => ipcRenderer.invoke('sqlite-template-copies-get-all', limit, offset),
     delete: (id: string) => ipcRenderer.invoke('sqlite-template-copies-delete', id),
+    getByScriptId: (scriptId: string) => ipcRenderer.invoke('sqlite-template-copies-get-by-script-id', scriptId),
+    updateScriptContent: (scriptId: string, scriptContent: any) => ipcRenderer.invoke('sqlite-template-copies-update-script-content', scriptId, scriptContent),
   } as TemplateCopiesAPI,
+  
+  // ========================================================================
+  // APPSSCRIPT TOOLS
+  // ========================================================================
+  
+  /**
+   * AppsScript tools API
+   */
+  appsScriptTools: {
+    listFiles: (scriptId: string) => ipcRenderer.invoke('apps-script-list-files', scriptId),
+    readFile: (scriptId: string, fileName: string) => ipcRenderer.invoke('apps-script-read-file', scriptId, fileName),
+    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => ipcRenderer.invoke('apps-script-write-file', scriptId, fileName, content, fileType),
+    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => ipcRenderer.invoke('apps-script-partial-edit', scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching),
+    renameFile: (scriptId: string, oldFileName: string, newFileName: string) => ipcRenderer.invoke('apps-script-rename-file', scriptId, oldFileName, newFileName),
+  } as AppsScriptToolsAPI,
   
   // ========================================================================
   // SYNCHRONIZATION MANAGEMENT
@@ -1975,7 +2012,9 @@ auth: {
   getSession: () => ipcRenderer.invoke('auth:get-session'),
     signInWithGoogle: (scopes?: string) => ipcRenderer.invoke('auth:sign-in-google', scopes),
   signInWithGithub: () => ipcRenderer.invoke('auth:sign-in-github'),
-  signOut: () => ipcRenderer.invoke('auth:sign-out'),
+  signOut: (userId?: string) => ipcRenderer.invoke('auth:sign-out', userId),
+  getAllAccounts: () => ipcRenderer.invoke('auth:get-all-accounts'),
+  switchAccount: (userId: string) => ipcRenderer.invoke('auth:switch-account', userId),
   handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
     getGoogleWorkspaceToken: () => ipcRenderer.invoke('auth:get-google-workspace-token'),
   saveSession: (session: any) => ipcRenderer.invoke('auth:save-session', session),

@@ -1,20 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import './SignInPage.css';
 
 export default function SignInPage() {
-  const { signInWithGoogle, signInWithGithub } = useAuth();
+  const { signInWithGoogle, signInWithGithub, switchAccount } = useAuth();
   const [signingIn, setSigningIn] = useState(false);
   const [provider, setProvider] = useState<'google' | 'github' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [availableAccounts, setAvailableAccounts] = useState<any[]>([]);
 
-  const handleSignIn = async (signInMethod: () => Promise<void>, providerName: 'google' | 'github') => {
+  useEffect(() => {
+    window.electron.auth.getAllAccounts().then((result: any) => {
+      if (result.success && result.accounts) {
+        setAvailableAccounts(result.accounts);
+      }
+    });
+  }, []);
+
+  const handleAccountSwitch = async (userId: string) => {
+    setSigningIn(true);
+    setError(null);
+    try {
+      await switchAccount(userId);
+    } catch (err: any) {
+      console.error('Account switch failed:', err);
+      setError(err.message || 'Failed to switch account');
+      setSigningIn(false);
+    }
+  };
+
+  const handleSignIn = async (signInMethod: (scopes?: string) => Promise<void>, providerName: 'google' | 'github') => {
     setSigningIn(true);
     setProvider(providerName);
     setError(null);
     
     try {
-      await signInMethod();
+      if (providerName === 'google') {
+        // Request full scopes for Google to ensure Apps Script and Drive features work
+        const scopes = [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'openid',
+          'https://www.googleapis.com/auth/script.projects',
+          'https://www.googleapis.com/auth/script.projects.readonly',
+          'https://www.googleapis.com/auth/script.scriptapp',
+          'https://www.googleapis.com/auth/script.send_mail',
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive',
+        ].join(' ');
+        await signInMethod(scopes);
+      } else {
+        await signInMethod();
+      }
       // The auth state will be updated when the OAuth callback is received
     } catch (err: any) {
       console.error('Sign in failed:', err);
@@ -54,10 +91,47 @@ export default function SignInPage() {
 
         {/* Sign In Card */}
         <div className="signin-card">
-          <h2 className="card-title">Sign in to continue</h2>
+          <h2 className="card-title">
+            {availableAccounts.length > 0 ? 'Welcome back' : 'Sign in to continue'}
+          </h2>
           <p className="card-subtitle">
-            Choose your preferred authentication method
+            {availableAccounts.length > 0 ? 'Choose an account to continue' : 'Choose your preferred authentication method'}
           </p>
+
+          {availableAccounts.length > 0 && (
+            <div className="available-accounts">
+              <div className="accounts-list">
+                {availableAccounts.map((account) => (
+                  <button
+                    key={account.userId}
+                    className="account-item"
+                    onClick={() => handleAccountSwitch(account.userId)}
+                    disabled={signingIn}
+                  >
+                    <div className="account-avatar">
+                      {account.user.user_metadata?.avatar_url ? (
+                        <img src={account.user.user_metadata.avatar_url} alt="Avatar" />
+                      ) : (
+                        <div className="avatar-placeholder">
+                          {account.email?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="account-info">
+                      <div className="account-email">{account.email}</div>
+                      <div className="account-provider">
+                        {account.user.app_metadata?.provider || 'Email'}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="divider">
+                <div className="divider-line"></div>
+                <div className="divider-text">Or add another account</div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="signin-error">
