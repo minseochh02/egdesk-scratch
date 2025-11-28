@@ -12,6 +12,7 @@ const GOOGLE_APPS_SCRIPT_API = "https://script.googleapis.com/v1/projects";
 
 interface GetTemplateRequest {
   templateId: string; // Google Sheets spreadsheet ID
+  scriptId?: string; // Optional Apps Script project ID (if known)
 }
 
 interface SpreadsheetContent {
@@ -293,8 +294,9 @@ serve(async (req) => {
       );
     }
 
-    const { templateId } = body;
+    const { templateId, scriptId } = body;
     console.log("📋 Template ID:", templateId);
+    console.log("📜 Script ID (if provided):", scriptId || "not provided");
 
     if (!templateId) {
       console.error("❌ Missing templateId in request");
@@ -491,137 +493,59 @@ serve(async (req) => {
       hasGridData: spreadsheetData.sheets?.some((s: any) => s.data && s.data.length > 0),
     });
 
-    // Step 2: Get Apps Script content (container-bound script)
+    // Step 2: Get Apps Script content using provided scriptId
     let appsScriptContent = null;
-    try {
-      console.log("📜 Fetching Apps Script content...");
-      
-      // First, get the Apps Script project ID from the spreadsheet
-      // Container-bound scripts are linked to the spreadsheet
-      const driveResponse = await fetch(
-        `${GOOGLE_DRIVE_API}/${templateId}?fields=id,name,mimeType`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (driveResponse.ok) {
-        // For container-bound Apps Script, we need to:
-        // 1. First, try to find the script file in Drive (it's a hidden file)
-        // 2. Then use Apps Script API to get the project content
+    if (scriptId) {
+      try {
+        console.log("📜 Fetching Apps Script content using provided scriptId:", scriptId);
         
-        try {
-          // Method 1: Search for Apps Script files linked to this spreadsheet
-          // Container-bound scripts create a hidden file in Drive
-          const scriptFilesResponse = await fetch(
-            `${GOOGLE_DRIVE_API}/files?q="${templateId}"+in+parents+and+mimeType="application/vnd.google-apps.script"&fields=files(id,name)`,
-            {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          );
+        const scriptContentResponse = await fetch(
+          `${GOOGLE_APPS_SCRIPT_API}/${scriptId}/content`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
 
-          if (scriptFilesResponse.ok) {
-            const scriptFiles = await scriptFilesResponse.json();
-            console.log("📜 Found Apps Script files:", scriptFiles);
-            
-            if (scriptFiles.files && scriptFiles.files.length > 0) {
-              // Get the script file ID (this is the container-bound script)
-              const scriptFileId = scriptFiles.files[0].id;
-              console.log("📜 Found container-bound script file:", scriptFileId);
-              
-              // Method 2: Use Apps Script API to get project metadata
-              // For container-bound scripts, we need to use the file ID
-              // The Apps Script API can access container-bound projects via the file ID
-              try {
-                // List all projects and find one that matches
-                const projectsResponse = await fetch(
-                  `${GOOGLE_APPS_SCRIPT_API}`,
-                  {
-                    method: "GET",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                    },
-                  }
-                );
-
-                if (projectsResponse.ok) {
-                  const projects = await projectsResponse.json();
-                  console.log("📜 Available Apps Script projects:", projects);
-                  
-                  // Find the project that's bound to our spreadsheet
-                  // Container-bound projects have a parentId that matches the spreadsheet
-                  const boundProject = projects.projects?.find((p: any) => 
-                    p.parentId === templateId || p.parentId === scriptFileId
-                  );
-                  
-                  if (boundProject) {
-                    const scriptProjectId = boundProject.scriptId;
-                    console.log("📜 Found bound project, fetching content:", scriptProjectId);
-                    
-                    // Get the script content
-                    const scriptContentResponse = await fetch(
-                      `${GOOGLE_APPS_SCRIPT_API}/${scriptProjectId}/content`,
-                      {
-                        method: "GET",
-                        headers: {
-                          Authorization: `Bearer ${accessToken}`,
-                        },
-                      }
-                    );
-
-                    if (scriptContentResponse.ok) {
-                      appsScriptContent = await scriptContentResponse.json();
-                      console.log("✅ Apps Script content fetched:", {
-                        scriptId: scriptProjectId,
-                        filesCount: appsScriptContent.files?.length,
-                        fileNames: appsScriptContent.files?.map((f: any) => f.name),
-                      });
-                    } else {
-                      const errorText = await scriptContentResponse.text();
-                      console.warn("⚠️ Could not fetch Apps Script content:", {
-                        status: scriptContentResponse.status,
-                        statusText: scriptContentResponse.statusText,
-                        error: errorText,
-                      });
-                    }
-                  } else {
-                    console.log("⚠️ No bound project found for this spreadsheet");
-                  }
-                } else {
-                  const errorText = await projectsResponse.text();
-                  console.warn("⚠️ Could not list Apps Script projects:", {
-                    status: projectsResponse.status,
-                    statusText: projectsResponse.statusText,
-                    error: errorText,
-                  });
-                }
-              } catch (apiError) {
-                console.warn("⚠️ Apps Script API error:", apiError);
-              }
-            } else {
-              console.log("⚠️ No Apps Script files found for this spreadsheet");
-            }
-          } else {
-            const errorText = await scriptFilesResponse.text();
-            console.warn("⚠️ Could not search for Apps Script files:", {
-              status: scriptFilesResponse.status,
-              statusText: scriptFilesResponse.statusText,
-              error: errorText,
+        if (scriptContentResponse.ok) {
+          appsScriptContent = await scriptContentResponse.json();
+          console.log("✅ Apps Script content fetched successfully:", {
+            scriptId: scriptId,
+            filesCount: appsScriptContent.files?.length || 0,
+            fileNames: appsScriptContent.files?.map((f: any) => f.name) || [],
+            fileTypes: appsScriptContent.files?.map((f: any) => f.type) || [],
+            hasSource: appsScriptContent.files?.some((f: any) => f.source) || false,
+          });
+          
+          // Log details about each file
+          if (appsScriptContent.files) {
+            appsScriptContent.files.forEach((file: any, index: number) => {
+              console.log(`📄 Apps Script file ${index + 1}:`, {
+                name: file.name,
+                type: file.type,
+                hasSource: !!file.source,
+                sourceLength: file.source?.length || 0,
+                hasFunctionSet: !!file.functionSet,
+              });
             });
           }
-        } catch (scriptError) {
-          console.warn("⚠️ Error fetching Apps Script:", scriptError);
+        } else {
+          const errorText = await scriptContentResponse.text();
+          console.warn("⚠️ Could not fetch Apps Script using provided scriptId:", {
+            status: scriptContentResponse.status,
+            statusText: scriptContentResponse.statusText,
+            error: errorText.substring(0, 500),
+          });
         }
+      } catch (scriptError) {
+        console.warn("⚠️ Error fetching Apps Script with provided scriptId:", {
+          error: scriptError instanceof Error ? scriptError.message : String(scriptError),
+        });
       }
-    } catch (error) {
-      console.warn("⚠️ Could not fetch Apps Script info:", error);
-      // Continue without Apps Script - it's optional
+    } else {
+      console.log("📜 No scriptId provided, skipping Apps Script fetch");
     }
 
     // Structure the response with spreadsheet content
@@ -747,16 +671,15 @@ async function createServiceAccountJWT(
   // - iat, exp: issued at and expiration times (required)
   // - sub: ONLY include if using domain-wide delegation to impersonate users
   //        Since we're NOT using domain-wide delegation, we omit 'sub'
-  // TESTING: Using only spreadsheets scope to isolate potential scope issues
-  const scopeString = "https://www.googleapis.com/auth/spreadsheets";
-  
-  // TODO: If this works, add scopes back one by one:
-  // const scopeString = [
-  //   "https://www.googleapis.com/auth/spreadsheets",
-  //   "https://www.googleapis.com/auth/drive",
-  //   "https://www.googleapis.com/auth/script.projects.readonly",
-  //   "https://www.googleapis.com/auth/script.readonly",
-  // ].join(" ");
+  // Required scopes for template copying:
+  // - spreadsheets: Read spreadsheet content
+  // - drive: Access Drive files (if needed)
+  // - script.projects.readonly: View Google Apps Script projects (read Apps Script content)
+  const scopeString = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/script.projects.readonly",
+  ].join(" ");
   
   const payload = {
     iss: serviceAccountEmail, // Issuer: service account email

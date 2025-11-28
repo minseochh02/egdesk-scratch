@@ -254,6 +254,119 @@ export class GoogleWorkspaceService {
   }
 
   /**
+   * Copy template content to a new spreadsheet
+   * Creates a new spreadsheet and copies all sheets, data, formatting, and Apps Script
+   */
+  async copyTemplateContent(templateContent: any): Promise<{
+    spreadsheetId: string;
+    spreadsheetUrl: string;
+    scriptId?: string;
+  }> {
+    try {
+      const auth = await this.initializeOAuthClient();
+      const sheets = google.sheets({ version: 'v4', auth });
+      const script = google.script({ version: 'v1', auth });
+
+      // Step 1: Prepare sheets array with all data and formatting
+      // Create spreadsheet with all content in one request
+      const title = templateContent.properties?.title || 'Copied Spreadsheet';
+      
+      const sheetsArray: any[] = [];
+      
+      if (templateContent.sheets && templateContent.sheets.length > 0) {
+        for (const templateSheet of templateContent.sheets) {
+          const sheetData: any = {
+            properties: {
+              title: templateSheet.properties.title,
+              sheetType: templateSheet.properties.sheetType,
+              gridProperties: templateSheet.properties.gridProperties,
+            },
+          };
+
+          // Include data with formatting if present
+          if (templateSheet.data && templateSheet.data.length > 0) {
+            sheetData.data = templateSheet.data.map((gridData: any) => ({
+              startRow: gridData.startRow || 0,
+              startColumn: gridData.startColumn || 0,
+              rowData: gridData.rowData || [],
+            }));
+          }
+
+          sheetsArray.push(sheetData);
+        }
+      }
+
+      // Step 2: Create spreadsheet with all sheets, data, and formatting in one request
+      const createResponse = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: {
+            title: title,
+            locale: templateContent.properties?.locale,
+            timeZone: templateContent.properties?.timeZone,
+          },
+          sheets: sheetsArray,
+        },
+      });
+
+      if (!createResponse.data.spreadsheetId) {
+        throw new Error('Failed to create spreadsheet: No spreadsheet ID returned');
+      }
+
+      const spreadsheetId = createResponse.data.spreadsheetId;
+      console.log(`✅ Created spreadsheet with ${sheetsArray.length} sheets and all data/formatting: ${spreadsheetId}`);
+
+      // Step 6: Add Apps Script if present
+      let scriptId: string | undefined;
+      if (templateContent.appsScript && templateContent.appsScript.files) {
+        try {
+          // Create Apps Script project
+          const createScriptResponse = await script.projects.create({
+            requestBody: {
+              title: templateContent.appsScript.scriptId || 'Copied Script',
+              parentId: spreadsheetId,
+            },
+          });
+
+          if (createScriptResponse.data.scriptId) {
+            scriptId = createScriptResponse.data.scriptId;
+
+            // Update script content with all files from template
+            const scriptFiles = templateContent.appsScript.files.map((file: any) => ({
+              name: file.name,
+              type: file.type,
+              source: file.source || '',
+              functionSet: file.functionSet,
+            }));
+
+            await script.projects.updateContent({
+              scriptId: scriptId,
+              requestBody: {
+                files: scriptFiles,
+              },
+            });
+
+            console.log(`✅ Copied Apps Script with ${scriptFiles.length} files`);
+          }
+        } catch (scriptError: any) {
+          console.warn('⚠️ Could not copy Apps Script:', scriptError.message);
+          // Continue without Apps Script - it's optional
+        }
+      }
+
+      const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+
+      return {
+        spreadsheetId,
+        spreadsheetUrl,
+        scriptId,
+      };
+    } catch (error: any) {
+      console.error('Error copying template content:', error);
+      throw new Error(`Failed to copy template content: ${error.message}`);
+    }
+  }
+
+  /**
    * Register IPC handlers for the renderer process
    */
   registerIPCHandlers(): void {
@@ -319,6 +432,16 @@ export class GoogleWorkspaceService {
         }
       }
     );
+
+    // Copy template content to new spreadsheet
+    ipcMain.handle('workspace:copy-template-content', async (_, templateContent: any) => {
+      try {
+        const result = await this.copyTemplateContent(templateContent);
+        return { success: true, data: result };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
 
     console.log('✅ Google Workspace service IPC handlers registered');
   }

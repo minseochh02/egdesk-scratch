@@ -212,6 +212,9 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
         'https://www.googleapis.com/auth/script.projects.readonly',
         'https://www.googleapis.com/auth/script.scriptapp',
         'https://www.googleapis.com/auth/script.send_mail',
+        // Google Sheets and Drive scopes (required for template copying)
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
       ].join(' ');
 
       const result = await window.electron.auth.signInWithGoogle(scopes);

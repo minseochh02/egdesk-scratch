@@ -6,7 +6,7 @@ import {
   faSpinner,
   faCopy
 } from '../../utils/fontAwesomeIcons';
-import { faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faSync } from '@fortawesome/free-solid-svg-icons';
 import RunningServersSection, { 
   RunningMCPServer,
   AccessLevelConfig 
@@ -354,12 +354,17 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
         templateId: templateId,
       });
 
+      // Get scriptID from template if available
+      const scriptID = (template as any).scriptID;
+      console.log('📜 Script ID from template:', scriptID || 'not provided');
+
       // Call Edge Function via main process to avoid CORS issues
       const result = await window.electron.auth.callEdgeFunction({
         url: edgeFunctionUrl,
         method: 'POST',
         body: {
           templateId: templateId,
+          ...(scriptID ? { scriptId: scriptID } : {}), // Include scriptId if available
         },
         headers: {
           'apikey': supabaseAnonKey, // Required by Supabase Edge Functions
@@ -375,11 +380,45 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
       const data = result.data;
 
       if (data.success && data.content) {
-        console.log('✅ Template content received:', data.content);
+        console.log('✅ Template content summary:', {
+          spreadsheetId: data.content.spreadsheetId,
+          title: data.content.properties?.title,
+          sheetsCount: data.content.sheets?.length || 0,
+          hasAppsScript: !!data.content.appsScript,
+          appsScriptScriptId: data.content.appsScript?.scriptId,
+          appsScriptFilesCount: data.content.appsScript?.files?.length || 0,
+          appsScriptFiles: data.content.appsScript?.files?.map((f: any) => ({
+            name: f.name,
+            type: f.type,
+            hasSource: !!f.source,
+            sourceLength: f.source?.length || 0,
+            hasFunctionSet: !!f.functionSet,
+          })) || [],
+        });
         
-        // TODO: Create spreadsheet with this content using user's Google OAuth token
-        // For now, just show success message
-        alert(`Template content retrieved successfully!\n\nTemplate: ${data.content.properties.title}\nSheets: ${data.content.sheets.length}\n\nNext: Create spreadsheet with this content.`);
+        // Create spreadsheet with template content using user's Google OAuth token
+        console.log('📋 Creating new spreadsheet with template content...');
+        const copyResult = await window.electron.workspace.copyTemplateContent(data.content);
+        
+        if (!copyResult.success) {
+          throw new Error(copyResult.error || 'Failed to create spreadsheet copy');
+        }
+        
+        console.log('✅ Spreadsheet copy created:', copyResult.data);
+        
+        if (!copyResult.data) {
+          throw new Error('No data returned from copy operation');
+        }
+        
+        // Show success message with link
+        const message = `Template copied successfully!\n\n` +
+          `Title: ${data.content.properties.title}\n` +
+          `Sheets: ${data.content.sheets.length}\n` +
+          `Apps Script: ${data.content.appsScript ? 'Yes' : 'No'}\n\n` +
+          `New Spreadsheet ID: ${copyResult.data.spreadsheetId}\n` +
+          `URL: ${copyResult.data.spreadsheetUrl}`;
+        
+        alert(message);
         
         // Reload copies to update UI
         await loadExistingCopies();
@@ -389,6 +428,44 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     } catch (error) {
       console.error('❌ Error creating template copy:', error);
       alert(`Failed to create template copy: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Handle re-sign in to update scopes
+  const handleReSignIn = async () => {
+    try {
+      // Sign out first to clear existing token
+      await window.electron.auth.signOut();
+      
+      // Then sign in again with updated scopes
+      const scopes = [
+        // Basic auth scopes (required for OAuth)
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'openid',
+        // Apps Script scopes
+        'https://www.googleapis.com/auth/script.projects',
+        'https://www.googleapis.com/auth/script.projects.readonly',
+        'https://www.googleapis.com/auth/script.scriptapp',
+        'https://www.googleapis.com/auth/script.send_mail',
+        // Google Sheets and Drive scopes (required for template copying)
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+      ].join(' ');
+
+      const result = await window.electron.auth.signInWithGoogle(scopes);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to sign in with Google');
+      }
+      
+      // Wait a moment for the OAuth flow to complete
+      setTimeout(async () => {
+        await checkOAuthToken();
+      }, 2000);
+    } catch (error) {
+      console.error('Error re-signing in:', error);
+      alert(`Failed to re-sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -563,6 +640,18 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
 
               {!checkingOAuthToken && hasValidOAuthToken && (
                 <>
+                  <div className="cloud-oauth-actions" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <button
+                      onClick={handleReSignIn}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+                      title="Re-sign in to update Google OAuth scopes (required for creating spreadsheet copies)"
+                    >
+                      <FontAwesomeIcon icon={faSync} style={{ marginRight: '0.5rem' }} />
+                      Re-sign in to Update Scopes
+                    </button>
+                  </div>
+
                   {cloudLoading && (
                     <div className="loading-state">
                       <FontAwesomeIcon icon={faSpinner} spin />

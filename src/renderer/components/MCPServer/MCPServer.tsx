@@ -496,6 +496,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         const name = fields[0] || '';
         const description = fields[1] || '';
         const url = fields[2] || '';
+        const scriptId = fields[3] || ''; // Apps Script project ID (4th column)
 
         // Only include rows with a name
         if (!name) continue;
@@ -504,7 +505,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         const cleanUrl = url.trim();
         const protocol = cleanUrl.startsWith('https') ? 'https' as const : 'http' as const;
         
-        cloudServersList.push({
+        const server: RunningMCPServer = {
           id: `cloud-${i}-${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`,
           name: name,
           type: 'custom' as const,
@@ -530,7 +531,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           },
           tools: [],
           logs: []
-        });
+        };
+        
+        // Add scriptID if present (store it in a way we can access it later)
+        // Since RunningMCPServer interface doesn't have scriptID, we'll store it in the description or pass it separately
+        // For now, we'll add it as a custom property
+        (server as any).scriptID = scriptId;
+        
+        cloudServersList.push(server);
       }
 
       setCloudServers(cloudServersList);
