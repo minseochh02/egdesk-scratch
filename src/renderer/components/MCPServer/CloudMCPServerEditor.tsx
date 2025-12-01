@@ -11,9 +11,12 @@ import {
   faRobot,
   faUser,
   faArrowLeft,
-  faSave
+  faSave,
+  faPlus,
+  faHistory,
+  faUndo
 } from '../../utils/fontAwesomeIcons';
-import { chatWithGemma, OllamaChatMessage } from '../../lib/gemmaClient';
+import { chatWithGemma, OllamaChatMessage, GemmaToolCall } from '../../lib/gemmaClient';
 import './CloudMCPServerEditor.css';
 
 interface TemplateCopy {
@@ -51,6 +54,9 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: Date }>>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [conversations, setConversations] = useState<Array<{ id: string; title: string; isActive: boolean }>>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   // Ollama state
@@ -72,8 +78,16 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
       if (result.success && result.data) {
         setTemplateCopies(result.data);
         
-        // Auto-select copy if initialCopyId is provided
-        if (initialCopyId && result.data.length > 0) {
+        // If we have a selected copy, update it with fresh data
+        if (selectedCopy) {
+          const updatedCopy = result.data.find(copy => copy.id === selectedCopy.id);
+          if (updatedCopy) {
+            setSelectedCopy(updatedCopy);
+          }
+        }
+        
+        // Auto-select copy if initialCopyId is provided AND no copy is currently selected
+        if (initialCopyId && !selectedCopy && result.data.length > 0) {
           const copyToSelect = result.data.find(copy => copy.id === initialCopyId);
           if (copyToSelect) {
             setSelectedCopy(copyToSelect);
@@ -258,6 +272,106 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     scrollChatToBottom();
   }, [chatMessages]);
 
+  // Execute tool call
+  const executeTool = async (toolCall: GemmaToolCall): Promise<string> => {
+    if (!selectedCopy?.scriptId) {
+      return 'Error: No script selected or script ID missing.';
+    }
+
+    const { name, args } = toolCall;
+    const scriptId = selectedCopy.scriptId;
+
+    try {
+      switch (name) {
+        case 'apps_script_list_files':
+          const listResult = await window.electron.appsScriptTools.listFiles(scriptId);
+          return listResult.success 
+            ? JSON.stringify(listResult.data, null, 2) 
+            : `Error listing files: ${listResult.error}`;
+
+        case 'apps_script_read_file':
+          if (!args?.fileName) return 'Error: fileName argument required.';
+          const readResult = await window.electron.appsScriptTools.readFile(scriptId, args.fileName);
+          return readResult.success 
+            ? readResult.data || 'File is empty' 
+            : `Error reading file: ${readResult.error}`;
+
+        case 'apps_script_write_file':
+          if (!args?.fileName || args.content === undefined) return 'Error: fileName and content arguments required.';
+          // If the user just specified 'file', map it to fileName
+          const fileName = args.fileName || args.file;
+          const writeResult = await window.electron.appsScriptTools.writeFile(
+            scriptId, 
+            fileName, 
+            args.content, 
+            args.fileType,
+            currentConversationId || undefined
+          );
+          if (writeResult.success) {
+            // Refresh copies to show update
+            await loadTemplateCopies();
+            return `Successfully wrote to ${fileName}`;
+          }
+          return `Error writing file: ${writeResult.error}`;
+
+        case 'apps_script_partial_edit':
+          if (!args?.fileName || !args.oldString || args.newString === undefined) {
+            return 'Error: fileName, oldString, and newString arguments required.';
+          }
+          const editResult = await window.electron.appsScriptTools.partialEdit(
+            scriptId,
+            args.fileName,
+            args.oldString,
+            args.newString,
+            args.expectedReplacements,
+            args.flexibleMatching,
+            currentConversationId || undefined
+          );
+          if (editResult.success) {
+            await loadTemplateCopies();
+            return `Successfully edited ${args.fileName}`;
+          }
+          return `Error editing file: ${editResult.error}`;
+
+        case 'apps_script_rename_file':
+          if (!args?.oldFileName || !args.newFileName) {
+            return 'Error: oldFileName and newFileName arguments required.';
+          }
+          const renameResult = await window.electron.appsScriptTools.renameFile(
+            scriptId,
+            args.oldFileName,
+            args.newFileName,
+            currentConversationId || undefined
+          );
+          if (renameResult.success) {
+            await loadTemplateCopies();
+            return `Successfully renamed ${args.oldFileName} to ${args.newFileName}`;
+          }
+          return `Error renaming file: ${renameResult.error}`;
+
+        case 'apps_script_delete_file':
+          if (!args?.fileName) {
+            return 'Error: fileName argument required.';
+          }
+          const deleteResult = await window.electron.appsScriptTools.deleteFile(
+            scriptId,
+            args.fileName,
+            currentConversationId || undefined
+          );
+          if (deleteResult.success) {
+            await loadTemplateCopies();
+            return `Successfully deleted ${args.fileName}`;
+          }
+          return `Error deleting file: ${deleteResult.error}`;
+
+        default:
+          return `Error: Unknown tool '${name}'`;
+      }
+    } catch (err: any) {
+      return `Error executing ${name}: ${err.message}`;
+    }
+  };
+
   // Build system prompt with code context
   const buildSystemPrompt = useCallback(() => {
     const fileContent = getSelectedFileContent();
@@ -281,11 +395,32 @@ ${fileContent.slice(0, 5000)}${fileContent.length > 5000 ? '\n... (truncated)' :
     const toolsInfo = scriptId ? `
 AVAILABLE TOOLS:
 You can use these AppsScript tools to interact with the code:
-- apps_script_list_files: List all files in the AppsScript project (scriptId: ${scriptId})
-- apps_script_read_file: Read any file from the project
-- apps_script_write_file: Write/update file content
-- apps_script_partial_edit: Make targeted edits to files
-- apps_script_rename_file: Rename files
+- apps_script_list_files: List all files in the AppsScript project
+- apps_script_read_file: Read any file from the project (args: fileName)
+- apps_script_write_file: Write/update file content (args: fileName, content)
+- apps_script_partial_edit: Make targeted edits to files (args: fileName, oldString, newString)
+- apps_script_rename_file: Rename files (args: oldFileName, newFileName)
+- apps_script_delete_file: Delete files (args: fileName)
+
+TOOL USAGE INSTRUCTIONS:
+1. To take ANY action on the code, you MUST output a JSON object in your response.
+2. DO NOT hallucinate tool executions. DO NOT say "Tool Execution: ... Result: ...".
+3. ONLY output the JSON request. The system will execute it and give you the result in the next turn.
+4. You can wrap the JSON in \`\`\`json ... \`\`\` blocks.
+
+JSON FORMAT:
+{
+  "content": "Brief explanation of what you are doing",
+  "toolCalls": [
+    {
+      "name": "apps_script_write_file",
+      "args": {
+        "fileName": "example.gs",
+        "content": "function test() {}"
+      }
+    }
+  ]
+}
 
 The script content is stored in the EGDesk app's SQLite database (cloudmcp.db).
 ` : '';
@@ -307,14 +442,143 @@ ${toolsInfo}
 
 IMPORTANT:
 - When the user asks about code, refer to the current file context above
-- If they ask to modify code, you can use the AppsScript tools to make changes directly
+- If they ask to modify code, use the AppsScript tools to make changes directly
 - Always explain what changes you're making and why
 - Be concise but thorough in your explanations
 - If the file content is truncated, mention that you're working with a partial view
 - You have access to all files in the AppsScript project via tools
+- NEVER pretend to execute a tool. Send the JSON request and wait for the system result.
+- RESPOND WITH JSON ONLY WHEN USING TOOLS.
 
 Respond naturally and helpfully. If the user asks about code that isn't in the current context, use the tools to read that file first.`;
   }, [selectedFile, selectedCopy]);
+
+  // Save message to DB
+  const saveMessageToDB = useCallback(async (role: 'user' | 'assistant', content: string, metadata?: any) => {
+    if (!selectedCopy?.id || !(window.electron as any)?.aiChatData || !currentConversationId) return;
+
+    try {
+      // Map 'assistant' to 'model' for database compatibility if needed
+      // DB schema check: role IN ('user', 'model', 'tool')
+      const dbRole = role === 'assistant' ? 'model' : role;
+      
+      await (window.electron as any).aiChatData.addMessage({
+        conversation_id: currentConversationId,
+        role: dbRole,
+        content,
+        tool_call_id: null,
+        tool_status: null,
+        metadata: JSON.stringify({ 
+          timestamp: new Date().toISOString(),
+          ...metadata 
+        })
+      });
+    } catch (err) {
+      console.error('Failed to save message to DB:', err);
+    }
+  }, [selectedCopy, currentConversationId]);
+
+  // Create a new conversation
+  const createNewConversation = async (title?: string) => {
+    if (!selectedCopy?.id || !(window.electron as any)?.aiChatData) return;
+
+    try {
+      const id = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const newTitle = title || `New Chat ${new Date().toLocaleTimeString()}`;
+      
+      // Include copyId in project_context so we can filter by it
+      const projectContext = JSON.stringify({
+        copyId: selectedCopy.id,
+        spreadsheetId: selectedCopy.spreadsheetId,
+        scriptId: selectedCopy.scriptId,
+        serverName: (selectedCopy.metadata as any)?.serverName
+      });
+
+      await (window.electron as any).aiChatData.createConversation({
+        id,
+        title: newTitle,
+        project_context: projectContext,
+        is_active: true
+      });
+
+      setConversations(prev => [{ id, title: newTitle, isActive: true }, ...prev]);
+      setCurrentConversationId(id);
+      setChatMessages([]);
+      setShowHistory(false);
+    } catch (err) {
+      console.error('Failed to create conversation:', err);
+    }
+  };
+
+  // Load conversations for the selected copy
+  const loadConversations = async () => {
+    if (!selectedCopy?.id || !(window.electron as any)?.aiChatData) return;
+
+    try {
+      // We filter by projectContext containing the copyId
+      // Note: This is a simple string match, so we rely on copyId being unique enough
+      const result = await (window.electron as any).aiChatData.getConversations({
+        limit: 50,
+        projectContext: selectedCopy.id // This will match the copyId in the JSON string
+      });
+
+      if (result.success && result.data) {
+        const loadedConversations = result.data.map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          isActive: c.is_active
+        }));
+        
+        setConversations(loadedConversations);
+
+        // specific logic: if there are no conversations, create one
+        if (loadedConversations.length === 0) {
+            await createNewConversation(`Chat 1: ${(selectedCopy.metadata as any)?.serverName || 'Script'}`);
+        } else if (!currentConversationId) {
+            // select the most recent one
+            setCurrentConversationId(loadedConversations[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load conversations:', err);
+    }
+  };
+
+  // Load messages for current conversation
+  useEffect(() => {
+    const loadMessages = async () => {
+        if (!currentConversationId || !(window.electron as any)?.aiChatData) return;
+
+        try {
+            const messagesResult = await (window.electron as any).aiChatData.getMessages(currentConversationId);
+            
+            if (messagesResult.success && messagesResult.data) {
+                const uiMessages = messagesResult.data.map((msg: any) => ({
+                    // Map DB 'model' role back to 'assistant' for UI
+                    role: (msg.role === 'model' ? 'assistant' : msg.role) as 'user' | 'assistant',
+                    content: msg.content,
+                    timestamp: new Date(JSON.parse(msg.metadata || '{}').timestamp || Date.now())
+                }));
+                setChatMessages(uiMessages);
+            }
+        } catch (err) {
+            console.error('Failed to load messages:', err);
+        }
+    };
+
+    loadMessages();
+  }, [currentConversationId]);
+
+  // Initialize when selectedCopy changes
+  useEffect(() => {
+    if (selectedCopy) {
+        loadConversations();
+    } else {
+        setConversations([]);
+        setCurrentConversationId(null);
+        setChatMessages([]);
+    }
+  }, [selectedCopy]);
 
   // Handle chat send
   const handleChatSend = useCallback(async () => {
@@ -336,6 +600,9 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
     setChatInput('');
     setIsChatLoading(true);
     setOllamaError(null);
+    
+    // Save user message
+    void saveMessageToDB('user', prompt);
 
     try {
       // Build context from previous messages
@@ -345,7 +612,7 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
       }));
 
       // Get AI response
-      const { content: assistantContent } = await chatWithGemma(
+      const { content: assistantContent, toolCalls } = await chatWithGemma(
         prompt,
         priorContext,
         {
@@ -353,13 +620,64 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
         }
       );
 
-      const assistantMessage = {
-        role: 'assistant' as const,
-        content: assistantContent || 'I apologize, but I could not generate a response.',
-        timestamp: new Date(),
-      };
+      // Process tool calls if any
+      let responseContent = assistantContent || '';
+      
+      // If we have tool calls, execute them
+      if (toolCalls && toolCalls.length > 0) {
+        // Add the assistant's thought process first
+        if (responseContent) {
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: responseContent,
+            timestamp: new Date(),
+          }]);
+          void saveMessageToDB('assistant', responseContent);
+        }
 
-      setChatMessages(prev => [...prev, assistantMessage]);
+        // Execute each tool call
+        for (const toolCall of toolCalls) {
+          // Map 'file' to 'fileName' if needed (common mistake by models)
+          if (toolCall.args && toolCall.args.file && !toolCall.args.fileName) {
+            toolCall.args.fileName = toolCall.args.file;
+          }
+
+          // Show tool execution status
+          const toolMsgId = Date.now();
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: `⚙️ Executing tool: ${toolCall.name}...`,
+            timestamp: new Date(),
+          }]);
+
+          const result = await executeTool(toolCall);
+          
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: `✅ Tool Result:\n${result}`,
+            timestamp: new Date(),
+          }]);
+          
+          // Save tool execution and result
+          void saveMessageToDB('assistant', `Tool Execution: ${toolCall.name}\nResult: ${result}`, {
+            isTool: true,
+            toolName: toolCall.name,
+            toolArgs: toolCall.args,
+            toolResult: result
+          });
+          
+          // Append tool result to context for next turn (implicitly handled by chatMessages state)
+        }
+      } else {
+        // No tool calls, just show the message
+        const assistantMessage = {
+          role: 'assistant' as const,
+          content: responseContent || 'I apologize, but I could not generate a response.',
+          timestamp: new Date(),
+        };
+        setChatMessages(prev => [...prev, assistantMessage]);
+        void saveMessageToDB('assistant', assistantMessage.content);
+      }
     } catch (error) {
       console.error('Chat error:', error);
       setOllamaError(error instanceof Error ? error.message : 'Chat failed');
@@ -376,9 +694,61 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
 
   // Handle Enter key in chat input
   const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle Ctrl/Cmd+Z for undo
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleChatSend();
+    }
+  };
+
+  // Handle undo logic
+  const handleUndo = async () => {
+    if (!currentConversationId || !window.electron?.backup?.revertConversation) {
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '❌ Undo functionality is not available.',
+        timestamp: new Date(),
+      }]);
+      return;
+    }
+
+    try {
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '↩️ Reverting last change...',
+        timestamp: new Date(),
+      }]);
+
+      const result = await window.electron.backup.revertConversation(currentConversationId);
+      
+      if (result.success) {
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: '✅ Successfully reverted last change.',
+          timestamp: new Date(),
+        }]);
+        // Reload template copies to reflect reverted state
+        await loadTemplateCopies();
+      } else {
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `❌ Revert failed: ${result.error || 'Unknown error'}`,
+          timestamp: new Date(),
+        }]);
+      }
+    } catch (error) {
+      console.error('Undo error:', error);
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `❌ Undo error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+      }]);
     }
   };
 
@@ -589,16 +959,64 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
           {/* Right panel - Chat interface */}
           <div className="editor-chat">
             <div className="chat-header">
-              <FontAwesomeIcon icon={faRobot} />
-              <span>AI Assistant</span>
-              <span className={`chat-status ${ollamaReady ? 'chat-status--ready' : ''}`}>
-                {ollamaLoading
-                  ? 'Checking...'
-                  : ollamaReady
-                  ? '🟢 Ready'
-                  : '⚪ Setup Required'}
-              </span>
+              <div className="chat-header-left">
+                <FontAwesomeIcon icon={faRobot} />
+                <div className="chat-title-container" onClick={() => setShowHistory(!showHistory)}>
+                    <span className="chat-title">
+                        {conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'}
+                    </span>
+                    <FontAwesomeIcon icon={faHistory} className="history-icon" title="Chat History" />
+                </div>
+              </div>
+              
+              <div className="chat-header-actions">
+                 <button 
+                    className="undo-button"
+                    onClick={handleUndo}
+                    title="Undo Last Change (Ctrl+Z)"
+                    disabled={!currentConversationId}
+                 >
+                    <FontAwesomeIcon icon={faUndo} />
+                 </button>
+                 <button 
+                    className="new-chat-button"
+                    onClick={() => createNewConversation()}
+                    title="New Chat"
+                 >
+                    <FontAwesomeIcon icon={faPlus} />
+                 </button>
+                 <span className={`chat-status ${ollamaReady ? 'chat-status--ready' : ''}`}>
+                    {ollamaLoading
+                      ? 'Checking...'
+                      : ollamaReady
+                      ? '🟢 Ready'
+                      : '⚪ Setup Required'}
+                  </span>
+              </div>
             </div>
+            
+            {showHistory && (
+                <div className="chat-history-dropdown">
+                    <div className="history-list">
+                        {conversations.map(conv => (
+                            <div 
+                                key={conv.id} 
+                                className={`history-item ${conv.id === currentConversationId ? 'active' : ''}`}
+                                onClick={() => {
+                                    setCurrentConversationId(conv.id);
+                                    setShowHistory(false);
+                                }}
+                            >
+                                <span className="history-title">{conv.title}</span>
+                                <span className="history-date">
+                                    {/* We could add date here if available */}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {!ollamaReady ? (
               <div className="chat-setup">
                 <div className="chat-setup-card">

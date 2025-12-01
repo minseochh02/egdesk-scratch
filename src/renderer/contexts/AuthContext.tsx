@@ -66,8 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't auto-sign in - just check if a session exists
         // User can choose to use it or sign in with a different account
         if (result.success && result.session) {
-          console.log('🔐 AuthContext: Found existing session for:', result.user?.email, '- user can choose to use it or sign in with different account');
-          // Don't set session/user automatically - let user choose
+          console.log('🔐 AuthContext: Found existing session for:', result.user?.email, '- automatically restoring session');
+          // Automatically restore session so user stays logged in on refresh
+          setSession(result.session);
+          setUser(result.user);
         }
       } catch (error) {
         console.error('🔐 AuthContext: Failed to get initial session:', error);

@@ -136,6 +136,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const [existingCopies, setExistingCopies] = useState<Map<string, string>>(new Map()); // templateId -> copyId
   const [loadingCopies, setLoadingCopies] = useState<boolean>(true);
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
+  const [creatingCopyId, setCreatingCopyId] = useState<string | null>(null);
 
   // Check if OAuth token exists and has required scopes
   const checkOAuthToken = async () => {
@@ -316,6 +317,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
         // Create template copy by calling Edge Function
         const handleCreateTemplateCopy = async (templateId: string, template: RunningMCPServer) => {
           try {
+            setCreatingCopyId(templateId);
             console.log('🚀 Creating template copy for:', templateId);
             console.log('📋 Spreadsheet ID being sent to Edge Function:', templateId);
 
@@ -510,6 +512,8 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     } catch (error) {
       console.error('❌ Error creating template copy:', error);
       alert(`Failed to create template copy: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setCreatingCopyId(null);
     }
   };
 
@@ -838,12 +842,22 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                                 <p>{template.description || 'Cloud MCP Server Template'}</p>
                                 <button 
                                   className="cloud-template-create-button"
+                                  disabled={creatingCopyId === templateId}
                                   onClick={async () => {
                                     await handleCreateTemplateCopy(templateId, template);
                                   }}
                                 >
-                                  <FontAwesomeIcon icon={faPlus} />
-                                  <span>Create Server</span>
+                                  {creatingCopyId === templateId ? (
+                                    <>
+                                      <FontAwesomeIcon icon={faSpinner} spin />
+                                      <span>Creating...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FontAwesomeIcon icon={faPlus} />
+                                      <span>Create Server</span>
+                                    </>
+                                  )}
                                 </button>
                               </div>
                             )}

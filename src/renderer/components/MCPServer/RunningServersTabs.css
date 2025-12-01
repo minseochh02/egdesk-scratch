@@ -445,3 +445,11 @@
   max-width: 100%;
 }
 
+
+.cloud-template-create-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  background: linear-gradient(135deg, #7c8ff0 0%, #8a5fb8 100%);
+}

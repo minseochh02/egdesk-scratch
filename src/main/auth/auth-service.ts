@@ -327,7 +327,11 @@ export class AuthService {
         skipBrowserRedirect: false,
         redirectTo: 'egdesk://auth/callback',
         queryParams: {
+          // Use 'select_account' to allow users to choose an account, but don't force it if they're already signed in
+          // This allows keeping the current session active in the browser if desired, 
+          // while still showing the account chooser when initiating a new sign-in flow.
           prompt: 'select_account',
+          access_type: 'offline', // Request refresh token to keep session alive
         },
       };
 

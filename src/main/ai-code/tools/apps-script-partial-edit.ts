@@ -58,6 +58,11 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
       
       const currentContent = file.source;
       
+      // Create backup before modifying
+      if (conversationId) {
+        await this.createBackup(params.scriptId, params.fileName, templateCopy.scriptContent.files, conversationId);
+      }
+      
       // Perform replacement (similar to partial-edit.ts logic)
       const replacementResult = this.calculateReplacement(
         currentContent,
@@ -93,6 +98,54 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
       const errorMsg = `Failed to edit AppsScript file '${params.fileName}' in project '${params.scriptId}': ${error instanceof Error ? error.message : String(error)}`;
       console.error(`❌ ${errorMsg}`);
       throw new Error(errorMsg);
+    }
+  }
+
+  private async createBackup(
+    scriptId: string, 
+    fileName: string, 
+    files: Array<{ name: string; type: string; source: string }>, 
+    conversationId: string
+  ): Promise<void> {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const { app } = require('electron');
+      
+      // Get backups directory
+      const userDataPath = app.getPath('userData');
+      const backupsDir = path.join(userDataPath, 'backups');
+      const conversationBackupDir = path.join(backupsDir, `conversation-${conversationId}-backup`);
+      
+      // Ensure directory exists
+      await fs.promises.mkdir(conversationBackupDir, { recursive: true });
+      
+      // Find existing file content
+      const file = files.find(f => f.name === fileName);
+      
+      if (!file) return; // Should be handled by caller validation, but safe guard
+      
+      // Define backup file path
+      const safeFileName = fileName.replace(/[\/\\]/g, '_');
+      const backupFilePath = path.join(conversationBackupDir, `appsscript_${scriptId}_${safeFileName}`);
+      
+      // Metadata file
+      const metaFilePath = backupFilePath + '.meta.json';
+      
+      const metadata = {
+        originalPath: fileName,
+        scriptId: scriptId,
+        type: 'appsscript',
+        fileType: file.type,
+        isNewFile: false
+      };
+      
+      await fs.promises.writeFile(metaFilePath, JSON.stringify(metadata, null, 2), 'utf-8');
+      await fs.promises.writeFile(backupFilePath, file.source || '', 'utf-8');
+      console.log(`📚 Backed up AppsScript file for partial edit: ${fileName}`);
+      
+    } catch (error) {
+      console.error('❌ Failed to create AppsScript backup:', error);
     }
   }
 
