@@ -9,6 +9,29 @@ import type {
   NaverAPI,
 } from '../main/preload';
 
+export interface AIChatDataAPI {
+  // Conversation operations
+  getConversations: (options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getConversation: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getConversationWithMessages: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  createConversation: (conversationData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateConversation: (conversationId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+  deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  archiveConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  restoreConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  
+  // Message operations
+  getMessages: (conversationId: string, options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  addMessage: (messageData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  addMessages: (messagesData: any[]) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  updateMessage: (messageId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+  deleteMessage: (messageId: string) => Promise<{ success: boolean; error?: string }>;
+  
+  // Stats
+  getStats: (conversationId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getOverallStats: () => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
 export interface IElectronAPI {
   ipcRenderer: {
     sendMessage(
@@ -460,15 +483,10 @@ export interface IElectronAPI {
   appsScriptTools: {
     listFiles: (scriptId: string) => Promise<{ success: boolean; data?: Array<{name: string; type: string; hasSource: boolean}>; error?: string }>;
     readFile: (scriptId: string, fileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
-    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
-    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>;
-    renameFile: (scriptId: string, oldFileName: string, newFileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
-  };
-    create: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>;
-    get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
-    getByTemplate: (templateId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
-    getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
-    delete: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    renameFile: (scriptId: string, oldFileName: string, newFileName: string, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    deleteFile: (scriptId: string, fileName: string, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
   };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 
@@ -584,6 +602,9 @@ export interface IElectronAPI {
       remove: (connectionId: string) => Promise<{ success: boolean; error?: string }>;
     };
   };
+
+  aiChatData: AIChatDataAPI;
+
   gmailMCP: {
     fetchDomainUsers: (connectionId: string) => Promise<{ success: boolean; users?: any[]; error?: string }>;
     fetchUserMessages: (connectionId: string, userEmail: string, options?: any) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
@@ -681,6 +702,8 @@ export interface IElectronAPI {
     }>;
     onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => () => void;
   };
+
+  aiChatData: AIChatDataAPI;
 
   ollama: OllamaAPI;
 

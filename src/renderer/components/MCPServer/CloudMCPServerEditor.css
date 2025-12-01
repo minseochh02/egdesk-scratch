@@ -888,3 +888,150 @@
   margin: 0;
 }
 
+
+/* Chat Header Updates */
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  user-select: none;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chat-title-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  min-width: 0;
+}
+
+.chat-title-container:hover {
+  background: #333;
+}
+
+.chat-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.history-icon {
+  font-size: 12px;
+  color: #888;
+  opacity: 0.7;
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.new-chat-button {
+  background: transparent;
+  border: none;
+  color: #cccccc;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.new-chat-button:hover {
+  background: #333;
+  color: #fff;
+}
+
+/* Chat History Dropdown */
+.chat-history-dropdown {
+  position: absolute;
+  top: 48px; /* Below header */
+  left: 0;
+  right: 0;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.history-list {
+  padding: 8px;
+}
+
+.history-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  background: #333;
+}
+
+.history-item.active {
+  background: #37373d;
+  border-color: #444;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-date {
+  font-size: 11px;
+  color: #888;
+}
+
+.undo-button {
+  background: transparent;
+  border: none;
+  color: #cccccc;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.undo-button:hover:not(:disabled) {
+  background: #333;
+  color: #fff;
+}
+
+.undo-button:disabled {
+  color: #555;
+  cursor: not-allowed;
+}

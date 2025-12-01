@@ -12,6 +12,7 @@ export * from './apps-script-read-file';
 export * from './apps-script-write-file';
 export * from './apps-script-partial-edit';
 export * from './apps-script-rename-file';
+export * from './apps-script-delete-file';
 
 /**
  * Tools Index
@@ -30,3 +31,4 @@ export { AppsScriptReadFileTool } from './apps-script-read-file';
 export { AppsScriptWriteFileTool } from './apps-script-write-file';
 export { AppsScriptPartialEditTool } from './apps-script-partial-edit';
 export { AppsScriptRenameFileTool } from './apps-script-rename-file';
+export { AppsScriptDeleteFileTool } from './apps-script-delete-file';

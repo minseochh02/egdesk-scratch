@@ -24,7 +24,8 @@ import {
   AppsScriptReadFileTool,
   AppsScriptWriteFileTool,
   AppsScriptPartialEditTool,
-  AppsScriptRenameFileTool
+  AppsScriptRenameFileTool,
+  AppsScriptDeleteFileTool
 } from './tools';
 
 
@@ -278,6 +279,22 @@ export class ToolRegistry {
           required: ['script_id', 'old_file_name', 'new_file_name']
         };
       
+      case 'apps_script_delete_file':
+        return {
+          type: 'object',
+          properties: {
+            script_id: {
+              type: 'string',
+              description: 'The AppsScript project ID (stored in cloudmcp.db SQLite database)'
+            },
+            file_name: {
+              type: 'string',
+              description: 'The name of the file to delete'
+            }
+          },
+          required: ['script_id', 'file_name']
+        };
+      
       default:
         return {
           type: 'object',
@@ -421,6 +438,7 @@ export class ToolRegistry {
     this.registerTool(new AppsScriptWriteFileTool());
     this.registerTool(new AppsScriptPartialEditTool());
     this.registerTool(new AppsScriptRenameFileTool());
+    this.registerTool(new AppsScriptDeleteFileTool());
   }
 }
 
@@ -440,12 +458,14 @@ export function registerAppsScriptToolHandlers(): void {
   const { AppsScriptWriteFileTool } = require('./tools/apps-script-write-file');
   const { AppsScriptPartialEditTool } = require('./tools/apps-script-partial-edit');
   const { AppsScriptRenameFileTool } = require('./tools/apps-script-rename-file');
+  const { AppsScriptDeleteFileTool } = require('./tools/apps-script-delete-file');
   
   const listFilesTool = new AppsScriptListFilesTool();
   const readFileTool = new AppsScriptReadFileTool();
   const writeFileTool = new AppsScriptWriteFileTool();
   const partialEditTool = new AppsScriptPartialEditTool();
   const renameFileTool = new AppsScriptRenameFileTool();
+  const deleteFileTool = new AppsScriptDeleteFileTool();
   
   // List AppsScript files
   ipcMain.handle('apps-script-list-files', async (event, scriptId: string) => {
@@ -474,9 +494,9 @@ export function registerAppsScriptToolHandlers(): void {
   });
 
   // Write AppsScript file
-  ipcMain.handle('apps-script-write-file', async (event, scriptId: string, fileName: string, content: string, fileType?: string) => {
+  ipcMain.handle('apps-script-write-file', async (event, scriptId: string, fileName: string, content: string, fileType?: string, conversationId?: string) => {
     try {
-      const result = await writeFileTool.execute({ scriptId, fileName, content, fileType });
+      const result = await writeFileTool.execute({ scriptId, fileName, content, fileType }, undefined, conversationId);
       return { success: true, data: result };
     } catch (error) {
       return {
@@ -487,9 +507,9 @@ export function registerAppsScriptToolHandlers(): void {
   });
 
   // Partial edit AppsScript file
-  ipcMain.handle('apps-script-partial-edit', async (event, scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => {
+  ipcMain.handle('apps-script-partial-edit', async (event, scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean, conversationId?: string) => {
     try {
-      const result = await partialEditTool.execute({ scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching });
+      const result = await partialEditTool.execute({ scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching }, undefined, conversationId);
       return { success: true, data: result };
     } catch (error) {
       return {
@@ -500,9 +520,22 @@ export function registerAppsScriptToolHandlers(): void {
   });
 
   // Rename AppsScript file
-  ipcMain.handle('apps-script-rename-file', async (event, scriptId: string, oldFileName: string, newFileName: string) => {
+  ipcMain.handle('apps-script-rename-file', async (event, scriptId: string, oldFileName: string, newFileName: string, conversationId?: string) => {
     try {
-      const result = await renameFileTool.execute({ scriptId, oldFileName, newFileName });
+      const result = await renameFileTool.execute({ scriptId, oldFileName, newFileName }, undefined, conversationId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Delete AppsScript file
+  ipcMain.handle('apps-script-delete-file', async (event, scriptId: string, fileName: string, conversationId?: string) => {
+    try {
+      const result = await deleteFileTool.execute({ scriptId, fileName }, undefined, conversationId);
       return { success: true, data: result };
     } catch (error) {
       return {

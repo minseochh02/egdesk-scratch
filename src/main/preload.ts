@@ -682,6 +682,7 @@ export interface AppsScriptToolsAPI {
   writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
   partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>;
   renameFile: (scriptId: string, oldFileName: string, newFileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  deleteFile: (scriptId: string, fileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
 }
 
 /**
@@ -1520,9 +1521,10 @@ const electronHandler = {
   appsScriptTools: {
     listFiles: (scriptId: string) => ipcRenderer.invoke('apps-script-list-files', scriptId),
     readFile: (scriptId: string, fileName: string) => ipcRenderer.invoke('apps-script-read-file', scriptId, fileName),
-    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string) => ipcRenderer.invoke('apps-script-write-file', scriptId, fileName, content, fileType),
-    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => ipcRenderer.invoke('apps-script-partial-edit', scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching),
-    renameFile: (scriptId: string, oldFileName: string, newFileName: string) => ipcRenderer.invoke('apps-script-rename-file', scriptId, oldFileName, newFileName),
+    writeFile: (scriptId: string, fileName: string, content: string, fileType?: string, conversationId?: string) => ipcRenderer.invoke('apps-script-write-file', scriptId, fileName, content, fileType, conversationId),
+    partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean, conversationId?: string) => ipcRenderer.invoke('apps-script-partial-edit', scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching, conversationId),
+    renameFile: (scriptId: string, oldFileName: string, newFileName: string, conversationId?: string) => ipcRenderer.invoke('apps-script-rename-file', scriptId, oldFileName, newFileName, conversationId),
+    deleteFile: (scriptId: string, fileName: string, conversationId?: string) => ipcRenderer.invoke('apps-script-delete-file', scriptId, fileName, conversationId),
   } as AppsScriptToolsAPI,
   
   // ========================================================================

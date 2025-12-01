@@ -17,6 +17,7 @@ This guide shows how to create corresponding AppsScript tools:
 - `apps_script_write_file` - Write file to AppsScript project
 - `apps_script_partial_edit` - Edit file in AppsScript project
 - `apps_script_rename_file` - Rename file in AppsScript project
+- `apps_script_delete_file` - Delete file from AppsScript project
 
 ## Important: SQLite Storage
 
@@ -600,6 +601,83 @@ export class AppsScriptRenameFileTool implements ToolExecutor {
 }
 ```
 
+### 6. apps_script_delete_file
+
+**File: `apps-script-delete-file.ts`**
+
+Deletes a file from a Google AppsScript project.
+
+```typescript
+/**
+ * Delete AppsScript File Tool
+ * Deletes a file from a Google AppsScript project
+ */
+
+import type { ToolExecutor } from '../../types/ai-types';
+import { getSQLiteManager } from '../../sqlite/manager';
+
+export class AppsScriptDeleteFileTool implements ToolExecutor {
+  name = 'apps_script_delete_file';
+  description = 'Delete a file from a Google AppsScript project.';
+  dangerous = true;
+  requiresConfirmation = true;
+
+  async execute(
+    params: { scriptId: string; fileName: string }, 
+    signal?: AbortSignal, 
+    conversationId?: string
+  ): Promise<string> {
+    if (!params.scriptId) {
+      throw new Error('scriptId parameter is required');
+    }
+    
+    if (!params.fileName) {
+      throw new Error('fileName parameter is required');
+    }
+
+    try {
+      const sqliteManager = getSQLiteManager();
+      const templateCopiesManager = sqliteManager.getTemplateCopiesManager();
+      
+      // Get template copy by script ID
+      const templateCopy = templateCopiesManager.getTemplateCopyByScriptId(params.scriptId);
+      
+      if (!templateCopy) {
+        throw new Error(`AppsScript project '${params.scriptId}' not found in database`);
+      }
+      
+      if (!templateCopy.scriptContent || !templateCopy.scriptContent.files) {
+        throw new Error(`No files found in AppsScript project '${params.scriptId}'`);
+      }
+      
+      // Find the file to delete
+      const fileIndex = templateCopy.scriptContent.files.findIndex((f: any) => f.name === params.fileName);
+      if (fileIndex < 0) {
+        throw new Error(`File '${params.fileName}' not found in AppsScript project '${params.scriptId}'`);
+      }
+      
+      // Delete the file
+      templateCopy.scriptContent.files.splice(fileIndex, 1);
+      
+      // Update script content in database
+      const updated = templateCopiesManager.updateTemplateCopyScriptContent(params.scriptId, templateCopy.scriptContent);
+      
+      if (!updated) {
+        throw new Error(`Failed to update script content in database`);
+      }
+      
+      const result = `Successfully deleted AppsScript file '${params.fileName}'`;
+      console.log(`🗑️ ${result}`);
+      return result;
+    } catch (error) {
+      const errorMsg = `Failed to delete AppsScript file '${params.fileName}' in project '${params.scriptId}': ${error instanceof Error ? error.message : String(error)}`;
+      console.error(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+}
+```
+
 ## Registering Tools
 
 ### Step 1: Import Tools
@@ -620,7 +698,8 @@ import {
   AppsScriptReadFileTool,
   AppsScriptWriteFileTool,
   AppsScriptPartialEditTool,
-  AppsScriptRenameFileTool
+  AppsScriptRenameFileTool,
+  AppsScriptDeleteFileTool
 } from './tools';
 ```
 
@@ -650,6 +729,7 @@ private registerBuiltinTools(): void {
   this.registerTool(new AppsScriptWriteFileTool());
   this.registerTool(new AppsScriptPartialEditTool());
   this.registerTool(new AppsScriptRenameFileTool());
+  this.registerTool(new AppsScriptDeleteFileTool());
 }
 ```
 
@@ -761,6 +841,22 @@ case 'apps_script_rename_file':
     },
     required: ['script_id', 'old_file_name', 'new_file_name']
   };
+
+case 'apps_script_delete_file':
+  return {
+    type: 'object',
+    properties: {
+      script_id: {
+        type: 'string',
+        description: 'The AppsScript project ID'
+      },
+      file_name: {
+        type: 'string',
+        description: 'The name of the file to delete'
+      }
+    },
+    required: ['script_id', 'file_name']
+  };
 ```
 
 ### Step 4: Export Tools
@@ -773,12 +869,14 @@ export * from './apps-script-read-file';
 export * from './apps-script-write-file';
 export * from './apps-script-partial-edit';
 export * from './apps-script-rename-file';
+export * from './apps-script-delete-file';
 
 export { AppsScriptListFilesTool } from './apps-script-list-files';
 export { AppsScriptReadFileTool } from './apps-script-read-file';
 export { AppsScriptWriteFileTool } from './apps-script-write-file';
 export { AppsScriptPartialEditTool } from './apps-script-partial-edit';
 export { AppsScriptRenameFileTool } from './apps-script-rename-file';
+export { AppsScriptDeleteFileTool } from './apps-script-delete-file';
 ```
 
 ## Tool Interface Requirements

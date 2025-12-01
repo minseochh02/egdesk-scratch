@@ -48,6 +48,11 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       const existingFileIndex = existingFiles.findIndex((f: any) => f.name === params.fileName);
       const fileType = params.fileType || 'SERVER_JS';
       
+      // Create backup before modifying (for undo functionality)
+      if (conversationId) {
+        await this.createBackup(params.scriptId, params.fileName, existingFiles, conversationId);
+      }
+      
       // Update or add file
       if (existingFileIndex >= 0) {
         existingFiles[existingFileIndex].source = params.content;
@@ -80,6 +85,61 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       const errorMsg = `Failed to write AppsScript file '${params.fileName}' in project '${params.scriptId}': ${error instanceof Error ? error.message : String(error)}`;
       console.error(`❌ ${errorMsg}`);
       throw new Error(errorMsg);
+    }
+  }
+
+  private async createBackup(
+    scriptId: string, 
+    fileName: string, 
+    files: Array<{ name: string; type: string; source: string }>, 
+    conversationId: string
+  ): Promise<void> {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const { app } = require('electron');
+      
+      // Get backups directory
+      const userDataPath = app.getPath('userData');
+      const backupsDir = path.join(userDataPath, 'backups');
+      const conversationBackupDir = path.join(backupsDir, `conversation-${conversationId}-backup`);
+      
+      // Ensure directory exists
+      await fs.promises.mkdir(conversationBackupDir, { recursive: true });
+      
+      // Find existing file content
+      const file = files.find(f => f.name === fileName);
+      
+      // Define backup file path (using a safe name to avoid issues with slashes)
+      // We prefix with appsscript_ to distinguish from local file backups
+      const safeFileName = fileName.replace(/[\/\\]/g, '_');
+      const backupFilePath = path.join(conversationBackupDir, `appsscript_${scriptId}_${safeFileName}`);
+      
+      // Metadata file to store original path/name and context
+      const metaFilePath = backupFilePath + '.meta.json';
+      
+      const metadata = {
+        originalPath: fileName, // For AppsScript, this is the file name/path in the project
+        scriptId: scriptId,
+        type: 'appsscript', // Marker to identify this as an AppsScript file backup
+        fileType: file?.type,
+        isNewFile: !file // If file didn't exist, it's new
+      };
+      
+      await fs.promises.writeFile(metaFilePath, JSON.stringify(metadata, null, 2), 'utf-8');
+      
+      if (file) {
+        // Backup existing content
+        await fs.promises.writeFile(backupFilePath, file.source || '', 'utf-8');
+        console.log(`📚 Backed up AppsScript file: ${fileName}`);
+      } else {
+        // New file - just creating metadata implies deletion on revert
+        console.log(`📚 Registered new AppsScript file for backup tracking: ${fileName}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to create AppsScript backup:', error);
+      // Don't throw, just log - backup failure shouldn't block the write
     }
   }
 
