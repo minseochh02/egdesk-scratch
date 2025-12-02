@@ -20,8 +20,18 @@ import { GmailConnection } from '../../types/gmail-types';
 import { GmailMCPService } from '../gmail/gmail-mcp-service';
 import { FileSystemMCPService } from '../file-system/file-system-mcp-service';
 import { FileConversionMCPService } from '../file-conversion/file-conversion-mcp-service';
+import { AppsScriptMCPService } from '../apps-script/apps-script-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
+
+// Database path helper
+function getDatabasePath(): string {
+  if (app) {
+    return path.join(app.getPath('userData'), 'database', 'conversations.db');
+  }
+  // Fallback for standalone mode
+  return process.env.DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/conversations.db';
+}
 
 export interface HTTPServerOptions {
   port: number;
@@ -70,14 +80,24 @@ export class LocalServerManager {
   private currentPort: number | null = null;
   private useHTTPS = false;
   private store = getStore();
+  
+  // Services
   private gmailMCPService: GmailMCPService | null = null;
   private filesystemMCPService: FileSystemMCPService | null = null;
   private fileConversionMCPService: FileConversionMCPService | null = null;
+  private appsScriptMCPService: AppsScriptMCPService | null = null;
+  
+  // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
   private filesystemSSEHandler: SSEMCPHandler | null = null;
   private fileConversionSSEHandler: SSEMCPHandler | null = null;
+  private appsScriptSSEHandler: SSEMCPHandler | null = null;
+  
+  // HTTP Stream Handlers
   private httpStreamHandler: HTTPStreamHandler | null = null;
   private filesystemHTTPStreamHandler: HTTPStreamHandler | null = null;
+  private appsScriptHTTPStreamHandler: HTTPStreamHandler | null = null;
+  
   // Power management
   private powerSaveBlockerId: number | null = null;
 
@@ -335,6 +355,28 @@ export class LocalServerManager {
       return;
     }
 
+    // Apps Script HTTP Streamable endpoint for MCP protocol (POST for bidirectional streaming)
+    if (url === '/apps-script' && req.method === 'POST') {
+      await this.handleAppsScriptHTTPStream(req, res);
+      return;
+    }
+
+    // Apps Script SSE endpoints for MCP protocol
+    if (url === '/apps-script/sse') {
+      if (req.method === 'GET') {
+        await this.handleAppsScriptSSEStream(req, res);
+        return;
+      } else if (req.method === 'POST') {
+        await this.handleAppsScriptMessage(req, res);
+        return;
+      }
+    }
+
+    if (url === '/apps-script/message' && req.method === 'POST') {
+      await this.handleAppsScriptMessage(req, res);
+      return;
+    }
+
     // Gmail MCP Server endpoints
     if (url.startsWith('/gmail')) {
       await this.handleGmailMCP(url, req, res);
@@ -344,6 +386,12 @@ export class LocalServerManager {
     // FileSystem MCP Server endpoints (REST API)
     if (url.startsWith('/filesystem')) {
       await this.handleFilesystemMCP(url, req, res);
+      return;
+    }
+
+    // Apps Script MCP Server endpoints (REST API)
+    if (url.startsWith('/apps-script')) {
+      await this.handleAppsScriptMCP(url, req, res);
       return;
     }
 
@@ -376,6 +424,11 @@ export class LocalServerManager {
         'POST /filesystem/message - FileSystem message endpoint for SSE',
         '/filesystem/tools - List File System tools',
         '/filesystem/tools/call - Call a File System tool',
+        'POST /apps-script - Apps Script HTTP Streamable endpoint for MCP protocol',
+        'GET /apps-script/sse - Apps Script SSE endpoint for MCP protocol',
+        'POST /apps-script/message - Apps Script message endpoint for SSE',
+        '/apps-script/tools - List Apps Script tools',
+        '/apps-script/tools/call - Call an Apps Script tool',
         '/file-conversion/tools - List File Conversion tools',
         '/file-conversion/tools/call - Call a File Conversion tool',
         '/test-gmail - Test endpoint (dev only)'
@@ -431,6 +484,17 @@ export class LocalServerManager {
   }
 
   /**
+   * Get or create Apps Script MCP Service instance
+   */
+  private getAppsScriptMCPService(): AppsScriptMCPService {
+    if (!this.appsScriptMCPService) {
+      const dbPath = getDatabasePath();
+      this.appsScriptMCPService = new AppsScriptMCPService(dbPath);
+    }
+    return this.appsScriptMCPService;
+  }
+
+  /**
    * Get or create File Conversion MCP Service instance
    */
   private getFileConversionMCPService(): FileConversionMCPService {
@@ -467,6 +531,17 @@ export class LocalServerManager {
   }
 
   /**
+   * Get or create Apps Script SSE handler instance
+   */
+  private getAppsScriptSSEHandler(): SSEMCPHandler {
+    if (!this.appsScriptSSEHandler) {
+      const appsScriptService = this.getAppsScriptMCPService();
+      this.appsScriptSSEHandler = new SSEMCPHandler(appsScriptService, '/apps-script/message', 'apps-script');
+    }
+    return this.appsScriptSSEHandler;
+  }
+
+  /**
    * Get or create HTTP Stream handler instance
    */
   private async getHTTPStreamHandler(): Promise<HTTPStreamHandler> {
@@ -486,6 +561,17 @@ export class LocalServerManager {
       this.filesystemHTTPStreamHandler = new HTTPStreamHandler(filesystemService);
     }
     return this.filesystemHTTPStreamHandler;
+  }
+
+  /**
+   * Get or create Apps Script HTTP Stream handler instance
+   */
+  private getAppsScriptHTTPStreamHandler(): HTTPStreamHandler {
+    if (!this.appsScriptHTTPStreamHandler) {
+      const appsScriptService = this.getAppsScriptMCPService();
+      this.appsScriptHTTPStreamHandler = new HTTPStreamHandler(appsScriptService);
+    }
+    return this.appsScriptHTTPStreamHandler;
   }
 
   /**
@@ -538,6 +624,35 @@ export class LocalServerManager {
       await httpStreamHandler.handleStream(req, res);
     } catch (error) {
       console.error('❌ Error handling FileSystem HTTP Stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Apps Script HTTP Stream endpoint (POST /apps-script)
+   * This is the new bidirectional HTTP streaming protocol
+   */
+  private async handleAppsScriptHTTPStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Apps Script MCP is enabled
+    if (!this.isMCPServerEnabled('apps-script')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Apps Script MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'apps-script'
+      }));
+      return;
+    }
+
+    try {
+      const httpStreamHandler = this.getAppsScriptHTTPStreamHandler();
+      await httpStreamHandler.handleStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling Apps Script HTTP Stream:', error);
       res.writeHead(500);
       res.end(JSON.stringify({
         success: false,
@@ -659,6 +774,62 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle Apps Script SSE stream endpoint (GET /apps-script/sse)
+   */
+  private async handleAppsScriptSSEStream(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Apps Script MCP is enabled
+    if (!this.isMCPServerEnabled('apps-script')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Apps Script MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'apps-script'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = this.getAppsScriptSSEHandler();
+      await sseHandler.handleSSEStream(req, res);
+    } catch (error) {
+      console.error('❌ Error handling Apps Script SSE stream:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Apps Script message endpoint (POST /apps-script/message)
+   */
+  private async handleAppsScriptMessage(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Apps Script MCP is enabled
+    if (!this.isMCPServerEnabled('apps-script')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Apps Script MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'apps-script'
+      }));
+      return;
+    }
+
+    try {
+      const sseHandler = this.getAppsScriptSSEHandler();
+      await sseHandler.handleMessage(req, res);
+    } catch (error) {
+      console.error('❌ Error handling Apps Script message:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle Gmail MCP requests
    */
   private async handleGmailMCP(url: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -734,6 +905,45 @@ export class LocalServerManager {
       availableEndpoints: [
         '/filesystem/tools - List available tools',
         '/filesystem/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle Apps Script MCP requests
+   */
+  private async handleAppsScriptMCP(url: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Check if Apps Script MCP is enabled
+    if (!this.isMCPServerEnabled('apps-script')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Apps Script MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'apps-script'
+      }));
+      return;
+    }
+
+    // List Apps Script tools
+    if (url === '/apps-script/tools' && req.method === 'GET') {
+      this.handleAppsScriptToolsList(res);
+      return;
+    }
+
+    // Call an Apps Script tool
+    if (url === '/apps-script/tools/call' && req.method === 'POST') {
+      await this.handleAppsScriptToolCall(req, res);
+      return;
+    }
+
+    // Unknown Apps Script endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Apps Script MCP endpoint not found',
+      availableEndpoints: [
+        '/apps-script/tools - List available tools',
+        '/apps-script/tools/call - Call a tool'
       ]
     }));
   }
@@ -873,6 +1083,58 @@ export class LocalServerManager {
       }, null, 2));
     } catch (error) {
       console.error('Error calling FileSystem tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Apps Script tools list
+   */
+  private handleAppsScriptToolsList(res: http.ServerResponse): void {
+    const service = this.getAppsScriptMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle Apps Script tool call
+   */
+  private async handleAppsScriptToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`📝 Calling Apps Script tool: ${tool}`);
+
+      // Get Apps Script service
+      const service = this.getAppsScriptMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling Apps Script tool:', error);
       res.writeHead(500);
       res.end(JSON.stringify({
         success: false,
@@ -1379,18 +1641,12 @@ export class LocalServerManager {
         name: 'file-conversion',
         enabled: true, // Enabled by default
         description: 'File Conversion MCP Server - Convert between file formats (PDF, images, documents)'
+      },
+      {
+        name: 'apps-script',
+        enabled: true, // Enabled by default
+        description: 'Apps Script MCP Server - Virtual Filesystem for editing Google Apps Script projects'
       }
-      // Future servers:
-      // {
-      //   name: 'calendar',
-      //   enabled: false,
-      //   description: 'Google Calendar MCP Server - Access calendar data'
-      // },
-      // {
-      //   name: 'drive',
-      //   enabled: false,
-      //   description: 'Google Drive MCP Server - Access drive files'
-      // }
     ];
   }
 

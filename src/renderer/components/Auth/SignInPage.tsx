@@ -21,7 +21,13 @@ export default function SignInPage() {
     setSigningIn(true);
     setError(null);
     try {
+      // Wait for the switch to complete
       await switchAccount(userId);
+      // Force a small delay to allow state to propagate
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // We rely on the AuthContext state update to trigger navigation/UI changes
+      // but if nothing happens, we can reload the page as a fallback
+      // window.location.reload();
     } catch (err: any) {
       console.error('Account switch failed:', err);
       setError(err.message || 'Failed to switch account');
@@ -50,7 +56,7 @@ export default function SignInPage() {
         ].join(' ');
         await signInMethod(scopes);
       } else {
-        await signInMethod();
+      await signInMethod();
       }
       // The auth state will be updated when the OAuth callback is received
     } catch (err: any) {

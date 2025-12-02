@@ -142,10 +142,11 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const checkOAuthToken = async () => {
     try {
       setCheckingOAuthToken(true);
+      console.log('🔍 RunningServersTabs: Starting OAuth token check...');
       
       // First, check Supabase session (from GoogleOAuthSignIn component)
       const sessionResult = await window.electron.auth.getSession();
-      console.log('🔍 Checking Supabase session:', {
+      console.log('🔍 RunningServersTabs: Supabase session result:', {
         success: sessionResult.success,
         hasSession: !!sessionResult.session,
         hasUser: !!sessionResult.user,
@@ -160,14 +161,14 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
           user.identities?.some((id: any) => id.provider === 'google');
         
         if (isGoogleAuth) {
-          console.log('✅ Google OAuth session found via Supabase');
+          console.log('✅ RunningServersTabs: Google OAuth session found via Supabase');
           // User is authenticated with Google via Supabase
           // Check if we also have the token in electron-store with scopes
           const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
           
           if (tokenResult.success && tokenResult.token) {
             const token = tokenResult.token;
-            console.log('📦 Token from store:', {
+            console.log('📦 RunningServersTabs: Token from store:', {
               hasAccessToken: !!token.access_token,
               hasScopes: !!token.scopes,
               scopesType: typeof token.scopes
@@ -175,7 +176,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
             
             // First check if token has access_token (required for Google API calls)
             if (!token.access_token) {
-              console.log('⚠️ Token exists but no access_token - cannot use for API calls');
+              console.log('⚠️ RunningServersTabs: Token exists but no access_token - cannot use for API calls');
               setHasValidOAuthToken(false);
               return;
             }
@@ -196,69 +197,51 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
               );
               
               if (hasAllScopes) {
-                console.log('✅ All required scopes present in token');
+                console.log('✅ RunningServersTabs: All required scopes present in token');
                 setHasValidOAuthToken(true);
                 return;
               } else {
-                console.log('⚠️ Token exists but missing some required scopes');
+                console.log('⚠️ RunningServersTabs: Token exists but missing some required scopes');
                 // Still allow access since user has access_token, but log warning
                 setHasValidOAuthToken(true);
                 return;
               }
             } else {
               // Token exists with access_token but no scopes - allow access
-              console.log('⚠️ Token exists with access_token but no scopes stored - allowing access');
+              console.log('⚠️ RunningServersTabs: Token exists with access_token but no scopes stored - allowing access');
               setHasValidOAuthToken(true);
               return;
             }
           } else {
             // No token in store, but user is authenticated via Supabase
-            // This happens when using GoogleOAuthSignIn component directly
-            // However, we need an actual Google OAuth token for API calls, not just Supabase session
-            console.log('⚠️ Google authenticated via Supabase but no Google OAuth token found in store');
-            console.log('⚠️ User needs to sign in with Google to get OAuth token for API access');
+            console.log('⚠️ RunningServersTabs: Google authenticated via Supabase but no Google OAuth token found in store');
+            console.log('⚠️ RunningServersTabs: User needs to sign in with Google to get OAuth token for API access');
             setHasValidOAuthToken(false);
             return;
           }
+        } else {
+            console.log('⚠️ RunningServersTabs: User is signed in but NOT with Google');
         }
+      } else {
+          console.log('❌ RunningServersTabs: No active Supabase session found');
       }
       
       // Fallback: Check electron-store token directly
       const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
-      console.log('🔍 Checking electron-store token:', tokenResult);
+      console.log('🔍 RunningServersTabs: Checking electron-store token directly:', tokenResult);
       
       if (tokenResult.success && tokenResult.token) {
         const token = tokenResult.token;
         
         // Check if token has access_token (required for Google API calls)
         if (token.access_token) {
-          console.log('✅ Google OAuth token found in electron-store');
-          
-          // Check scopes if available
-          if (token.scopes) {
-            let tokenScopes: string[] = [];
-            
-            if (Array.isArray(token.scopes)) {
-              tokenScopes = token.scopes;
-            } else if (typeof token.scopes === 'string') {
-              tokenScopes = (token.scopes as string).split(' ');
-            }
-            
-            const hasAllScopes = REQUIRED_OAUTH_SCOPES.every(scope => 
-              tokenScopes.includes(scope)
-            );
-            
-            setHasValidOAuthToken(hasAllScopes);
-            return;
-          } else {
-            // Token exists but no scopes - allow access
+          console.log('✅ RunningServersTabs: Google OAuth token found in electron-store (fallback)');
             setHasValidOAuthToken(true);
             return;
-          }
         }
       }
       
-      console.log('❌ No valid OAuth token or session found');
+      console.log('❌ RunningServersTabs: No valid OAuth token or session found (final check)');
       setHasValidOAuthToken(false);
     } catch (err) {
       console.error('Error checking OAuth token:', err);
@@ -689,22 +672,27 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                 <div className="cloud-oauth-section">
                   <div className="cloud-oauth-header">
                     <h3>Authentication Required</h3>
-                    <p>Sign in with Google to access cloud MCP servers</p>
+                    <p>
+                      {hasValidOAuthToken === false && (window.electron as any)?.auth?.user 
+                        ? "Additional permissions needed for Cloud MCP Servers." 
+                        : "Sign in with Google to access cloud MCP servers"}
+                    </p>
                   </div>
-                  <GoogleOAuthSignIn
-                    onSignInSuccess={async (user, session) => {
-                      console.log('Google OAuth sign in successful:', user);
-                      // Re-check token after sign in
-                      await checkOAuthToken();
-                      // Optionally reload cloud servers after sign in
-                      if (loadCloudServers) {
-                        loadCloudServers(true);
-                      }
-                    }}
-                    onSignInError={(error) => {
-                      console.error('Google OAuth sign in error:', error);
-                    }}
-                  />
+                  
+                  {/* If user is already signed in but missing token, show Re-Sign In button instead of generic sign in */}
+                  <div className="cloud-oauth-login-container">
+                     <button
+                      onClick={handleReSignIn}
+                      className="btn btn-primary google-signin-btn"
+                      style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}
+                    >
+                      <FontAwesomeIcon icon={faSync} />
+                      {hasValidOAuthToken === false ? "Authorize Google Workspace" : "Sign in with Google"}
+                    </button>
+                    <p className="oauth-help-text" style={{ marginTop: '1rem', color: '#888', fontSize: '0.9rem' }}>
+                      This will open a browser window to authorize access to Google Sheets and Apps Script.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -854,8 +842,8 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                                     </>
                                   ) : (
                                     <>
-                                      <FontAwesomeIcon icon={faPlus} />
-                                      <span>Create Server</span>
+                                  <FontAwesomeIcon icon={faPlus} />
+                                  <span>Create Server</span>
                                     </>
                                   )}
                                 </button>

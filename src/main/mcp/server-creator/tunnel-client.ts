@@ -17,6 +17,7 @@ interface TunnelConfig {
   localServerUrl: string;
   reconnectInterval?: number;
   autoPrompt?: boolean;
+  skipRegistration?: boolean;
 }
 
 interface TunnelRequest {
@@ -378,6 +379,11 @@ export class TunnelClient {
    * @returns true if registration successful, false otherwise
    */
   private async registerWithTunnelService(name: string): Promise<boolean> {
+    if (this.config.skipRegistration) {
+      console.log(`⏩ Skipping registration for "${name}" (handled externally)`);
+      return true;
+    }
+
     try {
       console.log(`📝 Registering MCP server "${name}" with tunnel service...`);
 

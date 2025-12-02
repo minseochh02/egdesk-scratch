@@ -226,22 +226,22 @@ export async function chatWithGemma(
         
         // Extract content if present
         if (typeof parsed.content === 'string') {
-          parsedContent = parsed.content;
-        }
+        parsedContent = parsed.content;
+      }
         
         // Extract toolCalls if present
         if (Array.isArray(parsed.toolCalls)) {
-          parsedToolCalls = parsed.toolCalls
-            .map((tool: any) => {
-              if (!tool || typeof tool !== 'object') return null;
-              if (typeof tool.name !== 'string') return null;
-              const args =
-                tool.args && typeof tool.args === 'object' && !Array.isArray(tool.args)
-                  ? tool.args
-                  : {};
-              return { name: tool.name, args };
-            })
-            .filter((tool: GemmaToolCall | null): tool is GemmaToolCall => Boolean(tool));
+        parsedToolCalls = parsed.toolCalls
+          .map((tool: any) => {
+            if (!tool || typeof tool !== 'object') return null;
+            if (typeof tool.name !== 'string') return null;
+            const args =
+              tool.args && typeof tool.args === 'object' && !Array.isArray(tool.args)
+                ? tool.args
+                : {};
+            return { name: tool.name, args };
+          })
+          .filter((tool: GemmaToolCall | null): tool is GemmaToolCall => Boolean(tool));
             
           // If we successfully parsed tool calls, we should use the parsed content
           // instead of the raw content which might include the JSON block

@@ -86,48 +86,48 @@ export class BackupManager {
 
     for (const baseDir of backupDirs) {
       console.log(`🔍 Debug: Scanning backup directory: ${baseDir}`);
-      try {
+    try {
         const backupExists = await fs.promises.access(baseDir).then(() => true).catch(() => false);
-        if (!backupExists) {
+      if (!backupExists) {
             console.log(`🔍 Debug: Directory does not exist: ${baseDir}`);
             continue;
-        }
+      }
 
         const entries = await fs.promises.readdir(baseDir, { withFileTypes: true });
         console.log(`🔍 Debug: Found ${entries.length} entries in ${baseDir}`);
 
-        for (const entry of entries) {
-          if (entry.isDirectory() && entry.name.startsWith('conversation-') && entry.name.endsWith('-backup')) {
-            const conversationId = entry.name.replace('conversation-', '').replace('-backup', '');
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('conversation-') && entry.name.endsWith('-backup')) {
+          const conversationId = entry.name.replace('conversation-', '').replace('-backup', '');
             
             // Avoid duplicates if same conversation exists in multiple locations (unlikely but good safety)
             if (processedIds.has(conversationId)) continue;
 
             const backupPath = path.join(baseDir, entry.name);
+          
+          try {
+            const stats = await fs.promises.stat(backupPath);
+            const files = await this.getBackupFiles(backupPath);
             
-            try {
-              const stats = await fs.promises.stat(backupPath);
-              const files = await this.getBackupFiles(backupPath);
-              
-              backups.push({
-                conversationId,
-                backupPath,
-                timestamp: stats.birthtime,
-                files
-              });
+            backups.push({
+              conversationId,
+              backupPath,
+              timestamp: stats.birthtime,
+              files
+            });
               processedIds.add(conversationId);
-            } catch (error) {
+          } catch (error) {
               console.warn(`Failed to read backup info for ${entry.name} in ${baseDir}:`, error);
             }
           }
         }
       } catch (error) {
         console.warn(`Failed to read backups from ${baseDir}:`, error);
+        }
       }
-    }
 
-    // Sort by timestamp (newest first)
-    return backups.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      // Sort by timestamp (newest first)
+      return backups.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }
 
   /**

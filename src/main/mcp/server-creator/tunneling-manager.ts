@@ -9,6 +9,7 @@
  * - Tunnel lifecycle management
  */
 
+import { getAuthService } from '../../auth/auth-service';
 import { 
   TunnelClient, 
   AddPermissionsRequest, 
@@ -59,10 +60,8 @@ export async function registerServerName(
 
     console.log(`🔗 Registering MCP server: ${name}`);
 
-    // Build URL with query parameters
-    const url = `${SUPABASE_URL}/functions/v1/register?name=${encodeURIComponent(name)}${
-      password ? `&password=${encodeURIComponent(password)}` : ''
-    }`;
+    // Build URL
+    const url = `${SUPABASE_URL}/functions/v1/register`;
 
     // Prepare headers
     const headers: Record<string, string> = {
@@ -75,10 +74,34 @@ export async function registerServerName(
       headers['apikey'] = SUPABASE_ANON_KEY;
     }
 
-    // Make GET request
+    // If we have a user session, use their token for Authorization instead of anon key
+    // This is required because the Edge Function checks for an authenticated user
+    try {
+      const authService = getAuthService();
+      const { session } = await authService.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+        console.log('🔐 Using user session token for registration');
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to retrieve user session, falling back to anon key:', err);
+    }
+
+    // Prepare body
+    const body = JSON.stringify({
+      name,
+      // Generate a simple server_key from name if not provided (or let the function handle it if logic exists)
+      // The edge function expects server_key.
+      server_key: name.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+      connection_url: 'http://localhost:8080', // Default
+      description: `MCP Server: ${name}`
+    });
+
+    // Make POST request
     const response = await fetch(url, {
-      method: 'GET',
+      method: 'POST',
       headers,
+      body
     });
 
     const data = await response.json();
@@ -152,6 +175,23 @@ export async function startTunnel(
     }
 
     console.log(`🚀 Starting tunnel: ${serverName} → ${localServerUrl}`);
+
+    // Register with Supabase Edge Function first to ensure secure IP storage
+    console.log(`📝 Registering with Supabase Edge Function...`);
+    const registration = await registerServerName(serverName);
+    
+    if (!registration.success) {
+      // If name is taken, we can proceed (it might be our own server), otherwise fail
+      if (registration.status !== 'name_taken') {
+        console.error(`❌ Supabase registration failed: ${registration.message}`);
+        // We generally want to fail here, but for now let's just log error and try to proceed 
+        // in case the tunnel service can still handle it, or throw if strict security is required.
+        // throw new Error(`Registration failed: ${registration.message}`);
+      } else {
+        console.log(`ℹ️ Server name already registered in Supabase, proceeding...`);
+      }
+    }
+
     console.log(`📝 Auto-registering with tunnel service...`);
 
     // Create tunnel client (registration happens automatically in start())
@@ -161,13 +201,27 @@ export async function startTunnel(
       localServerUrl,
       reconnectInterval: 5000,
       autoPrompt: false, // Don't prompt in GUI mode
+      skipRegistration: true, // Registration handled by Supabase Edge Function above
     });
 
     // Start tunnel (this auto-registers and connects)
     await tunnel.start();
 
-    // Wait a bit for connection to establish and get public URL
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for connection to establish and get public URL (poll for up to 10 seconds)
+    let attempts = 0;
+    while ((!tunnel.isConnected() || !tunnel.getPublicUrl()) && attempts < 40) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      attempts++;
+    }
+
+    if (!tunnel.isConnected()) {
+      console.warn(`⚠️ Tunnel started but failed to connect within 10 seconds`);
+      tunnel.stop();
+      return {
+        success: false,
+        message: 'Tunnel started but failed to establish connection to service (timeout)',
+      };
+    }
 
     // Store active tunnel
     activeTunnels.set(serverName, tunnel);

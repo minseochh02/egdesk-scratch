@@ -670,12 +670,12 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
         }
       } else {
         // No tool calls, just show the message
-        const assistantMessage = {
-          role: 'assistant' as const,
+      const assistantMessage = {
+        role: 'assistant' as const,
           content: responseContent || 'I apologize, but I could not generate a response.',
-          timestamp: new Date(),
-        };
-        setChatMessages(prev => [...prev, assistantMessage]);
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, assistantMessage]);
         void saveMessageToDB('assistant', assistantMessage.content);
       }
     } catch (error) {
@@ -960,7 +960,7 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
           <div className="editor-chat">
             <div className="chat-header">
               <div className="chat-header-left">
-                <FontAwesomeIcon icon={faRobot} />
+              <FontAwesomeIcon icon={faRobot} />
                 <div className="chat-title-container" onClick={() => setShowHistory(!showHistory)}>
                     <span className="chat-title">
                         {conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'}
@@ -985,14 +985,14 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                  >
                     <FontAwesomeIcon icon={faPlus} />
                  </button>
-                 <span className={`chat-status ${ollamaReady ? 'chat-status--ready' : ''}`}>
-                    {ollamaLoading
-                      ? 'Checking...'
-                      : ollamaReady
-                      ? '🟢 Ready'
-                      : '⚪ Setup Required'}
-                  </span>
-              </div>
+              <span className={`chat-status ${ollamaReady ? 'chat-status--ready' : ''}`}>
+                {ollamaLoading
+                  ? 'Checking...'
+                  : ollamaReady
+                  ? '🟢 Ready'
+                  : '⚪ Setup Required'}
+              </span>
+            </div>
             </div>
             
             {showHistory && (
