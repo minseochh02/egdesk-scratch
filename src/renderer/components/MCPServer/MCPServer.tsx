@@ -222,6 +222,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     updatedAt?: string;
   }>>([]);
 
+  // Tunnel loading state
+  const [isTunnelStarting, setIsTunnelStarting] = useState<boolean>(false);
+  const [isTunnelStopping, setIsTunnelStopping] = useState<boolean>(false);
+
   // MCP Server name state
   const [mcpServerName, setMcpServerName] = useState<string>('my-mcp-server');
   const [isEditingMcpServerName, setIsEditingMcpServerName] = useState<boolean>(false);
@@ -1765,6 +1769,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         return;
       }
       
+      setIsTunnelStarting(true);
       console.log(`🚀 Starting tunnel for MCP server: ${mcpServerName}`);
       
       const localServerUrl = `http://localhost:${httpServerStatus.port}`;
@@ -1802,11 +1807,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     } catch (error) {
       console.error('Error starting tunnel:', error);
       alert(`❌ Error starting tunnel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTunnelStarting(false);
     }
   };
 
   const handleStopTunnelForConfig = async () => {
     try {
+      setIsTunnelStopping(true);
       console.log(`🛑 Stopping tunnel for: ${mcpServerName}`);
       
       const result = await window.electron.invoke('mcp-tunnel-stop', mcpServerName);
@@ -1838,6 +1846,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       // Still reload to ensure state is synced
       await loadActiveTunnelConfig();
       alert(`❌ Error stopping tunnel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTunnelStopping(false);
     }
   };
 
@@ -2026,6 +2036,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         handleStopTunnel={handleStopTunnelForConfig}
         loadActiveTunnelConfig={loadActiveTunnelConfig}
         checkTunnelHealth={checkTunnelHealth}
+        isTunnelStarting={isTunnelStarting}
+        isTunnelStopping={isTunnelStopping}
       />
 
       {/* Conditionally render Script Editor or Running Servers Tabs */}

@@ -394,20 +394,20 @@ export class GoogleWorkspaceService {
               url: 'https://script.google.com/home/usersettings',
             };
           } else {
-            // Log full error details for debugging (especially on Windows)
-            console.error('❌ Failed to copy Apps Script:', {
-              message: scriptError.message,
-              code: scriptError.code,
-              status: scriptError.response?.status,
-              statusText: scriptError.response?.statusText,
-              data: scriptError.response?.data,
-              errors: scriptError.errors,
-              stack: scriptError.stack,
-              platform: process.platform,
-              spreadsheetId: spreadsheetId,
-              hasFiles: !!templateContent.appsScript?.files,
-              filesCount: templateContent.appsScript?.files?.length || 0,
-            });
+          // Log full error details for debugging (especially on Windows)
+          console.error('❌ Failed to copy Apps Script:', {
+            message: scriptError.message,
+            code: scriptError.code,
+            status: scriptError.response?.status,
+            statusText: scriptError.response?.statusText,
+            data: scriptError.response?.data,
+            errors: scriptError.errors,
+            stack: scriptError.stack,
+            platform: process.platform,
+            spreadsheetId: spreadsheetId,
+            hasFiles: !!templateContent.appsScript?.files,
+            filesCount: templateContent.appsScript?.files?.length || 0,
+          });
             appsScriptError = {
               code: scriptError.code || 'UNKNOWN_ERROR',
               message: scriptError.message || 'Failed to copy Apps Script',

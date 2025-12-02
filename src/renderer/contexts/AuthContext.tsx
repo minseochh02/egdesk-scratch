@@ -157,8 +157,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const switchAccount = async (userId: string) => {
     try {
+      console.log('🔐 AuthContext: Switching to account', userId);
       const result = await window.electron.auth.switchAccount(userId);
+      console.log('🔐 AuthContext: switchAccount result:', result);
+      
       if (result.success && result.session) {
+        console.log('🔐 AuthContext: Setting user and session:', result.session.user);
         setSession(result.session);
         setUser(result.session.user);
       } else {

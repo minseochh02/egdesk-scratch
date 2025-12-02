@@ -12,7 +12,8 @@ import {
   faCheck,
   faCopy,
   faEdit,
-  faTimes
+  faTimes,
+  faSpinner
 } from '../../utils/fontAwesomeIcons';
 import InviteManager from './InviteManager';
 
@@ -73,6 +74,8 @@ interface TunnelAndServerConfigProps {
     lastHealthCheck: string;
     healthError?: string;
   }>;
+  isTunnelStarting?: boolean;
+  isTunnelStopping?: boolean;
 }
 
 const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
@@ -95,7 +98,9 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   handleStartTunnel,
   handleStopTunnel,
   loadActiveTunnelConfig,
-  checkTunnelHealth
+  checkTunnelHealth,
+  isTunnelStarting = false,
+  isTunnelStopping = false
 }) => {
   const handleCopyPublicUrl = () => {
     if (activeTunnelConfig.publicUrl) {
@@ -256,7 +261,7 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
           {!activeTunnelConfig.publicUrl ? (
             <button
               onClick={handleStartTunnel}
-              disabled={!httpServerStatus.isRunning}
+              disabled={!httpServerStatus.isRunning || isTunnelStarting}
               style={{
                 background: httpServerStatus.isRunning 
                   ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
@@ -267,22 +272,22 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                   : '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '8px',
                 padding: '12px 24px',
-                cursor: httpServerStatus.isRunning ? 'pointer' : 'not-allowed',
+                cursor: (httpServerStatus.isRunning && !isTunnelStarting) ? 'pointer' : 'not-allowed',
                 fontSize: '14px',
                 fontWeight: '600',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                opacity: httpServerStatus.isRunning ? 1 : 0.5,
+                opacity: (httpServerStatus.isRunning && !isTunnelStarting) ? 1 : 0.5,
                 transition: 'all 0.2s ease'
               }}
               title={httpServerStatus.isRunning 
                 ? 'Start tunnel for local MCP server' 
                 : 'Start HTTP server first to enable tunneling'}
             >
-              <FontAwesomeIcon icon={faPlay} />
-              Start Tunnel
-              {!httpServerStatus.isRunning && (
+              <FontAwesomeIcon icon={isTunnelStarting ? faSpinner : faPlay} spin={isTunnelStarting} />
+              {isTunnelStarting ? 'Starting Tunnel...' : 'Start Tunnel'}
+              {!httpServerStatus.isRunning && !isTunnelStarting && (
                 <span style={{ fontSize: '12px', opacity: 0.8 }}>
                   (HTTP server must be running)
                 </span>
@@ -291,28 +296,28 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
           ) : (
             <button
               onClick={handleStopTunnel}
-              disabled={!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable}
+              disabled={(!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) || isTunnelStopping}
               style={{
                 background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                 color: 'white',
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 borderRadius: '8px',
                 padding: '12px 24px',
-                cursor: (!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) ? 'not-allowed' : 'pointer',
+                cursor: ((!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) || isTunnelStopping) ? 'not-allowed' : 'pointer',
                 fontSize: '14px',
                 fontWeight: '600',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                opacity: (!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) ? 0.6 : 1,
+                opacity: ((!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) || isTunnelStopping) ? 0.6 : 1,
                 transition: 'all 0.2s ease'
               }}
               title={(!activeTunnelConfig.isConnected && !activeTunnelConfig.isServiceAvailable) 
                 ? "Cannot stop tunnel - service unavailable. Use refresh button to sync state." 
                 : "Stop tunnel connection"}
             >
-              <FontAwesomeIcon icon={faStop} />
-              {activeTunnelConfig.isConnected || activeTunnelConfig.isServiceAvailable ? 'Stop Tunnel' : 'Force Stop'}
+              <FontAwesomeIcon icon={isTunnelStopping ? faSpinner : faStop} spin={isTunnelStopping} />
+              {isTunnelStopping ? 'Stopping Tunnel...' : (activeTunnelConfig.isConnected || activeTunnelConfig.isServiceAvailable ? 'Stop Tunnel' : 'Force Stop')}
             </button>
           )}
           
