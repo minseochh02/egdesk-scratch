@@ -29,7 +29,8 @@ import {
   faCopy,
   faPlus,
   faTrash,
-  faEdit
+  faEdit,
+  faFileCode
 } from '../../utils/fontAwesomeIcons';
 import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
@@ -1214,6 +1215,17 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       gradient: 'linear-gradient(135deg, #ea4335 0%, #d33b2c 100%)',
       isAvailable: true,
       features: ['Email Integration', 'AI Content Generation', 'Automated Workflows', 'Message Management'],
+      status: 'available'
+    },
+    {
+      id: 'apps-script',
+      name: 'Apps Script',
+      description: 'Virtual Filesystem for editing Google Apps Script projects',
+      icon: faFileCode,
+      color: '#4285f4',
+      gradient: 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)',
+      isAvailable: true,
+      features: ['Project Management', 'File Editing', 'Code Execution', 'Deployment'],
       status: 'available'
     }
   ];

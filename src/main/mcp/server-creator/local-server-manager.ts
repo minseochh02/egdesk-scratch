@@ -33,6 +33,15 @@ function getDatabasePath(): string {
   return process.env.DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/conversations.db';
 }
 
+// Cloud MCP Database path helper
+function getCloudMCPDatabasePath(): string {
+  if (app) {
+    return path.join(app.getPath('userData'), 'database', 'cloudmcp.db');
+  }
+  // Fallback for standalone mode
+  return process.env.CLOUDMCP_DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/cloudmcp.db';
+}
+
 export interface HTTPServerOptions {
   port: number;
   useHTTPS?: boolean;  // Optional: false = HTTP, true = HTTPS (for tunnel mode)
@@ -488,7 +497,7 @@ export class LocalServerManager {
    */
   private getAppsScriptMCPService(): AppsScriptMCPService {
     if (!this.appsScriptMCPService) {
-      const dbPath = getDatabasePath();
+      const dbPath = getCloudMCPDatabasePath();
       this.appsScriptMCPService = new AppsScriptMCPService(dbPath);
     }
     return this.appsScriptMCPService;

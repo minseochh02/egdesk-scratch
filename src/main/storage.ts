@@ -83,6 +83,11 @@ export function initializeStore(): Promise<void> {
             name: 'file-conversion',
             enabled: true,
             description: 'File Conversion MCP Server - Convert between file formats (PDF, images, documents)'
+          },
+          {
+            name: 'apps-script',
+            enabled: true,
+            description: 'Apps Script MCP Server - Virtual Filesystem for editing Google Apps Script projects'
           }
         ],
       },
@@ -91,6 +96,7 @@ export function initializeStore(): Promise<void> {
       // Migrations: Add filesystem and file-conversion servers to existing stores
       migrateFilesystemServer();
       migrateFileConversionServer();
+      migrateAppsScriptServer();
       
       resolve();
     } catch (error) {
@@ -153,6 +159,34 @@ function migrateFileConversionServer() {
     }
   } catch (error) {
     console.error('Error during file-conversion server migration:', error);
+  }
+}
+
+/**
+ * Migration: Add apps-script server to existing stores if not present
+ */
+function migrateAppsScriptServer() {
+  try {
+    const mcpServers = store.get('mcpServers', []) as any[];
+    
+    // Check if apps-script server already exists
+    const hasAppsScript = mcpServers.some(server => server.name === 'apps-script');
+    
+    if (!hasAppsScript) {
+      console.log('🔄 Migrating: Adding apps-script server to MCP servers list');
+      
+      // Add apps-script server
+      mcpServers.push({
+        name: 'apps-script',
+        enabled: true,
+        description: 'Apps Script MCP Server - Virtual Filesystem for editing Google Apps Script projects'
+      });
+      
+      store.set('mcpServers', mcpServers);
+      console.log('✅ Apps-script server added to MCP servers list');
+    }
+  } catch (error) {
+    console.error('Error during apps-script server migration:', error);
   }
 }
 

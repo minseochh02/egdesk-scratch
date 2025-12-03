@@ -270,3 +270,4 @@ const { token } = await window.electron.auth.getGoogleWorkspaceToken();
 4. **Secure deletion:** When clearing tokens, ensure they're actually deleted from disk
 5. **Key management:** Consider using OS keychain for encryption keys in production
 
+

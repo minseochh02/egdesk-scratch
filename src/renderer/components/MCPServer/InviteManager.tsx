@@ -263,7 +263,6 @@ alice@company.com, bob@company.com
 charlie@company.com"
               value={newEmails}
               onChange={(e) => {
-                console.log('📝 Textarea onChange fired, value:', e.target.value);
                 setNewEmails(e.target.value);
               }}
               onFocus={() => console.log('📝 Textarea focused')}
