@@ -122,10 +122,12 @@ export class AppsScriptMCPService implements IMCPService {
           // Construct path from projectId and fileName
           const readPath = `/${args.projectId}/${args.fileName}`;
           result = await this.service.readFile(readPath);
+          // Ensure result is a string (handle case where source was stored as object)
+          const textContent = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
           return {
             content: [{
               type: 'text',
-              text: result
+              text: textContent
             }]
           };
 

@@ -52,7 +52,7 @@ export class AppsScriptService {
   /**
    * List entries in a directory (Project or Root)
    */
-  async listDirectory(path: string): Promise<string[]> {
+  async listDirectory(path: string): Promise<Array<{ name: string, type: string } | string>> {
     const { projectId, filePath } = this.parsePath(path);
 
     // 1. Root Directory: List all projects
@@ -89,11 +89,40 @@ export class AppsScriptService {
     
     // If filePath is provided, we might want to filter (but Apps Script is flat-ish)
     // Apps Script files are "name" (e.g. "Code") and "type" (e.g. "server_js")
-    // We expose them as "Code.gs", "index.html"
+    // We return objects to make it easier for clients to handle file types
     
     return files.map(f => {
-      const ext = f.type === 'server_js' ? '.gs' : '.html';
-      return `${f.name}${ext}`;
+      let ext = '';
+      
+      // Map internal types to extensions
+      switch(f.type.toLowerCase()) {
+        case 'server_js':
+        case 'server_js': // handle both cases if needed
+          ext = '.gs';
+          break;
+        case 'html':
+          ext = '.html';
+          break;
+        case 'json':
+          ext = '.json';
+          break;
+        default:
+          // Fallback: if type is unknown, default to .html if not server_js, or just use .html
+          // Better logic: check if name already has extension
+          if (!f.name.includes('.')) {
+             ext = '.html'; // Default for unknown types in Apps Script is often HTML/Frontend
+          }
+      }
+
+      // Override for known types from Google API that might be uppercase
+      if (f.type === 'SERVER_JS') ext = '.gs';
+      if (f.type === 'HTML') ext = '.html';
+      if (f.type === 'JSON') ext = '.json';
+
+      return {
+        name: `${f.name}${ext}`,
+        type: f.type
+      };
     });
   }
 
@@ -124,21 +153,34 @@ export class AppsScriptService {
     // Apps Script files don't store extension in the name usually
     // "Code.gs" -> name: "Code", type: "server_js"
     // "index.html" -> name: "index", type: "html"
+    // "appsscript.json" -> name: "appsscript", type: "json"
     
-    const targetName = filePath.replace(/\.(gs|html)$/, '');
-    const targetType = filePath.endsWith('.html') ? 'html' : 'server_js';
+    const targetName = filePath.replace(/\.(gs|html|json)$/, '');
+    let targetType = 'server_js';
+    if (filePath.endsWith('.html')) targetType = 'html';
+    else if (filePath.endsWith('.json')) targetType = 'json';
+    else if (filePath.endsWith('.gs')) targetType = 'server_js';
 
-    const file = copy.scriptContent.files.find((f: any) => f.name === targetName && f.type === targetType);
+    // Handle case-insensitive type matching (e.g., "JSON" vs "json", "SERVER_JS" vs "server_js")
+    const file = copy.scriptContent.files.find((f: any) => 
+      f.name === targetName && f.type.toLowerCase() === targetType.toLowerCase()
+    );
     
     if (!file) {
         // Fallback: try matching just name
         const fileByName = copy.scriptContent.files.find((f: any) => f.name === targetName);
-        if (fileByName) return fileByName.source;
+        if (fileByName) {
+          // Ensure source is returned as string (JSON files may be stored as objects)
+          const source = fileByName.source;
+          return typeof source === 'object' ? JSON.stringify(source, null, 2) : source;
+        }
         
         throw new Error(`File not found: ${filePath} in project ${targetId}`);
     }
 
-    return file.source;
+    // Ensure source is returned as string (JSON files may be stored as objects)
+    const source = file.source;
+    return typeof source === 'object' ? JSON.stringify(source, null, 2) : source;
   }
 
   /**
@@ -164,10 +206,15 @@ export class AppsScriptService {
     const scriptContent = copy.scriptContent || { files: [] };
     const files = scriptContent.files || [];
 
-    const targetName = filePath.replace(/\.(gs|html)$/, '');
-    const targetType = filePath.endsWith('.html') ? 'html' : 'server_js';
+    const targetName = filePath.replace(/\.(gs|html|json)$/, '');
+    let targetType = 'server_js';
+    if (filePath.endsWith('.html')) targetType = 'html';
+    else if (filePath.endsWith('.json')) targetType = 'json';
+    else if (filePath.endsWith('.gs')) targetType = 'server_js';
 
-    const existingFileIndex = files.findIndex((f: any) => f.name === targetName && f.type === targetType);
+    const existingFileIndex = files.findIndex((f: any) => 
+      f.name === targetName && f.type.toLowerCase() === targetType.toLowerCase()
+    );
 
     if (existingFileIndex >= 0) {
       // Update existing
@@ -205,10 +252,15 @@ export class AppsScriptService {
     const scriptContent = copy.scriptContent || { files: [] };
     const files = scriptContent.files || [];
 
-    const targetName = filePath.replace(/\.(gs|html)$/, '');
-    const targetType = filePath.endsWith('.html') ? 'html' : 'server_js';
+    const targetName = filePath.replace(/\.(gs|html|json)$/, '');
+    let targetType = 'server_js';
+    if (filePath.endsWith('.html')) targetType = 'html';
+    else if (filePath.endsWith('.json')) targetType = 'json';
+    else if (filePath.endsWith('.gs')) targetType = 'server_js';
 
-    const newFiles = files.filter((f: any) => !(f.name === targetName && f.type === targetType));
+    const newFiles = files.filter((f: any) => 
+      !(f.name === targetName && f.type.toLowerCase() === targetType.toLowerCase())
+    );
 
     if (newFiles.length === files.length) {
        throw new Error(`File not found to delete: ${filePath}`);
