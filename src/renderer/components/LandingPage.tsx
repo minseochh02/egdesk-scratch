@@ -14,6 +14,7 @@ import {
   faFingerprint,
   faShare,
   faBuilding,
+  faDocker,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -166,6 +167,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Server Registration</span>
                 <span className="egdesk-landing-feature-tag">AI Connection</span>
                 <span className="egdesk-landing-feature-tag">Protocol Management</span>
+              </div>
+            </Link>
+
+            <Link to="/docker" className="egdesk-landing-action-card egdesk-landing-docker-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faDocker} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Docker</h3>
+              <p className="egdesk-landing-card-description">
+                Manage Docker containers and images directly from EGDesk. Start, stop, and monitor your containerized applications.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Container Management</span>
+                <span className="egdesk-landing-feature-tag">Image Control</span>
+                <span className="egdesk-landing-feature-tag">Live Logs</span>
               </div>
             </Link>
 

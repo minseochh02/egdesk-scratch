@@ -95,6 +95,7 @@ import { crawlMultiplePagesForBusinessIdentity } from './web/multi-page-crawler'
 import { generateBusinessIdentity, generateSnsPlan } from './web/ai-search';
 import { AuthContext } from './sns/instagram/login';
 import { createBusinessIdentityInstagramPost } from './sns/instagram';
+import { dockerService } from './docker';
 
 const envCandidates = new Set<string>();
 
@@ -1474,6 +1475,15 @@ const createWindow = async () => {
       console.error('❌ Failed to initialize File System handlers:', error);
     }
 
+    // Initialize Docker service (IPC handlers registered on import)
+    try {
+      // dockerService is a singleton that self-initializes on import
+      // Just reference it to ensure it's loaded and log confirmation
+      const _docker = dockerService;
+      console.log('✅ Docker service initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Docker service:', error);
+    }
 
     // ========================================================================
     // MCP REGISTRATION HANDLERS

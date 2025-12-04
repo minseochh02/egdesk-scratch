@@ -1203,6 +1203,64 @@ export interface WorkspaceAPI {
   }>;
 }
 
+/**
+ * Docker container information
+ */
+export interface DockerContainer {
+  Id: string;
+  Names: string[];
+  Image: string;
+  State: string;
+  Status: string;
+  Ports: Array<{ PublicPort?: number; PrivatePort: number; Type: string }>;
+  Created: number;
+}
+
+/**
+ * Docker image information
+ */
+export interface DockerImage {
+  Id: string;
+  RepoTags: string[];
+  Size: number;
+  Created: number;
+}
+
+/**
+ * Docker management API
+ */
+export interface DockerAPI {
+  // Connection
+  checkConnection: () => Promise<{ connected: boolean; error?: string }>;
+  getInfo: () => Promise<any>;
+
+  // Containers
+  listContainers: (options?: { all?: boolean }) => Promise<DockerContainer[]>;
+  getContainer: (containerId: string) => Promise<any>;
+  startContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+  stopContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+  restartContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+  removeContainer: (containerId: string, options?: { force?: boolean; v?: boolean }) => Promise<{ success: boolean; error?: string }>;
+  getContainerLogs: (containerId: string, options?: { follow?: boolean; stdout?: boolean; stderr?: boolean; tail?: number }) => Promise<string>;
+  getContainerStats: (containerId: string) => Promise<any>;
+  execInContainer: (containerId: string, cmd: string[]) => Promise<{ success: boolean; output?: string; error?: string }>;
+
+  // Images
+  listImages: () => Promise<DockerImage[]>;
+  pullImage: (imageName: string) => Promise<{ success: boolean; error?: string }>;
+  removeImage: (imageId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Create
+  createContainer: (options: any) => Promise<{ success: boolean; containerId?: string; error?: string }>;
+
+  // Networks & Volumes
+  listNetworks: () => Promise<any[]>;
+  listVolumes: () => Promise<any>;
+
+  // Events
+  onPullProgress: (callback: (data: { imageName: string; status?: string; progress?: string }) => void) => () => void;
+}
+
 
 
 // ============================================================================
@@ -2053,6 +2111,60 @@ auth: {
   // ========================================================================
   shell: {
     openPath: (filePath: string) => ipcRenderer.invoke('shell-open-path', filePath),
+  },
+
+  // ========================================================================
+  // DOCKER MANAGEMENT
+  // ========================================================================
+  /**
+   * Docker container and image management API
+   */
+  docker: {
+    // Connection
+    checkConnection: () => ipcRenderer.invoke('docker:check-connection'),
+    getInfo: () => ipcRenderer.invoke('docker:info'),
+
+    // Containers
+    listContainers: (options?: { all?: boolean }) =>
+      ipcRenderer.invoke('docker:list-containers', options),
+    getContainer: (containerId: string) =>
+      ipcRenderer.invoke('docker:get-container', containerId),
+    startContainer: (containerId: string) =>
+      ipcRenderer.invoke('docker:start-container', containerId),
+    stopContainer: (containerId: string) =>
+      ipcRenderer.invoke('docker:stop-container', containerId),
+    restartContainer: (containerId: string) =>
+      ipcRenderer.invoke('docker:restart-container', containerId),
+    removeContainer: (containerId: string, options?: { force?: boolean; v?: boolean }) =>
+      ipcRenderer.invoke('docker:remove-container', containerId, options),
+    getContainerLogs: (containerId: string, options?: { follow?: boolean; stdout?: boolean; stderr?: boolean; tail?: number }) =>
+      ipcRenderer.invoke('docker:container-logs', containerId, options),
+    getContainerStats: (containerId: string) =>
+      ipcRenderer.invoke('docker:container-stats', containerId),
+    execInContainer: (containerId: string, cmd: string[]) =>
+      ipcRenderer.invoke('docker:exec', containerId, cmd),
+
+    // Images
+    listImages: () => ipcRenderer.invoke('docker:list-images'),
+    pullImage: (imageName: string) =>
+      ipcRenderer.invoke('docker:pull-image', imageName),
+    removeImage: (imageId: string) =>
+      ipcRenderer.invoke('docker:remove-image', imageId),
+
+    // Create
+    createContainer: (options: any) =>
+      ipcRenderer.invoke('docker:create-container', options),
+
+    // Networks & Volumes
+    listNetworks: () => ipcRenderer.invoke('docker:list-networks'),
+    listVolumes: () => ipcRenderer.invoke('docker:list-volumes'),
+
+    // Events
+    onPullProgress: (callback: (data: { imageName: string; status?: string; progress?: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('docker:pull-progress', subscription);
+      return () => ipcRenderer.removeListener('docker:pull-progress', subscription);
+    },
   },
 
   // ========================================================================

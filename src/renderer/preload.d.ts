@@ -711,6 +711,51 @@ export interface IElectronAPI {
     openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
 
+  docker: {
+    // Connection
+    checkConnection: () => Promise<{ connected: boolean; error?: string }>;
+    getInfo: () => Promise<any>;
+
+    // Containers
+    listContainers: (options?: { all?: boolean }) => Promise<Array<{
+      Id: string;
+      Names: string[];
+      Image: string;
+      State: string;
+      Status: string;
+      Ports: Array<{ PublicPort?: number; PrivatePort: number; Type: string }>;
+      Created: number;
+    }>>;
+    getContainer: (containerId: string) => Promise<any>;
+    startContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+    stopContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+    restartContainer: (containerId: string) => Promise<{ success: boolean; error?: string }>;
+    removeContainer: (containerId: string, options?: { force?: boolean; v?: boolean }) => Promise<{ success: boolean; error?: string }>;
+    getContainerLogs: (containerId: string, options?: { follow?: boolean; stdout?: boolean; stderr?: boolean; tail?: number }) => Promise<string>;
+    getContainerStats: (containerId: string) => Promise<any>;
+    execInContainer: (containerId: string, cmd: string[]) => Promise<{ success: boolean; output?: string; error?: string }>;
+
+    // Images
+    listImages: () => Promise<Array<{
+      Id: string;
+      RepoTags: string[];
+      Size: number;
+      Created: number;
+    }>>;
+    pullImage: (imageName: string) => Promise<{ success: boolean; error?: string }>;
+    removeImage: (imageId: string) => Promise<{ success: boolean; error?: string }>;
+
+    // Create
+    createContainer: (options: any) => Promise<{ success: boolean; containerId?: string; error?: string }>;
+
+    // Networks & Volumes
+    listNetworks: () => Promise<any[]>;
+    listVolumes: () => Promise<any>;
+
+    // Events
+    onPullProgress: (callback: (data: { imageName: string; status?: string; progress?: string }) => void) => () => void;
+  };
+
   updater: {
     checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
     downloadUpdate: () => Promise<{ success: boolean; error?: string }>;

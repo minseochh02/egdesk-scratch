@@ -15,15 +15,16 @@
     "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
     "@google/genai": "^1.19.0",
-    "mime-types": "^3.0.1",
-    "playwright": "^1.55.1",
-    "lighthouse": "^12.2.1",
-    "playwright-lighthouse": "^4.0.0",
+    "better-sqlite3": "^12.4.1",
+    "dockerode": "^4.0.9",
     "jimp": "^0.22.12",
-    "pdf-lib": "^1.17.1",
+    "lighthouse": "^12.2.1",
     "mammoth": "^1.11.0",
-    "marked": "^16.4.1"
+    "marked": "^16.4.1",
+    "mime-types": "^3.0.1",
+    "pdf-lib": "^1.17.1",
+    "playwright": "^1.55.1",
+    "playwright-lighthouse": "^4.0.0"
   }
 }
