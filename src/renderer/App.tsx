@@ -17,6 +17,7 @@ import {
   faServer,
   faQuestion,
   faShare,
+  faDocker,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -38,6 +39,7 @@ import EGChatting from './components/EGChatting';
 import EGBusinessIdentity from './components/EGBusinessIdentity';
 import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
 import { UpdateDialog } from './components/UpdateDialog';
+import { DockerManager } from './components/DockerManager';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -1951,6 +1953,13 @@ function NavigationBar({
             <FontAwesomeIcon icon={faServer} />
             {!isNarrow && <span>MCP Server</span>}
           </Link>
+          <Link
+            to="/docker"
+            className={`nav-link ${location.pathname === '/docker' ? 'active' : ''}`}
+          >
+            <FontAwesomeIcon icon={faDocker} />
+            {!isNarrow && <span>Docker</span>}
+          </Link>
           <button
             className="nav-link"
             onClick={() => setShowDebugModal(true)}
@@ -2308,8 +2317,7 @@ function AppContent() {
             <Route path="/egchatting" element={<EGChatting />} />
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
-            <Route 
-            />
+            <Route path="/docker" element={<DockerManager />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

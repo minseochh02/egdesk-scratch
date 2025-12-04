@@ -184,6 +184,14 @@
   background: linear-gradient(90deg, #5856d6, #007aff);
 }
 
+.egdesk-landing-docker-card:hover {
+  border-color: #2496ed;
+}
+
+.egdesk-landing-docker-card:hover::before {
+  background: linear-gradient(90deg, #2496ed, #0db7ed);
+}
+
 .egdesk-landing-seo-card:hover {
   border-color: #007aff;
 }
@@ -254,6 +262,10 @@
 
 .egdesk-landing-mcp-card .egdesk-landing-card-icon {
   background: linear-gradient(135deg, #5856d6, #007aff);
+}
+
+.egdesk-landing-docker-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #2496ed, #0db7ed);
 }
 
 .egdesk-landing-seo-card .egdesk-landing-card-icon {
@@ -329,6 +341,11 @@
 .egdesk-landing-mcp-card:hover .egdesk-landing-feature-tag {
   background: #e6e6ff;
   color: #5856d6;
+}
+
+.egdesk-landing-docker-card:hover .egdesk-landing-feature-tag {
+  background: #e3f2fd;
+  color: #2496ed;
 }
 
 .egdesk-landing-seo-card:hover .egdesk-landing-feature-tag {
