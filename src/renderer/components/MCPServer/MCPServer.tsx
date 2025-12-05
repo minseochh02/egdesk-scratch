@@ -227,6 +227,17 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [isTunnelStarting, setIsTunnelStarting] = useState<boolean>(false);
   const [isTunnelStopping, setIsTunnelStopping] = useState<boolean>(false);
 
+  // Auto-start settings state
+  const [autoStartEnabled, setAutoStartEnabled] = useState<boolean>(() => {
+    // Load from localStorage, default to true for convenience
+    const saved = localStorage.getItem('mcp-server-auto-start');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [autoStartTunnelEnabled, setAutoStartTunnelEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('mcp-tunnel-auto-start');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   // MCP Server name state
   const [mcpServerName, setMcpServerName] = useState<string>('my-mcp-server');
   const [isEditingMcpServerName, setIsEditingMcpServerName] = useState<boolean>(false);
@@ -870,6 +881,105 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     loadMcpServerName();
     loadActiveTunnelConfig();
   }, []);
+
+  // Auto-start HTTP server and tunnel on mount
+  useEffect(() => {
+    const autoStartServices = async () => {
+      // Wait a moment for initial status to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Auto-start HTTP server if enabled
+      if (autoStartEnabled) {
+        try {
+          // Check current status first
+          const status = await window.electron.httpsServer.status();
+          
+          if (!status.isRunning) {
+            console.log('🚀 Auto-starting HTTP server...');
+            const result = await window.electron.httpsServer.start({
+              port: 8080,
+              useHTTPS: false
+            });
+
+            if (result.success) {
+              console.log('✅ HTTP server auto-started successfully on port', result.port);
+              await loadHttpServerStatus();
+              
+              // Auto-start tunnel if enabled and was previously registered
+              if (autoStartTunnelEnabled) {
+                // Wait for tunnel config to load
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                const tunnelResult = await window.electron.invoke('get-mcp-tunnel-config');
+                if (tunnelResult.success && tunnelResult.tunnel?.registered && tunnelResult.tunnel?.serverName) {
+                  console.log('🚀 Auto-starting tunnel for:', tunnelResult.tunnel.serverName);
+                  
+                  const tunnelStartResult = await window.electron.invoke(
+                    'mcp-tunnel-start',
+                    tunnelResult.tunnel.serverName,
+                    `http://localhost:${result.port || 8080}`
+                  );
+                  
+                  if (tunnelStartResult.success) {
+                    console.log('✅ Tunnel auto-started successfully');
+                    await loadActiveTunnelConfig();
+                  } else {
+                    console.warn('⚠️ Failed to auto-start tunnel:', tunnelStartResult.error);
+                  }
+                }
+              }
+            } else {
+              console.warn('⚠️ Failed to auto-start HTTP server:', result.error);
+            }
+          } else {
+            console.log('ℹ️ HTTP server already running, skipping auto-start');
+            
+            // Still try to auto-start tunnel if server is already running
+            if (autoStartTunnelEnabled) {
+              const tunnelResult = await window.electron.invoke('get-mcp-tunnel-config');
+              if (tunnelResult.success && tunnelResult.tunnel?.registered && tunnelResult.tunnel?.serverName) {
+                // Check if tunnel is already connected
+                const tunnelInfo = await window.electron.invoke('mcp-tunnel-info', tunnelResult.tunnel.serverName);
+                if (!tunnelInfo.isConnected) {
+                  console.log('🚀 Auto-starting tunnel for:', tunnelResult.tunnel.serverName);
+                  
+                  const tunnelStartResult = await window.electron.invoke(
+                    'mcp-tunnel-start',
+                    tunnelResult.tunnel.serverName,
+                    `http://localhost:${status.port || 8080}`
+                  );
+                  
+                  if (tunnelStartResult.success) {
+                    console.log('✅ Tunnel auto-started successfully');
+                    await loadActiveTunnelConfig();
+                  } else {
+                    console.warn('⚠️ Failed to auto-start tunnel:', tunnelStartResult.error);
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error during auto-start:', error);
+        }
+      }
+    };
+
+    autoStartServices();
+  }, []); // Run only on mount
+
+  // Toggle auto-start settings
+  const toggleAutoStart = () => {
+    const newValue = !autoStartEnabled;
+    setAutoStartEnabled(newValue);
+    localStorage.setItem('mcp-server-auto-start', JSON.stringify(newValue));
+  };
+
+  const toggleAutoStartTunnel = () => {
+    const newValue = !autoStartTunnelEnabled;
+    setAutoStartTunnelEnabled(newValue);
+    localStorage.setItem('mcp-tunnel-auto-start', JSON.stringify(newValue));
+  };
 
   // Periodic tunnel health checking with auto-disconnect
   useEffect(() => {
@@ -2050,6 +2160,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         checkTunnelHealth={checkTunnelHealth}
         isTunnelStarting={isTunnelStarting}
         isTunnelStopping={isTunnelStopping}
+        autoStartEnabled={autoStartEnabled}
+        autoStartTunnelEnabled={autoStartTunnelEnabled}
+        toggleAutoStart={toggleAutoStart}
+        toggleAutoStartTunnel={toggleAutoStartTunnel}
       />
 
       {/* Conditionally render Script Editor or Running Servers Tabs */}
