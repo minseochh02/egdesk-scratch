@@ -50,6 +50,71 @@ export class AppsScriptService {
   }
 
   /**
+   * Get project details including bound spreadsheet info
+   */
+  getProjectDetails(projectId: string): {
+    id: string;
+    name: string;
+    scriptId?: string;
+    spreadsheetId: string;
+    spreadsheetUrl: string;
+    createdAt: string;
+    fileCount: number;
+  } | null {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) return null;
+
+    const files = copy.scriptContent?.files || [];
+    
+    return {
+      id: copy.id,
+      name: copy.metadata?.name || 'Untitled Project',
+      scriptId: copy.scriptId,
+      spreadsheetId: copy.spreadsheetId,
+      spreadsheetUrl: copy.spreadsheetUrl,
+      createdAt: copy.createdAt,
+      fileCount: files.length,
+    };
+  }
+
+  /**
+   * List all projects with their bound spreadsheet info
+   */
+  listProjectsWithDetails(): Array<{
+    id: string;
+    name: string;
+    displayName: string;
+    scriptId?: string;
+    spreadsheetId: string;
+    spreadsheetUrl: string;
+    createdAt: string;
+    fileCount: number;
+  }> {
+    const copies = this.copiesManager.getAllTemplateCopies();
+    
+    return copies.map(copy => {
+      const name = copy.metadata?.name || 'Untitled Project';
+      const files = copy.scriptContent?.files || [];
+      
+      return {
+        id: copy.id,
+        name: name,
+        displayName: `${name} [${copy.id}]`,
+        scriptId: copy.scriptId,
+        spreadsheetId: copy.spreadsheetId,
+        spreadsheetUrl: copy.spreadsheetUrl,
+        createdAt: copy.createdAt,
+        fileCount: files.length,
+      };
+    });
+  }
+
+  /**
    * List entries in a directory (Project or Root)
    */
   async listDirectory(path: string): Promise<Array<{ name: string, type: string } | string>> {

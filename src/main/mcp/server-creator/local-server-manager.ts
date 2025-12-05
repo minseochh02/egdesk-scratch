@@ -21,6 +21,8 @@ import { GmailMCPService } from '../gmail/gmail-mcp-service';
 import { FileSystemMCPService } from '../file-system/file-system-mcp-service';
 import { FileConversionMCPService } from '../file-conversion/file-conversion-mcp-service';
 import { AppsScriptMCPService } from '../apps-script/apps-script-mcp-service';
+import { ConversationsMCPService } from '../conversations/conversations-mcp-service';
+import { SheetsMCPService } from '../sheets/sheets-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 
@@ -95,6 +97,8 @@ export class LocalServerManager {
   private filesystemMCPService: FileSystemMCPService | null = null;
   private fileConversionMCPService: FileConversionMCPService | null = null;
   private appsScriptMCPService: AppsScriptMCPService | null = null;
+  private conversationsMCPService: ConversationsMCPService | null = null;
+  private sheetsMCPService: SheetsMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -410,6 +414,18 @@ export class LocalServerManager {
       return;
     }
 
+    // Conversations MCP Server endpoints (REST API)
+    if (url.startsWith('/conversations')) {
+      await this.handleConversationsEndpoint(req, res, url);
+      return;
+    }
+
+    // Sheets MCP Server endpoints (REST API)
+    if (url.startsWith('/sheets')) {
+      await this.handleSheetsEndpoint(req, res, url);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -440,6 +456,10 @@ export class LocalServerManager {
         '/apps-script/tools/call - Call an Apps Script tool',
         '/file-conversion/tools - List File Conversion tools',
         '/file-conversion/tools/call - Call a File Conversion tool',
+        '/conversations/tools - List Conversations tools',
+        '/conversations/tools/call - Call a Conversations tool',
+        '/sheets/tools - List Sheets tools',
+        '/sheets/tools/call - Call a Sheets tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -515,6 +535,26 @@ export class LocalServerManager {
       });
     }
     return this.fileConversionMCPService;
+  }
+
+  /**
+   * Get or create Conversations MCP Service instance
+   */
+  private getConversationsMCPService(): ConversationsMCPService {
+    if (!this.conversationsMCPService) {
+      this.conversationsMCPService = new ConversationsMCPService();
+    }
+    return this.conversationsMCPService;
+  }
+
+  /**
+   * Get or create Sheets MCP Service instance
+   */
+  private getSheetsMCPService(): SheetsMCPService {
+    if (!this.sheetsMCPService) {
+      this.sheetsMCPService = new SheetsMCPService();
+    }
+    return this.sheetsMCPService;
   }
 
   /**
@@ -1040,6 +1080,188 @@ export class LocalServerManager {
       }, null, 2));
     } catch (error) {
       console.error('Error calling File Conversion tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Conversations MCP endpoints
+   */
+  private async handleConversationsEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // Check if conversations server is enabled
+    if (!this.isMCPServerEnabled('conversations')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Conversations MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'conversations'
+      }));
+      return;
+    }
+
+    // List Conversations tools
+    if (url === '/conversations/tools' && req.method === 'GET') {
+      this.handleConversationsToolsList(res);
+      return;
+    }
+
+    // Call a Conversations tool
+    if (url === '/conversations/tools/call' && req.method === 'POST') {
+      await this.handleConversationsToolCall(req, res);
+      return;
+    }
+
+    // Unknown Conversations endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Conversations MCP endpoint not found',
+      availableEndpoints: [
+        '/conversations/tools - List available tools',
+        '/conversations/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle Conversations tools list
+   */
+  private handleConversationsToolsList(res: http.ServerResponse): void {
+    const service = this.getConversationsMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle Conversations tool call
+   */
+  private async handleConversationsToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`💬 Calling Conversations tool: ${tool}`);
+
+      // Get Conversations service
+      const service = this.getConversationsMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling Conversations tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Sheets MCP endpoints
+   */
+  private async handleSheetsEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // Check if sheets server is enabled
+    if (!this.isMCPServerEnabled('sheets')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Sheets MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        hint: 'Use: ipcRenderer.invoke("mcp-server-enable", "sheets")'
+      }));
+      return;
+    }
+
+    // List Sheets tools
+    if (url === '/sheets/tools' && req.method === 'GET') {
+      this.handleSheetsToolsList(res);
+      return;
+    }
+
+    // Call a Sheets tool
+    if (url === '/sheets/tools/call' && req.method === 'POST') {
+      await this.handleSheetsToolCall(req, res);
+      return;
+    }
+
+    // Unknown Sheets endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Sheets MCP endpoint not found',
+      availableEndpoints: [
+        '/sheets/tools - List available tools',
+        '/sheets/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle Sheets tools list
+   */
+  private handleSheetsToolsList(res: http.ServerResponse): void {
+    const service = this.getSheetsMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle Sheets tool call
+   */
+  private async handleSheetsToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`📊 Calling Sheets tool: ${tool}`);
+
+      // Get Sheets service
+      const service = this.getSheetsMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling Sheets tool:', error);
       res.writeHead(500);
       res.end(JSON.stringify({
         success: false,
@@ -1655,6 +1877,16 @@ export class LocalServerManager {
         name: 'apps-script',
         enabled: true, // Enabled by default
         description: 'Apps Script MCP Server - Virtual Filesystem for editing Google Apps Script projects'
+      },
+      {
+        name: 'conversations',
+        enabled: true, // Enabled by default for website integration
+        description: 'Conversations MCP Server - Store and retrieve chat conversations for egdesk-website'
+      },
+      {
+        name: 'sheets',
+        enabled: true, // Enabled by default for spreadsheet data access
+        description: 'Google Sheets MCP Server - Read spreadsheet data (headers, ranges, metadata)'
       }
     ];
   }

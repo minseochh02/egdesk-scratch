@@ -34,11 +34,22 @@ export class AppsScriptMCPService implements IMCPService {
     return [
       {
         name: 'apps_script_list_projects',
-        description: 'List all available Apps Script projects.',
+        description: 'List all available Apps Script projects with their bound spreadsheet information. Returns project ID, name, spreadsheetId, spreadsheetUrl, and file count.',
         inputSchema: {
           type: 'object',
           properties: {},
           required: []
+        }
+      },
+      {
+        name: 'apps_script_get_project',
+        description: 'Get detailed information about a specific Apps Script project, including the bound spreadsheet ID and URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
         }
       },
       {
@@ -98,12 +109,25 @@ export class AppsScriptMCPService implements IMCPService {
 
       switch (name) {
         case 'apps_script_list_projects':
-          // Reuse listDirectory with root path which lists projects
-          const projects = await this.service.listDirectory('/');
+          // Return projects with full details including bound spreadsheet info
+          const projectsWithDetails = this.service.listProjectsWithDetails();
           return {
             content: [{
               type: 'text',
-              text: JSON.stringify(projects, null, 2)
+              text: JSON.stringify(projectsWithDetails, null, 2)
+            }]
+          };
+
+        case 'apps_script_get_project':
+          // Get detailed info about a specific project
+          const projectDetails = this.service.getProjectDetails(args.projectId);
+          if (!projectDetails) {
+            throw new Error(`Project not found: ${args.projectId}`);
+          }
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(projectDetails, null, 2)
             }]
           };
 
