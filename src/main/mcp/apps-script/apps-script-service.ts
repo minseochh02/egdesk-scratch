@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { SQLiteTemplateCopiesManager, TemplateCopy } from '../../sqlite/template-copies';
 import { randomUUID } from 'crypto';
+import { getAuthService } from '../../auth/auth-service';
 
 export interface FileInfo {
   name: string;
@@ -332,6 +333,425 @@ export class AppsScriptService {
     }
 
     this.copiesManager.updateTemplateCopyScriptContent(copy.scriptId!, { ...scriptContent, files: newFiles });
+  }
+
+  /**
+   * Push local changes to Google Apps Script
+   * Uses the Apps Script API to update the actual script content
+   */
+  async pushToGoogle(projectId: string): Promise<{ success: boolean; message: string }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    if (!copy.scriptContent || !copy.scriptContent.files) {
+      throw new Error(`Project ${targetId} has no files to push.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Prepare files for Google Apps Script API format
+    // Google expects: { files: [{ name, type, source }] }
+    const files = copy.scriptContent.files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toUpperCase(), // Google API uses uppercase (SERVER_JS, HTML, JSON)
+      source: f.source,
+    }));
+
+    // Call Google Apps Script API to update content
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ files }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || errorData.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to push to Google: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      success: true,
+      message: `Successfully pushed ${files.length} file(s) to Google Apps Script (${copy.scriptId})`,
+    };
+  }
+
+  /**
+   * Pull latest from Google Apps Script and update local
+   */
+  async pullFromGoogle(projectId: string): Promise<{ success: boolean; message: string; fileCount: number }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Call Google Apps Script API to get content
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || errorData.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to pull from Google: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    const files = result.files || [];
+
+    // Convert to our internal format (lowercase types)
+    const normalizedFiles = files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toLowerCase(),
+      source: f.source,
+    }));
+
+    // Update local SQLite
+    this.copiesManager.updateTemplateCopyScriptContent(copy.scriptId, { 
+      ...copy.scriptContent, 
+      files: normalizedFiles 
+    });
+
+    return {
+      success: true,
+      message: `Successfully pulled ${normalizedFiles.length} file(s) from Google Apps Script`,
+      fileCount: normalizedFiles.length,
+    };
+  }
+
+  /**
+   * Run a function in the Apps Script project remotely
+   * POST /v1/scripts/{scriptId}:run
+   */
+  async runFunction(
+    projectId: string, 
+    functionName: string, 
+    parameters?: any[]
+  ): Promise<{ success: boolean; result?: any; error?: string; logs?: string[] }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Call Google Apps Script API to run function
+    const response = await fetch(`https://script.googleapis.com/v1/scripts/${copy.scriptId}:run`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        function: functionName,
+        parameters: parameters || [],
+        devMode: true, // Run against the HEAD version (most recent save)
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.error) {
+      const errorMsg = result.error?.message || result.error?.details?.[0]?.errorMessage || `HTTP ${response.status}`;
+      return {
+        success: false,
+        error: errorMsg,
+      };
+    }
+
+    return {
+      success: true,
+      result: result.response?.result,
+      logs: result.response?.logs || [],
+    };
+  }
+
+  /**
+   * Create a new version (immutable snapshot)
+   * POST /v1/projects/{scriptId}/versions
+   */
+  async createVersion(projectId: string, description?: string): Promise<{ 
+    success: boolean; 
+    versionNumber?: number; 
+    description?: string;
+    createTime?: string;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: description || `Version created from EGDesk at ${new Date().toISOString()}`,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to create version: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      success: true,
+      versionNumber: result.versionNumber,
+      description: result.description,
+      createTime: result.createTime,
+    };
+  }
+
+  /**
+   * List all versions of a script
+   * GET /v1/projects/{scriptId}/versions
+   */
+  async listVersions(projectId: string): Promise<Array<{
+    versionNumber: number;
+    description?: string;
+    createTime: string;
+  }>> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to list versions: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return (result.versions || []).map((v: any) => ({
+      versionNumber: v.versionNumber,
+      description: v.description,
+      createTime: v.createTime,
+    }));
+  }
+
+  /**
+   * List all deployments of a script
+   * GET /v1/projects/{scriptId}/deployments
+   */
+  async listDeployments(projectId: string): Promise<Array<{
+    deploymentId: string;
+    versionNumber?: number;
+    description?: string;
+    webAccessConfig?: {
+      access: string;
+      executeAs: string;
+    };
+    entryPoints?: Array<{
+      entryPointType: string;
+      webApp?: { url: string };
+    }>;
+  }>> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/deployments`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to list deployments: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return (result.deployments || []).map((d: any) => ({
+      deploymentId: d.deploymentId,
+      versionNumber: d.deploymentConfig?.versionNumber,
+      description: d.deploymentConfig?.description,
+      webAccessConfig: d.deploymentConfig?.webAccessConfig,
+      entryPoints: d.entryPoints,
+    }));
+  }
+
+  /**
+   * Get execution metrics for a script
+   * GET /v1/projects/{scriptId}/metrics
+   */
+  async getMetrics(projectId: string): Promise<{
+    totalExecutions?: number;
+    activeUsers?: { total?: number };
+    failedExecutions?: number;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(
+      `https://script.googleapis.com/v1/projects/${copy.scriptId}/metrics?metricsGranularity=DAILY`, 
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to get metrics: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      totalExecutions: result.metrics?.[0]?.totalExecutions,
+      activeUsers: result.activeUsers,
+      failedExecutions: result.metrics?.[0]?.failedExecutions,
+    };
   }
 }
 

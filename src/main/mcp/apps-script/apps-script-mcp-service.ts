@@ -99,6 +99,90 @@ export class AppsScriptMCPService implements IMCPService {
           },
           required: ['projectId', 'fileName']
         }
+      },
+      {
+        name: 'apps_script_push_to_google',
+        description: 'Push local changes to the actual Google Apps Script project. This will overwrite the cloud version with local changes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_pull_from_google',
+        description: 'Pull the latest version from Google Apps Script and update local storage. This will overwrite local changes with the cloud version.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_run_function',
+        description: 'Execute a function in the Apps Script project remotely. Runs against the most recent saved version (devMode). Returns the function result or error.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            functionName: { type: 'string', description: 'Name of the function to execute (e.g., "myFunction", "doGet")' },
+            parameters: { 
+              type: 'array', 
+              description: 'Optional array of parameters to pass to the function',
+              items: { type: 'any' }
+            }
+          },
+          required: ['projectId', 'functionName']
+        }
+      },
+      {
+        name: 'apps_script_create_version',
+        description: 'Create a new immutable version (snapshot) of the Apps Script project. Useful before making major changes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            description: { type: 'string', description: 'Optional description for this version' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_list_versions',
+        description: 'List all versions (snapshots) of the Apps Script project.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_list_deployments',
+        description: 'List all deployments of the Apps Script project. Shows web app URLs, deployment IDs, and configuration.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_get_metrics',
+        description: 'Get execution metrics for the Apps Script project (total executions, active users, failed executions).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+          },
+          required: ['projectId']
+        }
       }
     ];
   }
@@ -172,6 +256,106 @@ export class AppsScriptMCPService implements IMCPService {
             content: [{
               type: 'text',
               text: `Successfully deleted ${args.fileName} in project ${args.projectId}`
+            }]
+          };
+
+        case 'apps_script_push_to_google':
+          const pushResult = await this.service.pushToGoogle(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: pushResult.message
+            }]
+          };
+
+        case 'apps_script_pull_from_google':
+          const pullResult = await this.service.pullFromGoogle(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: pullResult.message
+            }]
+          };
+
+        case 'apps_script_run_function':
+          const runResult = await this.service.runFunction(
+            args.projectId, 
+            args.functionName, 
+            args.parameters
+          );
+          if (runResult.success) {
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  functionName: args.functionName,
+                  result: runResult.result,
+                  logs: runResult.logs,
+                }, null, 2)
+              }]
+            };
+          } else {
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  functionName: args.functionName,
+                  error: runResult.error,
+                }, null, 2)
+              }]
+            };
+          }
+
+        case 'apps_script_create_version':
+          const versionResult = await this.service.createVersion(args.projectId, args.description);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Created version ${versionResult.versionNumber}`,
+                ...versionResult,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_list_versions':
+          const versions = await this.service.listVersions(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                projectId: args.projectId,
+                versionCount: versions.length,
+                versions,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_list_deployments':
+          const deployments = await this.service.listDeployments(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                projectId: args.projectId,
+                deploymentCount: deployments.length,
+                deployments,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_get_metrics':
+          const metrics = await this.service.getMetrics(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                projectId: args.projectId,
+                ...metrics,
+              }, null, 2)
             }]
           };
 
