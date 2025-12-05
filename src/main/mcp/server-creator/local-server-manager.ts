@@ -1845,7 +1845,7 @@ export class LocalServerManager {
    */
   private async getMCPServers(): Promise<{ success: boolean; servers?: MCPServerConfig[]; error?: string }> {
     try {
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       return { success: true, servers: mcpServers };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1892,11 +1892,38 @@ export class LocalServerManager {
   }
 
   /**
+   * Get MCP servers with migration - ensures new services are added to existing configs
+   */
+  private getMCPServersWithMigration(): MCPServerConfig[] {
+    const defaults = this.getDefaultMCPServers();
+    const stored = this.store.get('mcpServers') as MCPServerConfig[] | undefined;
+    
+    // If no stored config, return defaults
+    if (!stored || !Array.isArray(stored)) {
+      this.store.set('mcpServers', defaults);
+      return defaults;
+    }
+    
+    // Check if any new services need to be added
+    const storedNames = new Set(stored.map(s => s.name));
+    const missingServices = defaults.filter(d => !storedNames.has(d.name));
+    
+    if (missingServices.length > 0) {
+      console.log(`🔄 Migrating MCP config: adding ${missingServices.map(s => s.name).join(', ')}`);
+      const migrated = [...stored, ...missingServices];
+      this.store.set('mcpServers', migrated);
+      return migrated;
+    }
+    
+    return stored;
+  }
+
+  /**
    * Check if an MCP server is enabled
    */
   private isMCPServerEnabled(serverName: string): boolean {
     try {
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       const server = mcpServers.find(s => s.name === serverName);
       return server ? server.enabled : false;
     } catch (error) {
@@ -1910,7 +1937,7 @@ export class LocalServerManager {
    */
   private getEnabledMCPServers(): MCPServerConfig[] {
     try {
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       return mcpServers.filter(server => server.enabled);
     } catch (error) {
       console.error('Error getting enabled MCP servers:', error);
@@ -1925,7 +1952,7 @@ export class LocalServerManager {
     try {
       console.log(`🟢 Enabling MCP server: ${serverName}`);
       
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       const serverIndex = mcpServers.findIndex(s => s.name === serverName);
       
       if (serverIndex === -1) {
@@ -1954,7 +1981,7 @@ export class LocalServerManager {
     try {
       console.log(`🔴 Disabling MCP server: ${serverName}`);
       
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       const serverIndex = mcpServers.findIndex(s => s.name === serverName);
       
       if (serverIndex === -1) {
@@ -1982,7 +2009,7 @@ export class LocalServerManager {
    */
   private async getMCPServerStatus(serverName: string): Promise<{ success: boolean; server?: MCPServerConfig; error?: string }> {
     try {
-      const mcpServers = this.store.get('mcpServers', this.getDefaultMCPServers()) as MCPServerConfig[];
+      const mcpServers = this.getMCPServersWithMigration();
       const server = mcpServers.find(s => s.name === serverName);
       
       if (!server) {
