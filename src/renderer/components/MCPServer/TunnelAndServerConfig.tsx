@@ -76,6 +76,11 @@ interface TunnelAndServerConfigProps {
   }>;
   isTunnelStarting?: boolean;
   isTunnelStopping?: boolean;
+  // Auto-start settings
+  autoStartEnabled?: boolean;
+  autoStartTunnelEnabled?: boolean;
+  toggleAutoStart?: () => void;
+  toggleAutoStartTunnel?: () => void;
 }
 
 const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
@@ -100,7 +105,11 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   loadActiveTunnelConfig,
   checkTunnelHealth,
   isTunnelStarting = false,
-  isTunnelStopping = false
+  isTunnelStopping = false,
+  autoStartEnabled = true,
+  autoStartTunnelEnabled = true,
+  toggleAutoStart,
+  toggleAutoStartTunnel
 }) => {
   const handleCopyPublicUrl = () => {
     if (activeTunnelConfig.publicUrl) {
@@ -857,6 +866,77 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
               >
                 <FontAwesomeIcon icon={faRefresh} />
               </button>
+            </div>
+
+            {/* Auto-start Settings */}
+            <div style={{ 
+              marginTop: '16px', 
+              paddingTop: '16px', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)' 
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', opacity: 0.9 }}>
+                <FontAwesomeIcon icon={faCog} style={{ marginRight: '8px' }} />
+                Auto-start Settings
+              </div>
+              
+              {/* Auto-start HTTP Server Toggle */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: toggleAutoStart ? 'pointer' : 'default',
+                marginBottom: '10px',
+                padding: '8px 12px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '6px',
+                transition: 'background 0.2s ease'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={autoStartEnabled}
+                  onChange={toggleAutoStart}
+                  disabled={!toggleAutoStart}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: toggleAutoStart ? 'pointer' : 'default',
+                    accentColor: '#10b981'
+                  }}
+                />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '500' }}>Auto-start HTTP Server</div>
+                  <div style={{ fontSize: '11px', opacity: 0.6 }}>Automatically start server when app opens</div>
+                </div>
+              </label>
+
+              {/* Auto-start Tunnel Toggle */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: toggleAutoStartTunnel ? 'pointer' : 'default',
+                padding: '8px 12px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '6px',
+                transition: 'background 0.2s ease'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={autoStartTunnelEnabled}
+                  onChange={toggleAutoStartTunnel}
+                  disabled={!toggleAutoStartTunnel}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: toggleAutoStartTunnel ? 'pointer' : 'default',
+                    accentColor: '#10b981'
+                  }}
+                />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '500' }}>Auto-start Tunnel</div>
+                  <div style={{ fontSize: '11px', opacity: 0.6 }}>Reconnect tunnel if previously registered</div>
+                </div>
+              </label>
             </div>
           </div>
 

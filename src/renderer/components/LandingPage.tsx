@@ -9,11 +9,9 @@ import {
   faShieldAlt,
   faServer,
   faGlobe,
-  faDesktop,
   faComments,
   faFingerprint,
   faShare,
-  faBuilding,
   faDocker,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
@@ -47,21 +45,6 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Brand Hub</span>
                 <span className="egdesk-landing-feature-tag">AI Identity</span>
                 <span className="egdesk-landing-feature-tag">Social Roadmap</span>
-              </div>
-            </Link>
-
-            <Link to="/egdesktop" className="egdesk-landing-action-card egdesk-landing-desktop-card">
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faDesktop} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Desktop</h3>
-              <p className="egdesk-landing-card-description">
-                Manage and control all EGDesk features at a glance in an integrated desktop environment.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">Unified Management</span>
-                <span className="egdesk-landing-feature-tag">Dashboard</span>
-                <span className="egdesk-landing-feature-tag">Central Control</span>
               </div>
             </Link>
 
@@ -182,21 +165,6 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Container Management</span>
                 <span className="egdesk-landing-feature-tag">Image Control</span>
                 <span className="egdesk-landing-feature-tag">Live Logs</span>
-              </div>
-            </Link>
-
-            <Link to="/google-workspace" className="egdesk-landing-action-card egdesk-landing-workspace-card">
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faBuilding} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Google Workspace Manager</h3>
-              <p className="egdesk-landing-card-description">
-                Manage your Google Workspace domain. Control users, monitor activity, and manage access across your organization.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">User Management</span>
-                <span className="egdesk-landing-feature-tag">Email Control</span>
-                <span className="egdesk-landing-feature-tag">Domain Administration</span>
               </div>
             </Link>
           </div>
