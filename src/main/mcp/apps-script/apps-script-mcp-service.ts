@@ -183,6 +183,55 @@ export class AppsScriptMCPService implements IMCPService {
           },
           required: ['projectId']
         }
+      },
+      {
+        name: 'apps_script_create_version',
+        description: 'Create a new version (snapshot) of the Apps Script project. Versions are required before creating deployments.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            description: { type: 'string', description: 'Optional description for the version' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_create_deployment',
+        description: 'Deploy the Apps Script project as a web app. Creates a new version if none specified. Returns the web app URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            versionNumber: { type: 'number', description: 'Optional version number to deploy (creates new version if not provided)' },
+            description: { type: 'string', description: 'Optional description for the deployment' },
+            access: { 
+              type: 'string', 
+              enum: ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'],
+              description: 'Who can access the web app. MYSELF=only you, DOMAIN=your organization, ANYONE=anyone with Google account, ANYONE_ANONYMOUS=anyone (no login required)'
+            },
+            executeAs: {
+              type: 'string',
+              enum: ['USER_ACCESSING', 'USER_DEPLOYING'],
+              description: 'Who the script runs as. USER_ACCESSING=the user viewing the app, USER_DEPLOYING=you (the owner)'
+            }
+          },
+          required: ['projectId']
+        }
+      },
+      {
+        name: 'apps_script_update_deployment',
+        description: 'Update an existing deployment to use a new version. Useful for publishing code changes to an existing web app URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            deploymentId: { type: 'string', description: 'The deployment ID to update (from apps_script_list_deployments)' },
+            versionNumber: { type: 'number', description: 'Optional version number to deploy (creates new version if not provided)' },
+            description: { type: 'string', description: 'Optional new description for the deployment' }
+          },
+          required: ['projectId', 'deploymentId']
+        }
       }
     ];
   }
@@ -355,6 +404,64 @@ export class AppsScriptMCPService implements IMCPService {
               text: JSON.stringify({
                 projectId: args.projectId,
                 ...metrics,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_create_version':
+          const newVersion = await this.service.createVersion(args.projectId, args.description);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                projectId: args.projectId,
+                message: `Created version ${newVersion.versionNumber}`,
+                version: newVersion,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_create_deployment':
+          const deployment = await this.service.createDeployment(args.projectId, {
+            versionNumber: args.versionNumber,
+            description: args.description,
+            access: args.access,
+            executeAs: args.executeAs,
+          });
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                projectId: args.projectId,
+                message: deployment.webAppUrl 
+                  ? `Deployed as web app: ${deployment.webAppUrl}`
+                  : `Created deployment ${deployment.deploymentId}`,
+                deployment,
+              }, null, 2)
+            }]
+          };
+
+        case 'apps_script_update_deployment':
+          const updatedDeployment = await this.service.updateDeployment(
+            args.projectId,
+            args.deploymentId,
+            {
+              versionNumber: args.versionNumber,
+              description: args.description,
+            }
+          );
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                projectId: args.projectId,
+                message: updatedDeployment.webAppUrl 
+                  ? `Updated deployment, web app: ${updatedDeployment.webAppUrl}`
+                  : `Updated deployment ${updatedDeployment.deploymentId}`,
+                deployment: updatedDeployment,
               }, null, 2)
             }]
           };

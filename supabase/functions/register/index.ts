@@ -50,7 +50,18 @@ serve(async (req) => {
 
     // Parse request body
     const body = await req.json()
-    const { name, description, server_key, connection_url, max_concurrent_connections } = body
+    const { name, description, server_key, connection_url, max_concurrent_connections, owner_email } = body
+    
+    // Get user email - check multiple sources
+    // Priority: user.email > user.user_metadata.email > owner_email from request body
+    const userEmail = user.email || user.user_metadata?.email || owner_email
+    
+    console.log('🔍 Email sources:', {
+      'user.email': user.email,
+      'user.user_metadata.email': user.user_metadata?.email,
+      'owner_email (from body)': owner_email,
+      'resolved userEmail': userEmail
+    })
 
     if (!name || !server_key) {
       return new Response(
@@ -88,19 +99,68 @@ serve(async (req) => {
       )
     }
 
-    // If server_key is already taken, return error
+    // If server_key is already taken
     if (existingRecords && existingRecords.length > 0) {
       const existingRecord = existingRecords[0]
+      
+      // Even on conflict, try to add owner permission if missing
+      // This handles the case where server was created but permission wasn't
+      let ownerPermissionAdded = false
+      if (userEmail) {
+        try {
+          // Check if permission already exists
+          const { data: existingPerm } = await supabaseAdminClient
+            .from('mcp_server_permissions')
+            .select('id')
+            .eq('server_id', existingRecord.id)
+            .eq('allowed_email', userEmail.toLowerCase())
+            .single()
+          
+          if (!existingPerm) {
+            // Permission doesn't exist, create it
+            const { error: permissionError } = await supabaseAdminClient
+              .from('mcp_server_permissions')
+              .insert({
+                server_id: existingRecord.id,
+                allowed_email: userEmail.toLowerCase(),
+                user_id: user.id,
+                status: 'active',
+                access_level: 'admin',
+                granted_at: new Date().toISOString(),
+                activated_at: new Date().toISOString(),
+                notes: 'Auto-granted: Server owner (on re-registration)'
+              })
+            
+            if (!permissionError) {
+              ownerPermissionAdded = true
+              console.log(`✅ Auto-added owner permission for ${userEmail} on re-registration`)
+            } else {
+              console.warn('Warning: Failed to auto-add owner permission on re-registration:', permissionError)
+            }
+          } else {
+            // Permission already exists
+            ownerPermissionAdded = true
+            console.log(`ℹ️ Owner permission already exists for ${userEmail}`)
+          }
+        } catch (permError) {
+          console.warn('Warning: Error checking/adding permission on re-registration:', permError)
+        }
+      } else {
+        console.warn('Warning: No email available on re-registration, skipping auto-permission')
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Server key already exists',
           message: `Server key '${server_key}' is already registered`,
           existing_record: {
+            id: existingRecord.id,
             name: existingRecord.name,
             server_key: existingRecord.server_key,
             registered_at: existingRecord.created_at
-          }
+          },
+          owner_permission_added: ownerPermissionAdded
         }),
         { 
           status: 409, // Conflict status code
@@ -159,6 +219,34 @@ serve(async (req) => {
       )
     }
 
+    // Auto-add owner as admin in permissions table
+    // This allows the owner to see and access their own server immediately
+    let ownerPermissionAdded = false
+    if (userEmail) {
+      const { error: permissionError } = await supabaseAdminClient
+        .from('mcp_server_permissions')
+        .insert({
+          server_id: data.id,
+          allowed_email: userEmail.toLowerCase(),
+          user_id: user.id,
+          status: 'active',
+          access_level: 'admin',
+          granted_at: new Date().toISOString(),
+          activated_at: new Date().toISOString(),
+          notes: 'Auto-granted: Server owner'
+        })
+
+      if (permissionError) {
+        // Non-fatal: Log warning but don't fail the registration
+        console.warn('Warning: Failed to auto-add owner permission:', permissionError)
+      } else {
+        ownerPermissionAdded = true
+        console.log(`✅ Auto-added owner permission for ${userEmail}`)
+      }
+    } else {
+      console.warn('Warning: No email available (checked user.email, user.user_metadata.email, and owner_email from body), skipping auto-permission')
+    }
+
     // Return success response matching RegistrationResponse interface
     return new Response(
       JSON.stringify({
@@ -168,7 +256,8 @@ serve(async (req) => {
         id: data.id,
         server_key: data.server_key,
         ip: clientIp,
-        created_at: data.created_at
+        created_at: data.created_at,
+        owner_permission_added: ownerPermissionAdded
       }),
       { 
         status: 201, 

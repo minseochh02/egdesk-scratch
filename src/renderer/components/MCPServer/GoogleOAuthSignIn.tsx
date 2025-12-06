@@ -246,6 +246,7 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
         'https://www.googleapis.com/auth/script.projects.readonly',
         'https://www.googleapis.com/auth/script.scriptapp',
         'https://www.googleapis.com/auth/script.send_mail',
+        'https://www.googleapis.com/auth/script.deployments', // Required for listing/creating/updating web app deployments
         // Google Sheets and Drive scopes (required for template copying)
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive',
