@@ -442,6 +442,25 @@
   background: rgba(255, 118, 117, 0.25);
 }
 
+.docker-btn-run {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: rgba(0, 184, 148, 0.15);
+  color: #00b894;
+}
+
+.docker-btn-run:hover {
+  background: rgba(0, 184, 148, 0.3);
+}
+
 /* Image Cards */
 .docker-card-image {
   border-left-color: #a29bfe;
@@ -519,6 +538,206 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Run Container Modal */
+.docker-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: docker-fade-in 0.2s ease;
+}
+
+@keyframes docker-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.docker-modal {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: docker-slide-up 0.3s ease;
+}
+
+@keyframes docker-slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.docker-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.docker-modal-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.docker-modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: #888;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.docker-modal-close:hover:not(:disabled) {
+  background: rgba(255, 118, 117, 0.2);
+  color: #ff7675;
+}
+
+.docker-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.docker-modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.docker-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.docker-form-group label {
+  font-size: 0.8rem;
+  color: #888;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.docker-form-group .docker-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.docker-input-readonly {
+  background: rgba(0, 0, 0, 0.5);
+  color: #a29bfe;
+  cursor: default;
+}
+
+.docker-form-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.docker-form-row .docker-form-group {
+  flex: 1;
+}
+
+.docker-form-separator {
+  font-size: 1.5rem;
+  color: #666;
+  padding-bottom: 0.4rem;
+}
+
+.docker-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 0.85rem;
+  font-family: 'Monaco', 'Menlo', monospace;
+  resize: vertical;
+  min-height: 60px;
+  transition: border-color 0.2s;
+}
+
+.docker-textarea:focus {
+  outline: none;
+  border-color: #0984e3;
+}
+
+.docker-textarea::placeholder {
+  color: #555;
+}
+
+.docker-textarea:disabled,
+.docker-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.docker-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0 0 16px 16px;
+}
+
+.docker-btn-secondary {
+  padding: 0.6rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: transparent;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.docker-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.docker-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.docker-btn-run-confirm {
+  padding: 0.6rem 1.5rem;
+  font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .docker-header {
@@ -551,6 +770,11 @@
     margin-left: 0;
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .docker-modal {
+    width: 95%;
+    margin: 1rem;
   }
 }
 

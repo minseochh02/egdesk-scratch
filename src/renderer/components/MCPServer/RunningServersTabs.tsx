@@ -133,6 +133,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>('local');
   const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
   const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
+  const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false); // Token exists but access_token is missing/expired
   const [existingCopies, setExistingCopies] = useState<Map<string, string>>(new Map()); // templateId -> copyId
   const [loadingCopies, setLoadingCopies] = useState<boolean>(true);
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
@@ -142,6 +143,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const checkOAuthToken = async () => {
     try {
       setCheckingOAuthToken(true);
+      setTokenNeedsRefresh(false); // Reset on each check
       console.log('🔍 RunningServersTabs: Starting OAuth token check...');
       
       // First, check Supabase session (from GoogleOAuthSignIn component)
@@ -177,6 +179,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
             // First check if token has access_token (required for Google API calls)
             if (!token.access_token) {
               console.log('⚠️ RunningServersTabs: Token exists but no access_token - cannot use for API calls');
+              setTokenNeedsRefresh(true); // User has token but it's expired/invalid
               setHasValidOAuthToken(false);
               return;
             }
@@ -541,6 +544,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
         'https://www.googleapis.com/auth/script.projects.readonly',
         'https://www.googleapis.com/auth/script.scriptapp',
         'https://www.googleapis.com/auth/script.send_mail',
+        'https://www.googleapis.com/auth/script.deployments', // Required for listing/creating/updating web app deployments
         // Google Sheets and Drive scopes (required for template copying)
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive',
@@ -671,13 +675,37 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
               {!checkingOAuthToken && !hasValidOAuthToken && (
                 <div className="cloud-oauth-section">
                   <div className="cloud-oauth-header">
-                    <h3>Authentication Required</h3>
+                    <h3>{tokenNeedsRefresh ? "Access Token Expired" : "Authentication Required"}</h3>
                     <p>
-                      {hasValidOAuthToken === false && (window.electron as any)?.auth?.user 
-                        ? "Additional permissions needed for Cloud MCP Servers." 
-                        : "Sign in with Google to access cloud MCP servers"}
+                      {tokenNeedsRefresh 
+                        ? "Your Google access token has expired or is invalid. Please refresh your token to continue using Cloud MCP Servers."
+                        : (hasValidOAuthToken === false && (window.electron as any)?.auth?.user 
+                          ? "Additional permissions needed for Cloud MCP Servers." 
+                          : "Sign in with Google to access cloud MCP servers")}
                     </p>
                   </div>
+                  
+                  {tokenNeedsRefresh && (
+                    <div className="token-refresh-warning" style={{ 
+                      backgroundColor: 'rgba(255, 193, 7, 0.15)', 
+                      border: '1px solid rgba(255, 193, 7, 0.4)',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      marginBottom: '1rem',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.75rem'
+                    }}>
+                      <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+                      <div>
+                        <strong style={{ color: '#ffc107', display: 'block', marginBottom: '0.25rem' }}>Token Refresh Required</strong>
+                        <span style={{ color: '#ccc', fontSize: '0.9rem' }}>
+                          Your stored credentials are missing the access token needed for Google API calls. 
+                          This can happen when the token expires. Click the button below to re-authorize.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* If user is already signed in but missing token, show Re-Sign In button instead of generic sign in */}
                   <div className="cloud-oauth-login-container">
@@ -687,10 +715,12 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                       style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}
                     >
                       <FontAwesomeIcon icon={faSync} />
-                      {hasValidOAuthToken === false ? "Authorize Google Workspace" : "Sign in with Google"}
+                      {tokenNeedsRefresh ? "Refresh Access Token" : (hasValidOAuthToken === false ? "Authorize Google Workspace" : "Sign in with Google")}
                     </button>
                     <p className="oauth-help-text" style={{ marginTop: '1rem', color: '#888', fontSize: '0.9rem' }}>
-                      This will open a browser window to authorize access to Google Sheets and Apps Script.
+                      {tokenNeedsRefresh 
+                        ? "This will open a browser window to refresh your Google authorization and get a new access token."
+                        : "This will open a browser window to authorize access to Google Sheets and Apps Script."}
                     </p>
                   </div>
                 </div>

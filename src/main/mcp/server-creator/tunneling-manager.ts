@@ -36,9 +36,11 @@ export interface TunnelRegistrationResult {
   ip?: string;
   timestamp?: string;
   id?: string;
+  ownerPermissionAdded?: boolean;
   existing_record?: {
+    id?: string;
     name: string;
-    ip: string;
+    server_key?: string;
     registered_at: string;
   };
 }
@@ -76,15 +78,29 @@ export async function registerServerName(
 
     // If we have a user session, use their token for Authorization instead of anon key
     // This is required because the Edge Function checks for an authenticated user
+    let userEmail: string | undefined;
     try {
       const authService = getAuthService();
-      const { session } = await authService.getSession();
+      const { session, user } = await authService.getSession();
+      
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
         console.log('🔐 Using user session token for registration');
+      } else {
+        console.warn('⚠️ No session access token found, using anon key');
+      }
+      
+      // Get user email for auto-invite owner feature
+      if (user?.email) {
+        userEmail = user.email;
+        console.log(`📧 User email found: ${userEmail} - will auto-add owner permission`);
+      } else {
+        console.warn('⚠️ No user email found in session! Owner permission may not be added.');
+        console.warn('   User object:', user ? JSON.stringify({ id: user.id, email: user.email, role: user.role }) : 'null');
       }
     } catch (err) {
-      console.warn('⚠️ Failed to retrieve user session, falling back to anon key:', err);
+      console.error('❌ Failed to retrieve user session:', err);
+      console.warn('⚠️ Falling back to anon key - owner permission will NOT be added');
     }
 
     // Prepare body
@@ -94,7 +110,8 @@ export async function registerServerName(
       // The edge function expects server_key.
       server_key: name.toLowerCase().replace(/[^a-z0-9-]/g, ''),
       connection_url: 'http://localhost:8080', // Default
-      description: `MCP Server: ${name}`
+      description: `MCP Server: ${name}`,
+      owner_email: userEmail  // Auto-add owner as invited user
     });
 
     // Make POST request
@@ -106,34 +123,55 @@ export async function registerServerName(
 
     const data = await response.json();
 
-    if (response.ok && data.status === 'registered') {
+    // Check for successful registration (201 Created)
+    // Edge Function returns { success: true, ... } not { status: 'registered' }
+    if (response.ok && data.success === true) {
       console.log(`✅ Successfully registered: ${name}`);
+      
+      // Log whether owner permission was added
+      if (data.owner_permission_added) {
+        console.log(`✅ Owner permission auto-added for server: ${name}`);
+      } else {
+        console.warn(`⚠️ Owner permission was NOT added for server: ${name}. User may not see this server in their dashboard.`);
+      }
+      
       return {
         success: true,
         status: 'registered',
         name: data.name,
         ip: data.ip,
-        timestamp: data.timestamp,
+        timestamp: data.created_at,
         id: data.id,
+        ownerPermissionAdded: data.owner_permission_added,
       };
     }
 
-    if (response.status === 409 && data.status === 'name_taken') {
-      console.log(`⚠️ Name already taken: ${name}`);
+    // Check for 409 Conflict (server_key already exists)
+    if (response.status === 409) {
+      console.log(`⚠️ Server key already taken: ${name}`);
+      
+      // Log whether owner permission was added during re-registration attempt
+      if (data.owner_permission_added) {
+        console.log(`✅ Owner permission was added on re-registration for server: ${name}`);
+      } else if (data.owner_permission_added === false) {
+        console.warn(`⚠️ Owner permission was NOT added on re-registration for server: ${name}`);
+      }
+      
       return {
         success: false,
         status: 'name_taken',
         message: data.message,
         existing_record: data.existing_record,
+        ownerPermissionAdded: data.owner_permission_added,
       };
     }
 
     // Handle error cases
-    console.error(`❌ Registration failed: ${data.message || 'Unknown error'}`);
+    console.error(`❌ Registration failed: ${data.message || data.error || 'Unknown error'}`);
     return {
       success: false,
       status: 'error',
-      message: data.message || 'Registration failed',
+      message: data.message || data.error || 'Registration failed',
     };
   } catch (error) {
     console.error('❌ Registration error:', error);

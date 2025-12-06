@@ -753,5 +753,335 @@ export class AppsScriptService {
       failedExecutions: result.metrics?.[0]?.failedExecutions,
     };
   }
+
+  /**
+   * Create a new version (snapshot) of the script
+   * POST /v1/projects/{scriptId}/versions
+   */
+  async createVersion(projectId: string, description?: string): Promise<{
+    versionNumber: number;
+    description?: string;
+    createTime: string;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: description || `Version created at ${new Date().toISOString()}`,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to create version: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      versionNumber: result.versionNumber,
+      description: result.description,
+      createTime: result.createTime,
+    };
+  }
+
+  /**
+   * Create a new deployment (web app) for the script
+   * POST /v1/projects/{scriptId}/deployments
+   * 
+   * @param projectId - The project ID
+   * @param versionNumber - The version number to deploy (if not provided, creates a new version first)
+   * @param description - Description for the deployment
+   * @param access - Who can access the web app: 'MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'
+   * @param executeAs - Who the script runs as: 'USER_ACCESSING' or 'USER_DEPLOYING'
+   */
+  async createDeployment(
+    projectId: string, 
+    options: {
+      versionNumber?: number;
+      description?: string;
+      access?: 'MYSELF' | 'DOMAIN' | 'ANYONE' | 'ANYONE_ANONYMOUS';
+      executeAs?: 'USER_ACCESSING' | 'USER_DEPLOYING';
+    } = {}
+  ): Promise<{
+    deploymentId: string;
+    versionNumber: number;
+    description?: string;
+    webAppUrl?: string;
+    entryPoints?: Array<{
+      entryPointType: string;
+      webApp?: { url: string };
+    }>;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // For web app deployments, we need to update the manifest first, then create a version
+    let versionNumber = options.versionNumber;
+
+    // IMPORTANT: Before deploying as web app, we need to update the manifest (appsscript.json) 
+    // to include webapp settings. The deployment API itself doesn't accept webAccessConfig.
+    // See: https://developers.google.com/apps-script/api/reference/rest/v1/projects.deployments/create
+    
+    // First, update the manifest with webapp settings
+    const access = options.access || 'ANYONE_ANONYMOUS';
+    const executeAs = options.executeAs || 'USER_DEPLOYING';
+    
+    console.log(`🚀 Updating manifest and creating WEB APP deployment for script ${copy.scriptId}...`);
+    console.log(`   Version: ${versionNumber}, Access: ${access}, ExecuteAs: ${executeAs}`);
+    
+    // Get current project content to update the manifest
+    const contentResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+    
+    if (!contentResponse.ok) {
+      const errorData = await contentResponse.json().catch(() => ({}));
+      throw new Error(`Failed to get project content: ${errorData.error?.message || contentResponse.status}`);
+    }
+    
+    const projectContent = await contentResponse.json();
+    
+    // Find or create the manifest file with webapp settings
+    let manifestFile = projectContent.files?.find((f: any) => f.name === 'appsscript');
+    let manifestSource: any;
+    
+    if (manifestFile?.source) {
+      try {
+        manifestSource = JSON.parse(manifestFile.source);
+      } catch (e) {
+        manifestSource = { timeZone: 'America/New_York', dependencies: {}, exceptionLogging: 'STACKDRIVER', runtimeVersion: 'V8' };
+      }
+    } else {
+      manifestSource = { timeZone: 'America/New_York', dependencies: {}, exceptionLogging: 'STACKDRIVER', runtimeVersion: 'V8' };
+    }
+    
+    // Add/update webapp settings in manifest
+    manifestSource.webapp = {
+      access: access,
+      executeAs: executeAs,
+    };
+    
+    // Update the project content with the new manifest
+    const updatedFiles = projectContent.files?.map((f: any) => {
+      if (f.name === 'appsscript') {
+        return { ...f, source: JSON.stringify(manifestSource, null, 2) };
+      }
+      return f;
+    }) || [];
+    
+    // If manifest wasn't found, add it
+    if (!manifestFile) {
+      updatedFiles.push({
+        name: 'appsscript',
+        type: 'JSON',
+        source: JSON.stringify(manifestSource, null, 2),
+      });
+    }
+    
+    // Push the updated manifest
+    const updateResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ files: updatedFiles }),
+    });
+    
+    if (!updateResponse.ok) {
+      const errorData = await updateResponse.json().catch(() => ({}));
+      throw new Error(`Failed to update manifest: ${errorData.error?.message || updateResponse.status}`);
+    }
+    
+    console.log('✅ Updated manifest with webapp settings');
+    
+    // Create a new version with the updated manifest
+    console.log('📝 Creating new version with webapp manifest...');
+    const newVersion = await this.createVersion(projectId, options.description || `Web App deployment`);
+    versionNumber = newVersion.versionNumber;
+    console.log(`✅ Created version ${versionNumber}`);
+    
+    // Build deployment config (only allowed fields per Google API docs)
+    const requestBody: any = {
+      versionNumber: versionNumber,
+      manifestFileName: 'appsscript',
+      description: options.description || `Web App - Version ${versionNumber}`,
+    };
+
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/deployments`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to create deployment: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    // Extract web app URL if present
+    const webAppEntry = result.entryPoints?.find((ep: any) => ep.entryPointType === 'WEB_APP');
+    
+    return {
+      deploymentId: result.deploymentId,
+      versionNumber: result.deploymentConfig?.versionNumber || versionNumber,
+      description: result.deploymentConfig?.description,
+      webAppUrl: webAppEntry?.webApp?.url,
+      entryPoints: result.entryPoints,
+    };
+  }
+
+  /**
+   * Update an existing deployment
+   * PUT /v1/projects/{scriptId}/deployments/{deploymentId}
+   * 
+   * @param projectId - The project ID
+   * @param deploymentId - The deployment ID to update
+   * @param versionNumber - The new version number to deploy
+   * @param description - New description for the deployment
+   */
+  async updateDeployment(
+    projectId: string,
+    deploymentId: string,
+    options: {
+      versionNumber?: number;
+      description?: string;
+    } = {}
+  ): Promise<{
+    deploymentId: string;
+    versionNumber: number;
+    description?: string;
+    webAppUrl?: string;
+    entryPoints?: Array<{
+      entryPointType: string;
+      webApp?: { url: string };
+    }>;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // If no version number provided, create a new version first
+    let versionNumber = options.versionNumber;
+    if (!versionNumber) {
+      console.log('📝 No version specified, creating a new version...');
+      const newVersion = await this.createVersion(projectId, options.description || 'Auto-created for deployment update');
+      versionNumber = newVersion.versionNumber;
+      console.log(`✅ Created version ${versionNumber}`);
+    }
+
+    // Build deployment config update
+    const deploymentConfig: any = {
+      versionNumber: versionNumber,
+    };
+
+    if (options.description) {
+      deploymentConfig.description = options.description;
+    }
+
+    const response = await fetch(
+      `https://script.googleapis.com/v1/projects/${copy.scriptId}/deployments/${deploymentId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ deploymentConfig }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to update deployment: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    // Extract web app URL if present
+    const webAppEntry = result.entryPoints?.find((ep: any) => ep.entryPointType === 'WEB_APP');
+    
+    return {
+      deploymentId: result.deploymentId,
+      versionNumber: result.deploymentConfig?.versionNumber || versionNumber,
+      description: result.deploymentConfig?.description,
+      webAppUrl: webAppEntry?.webApp?.url,
+      entryPoints: result.entryPoints,
+    };
+  }
 }
 

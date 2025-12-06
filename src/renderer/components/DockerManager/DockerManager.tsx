@@ -18,6 +18,14 @@ interface DockerImage {
   Created: number;
 }
 
+interface RunContainerConfig {
+  imageName: string;
+  containerName: string;
+  hostPort: string;
+  containerPort: string;
+  envVars: string;
+}
+
 export const DockerManager: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -34,6 +42,17 @@ export const DockerManager: React.FC = () => {
   const [pullImageName, setPullImageName] = useState('');
   const [isPulling, setIsPulling] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  
+  // Run container modal state
+  const [showRunModal, setShowRunModal] = useState(false);
+  const [runConfig, setRunConfig] = useState<RunContainerConfig>({
+    imageName: '',
+    containerName: '',
+    hostPort: '',
+    containerPort: '',
+    envVars: '',
+  });
+  const [isRunning, setIsRunning] = useState(false);
 
   // Check Docker connection on mount
   useEffect(() => {
@@ -191,6 +210,74 @@ export const DockerManager: React.FC = () => {
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     }
+  };
+
+  const openRunModal = (imageName: string) => {
+    const baseName = imageName.split(':')[0].split('/').pop() || 'container';
+    setRunConfig({
+      imageName,
+      containerName: `${baseName}-${Date.now().toString(36)}`,
+      hostPort: '',
+      containerPort: '',
+      envVars: '',
+    });
+    setShowRunModal(true);
+  };
+
+  const handleRunContainer = async () => {
+    if (!runConfig.imageName) return;
+    
+    setIsRunning(true);
+    try {
+      // Build container options
+      const options: any = {
+        Image: runConfig.imageName,
+        name: runConfig.containerName || undefined,
+        HostConfig: {},
+      };
+
+      // Add port bindings if specified
+      if (runConfig.hostPort && runConfig.containerPort) {
+        options.ExposedPorts = {
+          [`${runConfig.containerPort}/tcp`]: {},
+        };
+        options.HostConfig.PortBindings = {
+          [`${runConfig.containerPort}/tcp`]: [{ HostPort: runConfig.hostPort }],
+        };
+      }
+
+      // Add environment variables if specified
+      if (runConfig.envVars.trim()) {
+        options.Env = runConfig.envVars
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && line.includes('='));
+      }
+
+      // Create the container
+      const createResult = await window.electron.docker.createContainer(options);
+      if (!createResult.success) {
+        alert(`Failed to create container: ${createResult.error}`);
+        setIsRunning(false);
+        return;
+      }
+
+      // Start the container
+      const startResult = await window.electron.docker.startContainer(
+        createResult.containerId!,
+      );
+      if (!startResult.success) {
+        alert(`Container created but failed to start: ${startResult.error}`);
+      } else {
+        setShowRunModal(false);
+        setSelectedTab('containers');
+      }
+
+      await refreshContainers();
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    }
+    setIsRunning(false);
   };
 
   const formatBytes = (bytes: number): string => {
@@ -451,6 +538,15 @@ export const DockerManager: React.FC = () => {
                     </div>
                     <div className="docker-card-actions">
                       <button
+                        onClick={() =>
+                          openRunModal(image.RepoTags?.[0] || image.Id)
+                        }
+                        className="docker-btn-run"
+                        title="Run Container"
+                      >
+                        ▶
+                      </button>
+                      <button
                         onClick={() => handleRemoveImage(image.Id)}
                         className="docker-btn-remove"
                         title="Remove Image"
@@ -483,6 +579,106 @@ export const DockerManager: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Run Container Modal */}
+      {showRunModal && (
+        <div className="docker-modal-overlay" onClick={() => !isRunning && setShowRunModal(false)}>
+          <div className="docker-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="docker-modal-header">
+              <h2>▶ Run Container</h2>
+              <button
+                className="docker-modal-close"
+                onClick={() => !isRunning && setShowRunModal(false)}
+                disabled={isRunning}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="docker-modal-body">
+              <div className="docker-form-group">
+                <label>Image</label>
+                <input
+                  type="text"
+                  value={runConfig.imageName}
+                  readOnly
+                  className="docker-input docker-input-readonly"
+                />
+              </div>
+              <div className="docker-form-group">
+                <label>Container Name (optional)</label>
+                <input
+                  type="text"
+                  placeholder="my-container"
+                  value={runConfig.containerName}
+                  onChange={(e) =>
+                    setRunConfig({ ...runConfig, containerName: e.target.value })
+                  }
+                  className="docker-input"
+                  disabled={isRunning}
+                />
+              </div>
+              <div className="docker-form-row">
+                <div className="docker-form-group">
+                  <label>Host Port</label>
+                  <input
+                    type="text"
+                    placeholder="8080"
+                    value={runConfig.hostPort}
+                    onChange={(e) =>
+                      setRunConfig({ ...runConfig, hostPort: e.target.value })
+                    }
+                    className="docker-input"
+                    disabled={isRunning}
+                  />
+                </div>
+                <span className="docker-form-separator">:</span>
+                <div className="docker-form-group">
+                  <label>Container Port</label>
+                  <input
+                    type="text"
+                    placeholder="80"
+                    value={runConfig.containerPort}
+                    onChange={(e) =>
+                      setRunConfig({ ...runConfig, containerPort: e.target.value })
+                    }
+                    className="docker-input"
+                    disabled={isRunning}
+                  />
+                </div>
+              </div>
+              <div className="docker-form-group">
+                <label>Environment Variables (one per line, KEY=VALUE)</label>
+                <textarea
+                  placeholder="NODE_ENV=production&#10;PORT=3000"
+                  value={runConfig.envVars}
+                  onChange={(e) =>
+                    setRunConfig({ ...runConfig, envVars: e.target.value })
+                  }
+                  className="docker-textarea"
+                  rows={3}
+                  disabled={isRunning}
+                />
+              </div>
+            </div>
+            <div className="docker-modal-footer">
+              <button
+                onClick={() => setShowRunModal(false)}
+                className="docker-btn-secondary"
+                disabled={isRunning}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRunContainer}
+                className="docker-btn-primary docker-btn-run-confirm"
+                disabled={isRunning}
+              >
+                {isRunning ? '⏳ Starting...' : '▶ Run'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
