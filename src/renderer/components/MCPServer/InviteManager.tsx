@@ -80,13 +80,7 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
   };
 
   const handleAddPermissions = async () => {
-    console.log('🔍 handleAddPermissions called');
-    console.log('🔍 newEmails value:', newEmails);
-    console.log('🔍 newEmails.trim():', newEmails.trim());
-    console.log('🔍 newEmails length:', newEmails.length);
-    
     if (!newEmails.trim()) {
-      console.log('❌ Validation failed: empty email field');
       setError('Please enter at least one email address');
       return;
     }
@@ -100,8 +94,6 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
         .split(/[,\n]+/)
         .map(email => email.trim().toLowerCase())
         .filter(email => email.length > 0 && email.includes('@'));
-
-      console.log('📧 Parsed email list:', emailList);
 
       if (emailList.length === 0) {
         setError('Please enter valid email addresses');
@@ -181,322 +173,266 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'active':
-        return <FontAwesomeIcon icon={faCircleCheck} className="status-icon status-active" />;
+        return <FontAwesomeIcon icon={faCircleCheck} className="status-icon status-active" style={{ fontSize: '10px' }} />;
       case 'pending':
-        return <FontAwesomeIcon icon={faClock} className="status-icon status-pending" />;
+        return <FontAwesomeIcon icon={faClock} className="status-icon status-pending" style={{ fontSize: '10px' }} />;
       case 'revoked':
-        return <FontAwesomeIcon icon={faCircleXmark} className="status-icon status-revoked" />;
+        return <FontAwesomeIcon icon={faCircleXmark} className="status-icon status-revoked" style={{ fontSize: '10px' }} />;
       case 'expired':
-        return <FontAwesomeIcon icon={faExclamationTriangle} className="status-icon status-expired" />;
+        return <FontAwesomeIcon icon={faExclamationTriangle} className="status-icon status-expired" style={{ fontSize: '10px' }} />;
       default:
         return null;
     }
   };
 
+  // Simplified badge for compact view
   const getAccessLevelBadge = (level: string) => {
-    const badges = {
-      admin: <span className="access-badge access-admin">Admin</span>,
-      read_write: <span className="access-badge access-read-write">Read/Write</span>,
-      read_only: <span className="access-badge access-read-only">Read Only</span>
+    const labels = {
+      admin: 'Admin',
+      read_write: 'R/W',
+      read_only: 'Read'
     };
-    return badges[level as keyof typeof badges] || null;
-  };
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleString();
+    const colors = {
+      admin: '#ef4444',
+      read_write: '#10b981',
+      read_only: '#3b82f6'
+    };
+    
+    return (
+      <span style={{ 
+        fontSize: '10px', 
+        padding: '2px 6px', 
+        borderRadius: '4px', 
+        backgroundColor: `${colors[level as keyof typeof colors]}20`,
+        color: colors[level as keyof typeof colors],
+        fontWeight: '600',
+        textTransform: 'uppercase'
+      }}>
+        {labels[level as keyof typeof labels] || level}
+      </span>
+    );
   };
 
   // Group permissions by status
   const activePermissions = permissions.filter(p => p.status === 'active');
   const pendingPermissions = permissions.filter(p => p.status === 'pending');
-  const revokedPermissions = permissions.filter(p => p.status === 'revoked');
+  // Revoked permissions are hidden by default in compact view to save space
 
   return (
-    <div className="invite-manager">
-      <div className="invite-manager-header">
+    <div className="invite-manager compact" style={{ fontSize: '13px' }}>
+      <div className="invite-manager-header" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="header-content">
-          <h2>
-            <FontAwesomeIcon icon={faUsers} />
-            Manage Invitations
-          </h2>
-          <p className="header-subtitle">Control who can access {serverName}</p>
+          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FontAwesomeIcon icon={faUsers} style={{ color: '#3b82f6' }} />
+            Manage Access
+          </h4>
         </div>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: 'flex', gap: '8px' }}>
           <button 
             className="btn-refresh" 
             onClick={loadPermissions}
             disabled={loading}
+            style={{ background: 'transparent', border: 'none', color: 'white', opacity: 0.7, cursor: 'pointer', padding: '4px' }}
+            title="Refresh list"
           >
             <FontAwesomeIcon icon={faRefresh} spin={loading} />
-            Refresh
           </button>
           <button 
             className="btn-add-permission" 
             onClick={() => setShowAddForm(!showAddForm)}
+            style={{ 
+              background: 'rgba(59, 130, 246, 0.2)', 
+              border: 'none', 
+              color: '#3b82f6', 
+              cursor: 'pointer', 
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
           >
-            <FontAwesomeIcon icon={faUserPlus} />
-            Add People
+            <FontAwesomeIcon icon={showAddForm ? faTimes : faUserPlus} />
+            {showAddForm ? 'Cancel' : 'Add'}
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="error-message">
+        <div className="error-message" style={{ 
+          padding: '8px', 
+          background: 'rgba(239, 68, 68, 0.1)', 
+          borderRadius: '6px', 
+          color: '#ef4444', 
+          marginBottom: '12px',
+          fontSize: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
           <FontAwesomeIcon icon={faExclamationTriangle} />
-          {error}
-          <button onClick={() => setError(null)}>
+          <span style={{ flex: 1 }}>{error}</span>
+          <button onClick={() => setError(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}>
             <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
       )}
 
       {showAddForm && (
-        <div className="add-permission-form">
-          <h3>Add New People</h3>
-          <div className="form-group">
-            <label>Email Addresses (Current value: "{newEmails}")</label>
+        <div className="add-permission-form" style={{ 
+          background: 'rgba(0, 0, 0, 0.2)', 
+          padding: '12px', 
+          borderRadius: '8px', 
+          marginBottom: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <div className="form-group" style={{ marginBottom: '12px' }}>
             <textarea
-              placeholder="Enter email addresses (one per line or comma-separated)
-Example:
-alice@company.com, bob@company.com
-charlie@company.com"
+              placeholder="Enter emails (comma separated)..."
               value={newEmails}
-              onChange={(e) => {
-                setNewEmails(e.target.value);
+              onChange={(e) => setNewEmails(e.target.value)}
+              rows={2}
+              style={{ 
+                width: '100%', 
+                padding: '8px', 
+                borderRadius: '4px', 
+                background: 'rgba(255, 255, 255, 0.9)', 
+                color: '#1f2937',
+                border: 'none',
+                resize: 'vertical',
+                fontSize: '13px'
               }}
-              onFocus={() => console.log('📝 Textarea focused')}
-              onBlur={() => console.log('📝 Textarea blurred')}
-              rows={4}
-              style={{ backgroundColor: 'white', cursor: 'text' }}
             />
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>Access Level</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: 1 }}>
               <select
                 value={newAccessLevel}
                 onChange={(e) => setNewAccessLevel(e.target.value as any)}
+                style={{ 
+                  width: '100%', 
+                  padding: '6px', 
+                  borderRadius: '4px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  fontSize: '12px'
+                }}
               >
                 <option value="read_only">Read Only</option>
                 <option value="read_write">Read & Write</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
-          </div>
-
-          <div className="form-group">
-            <label>Notes (Optional)</label>
-            <input
-              type="text"
-              placeholder="e.g., Team members, External contractors..."
-              value={newNotes}
-              onChange={(e) => setNewNotes(e.target.value)}
-            />
-          </div>
-
-          <div className="form-actions">
             <button 
-              className="btn-cancel" 
-              onClick={() => {
-                setShowAddForm(false);
-                setNewEmails('');
-                setNewNotes('');
-              }}
-              disabled={addingPermissions}
-            >
-              <FontAwesomeIcon icon={faTimes} />
-              Cancel
-            </button>
-            <button 
-              className="btn-submit" 
               onClick={handleAddPermissions}
               disabled={addingPermissions}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '6px 12px',
+                cursor: addingPermissions ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+                opacity: addingPermissions ? 0.7 : 1,
+                whiteSpace: 'nowrap'
+              }}
             >
-              {addingPermissions ? (
-                <>
-                  <FontAwesomeIcon icon={faSpinner} spin />
-                  Adding...
-                </>
-              ) : (
-                <>
-                  <FontAwesomeIcon icon={faCheck} />
-                  Add Permissions
-                </>
-              )}
+              {addingPermissions ? <FontAwesomeIcon icon={faSpinner} spin /> : 'Invite'}
             </button>
           </div>
         </div>
       )}
 
       {loading && permissions.length === 0 ? (
-        <div className="loading-state">
-          <FontAwesomeIcon icon={faSpinner} spin />
-          Loading permissions...
+        <div className="loading-state" style={{ textAlign: 'center', padding: '12px', opacity: 0.7, fontSize: '12px' }}>
+          <FontAwesomeIcon icon={faSpinner} spin style={{ marginRight: '8px' }} />
+          Loading...
         </div>
-      ) : permissions.length === 0 ? (
-        <div className="empty-state">
-          <FontAwesomeIcon icon={faUsers} />
-          <h3>No permissions yet</h3>
-          <p>Add people to grant them access to this server</p>
-          <button onClick={() => setShowAddForm(true)}>
-            <FontAwesomeIcon icon={faUserPlus} />
-            Add First Person
-          </button>
+      ) : permissions.length === 0 && !showAddForm ? (
+        <div className="empty-state" style={{ textAlign: 'center', padding: '12px', opacity: 0.5, fontSize: '12px' }}>
+          No permissions set
         </div>
       ) : (
-        <div className="permissions-list">
-          {/* Active Permissions */}
-          {activePermissions.length > 0 && (
-            <div className="permissions-section">
-              <h3 className="section-title">
-                <FontAwesomeIcon icon={faCircleCheck} />
-                Active ({activePermissions.length})
-              </h3>
-              {activePermissions.map(permission => (
-                <div key={permission.id} className="permission-card">
-                  {editingId === permission.id ? (
-                    <div className="permission-edit-form">
-                      <div className="edit-header">
-                        <FontAwesomeIcon icon={faEnvelope} />
-                        <span className="email">{permission.allowed_email}</span>
-                      </div>
-                      <div className="edit-fields">
-                        <div className="form-group">
-                          <label>Access Level</label>
-                          <select
-                            value={editAccessLevel}
-                            onChange={(e) => setEditAccessLevel(e.target.value as any)}
-                          >
-                            <option value="read_only">Read Only</option>
-                            <option value="read_write">Read & Write</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </div>
-                        <div className="form-group">
-                          <label>Notes</label>
-                          <input
-                            type="text"
-                            value={editNotes}
-                            onChange={(e) => setEditNotes(e.target.value)}
-                            placeholder="Add notes..."
-                          />
-                        </div>
-                      </div>
-                      <div className="edit-actions">
-                        <button onClick={cancelEditing} className="btn-cancel-edit">
-                          <FontAwesomeIcon icon={faTimes} />
-                        </button>
-                        <button onClick={() => handleUpdatePermission(permission.id)} className="btn-save-edit">
-                          <FontAwesomeIcon icon={faCheck} />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="permission-info">
-                        <div className="permission-header">
-                          {getStatusIcon(permission.status)}
-                          <FontAwesomeIcon icon={faEnvelope} className="email-icon" />
-                          <span className="email">{permission.allowed_email}</span>
-                          {getAccessLevelBadge(permission.access_level)}
-                        </div>
-                        {permission.notes && (
-                          <div className="permission-notes">{permission.notes}</div>
-                        )}
-                        <div className="permission-meta">
-                          <span>Added: {formatDate(permission.granted_at)}</span>
-                          {permission.activated_at && (
-                            <span>Activated: {formatDate(permission.activated_at)}</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="permission-actions">
-                        <button 
-                          onClick={() => startEditing(permission)}
-                          className="btn-edit"
-                          title="Edit"
-                        >
-                          <FontAwesomeIcon icon={faEdit} />
-                        </button>
-                        <button 
-                          onClick={() => handleRevokePermission(permission.id, permission.allowed_email)}
-                          className="btn-revoke"
-                          title="Revoke"
-                        >
-                          <FontAwesomeIcon icon={faTrash} />
-                        </button>
-                      </div>
-                    </>
-                  )}
+        <div className="permissions-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Active & Pending List Mixed (sorted by status/name) */}
+          {[...activePermissions, ...pendingPermissions].map(permission => (
+            <div key={permission.id} className="permission-item" style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.05)'
+            }}>
+              {editingId === permission.id ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>{permission.allowed_email}</div>
+                    <select
+                      value={editAccessLevel}
+                      onChange={(e) => setEditAccessLevel(e.target.value as any)}
+                      style={{ 
+                        width: '100%', 
+                        padding: '4px', 
+                        fontSize: '11px',
+                        background: 'rgba(0,0,0,0.3)',
+                        color: 'white',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      <option value="read_only">Read Only</option>
+                      <option value="read_write">Read & Write</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <button onClick={() => handleUpdatePermission(permission.id)} style={{ background: '#10b981', border: 'none', borderRadius: '4px', padding: '4px', color: 'white', cursor: 'pointer' }}>
+                    <FontAwesomeIcon icon={faCheck} size="xs" />
+                  </button>
+                  <button onClick={cancelEditing} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', padding: '4px', color: 'white', cursor: 'pointer' }}>
+                    <FontAwesomeIcon icon={faTimes} size="xs" />
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Pending Permissions */}
-          {pendingPermissions.length > 0 && (
-            <div className="permissions-section">
-              <h3 className="section-title">
-                <FontAwesomeIcon icon={faClock} />
-                Pending ({pendingPermissions.length})
-              </h3>
-              {pendingPermissions.map(permission => (
-                <div key={permission.id} className="permission-card permission-pending">
-                  <div className="permission-info">
-                    <div className="permission-header">
-                      {getStatusIcon(permission.status)}
-                      <FontAwesomeIcon icon={faEnvelope} className="email-icon" />
-                      <span className="email">{permission.allowed_email}</span>
-                      {getAccessLevelBadge(permission.access_level)}
-                    </div>
-                    {permission.notes && (
-                      <div className="permission-notes">{permission.notes}</div>
-                    )}
-                    <div className="permission-meta">
-                      <span>Added: {formatDate(permission.granted_at)}</span>
-                      <span className="pending-note">Waiting for user to connect</span>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
+                    {getStatusIcon(permission.status)}
+                    <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '500' }}>{permission.allowed_email}</div>
+                      {permission.status === 'pending' && (
+                        <div style={{ fontSize: '10px', opacity: 0.5 }}>Pending invitation</div>
+                      )}
                     </div>
                   </div>
-                  <div className="permission-actions">
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {getAccessLevelBadge(permission.access_level)}
+                    <button 
+                      onClick={() => startEditing(permission)}
+                      style={{ background: 'transparent', border: 'none', color: 'white', opacity: 0.5, cursor: 'pointer', padding: '2px' }}
+                      title="Edit"
+                    >
+                      <FontAwesomeIcon icon={faEdit} size="xs" />
+                    </button>
                     <button 
                       onClick={() => handleRevokePermission(permission.id, permission.allowed_email)}
-                      className="btn-revoke"
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '2px' }}
                       title="Revoke"
                     >
-                      <FontAwesomeIcon icon={faTrash} />
+                      <FontAwesomeIcon icon={faTrash} size="xs" />
                     </button>
                   </div>
-                </div>
-              ))}
+                </>
+              )}
             </div>
-          )}
-
-          {/* Revoked Permissions */}
-          {revokedPermissions.length > 0 && (
-            <div className="permissions-section permissions-revoked">
-              <h3 className="section-title">
-                <FontAwesomeIcon icon={faCircleXmark} />
-                Revoked ({revokedPermissions.length})
-              </h3>
-              {revokedPermissions.map(permission => (
-                <div key={permission.id} className="permission-card permission-revoked">
-                  <div className="permission-info">
-                    <div className="permission-header">
-                      {getStatusIcon(permission.status)}
-                      <FontAwesomeIcon icon={faEnvelope} className="email-icon" />
-                      <span className="email">{permission.allowed_email}</span>
-                      {getAccessLevelBadge(permission.access_level)}
-                    </div>
-                    <div className="permission-meta">
-                      <span>Revoked: {formatDate(permission.revoked_at)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
       )}
     </div>
@@ -504,4 +440,3 @@ charlie@company.com"
 };
 
 export default InviteManager;
-
