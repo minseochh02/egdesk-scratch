@@ -20,10 +20,19 @@ import {
   DeletePermissionResponse
 } from './tunnel-client';
 
-// Environment variables (loaded via dotenv in main.ts)
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const TUNNEL_SERVER_URL = process.env.TUNNEL_SERVER_URL || 'https://tunneling-service.onrender.com';
+// Environment variable getters - must be functions to ensure dotenv has loaded before reading
+// (Module imports are hoisted and execute before dotenv.config() in main.ts)
+function getSupabaseUrl(): string | undefined {
+  return process.env.SUPABASE_URL;
+}
+
+function getSupabaseAnonKey(): string | undefined {
+  return process.env.SUPABASE_ANON_KEY;
+}
+
+function getTunnelServerUrl(): string {
+  return process.env.TUNNEL_SERVER_URL || 'https://tunneling-service.onrender.com';
+}
 
 // Active tunnel clients
 const activeTunnels = new Map<string, TunnelClient>();
@@ -56,14 +65,23 @@ export async function registerServerName(
   password?: string
 ): Promise<TunnelRegistrationResult> {
   try {
-    if (!SUPABASE_URL) {
-      throw new Error('SUPABASE_URL environment variable is not set');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    
+    // Debug logging for production troubleshooting
+    console.log(`🔧 [tunneling-manager] Environment check:`);
+    console.log(`   SUPABASE_URL: ${supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : 'NOT SET'}`);
+    console.log(`   SUPABASE_ANON_KEY: ${supabaseAnonKey ? `${supabaseAnonKey.substring(0, 10)}...` : 'NOT SET'}`);
+    console.log(`   TUNNEL_SERVER_URL: ${getTunnelServerUrl()}`);
+    
+    if (!supabaseUrl) {
+      throw new Error('SUPABASE_URL environment variable is not set. Make sure .env file exists in resources directory for production builds.');
     }
 
     console.log(`🔗 Registering MCP server: ${name}`);
 
     // Build URL
-    const url = `${SUPABASE_URL}/functions/v1/register`;
+    const url = `${supabaseUrl}/functions/v1/register`;
 
     // Prepare headers
     const headers: Record<string, string> = {
@@ -71,9 +89,9 @@ export async function registerServerName(
     };
 
     // Add authorization header if anon key is provided
-    if (SUPABASE_ANON_KEY) {
-      headers['Authorization'] = `Bearer ${SUPABASE_ANON_KEY}`;
-      headers['apikey'] = SUPABASE_ANON_KEY;
+    if (supabaseAnonKey) {
+      headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
+      headers['apikey'] = supabaseAnonKey;
     }
 
     // If we have a user session, use their token for Authorization instead of anon key
@@ -200,7 +218,23 @@ export async function startTunnel(
   publicUrl?: string;
   registrationId?: string;
   tunnelId?: string;
+  _logs?: string[];
 }> {
+  // Collect logs for debugging
+  const logs: string[] = [];
+  const addLog = (msg: string) => {
+    logs.push(msg);
+    console.log(msg);
+  };
+  const addWarn = (msg: string) => {
+    logs.push(`[WARN] ${msg}`);
+    console.warn(msg);
+  };
+  const addError = (msg: string) => {
+    logs.push(`[ERROR] ${msg}`);
+    console.error(msg);
+  };
+
   try {
     // Check if tunnel already running
     const existingTunnel = activeTunnels.get(serverName);
@@ -209,32 +243,35 @@ export async function startTunnel(
         success: false,
         message: 'Tunnel is already running for this server',
         publicUrl: existingTunnel.getPublicUrl() || undefined,
+        _logs: logs,
       };
     }
 
-    console.log(`🚀 Starting tunnel: ${serverName} → ${localServerUrl}`);
+    addLog(`🚀 Starting tunnel: ${serverName} → ${localServerUrl}`);
 
     // Register with Supabase Edge Function first to ensure secure IP storage
-    console.log(`📝 Registering with Supabase Edge Function...`);
+    addLog(`📝 Registering with Supabase Edge Function...`);
     const registration = await registerServerName(serverName);
+    addLog(`   Registration result: success=${registration.success}, status=${registration.status}`);
     
     if (!registration.success) {
       // If name is taken, we can proceed (it might be our own server), otherwise fail
       if (registration.status !== 'name_taken') {
-        console.error(`❌ Supabase registration failed: ${registration.message}`);
+        addError(`❌ Supabase registration failed: ${registration.message}`);
         // We generally want to fail here, but for now let's just log error and try to proceed 
         // in case the tunnel service can still handle it, or throw if strict security is required.
         // throw new Error(`Registration failed: ${registration.message}`);
       } else {
-        console.log(`ℹ️ Server name already registered in Supabase, proceeding...`);
+        addLog(`ℹ️ Server name already registered in Supabase, proceeding...`);
       }
     }
 
-    console.log(`📝 Auto-registering with tunnel service...`);
+    const tunnelServerUrl = getTunnelServerUrl();
+    addLog(`📝 Connecting to tunnel service at: ${tunnelServerUrl}`);
 
     // Create tunnel client (registration happens automatically in start())
     const tunnel = new TunnelClient({
-      tunnelServerUrl: TUNNEL_SERVER_URL,
+      tunnelServerUrl,
       serverName,
       localServerUrl,
       reconnectInterval: 5000,
@@ -243,21 +280,51 @@ export async function startTunnel(
     });
 
     // Start tunnel (this auto-registers and connects)
+    addLog(`🔌 Starting tunnel client...`);
     await tunnel.start();
+    addLog(`✓ Tunnel client started, waiting for WebSocket connection...`);
 
-    // Wait for connection to establish and get public URL (poll for up to 10 seconds)
+    // Wait for connection to establish and get public URL
+    // Increased timeout to 30 seconds to handle Render.com cold starts (free tier can take 30-60s)
     let attempts = 0;
-    while ((!tunnel.isConnected() || !tunnel.getPublicUrl()) && attempts < 40) {
+    const maxAttempts = 120; // 30 seconds (120 * 250ms)
+    const timeoutSec = maxAttempts * 250 / 1000;
+    
+    while ((!tunnel.isConnected() || !tunnel.getPublicUrl()) && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 250));
       attempts++;
+      // Log progress every 5 seconds
+      if (attempts % 20 === 0) {
+        const lastError = tunnel.getLastError();
+        const connectionLog = tunnel.getConnectionLog();
+        const lastLogEntry = connectionLog.length > 0 ? connectionLog[connectionLog.length - 1] : 'none';
+        addLog(`⏳ Waiting... (${attempts * 250 / 1000}s / ${timeoutSec}s) isConnected=${tunnel.isConnected()}, hasPublicUrl=${!!tunnel.getPublicUrl()}${lastError ? `, lastError=${lastError}` : ''}, lastLog=${lastLogEntry}`);
+      }
     }
 
     if (!tunnel.isConnected()) {
-      console.warn(`⚠️ Tunnel started but failed to connect within 10 seconds`);
+      const lastError = tunnel.getLastError();
+      const connectionLog = tunnel.getConnectionLog();
+      
+      addWarn(`⚠️ Tunnel started but failed to connect within ${timeoutSec} seconds`);
+      addWarn(`   Final state: isConnected=${tunnel.isConnected()}, publicUrl=${tunnel.getPublicUrl()}, tunnelId=${tunnel.getTunnelId()}`);
+      if (lastError) {
+        addError(`   Last error: ${lastError}`);
+      }
+      
+      // Include detailed connection log
+      if (connectionLog.length > 0) {
+        addLog(`📋 Connection log from tunnel-client:`);
+        connectionLog.forEach(log => addLog(`   ${log}`));
+      } else {
+        addWarn(`   No connection log entries - connect() may not have been called`);
+      }
+      
       tunnel.stop();
       return {
         success: false,
-        message: 'Tunnel started but failed to establish connection to service (timeout)',
+        message: `Tunnel failed to establish WebSocket connection (timeout after ${timeoutSec}s).${lastError ? ` Error: ${lastError}` : ''} Check if tunnel service at ${tunnelServerUrl} is accessible.`,
+        _logs: logs,
       };
     }
 
@@ -268,9 +335,9 @@ export async function startTunnel(
     const registrationId = tunnel.getRegistrationId();
     const tunnelId = tunnel.getTunnelId();
 
-    console.log(`✅ Tunnel started: ${serverName}`);
+    addLog(`✅ Tunnel started: ${serverName}`);
     if (publicUrl) {
-      console.log(`🌐 Public URL: ${publicUrl}`);
+      addLog(`🌐 Public URL: ${publicUrl}`);
     }
 
     return {
@@ -279,12 +346,14 @@ export async function startTunnel(
       publicUrl: publicUrl || undefined,
       registrationId: registrationId || undefined,
       tunnelId: tunnelId || undefined,
+      _logs: logs,
     };
   } catch (error) {
-    console.error('❌ Failed to start tunnel:', error);
+    addError(`❌ Failed to start tunnel: ${error instanceof Error ? error.message : error}`);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+      _logs: logs,
     };
   }
 }
@@ -406,7 +475,7 @@ export function stopAllTunnels(): void {
  */
 export async function addPermissions(request: AddPermissionsRequest): Promise<AddPermissionsResponse> {
   const client = new TunnelClient({
-    tunnelServerUrl: TUNNEL_SERVER_URL,
+    tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
     autoPrompt: false
   });
@@ -419,7 +488,7 @@ export async function addPermissions(request: AddPermissionsRequest): Promise<Ad
  */
 export async function getPermissions(serverKey: string): Promise<GetPermissionsResponse> {
   const client = new TunnelClient({
-    tunnelServerUrl: TUNNEL_SERVER_URL,
+    tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
     autoPrompt: false
   });
@@ -435,7 +504,7 @@ export async function updatePermission(
   updates: UpdatePermissionRequest
 ): Promise<UpdatePermissionResponse> {
   const client = new TunnelClient({
-    tunnelServerUrl: TUNNEL_SERVER_URL,
+    tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
     autoPrompt: false
   });
@@ -448,7 +517,7 @@ export async function updatePermission(
  */
 export async function revokePermission(permissionId: string): Promise<DeletePermissionResponse> {
   const client = new TunnelClient({
-    tunnelServerUrl: TUNNEL_SERVER_URL,
+    tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
     autoPrompt: false
   });

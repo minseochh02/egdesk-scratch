@@ -13,6 +13,7 @@ import {
   faFingerprint,
   faShare,
   faDocker,
+  faDesktop,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -165,6 +166,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Container Management</span>
                 <span className="egdesk-landing-feature-tag">Image Control</span>
                 <span className="egdesk-landing-feature-tag">Live Logs</span>
+              </div>
+            </Link>
+
+            <Link to="/egdesktop" className="egdesk-landing-action-card egdesk-landing-desktop-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faDesktop} />
+              </div>
+              <h3 className="egdesk-landing-card-title">EGDesktop</h3>
+              <p className="egdesk-landing-card-description">
+                Manage desktop environment, remote access settings, and system controls directly.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Remote Access</span>
+                <span className="egdesk-landing-feature-tag">System Control</span>
+                <span className="egdesk-landing-feature-tag">Auto Start</span>
               </div>
             </Link>
           </div>

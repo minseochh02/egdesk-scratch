@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './DockerManager.css';
+import { DockerScheduler } from './DockerScheduler';
 
 interface Container {
   Id: string;
@@ -32,7 +33,7 @@ export const DockerManager: React.FC = () => {
   const [containers, setContainers] = useState<Container[]>([]);
   const [images, setImages] = useState<DockerImage[]>([]);
   const [selectedTab, setSelectedTab] = useState<
-    'containers' | 'images' | 'logs'
+    'containers' | 'images' | 'logs' | 'scheduler'
   >('containers');
   const [selectedContainer, setSelectedContainer] = useState<string | null>(
     null,
@@ -359,6 +360,12 @@ export const DockerManager: React.FC = () => {
         >
           💿 Images ({images.length})
         </button>
+        <button
+          className={`docker-tab ${selectedTab === 'scheduler' ? 'active' : ''}`}
+          onClick={() => setSelectedTab('scheduler')}
+        >
+          ⏰ Scheduler
+        </button>
         {selectedContainer && (
           <button
             className={`docker-tab ${selectedTab === 'logs' ? 'active' : ''}`}
@@ -577,6 +584,14 @@ export const DockerManager: React.FC = () => {
             </div>
             <pre className="docker-logs-content">{logs}</pre>
           </div>
+        )}
+
+        {selectedTab === 'scheduler' && (
+          <DockerScheduler
+            containers={containers}
+            images={images}
+            onRefreshContainers={refreshContainers}
+          />
         )}
       </div>
 

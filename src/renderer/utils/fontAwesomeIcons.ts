@@ -170,4 +170,5 @@ export {
   faLaptop as faTablet,
   faPaperPlane,
   faLightbulb as faBrain,
+  faLaptopCode,
 } from '@fortawesome/free-solid-svg-icons';

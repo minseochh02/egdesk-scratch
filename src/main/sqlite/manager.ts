@@ -12,6 +12,12 @@ import {
   CreateBusinessIdentitySnsPlan,
 } from './business-identity';
 import { SQLiteTemplateCopiesManager } from './template-copies';
+import {
+  SQLiteDockerSchedulerManager,
+  CreateDockerTaskData,
+} from './docker-scheduler';
+import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
+import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
 import { restartScheduledPostsExecutor } from '../scheduler/executor-instance';
@@ -44,6 +50,7 @@ export class SQLiteManager {
   private businessIdentityManager: SQLiteBusinessIdentityManager | null = null;
   private activityManager: SQLiteActivityManager | null = null;
   private templateCopiesManager: SQLiteTemplateCopiesManager | null = null;
+  private dockerSchedulerManager: SQLiteDockerSchedulerManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -81,6 +88,7 @@ export class SQLiteManager {
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
       this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
+      this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb);
       this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.isInitialized = true;
@@ -189,6 +197,7 @@ export class SQLiteManager {
       this.scheduledPostsManager = null;
       this.businessIdentityManager = null;
       this.activityManager = null;
+      this.dockerSchedulerManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
     } catch (error) {
@@ -259,6 +268,14 @@ export class SQLiteManager {
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb!);
     }
     return this.templateCopiesManager;
+  }
+
+  public getDockerSchedulerManager(): SQLiteDockerSchedulerManager {
+    this.ensureInitialized();
+    if (!this.dockerSchedulerManager) {
+      this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb!);
+    }
+    return this.dockerSchedulerManager;
   }
 
   /**
@@ -523,6 +540,7 @@ export class SQLiteManager {
     this.registerBusinessIdentityHandlers();
     this.registerActivityHandlers();
     this.registerTemplateCopiesHandlers();
+    this.registerDockerSchedulerHandlers();
   }
 
   /**
@@ -1452,6 +1470,211 @@ export class SQLiteManager {
       try {
         const updated = this.getTemplateCopiesManager().updateTemplateCopyScriptContent(scriptId, scriptContent);
         return { success: updated, data: { updated } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register Docker scheduler IPC handlers
+   */
+  private registerDockerSchedulerHandlers(): void {
+    // Get all Docker scheduled tasks
+    ipcMain.handle('sqlite-docker-scheduler-get-all', async () => {
+      try {
+        const tasks = this.getDockerSchedulerManager().getAllTasks();
+        return { success: true, data: tasks };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get Docker scheduled task by ID
+    ipcMain.handle('sqlite-docker-scheduler-get', async (event, id: string) => {
+      try {
+        const task = this.getDockerSchedulerManager().getTask(id);
+        return { success: true, data: task };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Create Docker scheduled task
+    ipcMain.handle('sqlite-docker-scheduler-create', async (event, data: CreateDockerTaskData) => {
+      try {
+        const task = this.getDockerSchedulerManager().createTask(data);
+        // Restart scheduler to pick up new task
+        await restartDockerScheduler();
+        return { success: true, data: task };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Update Docker scheduled task
+    ipcMain.handle('sqlite-docker-scheduler-update', async (event, id: string, updates: Partial<CreateDockerTaskData>) => {
+      try {
+        const task = this.getDockerSchedulerManager().updateTask(id, updates);
+        // Restart scheduler to apply changes
+        await restartDockerScheduler();
+        return { success: true, data: task };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete Docker scheduled task
+    ipcMain.handle('sqlite-docker-scheduler-delete', async (event, id: string) => {
+      try {
+        const success = this.getDockerSchedulerManager().deleteTask(id);
+        // Restart scheduler to remove deleted task
+        await restartDockerScheduler();
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Toggle Docker scheduled task enabled/disabled
+    ipcMain.handle('sqlite-docker-scheduler-toggle', async (event, id: string, enabled: boolean) => {
+      try {
+        const success = this.getDockerSchedulerManager().toggleTask(id, enabled);
+        // Restart scheduler to apply enable/disable
+        await restartDockerScheduler();
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get enabled Docker scheduled tasks
+    ipcMain.handle('sqlite-docker-scheduler-get-enabled', async () => {
+      try {
+        const tasks = this.getDockerSchedulerManager().getEnabledTasks();
+        return { success: true, data: tasks };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get execution history for a Docker task
+    ipcMain.handle('sqlite-docker-scheduler-get-executions', async (event, taskId: string, limit?: number) => {
+      try {
+        const executions = this.getDockerSchedulerManager().getTaskExecutions(taskId, limit);
+        return { success: true, data: executions };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get recent executions across all Docker tasks
+    ipcMain.handle('sqlite-docker-scheduler-get-recent-executions', async (event, limit?: number) => {
+      try {
+        const executions = this.getDockerSchedulerManager().getRecentExecutions(limit);
+        return { success: true, data: executions };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Run a Docker task immediately
+    ipcMain.handle('sqlite-docker-scheduler-run-now', async (event, taskId: string) => {
+      try {
+        console.log(`\n🚀 ===== MANUAL DOCKER TASK EXECUTION =====`);
+        console.log(`🆔 Task ID: ${taskId}`);
+        console.log(`🕐 Started at: ${new Date().toISOString()}`);
+
+        const task = this.getDockerSchedulerManager().getTask(taskId);
+        if (!task) {
+          return { success: false, error: 'Task not found' };
+        }
+
+        console.log(`📝 Task: ${task.name}`);
+        console.log(`🔧 Type: ${task.taskType}`);
+
+        // Get the scheduler service and execute the task
+        const schedulerService = getDockerSchedulerService();
+        if (!schedulerService) {
+          return { success: false, error: 'Docker scheduler service not initialized' };
+        }
+
+        const result = await schedulerService.executeTask(taskId);
+        
+        if (result.success) {
+          console.log(`✅ Manual execution completed successfully`);
+        } else {
+          console.error(`❌ Manual execution failed: ${result.error}`);
+        }
+
+        return result;
+      } catch (error) {
+        console.error(`\n💥 ===== MANUAL DOCKER TASK EXECUTION FAILED =====`);
+        console.error(`❌ Task ID: ${taskId}`);
+        console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+        console.error(`📄 Error details:`, error);
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get scheduler status
+    ipcMain.handle('sqlite-docker-scheduler-status', async () => {
+      try {
+        const schedulerService = getDockerSchedulerService();
+        return {
+          success: true,
+          data: {
+            isRunning: schedulerService?.isServiceRunning() || false,
+            scheduledJobCount: schedulerService?.getScheduledJobCount() || 0,
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Restart the scheduler
+    ipcMain.handle('sqlite-docker-scheduler-restart', async () => {
+      try {
+        await restartDockerScheduler();
+        return { success: true };
       } catch (error) {
         return {
           success: false,

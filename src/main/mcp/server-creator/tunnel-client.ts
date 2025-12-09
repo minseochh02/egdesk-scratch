@@ -497,15 +497,38 @@ export class TunnelClient {
     });
   }
 
+  // Last connection error for debugging
+  private lastError: string | null = null;
+
+  /**
+   * Get the last connection error
+   */
+  public getLastError(): string | null {
+    return this.lastError;
+  }
+
+  // Connection log for debugging (captured by tunneling-manager)
+  private connectionLog: string[] = [];
+  
+  /**
+   * Get connection logs for debugging
+   */
+  public getConnectionLog(): string[] {
+    return this.connectionLog;
+  }
+
   /**
    * Connect to tunnel server via WebSocket
    */
   private async connect(): Promise<void> {
     if (this.isConnecting || this.isConnected()) {
+      this.connectionLog.push(`[connect] Already connecting or connected, skipping`);
       return;
     }
 
     this.isConnecting = true;
+    this.lastError = null;
+    this.connectionLog = []; // Reset log for new connection attempt
 
     try {
       // Convert HTTP(S) URL to WS(S) URL and add /tunnel/connect path with server name
@@ -518,13 +541,17 @@ export class TunnelClient {
         wsUrl += `?name=${encodeURIComponent(this.serverName)}`;
       }
 
-      console.log(`🔌 Connecting to tunnel server: ${wsUrl}`);
+      this.connectionLog.push(`[connect] Creating WebSocket to: ${wsUrl}`);
+      console.log(`🔌 [tunnel-client] Connecting to: ${wsUrl}`);
 
       this.ws = new WebSocket(wsUrl);
+      this.connectionLog.push(`[connect] WebSocket object created, readyState=${this.ws.readyState}`);
 
       // Handle connection open
       this.ws.on('open', () => {
-        console.log(`✅ WebSocket connected`);
+        this.connectionLog.push(`[open] WebSocket connected successfully`);
+        console.log(`✅ [tunnel-client] WebSocket connected to ${wsUrl}`);
+        this.lastError = null;
       });
 
       // Handle incoming messages
@@ -579,8 +606,13 @@ export class TunnelClient {
       });
 
       // Handle connection close
-      this.ws.on('close', () => {
-        console.log(`❌ WebSocket disconnected`);
+      this.ws.on('close', (code, reason) => {
+        const reasonStr = reason ? reason.toString() : 'no reason';
+        this.connectionLog.push(`[close] WebSocket closed: code=${code}, reason=${reasonStr}`);
+        console.log(`❌ [tunnel-client] WebSocket closed: code=${code}, reason=${reasonStr}`);
+        if (!this.lastError) {
+          this.lastError = `WebSocket closed: code=${code}, reason=${reasonStr}`;
+        }
         this.ws = null;
         this.publicUrl = null;
         this.tunnelId = null;
@@ -606,7 +638,10 @@ export class TunnelClient {
 
       // Handle errors
       this.ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        this.connectionLog.push(`[error] WebSocket error: ${errorMsg}`);
+        console.error(`❌ [tunnel-client] WebSocket error: ${errorMsg}`);
+        this.lastError = errorMsg;
         this.isConnecting = false;
       });
 

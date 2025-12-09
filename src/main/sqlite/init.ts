@@ -5,6 +5,7 @@ import fs from 'fs';
 import { SQLiteTaskManager } from './tasks';
 import { initializeActivityDatabaseSchema } from './activity';
 import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
+import { initializeDockerSchedulerSchema } from './docker-scheduler';
 
 /**
  * SQLite Database Initialization
@@ -121,6 +122,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeTaskSchema(taskDb);
     initializeWordPressDatabaseSchema(wordpressDb);
     initializeScheduledPostsDatabaseSchema(wordpressDb); // Use wordpress DB for scheduled posts
+    initializeDockerSchedulerSchema(wordpressDb); // Use wordpress DB for docker scheduler
     initializeActivityDatabaseSchema(activityDb);
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     

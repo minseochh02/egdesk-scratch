@@ -63,6 +63,8 @@ import { registerFileSystemHandlers } from './fs';
 import { backupHandler } from './codespace/backup-handler';
 import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
+import { DockerSchedulerService } from './docker/DockerSchedulerService';
+import { setDockerSchedulerService } from './docker/docker-scheduler-instance';
 import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
@@ -263,6 +265,7 @@ let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
 let appUpdater: AppUpdater | null = null;
 let scheduledPostsExecutor: ScheduledPostsExecutor;
+let dockerSchedulerService: DockerSchedulerService;
 let handlersRegistered = false;
 
 const getDefaultChromeProfileRoot = (): string | undefined => {
@@ -1534,9 +1537,29 @@ const createWindow = async () => {
 
       // Tunnel start handler (auto-registers and saves config)
       ipcMain.handle('mcp-tunnel-start', async (_event, serverName: string, localServerUrl?: string) => {
+        // Capture logs for debugging
+        const logs: string[] = [];
+        const captureLog = (msg: string) => {
+          const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+          logs.push(`[${timestamp}] ${msg}`);
+          console.log(msg);
+        };
+        
         try {
-          console.log(`🚀 Starting tunnel: ${serverName}`);
+          captureLog(`🚀 [IPC] Starting tunnel: ${serverName}`);
+          captureLog(`   Local server URL: ${localServerUrl || 'http://localhost:8080 (default)'}`);
+          captureLog(`   Environment: SUPABASE_URL=${process.env.SUPABASE_URL ? 'set' : 'NOT SET'}, TUNNEL_SERVER_URL=${process.env.TUNNEL_SERVER_URL || 'default'}`);
+          
           const result = await startTunnel(serverName, localServerUrl);
+          
+          // Merge logs from startTunnel
+          if (result._logs) {
+            logs.push(...result._logs);
+          }
+          
+          captureLog(`   [IPC] Final result: success=${result.success}, publicUrl=${result.publicUrl || 'none'}`);
+          if (result.message) captureLog(`   [IPC] Message: ${result.message}`);
+          if (result.error) captureLog(`   [IPC] Error: ${result.error}`);
           
           // Auto-save tunnel configuration to electron store if successful
           if (result.success && result.publicUrl) {
@@ -1551,19 +1574,22 @@ const createWindow = async () => {
                 lastConnectedAt: new Date().toISOString(),
               };
               store.set('mcpConfiguration', mcpConfig);
-              console.log(`💾 Auto-saved tunnel configuration: ${result.publicUrl}`);
+              captureLog(`💾 Auto-saved tunnel configuration: ${result.publicUrl}`);
             } catch (saveError) {
-              console.error('⚠️ Failed to auto-save tunnel config:', saveError);
+              captureLog(`⚠️ Failed to auto-save tunnel config: ${saveError}`);
               // Don't fail the whole operation if save fails
             }
           }
           
-          return result;
+          // Include captured logs in the result for debugging (remove internal _logs)
+          const { _logs, ...cleanResult } = result;
+          return { ...cleanResult, _debugLogs: logs };
         } catch (error: any) {
-          console.error('❌ Failed to start tunnel:', error);
+          captureLog(`❌ Failed to start tunnel: ${error.message || error}`);
           return {
             success: false,
-            error: error.message || 'Unknown error'
+            error: error.message || 'Unknown error',
+            _debugLogs: logs
           };
         }
       });
@@ -1911,6 +1937,41 @@ const createWindow = async () => {
         }
       });
 
+      // Debug info handler - useful for troubleshooting production issues
+      ipcMain.handle('debug-info', async () => {
+        try {
+          const logPath = log.transports.file.getFile()?.path || 'unknown';
+          
+          return {
+            success: true,
+            environment: {
+              NODE_ENV: process.env.NODE_ENV || 'not set',
+              isPackaged: app.isPackaged,
+              appPath: app.getAppPath(),
+              resourcesPath: app.isPackaged ? process.resourcesPath : 'N/A (development)',
+              userDataPath: app.getPath('userData'),
+            },
+            tunnelConfig: {
+              SUPABASE_URL: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.substring(0, 30)}...` : 'NOT SET',
+              SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ? `${process.env.SUPABASE_ANON_KEY.substring(0, 10)}...` : 'NOT SET',
+              TUNNEL_SERVER_URL: process.env.TUNNEL_SERVER_URL || 'https://tunneling-service.onrender.com (default)',
+            },
+            logging: {
+              logFilePath: logPath,
+            },
+            platform: {
+              platform: process.platform,
+              arch: process.arch,
+              nodeVersion: process.version,
+              electronVersion: process.versions.electron,
+            },
+          };
+        } catch (error: any) {
+          console.error('❌ Failed to get debug info:', error);
+          return { success: false, error: error.message };
+        }
+      });
+
       ipcMain.handle('ollama-check-installed', async () => {
         try {
           const installed = await ollamaManager.checkInstalled();
@@ -2153,6 +2214,13 @@ const createWindow = async () => {
     scheduledPostsExecutor = new ScheduledPostsExecutor();
     setScheduledPostsExecutor(scheduledPostsExecutor);
     await scheduledPostsExecutor.start();
+    }
+
+    // Initialize Docker Scheduler Service - only once
+    if (!dockerSchedulerService) {
+      dockerSchedulerService = DockerSchedulerService.getInstance();
+      setDockerSchedulerService(dockerSchedulerService);
+      await dockerSchedulerService.start();
     }
 
     console.log('✅ All components initialized successfully');
@@ -2411,6 +2479,11 @@ app.on('before-quit', async () => {
   // Cleanup scheduled posts executor
   if (scheduledPostsExecutor) {
     await scheduledPostsExecutor.cleanup();
+  }
+
+  // Cleanup Docker scheduler service
+  if (dockerSchedulerService) {
+    dockerSchedulerService.stop();
   }
 
   if (activeInstagramSessions.length > 0) {

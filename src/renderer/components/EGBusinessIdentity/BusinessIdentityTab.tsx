@@ -1133,8 +1133,20 @@ const BusinessIdentityTab: React.FC = () => {
                   console.error('[BusinessIdentityTab] Error loading Instagram connections:', error);
                 }
               } else if (normalized.includes('youtube') || normalized === 'yt') {
-                // TODO: Implement YouTube connections loading when handler is created
-                console.warn('[BusinessIdentityTab] YouTube connections not yet implemented');
+                try {
+                  const youtubeResult = await window.electron.youtube.getConnections();
+                  if (youtubeResult.success && youtubeResult.connections) {
+                    connections.push(
+                      ...youtubeResult.connections.map((conn: any) => ({
+                        id: conn.id,
+                        name: conn.name,
+                        type: 'youtube',
+                      }))
+                    );
+                  }
+                } catch (error) {
+                  console.error('[BusinessIdentityTab] Error loading YouTube connections:', error);
+                }
               }
               
               return connections;

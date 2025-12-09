@@ -1904,7 +1904,14 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         publicUrl?: string;
         registrationId?: string;
         tunnelId?: string;
+        _debugLogs?: string[];
       };
+      
+      // Log debug info from main process
+      if (result._debugLogs && result._debugLogs.length > 0) {
+        console.log('📋 Tunnel debug logs from main process:');
+        result._debugLogs.forEach(log => console.log(`   ${log}`));
+      }
       
       if (result.success) {
         // Reset auto-reconnection state on manual start
@@ -1924,7 +1931,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         
         alert(`✅ Tunnel started successfully!\n\nTunnel Name: ${mcpServerName}\nLocal Port: ${httpServerStatus.port}${publicUrlMessage}`);
       } else {
-        alert(`❌ Failed to start tunnel: ${result.error || result.message}`);
+        console.error('❌ Tunnel start failed. Debug logs:', result._debugLogs);
+        alert(`❌ Failed to start tunnel: ${result.error || result.message}\n\nCheck DevTools console for debug logs.`);
       }
     } catch (error) {
       console.error('Error starting tunnel:', error);
