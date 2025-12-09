@@ -91,6 +91,9 @@ interface RunningServersTabsProps {
   
   // Script editor navigation
   onOpenScriptEditor?: (copyId?: string) => void;
+  
+  // New server creation
+  onAddServer: () => void;
 }
 
 type TabType = 'local' | 'cloud';
@@ -128,7 +131,8 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   cloudLoading = false,
   cloudError = null,
   loadCloudServers,
-  onOpenScriptEditor
+  onOpenScriptEditor,
+  onAddServer
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('local');
   const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
@@ -623,6 +627,27 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
       <div className="running-servers-tabs-content">
         {activeTab === 'local' && (
           <div className="running-servers-tab-panel">
+            <div className="tab-actions" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                className="add-server-btn"
+                onClick={onAddServer}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 500
+                }}
+              >
+                <FontAwesomeIcon icon={faPlus} />
+                <span>Add MCP Server</span>
+              </button>
+            </div>
             <RunningServersSection
               servers={servers}
               loading={loading}

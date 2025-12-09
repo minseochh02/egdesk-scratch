@@ -2109,41 +2109,6 @@ const MCPServer: React.FC<MCPServerProps> = () => {
 
   return (
     <div className="mcp-server">
-      {/* Hero Section */}
-      <div className="connector-hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <FontAwesomeIcon icon={faEnvelope} />
-            <span>EG Blogging Integration</span>
-          </div>
-          <h1>MCP Server Management</h1>
-          <p>Manage your Model Context Protocol servers and create new connections for enhanced AI-powered blogging workflows</p>
-          <div className="hero-actions">
-            <button 
-              className="hero-action-btn"
-              onClick={() => handleToolSelect('gmail')}
-            >
-              <FontAwesomeIcon icon={faPlus} />
-              <span>Add MCP Server</span>
-            </button>
-          </div>
-        </div>
-        
-        <div className="hero-visual">
-          <div className="floating-cards">
-            <div className="floating-card card-1">
-              <FontAwesomeIcon icon={faEnvelope} />
-            </div>
-            <div className="floating-card card-2">
-              <FontAwesomeIcon icon={faServer} />
-            </div>
-            <div className="floating-card card-3">
-              <FontAwesomeIcon icon={faGlobe} />
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Tunnel and Server Configuration */}
       <TunnelAndServerConfig
         mcpServerName={mcpServerName}
@@ -2221,6 +2186,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
             setSelectedEditorCopyId(copyId);
             setShowScriptEditor(true);
           }}
+          onAddServer={() => handleToolSelect('gmail')}
         />
       )}
 
