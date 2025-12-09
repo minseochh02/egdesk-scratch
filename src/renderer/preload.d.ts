@@ -9,6 +9,74 @@ import type {
   NaverAPI,
 } from '../main/preload';
 
+// Docker Scheduler Types
+export interface DockerContainerCreateOptions {
+  containerName?: string;
+  hostPort?: string;
+  containerPort?: string;
+  envVars?: Record<string, string>;
+  volumes?: Array<{ hostPath: string; containerPath: string }>;
+  network?: string;
+  restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
+  command?: string[];
+}
+
+export interface DockerScheduledTask {
+  id: string;
+  name: string;
+  taskType: 'start_container' | 'stop_container' | 'restart_container' | 'run_image';
+  containerId?: string;
+  containerName?: string;
+  imageName?: string;
+  createOptions?: DockerContainerCreateOptions;
+  scheduleType: 'once' | 'daily' | 'weekly' | 'monthly' | 'custom' | 'cron';
+  scheduledTime: string;
+  scheduledDate?: string;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  customIntervalDays?: number;
+  cronExpression?: string;
+  enabled: boolean;
+  lastRun?: Date;
+  nextRun?: Date;
+  runCount: number;
+  successCount: number;
+  failureCount: number;
+  description?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface DockerTaskExecution {
+  id: string;
+  taskId: string;
+  status: 'running' | 'success' | 'failure' | 'cancelled';
+  startedAt: Date;
+  completedAt?: Date;
+  duration?: number;
+  errorMessage?: string;
+  containerId?: string;
+  executionOutput?: string;
+  createdAt: Date;
+}
+
+export interface CreateDockerTaskData {
+  name: string;
+  taskType: DockerScheduledTask['taskType'];
+  containerId?: string;
+  containerName?: string;
+  imageName?: string;
+  createOptions?: DockerContainerCreateOptions;
+  scheduleType: DockerScheduledTask['scheduleType'];
+  scheduledTime: string;
+  scheduledDate?: string;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  customIntervalDays?: number;
+  cronExpression?: string;
+  description?: string;
+}
+
 export interface AIChatDataAPI {
   // Conversation operations
   getConversations: (options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
@@ -754,6 +822,22 @@ export interface IElectronAPI {
 
     // Events
     onPullProgress: (callback: (data: { imageName: string; status?: string; progress?: string }) => void) => () => void;
+
+    // Scheduler
+    scheduler: {
+      getAll: () => Promise<{ success: boolean; data?: DockerScheduledTask[]; error?: string }>;
+      get: (id: string) => Promise<{ success: boolean; data?: DockerScheduledTask | null; error?: string }>;
+      create: (data: CreateDockerTaskData) => Promise<{ success: boolean; data?: DockerScheduledTask; error?: string }>;
+      update: (id: string, updates: Partial<CreateDockerTaskData>) => Promise<{ success: boolean; data?: DockerScheduledTask | null; error?: string }>;
+      delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+      toggle: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+      getEnabled: () => Promise<{ success: boolean; data?: DockerScheduledTask[]; error?: string }>;
+      getExecutions: (taskId: string, limit?: number) => Promise<{ success: boolean; data?: DockerTaskExecution[]; error?: string }>;
+      getRecentExecutions: (limit?: number) => Promise<{ success: boolean; data?: DockerTaskExecution[]; error?: string }>;
+      runNow: (taskId: string) => Promise<{ success: boolean; error?: string; containerId?: string }>;
+      getStatus: () => Promise<{ success: boolean; data?: { isRunning: boolean; scheduledJobCount: number }; error?: string }>;
+      restart: () => Promise<{ success: boolean; error?: string }>;
+    };
   };
 
   updater: {

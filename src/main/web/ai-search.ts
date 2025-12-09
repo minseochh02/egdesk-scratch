@@ -410,9 +410,10 @@ Rules:
 - Emit only JSON (no prose).
 - Provide at least 3 plan entries across multiple channels when possible.
 - Keep strings concise (≤ 200 chars).
-- Available platforms ONLY: Instagram, WordPress, Naver Blog.
+- Available platforms ONLY: Instagram, YouTube, WordPress, Naver Blog.
 - For blog platforms, use exact names: "WordPress" or "Naver Blog" (not generic "Blog").
-- DO NOT use YouTube, LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}${languageInstruction}
+- For YouTube, focus on short-form video content (YouTube Shorts style, ~7 seconds).
+- DO NOT use LinkedIn, Twitter, Facebook, TikTok, Tistory, or any other platforms.${platformContext}${languageInstruction}
 
 Identity JSON:
 ${JSON.stringify(identityData, null, 2)}`;

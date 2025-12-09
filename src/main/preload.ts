@@ -1987,6 +1987,7 @@ const electronHandler = {
    */
   env: {
     checkConfig: () => ipcRenderer.invoke('env-check-config'),
+    getDebugInfo: () => ipcRenderer.invoke('debug-info'),
   },
 
 /**
@@ -2164,6 +2165,22 @@ auth: {
       const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
       ipcRenderer.on('docker:pull-progress', subscription);
       return () => ipcRenderer.removeListener('docker:pull-progress', subscription);
+    },
+
+    // Scheduler
+    scheduler: {
+      getAll: () => ipcRenderer.invoke('sqlite-docker-scheduler-get-all'),
+      get: (id: string) => ipcRenderer.invoke('sqlite-docker-scheduler-get', id),
+      create: (data: any) => ipcRenderer.invoke('sqlite-docker-scheduler-create', data),
+      update: (id: string, updates: any) => ipcRenderer.invoke('sqlite-docker-scheduler-update', id, updates),
+      delete: (id: string) => ipcRenderer.invoke('sqlite-docker-scheduler-delete', id),
+      toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('sqlite-docker-scheduler-toggle', id, enabled),
+      getEnabled: () => ipcRenderer.invoke('sqlite-docker-scheduler-get-enabled'),
+      getExecutions: (taskId: string, limit?: number) => ipcRenderer.invoke('sqlite-docker-scheduler-get-executions', taskId, limit),
+      getRecentExecutions: (limit?: number) => ipcRenderer.invoke('sqlite-docker-scheduler-get-recent-executions', limit),
+      runNow: (taskId: string) => ipcRenderer.invoke('sqlite-docker-scheduler-run-now', taskId),
+      getStatus: () => ipcRenderer.invoke('sqlite-docker-scheduler-status'),
+      restart: () => ipcRenderer.invoke('sqlite-docker-scheduler-restart'),
     },
   },
 

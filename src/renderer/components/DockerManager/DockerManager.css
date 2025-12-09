@@ -778,3 +778,365 @@
   }
 }
 
+/* ========================================
+   DOCKER SCHEDULER STYLES
+   ======================================== */
+
+.docker-scheduler {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.docker-scheduler-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 1rem;
+  color: #888;
+}
+
+.docker-scheduler-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.docker-scheduler-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.docker-scheduler-header-left h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.scheduler-status {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+}
+
+.scheduler-status.running {
+  background: rgba(0, 184, 148, 0.15);
+  color: #00b894;
+}
+
+.scheduler-status.stopped {
+  background: rgba(255, 118, 117, 0.15);
+  color: #ff7675;
+}
+
+.docker-scheduler-header-right {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.docker-scheduler-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Scheduler Card */
+.docker-scheduler-card {
+  background: rgba(26, 26, 46, 0.8);
+  border-radius: 12px;
+  border-left: 4px solid #0984e3;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.docker-scheduler-card:hover {
+  background: rgba(30, 30, 58, 0.9);
+}
+
+.docker-scheduler-card.disabled {
+  border-left-color: #666;
+  opacity: 0.7;
+}
+
+.docker-scheduler-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1rem 1.25rem;
+  padding-right: 140px;
+  position: relative;
+}
+
+.docker-scheduler-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.docker-scheduler-card-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.docker-task-type-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.docker-task-type-start_container {
+  background: rgba(0, 184, 148, 0.15);
+  color: #00b894;
+}
+
+.docker-task-type-stop_container {
+  background: rgba(255, 118, 117, 0.15);
+  color: #ff7675;
+}
+
+.docker-task-type-restart_container {
+  background: rgba(253, 203, 110, 0.15);
+  color: #fdcb6e;
+}
+
+.docker-task-type-run_image {
+  background: rgba(162, 155, 254, 0.15);
+  color: #a29bfe;
+}
+
+.docker-scheduler-card-target {
+  color: #888;
+  font-size: 0.85rem;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.docker-scheduler-card-schedule {
+  color: #74b9ff;
+  font-size: 0.85rem;
+}
+
+.docker-scheduler-card-description {
+  color: #666;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.docker-scheduler-card-stats {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.docker-scheduler-card-stats .stat-success {
+  color: #00b894;
+}
+
+.docker-scheduler-card-stats .stat-failure {
+  color: #ff7675;
+}
+
+.docker-scheduler-card-stats .stat-next {
+  color: #74b9ff;
+}
+
+/* Card Actions */
+.docker-scheduler-card .docker-card-actions {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Toggle Switch */
+.docker-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.docker-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.docker-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  transition: 0.3s;
+}
+
+.docker-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #666;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.docker-toggle input:checked + .docker-toggle-slider {
+  background-color: rgba(0, 184, 148, 0.3);
+}
+
+.docker-toggle input:checked + .docker-toggle-slider:before {
+  transform: translateX(20px);
+  background-color: #00b894;
+}
+
+/* Edit Button */
+.docker-btn-edit {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: rgba(116, 185, 255, 0.15);
+  color: #74b9ff;
+}
+
+.docker-btn-edit:hover {
+  background: rgba(116, 185, 255, 0.3);
+}
+
+/* Execution History Panel */
+.docker-scheduler-history {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.docker-scheduler-history h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #aaa;
+}
+
+.docker-scheduler-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.docker-scheduler-history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.docker-scheduler-history-item .exec-status {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+}
+
+.docker-exec-success .exec-status {
+  color: #00b894;
+}
+
+.docker-exec-failure .exec-status {
+  color: #ff7675;
+}
+
+.docker-exec-running .exec-status {
+  color: #74b9ff;
+}
+
+.docker-scheduler-history-item .exec-time {
+  color: #888;
+  flex: 1;
+}
+
+.docker-scheduler-history-item .exec-duration {
+  color: #666;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.docker-scheduler-history-item .exec-error {
+  color: #ff7675;
+  font-size: 0.75rem;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Scheduler Modal */
+.docker-scheduler-modal {
+  max-width: 540px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.docker-scheduler-modal .docker-modal-body {
+  max-height: calc(85vh - 140px);
+  overflow-y: auto;
+}
+
+/* Select Dropdown */
+.docker-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+  cursor: pointer;
+}
+
+.docker-select:focus {
+  outline: none;
+  border-color: #0984e3;
+}
+
+.docker-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.docker-select option {
+  background: #1a1a2e;
+  color: #fff;
+}
+

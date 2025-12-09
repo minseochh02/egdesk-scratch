@@ -48,9 +48,9 @@ const SocialMediaConnector: React.FC<SocialMediaConnectorProps> = ({ onShowConne
       icon: faYoutube,
       color: '#FF0000',
       gradient: 'linear-gradient(135deg, #FF0000 0%, #cc0000 100%)',
-      isAvailable: false,
+      isAvailable: true,
       features: ['Video Scheduling', 'Thumbnail Generation', 'Analytics'],
-      status: 'coming-soon'
+      status: 'available'
     },
     {
       id: 'facebook',

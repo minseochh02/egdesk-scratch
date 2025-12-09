@@ -18,6 +18,14 @@ import {
   faQuestion,
   faShare,
   faDocker,
+  faDesktop,
+  faFingerprint,
+  faComments,
+  faChevronDown,
+  faChevronUp,
+  faChartBar,
+  faWrench,
+  faLaptopCode,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -1860,6 +1868,59 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
+function NavDropdown({ 
+  title, 
+  icon, 
+  children, 
+  isActive,
+  isNarrow
+}: { 
+  title: string; 
+  icon: any; 
+  children: React.ReactNode; 
+  isActive: boolean;
+  isNarrow: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  return (
+    <div className="nav-dropdown" ref={dropdownRef}>
+      <button 
+        className={`nav-link nav-dropdown-trigger ${isActive ? 'active' : ''}`} 
+        onClick={() => setIsOpen(!isOpen)}
+        title={title}
+      >
+        <FontAwesomeIcon icon={icon} />
+        {!isNarrow && (
+          <>
+            <span>{title}</span>
+            <FontAwesomeIcon icon={isOpen ? faChevronUp : faChevronDown} style={{ fontSize: '10px', marginLeft: '4px' }} />
+          </>
+        )}
+      </button>
+      {isOpen && (
+        <div className="nav-dropdown-menu">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavigationBar({ 
   showDebugModal, 
   setShowDebugModal,
@@ -1877,7 +1938,7 @@ function NavigationBar({
 
   useEffect(() => {
     const checkWidth = () => {
-      setIsNarrow(window.innerWidth < 600);
+      setIsNarrow(window.innerWidth < 800); // Increased threshold since we have more items but grouping helps
     };
     
     checkWidth();
@@ -1885,90 +1946,132 @@ function NavigationBar({
     return () => window.removeEventListener('resize', checkWidth);
   }, []);
 
+  const isDevelopmentActive = [
+    '/homepage-editor',
+    '/egchatting'
+  ].some(path => location.pathname.startsWith(path));
+
+  const isMarketingActive = [
+    '/egbusiness-identity', 
+    '/blog-connector', 
+    '/social-media', 
+    '/seo-analyzer',
+    '/ssl-analyzer'
+  ].some(path => location.pathname.startsWith(path));
+
+  const isSystemActive = [
+    '/mcp-server',
+    '/docker',
+    '/egdesktop',
+    '/ai-keys'
+  ].some(path => location.pathname.startsWith(path));
+
+  // Check environment
+  const isDev = process.env.NODE_ENV === 'development';
+
   return (
     <div className={`navigation-bar ${isNarrow ? 'narrow' : ''}`}>
       <div className="nav-links-wrapper">
         <nav className="nav-links">
+          {/* Main Items */}
           <Link
             to="/"
             className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+            title="Home"
           >
             <FontAwesomeIcon icon={faHome} />
             {!isNarrow && <span>Home</span>}
           </Link>
-          <Link
-            to="/homepage-editor"
-            className={`nav-link ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
+
+          {/* Development Group */}
+          <NavDropdown 
+            title="Development" 
+            icon={faLaptopCode} 
+            isActive={isDevelopmentActive}
+            isNarrow={isNarrow}
           >
-            <FontAwesomeIcon icon={faCog} />
-            {!isNarrow && <span>Coding</span>}
-          </Link>
-          {/* Legacy BlogManager navigation - replaced by Blog Connector */}
-          {/* <Link
-            to="/blog-manager"
-            className={`nav-link ${location.pathname === '/blog-manager' ? 'active' : ''}`}
+            <Link
+              to="/homepage-editor"
+              className={`nav-dropdown-item ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faCog} fixedWidth />
+              <span>Coding</span>
+            </Link>
+            <Link
+              to="/egchatting"
+              className={`nav-dropdown-item ${location.pathname === '/egchatting' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faComments} fixedWidth />
+              <span>Chatting</span>
+            </Link>
+          </NavDropdown>
+
+          {/* Marketing Group */}
+          <NavDropdown 
+            title="Marketing" 
+            icon={faChartBar} 
+            isActive={isMarketingActive}
+            isNarrow={isNarrow}
           >
-            <FontAwesomeIcon icon={faGlobe} />
-            {!isNarrow && <span>EG Blogging</span>}
-          </Link> */}
-          <Link
-            to="/blog-connector"
-            className={`nav-link ${location.pathname === '/blog-connector' ? 'active' : ''}`}
+            <Link to="/egbusiness-identity" className={`nav-dropdown-item ${location.pathname.startsWith('/egbusiness-identity') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faFingerprint} fixedWidth />
+              <span>Business ID</span>
+            </Link>
+            <Link to="/blog-connector" className={`nav-dropdown-item ${location.pathname.startsWith('/blog-connector') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faGlobe} fixedWidth />
+              <span>Blogging</span>
+            </Link>
+            <Link to="/social-media" className={`nav-dropdown-item ${location.pathname.startsWith('/social-media') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faShare} fixedWidth />
+              <span>SNS Manager</span>
+            </Link>
+            <Link to="/seo-analyzer" className={`nav-dropdown-item ${location.pathname.startsWith('/seo-analyzer') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faGlobe} fixedWidth />
+              <span>SEO-Analyzer</span>
+            </Link>
+            <Link to="/ssl-analyzer" className={`nav-dropdown-item ${location.pathname.startsWith('/ssl-analyzer') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faShieldAlt} fixedWidth />
+              <span>SSL-Checker</span>
+            </Link>
+          </NavDropdown>
+
+          {/* System Group */}
+          <NavDropdown 
+            title="System" 
+            icon={faWrench} 
+            isActive={isSystemActive}
+            isNarrow={isNarrow}
           >
-            <FontAwesomeIcon icon={faGlobe} />
-            {!isNarrow && <span>Blogging</span>}
-          </Link>
-          <Link
-            to="/social-media"
-            className={`nav-link ${location.pathname === '/social-media' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faShare} />
-            {!isNarrow && <span>SNS Manager</span>}
-          </Link>
-          <Link
-            to="/ssl-analyzer"
-            className={`nav-link ${location.pathname === '/ssl-analyzer' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faShieldAlt} />
-            {!isNarrow && <span>SSL-Checker</span>}
-          </Link>
-          <Link
-            to="/seo-analyzer"
-            className={`nav-link ${location.pathname === '/seo-analyzer' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faGlobe} />
-            {!isNarrow && <span>SEO-Analyzer</span>}
-          </Link>
-          <Link
-            to="/ai-keys"
-            className={`nav-link ${location.pathname === '/ai-keys' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faRobot} />
-            {!isNarrow && <span>API Keys</span>}
-          </Link>
-          <Link
-            to="/mcp-server"
-            className={`nav-link ${location.pathname === '/mcp-server' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faServer} />
-            {!isNarrow && <span>MCP Server</span>}
-          </Link>
-          <Link
-            to="/docker"
-            className={`nav-link ${location.pathname === '/docker' ? 'active' : ''}`}
-          >
-            <FontAwesomeIcon icon={faDocker} />
-            {!isNarrow && <span>Docker</span>}
-          </Link>
-          <button
-            className="nav-link"
-            onClick={() => setShowDebugModal(true)}
-            style={{ cursor: 'pointer' }}
-            title="Open Debug Panel"
-          >
-            <FontAwesomeIcon icon={faRobot} />
-            {!isNarrow && <span>Debug</span>}
-          </button>
+            <Link to="/mcp-server" className={`nav-dropdown-item ${location.pathname.startsWith('/mcp-server') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faServer} fixedWidth />
+              <span>MCP Server</span>
+            </Link>
+            <Link to="/docker" className={`nav-dropdown-item ${location.pathname.startsWith('/docker') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faDocker} fixedWidth />
+              <span>Docker</span>
+            </Link>
+            <Link to="/egdesktop" className={`nav-dropdown-item ${location.pathname.startsWith('/egdesktop') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faDesktop} fixedWidth />
+              <span>Desktop</span>
+            </Link>
+            <Link to="/ai-keys" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-keys') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faRobot} fixedWidth />
+              <span>API Keys</span>
+            </Link>
+          </NavDropdown>
+
+          {/* Help & Tools - Kept as icons/buttons */}
+          {isDev && (
+            <button
+              className="nav-link"
+              onClick={() => setShowDebugModal(true)}
+              style={{ cursor: 'pointer' }}
+              title="Open Debug Panel (Dev Only)"
+            >
+              <FontAwesomeIcon icon={faRobot} />
+              {!isNarrow && <span>Debug</span>}
+            </button>
+          )}
           <button
             className="nav-link"
             onClick={() => setShowSupportModal(true)}
