@@ -35,16 +35,15 @@ jobs:
           npm run build:renderer || echo "Build:renderer completed with warnings"
 
       - name: Run linting (non-blocking)
-        run: |
-          npm run lint || echo "Linting issues found but continuing..."
+        continue-on-error: true
+        run: npm run lint
 
       - name: Run TypeScript check (non-blocking)
-        run: |
-          npm exec tsc --noEmit || echo "TypeScript errors found but continuing..."
+        continue-on-error: true
+        run: npx tsc --noEmit
 
       - name: Run tests
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-        run: |
-          npm test
+        run: npm test
