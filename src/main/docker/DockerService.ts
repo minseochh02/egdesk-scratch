@@ -220,6 +220,10 @@ class DockerService {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+      // HTTP 304 means container is already started - treat as success
+      if (errorMessage.includes('304') || errorMessage.includes('already started')) {
+        return { success: true };
+      }
       return { success: false, error: errorMessage };
     }
   }
@@ -236,6 +240,10 @@ class DockerService {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+      // HTTP 304 means container is already stopped - treat as success
+      if (errorMessage.includes('304') || errorMessage.includes('already stopped')) {
+        return { success: true };
+      }
       return { success: false, error: errorMessage };
     }
   }

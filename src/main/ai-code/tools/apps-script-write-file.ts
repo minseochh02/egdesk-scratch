@@ -6,6 +6,58 @@
 import type { ToolExecutor, ToolCallConfirmationDetails } from '../../types/ai-types';
 import { getSQLiteManager } from '../../sqlite/manager';
 
+/**
+ * Normalize file name to Google Apps Script format
+ * "Code.gs" → { name: "Code", type: "server_js" }
+ * "index.html" → { name: "index", type: "html" }
+ * "appsscript.json" → { name: "appsscript", type: "json" }
+ */
+function normalizeFileName(fileName: string): { name: string; type: string } {
+  // Strip extension and determine type
+  let name = fileName;
+  let type = 'server_js';
+  
+  if (fileName.endsWith('.gs')) {
+    name = fileName.replace(/\.gs$/, '');
+    type = 'server_js';
+  } else if (fileName.endsWith('.html')) {
+    name = fileName.replace(/\.html$/, '');
+    type = 'html';
+  } else if (fileName.endsWith('.json')) {
+    name = fileName.replace(/\.json$/, '');
+    type = 'json';
+  }
+  // If no extension, keep as-is (already normalized)
+  
+  return { name, type };
+}
+
+/**
+ * Find file in files array, handling both formats:
+ * - Normalized: { name: "Code", type: "server_js" }
+ * - Legacy: { name: "Code.gs", type: "SERVER_JS" }
+ */
+function findFileIndex(files: any[], fileName: string): number {
+  const normalized = normalizeFileName(fileName);
+  
+  // Try normalized format first (preferred)
+  let index = files.findIndex((f: any) => 
+    f.name === normalized.name && f.type.toLowerCase() === normalized.type.toLowerCase()
+  );
+  
+  if (index >= 0) return index;
+  
+  // Try exact match (legacy format with extension)
+  index = files.findIndex((f: any) => f.name === fileName);
+  
+  if (index >= 0) return index;
+  
+  // Try matching just the base name (fallback)
+  index = files.findIndex((f: any) => f.name === normalized.name);
+  
+  return index;
+}
+
 export class AppsScriptWriteFileTool implements ToolExecutor {
   name = 'apps_script_write_file';
   description = 'Write content to a file in a Google AppsScript project. Creates the file if it doesn\'t exist, or overwrites it if it does. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
@@ -44,22 +96,27 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       const scriptContent = templateCopy.scriptContent || { files: [] };
       const existingFiles = scriptContent.files || [];
       
-      // Check if file exists
-      const existingFileIndex = existingFiles.findIndex((f: any) => f.name === params.fileName);
-      const fileType = params.fileType || 'SERVER_JS';
+      // Normalize the file name to Google's format (strip extension, determine type)
+      const normalized = normalizeFileName(params.fileName);
+      const fileType = params.fileType?.toLowerCase() || normalized.type;
+      
+      // Check if file exists (handles both normalized and legacy formats)
+      const existingFileIndex = findFileIndex(existingFiles, params.fileName);
       
       // Create backup before modifying (for undo functionality)
       if (conversationId) {
-        await this.createBackup(params.scriptId, params.fileName, existingFiles, conversationId);
+        await this.createBackup(params.scriptId, normalized.name, existingFiles, conversationId);
       }
       
-      // Update or add file
+      // Update or add file using normalized format (Google's format)
       if (existingFileIndex >= 0) {
         existingFiles[existingFileIndex].source = params.content;
         existingFiles[existingFileIndex].type = fileType;
+        // Also normalize the name if it was in legacy format
+        existingFiles[existingFileIndex].name = normalized.name;
       } else {
         existingFiles.push({
-          name: params.fileName,
+          name: normalized.name,  // Store without extension (Google's format)
           type: fileType,
           source: params.content
         });
@@ -90,7 +147,7 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
 
   private async createBackup(
     scriptId: string, 
-    fileName: string, 
+    fileName: string,  // Already normalized (no extension)
     files: Array<{ name: string; type: string; source: string }>, 
     conversationId: string
   ): Promise<void> {
@@ -107,8 +164,8 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       // Ensure directory exists
       await fs.promises.mkdir(conversationBackupDir, { recursive: true });
       
-      // Find existing file content
-      const file = files.find(f => f.name === fileName);
+      // Find existing file content (fileName is already normalized)
+      const file = files.find(f => f.name === fileName || f.name === fileName.replace(/\.(gs|html|json)$/, ''));
       
       // Define backup file path (using a safe name to avoid issues with slashes)
       // We prefix with appsscript_ to distinguish from local file backups
@@ -161,7 +218,7 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       
       const scriptContent = templateCopy.scriptContent || { files: [] };
       const existingFiles = scriptContent.files || [];
-      const fileExists = existingFiles.some((f: any) => f.name === params.fileName);
+      const fileExists = findFileIndex(existingFiles, params.fileName) >= 0;
       
       return {
         toolName: this.name,

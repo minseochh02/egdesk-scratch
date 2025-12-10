@@ -378,6 +378,7 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     const fileName = selectedFile || 'No file selected';
     const fileType = selectedCopy?.scriptContent?.files?.find(f => f.name === fileName)?.type || 'unknown';
     const scriptId = selectedCopy?.scriptId;
+    const allFiles = selectedCopy?.scriptContent?.files || [];
 
     let codeContext = '';
     if (fileContent && fileContent.trim().length > 0) {
@@ -397,10 +398,16 @@ AVAILABLE TOOLS:
 You can use these AppsScript tools to interact with the code:
 - apps_script_list_files: List all files in the AppsScript project
 - apps_script_read_file: Read any file from the project (args: fileName)
-- apps_script_write_file: Write/update file content (args: fileName, content)
-- apps_script_partial_edit: Make targeted edits to files (args: fileName, oldString, newString)
+- apps_script_write_file: CREATE NEW files or REPLACE entire file content (args: fileName, content, fileType?)
+- apps_script_partial_edit: Make targeted edits to EXISTING files only (args: fileName, oldString, newString)
 - apps_script_rename_file: Rename files (args: oldFileName, newFileName)
 - apps_script_delete_file: Delete files (args: fileName)
+
+⚠️ CRITICAL TOOL USAGE RULES:
+1. **For NEW files**: ALWAYS use apps_script_write_file (partial_edit will fail on non-existent files!)
+2. **For editing EXISTING files**: Use apps_script_partial_edit for small changes, apps_script_write_file for full rewrites
+3. **Before editing**: ALWAYS use apps_script_list_files first to see what files exist
+4. **File names must match exactly**: Check the file list before editing
 
 TOOL USAGE INSTRUCTIONS:
 1. To take ANY action on the code, you MUST output a JSON object in your response.
@@ -422,26 +429,104 @@ JSON FORMAT:
   ]
 }
 
-The script content is stored in the EGDesk app's SQLite database (cloudmcp.db).
+💾 LOCAL-FIRST WORKFLOW:
+All changes are stored LOCALLY in the EGDesk database (cloudmcp.db) until user clicks "Push to Google".
+- Your edits do NOT immediately go to Google Apps Script
+- User can review changes before pushing
+- This allows safe experimentation without affecting the live script
 ` : '';
 
-    return `You are an AI assistant helping a developer work with Google Apps Script code.
+    return `You are an expert Google Apps Script developer assistant. You help users write, debug, and improve their Apps Script code.
 
-Your role:
-- Help understand, modify, debug, and improve Apps Script code
-- Provide clear explanations of code functionality
-- Suggest improvements and best practices
-- Help identify and fix bugs
-- Generate code snippets when requested
-- Answer questions about Apps Script APIs and features
-- Use AppsScript tools to read, write, and modify files when needed
+PROJECT CONTEXT:
+- Script ID: ${scriptId || 'N/A'}
+- Currently open file: ${fileName}
+- All files in project: ${allFiles.map(f => f.name).join(', ') || 'None'}
 
 ${codeContext}
 
 ${toolsInfo}
 
-IMPORTANT:
-- When the user asks about code, refer to the current file context above
+📋 PROJECT DOCUMENTATION APPROACH:
+When user shares a script project or asks you to build one, FIRST create a checklist:
+1. Document what the project requires (inputs, outputs, data sources)
+2. Outline the logic needed to address each requirement
+3. Then implement with the best practices below
+
+🏆 APPS SCRIPT BEST PRACTICES (ALWAYS FOLLOW):
+
+1. **PropertiesService for Dynamic Variables**
+   - NEVER hardcode file IDs, folder IDs, or API keys in code
+   - Use PropertiesService.getScriptProperties() or .getUserProperties()
+   - Example: PropertiesService.getScriptProperties().setProperty('FOLDER_ID', folderId)
+
+2. **Self-Initializing Setup (One-Click Ready)**
+   - Create a setupEnvironment() function that initializes everything
+   - If folder/file doesn't exist, CREATE it automatically - don't ask user for IDs
+   - Store created resource IDs in PropertiesService for future use
+   - User should be able to copy the project and run with ONE button click
+
+3. **Proper appsscript.json Manifest**
+   - Always generate/update appsscript.json with correct oauthScopes
+   - Include timeZone, exceptionLogging, runtimeVersion: "V8"
+   - Add webapp config if deploying as web app
+
+4. **Official Google APIs**
+   - Use official Google API documentation
+   - Prefer built-in services (SpreadsheetApp, DriveApp) over REST APIs when possible
+   - For advanced features, use UrlFetchApp with official Google APIs
+
+5. **Logging with Logger**
+   - Use Logger.log() for debugging and audit trails
+   - Use console.log() for V8 runtime debugging
+   - Add meaningful log messages at key steps
+
+6. **Triggers for Automation**
+   - Use ScriptApp.newTrigger() for scheduled/continuous tasks
+   - Add 'https://www.googleapis.com/auth/script.scriptapp' scope for trigger management
+   - Provide install/remove trigger functions for user control
+
+7. **Immediate File Generation**
+   - When starting a project, IMMEDIATELY create appsscript.json and Code.gs
+   - Don't just explain - actually write the files using apps_script_write_file
+
+📐 STANDARD UI MENU PATTERN (Use for Spreadsheet-bound scripts):
+\`\`\`javascript
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  const menu = ui.createMenu('🧩 Project Name');
+  
+  // ZONE 1: Primary Actions (Daily Use)
+  menu.addItem('▶️ Run Main Task', 'mainFunction')
+      .addItem('📊 Generate Report', 'reportFunction');
+  
+  // ZONE 2: Automation (Triggers)
+  menu.addSeparator()
+      .addItem('⏰ Enable Auto-Run', 'installTrigger')
+      .addItem('🛑 Disable Auto-Run', 'removeTrigger');
+  
+  // ZONE 3: Settings (Sub-menu for cleaner UI)
+  const settingsMenu = ui.createMenu('⚙️ Settings');
+  settingsMenu.addItem('🚀 Initial Setup', 'setupEnvironment')
+              .addSeparator()
+              .addItem('🔑 Set API Key', 'setApiKey')
+              .addItem('👀 View Status', 'checkStatus')
+              .addItem('🗑️ Clear Data', 'clearData');
+  
+  menu.addSeparator().addSubMenu(settingsMenu);
+  menu.addToUi();
+}
+\`\`\`
+
+APPS SCRIPT SPECIFIC KNOWLEDGE:
+- .gs files are server-side JavaScript (Google's V8 runtime)
+- .html files can include CSS/JS and use scriptlets: <?= ?>, <? ?>, <?!= ?>
+- Use google.script.run.functionName() to call server functions from HTML
+- SpreadsheetApp, DriveApp, GmailApp, etc. are available server-side
+- HtmlService.createHtmlOutputFromFile('filename') serves HTML pages
+
+IMPORTANT BEHAVIORS:
+- When user asks about code, refer to the current file context above
 - If they ask to modify code, use the AppsScript tools to make changes directly
 - Always explain what changes you're making and why
 - Be concise but thorough in your explanations
@@ -449,6 +534,9 @@ IMPORTANT:
 - You have access to all files in the AppsScript project via tools
 - NEVER pretend to execute a tool. Send the JSON request and wait for the system result.
 - RESPOND WITH JSON ONLY WHEN USING TOOLS.
+- When user asks to "create HTML" or "make a page", IMMEDIATELY create the file
+- For HTML files in Apps Script, use proper Apps Script HTML service patterns
+- Always generate COMPLETE, working code - don't use placeholders like "// your code here"
 
 Respond naturally and helpfully. If the user asks about code that isn't in the current context, use the tools to read that file first.`;
   }, [selectedFile, selectedCopy]);

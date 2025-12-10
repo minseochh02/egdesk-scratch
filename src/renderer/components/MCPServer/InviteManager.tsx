@@ -371,13 +371,13 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
               borderRadius: '6px',
               border: '1px solid rgba(255, 255, 255, 0.05)'
             }}>
-              {editingId === permission.id ? (
+                  {editingId === permission.id ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                   <div style={{ flex: 1, overflow: 'hidden' }}>
                     <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>{permission.allowed_email}</div>
-                    <select
-                      value={editAccessLevel}
-                      onChange={(e) => setEditAccessLevel(e.target.value as any)}
+                          <select
+                            value={editAccessLevel}
+                            onChange={(e) => setEditAccessLevel(e.target.value as any)}
                       style={{ 
                         width: '100%', 
                         padding: '4px', 
@@ -387,52 +387,52 @@ const InviteManager: React.FC<InviteManagerProps> = ({ serverKey, serverName }) 
                         border: '1px solid rgba(255,255,255,0.1)',
                         borderRadius: '4px'
                       }}
-                    >
-                      <option value="read_only">Read Only</option>
-                      <option value="read_write">Read & Write</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
+                          >
+                            <option value="read_only">Read Only</option>
+                            <option value="read_write">Read & Write</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </div>
                   <button onClick={() => handleUpdatePermission(permission.id)} style={{ background: '#10b981', border: 'none', borderRadius: '4px', padding: '4px', color: 'white', cursor: 'pointer' }}>
                     <FontAwesomeIcon icon={faCheck} size="xs" />
-                  </button>
+                        </button>
                   <button onClick={cancelEditing} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', padding: '4px', color: 'white', cursor: 'pointer' }}>
                     <FontAwesomeIcon icon={faTimes} size="xs" />
-                  </button>
-                </div>
-              ) : (
-                <>
+                        </button>
+                    </div>
+                  ) : (
+                    <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
-                    {getStatusIcon(permission.status)}
+                          {getStatusIcon(permission.status)}
                     <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                       <div style={{ fontSize: '12px', fontWeight: '500' }}>{permission.allowed_email}</div>
                       {permission.status === 'pending' && (
                         <div style={{ fontSize: '10px', opacity: 0.5 }}>Pending invitation</div>
-                      )}
-                    </div>
-                  </div>
+                          )}
+                        </div>
+                      </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {getAccessLevelBadge(permission.access_level)}
-                    <button 
-                      onClick={() => startEditing(permission)}
+                        <button 
+                          onClick={() => startEditing(permission)}
                       style={{ background: 'transparent', border: 'none', color: 'white', opacity: 0.5, cursor: 'pointer', padding: '2px' }}
-                      title="Edit"
-                    >
+                          title="Edit"
+                        >
                       <FontAwesomeIcon icon={faEdit} size="xs" />
-                    </button>
-                    <button 
-                      onClick={() => handleRevokePermission(permission.id, permission.allowed_email)}
+                        </button>
+                        <button 
+                          onClick={() => handleRevokePermission(permission.id, permission.allowed_email)}
                       style={{ background: 'transparent', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '2px' }}
-                      title="Revoke"
-                    >
+                          title="Revoke"
+                        >
                       <FontAwesomeIcon icon={faTrash} size="xs" />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
         </div>
       )}
     </div>
