@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [windows-latest]
+        os: [windows-latest, macos-latest]
 
     steps:
       - name: Checkout git repo
@@ -44,9 +44,18 @@ jobs:
           npm run postinstall
           npm run build
 
-      - name: Publish releases
+      - name: Publish Windows releases
+        if: matrix.os == 'windows-latest'
         env:
-          # This is used for uploading release assets to github
           GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           npm exec electron-builder -- --publish always --win
+
+      - name: Publish macOS releases
+        if: matrix.os == 'macos-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          # Skip notarization for now (requires Apple Developer account)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          npm exec electron-builder -- --publish always --mac
