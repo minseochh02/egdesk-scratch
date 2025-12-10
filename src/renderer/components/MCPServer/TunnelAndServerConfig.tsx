@@ -13,7 +13,9 @@ import {
   faCopy,
   faEdit,
   faTimes,
-  faSpinner
+  faSpinner,
+  faExclamationTriangle,
+  faSync
 } from '../../utils/fontAwesomeIcons';
 import InviteManager from './InviteManager';
 
@@ -81,6 +83,9 @@ interface TunnelAndServerConfigProps {
   autoStartTunnelEnabled?: boolean;
   toggleAutoStart?: () => void;
   toggleAutoStartTunnel?: () => void;
+  // OAuth Props
+  tokenNeedsRefresh?: boolean;
+  handleReSignIn?: () => Promise<void>;
 }
 
 const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
@@ -109,7 +114,9 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   autoStartEnabled = true,
   autoStartTunnelEnabled = true,
   toggleAutoStart,
-  toggleAutoStartTunnel
+  toggleAutoStartTunnel,
+  tokenNeedsRefresh = false,
+  handleReSignIn
 }) => {
   const handleCopyPublicUrl = () => {
     if (activeTunnelConfig.publicUrl) {
@@ -117,6 +124,25 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
       alert('Public URL copied to clipboard!');
     }
   };
+
+  // Helper to check if a service requires Google OAuth
+  const isCloudService = (serverName: string) => {
+    const name = serverName.toLowerCase();
+    return name.includes('gmail') || name.includes('apps-script') || name.includes('sheets') || name.includes('drive');
+  };
+
+  // Sort MCP servers to put 'conversation' at the top
+  const sortedMcpServers = [...mcpServers].sort((a, b) => {
+    const aName = a.name.toLowerCase();
+    const bName = b.name.toLowerCase();
+    
+    // Move 'conversation' to top
+    if (aName.includes('conversation') && !bName.includes('conversation')) return -1;
+    if (!aName.includes('conversation') && bName.includes('conversation')) return 1;
+    
+    return 0; // Keep original order for others
+  });
+
   return (
     <>
       {/* HTTP Server Control Section */}
@@ -575,45 +601,91 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
               MCP Services
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {mcpServers.map(server => (
-                <div key={server.name} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>{server.name}</div>
-                    <div style={{ fontSize: '12px', opacity: 0.7 }}>{server.description}</div>
+              {sortedMcpServers.map(server => {
+                const isCloud = isCloudService(server.name);
+                const hasTokenIssue = isCloud && tokenNeedsRefresh;
+                
+                return (
+                  <div key={server.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px',
+                    background: hasTokenIssue ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '8px',
+                    border: hasTokenIssue ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(255, 255, 255, 0.1)'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '600', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {server.name}
+                        {hasTokenIssue && (
+                          <span style={{ 
+                            fontSize: '10px', 
+                            background: 'rgba(239, 68, 68, 0.1)', 
+                            color: '#ef4444', 
+                            padding: '2px 6px', 
+                            borderRadius: '4px',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            <FontAwesomeIcon icon={faExclamationTriangle} /> Token Expired
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '12px', opacity: 0.7 }}>{server.description}</div>
+                    </div>
+                    {hasTokenIssue && handleReSignIn ? (
+                      <button
+                        onClick={handleReSignIn}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '6px',
+                          padding: '8px 16px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          minWidth: '100px',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <FontAwesomeIcon icon={faSync} />
+                        Fix
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => server.enabled ? handleDisableMCPServer(server.name) : handleEnableMCPServer(server.name)}
+                        style={{
+                          background: server.enabled 
+                            ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                            : 'rgba(255, 255, 255, 0.1)',
+                          color: 'white',
+                          border: server.enabled ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          padding: '8px 16px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          minWidth: '100px',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <FontAwesomeIcon icon={server.enabled ? faCheck : faPlay} />
+                        {server.enabled ? 'Enabled' : 'Enable'}
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={() => server.enabled ? handleDisableMCPServer(server.name) : handleEnableMCPServer(server.name)}
-                    style={{
-                      background: server.enabled 
-                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                        : 'rgba(255, 255, 255, 0.1)',
-                      color: 'white',
-                      border: server.enabled ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      minWidth: '100px',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <FontAwesomeIcon icon={server.enabled ? faCheck : faPlay} />
-                    {server.enabled ? 'Enabled' : 'Enable'}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               {mcpServers.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '20px', opacity: 0.5 }}>
                   No MCP services configured

@@ -6,9 +6,20 @@
 import type { ToolExecutor } from '../../types/ai-types';
 import { getSQLiteManager } from '../../sqlite/manager';
 
+/**
+ * Get display name with extension for user-friendly output
+ */
+function getDisplayName(file: { name: string; type: string }): string {
+  const type = (file.type || 'server_js').toLowerCase();
+  if (type === 'server_js') return `${file.name}.gs`;
+  if (type === 'html') return `${file.name}.html`;
+  if (type === 'json') return `${file.name}.json`;
+  return file.name;
+}
+
 export class AppsScriptListFilesTool implements ToolExecutor {
   name = 'apps_script_list_files';
-  description = 'List all files in a Google AppsScript project. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
+  description = 'List all files in a Google AppsScript project. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db). Returns file names with extensions.';
   dangerous = false;
   requiresConfirmation = false;
 
@@ -16,7 +27,7 @@ export class AppsScriptListFilesTool implements ToolExecutor {
     params: { scriptId: string }, 
     signal?: AbortSignal, 
     conversationId?: string
-  ): Promise<Array<{name: string; type: string; hasSource: boolean}>> {
+  ): Promise<Array<{name: string; displayName: string; type: string; hasSource: boolean}>> {
     if (!params.scriptId) {
       throw new Error('scriptId parameter is required');
     }
@@ -36,9 +47,11 @@ export class AppsScriptListFilesTool implements ToolExecutor {
         return [];
       }
       
+      // Return both internal name and display name (with extension)
       return templateCopy.scriptContent.files.map((file: any) => ({
         name: file.name,
-        type: file.type || 'SERVER_JS',
+        displayName: getDisplayName(file),  // "Code.gs", "index.html", etc.
+        type: file.type || 'server_js',
         hasSource: !!file.source
       }));
     } catch (error) {

@@ -243,6 +243,170 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [isEditingMcpServerName, setIsEditingMcpServerName] = useState<boolean>(false);
   const [editingMcpServerNameValue, setEditingMcpServerNameValue] = useState<string>('');
 
+  // OAuth State
+  const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
+  const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
+  const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false); // Token exists but access_token is missing/expired
+
+  // Required OAuth scopes for cloud MCP servers
+  const REQUIRED_OAUTH_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.addons.current.action.compose',
+    'https://www.googleapis.com/auth/gmail.addons.current.message.action',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid',
+    'https://www.googleapis.com/auth/sites',
+    'https://www.googleapis.com/auth/forms',
+    'https://www.googleapis.com/auth/gmail.addons.current.message.metadata',
+    'https://www.googleapis.com/auth/gmail.addons.current.message.readonly',
+    'https://www.googleapis.com/auth/script.projects',
+    'https://www.googleapis.com/auth/script.projects.readonly',
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/contacts',
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/script.scriptapp',
+    'https://www.googleapis.com/auth/script.send_mail',
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://mail.google.com/',
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.compose',
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.metadata',
+    'https://www.googleapis.com/auth/gmail.insert',
+  ];
+
+  // Check if OAuth token exists and has required scopes
+  const checkOAuthToken = async () => {
+    try {
+      setCheckingOAuthToken(true);
+      setTokenNeedsRefresh(false); // Reset on each check
+      console.log('🔍 MCPServer: Starting OAuth token check...');
+      
+      // First, check Supabase session
+      const sessionResult = await window.electron.auth.getSession();
+      
+      // Check if user is signed in with Google via Supabase
+      if (sessionResult.success && sessionResult.session && sessionResult.user) {
+        const user = sessionResult.user;
+        const isGoogleAuth = 
+          user.app_metadata?.provider === 'google' ||
+          user.identities?.some((id: any) => id.provider === 'google');
+        
+        if (isGoogleAuth) {
+          // User is authenticated with Google via Supabase
+          // Check if we also have the token in electron-store with scopes
+          const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
+          
+          if (tokenResult.success && tokenResult.token) {
+            const token = tokenResult.token;
+            
+            // First check if token has access_token (required for Google API calls)
+            if (!token.access_token) {
+              console.log('⚠️ MCPServer: Token exists but no access_token - cannot use for API calls');
+              setTokenNeedsRefresh(true); // User has token but it's expired/invalid
+              setHasValidOAuthToken(false);
+              return;
+            }
+            
+            // If token has scopes, verify they match
+            if (token.scopes) {
+              let tokenScopes: string[] = [];
+              
+              if (Array.isArray(token.scopes)) {
+                tokenScopes = token.scopes;
+              } else if (typeof token.scopes === 'string') {
+                tokenScopes = (token.scopes as string).split(' ');
+              }
+              
+              // Check if all required scopes are present
+              const hasAllScopes = REQUIRED_OAUTH_SCOPES.every(scope => 
+                tokenScopes.includes(scope)
+              );
+              
+              if (hasAllScopes) {
+                setHasValidOAuthToken(true);
+                return;
+              } else {
+                console.log('⚠️ MCPServer: Token exists but missing some required scopes');
+                // Still allow access since user has access_token, but log warning
+                setHasValidOAuthToken(true);
+                return;
+              }
+            } else {
+              // Token exists with access_token but no scopes - allow access
+              setHasValidOAuthToken(true);
+              return;
+            }
+          } else {
+            // No token in store, but user is authenticated via Supabase
+            setHasValidOAuthToken(false);
+            return;
+          }
+        }
+      }
+      
+      // Fallback: Check electron-store token directly
+      const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
+      
+      if (tokenResult.success && tokenResult.token) {
+        const token = tokenResult.token;
+        
+        // Check if token has access_token (required for Google API calls)
+        if (token.access_token) {
+          console.log('✅ MCPServer: Google OAuth token found in electron-store (fallback)');
+            setHasValidOAuthToken(true);
+            return;
+        }
+      }
+      
+      setHasValidOAuthToken(false);
+    } catch (err) {
+      console.error('Error checking OAuth token:', err);
+      setHasValidOAuthToken(false);
+    } finally {
+      setCheckingOAuthToken(false);
+    }
+  };
+
+  // Handle re-sign in to update scopes
+  const handleReSignIn = async () => {
+    try {
+      // Sign out first to clear existing token
+      await window.electron.auth.signOut();
+      
+      // Then sign in again with updated scopes
+      const scopes = [
+        // Basic auth scopes (required for OAuth)
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'openid',
+        // Apps Script scopes
+        'https://www.googleapis.com/auth/script.projects',
+        'https://www.googleapis.com/auth/script.projects.readonly',
+        'https://www.googleapis.com/auth/script.scriptapp',
+        'https://www.googleapis.com/auth/script.send_mail',
+        'https://www.googleapis.com/auth/script.deployments', // Required for listing/creating/updating web app deployments
+        // Google Sheets and Drive scopes (required for template copying)
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+      ].join(' ');
+
+      const result = await window.electron.auth.signInWithGoogle(scopes);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to sign in with Google');
+      }
+      
+      // Wait a moment for the OAuth flow to complete
+      setTimeout(async () => {
+        await checkOAuthToken();
+      }, 2000);
+    } catch (error) {
+      console.error('Error re-signing in:', error);
+      alert(`Failed to re-sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   // Active tunnel configuration state
   const [activeTunnelConfig, setActiveTunnelConfig] = useState<{
     registered: boolean;
@@ -472,7 +636,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       setCloudError(null);
 
       // Google Sheets spreadsheet ID
-      const SPREADSHEET_ID = '1JPlm17KCvZmvQQ3J68He_xJxDVB_schN6TEP7W6dP0A';
+      // https://docs.google.com/spreadsheets/d/1zo30Kke-nyir3tys9HsUMG7QqY3Gi6cnVCbLGdishIU/edit?usp=sharing
+      const SPREADSHEET_ID = '1zo30Kke-nyir3tys9HsUMG7QqY3Gi6cnVCbLGdishIU';
       // Use the CSV export format which is simpler and more reliable
       const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
 
@@ -880,6 +1045,22 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     loadTunnelConfigs();
     loadMcpServerName();
     loadActiveTunnelConfig();
+    checkOAuthToken();
+    
+    // Listen for auth state changes
+    const unsubscribe = window.electron.auth.onAuthStateChanged((data: any) => {
+      // Re-check token when auth state changes
+      setTimeout(() => {
+        checkOAuthToken();
+      }, 1000);
+    });
+
+    return () => {
+      // Cleanup listener if possible (though onAuthStateChanged might not return unsubscribe in some implementations, standard practice is to handle it)
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, []);
 
   // Auto-start HTTP server and tunnel on mount
@@ -2137,6 +2318,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         autoStartTunnelEnabled={autoStartTunnelEnabled}
         toggleAutoStart={toggleAutoStart}
         toggleAutoStartTunnel={toggleAutoStartTunnel}
+        tokenNeedsRefresh={tokenNeedsRefresh}
+        handleReSignIn={handleReSignIn}
       />
 
       {/* Conditionally render Script Editor or Running Servers Tabs */}
@@ -2187,6 +2370,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
             setShowScriptEditor(true);
           }}
           onAddServer={() => handleToolSelect('gmail')}
+          hasValidOAuthToken={hasValidOAuthToken}
+          checkingOAuthToken={checkingOAuthToken}
+          tokenNeedsRefresh={tokenNeedsRefresh}
+          handleReSignIn={handleReSignIn}
         />
       )}
 

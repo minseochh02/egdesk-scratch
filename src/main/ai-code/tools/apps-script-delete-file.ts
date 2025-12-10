@@ -6,6 +6,60 @@
 import type { ToolExecutor, ToolCallConfirmationDetails } from '../../types/ai-types';
 import { getSQLiteManager } from '../../sqlite/manager';
 
+/**
+ * Normalize file name to Google Apps Script format
+ */
+function normalizeFileName(fileName: string): { name: string; type: string } {
+  let name = fileName;
+  let type = 'server_js';
+  
+  if (fileName.endsWith('.gs')) {
+    name = fileName.replace(/\.gs$/, '');
+    type = 'server_js';
+  } else if (fileName.endsWith('.html')) {
+    name = fileName.replace(/\.html$/, '');
+    type = 'html';
+  } else if (fileName.endsWith('.json')) {
+    name = fileName.replace(/\.json$/, '');
+    type = 'json';
+  }
+  
+  return { name, type };
+}
+
+/**
+ * Find file index in files array, handling both formats
+ */
+function findFileIndex(files: any[], fileName: string): number {
+  const normalized = normalizeFileName(fileName);
+  
+  // Try normalized format first
+  let index = files.findIndex((f: any) => 
+    f.name === normalized.name && f.type.toLowerCase() === normalized.type.toLowerCase()
+  );
+  
+  if (index >= 0) return index;
+  
+  // Try exact match (legacy)
+  index = files.findIndex((f: any) => f.name === fileName);
+  
+  if (index >= 0) return index;
+  
+  // Try just base name
+  return files.findIndex((f: any) => f.name === normalized.name);
+}
+
+/**
+ * Get display name with extension
+ */
+function getDisplayName(file: { name: string; type: string }): string {
+  const type = file.type.toLowerCase();
+  if (type === 'server_js') return `${file.name}.gs`;
+  if (type === 'html') return `${file.name}.html`;
+  if (type === 'json') return `${file.name}.json`;
+  return file.name;
+}
+
 export class AppsScriptDeleteFileTool implements ToolExecutor {
   name = 'apps_script_delete_file';
   description = 'Delete a file from a Google AppsScript project. The change is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
@@ -40,16 +94,23 @@ export class AppsScriptDeleteFileTool implements ToolExecutor {
       const scriptContent = templateCopy.scriptContent || { files: [] };
       const existingFiles = scriptContent.files || [];
       
-      // Check if file exists
-      const existingFileIndex = existingFiles.findIndex((f: any) => f.name === params.fileName);
+      // Check if file exists (handles both normalized and legacy formats)
+      const existingFileIndex = findFileIndex(existingFiles, params.fileName);
       
       if (existingFileIndex < 0) {
-        throw new Error(`File '${params.fileName}' not found in AppsScript project '${params.scriptId}'`);
+        const availableFiles = existingFiles.map((f: any) => getDisplayName(f)).join(', ');
+        throw new Error(
+          `File '${params.fileName}' not found in AppsScript project '${params.scriptId}'. ` +
+          `Available files: [${availableFiles || 'none'}]`
+        );
       }
+      
+      // Get actual file name from DB for backup
+      const actualFileName = existingFiles[existingFileIndex].name;
       
       // Create backup before deleting (for undo functionality)
       if (conversationId) {
-        await this.createBackup(params.scriptId, params.fileName, existingFiles, conversationId);
+        await this.createBackup(params.scriptId, actualFileName, existingFiles, conversationId);
       }
       
       // Remove file

@@ -1,6 +1,6 @@
 /* Modern MCP Server Styles - Based on BlogConnector */
 .mcp-server {
-  min-height: 100vh;
+  height: 100%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   position: relative;
   overflow-x: hidden;

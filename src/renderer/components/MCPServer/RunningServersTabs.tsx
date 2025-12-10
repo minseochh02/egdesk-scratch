@@ -94,6 +94,12 @@ interface RunningServersTabsProps {
   
   // New server creation
   onAddServer: () => void;
+
+  // OAuth Props
+  hasValidOAuthToken: boolean;
+  checkingOAuthToken: boolean;
+  tokenNeedsRefresh: boolean;
+  handleReSignIn: () => Promise<void>;
 }
 
 type TabType = 'local' | 'cloud';
@@ -132,131 +138,17 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   cloudError = null,
   loadCloudServers,
   onOpenScriptEditor,
-  onAddServer
+  onAddServer,
+  hasValidOAuthToken,
+  checkingOAuthToken,
+  tokenNeedsRefresh,
+  handleReSignIn
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('local');
-  const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
-  const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
-  const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false); // Token exists but access_token is missing/expired
   const [existingCopies, setExistingCopies] = useState<Map<string, string>>(new Map()); // templateId -> copyId
   const [loadingCopies, setLoadingCopies] = useState<boolean>(true);
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
   const [creatingCopyId, setCreatingCopyId] = useState<string | null>(null);
-
-  // Check if OAuth token exists and has required scopes
-  const checkOAuthToken = async () => {
-    try {
-      setCheckingOAuthToken(true);
-      setTokenNeedsRefresh(false); // Reset on each check
-      console.log('🔍 RunningServersTabs: Starting OAuth token check...');
-      
-      // First, check Supabase session (from GoogleOAuthSignIn component)
-      const sessionResult = await window.electron.auth.getSession();
-      console.log('🔍 RunningServersTabs: Supabase session result:', {
-        success: sessionResult.success,
-        hasSession: !!sessionResult.session,
-        hasUser: !!sessionResult.user,
-        provider: sessionResult.user?.app_metadata?.provider
-      });
-      
-      // Check if user is signed in with Google via Supabase
-      if (sessionResult.success && sessionResult.session && sessionResult.user) {
-        const user = sessionResult.user;
-        const isGoogleAuth = 
-          user.app_metadata?.provider === 'google' ||
-          user.identities?.some((id: any) => id.provider === 'google');
-        
-        if (isGoogleAuth) {
-          console.log('✅ RunningServersTabs: Google OAuth session found via Supabase');
-          // User is authenticated with Google via Supabase
-          // Check if we also have the token in electron-store with scopes
-          const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
-          
-          if (tokenResult.success && tokenResult.token) {
-            const token = tokenResult.token;
-            console.log('📦 RunningServersTabs: Token from store:', {
-              hasAccessToken: !!token.access_token,
-              hasScopes: !!token.scopes,
-              scopesType: typeof token.scopes
-            });
-            
-            // First check if token has access_token (required for Google API calls)
-            if (!token.access_token) {
-              console.log('⚠️ RunningServersTabs: Token exists but no access_token - cannot use for API calls');
-              setTokenNeedsRefresh(true); // User has token but it's expired/invalid
-              setHasValidOAuthToken(false);
-              return;
-            }
-            
-            // If token has scopes, verify they match
-            if (token.scopes) {
-              let tokenScopes: string[] = [];
-              
-              if (Array.isArray(token.scopes)) {
-                tokenScopes = token.scopes;
-              } else if (typeof token.scopes === 'string') {
-                tokenScopes = (token.scopes as string).split(' ');
-              }
-              
-              // Check if all required scopes are present
-              const hasAllScopes = REQUIRED_OAUTH_SCOPES.every(scope => 
-                tokenScopes.includes(scope)
-              );
-              
-              if (hasAllScopes) {
-                console.log('✅ RunningServersTabs: All required scopes present in token');
-                setHasValidOAuthToken(true);
-                return;
-              } else {
-                console.log('⚠️ RunningServersTabs: Token exists but missing some required scopes');
-                // Still allow access since user has access_token, but log warning
-                setHasValidOAuthToken(true);
-                return;
-              }
-            } else {
-              // Token exists with access_token but no scopes - allow access
-              console.log('⚠️ RunningServersTabs: Token exists with access_token but no scopes stored - allowing access');
-              setHasValidOAuthToken(true);
-              return;
-            }
-          } else {
-            // No token in store, but user is authenticated via Supabase
-            console.log('⚠️ RunningServersTabs: Google authenticated via Supabase but no Google OAuth token found in store');
-            console.log('⚠️ RunningServersTabs: User needs to sign in with Google to get OAuth token for API access');
-            setHasValidOAuthToken(false);
-            return;
-          }
-        } else {
-            console.log('⚠️ RunningServersTabs: User is signed in but NOT with Google');
-        }
-      } else {
-          console.log('❌ RunningServersTabs: No active Supabase session found');
-      }
-      
-      // Fallback: Check electron-store token directly
-      const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
-      console.log('🔍 RunningServersTabs: Checking electron-store token directly:', tokenResult);
-      
-      if (tokenResult.success && tokenResult.token) {
-        const token = tokenResult.token;
-        
-        // Check if token has access_token (required for Google API calls)
-        if (token.access_token) {
-          console.log('✅ RunningServersTabs: Google OAuth token found in electron-store (fallback)');
-            setHasValidOAuthToken(true);
-            return;
-        }
-      }
-      
-      console.log('❌ RunningServersTabs: No valid OAuth token or session found (final check)');
-      setHasValidOAuthToken(false);
-    } catch (err) {
-      console.error('Error checking OAuth token:', err);
-      setHasValidOAuthToken(false);
-    } finally {
-      setCheckingOAuthToken(false);
-    }
-  };
 
   // Load existing copies from electron-store and database
   const loadExistingCopies = async () => {
@@ -531,67 +423,11 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
     }
   };
 
-  // Handle re-sign in to update scopes
-  const handleReSignIn = async () => {
-    try {
-      // Sign out first to clear existing token
-      await window.electron.auth.signOut();
-      
-      // Then sign in again with updated scopes
-      const scopes = [
-        // Basic auth scopes (required for OAuth)
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'openid',
-        // Apps Script scopes
-        'https://www.googleapis.com/auth/script.projects',
-        'https://www.googleapis.com/auth/script.projects.readonly',
-        'https://www.googleapis.com/auth/script.scriptapp',
-        'https://www.googleapis.com/auth/script.send_mail',
-        'https://www.googleapis.com/auth/script.deployments', // Required for listing/creating/updating web app deployments
-        // Google Sheets and Drive scopes (required for template copying)
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive',
-      ].join(' ');
-
-      const result = await window.electron.auth.signInWithGoogle(scopes);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to sign in with Google');
-      }
-      
-      // Wait a moment for the OAuth flow to complete
-      setTimeout(async () => {
-        await checkOAuthToken();
-      }, 2000);
-    } catch (error) {
-      console.error('Error re-signing in:', error);
-      alert(`Failed to re-sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
   // Check OAuth token on mount and when switching to cloud tab
   useEffect(() => {
     if (activeTab === 'cloud') {
-      checkOAuthToken();
       loadExistingCopies();
     }
-  }, [activeTab]);
-
-  // Listen for auth state changes to re-check token
-  useEffect(() => {
-    const unsubscribe = window.electron.auth.onAuthStateChanged((data) => {
-      if (activeTab === 'cloud') {
-        // Re-check token when auth state changes
-        setTimeout(() => {
-          checkOAuthToken();
-        }, 1000); // Small delay to allow token to be saved
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
   }, [activeTab]);
 
   return (
@@ -685,11 +521,6 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
         {activeTab === 'cloud' && (
           <div className="running-servers-tab-panel">
             <div className="running-servers-section">
-              <div className="section-header">
-                <h2>Cloud Running MCP Servers</h2>
-                <p>Monitor and manage your cloud-hosted MCP server connections</p>
-              </div>
-
               {checkingOAuthToken && (
                 <div className="loading-state">
                   <FontAwesomeIcon icon={faSpinner} spin />
@@ -699,18 +530,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
 
               {!checkingOAuthToken && !hasValidOAuthToken && (
                 <div className="cloud-oauth-section">
-                  <div className="cloud-oauth-header">
-                    <h3>{tokenNeedsRefresh ? "Access Token Expired" : "Authentication Required"}</h3>
-                    <p>
-                      {tokenNeedsRefresh 
-                        ? "Your Google access token has expired or is invalid. Please refresh your token to continue using Cloud MCP Servers."
-                        : (hasValidOAuthToken === false && (window.electron as any)?.auth?.user 
-                          ? "Additional permissions needed for Cloud MCP Servers." 
-                          : "Sign in with Google to access cloud MCP servers")}
-                    </p>
-                  </div>
-                  
-                  {tokenNeedsRefresh && (
+                  {tokenNeedsRefresh ? (
                     <div className="token-refresh-warning" style={{ 
                       backgroundColor: 'rgba(255, 193, 7, 0.15)', 
                       border: '1px solid rgba(255, 193, 7, 0.4)',
@@ -723,12 +543,20 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                     }}>
                       <span style={{ fontSize: '1.25rem' }}>⚠️</span>
                       <div>
-                        <strong style={{ color: '#ffc107', display: 'block', marginBottom: '0.25rem' }}>Token Refresh Required</strong>
+                        <strong style={{ color: '#ffc107', display: 'block', marginBottom: '0.25rem' }}>Access Token Expired</strong>
                         <span style={{ color: '#ccc', fontSize: '0.9rem' }}>
-                          Your stored credentials are missing the access token needed for Google API calls. 
-                          This can happen when the token expires. Click the button below to re-authorize.
+                          Your Google access token has expired or is invalid. Please refresh your token to continue using Cloud MCP Servers.
                         </span>
                       </div>
+                    </div>
+                  ) : (
+                    <div className="cloud-oauth-header">
+                      <h3>Authentication Required</h3>
+                      <p>
+                        {(hasValidOAuthToken === false && (window.electron as any)?.auth?.user 
+                          ? "Additional permissions needed for Cloud MCP Servers." 
+                          : "Sign in with Google to access cloud MCP servers")}
+                      </p>
                     </div>
                   )}
                   

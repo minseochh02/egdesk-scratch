@@ -6,6 +6,67 @@
 import type { ToolExecutor, ToolCallConfirmationDetails } from '../../types/ai-types';
 import { getSQLiteManager } from '../../sqlite/manager';
 
+/**
+ * Normalize file name to Google Apps Script format
+ * "Code.gs" → { name: "Code", type: "server_js" }
+ * "index.html" → { name: "index", type: "html" }
+ * "appsscript.json" → { name: "appsscript", type: "json" }
+ */
+function normalizeFileName(fileName: string): { name: string; type: string } {
+  let name = fileName;
+  let type = 'server_js';
+  
+  if (fileName.endsWith('.gs')) {
+    name = fileName.replace(/\.gs$/, '');
+    type = 'server_js';
+  } else if (fileName.endsWith('.html')) {
+    name = fileName.replace(/\.html$/, '');
+    type = 'html';
+  } else if (fileName.endsWith('.json')) {
+    name = fileName.replace(/\.json$/, '');
+    type = 'json';
+  }
+  
+  return { name, type };
+}
+
+/**
+ * Find file in files array, handling both formats:
+ * - Normalized: { name: "Code", type: "server_js" }
+ * - Legacy: { name: "Code.gs", type: "SERVER_JS" }
+ */
+function findFileIndex(files: any[], fileName: string): number {
+  const normalized = normalizeFileName(fileName);
+  
+  // Try normalized format first (preferred)
+  let index = files.findIndex((f: any) => 
+    f.name === normalized.name && f.type.toLowerCase() === normalized.type.toLowerCase()
+  );
+  
+  if (index >= 0) return index;
+  
+  // Try exact match (legacy format with extension)
+  index = files.findIndex((f: any) => f.name === fileName);
+  
+  if (index >= 0) return index;
+  
+  // Try matching just the base name (fallback)
+  index = files.findIndex((f: any) => f.name === normalized.name);
+  
+  return index;
+}
+
+/**
+ * Get display name with extension for user-friendly output
+ */
+function getDisplayName(file: { name: string; type: string }): string {
+  const type = file.type.toLowerCase();
+  if (type === 'server_js') return `${file.name}.gs`;
+  if (type === 'html') return `${file.name}.html`;
+  if (type === 'json') return `${file.name}.json`;
+  return file.name;
+}
+
 export interface AppsScriptPartialEditParams {
   scriptId: string;
   fileName: string;
@@ -45,10 +106,18 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
         throw new Error(`No files found in AppsScript project '${params.scriptId}'`);
       }
       
-      // Find the file
-      const fileIndex = templateCopy.scriptContent.files.findIndex((f: any) => f.name === params.fileName);
+      // Find the file (handles both normalized and legacy formats)
+      const fileIndex = findFileIndex(templateCopy.scriptContent.files, params.fileName);
       if (fileIndex < 0) {
-        throw new Error(`File '${params.fileName}' not found in AppsScript project '${params.scriptId}'`);
+        // List available files with display names (with extensions) to help the AI
+        const availableFiles = templateCopy.scriptContent.files
+          .map((f: any) => getDisplayName(f))
+          .join(', ');
+        throw new Error(
+          `File '${params.fileName}' not found in AppsScript project. ` +
+          `Available files: [${availableFiles || 'none'}]. ` +
+          `Use 'apps_script_write_file' to create new files first.`
+        );
       }
       
       const file = templateCopy.scriptContent.files[fileIndex];
@@ -58,9 +127,10 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
       
       const currentContent = file.source;
       
-      // Create backup before modifying
+      // Create backup before modifying (use the actual file name from DB)
+      const actualFileName = templateCopy.scriptContent.files[fileIndex].name;
       if (conversationId) {
-        await this.createBackup(params.scriptId, params.fileName, templateCopy.scriptContent.files, conversationId);
+        await this.createBackup(params.scriptId, actualFileName, templateCopy.scriptContent.files, conversationId);
       }
       
       // Perform replacement (similar to partial-edit.ts logic)
@@ -103,7 +173,7 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
 
   private async createBackup(
     scriptId: string, 
-    fileName: string, 
+    fileName: string,  // This is the actual name from the DB (normalized, no extension)
     files: Array<{ name: string; type: string; source: string }>, 
     conversationId: string
   ): Promise<void> {
@@ -120,7 +190,7 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
       // Ensure directory exists
       await fs.promises.mkdir(conversationBackupDir, { recursive: true });
       
-      // Find existing file content
+      // Find existing file content (fileName is the actual DB name)
       const file = files.find(f => f.name === fileName);
       
       if (!file) return; // Should be handled by caller validation, but safe guard
