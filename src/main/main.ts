@@ -257,7 +257,9 @@ class AppUpdater {
   // Public method to quit and install (called from renderer)
   public quitAndInstall(): void {
     log.info('Quitting and installing update...');
-    autoUpdater.quitAndInstall();
+    // isSilent: false (show installer dialog on Windows)
+    // isForceRunAfter: true (force app to restart after install, especially needed on macOS)
+    autoUpdater.quitAndInstall(false, true);
   }
 }
 
