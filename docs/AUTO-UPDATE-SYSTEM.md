@@ -146,7 +146,8 @@ class AppUpdater {
 
   public quitAndInstall(): void {
     log.info('Quitting and installing update...');
-    autoUpdater.quitAndInstall();
+    // isSilent: false, isForceRunAfter: true (ensures app restarts after install)
+    autoUpdater.quitAndInstall(false, true);
   }
 }
 ```
