@@ -14,9 +14,21 @@ import {
   faSave,
   faPlus,
   faHistory,
-  faUndo
+  faUndo,
+  faCloudUpload,
+  faCloudDownload,
+  faCheckCircle,
+  faChevronDown,
+  faChevronUp,
+  faCodeBranch,
+  faRefresh,
+  faChevronLeft,
+  faChevronRight,
+  faPlay,
+  faTimes
 } from '../../utils/fontAwesomeIcons';
 import { chatWithGemma, OllamaChatMessage, GemmaToolCall } from '../../lib/gemmaClient';
+import CodeViewerWithLineNumbers from './CodeViewerWithLineNumbers';
 import './CloudMCPServerEditor.css';
 
 interface TemplateCopy {
@@ -65,6 +77,32 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const [ollamaLoading, setOllamaLoading] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [isPullingModel, setIsPullingModel] = useState(false);
+
+  // Push/Pull state
+  const [isPushing, setIsPushing] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'pushed' | 'pulled' | 'error'>('idle');
+  const [lastPushedVersion, setLastPushedVersion] = useState<number | null>(null);
+
+  // Version history state
+  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [versions, setVersions] = useState<Array<{ versionNumber: number; description?: string; createTime: string }>>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [versionContent, setVersionContent] = useState<Array<{ name: string; type: string; source: string }> | null>(null);
+  const [loadingVersionContent, setLoadingVersionContent] = useState(false);
+  const [viewingVersionFile, setViewingVersionFile] = useState<string | null>(null);
+  const filesListRef = useRef<HTMLDivElement>(null);
+  const [showScrollLeft, setShowScrollLeft] = useState(false);
+  const [showScrollRight, setShowScrollRight] = useState(false);
+
+  // Run function state
+  const [showRunDialog, setShowRunDialog] = useState(false);
+  const [functionToRun, setFunctionToRun] = useState('');
+  const [isRunning, setIsRunning] = useState(false);
+  const [runResult, setRunResult] = useState<{ success: boolean; result?: any; error?: string; logs?: string[] } | null>(null);
+  const [availableFunctions, setAvailableFunctions] = useState<string[]>([]);
+  const [loadingFunctions, setLoadingFunctions] = useState(false);
 
   const GEMMA_MODEL = 'gemma3:4b';
 
@@ -253,6 +291,331 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     }
   };
 
+  // Handle push to Google
+  const handlePushToGoogle = async () => {
+    if (!selectedCopy?.id) {
+      alert('No project selected');
+      return;
+    }
+
+    const confirmMsg = 'Push local changes to Google Apps Script and create a new version?\n\nThis will overwrite the cloud version with your local changes and create an immutable snapshot.';
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    setIsPushing(true);
+    setSyncStatus('idle');
+    setError(null);
+
+    try {
+      console.log(`⬆️ Pushing to Google Apps Script with version...`);
+      const result = await (window.electron as any).appsScriptTools.pushToGoogle(
+        selectedCopy.id,
+        true,
+        `Push from EGDesk at ${new Date().toLocaleString()}`
+      );
+
+      if (result.success && result.data) {
+        setSyncStatus('pushed');
+        
+        if (result.data.versionNumber) {
+          setLastPushedVersion(result.data.versionNumber);
+          console.log(`✅ Pushed and created version ${result.data.versionNumber}`);
+        } else {
+          setLastPushedVersion(null);
+        }
+        
+        setTimeout(() => {
+          setSyncStatus('idle');
+          setLastPushedVersion(null);
+        }, 4000);
+      } else {
+        setError(result.error || 'Failed to push to Google');
+        setSyncStatus('error');
+      }
+    } catch (err) {
+      console.error('Error pushing to Google:', err);
+      setError(err instanceof Error ? err.message : 'Error pushing to Google');
+      setSyncStatus('error');
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
+  // Handle pull from Google
+  const handlePullFromGoogle = async () => {
+    if (!selectedCopy?.id) {
+      alert('No project selected');
+      return;
+    }
+
+    if (!confirm('Pull latest from Google Apps Script?\n\nThis will overwrite your local changes with the cloud version.')) {
+      return;
+    }
+
+    setIsPulling(true);
+    setSyncStatus('idle');
+    setError(null);
+
+    try {
+      console.log(`⬇️ Pulling from Google Apps Script...`);
+      const result = await (window.electron as any).appsScriptTools.pullFromGoogle(selectedCopy.id);
+
+      if (result.success && result.data) {
+        setSyncStatus('pulled');
+        // Refresh local files to show updated content
+        await loadTemplateCopies();
+        setTimeout(() => setSyncStatus('idle'), 3000);
+      } else {
+        setError(result.error || 'Failed to pull from Google');
+        setSyncStatus('error');
+      }
+    } catch (err) {
+      console.error('Error pulling from Google:', err);
+      setError(err instanceof Error ? err.message : 'Error pulling from Google');
+      setSyncStatus('error');
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
+  // Load versions for the selected project
+  const loadVersions = async () => {
+    if (!selectedCopy?.id) return;
+
+    setLoadingVersions(true);
+    try {
+      console.log('📜 Loading versions...');
+      const result = await (window.electron as any).appsScriptTools.listVersions(selectedCopy.id);
+      
+      if (result.success && result.data) {
+        // Sort by version number descending (newest first)
+        const sortedVersions = [...result.data].sort((a, b) => b.versionNumber - a.versionNumber);
+        setVersions(sortedVersions);
+        console.log(`✅ Loaded ${sortedVersions.length} versions`);
+      } else {
+        console.warn('Failed to load versions:', result.error);
+        setVersions([]);
+      }
+    } catch (err) {
+      console.error('Error loading versions:', err);
+      setVersions([]);
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  // Load content for a specific version
+  const loadVersionContent = async (versionNumber: number) => {
+    if (!selectedCopy?.id) return;
+
+    setLoadingVersionContent(true);
+    setVersionContent(null);
+    setViewingVersionFile(null);
+
+    try {
+      console.log(`📜 Loading content for version ${versionNumber}...`);
+      const result = await (window.electron as any).appsScriptTools.getVersionContent(selectedCopy.id, versionNumber);
+      
+      if (result.success && result.data) {
+        setVersionContent(result.data.files);
+        // Auto-select first file
+        if (result.data.files.length > 0) {
+          setViewingVersionFile(result.data.files[0].name);
+        }
+        console.log(`✅ Loaded ${result.data.files.length} files from version ${versionNumber}`);
+      } else {
+        console.warn('Failed to load version content:', result.error);
+        alert(`Failed to load version content: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Error loading version content:', err);
+      alert(`Error loading version content: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLoadingVersionContent(false);
+    }
+  };
+
+  // Handle version selection
+  const handleVersionSelect = async (versionNumber: number | null) => {
+    setSelectedVersion(versionNumber);
+    setShowVersionDropdown(false);
+    
+    if (versionNumber === null) {
+      // Clear version content when selecting HEAD
+      setVersionContent(null);
+      setViewingVersionFile(null);
+    } else {
+      // Load content for selected version
+      await loadVersionContent(versionNumber);
+    }
+  };
+
+  // Restore version to local
+  const handleRestoreVersion = async () => {
+    if (!selectedCopy?.id || !versionContent || selectedVersion === null) return;
+
+    if (!confirm(`Restore version ${selectedVersion} to local?\n\nThis will replace your local content with this version's content.`)) {
+      return;
+    }
+
+    try {
+      // Update local script content with version content
+      const scriptContent = {
+        ...selectedCopy.scriptContent,
+        files: versionContent.map(f => ({
+          name: f.name,
+          type: f.type,
+          source: f.source,
+        })),
+      };
+
+      const result = await window.electron.templateCopies.updateScriptContent(
+        selectedCopy.scriptId!,
+        scriptContent
+      );
+
+      if (result.success) {
+        alert(`Successfully restored version ${selectedVersion} to local!`);
+        // Reset to HEAD view
+        setSelectedVersion(null);
+        setVersionContent(null);
+        setViewingVersionFile(null);
+        // Reload template copies to see updated content
+        await loadTemplateCopies();
+      } else {
+        alert(`Failed to restore version: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Error restoring version:', err);
+      alert(`Error restoring version: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Load versions when project changes
+  useEffect(() => {
+    if (selectedCopy?.scriptId) {
+      loadVersions();
+    } else {
+      setVersions([]);
+      setSelectedVersion(null);
+      setVersionContent(null);
+    }
+  }, [selectedCopy?.id]);
+
+  // Extract function names from script files
+  const extractFunctions = useCallback(() => {
+    if (!selectedCopy?.scriptContent?.files) {
+      console.log('🔍 No script files found for function detection');
+      setAvailableFunctions([]);
+      return;
+    }
+
+    const functions: string[] = [];
+    // Match function declarations - handles various formats
+    const functionRegex = /function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
+
+    console.log('🔍 Scanning files for functions:', selectedCopy.scriptContent.files.map(f => ({ name: f.name, type: f.type, hasSource: !!f.source })));
+
+    for (const file of selectedCopy.scriptContent.files) {
+      // Check for .gs files - type could be 'server_js', 'SERVER_JS', or file name ends with .gs
+      const isGsFile = 
+        file.type?.toLowerCase() === 'server_js' || 
+        file.name?.endsWith('.gs') ||
+        file.type === 'SERVER_JS';
+      
+      if (isGsFile && file.source) {
+        // Reset regex lastIndex for each file
+        functionRegex.lastIndex = 0;
+        let match;
+        while ((match = functionRegex.exec(file.source)) !== null) {
+          const funcName = match[1];
+          // Skip private functions (starting with _)
+          if (!funcName.startsWith('_') && !functions.includes(funcName)) {
+            functions.push(funcName);
+          }
+        }
+        console.log(`📄 Found functions in ${file.name}:`, functions.filter(f => file.source?.includes(`function ${f}`)));
+      }
+    }
+
+    // Sort alphabetically, but put common entry points first
+    const priorityFunctions = ['doGet', 'doPost', 'onOpen', 'onEdit', 'onInstall', 'main', 'run'];
+    functions.sort((a, b) => {
+      const aIdx = priorityFunctions.indexOf(a);
+      const bIdx = priorityFunctions.indexOf(b);
+      if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+      if (aIdx !== -1) return -1;
+      if (bIdx !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    console.log('✅ Total functions detected:', functions);
+    setAvailableFunctions(functions);
+  }, [selectedCopy]);
+
+  // Update available functions when selected copy changes
+  useEffect(() => {
+    extractFunctions();
+  }, [extractFunctions]);
+
+  // Run a function in the Apps Script project
+  const handleRunFunction = async () => {
+    if (!functionToRun.trim() || !selectedCopy?.scriptId) {
+      return;
+    }
+
+    setIsRunning(true);
+    setRunResult(null);
+
+    try {
+      console.log(`▶️ Running function: ${functionToRun}...`);
+      const result = await (window.electron as any).appsScriptTools.runFunction(
+        selectedCopy.scriptId,
+        functionToRun.trim()
+      );
+
+      if (result.success) {
+        setRunResult({
+          success: true,
+          result: result.data?.response?.result,
+          logs: result.data?.logs || []
+        });
+        console.log(`✅ Function executed successfully`);
+      } else {
+        setRunResult({
+          success: false,
+          error: result.error || 'Function execution failed'
+        });
+        console.error(`❌ Function execution failed:`, result.error);
+      }
+    } catch (err) {
+      console.error('Error running function:', err);
+      setRunResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error'
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Open run dialog
+  const openRunDialog = () => {
+    setShowRunDialog(true);
+    // Auto-select first function if available
+    setFunctionToRun(availableFunctions.length > 0 ? availableFunctions[0] : '');
+    setRunResult(null);
+  };
+
+  // Close run dialog
+  const closeRunDialog = () => {
+    setShowRunDialog(false);
+    setFunctionToRun('');
+    setRunResult(null);
+  };
+
   // Format date
   const formatDate = (dateString: string): string => {
     try {
@@ -267,6 +630,42 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const scrollChatToBottom = () => {
     chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Handle file list scrolling
+  const handleScroll = useCallback(() => {
+    if (filesListRef.current) {
+      const { scrollWidth, clientWidth, scrollLeft } = filesListRef.current;
+      setShowScrollLeft(scrollLeft > 0);
+      setShowScrollRight(scrollLeft < scrollWidth - clientWidth);
+    }
+  }, []);
+
+  const handleScrollLeft = () => {
+    if (filesListRef.current) {
+      filesListRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollRight = () => {
+    if (filesListRef.current) {
+      filesListRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+    }
+  };
+
+  // Add scroll and resize listeners for file tabs
+  useEffect(() => {
+    const filesListElement = filesListRef.current;
+    if (filesListElement) {
+      filesListElement.addEventListener('scroll', handleScroll);
+      window.addEventListener('resize', handleScroll);
+      // Initial check
+      handleScroll();
+      return () => {
+        filesListElement.removeEventListener('scroll', handleScroll);
+        window.removeEventListener('resize', handleScroll);
+      };
+    }
+  }, [handleScroll, selectedCopy, selectedVersion]);
 
   useEffect(() => {
     scrollChatToBottom();
@@ -853,20 +1252,110 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
               <FontAwesomeIcon icon={faArrowLeft} />
             </button>
           )}
-          <FontAwesomeIcon icon={faCode} className="header-icon" />
-          <div>
-            <h2>Cloud MCP Server Editor</h2>
-            <p>View and manage Apps Script content from template copies</p>
-          </div>
+          
         </div>
-        <button 
-          className="refresh-button"
-          onClick={loadTemplateCopies}
-          disabled={loading}
-        >
-          <FontAwesomeIcon icon={faSpinner} spin={loading} />
-          Refresh
-        </button>
+        <div className="header-actions">
+          {/* Open Spreadsheet Button */}
+          {selectedCopy && (
+            <button
+              className="open-spreadsheet-button"
+              onClick={() => {
+                if (selectedCopy.spreadsheetUrl) {
+                  window.open(selectedCopy.spreadsheetUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              title="Open spreadsheet in browser"
+            >
+              <FontAwesomeIcon icon={faExternalLinkAlt} />
+              Open
+            </button>
+          )}
+          
+          {/* Save Button */}
+          {selectedFile && getSelectedFileContent() && selectedCopy?.scriptId && (
+            <button
+              className="save-button"
+              onClick={handleSave}
+              title="Save changes to Apps Script (uses AppsScript tools)"
+            >
+              <FontAwesomeIcon icon={faSave} />
+              Save
+            </button>
+          )}
+          
+          {/* Push/Pull Sync Buttons */}
+          {selectedCopy?.scriptId && (
+            <>
+              <div className="sync-button-group">
+                <button
+                  className="push-button"
+                  onClick={handlePushToGoogle}
+                  disabled={isPushing || isPulling}
+                  title="Push and create version"
+                >
+                  {isPushing ? (
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                  ) : (
+                    <FontAwesomeIcon icon={faCloudUpload} />
+                  )}
+                  Push
+                </button>
+              </div>
+              
+              <button
+                className="pull-button"
+                onClick={handlePullFromGoogle}
+                disabled={isPushing || isPulling}
+                title="Pull latest from Google Apps Script"
+              >
+                {isPulling ? (
+                  <FontAwesomeIcon icon={faSpinner} spin />
+                ) : (
+                  <FontAwesomeIcon icon={faCloudDownload} />
+                )}
+                Pull
+              </button>
+              
+              {syncStatus === 'pushed' && (
+                <span className="sync-status sync-status-pushed">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {lastPushedVersion ? `Pushed! (v${lastPushedVersion})` : 'Pushed!'}
+                </span>
+              )}
+              {syncStatus === 'pulled' && (
+                <span className="sync-status sync-status-pulled">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  Pulled!
+                </span>
+              )}
+            </>
+          )}
+          
+          {/* Run Function Button */}
+          {selectedCopy?.scriptId && (
+            <button
+              className="run-button"
+              onClick={openRunDialog}
+              disabled={isRunning}
+              title="Run a function"
+            >
+              {isRunning ? (
+                <FontAwesomeIcon icon={faSpinner} spin />
+              ) : (
+                <FontAwesomeIcon icon={faPlay} />
+              )}
+              Run
+            </button>
+          )}
+          
+          <button 
+            className="refresh-button"
+            onClick={loadTemplateCopies}
+            disabled={loading}
+          >
+            <FontAwesomeIcon icon={faRefresh} spin={loading} />
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -913,26 +1402,81 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                         {(copy.metadata as any)?.serverName || copy.spreadsheetId.substring(0, 20) + '...'}
                       </span>
                     </div>
-                    <div className="copy-item-meta">
-                      <div className="meta-item">
-                        <FontAwesomeIcon icon={faCalendarAlt} />
-                        <span>{formatDate(copy.createdAt)}</span>
-                      </div>
-                      {copy.scriptContent?.files && (
-                        <div className="meta-item">
-                          <span>{copy.scriptContent.files.length} file(s)</span>
-                        </div>
-                      )}
-                    </div>
-                    {copy.scriptId && (
-                      <div className="copy-item-script-id">
-                        Script ID: {copy.scriptId.substring(0, 30)}...
-                      </div>
-                    )}
                   </div>
                 ))
               )}
             </div>
+            
+            {/* Version History Dropdown - Below project selector */}
+            {selectedCopy?.scriptId && (
+              <div className="version-dropdown-container">
+                <div className="sidebar-header version-header">
+                  <FontAwesomeIcon icon={faCodeBranch} />
+                  <span>Version History {loadingVersions && <FontAwesomeIcon icon={faSpinner} spin className="loading-spinner-small" />}</span>
+                </div>
+                <button 
+                  className="version-dropdown-toggle"
+                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
+                  disabled={loadingVersions}
+                >
+                  <span className="version-toggle-label">
+                    {loadingVersionContent ? 'Loading...' : selectedVersion ? `v${selectedVersion}` : 'Current (HEAD)'}
+                  </span>
+                  <FontAwesomeIcon 
+                    icon={showVersionDropdown ? faChevronUp : faChevronDown} 
+                    className="dropdown-chevron"
+                  />
+                </button>
+                
+                {showVersionDropdown && (
+                  <div className="version-dropdown-list">
+                    <div 
+                      className={`version-dropdown-item ${selectedVersion === null ? 'active' : ''}`}
+                      onClick={() => handleVersionSelect(null)}
+                    >
+                      <div className="version-item-header">
+                        <span className="version-number">Current (HEAD)</span>
+                      </div>
+                      <span className="version-description">Local working copy</span>
+                    </div>
+                    
+                    {versions.length === 0 && !loadingVersions && (
+                      <div className="version-dropdown-item version-empty">
+                        <span className="version-description">No versions found. Push with version enabled to create one.</span>
+                      </div>
+                    )}
+                    
+                    {versions.map((version) => (
+                      <div 
+                        key={version.versionNumber}
+                        className={`version-dropdown-item ${selectedVersion === version.versionNumber ? 'active' : ''}`}
+                        onClick={() => handleVersionSelect(version.versionNumber)}
+                      >
+                        <div className="version-item-header">
+                          <span className="version-number">v{version.versionNumber}</span>
+                          <span className="version-date">
+                            {new Date(version.createTime).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <span className="version-description">{version.description || 'No description'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Restore button when viewing a version */}
+                {selectedVersion !== null && versionContent && (
+                  <button 
+                    className="restore-version-button"
+                    onClick={handleRestoreVersion}
+                    title="Restore this version to local"
+                  >
+                    <FontAwesomeIcon icon={faUndo} />
+                    Restore v{selectedVersion} to Local
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Middle panel - Script content */}
@@ -972,71 +1516,81 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
               </div>
             ) : (
               <>
-                {/* File selector */}
-                <div className="file-selector">
-                  <div className="file-selector-header">
-                    <FontAwesomeIcon icon={faFileCode} />
-                    <span>Script Files</span>
+                {/* File tabs - shows version files or current files */}
+                <div className="file-selector-wrapper">
+                  {showScrollLeft && (
+                    <button className="scroll-button scroll-left" onClick={handleScrollLeft}>
+                      <FontAwesomeIcon icon={faChevronLeft} />
+                    </button>
+                  )}
+                  <div className="files-list" ref={filesListRef}>
+                    {/* Show version content files or current files */}
+                    {selectedVersion !== null && versionContent ? (
+                      versionContent.map((file, index) => (
+                        <div
+                          key={index}
+                          className={`file-item ${viewingVersionFile === file.name ? 'active' : ''}`}
+                          onClick={() => setViewingVersionFile(file.name)}
+                        >
+                          <FontAwesomeIcon icon={faFileCode} />
+                          <span>{file.name}</span>
+                          <span className="file-type">{file.type}</span>
+                        </div>
+                      ))
+                    ) : (
+                      selectedCopy.scriptContent.files.map((file, index) => (
+                        <div
+                          key={index}
+                          className={`file-item ${selectedFile === file.name ? 'active' : ''}`}
+                          onClick={() => setSelectedFile(file.name)}
+                        >
+                          <FontAwesomeIcon icon={faFileCode} />
+                          <span>{file.name}</span>
+                          <span className="file-type">{file.type}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
-                  <div className="files-list">
-                    {selectedCopy.scriptContent.files.map((file, index) => (
-                      <div
-                        key={index}
-                        className={`file-item ${selectedFile === file.name ? 'active' : ''}`}
-                        onClick={() => setSelectedFile(file.name)}
-                      >
-                        <FontAwesomeIcon icon={faFileCode} />
-                        <span>{file.name}</span>
-                        <span className="file-type">{file.type}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {showScrollRight && (
+                    <button className="scroll-button scroll-right" onClick={handleScrollRight}>
+                      <FontAwesomeIcon icon={faChevronRight} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Code viewer */}
                 <div className="code-viewer">
-                  <div className="code-viewer-header">
-                    <div className="code-header-left">
-                      <FontAwesomeIcon icon={faCode} />
-                      <span>{selectedFile || 'Select a file'}</span>
-                    </div>
-                    <div className="code-header-actions">
-                      {selectedCopy && (
-                        <button
-                          className="open-spreadsheet-button"
-                          onClick={() => {
-                            if (selectedCopy.spreadsheetUrl) {
-                              // Open in default browser
-                              window.open(selectedCopy.spreadsheetUrl, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
-                          title="Open spreadsheet in browser"
-                        >
-                          <FontAwesomeIcon icon={faExternalLinkAlt} />
-                          <span>Open Spreadsheet</span>
-                        </button>
-                      )}
-                      {selectedFile && getSelectedFileContent() && selectedCopy?.scriptId && (
-                        <button
-                          className="save-button"
-                          onClick={handleSave}
-                          title="Save changes to Apps Script (uses AppsScript tools)"
-                        >
-                          <FontAwesomeIcon icon={faSave} />
-                          Save
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="code-content">
-                    {selectedFile ? (
-                      <pre className="code-block">
-                        <code>{getSelectedFileContent() || 'No content available'}</code>
-                      </pre>
+
+                  <div className="code-content-script">
+                    {/* Show version content or current content */}
+                    {selectedVersion !== null ? (
+                      // Version content viewer
+                      loadingVersionContent ? (
+                        <div className="code-placeholder">
+                          <FontAwesomeIcon icon={faSpinner} spin />
+                          <p>Loading version content...</p>
+                        </div>
+                      ) : viewingVersionFile && versionContent ? (
+                        <CodeViewerWithLineNumbers
+                          code={versionContent.find(f => f.name === viewingVersionFile)?.source || 'No content available'}
+                          className="version-code"
+                        />
+                      ) : (
+                        <div className="code-placeholder">
+                          <p>Select a file from the list above to view its content</p>
+                        </div>
+                      )
                     ) : (
-                      <div className="code-placeholder">
-                        <p>Select a file from the list above to view its content</p>
-                      </div>
+                      // Current content viewer
+                      selectedFile ? (
+                        <CodeViewerWithLineNumbers
+                          code={getSelectedFileContent() || 'No content available'}
+                        />
+                      ) : (
+                        <div className="code-placeholder">
+                          <p>Select a file from the list above to view its content</p>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
@@ -1077,7 +1631,7 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                 {ollamaLoading
                   ? 'Checking...'
                   : ollamaReady
-                  ? '🟢 Ready'
+                  ? '🟢'
                   : '⚪ Setup Required'}
               </span>
             </div>
@@ -1216,6 +1770,112 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Run Function Dialog */}
+      {showRunDialog && (
+        <div className="run-dialog-overlay" onClick={closeRunDialog}>
+          <div className="run-dialog" onClick={e => e.stopPropagation()}>
+            <div className="run-dialog-header">
+              <h3>
+                <FontAwesomeIcon icon={faPlay} />
+                Run Function
+              </h3>
+              <button className="run-dialog-close" onClick={closeRunDialog}>
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            
+            <div className="run-dialog-content">
+              <div className="run-dialog-field">
+                <label>Select Function</label>
+                <div className="run-function-select-wrapper">
+                  <select
+                    value={functionToRun}
+                    onChange={(e) => setFunctionToRun(e.target.value)}
+                    className="run-function-select"
+                    autoFocus
+                  >
+                    <option value="">-- Select a function --</option>
+                    {availableFunctions.map((func) => (
+                      <option key={func} value={func}>
+                        {func}
+                      </option>
+                    ))}
+                  </select>
+                  <FontAwesomeIcon icon={faChevronDown} className="select-arrow" />
+                </div>
+                {availableFunctions.length === 0 ? (
+                  <p className="run-dialog-hint warning">
+                    No functions detected. Make sure your .gs files contain valid function declarations.
+                  </p>
+                ) : (
+                  <p className="run-dialog-hint">
+                    Found {availableFunctions.length} function{availableFunctions.length !== 1 ? 's' : ''} in project. Runs in devMode.
+                  </p>
+                )}
+              </div>
+
+              {runResult && (
+                <div className={`run-result ${runResult.success ? 'success' : 'error'}`}>
+                  <div className="run-result-header">
+                    {runResult.success ? (
+                      <>
+                        <FontAwesomeIcon icon={faCheckCircle} />
+                        <span>Success</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faTimes} />
+                        <span>Error</span>
+                      </>
+                    )}
+                  </div>
+                  {runResult.success ? (
+                    <pre className="run-result-content">
+                      {runResult.result !== undefined 
+                        ? JSON.stringify(runResult.result, null, 2) 
+                        : '(no return value)'}
+                    </pre>
+                  ) : (
+                    <p className="run-result-error">{runResult.error}</p>
+                  )}
+                  {runResult.logs && runResult.logs.length > 0 && (
+                    <div className="run-result-logs">
+                      <strong>Logs:</strong>
+                      {runResult.logs.map((log, i) => (
+                        <div key={i} className="log-line">{log}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="run-dialog-actions">
+              <button className="run-dialog-cancel" onClick={closeRunDialog}>
+                Cancel
+              </button>
+              <button
+                className="run-dialog-run"
+                onClick={handleRunFunction}
+                disabled={!functionToRun.trim() || isRunning}
+              >
+                {isRunning ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faPlay} />
+                    Run
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

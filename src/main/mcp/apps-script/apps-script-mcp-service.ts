@@ -102,11 +102,13 @@ export class AppsScriptMCPService implements IMCPService {
       },
       {
         name: 'apps_script_push_to_google',
-        description: 'Push local changes to the actual Google Apps Script project. This will overwrite the cloud version with local changes.',
+        description: 'Push local changes to the actual Google Apps Script project. This will overwrite the cloud version with local changes. Optionally creates an immutable version snapshot after pushing.',
         inputSchema: {
           type: 'object',
           properties: {
-            projectId: { type: 'string', description: 'The ID of the Apps Script project' }
+            projectId: { type: 'string', description: 'The ID of the Apps Script project' },
+            createVersion: { type: 'boolean', description: 'If true, creates an immutable version snapshot after pushing (default: false)' },
+            versionDescription: { type: 'string', description: 'Optional description for the version (only used if createVersion is true)' }
           },
           required: ['projectId']
         }
@@ -309,11 +311,19 @@ export class AppsScriptMCPService implements IMCPService {
           };
 
         case 'apps_script_push_to_google':
-          const pushResult = await this.service.pushToGoogle(args.projectId);
+          const pushResult = await this.service.pushToGoogle(
+            args.projectId,
+            args.createVersion,
+            args.versionDescription
+          );
           return {
             content: [{
               type: 'text',
-              text: pushResult.message
+              text: JSON.stringify({
+                success: true,
+                message: pushResult.message,
+                versionNumber: pushResult.versionNumber,
+              }, null, 2)
             }]
           };
 

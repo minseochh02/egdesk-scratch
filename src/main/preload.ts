@@ -683,6 +683,11 @@ export interface AppsScriptToolsAPI {
   partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>;
   renameFile: (scriptId: string, oldFileName: string, newFileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
   deleteFile: (scriptId: string, fileName: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  pushToGoogle: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; versionNumber?: number }; error?: string }>;
+  pullFromGoogle: (projectId: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; fileCount: number }; error?: string }>;
+  listVersions: (projectId: string) => Promise<{ success: boolean; data?: Array<{ versionNumber: number; description?: string; createTime: string }>; error?: string }>;
+  getVersionContent: (projectId: string, versionNumber: number) => Promise<{ success: boolean; data?: { files: Array<{ name: string; type: string; source: string }>; versionNumber: number }; error?: string }>;
+  runFunction: (scriptId: string, functionName: string, parameters?: any[]) => Promise<{ success: boolean; data?: { response?: { result?: any }; logs?: string[] }; error?: string }>;
 }
 
 /**
@@ -1583,6 +1588,11 @@ const electronHandler = {
     partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean, conversationId?: string) => ipcRenderer.invoke('apps-script-partial-edit', scriptId, fileName, oldString, newString, expectedReplacements, flexibleMatching, conversationId),
     renameFile: (scriptId: string, oldFileName: string, newFileName: string, conversationId?: string) => ipcRenderer.invoke('apps-script-rename-file', scriptId, oldFileName, newFileName, conversationId),
     deleteFile: (scriptId: string, fileName: string, conversationId?: string) => ipcRenderer.invoke('apps-script-delete-file', scriptId, fileName, conversationId),
+    pushToGoogle: (projectId: string, createVersion?: boolean, versionDescription?: string) => ipcRenderer.invoke('apps-script-push-to-google', projectId, createVersion, versionDescription),
+    pullFromGoogle: (projectId: string) => ipcRenderer.invoke('apps-script-pull-from-google', projectId),
+    listVersions: (projectId: string) => ipcRenderer.invoke('apps-script-list-versions', projectId),
+    getVersionContent: (projectId: string, versionNumber: number) => ipcRenderer.invoke('apps-script-get-version-content', projectId, versionNumber),
+    runFunction: (scriptId: string, functionName: string, parameters?: any[]) => ipcRenderer.invoke('apps-script-run-function', scriptId, functionName, parameters),
   } as AppsScriptToolsAPI,
   
   // ========================================================================

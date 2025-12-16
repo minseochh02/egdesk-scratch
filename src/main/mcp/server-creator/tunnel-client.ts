@@ -18,6 +18,7 @@ interface TunnelConfig {
   reconnectInterval?: number;
   autoPrompt?: boolean;
   skipRegistration?: boolean;
+  authToken?: string;  // User's access token for authenticated API calls
 }
 
 interface TunnelRequest {
@@ -61,7 +62,7 @@ interface RegistrationResponse {
   name: string;
   id: string;
   server_key?: string;
-  ip: string;
+  owner_id?: string;
   created_at: string;
   is_reregistration?: boolean;
   error?: string;
@@ -133,6 +134,7 @@ export class TunnelClient {
   private serverName: string | null = null;
   private registrationId: string | null = null;
   private activeStreamRequests: Map<string, http.ClientRequest> = new Map();
+  private authToken: string | null = null;
 
   constructor(config: TunnelConfig) {
     this.config = {
@@ -144,6 +146,7 @@ export class TunnelClient {
     // Store tunnel server URL
     this.tunnelServerUrl = config.tunnelServerUrl;
     this.serverName = config.serverName || null;
+    this.authToken = config.authToken || null;
   }
 
   /**
@@ -240,12 +243,19 @@ export class TunnelClient {
       const url = `${this.tunnelServerUrl}/permissions`;
       const postData = JSON.stringify(request);
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData).toString(),
+      };
+      
+      // Include auth token if available
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
       const response = await this.makeHttpRequest(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData).toString(),
-        },
+        headers,
         body: postData,
       });
 
@@ -271,11 +281,18 @@ export class TunnelClient {
     try {
       const url = `${this.tunnelServerUrl}/permissions/${encodeURIComponent(serverKey)}`;
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Include auth token if available
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
       const response = await this.makeHttpRequest(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
       });
 
       const result = JSON.parse(response.body);
@@ -304,12 +321,19 @@ export class TunnelClient {
       const url = `${this.tunnelServerUrl}/permissions/${encodeURIComponent(permissionId)}`;
       const postData = JSON.stringify(updates);
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData).toString(),
+      };
+      
+      // Include auth token if available
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
       const response = await this.makeHttpRequest(url, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData).toString(),
-        },
+        headers,
         body: postData,
       });
 
@@ -335,11 +359,18 @@ export class TunnelClient {
     try {
       const url = `${this.tunnelServerUrl}/permissions/${encodeURIComponent(permissionId)}`;
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Include auth token if available
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
       const response = await this.makeHttpRequest(url, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
       });
 
       const result = JSON.parse(response.body);
@@ -429,7 +460,7 @@ export class TunnelClient {
         console.log(`   Name: ${result.name}`);
         console.log(`   Server Key: ${result.server_key || server_key}`);
         console.log(`   ID: ${result.id}`);
-        console.log(`   IP: ${result.ip}`);
+        console.log(`   Owner ID: ${result.owner_id || 'N/A'}`);
         console.log(`   Registered at: ${result.created_at}`);
         return true;
       } else if (response.statusCode === 409) {
