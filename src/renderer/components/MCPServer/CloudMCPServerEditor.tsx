@@ -380,6 +380,26 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     }
   };
 
+  // Helper: prefer MCP tool call, fall back to IPC AppsScriptTools
+  const callListVersions = async (projectId: string) => {
+    const mcpCall = (window as any)?.electron?.mcp?.callTool;
+    if (typeof mcpCall === 'function') {
+      console.log('🧰 Using MCP tool: apps_script_list_versions');
+      try {
+        const mcpResult = await mcpCall('apps_script_list_versions', { projectId });
+        console.log('🧰 MCP list_versions result:', mcpResult);
+        return { source: 'mcp', result: mcpResult };
+      } catch (err) {
+        console.warn('⚠️ MCP list_versions failed, falling back to IPC:', err);
+      }
+    }
+
+    console.log('🧰 Using IPC appsScriptTools.listVersions');
+    const ipcResult = await (window.electron as any).appsScriptTools.listVersions(projectId);
+    console.log('🧰 IPC appsScriptTools.listVersions result:', ipcResult);
+    return { source: 'ipc', result: ipcResult };
+  };
+
   // Load versions for the selected project
   const loadVersions = async () => {
     if (!selectedCopy?.id) return;
@@ -387,15 +407,38 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     setLoadingVersions(true);
     try {
       console.log('📜 Loading versions...');
-      const result = await (window.electron as any).appsScriptTools.listVersions(selectedCopy.id);
+      const { source, result } = await callListVersions(selectedCopy.id);
       
-      if (result.success && result.data) {
-        // Sort by version number descending (newest first)
-        const sortedVersions = [...result.data].sort((a, b) => b.versionNumber - a.versionNumber);
+      if (result?.success ?? !result?.error) {
+        console.log(`✅ listVersions succeeded via ${source}`);
+
+        // Normalize all known response shapes
+        let versionsData: any = result.data ?? result;
+
+        // 1) Raw MCP text content
+        if (versionsData?.content?.[0]?.text) {
+          try {
+            const parsed = JSON.parse(versionsData.content[0].text);
+            versionsData = parsed.versions || parsed || [];
+          } catch {
+            versionsData = [];
+          }
+        }
+        // 2) useMCPTools parsed object with versions
+        else if (versionsData?.content && typeof versionsData.content === 'object' && !Array.isArray(versionsData.content)) {
+          versionsData = versionsData.content.versions || versionsData.content || [];
+        }
+        // 3) Direct { versions: [...] }
+        else if (versionsData?.versions) {
+          versionsData = versionsData.versions;
+        }
+
+        const normalized = Array.isArray(versionsData) ? versionsData : [];
+        const sortedVersions = [...normalized].sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
         setVersions(sortedVersions);
         console.log(`✅ Loaded ${sortedVersions.length} versions`);
       } else {
-        console.warn('Failed to load versions:', result.error);
+        console.warn(`Failed to load versions via ${source}:`, result?.error);
         setVersions([]);
       }
     } catch (err) {
@@ -419,12 +462,29 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
       const result = await (window.electron as any).appsScriptTools.getVersionContent(selectedCopy.id, versionNumber);
       
       if (result.success && result.data) {
-        setVersionContent(result.data.files);
-        // Auto-select first file
-        if (result.data.files.length > 0) {
-          setViewingVersionFile(result.data.files[0].name);
+        let filesData: any = result.data;
+
+        // Handle different response shapes
+        if (filesData?.content?.[0]?.text) {
+          try {
+            const parsed = JSON.parse(filesData.content[0].text);
+            filesData = parsed.files || [];
+          } catch {
+            filesData = [];
+          }
+        } else if (filesData?.content && typeof filesData.content === 'object' && !Array.isArray(filesData.content)) {
+          filesData = filesData.content.files || [];
+        } else if (filesData?.files) {
+          filesData = filesData.files;
         }
-        console.log(`✅ Loaded ${result.data.files.length} files from version ${versionNumber}`);
+
+        const normalizedFiles = Array.isArray(filesData) ? filesData : [];
+        setVersionContent(normalizedFiles);
+        // Auto-select first file
+        if (normalizedFiles.length > 0) {
+          setViewingVersionFile(normalizedFiles[0].name);
+        }
+        console.log(`✅ Loaded ${normalizedFiles.length} files from version ${versionNumber}`);
       } else {
         console.warn('Failed to load version content:', result.error);
         alert(`Failed to load version content: ${result.error}`);

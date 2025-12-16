@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { SQLiteTemplateCopiesManager, TemplateCopy } from '../../sqlite/template-copies';
 import { randomUUID } from 'crypto';
 import { getAuthService } from '../../auth/auth-service';
+import path from 'path';
+import { app } from 'electron';
 
 export interface FileInfo {
   name: string;
@@ -22,10 +24,28 @@ export interface FileInfo {
 export class AppsScriptService {
   private db: Database.Database;
   private copiesManager: SQLiteTemplateCopiesManager;
+  private static instance: AppsScriptService | null = null;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
     this.copiesManager = new SQLiteTemplateCopiesManager(this.db);
+  }
+
+  /**
+   * Singleton accessor used by IPC handlers.
+   * Falls back to userData/database/cloudmcp.db or CLOUDMCP_DB_PATH env.
+   */
+  static getInstance(dbPath?: string): AppsScriptService {
+    if (!AppsScriptService.instance) {
+      const resolvedPath =
+        dbPath ||
+        process.env.CLOUDMCP_DB_PATH ||
+        (app ? path.join(app.getPath('userData'), 'database', 'cloudmcp.db') : '/Users/minseocha/Library/Application Support/egdesk/database/cloudmcp.db');
+
+      AppsScriptService.instance = new AppsScriptService(resolvedPath);
+      console.log(`🗄️ AppsScriptService initialized with DB: ${resolvedPath}`);
+    }
+    return AppsScriptService.instance;
   }
 
   /**
