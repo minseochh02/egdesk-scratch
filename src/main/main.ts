@@ -257,11 +257,42 @@ class AppUpdater {
   // Public method to quit and install (called from renderer)
   public quitAndInstall(): void {
     log.info('Quitting and installing update...');
-    // isSilent: false (show installer dialog on Windows)
-    // isForceRunAfter: true (force app to restart after install, especially needed on macOS)
-    autoUpdater.quitAndInstall(false, true);
+    
+    // Set flag to indicate we're updating (skip cleanup that might block quit)
+    isUpdating = true;
+    
+    // Ensure all windows are closable (important for update to work)
+    const windows = BrowserWindow.getAllWindows();
+    windows.forEach((win) => {
+      win.setClosable(true);
+      win.removeAllListeners('close');
+    });
+    
+    // On macOS without code signing, auto-restart may not work
+    // Show a dialog informing the user
+    if (process.platform === 'darwin') {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Installing',
+        message: 'The app will now close to install the update.',
+        detail: 'Please reopen EGDesk after it closes to use the new version.',
+        buttons: ['OK']
+      }).then(() => {
+        autoUpdater.quitAndInstall(false, true);
+        app.exit(0);
+      });
+    } else {
+      // Windows - auto-restart usually works
+      setTimeout(() => {
+        autoUpdater.quitAndInstall(false, true);
+        app.exit(0);
+      }, 100);
+    }
   }
 }
+
+// Flag to track if we're in the middle of an update
+let isUpdating = false;
 
 let mainWindow: BrowserWindow | null = null;
 let browserController: BrowserController;
@@ -2415,7 +2446,8 @@ const createWindow = async () => {
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even
   // after all windows have been closed
-  if (process.platform !== 'darwin') {
+  // BUT if we're updating, quit the app so the update can install
+  if (process.platform !== 'darwin' || isUpdating) {
     app.quit();
   }
 });
@@ -2444,6 +2476,12 @@ app.on('activate', async () => {
 });
 
 app.on('before-quit', async () => {
+  // If we're updating, skip cleanup to allow quick restart
+  if (isUpdating) {
+    log.info('Skipping cleanup - app is updating...');
+    return;
+  }
+
   const store = getStore();
   // Cleanup tunnels and clear stored config
   try {

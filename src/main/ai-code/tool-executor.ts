@@ -545,5 +545,80 @@ export function registerAppsScriptToolHandlers(): void {
     }
   });
 
+  // Push to Google Apps Script
+  ipcMain.handle('apps-script-push-to-google', async (event, projectId: string, createVersion?: boolean, versionDescription?: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pushToGoogle(projectId, createVersion, versionDescription);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Pull from Google Apps Script
+  ipcMain.handle('apps-script-pull-from-google', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pullFromGoogle(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // List versions of a script
+  ipcMain.handle('apps-script-list-versions', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.listVersions(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Get content at a specific version
+  ipcMain.handle('apps-script-get-version-content', async (event, projectId: string, versionNumber: number) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.getVersionContent(projectId, versionNumber);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Run a function in the Apps Script project
+  ipcMain.handle('apps-script-run-function', async (event, scriptId: string, functionName: string, parameters?: any[]) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.runFunction(scriptId, functionName, parameters);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
   console.log('✅ AppsScript tool IPC handlers registered');
 }

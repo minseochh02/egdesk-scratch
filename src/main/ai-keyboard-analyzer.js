@@ -1,8 +1,10 @@
 // AI Keyboard Analyzer
-// This file contains AI-powered keyboard analysis and typing functionality using segmentation masks
+// This file contains AI-powered keyboard analysis and typing functionality using Gemini 3 Vision
 
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenAI } = require('@google/genai');
+const { getStore } = require('./storage');
 
 // ============================================================================
 // TYPES AND INTERFACES
@@ -33,53 +35,146 @@ const path = require('path');
  */
 
 // ============================================================================
-// SEGMENTATION MASK ANALYSIS
+// GEMINI 3 API KEY MANAGEMENT
 // ============================================================================
 
 /**
- * Analyzes an image using segmentation masks to detect keyboard keys
+ * Gets the Gemini API key from environment or electron-store
+ * Uses the same pattern as other parts of the codebase (ai-search.ts, gemini/index.ts)
+ * @returns {string|null} API key or null if not found
+ */
+function getGeminiApiKey() {
+  // Try environment variable first
+  if (process.env.GEMINI_API_KEY && typeof process.env.GEMINI_API_KEY === 'string') {
+    return process.env.GEMINI_API_KEY.trim();
+  }
+  
+  // Try electron-store via getStore helper (same pattern as gemini/index.ts)
+  try {
+    const store = getStore?.();
+    if (!store) {
+      console.warn('[AI-KEYBOARD] Store not available');
+      return null;
+    }
+    
+    const aiKeys = store.get('ai-keys', []);
+    if (!Array.isArray(aiKeys)) {
+      console.warn('[AI-KEYBOARD] AI keys not found or not an array');
+      return null;
+    }
+    
+    // Find preferred key: egdesk > active > any google key (same logic as gemini/index.ts)
+    const preferred =
+      aiKeys.find(k => (k?.name || '').toLowerCase() === 'egdesk' && k?.providerId === 'google') ??
+      aiKeys.find(k => k?.providerId === 'google' && k?.isActive) ??
+      aiKeys.find(k => k?.providerId === 'google' && k?.fields?.apiKey);
+    
+    if (preferred) {
+      const apiKey = preferred?.fields?.apiKey;
+      if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+        return apiKey.trim();
+      }
+    }
+  } catch (error) {
+    console.warn('[AI-KEYBOARD] Failed to get API key from store:', error);
+  }
+  
+  return null;
+}
+
+// ============================================================================
+// GEMINI 3 VISION ANALYSIS
+// ============================================================================
+
+/**
+ * Analyzes an image using Gemini 3 Vision to detect keyboard keys
  * @param {string} imagePath - Path to the image file
- * @param {string} apiKey - Roboflow API key
+ * @param {string} apiKey - Gemini API key (optional, will use stored key if not provided)
  * @param {string} targetItems - What to detect (e.g., "keyboard keys", "all objects")
  * @returns {Promise<SegmentationMask[]>} Array of segmentation results
  */
 async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboard keys') {
   try {
-    console.log('[AI-KEYBOARD] Starting segmentation analysis with Roboflow...');
+    console.log('[AI-KEYBOARD] Starting keyboard analysis with Gemini 3 Vision...');
+    
+    // Get API key
+    const effectiveApiKey = apiKey || getGeminiApiKey();
+    if (!effectiveApiKey) {
+      throw new Error('Gemini API key not found. Set GEMINI_API_KEY environment variable or configure in AI Keys Manager.');
+    }
+    
+    // Initialize Gemini 3 client
+    const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
     
     // Read image file and convert to base64
     const imageData = fs.readFileSync(imagePath);
     const base64Image = imageData.toString('base64');
     
-    // Prepare Roboflow API request
-    const roboflowEndpoint = 'https://serverless.roboflow.com/visionmodeltest/workflows/custom-workflow-2';
+    // Determine MIME type from file extension
+    const ext = path.extname(imagePath).toLowerCase();
+    const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
     
-    console.log('[AI-KEYBOARD] Sending request to Roboflow endpoint...');
+    console.log('[AI-KEYBOARD] Sending request to Gemini 3 Vision API...');
+    console.log('[AI-KEYBOARD] Image size:', imageData.length, 'bytes');
     
-    // Send request to Roboflow
-    const response = await fetch(roboflowEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        api_key: apiKey,
-        inputs: {
-          image: {
-            type: 'base64',
-            value: base64Image
-          }
+    // Prepare the prompt for keyboard detection
+    const prompt = `Analyze this virtual keyboard image. Detect ALL keys visible on the keyboard.
+
+For each key, return:
+1. The key's label/character (what's written on the key - including Korean characters like ㅏ, ㅓ, ㄱ, ㄴ, etc.)
+2. The bounding box coordinates as [ymin, xmin, ymax, xmax] normalized to 0-1000 scale
+
+Return your response as a JSON array with this exact format:
+{
+  "keys": [
+    {
+      "label": "a / ㅏ",
+      "box_2d": [ymin, xmin, ymax, xmax]
+    },
+    {
+      "label": "shift",
+      "box_2d": [ymin, xmin, ymax, xmax]
+    }
+  ]
+}
+
+Important:
+- Include ALL keys: letters, numbers, special characters, shift, enter, space, backspace, etc.
+- For Korean keyboard layouts, include both English and Korean characters on dual-character keys
+- Coordinates should be normalized: 0 = top/left edge, 1000 = bottom/right edge
+- Be precise with bounding boxes - they should tightly fit each key
+- Return ONLY the JSON, no other text`;
+
+    // Send request to Gemini 3
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            { 
+              inlineData: { 
+                mimeType: mimeType, 
+                data: base64Image 
+              } 
+            }
+          ]
         }
-      })
+      ],
+      generationConfig: {
+        temperature: 0.1, // Low temperature for precise detection
+        maxOutputTokens: 8192,
+      }
     });
     
-    if (!response.ok) {
-      throw new Error(`Roboflow API error: ${response.status} ${response.statusText}`);
-    }
+    // Extract text response
+    const responseText = response.text || 
+      (response.candidates?.[0]?.content?.parts?.[0]?.text) || 
+      '';
     
-    const result = await response.json();
+    console.log('[AI-KEYBOARD] Gemini 3 response received, length:', responseText.length);
     
-    // Save raw response to JSON file for inspection
+    // Save raw response for debugging
     try {
       const debugDir = path.join(process.cwd(), 'output', 'debug');
       if (!fs.existsSync(debugDir)) {
@@ -87,137 +182,83 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
       }
       
       const timestamp = Date.now();
-      const rawResponsePath = path.join(debugDir, `roboflow-raw-response-${timestamp}.json`);
-      fs.writeFileSync(rawResponsePath, JSON.stringify(result, null, 2));
-      console.log('[AI-KEYBOARD] Raw Roboflow response saved to:', rawResponsePath);
+      const rawResponsePath = path.join(debugDir, `gemini3-raw-response-${timestamp}.json`);
+      fs.writeFileSync(rawResponsePath, JSON.stringify({ 
+        responseText,
+        model: 'gemini-3-pro-preview',
+        timestamp: new Date().toISOString()
+      }, null, 2));
+      console.log('[AI-KEYBOARD] Raw Gemini 3 response saved to:', rawResponsePath);
     } catch (saveError) {
       console.warn('[AI-KEYBOARD] Failed to save raw response:', saveError);
     }
     
-    // Parse Roboflow response and convert to expected format
-    // Roboflow response format may vary - adjust based on actual response structure
-    let segmentations = [];
-    
-    // Check if result has predictions or detections
-    if (result.outputs && Array.isArray(result.outputs)) {
-      // Handle workflow outputs format
-      console.log('[AI-KEYBOARD] Found outputs array, length:', result.outputs.length);
-      const outputs = result.outputs;
-      for (const output of outputs) {
-        // Check for model_predictions (Roboflow workflow format)
-        if (output.model_predictions && output.model_predictions.predictions && Array.isArray(output.model_predictions.predictions)) {
-          const predictions = output.model_predictions.predictions;
-          const imageWidth = output.model_predictions.image?.width || 1;
-          const imageHeight = output.model_predictions.image?.height || 1;
-          
-          console.log('[AI-KEYBOARD] Found predictions in model_predictions, count:', predictions.length);
-          console.log('[AI-KEYBOARD] Image dimensions:', imageWidth, 'x', imageHeight);
-          
-          segmentations = predictions.map((pred, idx) => {
-            // Convert Roboflow format to expected format
-            // Roboflow returns {x, y, width, height, class, confidence}
-            // We need to convert to {box_2d: [ymin, xmin, ymax, xmax], mask, label}
-            
-            const x = pred.x || 0;
-            const y = pred.y || 0;
-            const width = pred.width || 0;
-            const height = pred.height || 0;
-            
-            // Convert center coordinates to corner coordinates
-            const xmin = x - width / 2;
-            const ymin = y - height / 2;
-            const xmax = x + width / 2;
-            const ymax = y + height / 2;
-            
-            // Normalize to 0-1000 range (Roboflow returns pixel coordinates)
-            const normalizedXmin = (xmin / imageWidth) * 1000;
-            const normalizedYmin = (ymin / imageHeight) * 1000;
-            const normalizedXmax = (xmax / imageWidth) * 1000;
-            const normalizedYmax = (ymax / imageHeight) * 1000;
-            
-            return {
-              box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
-              mask: '', // Roboflow object detection doesn't provide masks
-              label: pred.class || pred.label || `key_${idx}`
-            };
-          });
-          console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from model_predictions');
-          break;
-        }
-        // Fallback: check for direct predictions array (older format)
-        else if (output.predictions && Array.isArray(output.predictions)) {
-          console.log('[AI-KEYBOARD] Found predictions in output, count:', output.predictions.length);
-          segmentations = output.predictions.map((pred, idx) => {
-            const x = pred.x || 0;
-            const y = pred.y || 0;
-            const width = pred.width || 0;
-            const height = pred.height || 0;
-            
-            const xmin = x - width / 2;
-            const ymin = y - height / 2;
-            const xmax = x + width / 2;
-            const ymax = y + height / 2;
-            
-            const imageWidth = pred.image_width || 1;
-            const imageHeight = pred.image_height || 1;
-            
-            const normalizedXmin = (xmin / imageWidth) * 1000;
-            const normalizedYmin = (ymin / imageHeight) * 1000;
-            const normalizedXmax = (xmax / imageWidth) * 1000;
-            const normalizedYmax = (ymax / imageHeight) * 1000;
-            
-            return {
-              box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
-              mask: '',
-              label: pred.class || pred.label || `key_${idx}`
-            };
-          });
-          console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from outputs');
-          break;
-        }
+    // Parse JSON from response
+    let parsedResult;
+    try {
+      // Try to extract JSON from the response (handle markdown code blocks)
+      let jsonStr = responseText;
+      
+      // Remove markdown code blocks if present
+      const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1].trim();
       }
-    } else if (result.predictions && Array.isArray(result.predictions)) {
-      // Handle direct predictions format
-      console.log('[AI-KEYBOARD] Found direct predictions array, count:', result.predictions.length);
-      segmentations = result.predictions.map((pred, idx) => {
-        const x = pred.x || 0;
-        const y = pred.y || 0;
-        const width = pred.width || 0;
-        const height = pred.height || 0;
-        
-        const xmin = x - width / 2;
-        const ymin = y - height / 2;
-        const xmax = x + width / 2;
-        const ymax = y + height / 2;
-        
-        const imageWidth = pred.image_width || 1;
-        const imageHeight = pred.image_height || 1;
-        
-        const normalizedXmin = (xmin / imageWidth) * 1000;
-        const normalizedYmin = (ymin / imageHeight) * 1000;
-        const normalizedXmax = (xmax / imageWidth) * 1000;
-        const normalizedYmax = (ymax / imageHeight) * 1000;
-        
-        return {
-          box_2d: [normalizedYmin, normalizedXmin, normalizedYmax, normalizedXmax],
-          mask: pred.mask || '',
-          label: pred.class || pred.label || `key_${idx}`
-        };
-      });
-      console.log('[AI-KEYBOARD] Mapped', segmentations.length, 'predictions from direct predictions');
-    } else {
-      console.warn('[AI-KEYBOARD] ⚠️ Could not find predictions in response!');
-      console.warn('[AI-KEYBOARD] Available top-level keys:', Object.keys(result));
+      
+      // Clean up any trailing/leading whitespace
+      jsonStr = jsonStr.trim();
+      
+      parsedResult = JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.error('[AI-KEYBOARD] Failed to parse Gemini 3 response as JSON:', parseError);
+      console.error('[AI-KEYBOARD] Response text:', responseText.substring(0, 500));
+      throw new Error(`Failed to parse Gemini 3 response: ${parseError.message}`);
     }
     
-    console.log('[AI-KEYBOARD] Successfully analyzed image, found', segmentations.length, 'objects');
+    // Convert to expected segmentation format
+    const keys = parsedResult.keys || parsedResult || [];
+    
+    if (!Array.isArray(keys)) {
+      console.warn('[AI-KEYBOARD] Unexpected response format, keys is not an array');
+      throw new Error('Gemini 3 response does not contain a valid keys array');
+    }
+    
+    const segmentations = keys.map((key, idx) => {
+      // Validate box_2d format
+      let box_2d = key.box_2d || key.bbox || key.bounds || [0, 0, 100, 100];
+      
+      // Ensure it's an array of 4 numbers
+      if (!Array.isArray(box_2d) || box_2d.length !== 4) {
+        console.warn(`[AI-KEYBOARD] Invalid box_2d for key ${key.label}, using default`);
+        box_2d = [0, 0, 100, 100];
+      }
+      
+      return {
+        box_2d: box_2d.map(v => Number(v) || 0), // [ymin, xmin, ymax, xmax]
+        mask: '', // Gemini doesn't provide masks
+        label: key.label || key.character || key.text || `key_${idx}`
+      };
+    });
+    
+    console.log('[AI-KEYBOARD] Successfully analyzed image with Gemini 3, found', segmentations.length, 'keys');
+    
+    // Log some detected keys for verification
+    if (segmentations.length > 0) {
+      console.log('[AI-KEYBOARD] Sample detected keys:');
+      segmentations.slice(0, 5).forEach((seg, i) => {
+        console.log(`  ${i + 1}. "${seg.label}" at [${seg.box_2d.join(', ')}]`);
+      });
+      if (segmentations.length > 5) {
+        console.log(`  ... and ${segmentations.length - 5} more keys`);
+      }
+    }
     
     // Save parsed segmentations for debugging
     if (segmentations.length > 0) {
       try {
         const debugDir = path.join(process.cwd(), 'output', 'debug');
         const timestamp = Date.now();
-        const parsedPath = path.join(debugDir, `roboflow-parsed-segmentations-${timestamp}.json`);
+        const parsedPath = path.join(debugDir, `gemini3-parsed-segmentations-${timestamp}.json`);
         fs.writeFileSync(parsedPath, JSON.stringify(segmentations, null, 2));
         console.log('[AI-KEYBOARD] Parsed segmentations saved to:', parsedPath);
       } catch (saveError) {
@@ -227,9 +268,9 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
     
     return segmentations;
   } catch (error) {
-    console.error('[AI-KEYBOARD] Error analyzing image segmentation:', error);
+    console.error('[AI-KEYBOARD] Error analyzing image with Gemini 3:', error);
     
-    // Save the problematic response for debugging
+    // Save error details for debugging
     try {
       const debugDir = path.join(process.cwd(), 'output', 'debug');
       if (!fs.existsSync(debugDir)) {
@@ -239,11 +280,12 @@ async function analyzeImageSegmentation(imagePath, apiKey, targetItems = 'keyboa
       const debugData = {
         timestamp: new Date().toISOString(),
         imagePath: imagePath,
+        model: 'gemini-3-pro-preview',
         error: error.message,
         errorStack: error.stack
       };
       
-      const debugPath = path.join(debugDir, `roboflow-error-${Date.now()}.json`);
+      const debugPath = path.join(debugDir, `gemini3-error-${Date.now()}.json`);
       fs.writeFileSync(debugPath, JSON.stringify(debugData, null, 2));
       console.log('[AI-KEYBOARD] Saved error debug data to:', debugPath);
     } catch (debugError) {
@@ -699,7 +741,7 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
 /**
  * Main function to analyze keyboard and type text
  * @param {string} imagePath - Path to keyboard screenshot
- * @param {string} apiKey - Roboflow API key
+ * @param {string} apiKey - Gemini API key (optional, will use stored key if not provided)
  * @param {Object} targetImageBox - Target image bounding box
  * @param {string} textToType - Text to type on keyboard
  * @param {Object} page - Playwright page object (optional)

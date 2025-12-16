@@ -42,7 +42,7 @@ export interface TunnelRegistrationResult {
   status: 'registered' | 'name_taken' | 'error';
   message?: string;
   name?: string;
-  ip?: string;
+  ownerId?: string;  // User ID who owns this server
   timestamp?: string;
   id?: string;
   ownerPermissionAdded?: boolean;
@@ -157,7 +157,7 @@ export async function registerServerName(
         success: true,
         status: 'registered',
         name: data.name,
-        ip: data.ip,
+        ownerId: data.owner_id,
         timestamp: data.created_at,
         id: data.id,
         ownerPermissionAdded: data.owner_permission_added,
@@ -470,14 +470,31 @@ export function stopAllTunnels(): void {
 }
 
 /**
+ * Get current user's auth token for authenticated API calls
+ */
+async function getAuthToken(): Promise<string | undefined> {
+  try {
+    const authService = getAuthService();
+    const { session } = await authService.getSession();
+    return session?.access_token;
+  } catch (err) {
+    console.error('❌ Failed to get auth token:', err);
+    return undefined;
+  }
+}
+
+/**
  * Add permissions to a server
  * Creates a temporary client to make the request
  */
 export async function addPermissions(request: AddPermissionsRequest): Promise<AddPermissionsResponse> {
+  const authToken = await getAuthToken();
+  
   const client = new TunnelClient({
     tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
-    autoPrompt: false
+    autoPrompt: false,
+    authToken,
   });
   
   return await client.addPermissions(request);
@@ -487,10 +504,13 @@ export async function addPermissions(request: AddPermissionsRequest): Promise<Ad
  * Get permissions for a server
  */
 export async function getPermissions(serverKey: string): Promise<GetPermissionsResponse> {
+  const authToken = await getAuthToken();
+  
   const client = new TunnelClient({
     tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
-    autoPrompt: false
+    autoPrompt: false,
+    authToken,
   });
   
   return await client.getPermissions(serverKey);
@@ -503,10 +523,13 @@ export async function updatePermission(
   permissionId: string, 
   updates: UpdatePermissionRequest
 ): Promise<UpdatePermissionResponse> {
+  const authToken = await getAuthToken();
+  
   const client = new TunnelClient({
     tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
-    autoPrompt: false
+    autoPrompt: false,
+    authToken,
   });
   
   return await client.updatePermission(permissionId, updates);
@@ -516,10 +539,13 @@ export async function updatePermission(
  * Revoke a permission
  */
 export async function revokePermission(permissionId: string): Promise<DeletePermissionResponse> {
+  const authToken = await getAuthToken();
+  
   const client = new TunnelClient({
     tunnelServerUrl: getTunnelServerUrl(),
     localServerUrl: 'http://localhost:8080', // Not used for permissions
-    autoPrompt: false
+    autoPrompt: false,
+    authToken,
   });
   
   return await client.revokePermission(permissionId);

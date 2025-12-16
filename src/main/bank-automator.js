@@ -4,10 +4,62 @@ const fs = require('fs');
 const { analyzeKeyboardAndType } = require('./ai-keyboard-analyzer');
 const { generateKeyboardVisualization } = require('./keyboard-visualization');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('./bilingual-keyboard-parser');
+const { getStore } = require('./storage');
 
 
-// Roboflow Custom Vision API
-// API Key should be set in environment variable: ROBOFLOW_API_KEY
+// Gemini 3 Vision API for keyboard detection
+// API Key can be set via:
+// 1. Environment variable: GEMINI_API_KEY
+// 2. Debug panel / AI Keys Manager (stored in electron-store)
+
+/**
+ * Gets the Gemini API key from environment or electron-store
+ * Uses the same pattern as other parts of the codebase (ai-search.ts, gemini/index.ts)
+ * @returns {string|null} API key or null if not found
+ */
+function getGeminiApiKey() {
+  // Try environment variable first
+  if (process.env.GEMINI_API_KEY && typeof process.env.GEMINI_API_KEY === 'string') {
+    console.log('[SHINHAN] Using Gemini API key from environment variable');
+    return process.env.GEMINI_API_KEY.trim();
+  }
+  
+  // Try electron-store via getStore helper (same pattern as gemini/index.ts)
+  try {
+    const store = getStore?.();
+    if (!store) {
+      console.warn('[SHINHAN] Store not available');
+      return null;
+    }
+    
+    const aiKeys = store.get('ai-keys', []);
+    if (!Array.isArray(aiKeys)) {
+      console.warn('[SHINHAN] AI keys not found or not an array');
+      return null;
+    }
+    
+    // Find preferred key: egdesk > active > any google key (same logic as gemini/index.ts)
+    const preferred =
+      aiKeys.find(k => (k?.name || '').toLowerCase() === 'egdesk' && k?.providerId === 'google') ??
+      aiKeys.find(k => k?.providerId === 'google' && k?.isActive) ??
+      aiKeys.find(k => k?.providerId === 'google' && k?.fields?.apiKey);
+    
+    if (preferred) {
+      const apiKey = preferred?.fields?.apiKey;
+      if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+        const keyPreview = `${apiKey.trim().substring(0, 8)}...${apiKey.trim().substring(apiKey.trim().length - 4)}`;
+        console.log('[SHINHAN] Using Gemini API key from AI Keys Manager:', preferred.name || 'unnamed', '- Key:', keyPreview);
+        return apiKey.trim();
+      }
+    }
+    
+    console.warn('[SHINHAN] No Google API key found in AI Keys Manager');
+  } catch (error) {
+    console.warn('[SHINHAN] Failed to get API key from store:', error.message);
+  }
+  
+  return null;
+}
 
 // Simple debug visualization without external dependencies
 
@@ -23,7 +75,14 @@ const CONFIG = {
   XPATHS: {
     ID_INPUT: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/input',
     PASSWORD_INPUT: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/div/input[1]',
-    KEYBOARD: '/html/body/div[6]/div[1]',
+    // Transkey virtual keyboard - LOWER keyboard (default, lowercase letters)
+    KEYBOARD_LOWER: '//div[@id="비밀번호_layoutLower"]',
+    KEYBOARD_LOWER_ALT: '//div[contains(@id, "_layoutLower") and contains(@class, "transkey_lower")]',
+    KEYBOARD_LOWER_CLASS: '//div[contains(@class, "transkey_lower")]',
+    // Transkey virtual keyboard - UPPER keyboard (after pressing shift, uppercase letters)
+    KEYBOARD_UPPER: '//div[@id="비밀번호_layoutUpper"]',
+    KEYBOARD_UPPER_ALT: '//div[contains(@id, "_layoutUpper") and contains(@class, "transkey_upper")]',
+    KEYBOARD_UPPER_CLASS: '//div[contains(@class, "transkey_upper")]',
     SECURITY_POPUP: '//div[@id="wq_uuid_28" and contains(@class, "layerContent")]',
     SECURITY_POPUP_CLOSE: '//a[@id="no_install" and contains(@class, "btnTyGray02")]',
     SECURITY_POPUP_ALT: '//div[contains(@class, "layerContent") and contains(., "보안프로그램")]',
@@ -742,57 +801,228 @@ async function runShinhanAutomation(username, password, id, proxyUrl) {
     // Wait a bit more for any remaining popups to settle
     await page.waitForTimeout(2000);
     
-    // Fill input fields
+    // Step 1: Fill only the ID field (can be filled directly)
     await fillInputField(page, CONFIG.XPATHS.ID_INPUT, id, 'Sinhan ID');
-    await fillInputField(page, CONFIG.XPATHS.PASSWORD_INPUT, password, 'Sinhan Password');
+    
+    // Step 2: Click on password field to trigger virtual keyboard
+    console.log('[SHINHAN] Clicking on password field to trigger virtual keyboard...');
+    try {
+      const passwordLocator = page.locator(`xpath=${CONFIG.XPATHS.PASSWORD_INPUT}`);
+      await passwordLocator.click({ timeout: CONFIG.TIMEOUTS.CLICK });
+      await page.waitForTimeout(1000); // Wait for keyboard to appear
+      console.log('[SHINHAN] Password field clicked, waiting for virtual keyboard...');
+    } catch (pwClickError) {
+      console.warn('[SHINHAN] Failed to click password field:', pwClickError.message);
+    }
     
     // Handle keyboard screenshot and AI analysis
-    let screenshotPath = null;
+    let lowerScreenshotPath = null;
+    let upperScreenshotPath = null;
     let keyboardAnalysisResult = null;
     
     try {
-      const keyboardLocator = page.locator(`xpath=${CONFIG.XPATHS.KEYBOARD}`);
-      if (await keyboardLocator.count()) {
+      // Step 3: Find the LOWER keyboard first (default state)
+      const lowerKeyboardSelectors = [
+        CONFIG.XPATHS.KEYBOARD_LOWER,
+        CONFIG.XPATHS.KEYBOARD_LOWER_ALT,
+        CONFIG.XPATHS.KEYBOARD_LOWER_CLASS
+      ].filter(Boolean);
+      
+      let lowerKeyboardLocator = null;
+      let lowerUsedSelector = null;
+      
+      console.log('[SHINHAN] Looking for LOWER keyboard (default state)...');
+      for (const selector of lowerKeyboardSelectors) {
+        console.log(`[SHINHAN] Trying LOWER keyboard selector: ${selector}`);
+        const locator = page.locator(`xpath=${selector}`);
+        const count = await locator.count();
+        console.log(`[SHINHAN] Found ${count} elements with selector: ${selector}`);
         
-        const keyboardBox = await getElementBox(page, `xpath=${CONFIG.XPATHS.KEYBOARD}`);
-        console.log('[SHINHAN] Keyboard element bounds after scroll:', keyboardBox);
+        if (count > 0) {
+          // Check if element is visible (has display: block)
+          const isVisible = await locator.first().isVisible().catch(() => false);
+          console.log(`[SHINHAN] LOWER keyboard visibility: ${isVisible}`);
+          
+          if (isVisible) {
+            lowerKeyboardLocator = locator.first();
+            lowerUsedSelector = selector;
+            console.log(`[SHINHAN] Found visible LOWER keyboard: ${selector}`);
+            break;
+          }
+        }
+      }
+      
+      if (!lowerKeyboardLocator) {
+        console.warn('[SHINHAN] LOWER keyboard not found or not visible');
+        console.warn('[SHINHAN] Make sure password field is clicked and keyboard is showing');
+        throw new Error('LOWER keyboard not found');
+      }
+      
+      const lowerKeyboardBox = await getElementBox(page, `xpath=${lowerUsedSelector}`);
+      console.log('[SHINHAN] LOWER keyboard bounds:', lowerKeyboardBox);
         
         // Ensure output directory exists
         const outputDir = path.join(process.cwd(), 'output');
         ensureOutputDirectory(outputDir);
         
         const timestamp = generateTimestamp();
-        const filename = `sinhan-keyboard-${timestamp}.png`;
-        screenshotPath = path.join(outputDir, filename);
+      
+      // Step 4: Screenshot the LOWER keyboard
+      const lowerFilename = `sinhan-keyboard-LOWER-${timestamp}.png`;
+      lowerScreenshotPath = path.join(outputDir, lowerFilename);
+      
+      await lowerKeyboardLocator.screenshot({ path: lowerScreenshotPath });
+      console.log('[SHINHAN] LOWER keyboard screenshot saved to:', lowerScreenshotPath);
+      
+      // Get Gemini API key
+      const geminiApiKey = getGeminiApiKey();
+      
+      if (!geminiApiKey) {
+        console.warn('[SHINHAN] Skipping AI analysis - GEMINI_API_KEY not set');
+        throw new Error('Gemini API key not found');
+      }
+      
+      // Step 5: Analyze LOWER keyboard with Gemini 3
+      console.log('[SHINHAN] Analyzing LOWER keyboard with Gemini 3...');
+      const lowerAnalysisResult = await analyzeKeyboardAndType(
+        lowerScreenshotPath,
+        geminiApiKey,
+        lowerKeyboardBox,
+        null,  // Don't type yet
+        null,  // Don't pass page yet
+        {}
+      );
+      
+      if (!lowerAnalysisResult.success) {
+        console.warn('[SHINHAN] LOWER keyboard analysis failed:', lowerAnalysisResult.error);
+        throw new Error('LOWER keyboard analysis failed');
+      }
+      
+      console.log('[SHINHAN] LOWER keyboard analysis completed, found', lowerAnalysisResult.processed, 'keys');
+      
+      // Step 6: Find the SHIFT key in the lower keyboard
+      const shiftKey = Object.entries(lowerAnalysisResult.keyboardKeys).find(([label, data]) => {
+        const labelLower = label.toLowerCase();
+        return labelLower.includes('shift');
+      });
+      
+      if (!shiftKey) {
+        console.warn('[SHINHAN] SHIFT key not found in LOWER keyboard');
+        throw new Error('SHIFT key not found');
+      }
+      
+      const [shiftLabel, shiftData] = shiftKey;
+      console.log(`[SHINHAN] Found SHIFT key: "${shiftLabel}" at position (${shiftData.position.x}, ${shiftData.position.y})`);
+      
+      // Step 7: Click SHIFT to switch to UPPER keyboard
+      console.log('[SHINHAN] Clicking SHIFT to switch to UPPER keyboard...');
+      await page.mouse.move(shiftData.position.x, shiftData.position.y);
+      await page.waitForTimeout(CONFIG.DELAYS.MOUSE_MOVE);
+      await page.mouse.click(shiftData.position.x, shiftData.position.y);
+      await page.waitForTimeout(CONFIG.DELAYS.KEYBOARD_UPDATE);
+      
+      // Step 8: Find and screenshot the UPPER keyboard
+      const upperKeyboardSelectors = [
+        CONFIG.XPATHS.KEYBOARD_UPPER,
+        CONFIG.XPATHS.KEYBOARD_UPPER_ALT,
+        CONFIG.XPATHS.KEYBOARD_UPPER_CLASS
+      ].filter(Boolean);
+      
+      let upperKeyboardLocator = null;
+      let upperUsedSelector = null;
+      
+      console.log('[SHINHAN] Looking for UPPER keyboard...');
+      for (const selector of upperKeyboardSelectors) {
+        const locator = page.locator(`xpath=${selector}`);
+        const count = await locator.count();
+        if (count > 0) {
+          const isVisible = await locator.first().isVisible().catch(() => false);
+          if (isVisible) {
+            upperKeyboardLocator = locator.first();
+            upperUsedSelector = selector;
+            console.log(`[SHINHAN] Found visible UPPER keyboard: ${selector}`);
+            break;
+          }
+        }
+      }
+      
+      let upperAnalysisResult = null;
+      if (upperKeyboardLocator) {
+        const upperKeyboardBox = await getElementBox(page, `xpath=${upperUsedSelector}`);
+        console.log('[SHINHAN] UPPER keyboard bounds:', upperKeyboardBox);
         
-        // Take screenshot of the keyboard element
-        await keyboardLocator.screenshot({ path: screenshotPath });
-        console.log('[SHINHAN] Screenshot saved to:', screenshotPath);
+        const upperFilename = `sinhan-keyboard-UPPER-${timestamp}.png`;
+        upperScreenshotPath = path.join(outputDir, upperFilename);
         
-        // Get Roboflow API key from environment
-        const roboflowApiKey = process.env.ROBOFLOW_API_KEY;
+        await upperKeyboardLocator.screenshot({ path: upperScreenshotPath });
+        console.log('[SHINHAN] UPPER keyboard screenshot saved to:', upperScreenshotPath);
         
-        // Use AI to analyze the keyboard (but don't type yet - we'll use JSON for typing)
-        if (roboflowApiKey && screenshotPath) {
-          console.log('[SHINHAN] Starting AI keyboard analysis with Roboflow...');
-          try {
-            // Pass null for password and page to only analyze, not type
-            // But pass page with options to enable shift keyboard capture
-            keyboardAnalysisResult = await analyzeKeyboardAndType(
-              screenshotPath,
-              roboflowApiKey,
-              keyboardBox,
-              null,  // Don't pass password to prevent typing
-              page,  // Pass page for shift keyboard capture
-              {      // Options for shift keyboard capture
-                keyboardXPath: CONFIG.XPATHS.KEYBOARD,
-                outputDir: outputDir
-              }
-            );
-            
-            if (keyboardAnalysisResult.success) {
-              console.log('[SHINHAN] AI keyboard analysis completed successfully');
-              console.log('[SHINHAN] Processed', keyboardAnalysisResult.processed, 'keyboard keys');
+        // Step 9: Analyze UPPER keyboard with Gemini 3
+        console.log('[SHINHAN] Analyzing UPPER keyboard with Gemini 3...');
+        upperAnalysisResult = await analyzeKeyboardAndType(
+          upperScreenshotPath,
+          geminiApiKey,
+          upperKeyboardBox,
+          null,
+          null,
+          {}
+        );
+        
+        if (upperAnalysisResult.success) {
+          console.log('[SHINHAN] UPPER keyboard analysis completed, found', upperAnalysisResult.processed, 'keys');
+                    } else {
+          console.warn('[SHINHAN] UPPER keyboard analysis failed:', upperAnalysisResult.error);
+        }
+        
+        // Click SHIFT again to return to LOWER state
+        console.log('[SHINHAN] Clicking SHIFT to return to LOWER keyboard...');
+        await page.mouse.click(shiftData.position.x, shiftData.position.y);
+        await page.waitForTimeout(CONFIG.DELAYS.KEYBOARD_UPDATE);
+      } else {
+        console.warn('[SHINHAN] UPPER keyboard not found, continuing with LOWER only');
+      }
+      
+      // Step 10: Build combined keyboard map and type password
+      console.log('[SHINHAN] Building keyboard map and typing password...');
+      
+      try {
+        // Build bilingual keyboard JSON with both LOWER and UPPER
+                  const keyboardJSON = buildBilingualKeyboardJSON(
+          lowerAnalysisResult.keyboardKeys,
+          upperAnalysisResult?.keyboardKeys || null
+                  );
+                  
+        // Export for debugging
+                  const jsonFilename = `keyboard-layout-${timestamp}.json`;
+                  const jsonPath = path.join(outputDir, jsonFilename);
+                  exportKeyboardJSON(
+          lowerAnalysisResult.keyboardKeys,
+                    jsonPath,
+          upperAnalysisResult?.keyboardKeys || null
+                  );
+                  console.log('[SHINHAN] Keyboard JSON exported to:', jsonPath);
+                  
+        // Step 11: Type the password using the virtual keyboard
+        console.log(`[SHINHAN] Typing password (${password.length} characters) using virtual keyboard...`);
+                  const typingResult = await typePasswordWithJSON(keyboardJSON, password, page);
+                  
+                  if (typingResult.success) {
+          console.log('[SHINHAN] Successfully typed password using virtual keyboard!');
+                    console.log(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
+                  } else {
+                    console.warn('[SHINHAN] Password typing completed with errors');
+                    console.warn(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
+          if (typingResult.failedChars.length > 0) {
+                    console.warn('[SHINHAN] Failed characters:', typingResult.failedChars.map(f => `'${f.char}'`).join(', '));
+                  }
+        }
+        
+        keyboardAnalysisResult = {
+          success: true,
+          lowerKeyboard: lowerAnalysisResult,
+          upperKeyboard: upperAnalysisResult,
+          typingResult: typingResult
+        };
               
               // Generate HTML visualization
               try {
@@ -800,107 +1030,31 @@ async function runShinhanAutomation(username, password, id, proxyUrl) {
                 const visualizationPath = path.join(outputDir, visualizationFilename);
                 
                 generateKeyboardVisualization({
-                  screenshotPath: screenshotPath,
-                  keyboardBox: keyboardBox,
-                  keyboardKeys: keyboardAnalysisResult.keyboardKeys,
-                  segmentationResults: keyboardAnalysisResult.segmentationResults,
+            screenshotPath: lowerScreenshotPath,
+            keyboardBox: lowerKeyboardBox,
+            keyboardKeys: lowerAnalysisResult.keyboardKeys,
+            segmentationResults: lowerAnalysisResult.segmentationResults,
                   password: password,
                   outputPath: visualizationPath
                 });
                 
-                console.log('[SHINHAN] HTML visualization saved to:', visualizationPath);
-                
-                // Build and export bilingual keyboard JSON
-                try {
-                  // Process shifted keyboard if it was captured
-                  let shiftedKeyboardKeys = null;
-                  if (keyboardAnalysisResult.shiftedKeyboard && keyboardAnalysisResult.shiftedKeyboard.success) {
-                    console.log('[SHINHAN] Analyzing shifted keyboard screenshot...');
-                    const shiftedScreenshotPath = keyboardAnalysisResult.shiftedKeyboard.screenshotPath;
-                    
-                    // Analyze shifted keyboard with AI
-                    const shiftedAnalysisResult = await analyzeKeyboardAndType(
-                      shiftedScreenshotPath,
-                      roboflowApiKey,
-                      keyboardBox,
-                      null,  // Don't type
-                      null,  // Don't pass page to avoid another shift capture
-                      {}     // Empty options
-                    );
-                    
-                    if (shiftedAnalysisResult.success) {
-                      shiftedKeyboardKeys = shiftedAnalysisResult.keyboardKeys;
-                      console.log('[SHINHAN] Shifted keyboard analyzed successfully');
-                      console.log('[SHINHAN] Shifted keyboard has', Object.keys(shiftedKeyboardKeys).length, 'keys');
-                    } else {
-                      console.warn('[SHINHAN] Failed to analyze shifted keyboard:', shiftedAnalysisResult.error);
-                    }
-                  }
-                  
-                  // Build keyboard JSON with both normal and shifted layouts
-                  const keyboardJSON = buildBilingualKeyboardJSON(
-                    keyboardAnalysisResult.keyboardKeys,
-                    shiftedKeyboardKeys
-                  );
-                  
-                  const jsonFilename = `keyboard-layout-${timestamp}.json`;
-                  const jsonPath = path.join(outputDir, jsonFilename);
-                  exportKeyboardJSON(
-                    keyboardAnalysisResult.keyboardKeys,
-                    jsonPath,
-                    shiftedKeyboardKeys
-                  );
-                  
-                  console.log('[SHINHAN] Keyboard JSON exported to:', jsonPath);
-                  console.log('[SHINHAN] JSON contains', keyboardJSON.metadata.totalKeys, 'keys');
-                  console.log('[SHINHAN] Character map has', Object.keys(keyboardJSON.characterMap).length, 'characters');
-                  console.log('[SHINHAN] Shift required for', keyboardJSON.metadata.shiftRequiredKeys, 'characters');
-                  
-                  // Use JSON to type the password
-                  console.log('\n[SHINHAN] Using keyboard JSON to type password...');
-                  const typingResult = await typePasswordWithJSON(keyboardJSON, password, page);
-                  
-                  if (typingResult.success) {
-                    console.log('[SHINHAN] Successfully typed password using JSON!');
-                    console.log(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
-                  } else {
-                    console.warn('[SHINHAN] Password typing completed with errors');
-                    console.warn(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
-                    console.warn('[SHINHAN] Failed characters:', typingResult.failedChars.map(f => `'${f.char}'`).join(', '));
-                  }
-                  
-                  // Store typing result
-                  keyboardAnalysisResult.typingResult = typingResult;
-                  ``
-                } catch (jsonError) {
-                  console.warn('[SHINHAN] Failed to export keyboard JSON or type password:', jsonError);
-                }
+          console.log('[SHINHAN] HTML visualization saved to:', visualizationPath);
               } catch (vizError) {
                 console.warn('[SHINHAN] Failed to generate HTML visualization:', vizError);
               }
-            } else {
-              console.warn('[SHINHAN] AI keyboard analysis failed:', keyboardAnalysisResult.error);
-            }
-          } catch (aiError) {
-            console.warn('[SHINHAN] AI keyboard analysis error:', aiError);
-          }
-        } else {
-          if (!roboflowApiKey) {
-            console.warn('[SHINHAN] Skipping AI analysis - ROBOFLOW_API_KEY environment variable not set');
-          } else {
-            console.log('[SHINHAN] Skipping AI analysis - no screenshot available');
-          }
-        }
-        }
+      } catch (jsonError) {
+        console.warn('[SHINHAN] Failed to build keyboard JSON or type password:', jsonError);
+      }
     } catch (error) {
-      console.warn('[SHINHAN] Failed to take screenshot of Sinhan keyboard:', error);
+      console.warn('[SHINHAN] Keyboard analysis/typing error:', error);
     }
     
     return { 
       success: true, 
       boxes: null, 
       clickedPoint: null, 
-      screenshotPath,
+      lowerScreenshotPath,
+      upperScreenshotPath,
       keyboardAnalysis: keyboardAnalysisResult
     };
     

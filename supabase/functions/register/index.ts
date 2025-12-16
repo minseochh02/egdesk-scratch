@@ -25,7 +25,7 @@ serve(async (req) => {
     )
 
     // Create Supabase client for Admin operations (Service Role - Bypasses RLS)
-    // Required to write to secure columns (ip_address, ip_salt) which are restricted for users
+    // Required to write to mcp_servers and mcp_server_permissions tables
     const supabaseAdminClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -103,6 +103,36 @@ serve(async (req) => {
     if (existingRecords && existingRecords.length > 0) {
       const existingRecord = existingRecords[0]
       
+      // Update owner_user_id if not set (upgrade legacy servers to User ID ownership)
+      let ownershipUpgraded = false
+      try {
+        const { data: serverData } = await supabaseAdminClient
+          .from('mcp_servers')
+          .select('owner_user_id')
+          .eq('id', existingRecord.id)
+          .single()
+        
+        if (serverData && !serverData.owner_user_id) {
+          // Legacy server without owner_user_id - upgrade to User ID ownership
+          const { error: updateError } = await supabaseAdminClient
+            .from('mcp_servers')
+            .update({ 
+              owner_user_id: user.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingRecord.id)
+          
+          if (!updateError) {
+            ownershipUpgraded = true
+            console.log(`⬆️ Upgraded server '${server_key}' from IP to User ID ownership for user ${user.id}`)
+          } else {
+            console.warn('Warning: Failed to upgrade server ownership:', updateError)
+          }
+        }
+      } catch (upgradeError) {
+        console.warn('Warning: Error checking/upgrading server ownership:', upgradeError)
+      }
+      
       // Even on conflict, try to add owner permission if missing
       // This handles the case where server was created but permission wasn't
       let ownerPermissionAdded = false
@@ -160,7 +190,8 @@ serve(async (req) => {
             server_key: existingRecord.server_key,
             registered_at: existingRecord.created_at
           },
-          owner_permission_added: ownerPermissionAdded
+          owner_permission_added: ownerPermissionAdded,
+          ownership_upgraded: ownershipUpgraded
         }),
         { 
           status: 409, // Conflict status code
@@ -169,36 +200,19 @@ serve(async (req) => {
       )
     }
 
-    // Extract IP information for logging
-    const forwardedFor = req.headers.get('x-forwarded-for')
-    const realIp = req.headers.get('x-real-ip')
-    
-    // Get client IP (prioritize real-ip, then forwarded-for, then connection remote address)
-    const clientIp = realIp || 
-      (forwardedFor ? forwardedFor.split(',')[0].trim() : null) ||
-      req.headers.get('cf-connecting-ip') || // Cloudflare
-      'unknown'
-
-    // Encrypt IP address
-    const ipSalt = Array.from(new Uint8Array(16)).map(() => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('');
-    const encoder = new TextEncoder();
-    const encodedData = encoder.encode(clientIp + ipSalt);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encodedData);
-    const ipHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
     // Insert into mcp_servers table using Admin Client
+    // Note: IP-based ownership has been removed - only User ID-based ownership is used
     const { data, error } = await supabaseAdminClient
       .from('mcp_servers')
       .insert({
-        owner_id: user.id,
+        owner_id: user.id,           // Legacy field (kept for compatibility)
+        owner_user_id: user.id,      // User ID-based ownership (primary)
         name: name,
         description: description || null,
         server_key: server_key,
         connection_url: connection_url || null,
         max_concurrent_connections: max_concurrent_connections || 10,
-        status: 'active',
-        owner_ip: ipHash, // Storing the hash instead of raw IP
-        owner_ip_salt: ipSalt     // Storing the salt
+        status: 'active'
       })
       .select()
       .single()
@@ -255,7 +269,7 @@ serve(async (req) => {
         name: data.name,
         id: data.id,
         server_key: data.server_key,
-        ip: clientIp,
+        owner_id: user.id,
         created_at: data.created_at,
         owner_permission_added: ownerPermissionAdded
       }),

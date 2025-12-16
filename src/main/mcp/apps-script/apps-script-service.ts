@@ -71,10 +71,12 @@ export class AppsScriptService {
     if (!copy) return null;
 
     const files = copy.scriptContent?.files || [];
+    // Check both 'serverName' (new format) and 'name' (legacy) for backwards compatibility
+    const name = copy.metadata?.serverName || copy.metadata?.name || 'Untitled Project';
     
     return {
       id: copy.id,
-      name: copy.metadata?.name || 'Untitled Project',
+      name: name,
       scriptId: copy.scriptId,
       spreadsheetId: copy.spreadsheetId,
       spreadsheetUrl: copy.spreadsheetUrl,
@@ -99,7 +101,8 @@ export class AppsScriptService {
     const copies = this.copiesManager.getAllTemplateCopies();
     
     return copies.map(copy => {
-      const name = copy.metadata?.name || 'Untitled Project';
+      // Check both 'serverName' (new format) and 'name' (legacy) for backwards compatibility
+      const name = copy.metadata?.serverName || copy.metadata?.name || 'Untitled Project';
       const files = copy.scriptContent?.files || [];
       
       return {
@@ -125,8 +128,9 @@ export class AppsScriptService {
     if (!projectId) {
       const copies = this.copiesManager.getAllTemplateCopies();
       // Format: "Project Name (ID)" or just ID if no metadata name
+      // Check both 'serverName' (new format) and 'name' (legacy) for backwards compatibility
       return copies.map(copy => {
-        const name = copy.metadata?.name || 'Untitled Project';
+        const name = copy.metadata?.serverName || copy.metadata?.name || 'Untitled Project';
         return `${name} [${copy.id}]`;
       });
     }
@@ -338,8 +342,15 @@ export class AppsScriptService {
   /**
    * Push local changes to Google Apps Script
    * Uses the Apps Script API to update the actual script content
+   * @param projectId - The project ID
+   * @param createVersion - If true, creates an immutable version snapshot after pushing
+   * @param versionDescription - Optional description for the version
    */
-  async pushToGoogle(projectId: string): Promise<{ success: boolean; message: string }> {
+  async pushToGoogle(
+    projectId: string, 
+    createVersion?: boolean,
+    versionDescription?: string
+  ): Promise<{ success: boolean; message: string; versionNumber?: number }> {
     // Handle "Name [ID]" format
     let targetId = projectId;
     const idMatch = projectId.match(/\[(.*?)\]$/);
@@ -392,9 +403,27 @@ export class AppsScriptService {
 
     const result = await response.json();
     
+    // Optionally create a version after successful push
+    let versionNumber: number | undefined;
+    if (createVersion) {
+      try {
+        const versionResult = await this.createVersion(
+          projectId, 
+          versionDescription || `Auto-version from push at ${new Date().toISOString()}`
+        );
+        versionNumber = versionResult.versionNumber;
+      } catch (versionError: any) {
+        console.warn('Push succeeded but version creation failed:', versionError.message);
+        // Don't fail the whole operation if version creation fails
+      }
+    }
+    
     return {
       success: true,
-      message: `Successfully pushed ${files.length} file(s) to Google Apps Script (${copy.scriptId})`,
+      message: versionNumber 
+        ? `Successfully pushed ${files.length} file(s) and created version ${versionNumber}`
+        : `Successfully pushed ${files.length} file(s) to Google Apps Script (${copy.scriptId})`,
+      versionNumber,
     };
   }
 
@@ -636,6 +665,72 @@ export class AppsScriptService {
   }
 
   /**
+   * Get content at a specific version
+   * GET /v1/projects/{scriptId}/content?versionNumber={n}
+   */
+  async getVersionContent(projectId: string, versionNumber: number): Promise<{
+    files: Array<{
+      name: string;
+      type: string;
+      source: string;
+    }>;
+    versionNumber: number;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const response = await fetch(
+      `https://script.googleapis.com/v1/projects/${copy.scriptId}/content?versionNumber=${versionNumber}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to get version content: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    const files = result.files || [];
+
+    // Normalize files to our internal format (lowercase types)
+    const normalizedFiles = files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toLowerCase(),
+      source: f.source || '',
+    }));
+
+    return {
+      files: normalizedFiles,
+      versionNumber,
+    };
+  }
+
+  /**
    * List all deployments of a script
    * GET /v1/projects/{scriptId}/deployments
    */
@@ -751,63 +846,6 @@ export class AppsScriptService {
       totalExecutions: result.metrics?.[0]?.totalExecutions,
       activeUsers: result.activeUsers,
       failedExecutions: result.metrics?.[0]?.failedExecutions,
-    };
-  }
-
-  /**
-   * Create a new version (snapshot) of the script
-   * POST /v1/projects/{scriptId}/versions
-   */
-  async createVersion(projectId: string, description?: string): Promise<{
-    versionNumber: number;
-    description?: string;
-    createTime: string;
-  }> {
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    if (!copy.scriptId) {
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
-
-    // Get OAuth token
-    const authService = getAuthService();
-    const token = await authService.getGoogleWorkspaceToken();
-    
-    if (!token?.access_token) {
-      throw new Error('No Google OAuth token available. Please sign in with Google.');
-    }
-
-    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        description: description || `Version created at ${new Date().toISOString()}`,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
-      throw new Error(`Failed to create version: ${errorMsg}`);
-    }
-
-    const result = await response.json();
-    
-    return {
-      versionNumber: result.versionNumber,
-      description: result.description,
-      createTime: result.createTime,
     };
   }
 
