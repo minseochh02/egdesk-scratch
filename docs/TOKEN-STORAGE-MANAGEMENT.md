@@ -271,3 +271,4 @@ const { token } = await window.electron.auth.getGoogleWorkspaceToken();
 5. **Key management:** Consider using OS keychain for encryption keys in production
 
 
+

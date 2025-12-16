@@ -102,21 +102,41 @@ export class AuthService {
       const providerToken = (session as any).provider_token || 
                            session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.access_token;
       
+      // Try to get refresh token from various sources - this is CRITICAL for token refresh
+      const providerRefreshToken = (session as any).provider_refresh_token || 
+                                   session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token;
+      
+      // Check if we already have a saved refresh token (preserve it if new one isn't available)
+      const existingGoogleToken = this.store.get('google_workspace_token') as any;
+      const existingRefreshToken = existingGoogleToken?.refresh_token;
+      
+      console.log('📋 saveSession - Google token sources:', {
+        hasProviderToken: !!providerToken,
+        hasProviderRefreshToken: !!providerRefreshToken,
+        hasExistingRefreshToken: !!existingRefreshToken,
+      });
+      
       if (providerToken) {
         // Google access tokens typically expire in 1 hour (3600 seconds)
         // Use the actual Google token expiry, NOT the Supabase session expiry
         const googleTokenExpiresAt = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
         
+        // Use new refresh token if available, otherwise preserve existing one
+        const refreshTokenToSave = providerRefreshToken || existingRefreshToken;
+        
         const googleToken = {
           access_token: providerToken,
-          refresh_token: (session as any).provider_refresh_token || 
-                        session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token,
+          refresh_token: refreshTokenToSave,
           expires_at: googleTokenExpiresAt, // Use Google's 1-hour expiry, not Supabase's
-          scopes: (session as any).provider_scopes || [],
+          scopes: (session as any).provider_scopes || existingGoogleToken?.scopes || [],
           saved_at: Date.now(),
         };
         this.store.set('google_workspace_token', googleToken);
-        console.log('💾 Saved Google Workspace OAuth token to electron-store (expires:', new Date(googleTokenExpiresAt * 1000).toISOString(), ')');
+        console.log('💾 Saved Google Workspace OAuth token to electron-store:', {
+          expires: new Date(googleTokenExpiresAt * 1000).toISOString(),
+          hasRefreshToken: !!refreshTokenToSave,
+          refreshTokenSource: providerRefreshToken ? 'new from OAuth' : (existingRefreshToken ? 'preserved existing' : 'none'),
+        });
       } else {
         // Even without provider token, save session info for Google auth
         // The Supabase access token can be used to get provider token via Supabase API
@@ -124,10 +144,14 @@ export class AuthService {
           supabase_session: true,
           expires_at: Math.floor(Date.now() / 1000) + 3600, // Assume 1 hour for Google tokens
           user_id: session.user?.id,
+          refresh_token: existingRefreshToken, // Preserve existing refresh token if we have one
           saved_at: Date.now(),
         };
         this.store.set('google_workspace_token', googleToken);
-        console.log('💾 Saved Google Workspace session info to electron-store (provider token will be retrieved via Supabase)');
+        console.log('💾 Saved Google Workspace session info to electron-store:', {
+          supabaseSession: true,
+          hasPreservedRefreshToken: !!existingRefreshToken,
+        });
       }
     }
   }
@@ -326,15 +350,25 @@ export class AuthService {
     }
 
     try {
+      // Check if we have a valid refresh token for Google
+      // If not, we need to force consent to get one
+      let needsRefreshToken = false;
+      if (provider === 'google') {
+        const existingToken = this.store.get('google_workspace_token') as any;
+        needsRefreshToken = !existingToken?.refresh_token;
+        if (needsRefreshToken) {
+          console.log('🔄 No Google refresh token found, will request consent to obtain one');
+        }
+      }
+
       // Use custom redirect URL for Electron
       const options: any = {
         skipBrowserRedirect: false,
         redirectTo: 'egdesk://auth/callback',
         queryParams: {
-          // Use 'select_account' to allow users to choose an account, but don't force it if they're already signed in
-          // This allows keeping the current session active in the browser if desired, 
-          // while still showing the account chooser when initiating a new sign-in flow.
-          prompt: 'select_account',
+          // Use 'consent' if we need a refresh token (Google only returns it on consent)
+          // Otherwise use 'select_account' for better UX (just account picker)
+          prompt: (provider === 'google' && needsRefreshToken) ? 'consent' : 'select_account',
           access_type: 'offline', // Request refresh token to keep session alive
         },
       };
@@ -489,6 +523,14 @@ export class AuthService {
       const hashParams = new URLSearchParams(hash);
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
+      
+      // Log all hash params for debugging
+      console.log('📋 OAuth callback hash params:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        providerToken: hashParams.get('provider_token') ? 'present' : 'absent',
+        providerRefreshToken: hashParams.get('provider_refresh_token') ? 'present' : 'absent',
+      });
 
       if (accessToken) {
         console.log('Found access token in hash (implicit flow)');
@@ -504,24 +546,49 @@ export class AuthService {
           return { success: false, error: error.message };
         }
 
-      if (data.session) {
-        console.log('✅ Session established from implicit flow');
-        
-        // Extract provider token from URL if available (for Google OAuth)
-        const providerToken = hashParams.get('provider_token') || accessToken;
-        if (providerToken && providerToken !== accessToken) {
-          // Store provider token in session metadata
-          (data.session as any).provider_token = providerToken;
-          (data.session as any).provider_refresh_token = hashParams.get('provider_refresh_token') || refreshToken;
+        if (data.session) {
+          console.log('✅ Session established from implicit flow');
+          
+          // Extract provider token from URL if available (for Google OAuth)
+          // Google provider tokens are separate from Supabase tokens
+          const providerToken = hashParams.get('provider_token');
+          const providerRefreshToken = hashParams.get('provider_refresh_token');
+          
+          console.log('📋 Provider tokens from callback:', {
+            hasProviderToken: !!providerToken,
+            hasProviderRefreshToken: !!providerRefreshToken,
+          });
+          
+          if (providerToken) {
+            // Store provider token in session metadata for saveSession to use
+            (data.session as any).provider_token = providerToken;
+            (data.session as any).provider_refresh_token = providerRefreshToken;
+          }
+          
+          // IMPORTANT: Also directly save Google token to ensure refresh_token is stored
+          // This is critical for MCP service to work after token expiry
+          if (providerToken || providerRefreshToken) {
+            const googleToken = {
+              access_token: providerToken || accessToken,
+              refresh_token: providerRefreshToken,
+              expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+              scopes: [],
+              saved_at: Date.now(),
+            };
+            this.store.set('google_workspace_token', googleToken);
+            console.log('💾 Directly saved Google token from implicit flow callback', {
+              hasAccessToken: !!googleToken.access_token,
+              hasRefreshToken: !!googleToken.refresh_token,
+            });
+          }
+          
+          this.saveSession(data.session);
+          
+          // Close the OAuth window after successful auth
+          this.closeOAuthWindow();
+          
+          return { success: true };
         }
-        
-        this.saveSession(data.session);
-        
-        // Close the OAuth window after successful auth
-        this.closeOAuthWindow();
-        
-        return { success: true };
-      }
 
         return { success: false, error: 'No session returned from setSession' };
       }
@@ -540,27 +607,77 @@ export class AuthService {
           return { success: false, error: error.message };
         }
 
-      if (data.session) {
-        console.log('✅ Session established from PKCE flow');
-        
-        // Try to get provider token from user's identity
-        // Supabase stores provider tokens in user.identities
-        if (data.user?.identities && data.user.identities.length > 0) {
-          const googleIdentity = data.user.identities.find((id: any) => id.provider === 'google');
-          if (googleIdentity) {
-            // Provider token might be in identity metadata
-            (data.session as any).provider_token = googleIdentity.identity_data?.access_token;
-            (data.session as any).provider_refresh_token = googleIdentity.identity_data?.refresh_token;
+        if (data.session) {
+          console.log('✅ Session established from PKCE flow');
+          
+          // Log full session data for debugging (without sensitive tokens)
+          console.log('📋 PKCE session data:', {
+            hasProviderToken: !!(data.session as any).provider_token,
+            hasProviderRefreshToken: !!(data.session as any).provider_refresh_token,
+            userProvider: data.user?.app_metadata?.provider,
+            identitiesCount: data.user?.identities?.length || 0,
+          });
+          
+          // Try to get provider token from user's identity
+          // Supabase stores provider tokens in user.identities
+          let providerToken: string | undefined;
+          let providerRefreshToken: string | undefined;
+          
+          if (data.user?.identities && data.user.identities.length > 0) {
+            const googleIdentity = data.user.identities.find((id: any) => id.provider === 'google');
+            if (googleIdentity) {
+              console.log('📋 Google identity data:', {
+                hasIdentityData: !!googleIdentity.identity_data,
+                identityDataKeys: googleIdentity.identity_data ? Object.keys(googleIdentity.identity_data) : [],
+              });
+              
+              // Provider token might be in identity metadata
+              providerToken = googleIdentity.identity_data?.access_token;
+              providerRefreshToken = googleIdentity.identity_data?.refresh_token;
+              
+              (data.session as any).provider_token = providerToken;
+              (data.session as any).provider_refresh_token = providerRefreshToken;
+            }
           }
+          
+          // Also check if session directly has provider tokens (some Supabase versions)
+          if (!providerToken && (data.session as any).provider_token) {
+            providerToken = (data.session as any).provider_token;
+            providerRefreshToken = (data.session as any).provider_refresh_token;
+          }
+          
+          console.log('📋 Final provider tokens:', {
+            hasProviderToken: !!providerToken,
+            hasProviderRefreshToken: !!providerRefreshToken,
+          });
+          
+          // IMPORTANT: If we have provider tokens, save them directly to google_workspace_token
+          // This ensures they're saved even if saveSession doesn't extract them properly
+          if (providerToken || providerRefreshToken) {
+            const existingGoogleToken = this.store.get('google_workspace_token') as any || {};
+            const googleToken = {
+              ...existingGoogleToken,
+              access_token: providerToken || existingGoogleToken.access_token,
+              refresh_token: providerRefreshToken || existingGoogleToken.refresh_token,
+              expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+              saved_at: Date.now(),
+            };
+            this.store.set('google_workspace_token', googleToken);
+            console.log('💾 Directly saved Google token from PKCE flow', {
+              hasAccessToken: !!googleToken.access_token,
+              hasRefreshToken: !!googleToken.refresh_token,
+            });
+          } else {
+            console.warn('⚠️ No provider tokens found in PKCE flow - Google token refresh may not work');
+          }
+          
+          this.saveSession(data.session);
+          
+          // Close the OAuth window after successful auth
+          this.closeOAuthWindow();
+          
+          return { success: true };
         }
-        
-        this.saveSession(data.session);
-        
-        // Close the OAuth window after successful auth
-        this.closeOAuthWindow();
-        
-        return { success: true };
-      }
 
         return { success: false, error: 'No session returned from code exchange' };
       }
