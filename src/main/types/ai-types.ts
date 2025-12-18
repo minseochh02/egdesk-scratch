@@ -218,7 +218,7 @@ export interface AIClientService {
   isConversationActive(): boolean;
   
   // Utility
-  getAvailableModels(): string[];
+  getAvailableModels(apiKey?: string): Promise<string[]>;
 }
 
 // Tool Execution Types

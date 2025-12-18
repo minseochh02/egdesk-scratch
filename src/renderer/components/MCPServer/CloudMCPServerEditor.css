@@ -10,7 +10,7 @@
   overflow: hidden;
 }
 
-.editor-header {
+.cloud-mcp-server-editor .editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -19,13 +19,13 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.header-content {
+.cloud-mcp-server-editor .header-content {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.back-button {
+.cloud-mcp-server-editor .back-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -41,37 +41,37 @@
   flex-shrink: 0;
 }
 
-.back-button:hover {
+.cloud-mcp-server-editor .back-button:hover {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateX(-2px);
 }
 
-.back-button svg {
+.cloud-mcp-server-editor .back-button svg {
   width: 16px;
   height: 16px;
 }
 
-.editor-header h2 {
+.cloud-mcp-server-editor .editor-header h2 {
   font-size: 16px;
   font-weight: 600;
   margin: 0;
   color: white;
 }
 
-.editor-header p {
+.cloud-mcp-server-editor .editor-header p {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
   margin: 0;
 }
 
-.header-actions {
+.cloud-mcp-server-editor .header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.refresh-button {
+.cloud-mcp-server-editor .refresh-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -86,19 +86,19 @@
   transition: all 0.3s ease;
 }
 
-.refresh-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .refresh-button:hover:not(:disabled) {
   background: rgba(102, 126, 234, 0.3);
   border-color: rgba(102, 126, 234, 0.6);
   transform: translateY(-2px);
 }
 
-.refresh-button:disabled {
+.cloud-mcp-server-editor .refresh-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.loading-state,
-.error-state {
+.cloud-mcp-server-editor .loading-state,
+.cloud-mcp-server-editor .error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -108,11 +108,11 @@
   color: white;
 }
 
-.error-state {
+.cloud-mcp-server-editor .error-state {
   color: #ef4444;
 }
 
-.error-state button {
+.cloud-mcp-server-editor .error-state button {
   padding: 8px 16px;
   background: rgba(239, 68, 68, 0.2);
   border: 1px solid rgba(239, 68, 68, 0.4);
@@ -122,18 +122,18 @@
   transition: all 0.3s ease;
 }
 
-.error-state button:hover {
+.cloud-mcp-server-editor .error-state button:hover {
   background: rgba(239, 68, 68, 0.3);
 }
 
-.editor-layout {
+.cloud-mcp-server-editor .editor-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
 /* Sidebar */
-.editor-sidebar {
+.cloud-mcp-server-editor .editor-sidebar {
   width: 20%;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -142,7 +142,7 @@
   overflow: hidden;
 }
 
-.sidebar-header {
+.cloud-mcp-server-editor .sidebar-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -153,13 +153,13 @@
   font-size: 14px;
 }
 
-.copies-list {
+.cloud-mcp-server-editor .copies-list {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
 }
 
-.copy-item {
+.cloud-mcp-server-editor .copy-item {
   padding: 12px;
   margin-bottom: 8px;
   background: rgba(255, 255, 255, 0.05);
@@ -169,18 +169,18 @@
   transition: all 0.3s ease;
 }
 
-.copy-item:hover {
+.cloud-mcp-server-editor .copy-item:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
   transform: translateX(4px);
 }
 
-.copy-item.selected {
+.cloud-mcp-server-editor .copy-item.selected {
   background: rgba(102, 126, 234, 0.2);
   border-color: rgba(102, 126, 234, 0.4);
 }
 
-.copy-item-header {
+.cloud-mcp-server-editor .copy-item-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -190,21 +190,21 @@
   font-size: 14px;
 }
 
-.copy-title {
+.cloud-mcp-server-editor .copy-title {
   font-family: 'Courier New', monospace;
   font-size: 12px;
   white-space: normal; /* Allow text to wrap */
   word-break: break-word; /* Break long words */
 }
 
-.copy-item-meta {
+.cloud-mcp-server-editor .copy-item-meta {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.meta-item {
+.cloud-mcp-server-editor .meta-item {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -212,7 +212,7 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-.copy-item-script-id {
+.cloud-mcp-server-editor .copy-item-script-id {
   font-size: 11px;
   color: rgba(102, 126, 234, 0.8);
   font-family: 'Courier New', monospace;
@@ -221,23 +221,23 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.empty-state {
+.cloud-mcp-server-editor .empty-state {
   padding: 24px;
   text-align: center;
   color: rgba(255, 255, 255, 0.6);
 }
 
-.empty-state p {
+.cloud-mcp-server-editor .empty-state p {
   margin: 8px 0;
 }
 
-.empty-hint {
+.cloud-mcp-server-editor .empty-hint {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
 }
 
 /* Content area */
-.editor-content {
+.cloud-mcp-server-editor .editor-content {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -245,7 +245,7 @@
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.empty-content {
+.cloud-mcp-server-editor .empty-content {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -256,24 +256,24 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-.empty-icon {
+.cloud-mcp-server-editor .empty-icon {
   font-size: 64px;
   color: rgba(102, 126, 234, 0.4);
   margin-bottom: 24px;
 }
 
-.empty-content h3 {
+.cloud-mcp-server-editor .empty-content h3 {
   font-size: 20px;
   color: white;
   margin: 0 0 8px 0;
 }
 
-.empty-content p {
+.cloud-mcp-server-editor .empty-content p {
   font-size: 14px;
   margin: 0;
 }
 
-.copy-info {
+.cloud-mcp-server-editor .copy-info {
   margin-top: 24px;
   text-align: left;
   background: rgba(255, 255, 255, 0.05);
@@ -283,18 +283,18 @@
   max-width: 600px;
 }
 
-.info-item {
+.cloud-mcp-server-editor .info-item {
   margin-bottom: 12px;
   font-size: 14px;
   color: rgba(255, 255, 255, 0.8);
 }
 
-.info-item strong {
+.cloud-mcp-server-editor .info-item strong {
   color: white;
   margin-right: 8px;
 }
 
-.info-item a {
+.cloud-mcp-server-editor .info-item a {
   color: #667eea;
   text-decoration: none;
   display: inline-flex;
@@ -302,19 +302,19 @@
   gap: 4px;
 }
 
-.info-item a:hover {
+.cloud-mcp-server-editor .info-item a:hover {
   text-decoration: underline;
 }
 
 /* File selector / Tab bar */
-.file-selector-wrapper {
+.cloud-mcp-server-editor .file-selector-wrapper {
   position: relative;
   display: flex;
   align-items: center;
   background: rgba(0, 0, 0, 0.2);
 }
 
-.files-list {
+.cloud-mcp-server-editor .files-list {
   display: flex;
   gap: 0;
   padding: 8px 12px 0 12px;
@@ -327,23 +327,23 @@
   flex-grow: 1;
 }
 
-.files-list::-webkit-scrollbar {
+.cloud-mcp-server-editor .files-list::-webkit-scrollbar {
   height: 0px; /* Hide horizontal scrollbar */
 }
 
-.files-list::-webkit-scrollbar-track {
+.cloud-mcp-server-editor .files-list::-webkit-scrollbar-track {
   background: transparent; /* Make track transparent */
 }
 
-.files-list::-webkit-scrollbar-thumb {
+.cloud-mcp-server-editor .files-list::-webkit-scrollbar-thumb {
   background: transparent; /* Make thumb transparent */
 }
 
-.files-list::-webkit-scrollbar-thumb:hover {
+.cloud-mcp-server-editor .files-list::-webkit-scrollbar-thumb:hover {
   background: transparent; /* Make thumb transparent on hover */
 }
 
-.scroll-button {
+.cloud-mcp-server-editor .scroll-button {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -360,25 +360,25 @@
   transition: background-color 0.2s;
 }
 
-.scroll-left {
+.cloud-mcp-server-editor .scroll-left {
   left: 0;
   background: linear-gradient(to right, rgba(0,0,0,0.7), rgba(0,0,0,0));
 }
 
-.scroll-right {
+.cloud-mcp-server-editor .scroll-right {
   right: 0;
   background: linear-gradient(to left, rgba(0,0,0,0.7), rgba(0,0,0,0));
 }
 
-.scroll-button:hover {
+.cloud-mcp-server-editor .scroll-button:hover {
   background: rgba(0,0,0,0.8);
 }
 
-.scroll-button:active {
+.cloud-mcp-server-editor .scroll-button:active {
   background: rgba(0,0,0,0.9);
 }
 
-.file-item {
+.cloud-mcp-server-editor .file-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -398,13 +398,13 @@
   margin-bottom: -1px;
 }
 
-.file-item:hover {
+.cloud-mcp-server-editor .file-item:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.85);
 }
 
-.file-item.active {
+.cloud-mcp-server-editor .file-item.active {
   background: #1e293b;
   border-color: rgba(255, 255, 255, 0.1);
   border-bottom: 1px solid #1e293b;
@@ -412,18 +412,18 @@
   z-index: 1;
 }
 
-.file-type {
+.cloud-mcp-server-editor .file-type {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
   font-style: italic;
 }
 
-.file-item.active .file-type {
+.cloud-mcp-server-editor .file-item.active .file-type {
   color: rgba(255, 255, 255, 0.5);
 }
 
 /* Code viewer */
-.code-viewer {
+.cloud-mcp-server-editor .code-viewer {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -431,7 +431,7 @@
   background: rgba(0, 0, 0, 0.3);
 }
 
-.code-viewer-header {
+.cloud-mcp-server-editor .code-viewer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -440,7 +440,7 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.code-header-left {
+.cloud-mcp-server-editor .code-header-left {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -449,7 +449,7 @@
   font-size: 14px;
 }
 
-.save-button {
+.cloud-mcp-server-editor .save-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -464,17 +464,17 @@
   transition: all 0.3s ease;
 }
 
-.save-button:hover {
+.cloud-mcp-server-editor .save-button:hover {
   background: rgba(34, 197, 94, 0.3);
   border-color: rgba(34, 197, 94, 0.6);
   transform: translateY(-1px);
 }
 
-.save-button:active {
+.cloud-mcp-server-editor .save-button:active {
   transform: translateY(0);
 }
 
-.open-spreadsheet-button {
+.cloud-mcp-server-editor .open-spreadsheet-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -489,26 +489,25 @@
   transition: all 0.3s ease;
 }
 
-.open-spreadsheet-button:hover {
+.cloud-mcp-server-editor .open-spreadsheet-button:hover {
   background: rgba(102, 126, 234, 0.3);
   border-color: rgba(102, 126, 234, 0.6);
   transform: translateY(-1px);
 }
 
-.open-spreadsheet-button svg {
+.cloud-mcp-server-editor .open-spreadsheet-button svg {
   width: 14px;
   height: 14px;
 }
 
-.code-content-script {
+.cloud-mcp-server-editor .code-content-script {
   flex: 1;
   overflow: auto;
-  
 }
 
-.code-block-script {
+.cloud-mcp-server-editor .code-block-script {
   margin: 0;
-  padding: 16px 0px 16px 0px; /* Adjust padding to remove left padding */
+  padding: 16px 0px 16px 0px;
   background: #1e293b;
   overflow-x: auto;
   font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
@@ -517,40 +516,40 @@
   color: #e2e8f0;
 }
 
-.code-block-script code {
-  display: flex; /* Use flex to align line numbers and content */
+.cloud-mcp-server-editor .code-block-script code {
+  display: flex;
   flex-direction: column;
   white-space: pre;
   color: inherit;
 }
 
-.code-line {
+.cloud-mcp-server-editor .code-line {
   display: flex;
   width: 100%;
 }
 
-.line-number {
-  flex-shrink: 0; /* Prevent line numbers from shrinking */
+.cloud-mcp-server-editor .line-number {
+  flex-shrink: 0;
   text-align: right;
-  padding: 0 10px; /* Adjusted padding */
-  min-width: 40px; /* Ensure enough space for two digits */
+  padding: 0 10px;
+  min-width: 40px;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.4);
-  user-select: none; /* Prevent selection of line numbers */
+  user-select: none;
   font-size: 12px;
   line-height: 1.6;
 }
 
-.line-content {
-  flex-grow: 1; /* Allow content to take remaining space */
-  white-space: pre-wrap; /* Wrap long lines */
-  word-break: break-all; /* Break long words */
-  padding-left: 15px; /* Add left padding here */
+.cloud-mcp-server-editor .line-content {
+  flex-grow: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding-left: 15px;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.code-placeholder {
+.cloud-mcp-server-editor .code-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -559,14 +558,14 @@
 }
 
 /* Copy info panel */
-.copy-info-panel {
+.cloud-mcp-server-editor .copy-info-panel {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.2);
   max-height: 200px;
   overflow-y: auto;
 }
 
-.info-panel-header {
+.cloud-mcp-server-editor .info-panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -577,28 +576,20 @@
   font-size: 14px;
 }
 
-.info-items {
+.cloud-mcp-server-editor .info-items {
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.info-items .info-item {
+.cloud-mcp-server-editor .info-items .info-item {
   margin: 0;
   font-size: 12px;
 }
 
-.files-list::-webkit-scrollbar,
-.files-list::-webkit-scrollbar-track,
-.files-list::-webkit-scrollbar-thumb,
-.files-list::-webkit-scrollbar-thumb:hover {
-  height: 0px;
-  background: transparent;
-}
-
 /* Chat Interface */
-.editor-chat {
+.cloud-mcp-server-editor .editor-chat {
   width: 400px;
   display: flex;
   flex-direction: column;
@@ -607,38 +598,7 @@
   overflow: hidden;
 }
 
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
-  font-weight: 600;
-  font-size: 14px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.chat-header svg {
-  color: #667eea;
-}
-
-.chat-status {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.chat-status--ready {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
-}
-
-.chat-messages {
+.cloud-mcp-server-editor .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
@@ -647,7 +607,7 @@
   gap: 16px;
 }
 
-.chat-empty {
+.cloud-mcp-server-editor .chat-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -658,29 +618,29 @@
   padding: 32px;
 }
 
-.chat-empty-icon {
+.cloud-mcp-server-editor .chat-empty-icon {
   font-size: 48px;
   color: rgba(102, 126, 234, 0.4);
   margin-bottom: 16px;
 }
 
-.chat-empty p {
+.cloud-mcp-server-editor .chat-empty p {
   margin: 8px 0;
   font-size: 14px;
 }
 
-.chat-empty-hint {
+.cloud-mcp-server-editor .chat-empty-hint {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
 }
 
-.chat-message {
+.cloud-mcp-server-editor .chat-message {
   display: flex;
   gap: 12px;
-  animation: fadeIn 0.3s ease;
+  animation: cmseFadeInUp 0.3s ease;
 }
 
-@keyframes fadeIn {
+@keyframes cmseFadeInUp {
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -691,11 +651,11 @@
   }
 }
 
-.chat-message.user {
+.cloud-mcp-server-editor .chat-message.user {
   flex-direction: row-reverse;
 }
 
-.chat-message-avatar {
+.cloud-mcp-server-editor .chat-message-avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -706,28 +666,28 @@
   font-size: 16px;
 }
 
-.chat-message.user .chat-message-avatar {
+.cloud-mcp-server-editor .chat-message.user .chat-message-avatar {
   background: rgba(102, 126, 234, 0.2);
   color: #667eea;
 }
 
-.chat-message.assistant .chat-message-avatar {
+.cloud-mcp-server-editor .chat-message.assistant .chat-message-avatar {
   background: rgba(118, 75, 162, 0.2);
   color: #764ba2;
 }
 
-.chat-message-content {
+.cloud-mcp-server-editor .chat-message-content {
   flex: 1;
   max-width: calc(100% - 44px);
 }
 
-.chat-message.user .chat-message-content {
+.cloud-mcp-server-editor .chat-message.user .chat-message-content {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
 
-.chat-message-text {
+.cloud-mcp-server-editor .chat-message-text {
   padding: 12px 16px;
   border-radius: 12px;
   font-size: 14px;
@@ -735,28 +695,28 @@
   word-wrap: break-word;
 }
 
-.chat-message.user .chat-message-text {
+.cloud-mcp-server-editor .chat-message.user .chat-message-text {
   background: rgba(102, 126, 234, 0.2);
   border: 1px solid rgba(102, 126, 234, 0.3);
   color: white;
   border-bottom-right-radius: 4px;
 }
 
-.chat-message.assistant .chat-message-text {
+.cloud-mcp-server-editor .chat-message.assistant .chat-message-text {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);
   border-bottom-left-radius: 4px;
 }
 
-.chat-message-time {
+.cloud-mcp-server-editor .chat-message-time {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
   margin-top: 4px;
   padding: 0 4px;
 }
 
-.chat-input-container {
+.cloud-mcp-server-editor .chat-input-container {
   display: flex;
   gap: 8px;
   padding: 16px;
@@ -764,7 +724,7 @@
   background: rgba(0, 0, 0, 0.3);
 }
 
-.chat-input {
+.cloud-mcp-server-editor .chat-input {
   flex: 1;
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
@@ -778,21 +738,21 @@
   transition: all 0.3s ease;
 }
 
-.chat-input:focus {
+.cloud-mcp-server-editor .chat-input:focus {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(102, 126, 234, 0.4);
 }
 
-.chat-input::placeholder {
+.cloud-mcp-server-editor .chat-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
 
-.chat-input:disabled {
+.cloud-mcp-server-editor .chat-input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.chat-send-button {
+.cloud-mcp-server-editor .chat-send-button {
   width: 44px;
   height: 44px;
   display: flex;
@@ -807,42 +767,41 @@
   flex-shrink: 0;
 }
 
-.chat-send-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .chat-send-button:hover:not(:disabled) {
   background: rgba(102, 126, 234, 0.3);
   border-color: rgba(102, 126, 234, 0.6);
   transform: translateY(-2px);
 }
 
-.chat-send-button:disabled {
+.cloud-mcp-server-editor .chat-send-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.chat-send-button svg {
+.cloud-mcp-server-editor .chat-send-button svg {
   width: 18px;
   height: 18px;
 }
 
-/* Scrollbar for chat messages */
-.chat-messages::-webkit-scrollbar {
+.cloud-mcp-server-editor .chat-messages::-webkit-scrollbar {
   width: 6px;
 }
 
-.chat-messages::-webkit-scrollbar-track {
+.cloud-mcp-server-editor .chat-messages::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.2);
 }
 
-.chat-messages::-webkit-scrollbar-thumb {
+.cloud-mcp-server-editor .chat-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
 
-.chat-messages::-webkit-scrollbar-thumb:hover {
+.cloud-mcp-server-editor .chat-messages::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
 /* Chat setup UI */
-.chat-setup {
+.cloud-mcp-server-editor .chat-setup {
   flex: 1;
   display: flex;
   align-items: center;
@@ -850,7 +809,7 @@
   padding: 32px;
 }
 
-.chat-setup-card {
+.cloud-mcp-server-editor .chat-setup-card {
   width: 100%;
   max-width: 400px;
   background: rgba(255, 255, 255, 0.05);
@@ -860,14 +819,14 @@
   text-align: center;
 }
 
-.chat-setup-card h3 {
+.cloud-mcp-server-editor .chat-setup-card h3 {
   margin: 0 0 16px 0;
   font-size: 18px;
   font-weight: 600;
   color: white;
 }
 
-.chat-setup-status {
+.cloud-mcp-server-editor .chat-setup-status {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -876,17 +835,17 @@
   font-size: 14px;
 }
 
-.chat-setup-error {
+.cloud-mcp-server-editor .chat-setup-error {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.chat-setup-error p {
+.cloud-mcp-server-editor .chat-setup-error p {
   margin: 0 0 12px 0;
   color: #f87171;
   font-size: 14px;
 }
 
-.chat-setup-error button {
+.cloud-mcp-server-editor .chat-setup-error button {
   padding: 8px 16px;
   background: rgba(102, 126, 234, 0.2);
   border: 1px solid rgba(102, 126, 234, 0.4);
@@ -897,24 +856,24 @@
   transition: all 0.3s ease;
 }
 
-.chat-setup-error button:hover {
+.cloud-mcp-server-editor .chat-setup-error button:hover {
   background: rgba(102, 126, 234, 0.3);
   border-color: rgba(102, 126, 234, 0.6);
 }
 
-.chat-setup-install,
-.chat-setup-model {
+.cloud-mcp-server-editor .chat-setup-install,
+.cloud-mcp-server-editor .chat-setup-model {
   color: rgba(255, 255, 255, 0.8);
 }
 
-.chat-setup-install p,
-.chat-setup-model p {
+.cloud-mcp-server-editor .chat-setup-install p,
+.cloud-mcp-server-editor .chat-setup-model p {
   margin: 0 0 16px 0;
   font-size: 14px;
   line-height: 1.5;
 }
 
-.chat-setup-action {
+.cloud-mcp-server-editor .chat-setup-action {
   padding: 10px 20px;
   background: rgba(102, 126, 234, 0.2);
   border: 1px solid rgba(102, 126, 234, 0.4);
@@ -926,18 +885,18 @@
   transition: all 0.3s ease;
 }
 
-.chat-setup-action:hover:not(:disabled) {
+.cloud-mcp-server-editor .chat-setup-action:hover:not(:disabled) {
   background: rgba(102, 126, 234, 0.3);
   border-color: rgba(102, 126, 234, 0.6);
   transform: translateY(-2px);
 }
 
-.chat-setup-action:disabled {
+.cloud-mcp-server-editor .chat-setup-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.chat-error {
+.cloud-mcp-server-editor .chat-error {
   padding: 12px 16px;
   margin: 8px 16px;
   background: rgba(239, 68, 68, 0.1);
@@ -945,16 +904,19 @@
   border-radius: 8px;
   color: #f87171;
   font-size: 13px;
-  animation: fadeIn 0.3s ease;
+  animation: cmseFadeInUp 0.3s ease;
 }
 
-.chat-error p {
+.cloud-mcp-server-editor .chat-error p {
   margin: 0;
 }
 
 
-/* Chat Header Updates */
-.chat-header {
+/* ==========================================================================
+   Chat Interface - Header & Actions
+   ========================================================================== */
+
+.cloud-mcp-server-editor .editor-chat .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -962,9 +924,10 @@
   background: #252526;
   border-bottom: 1px solid #333;
   user-select: none;
+  min-height: 48px;
 }
 
-.chat-header-left {
+.cloud-mcp-server-editor .editor-chat .chat-header-left {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -972,7 +935,12 @@
   overflow: hidden;
 }
 
-.chat-title-container {
+.cloud-mcp-server-editor .editor-chat .chat-header-left svg {
+  color: #667eea;
+  flex-shrink: 0;
+}
+
+.cloud-mcp-server-editor .editor-chat .chat-title-container {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -983,33 +951,144 @@
   min-width: 0;
 }
 
-.chat-title-container:hover {
+.cloud-mcp-server-editor .editor-chat .chat-title-container:hover {
   background: #333;
 }
 
-.chat-title {
+.cloud-mcp-server-editor .editor-chat .chat-title {
   font-weight: 600;
-  white-space: normal; /* Allow text to wrap */
-  word-break: break-word; /* Break long words */
-  max-width: 200px;
+  font-size: 13px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
-.history-icon {
-  font-size: 12px;
+.cloud-mcp-server-editor .editor-chat .history-icon {
+  font-size: 11px;
   color: #888;
   opacity: 0.7;
 }
 
-.chat-header-actions {
+.cloud-mcp-server-editor .editor-chat .chat-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.new-chat-button {
+/* Model Selector */
+.cloud-mcp-server-editor .editor-chat .model-selector {
+  position: relative;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle.ready {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.05);
+  color: #fff;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #444;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle.ready .model-status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+.cloud-mcp-server-editor .editor-chat .model-group-label {
+  padding: 8px 12px 4px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  font-weight: 700;
+  border-bottom: 1px solid #333;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.cloud-mcp-server-editor .editor-chat .model-option-hint {
+  padding: 12px;
+  font-size: 10px;
+  color: #555;
+  font-style: italic;
+  text-align: center;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle .model-name {
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 180px;
+  max-height: 250px;
+  overflow-y: auto;
+  background: #252526;
+  border: 1px solid #444;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-option {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
   background: transparent;
   border: none;
-  color: #cccccc;
+  color: #ccc;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-option:hover {
+  background: #333;
+}
+
+.cloud-mcp-server-editor .editor-chat .model-option.active {
+  background: rgba(102, 126, 234, 0.15);
+  color: #a5b4fc;
+}
+
+/* Chat Header Buttons */
+.cloud-mcp-server-editor .editor-chat .undo-button,
+.cloud-mcp-server-editor .editor-chat .new-chat-button {
+  background: transparent;
+  border: none;
+  color: #aaa;
   cursor: pointer;
   padding: 6px;
   border-radius: 4px;
@@ -1019,13 +1098,19 @@
   transition: all 0.2s;
 }
 
-.new-chat-button:hover {
+.cloud-mcp-server-editor .editor-chat .undo-button:hover:not(:disabled),
+.cloud-mcp-server-editor .editor-chat .new-chat-button:hover {
   background: #333;
   color: #fff;
 }
 
+.cloud-mcp-server-editor .editor-chat .undo-button:disabled {
+  color: #444;
+  cursor: not-allowed;
+}
+
 /* Chat History Dropdown */
-.chat-history-dropdown {
+.cloud-mcp-server-editor .chat-history-dropdown {
   position: absolute;
   top: 48px; /* Below header */
   left: 0;
@@ -1038,74 +1123,13 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.history-list {
-  padding: 8px;
-}
-
-.history-item {
-  padding: 10px 12px;
-  cursor: pointer;
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-}
-
-.history-item:hover {
-  background: #333;
-}
-
-.history-item.active {
-  background: #37373d;
-  border-color: #444;
-}
-
-.history-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.history-date {
-  font-size: 11px;
-  color: #888;
-}
-
-.undo-button {
-  background: transparent;
-  border: none;
-  color: #cccccc;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.undo-button:hover:not(:disabled) {
-  background: #333;
-  color: #fff;
-}
-
-.undo-button:disabled {
-  color: #555;
-  cursor: not-allowed;
-}
-
 /* Push/Pull Sync Buttons */
-.sync-button-group {
+.cloud-mcp-server-editor .sync-button-group {
   display: flex;
   align-items: center;
 }
 
-.push-button {
+.cloud-mcp-server-editor .push-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1120,17 +1144,17 @@
   transition: all 0.3s ease;
 }
 
-.push-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .push-button:hover:not(:disabled) {
   background: rgba(34, 197, 94, 0.3);
   border-color: rgba(34, 197, 94, 0.6);
 }
 
-.push-button:disabled {
+.cloud-mcp-server-editor .push-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.version-toggle-button {
+.cloud-mcp-server-editor .version-toggle-button {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1146,22 +1170,22 @@
   transition: all 0.3s ease;
 }
 
-.version-toggle-button.active {
+.cloud-mcp-server-editor .version-toggle-button.active {
   background: rgba(245, 158, 11, 0.3);
   border-color: rgba(245, 158, 11, 0.5);
   color: #f59e0b;
 }
 
-.version-toggle-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .version-toggle-button:hover:not(:disabled) {
   background: rgba(245, 158, 11, 0.2);
 }
 
-.version-toggle-button:disabled {
+.cloud-mcp-server-editor .version-toggle-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.pull-button {
+.cloud-mcp-server-editor .pull-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1176,56 +1200,61 @@
   transition: all 0.3s ease;
 }
 
-.pull-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .pull-button:hover:not(:disabled) {
   background: rgba(245, 158, 11, 0.3);
   border-color: rgba(245, 158, 11, 0.6);
 }
 
-.pull-button:disabled {
+.cloud-mcp-server-editor .pull-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.sync-status {
+.cloud-mcp-server-editor .sync-status {
   display: flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
   font-weight: 500;
-  animation: fadeIn 0.3s ease;
+  animation: cmseFadeIn 0.3s ease;
 }
 
-.sync-status-pushed {
+@keyframes cmseFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cloud-mcp-server-editor .sync-status-pushed {
   color: #22c55e;
 }
 
-.sync-status-pulled {
+.cloud-mcp-server-editor .sync-status-pulled {
   color: #f59e0b;
 }
 
-.sync-status svg {
+.cloud-mcp-server-editor .sync-status svg {
   width: 12px;
   height: 12px;
 }
 
 /* Version Dropdown Styles - Sidebar placement */
-.version-dropdown-container {
+.cloud-mcp-server-editor .version-dropdown-container {
   margin-top: 16px;
   padding: 0 16px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   position: relative;
 }
 
-.version-header {
+.cloud-mcp-server-editor .version-header {
   padding: 12px 0 8px 0 !important;
   border-bottom: none !important;
 }
 
-.version-header svg {
+.cloud-mcp-server-editor .version-header svg {
   color: #667eea;
 }
 
-.version-dropdown-toggle {
+.cloud-mcp-server-editor .version-dropdown-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1241,21 +1270,21 @@
   transition: all 0.2s ease;
 }
 
-.version-dropdown-toggle:hover {
+.cloud-mcp-server-editor .version-dropdown-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.version-toggle-label {
+.cloud-mcp-server-editor .version-toggle-label {
   font-weight: 600;
 }
 
-.version-dropdown-toggle .dropdown-chevron {
+.cloud-mcp-server-editor .version-dropdown-toggle .dropdown-chevron {
   font-size: 10px;
   opacity: 0.7;
 }
 
-.version-dropdown-list {
+.cloud-mcp-server-editor .version-dropdown-list {
   margin-top: 8px;
   background: rgba(20, 30, 45, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1263,10 +1292,10 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   max-height: 250px;
   overflow-y: auto;
-  animation: dropdownSlideIn 0.15s ease;
+  animation: cmseDropdownSlideIn 0.15s ease;
 }
 
-@keyframes dropdownSlideIn {
+@keyframes cmseDropdownSlideIn {
   from {
     opacity: 0;
     transform: translateY(-8px);
@@ -1277,45 +1306,45 @@
   }
 }
 
-.version-dropdown-item {
+.cloud-mcp-server-editor .version-dropdown-item {
   padding: 10px 12px;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   transition: background 0.15s ease;
 }
 
-.version-dropdown-item:last-child {
+.cloud-mcp-server-editor .version-dropdown-item:last-child {
   border-bottom: none;
 }
 
-.version-dropdown-item:hover {
+.cloud-mcp-server-editor .version-dropdown-item:hover {
   background: rgba(102, 126, 234, 0.15);
 }
 
-.version-dropdown-item.active {
+.cloud-mcp-server-editor .version-dropdown-item.active {
   background: rgba(102, 126, 234, 0.2);
   border-left: 3px solid #667eea;
 }
 
-.version-item-header {
+.cloud-mcp-server-editor .version-item-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
 }
 
-.version-number {
+.cloud-mcp-server-editor .version-number {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
 }
 
-.version-date {
+.cloud-mcp-server-editor .version-date {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
 }
 
-.version-description {
+.cloud-mcp-server-editor .version-description {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.6);
   display: block;
@@ -1324,22 +1353,22 @@
   text-overflow: ellipsis;
 }
 
-.version-empty {
+.cloud-mcp-server-editor .version-empty {
   cursor: default;
   opacity: 0.7;
 }
 
-.version-empty:hover {
+.cloud-mcp-server-editor .version-empty:hover {
   background: transparent;
 }
 
-.loading-spinner-small {
+.cloud-mcp-server-editor .loading-spinner-small {
   margin-left: 8px;
   font-size: 12px;
   opacity: 0.7;
 }
 
-.restore-version-button {
+.cloud-mcp-server-editor .restore-version-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1357,16 +1386,16 @@
   transition: all 0.2s ease;
 }
 
-.restore-version-button:hover {
+.cloud-mcp-server-editor .restore-version-button:hover {
   background: rgba(245, 158, 11, 0.3);
   border-color: rgba(245, 158, 11, 0.6);
 }
 
-.restore-version-button svg {
+.cloud-mcp-server-editor .restore-version-button svg {
   font-size: 14px;
 }
 
-.version-badge {
+.cloud-mcp-server-editor .version-badge {
   margin-left: 8px;
   padding: 2px 8px;
   background: rgba(245, 158, 11, 0.2);
@@ -1378,13 +1407,13 @@
   text-transform: uppercase;
 }
 
-.version-code {
+.cloud-mcp-server-editor .version-code {
   background: rgba(30, 30, 40, 0.5);
   border-left: 3px solid rgba(245, 158, 11, 0.5);
 }
 
 /* Run Button */
-.run-button {
+.cloud-mcp-server-editor .run-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1399,18 +1428,18 @@
   transition: all 0.2s ease;
 }
 
-.run-button:hover:not(:disabled) {
+.cloud-mcp-server-editor .run-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
   transform: translateY(-1px);
 }
 
-.run-button:disabled {
+.cloud-mcp-server-editor .run-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
 /* Run Dialog Overlay */
-.run-dialog-overlay {
+.cloud-mcp-server-editor .run-dialog-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.7);
@@ -1419,16 +1448,11 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  animation: cmseFadeIn 0.2s ease;
 }
 
 /* Run Dialog */
-.run-dialog {
+.cloud-mcp-server-editor .run-dialog {
   background: linear-gradient(180deg, #1e1e2e 0%, #181825 100%);
   border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 12px;
@@ -1439,10 +1463,10 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  animation: slideUp 0.3s ease;
+  animation: cmseSlideUp 0.3s ease;
 }
 
-@keyframes slideUp {
+@keyframes cmseSlideUp {
   from {
     opacity: 0;
     transform: translateY(20px);
@@ -1453,7 +1477,7 @@
   }
 }
 
-.run-dialog-header {
+.cloud-mcp-server-editor .run-dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1461,7 +1485,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.run-dialog-header h3 {
+.cloud-mcp-server-editor .run-dialog-header h3 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -1471,11 +1495,11 @@
   gap: 8px;
 }
 
-.run-dialog-header h3 svg {
+.cloud-mcp-server-editor .run-dialog-header h3 svg {
   color: #8b5cf6;
 }
 
-.run-dialog-close {
+.cloud-mcp-server-editor .run-dialog-close {
   background: none;
   border: none;
   color: #6b7280;
@@ -1485,22 +1509,22 @@
   transition: all 0.2s;
 }
 
-.run-dialog-close:hover {
+.cloud-mcp-server-editor .run-dialog-close:hover {
   color: white;
   background: rgba(255, 255, 255, 0.1);
 }
 
-.run-dialog-content {
+.cloud-mcp-server-editor .run-dialog-content {
   padding: 20px;
   flex: 1;
   overflow-y: auto;
 }
 
-.run-dialog-field {
+.cloud-mcp-server-editor .run-dialog-field {
   margin-bottom: 16px;
 }
 
-.run-dialog-field label {
+.cloud-mcp-server-editor .run-dialog-field label {
   display: block;
   font-size: 12px;
   font-weight: 500;
@@ -1508,11 +1532,11 @@
   margin-bottom: 8px;
 }
 
-.run-function-select-wrapper {
+.cloud-mcp-server-editor .run-function-select-wrapper {
   position: relative;
 }
 
-.run-function-select {
+.cloud-mcp-server-editor .run-function-select {
   width: 100%;
   padding: 12px 40px 12px 14px;
   background: rgba(30, 30, 40, 0.8);
@@ -1528,19 +1552,19 @@
   transition: all 0.2s;
 }
 
-.run-function-select:focus {
+.cloud-mcp-server-editor .run-function-select:focus {
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
 }
 
-.run-function-select option {
+.cloud-mcp-server-editor .run-function-select option {
   background: #1e1e2e;
   color: white;
   padding: 10px;
 }
 
-.run-function-select-wrapper .select-arrow {
+.cloud-mcp-server-editor .run-function-select-wrapper .select-arrow {
   position: absolute;
   right: 14px;
   top: 50%;
@@ -1550,46 +1574,35 @@
   font-size: 12px;
 }
 
-.run-dialog-hint {
+.cloud-mcp-server-editor .run-dialog-hint {
   font-size: 11px;
   color: #6b7280;
   margin-top: 8px;
 }
 
-.run-dialog-hint.warning {
+.cloud-mcp-server-editor .run-dialog-hint.warning {
   color: #f59e0b;
 }
 
 /* Run Result */
-.run-result {
+.cloud-mcp-server-editor .run-result {
   margin-top: 16px;
   padding: 12px;
   border-radius: 8px;
-  animation: slideIn 0.3s ease;
+  animation: cmseFadeInUp 0.3s ease;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.run-result.success {
+.cloud-mcp-server-editor .run-result.success {
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
-.run-result.error {
+.cloud-mcp-server-editor .run-result.error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-.run-result-header {
+.cloud-mcp-server-editor .run-result-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1598,15 +1611,15 @@
   margin-bottom: 8px;
 }
 
-.run-result.success .run-result-header {
+.cloud-mcp-server-editor .run-result.success .run-result-header {
   color: #22c55e;
 }
 
-.run-result.error .run-result-header {
+.cloud-mcp-server-editor .run-result.error .run-result-header {
   color: #ef4444;
 }
 
-.run-result-content {
+.cloud-mcp-server-editor .run-result-content {
   background: rgba(0, 0, 0, 0.3);
   padding: 10px;
   border-radius: 6px;
@@ -1620,26 +1633,26 @@
   word-break: break-all;
 }
 
-.run-result-error {
+.cloud-mcp-server-editor .run-result-error {
   font-size: 12px;
   color: #fca5a5;
   margin: 0;
 }
 
-.run-result-logs {
+.cloud-mcp-server-editor .run-result-logs {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.run-result-logs strong {
+.cloud-mcp-server-editor .run-result-logs strong {
   font-size: 11px;
   color: #9ca3af;
   display: block;
   margin-bottom: 4px;
 }
 
-.log-line {
+.cloud-mcp-server-editor .log-line {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
   color: #94a3b8;
@@ -1647,7 +1660,7 @@
 }
 
 /* Run Dialog Actions */
-.run-dialog-actions {
+.cloud-mcp-server-editor .run-dialog-actions {
   display: flex;
   gap: 10px;
   padding: 16px 20px;
@@ -1655,7 +1668,7 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.run-dialog-cancel {
+.cloud-mcp-server-editor .run-dialog-cancel {
   flex: 1;
   padding: 10px 16px;
   background: rgba(255, 255, 255, 0.05);
@@ -1668,12 +1681,12 @@
   transition: all 0.2s;
 }
 
-.run-dialog-cancel:hover {
+.cloud-mcp-server-editor .run-dialog-cancel:hover {
   background: rgba(255, 255, 255, 0.1);
   color: white;
 }
 
-.run-dialog-run {
+.cloud-mcp-server-editor .run-dialog-run {
   flex: 1;
   display: flex;
   align-items: center;
@@ -1690,11 +1703,11 @@
   transition: all 0.2s;
 }
 
-.run-dialog-run:hover:not(:disabled) {
+.cloud-mcp-server-editor .run-dialog-run:hover:not(:disabled) {
   background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
 }
 
-.run-dialog-run:disabled {
+.cloud-mcp-server-editor .run-dialog-run:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
