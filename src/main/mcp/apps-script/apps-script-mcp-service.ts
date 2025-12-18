@@ -337,11 +337,13 @@ export class AppsScriptMCPService implements IMCPService {
           };
 
         case 'apps_script_run_function':
+          console.log(`[MCP:apps_script_run_function] Tool called with args:`, JSON.stringify(args, null, 2));
           const runResult = await this.service.runFunction(
             args.projectId, 
             args.functionName, 
             args.parameters
           );
+          console.log(`[MCP:apps_script_run_function] Service returned:`, JSON.stringify(runResult, null, 2));
           if (runResult.success) {
             return {
               content: [{
@@ -362,6 +364,7 @@ export class AppsScriptMCPService implements IMCPService {
                   success: false,
                   functionName: args.functionName,
                   error: runResult.error,
+                  debugInfo: runResult.debugInfo, // Include detailed debug info on failure
                 }, null, 2)
               }]
             };
@@ -373,9 +376,9 @@ export class AppsScriptMCPService implements IMCPService {
             content: [{
               type: 'text',
               text: JSON.stringify({
+                ...versionResult,
                 success: true,
                 message: `Created version ${versionResult.versionNumber}`,
-                ...versionResult,
               }, null, 2)
             }]
           };

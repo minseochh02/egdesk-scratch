@@ -518,18 +518,35 @@ export class AppsScriptService {
     projectId: string, 
     functionName: string, 
     parameters?: any[]
-  ): Promise<{ success: boolean; result?: any; error?: string; logs?: string[] }> {
+  ): Promise<{ success: boolean; result?: any; error?: string; logs?: string[]; debugInfo?: any }> {
+    console.log(`[AppsScript:runFunction] Starting execution:`, {
+      projectId,
+      functionName,
+      parametersCount: parameters?.length || 0,
+      parameters: parameters,
+    });
+
     // Handle "Name [ID]" format
     let targetId = projectId;
     const idMatch = projectId.match(/\[(.*?)\]$/);
     if (idMatch) targetId = idMatch[1];
 
+    console.log(`[AppsScript:runFunction] Resolved targetId: ${targetId}`);
+
     const copy = this.copiesManager.getTemplateCopy(targetId);
     if (!copy) {
+      console.error(`[AppsScript:runFunction] ERROR: Project not found: ${targetId}`);
       throw new Error(`Project not found: ${targetId}`);
     }
 
+    console.log(`[AppsScript:runFunction] Found project:`, {
+      copyId: copy.id,
+      scriptId: copy.scriptId,
+      name: copy.name,
+    });
+
     if (!copy.scriptId) {
+      console.error(`[AppsScript:runFunction] ERROR: Missing scriptId for project ${targetId}`);
       throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
     }
 
@@ -538,31 +555,121 @@ export class AppsScriptService {
     const token = await authService.getGoogleWorkspaceToken();
     
     if (!token?.access_token) {
+      console.error(`[AppsScript:runFunction] ERROR: No OAuth token available`);
       throw new Error('No Google OAuth token available. Please sign in with Google.');
     }
 
+    console.log(`[AppsScript:runFunction] OAuth token obtained, making API call to script: ${copy.scriptId}`);
+
+    const requestBody = {
+      function: functionName,
+      parameters: parameters || [],
+      devMode: true, // Run against the HEAD version (most recent save)
+    };
+
+    console.log(`[AppsScript:runFunction] Request body:`, JSON.stringify(requestBody, null, 2));
+
     // Call Google Apps Script API to run function
-    const response = await fetch(`https://script.googleapis.com/v1/scripts/${copy.scriptId}:run`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        function: functionName,
-        parameters: parameters || [],
-        devMode: true, // Run against the HEAD version (most recent save)
-      }),
-    });
+    const apiUrl = `https://script.googleapis.com/v1/scripts/${copy.scriptId}:run`;
+    console.log(`[AppsScript:runFunction] API URL: ${apiUrl}`);
 
-    const result = await response.json();
-
-    if (!response.ok || result.error) {
-      const errorMsg = result.error?.message || result.error?.details?.[0]?.errorMessage || `HTTP ${response.status}`;
+    let response: Response;
+    try {
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+    } catch (fetchError) {
+      console.error(`[AppsScript:runFunction] FETCH ERROR:`, fetchError);
       return {
         success: false,
-        error: errorMsg,
+        error: `Network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`,
+        debugInfo: {
+          type: 'fetch_error',
+          error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        },
       };
+    }
+
+    console.log(`[AppsScript:runFunction] Response status: ${response.status} ${response.statusText}`);
+
+    let result: any;
+    try {
+      result = await response.json();
+    } catch (jsonError) {
+      console.error(`[AppsScript:runFunction] JSON PARSE ERROR:`, jsonError);
+      const rawText = await response.text().catch(() => 'Could not read response body');
+      console.error(`[AppsScript:runFunction] Raw response text:`, rawText);
+      return {
+        success: false,
+        error: `Failed to parse response: ${jsonError instanceof Error ? jsonError.message : String(jsonError)}`,
+        debugInfo: {
+          type: 'json_parse_error',
+          status: response.status,
+          statusText: response.statusText,
+          rawResponse: rawText,
+        },
+      };
+    }
+
+    console.log(`[AppsScript:runFunction] Full API response:`, JSON.stringify(result, null, 2));
+
+    if (!response.ok || result.error) {
+      // Extract detailed error information
+      const errorDetails = result.error?.details || [];
+      const scriptStackTrace = errorDetails.find((d: any) => d.scriptStackTraceElements)?.scriptStackTraceElements;
+      const errorMessage = result.error?.message || 'Unknown error';
+      const errorStatus = result.error?.status || response.status;
+      const scriptError = errorDetails.find((d: any) => d.errorMessage)?.errorMessage;
+      const scriptErrorType = errorDetails.find((d: any) => d.errorType)?.errorType;
+
+      console.error(`[AppsScript:runFunction] API ERROR:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorMessage,
+        errorStatus,
+        scriptError,
+        scriptErrorType,
+        scriptStackTrace,
+        fullError: result.error,
+      });
+
+      // Build comprehensive error message
+      let fullErrorMsg = scriptError || errorMessage;
+      if (scriptErrorType) {
+        fullErrorMsg = `[${scriptErrorType}] ${fullErrorMsg}`;
+      }
+      if (scriptStackTrace && scriptStackTrace.length > 0) {
+        const stackStr = scriptStackTrace
+          .map((s: any) => `  at ${s.function || 'anonymous'} (line ${s.lineNumber || '?'})`)
+          .join('\n');
+        fullErrorMsg += `\n\nStack trace:\n${stackStr}`;
+      }
+
+      return {
+        success: false,
+        error: fullErrorMsg,
+        debugInfo: {
+          type: 'api_error',
+          httpStatus: response.status,
+          httpStatusText: response.statusText,
+          errorMessage,
+          errorStatus,
+          scriptError,
+          scriptErrorType,
+          scriptStackTrace,
+          fullApiResponse: result,
+        },
+      };
+    }
+
+    console.log(`[AppsScript:runFunction] SUCCESS! Result:`, result.response?.result);
+    if (result.response?.logs?.length > 0) {
+      console.log(`[AppsScript:runFunction] Script logs:`, result.response.logs);
     }
 
     return {

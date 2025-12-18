@@ -861,6 +861,10 @@ You can use these AppsScript tools to interact with the code:
 - apps_script_partial_edit: Make targeted edits to EXISTING files only (args: fileName, oldString, newString)
 - apps_script_rename_file: Rename files (args: oldFileName, newFileName)
 - apps_script_delete_file: Delete files (args: fileName)
+- apps_script_run_function: Execute a function remotely in the Apps Script project (args: functionName, parameters?)
+  * Use this to test functions, retrieve data, list triggers, etc.
+  * Runs against the most recent saved version
+  * Example: To list triggers, call a function like "listAllTriggers"
 
 ⚠️ CRITICAL TOOL USAGE RULES:
 1. **For NEW files**: ALWAYS use apps_script_write_file (partial_edit will fail on non-existent files!)
