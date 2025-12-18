@@ -27,7 +27,8 @@ import {
   faPlay,
   faTimes
 } from '../../utils/fontAwesomeIcons';
-import { chatWithGemma, OllamaChatMessage, GemmaToolCall } from '../../lib/gemmaClient';
+import { AIService } from '../../services/ai-service';
+import type { AIStreamEvent } from '../../../main/types/ai-types';
 import CodeViewerWithLineNumbers from './CodeViewerWithLineNumbers';
 import './CloudMCPServerEditor.css';
 
@@ -71,12 +72,20 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const [showHistory, setShowHistory] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Ollama state
+  // AI state
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const aiConversationIdRef = useRef<string | null>(null);
+
+  // Ollama setup state (for when local models need installation)
   const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
-  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaLoading, setOllamaLoading] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [isPullingModel, setIsPullingModel] = useState(false);
+  const [hasGemma, setHasGemma] = useState(false);
 
   // Push/Pull state
   const [isPushing, setIsPushing] = useState(false);
@@ -149,54 +158,81 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     loadTemplateCopies();
   }, []);
 
-  // Check Ollama installation status on mount
-  const checkOllamaStatus = useCallback(async () => {
-    if (!window.electron) {
-      console.warn('Electron API not available for Ollama check');
-      return;
-    }
+  // Check AI status and fetch models
+  const refreshAIStatus = useCallback(async () => {
+    if (!window.electron) return;
 
-    setOllamaLoading(true);
+    setAiLoading(true);
     setOllamaError(null);
 
     try {
-      const result = await (window.electron as any).ollama.checkInstalled();
-      if (result.success) {
-        setOllamaInstalled(result.installed || false);
-        
-        if (result.installed) {
-          // Note: We'll need to add listModels to OllamaAPI or use invoke
-          // For now, we'll check for Gemma model directly
+      // 1. Check Ollama installation (for setup UI if needed)
+      const ollamaResult = await (window.electron as any).ollama.checkInstalled();
+      if (ollamaResult.success) {
+        setOllamaInstalled(ollamaResult.installed || false);
+        if (ollamaResult.installed) {
           const gemmaResult = await (window.electron as any).ollama.hasModel(GEMMA_MODEL);
-          if (gemmaResult.success && gemmaResult.exists) {
-            setOllamaModels([GEMMA_MODEL]);
-          }
+          setHasGemma(!!(gemmaResult.success && gemmaResult.exists));
         }
       }
+
+      // 2. Fetch all available models (Cloud + Local)
+      // This will automatically fetch from the key manager if available
+      const models = await AIService.getAvailableModels();
+      setAvailableModels(models);
+
+      // 3. Check if AI service is configured
+      const isConfigured = await AIService.isConfigured();
+      
+      // 4. If not configured or model changed, configure now
+      if (!isConfigured || selectedModel) {
+        const configured = await AIService.configure({
+          model: selectedModel,
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+          apiKey: '' // Will fetch from key manager in main process
+        });
+        setAiReady(configured);
+      } else {
+        setAiReady(true);
+      }
+
+      console.log('✅ AI status refreshed:', { 
+        models, 
+        selectedModel,
+        hasCloudModels: models.some(m => !m.startsWith('ollama:')),
+        hasLocalModels: models.some(m => m.startsWith('ollama:')),
+        isConfigured
+      });
     } catch (error) {
-      console.error('Failed to check Ollama status:', error);
-      setOllamaError('Failed to check Ollama installation');
+      console.error('Failed to refresh AI status:', error);
+      setAiReady(false);
+      setOllamaError('Failed to initialize AI service. Check your settings.');
     } finally {
-      setOllamaLoading(false);
+      setAiLoading(false);
     }
-  }, []);
+  }, [selectedModel, GEMMA_MODEL]);
 
   useEffect(() => {
-    void checkOllamaStatus();
-  }, [checkOllamaStatus]);
+    void refreshAIStatus();
+  }, [refreshAIStatus]);
+
+  // Handle model change
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model);
+    setShowModelDropdown(false);
+  };
 
   // Install Ollama if needed
   const handleInstallOllama = useCallback(async () => {
     if (!window.electron) return;
-
     setOllamaLoading(true);
     setOllamaError(null);
-
     try {
       const result = await (window.electron as any).ollama.ensure();
       if (result.success && result.installed) {
         setOllamaInstalled(true);
-        await checkOllamaStatus();
+        await refreshAIStatus();
       } else {
         setOllamaError('Failed to install Ollama');
       }
@@ -206,36 +242,34 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     } finally {
       setOllamaLoading(false);
     }
-  }, [checkOllamaStatus]);
+  }, [refreshAIStatus]);
 
-  // Pull Gemma model
-  const handlePullGemma = useCallback(async () => {
+  // Pull local model
+  const handlePullModel = useCallback(async (modelName: string) => {
     if (!window.electron) return;
-
     setIsPullingModel(true);
     setOllamaError(null);
-
     try {
-      const result = await (window.electron as any).ollama.pullModel(GEMMA_MODEL);
+      // If it's a model ID from our list (e.g. ollama:gemma), strip the prefix
+      const normalizedName = modelName.startsWith('ollama:') ? modelName.substring(7) : modelName;
+      const result = await (window.electron as any).ollama.pullModel(normalizedName);
       if (result.success) {
-        await checkOllamaStatus();
+        await refreshAIStatus();
       } else {
-        setOllamaError(result.error || 'Failed to pull Gemma model');
+        setOllamaError(result.error || `Failed to pull model ${normalizedName}`);
       }
     } catch (error) {
-      console.error('Failed to pull Gemma model:', error);
+      console.error('Failed to pull model:', error);
       setOllamaError(error instanceof Error ? error.message : 'Model pull failed');
     } finally {
       setIsPullingModel(false);
     }
-  }, [GEMMA_MODEL, checkOllamaStatus]);
+  }, [refreshAIStatus]);
 
-  // Check if Gemma is installed
-  const hasGemma = useMemo(() => {
-    return ollamaModels.some((model) => model.toLowerCase().includes('gemma'));
-  }, [ollamaModels]);
-
-  const ollamaReady = ollamaInstalled && hasGemma;
+  // Derived state for legacy setup cards
+  const isOllamaSelected = selectedModel.startsWith('ollama:');
+  const isGemmaSelected = selectedModel.includes('gemma');
+  const ollamaReady = ollamaInstalled && (isGemmaSelected ? hasGemma : true);
 
   // Update selection when initialCopyId changes
   useEffect(() => {
@@ -731,106 +765,6 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     scrollChatToBottom();
   }, [chatMessages]);
 
-  // Execute tool call
-  const executeTool = async (toolCall: GemmaToolCall): Promise<string> => {
-    if (!selectedCopy?.scriptId) {
-      return 'Error: No script selected or script ID missing.';
-    }
-
-    const { name, args } = toolCall;
-    const scriptId = selectedCopy.scriptId;
-
-    try {
-      switch (name) {
-        case 'apps_script_list_files':
-          const listResult = await window.electron.appsScriptTools.listFiles(scriptId);
-          return listResult.success 
-            ? JSON.stringify(listResult.data, null, 2) 
-            : `Error listing files: ${listResult.error}`;
-
-        case 'apps_script_read_file':
-          if (!args?.fileName) return 'Error: fileName argument required.';
-          const readResult = await window.electron.appsScriptTools.readFile(scriptId, args.fileName);
-          return readResult.success 
-            ? readResult.data || 'File is empty' 
-            : `Error reading file: ${readResult.error}`;
-
-        case 'apps_script_write_file':
-          if (!args?.fileName || args.content === undefined) return 'Error: fileName and content arguments required.';
-          // If the user just specified 'file', map it to fileName
-          const fileName = args.fileName || args.file;
-          const writeResult = await window.electron.appsScriptTools.writeFile(
-            scriptId, 
-            fileName, 
-            args.content, 
-            args.fileType,
-            currentConversationId || undefined
-          );
-          if (writeResult.success) {
-            // Refresh copies to show update
-            await loadTemplateCopies();
-            return `Successfully wrote to ${fileName}`;
-          }
-          return `Error writing file: ${writeResult.error}`;
-
-        case 'apps_script_partial_edit':
-          if (!args?.fileName || !args.oldString || args.newString === undefined) {
-            return 'Error: fileName, oldString, and newString arguments required.';
-          }
-          const editResult = await window.electron.appsScriptTools.partialEdit(
-            scriptId,
-            args.fileName,
-            args.oldString,
-            args.newString,
-            args.expectedReplacements,
-            args.flexibleMatching,
-            currentConversationId || undefined
-          );
-          if (editResult.success) {
-            await loadTemplateCopies();
-            return `Successfully edited ${args.fileName}`;
-          }
-          return `Error editing file: ${editResult.error}`;
-
-        case 'apps_script_rename_file':
-          if (!args?.oldFileName || !args.newFileName) {
-            return 'Error: oldFileName and newFileName arguments required.';
-          }
-          const renameResult = await window.electron.appsScriptTools.renameFile(
-            scriptId,
-            args.oldFileName,
-            args.newFileName,
-            currentConversationId || undefined
-          );
-          if (renameResult.success) {
-            await loadTemplateCopies();
-            return `Successfully renamed ${args.oldFileName} to ${args.newFileName}`;
-          }
-          return `Error renaming file: ${renameResult.error}`;
-
-        case 'apps_script_delete_file':
-          if (!args?.fileName) {
-            return 'Error: fileName argument required.';
-          }
-          const deleteResult = await window.electron.appsScriptTools.deleteFile(
-            scriptId,
-            args.fileName,
-            currentConversationId || undefined
-          );
-          if (deleteResult.success) {
-            await loadTemplateCopies();
-            return `Successfully deleted ${args.fileName}`;
-          }
-          return `Error deleting file: ${deleteResult.error}`;
-
-        default:
-          return `Error: Unknown tool '${name}'`;
-      }
-    } catch (err: any) {
-      return `Error executing ${name}: ${err.message}`;
-    }
-  };
-
   // Build system prompt with code context
   const buildSystemPrompt = useCallback(() => {
     const fileContent = getSelectedFileContent();
@@ -838,170 +772,61 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     const fileType = selectedCopy?.scriptContent?.files?.find(f => f.name === fileName)?.type || 'unknown';
     const scriptId = selectedCopy?.scriptId;
     const allFiles = selectedCopy?.scriptContent?.files || [];
+    
+    // DEBUG: Log what we're using for scriptId
+    console.log('🔍 buildSystemPrompt - selectedCopy:', {
+      id: selectedCopy?.id,
+      scriptId: selectedCopy?.scriptId,
+      spreadsheetId: selectedCopy?.spreadsheetId,
+      templateScriptId: selectedCopy?.templateScriptId
+    });
 
     let codeContext = '';
     if (fileContent && fileContent.trim().length > 0) {
-      codeContext = `\n\nCURRENT FILE CONTEXT:
-File Name: ${fileName}
-File Type: ${fileType}
-Script ID: ${scriptId || 'N/A'}
-File Content:
+      codeContext = `\n📂 CURRENT FILE: ${fileName} (${fileType})
 \`\`\`${fileType === 'server_js' ? 'javascript' : fileType === 'html' ? 'html' : 'javascript'}
 ${fileContent.slice(0, 5000)}${fileContent.length > 5000 ? '\n... (truncated)' : ''}
 \`\`\`
 `;
     }
 
-    const toolsInfo = scriptId ? `
-AVAILABLE TOOLS:
-You can use these AppsScript tools to interact with the code:
-- apps_script_list_files: List all files in the AppsScript project
-- apps_script_read_file: Read any file from the project (args: fileName)
-- apps_script_write_file: CREATE NEW files or REPLACE entire file content (args: fileName, content, fileType?)
-- apps_script_partial_edit: Make targeted edits to EXISTING files only (args: fileName, oldString, newString)
-- apps_script_rename_file: Rename files (args: oldFileName, newFileName)
-- apps_script_delete_file: Delete files (args: fileName)
-- apps_script_run_function: Execute a function remotely in the Apps Script project (args: functionName, parameters?)
-  * Use this to test functions, retrieve data, list triggers, etc.
-  * Runs against the most recent saved version
-  * Example: To list triggers, call a function like "listAllTriggers"
+    return `You are an expert Google Apps Script developer. Your job is to TAKE ACTION IMMEDIATELY using tools.
 
-⚠️ CRITICAL TOOL USAGE RULES:
-1. **For NEW files**: ALWAYS use apps_script_write_file (partial_edit will fail on non-existent files!)
-2. **For editing EXISTING files**: Use apps_script_partial_edit for small changes, apps_script_write_file for full rewrites
-3. **Before editing**: ALWAYS use apps_script_list_files first to see what files exist
-4. **File names must match exactly**: Check the file list before editing
-
-TOOL USAGE INSTRUCTIONS:
-1. To take ANY action on the code, you MUST output a JSON object in your response.
-2. DO NOT hallucinate tool executions. DO NOT say "Tool Execution: ... Result: ...".
-3. ONLY output the JSON request. The system will execute it and give you the result in the next turn.
-4. You can wrap the JSON in \`\`\`json ... \`\`\` blocks.
-
-JSON FORMAT:
-{
-  "content": "Brief explanation of what you are doing",
-  "toolCalls": [
-    {
-      "name": "apps_script_write_file",
-      "args": {
-        "fileName": "example.gs",
-        "content": "function test() {}"
-      }
-    }
-  ]
-}
-
-💾 LOCAL-FIRST WORKFLOW:
-All changes are stored LOCALLY in the EGDesk database (cloudmcp.db) until user clicks "Push to Google".
-- Your edits do NOT immediately go to Google Apps Script
-- User can review changes before pushing
-- This allows safe experimentation without affecting the live script
-` : '';
-
-    return `You are an expert Google Apps Script developer assistant. You help users write, debug, and improve their Apps Script code.
-
-PROJECT CONTEXT:
-- Script ID: ${scriptId || 'N/A'}
-- Currently open file: ${fileName}
-- All files in project: ${allFiles.map(f => f.name).join(', ') || 'None'}
-
+🔑 PROJECT ID: "${scriptId}"
+📂 Files: ${allFiles.map(f => f.name).join(', ') || 'None'}
 ${codeContext}
 
-${toolsInfo}
+⚡ CRITICAL RULES:
+1. When user asks to CREATE, MODIFY, or FIX code → USE TOOLS IMMEDIATELY
+2. DO NOT explain what you would do → JUST DO IT with tools
+3. DO NOT write example code in chat → WRITE IT TO FILES with apps_script_write_file
+4. ALWAYS use scriptId="${scriptId}" in ALL tool calls
 
-📋 PROJECT DOCUMENTATION APPROACH:
-When user shares a script project or asks you to build one, FIRST create a checklist:
-1. Document what the project requires (inputs, outputs, data sources)
-2. Outline the logic needed to address each requirement
-3. Then implement with the best practices below
+🛠️ AVAILABLE TOOLS (USE THESE - don't just talk about them):
+• apps_script_list_files - List all files
+• apps_script_read_file - Read a file
+• apps_script_write_file - Create/replace entire file (use for new files or complete rewrites)
+• apps_script_partial_edit - Edit existing code (search/replace)
+• apps_script_rename_file - Rename a file
+• apps_script_delete_file - Delete a file
 
-🏆 APPS SCRIPT BEST PRACTICES (ALWAYS FOLLOW):
+📝 APPS SCRIPT BEST PRACTICES:
+• Use PropertiesService for IDs/keys (NEVER hardcode)
+• Create setupEnvironment() for one-click initialization
+• Generate complete appsscript.json with all oauthScopes
+• Use Logger.log() for debugging, console.log() for V8
+• For automation, use ScriptApp.newTrigger()
+• .gs = server JS, .html = client HTML with scriptlets
 
-1. **PropertiesService for Dynamic Variables**
-   - NEVER hardcode file IDs, folder IDs, or API keys in code
-   - Use PropertiesService.getScriptProperties() or .getUserProperties()
-   - Example: PropertiesService.getScriptProperties().setProperty('FOLDER_ID', folderId)
+🎯 BEHAVIOR:
+- User says "create contact sync" → IMMEDIATELY call apps_script_write_file with complete code
+- User says "add error handling" → IMMEDIATELY call apps_script_partial_edit to add it
+- User says "fix the bug" → READ the file first, then FIX it with tools
+- NEVER say "Here's the code you need..." → WRITE IT TO THE FILE
+- NEVER use placeholders like "// your code here" → WRITE COMPLETE CODE
+- Be concise: Explain in 1-2 sentences, then USE TOOLS
 
-2. **Self-Initializing Setup (One-Click Ready)**
-   - Create a setupEnvironment() function that initializes everything
-   - If folder/file doesn't exist, CREATE it automatically - don't ask user for IDs
-   - Store created resource IDs in PropertiesService for future use
-   - User should be able to copy the project and run with ONE button click
-
-3. **Proper appsscript.json Manifest**
-   - Always generate/update appsscript.json with correct oauthScopes
-   - Include timeZone, exceptionLogging, runtimeVersion: "V8"
-   - Add webapp config if deploying as web app
-
-4. **Official Google APIs**
-   - Use official Google API documentation
-   - Prefer built-in services (SpreadsheetApp, DriveApp) over REST APIs when possible
-   - For advanced features, use UrlFetchApp with official Google APIs
-
-5. **Logging with Logger**
-   - Use Logger.log() for debugging and audit trails
-   - Use console.log() for V8 runtime debugging
-   - Add meaningful log messages at key steps
-
-6. **Triggers for Automation**
-   - Use ScriptApp.newTrigger() for scheduled/continuous tasks
-   - Add 'https://www.googleapis.com/auth/script.scriptapp' scope for trigger management
-   - Provide install/remove trigger functions for user control
-
-7. **Immediate File Generation**
-   - When starting a project, IMMEDIATELY create appsscript.json and Code.gs
-   - Don't just explain - actually write the files using apps_script_write_file
-
-📐 STANDARD UI MENU PATTERN (Use for Spreadsheet-bound scripts):
-\`\`\`javascript
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('🧩 Project Name');
-  
-  // ZONE 1: Primary Actions (Daily Use)
-  menu.addItem('▶️ Run Main Task', 'mainFunction')
-      .addItem('📊 Generate Report', 'reportFunction');
-  
-  // ZONE 2: Automation (Triggers)
-  menu.addSeparator()
-      .addItem('⏰ Enable Auto-Run', 'installTrigger')
-      .addItem('🛑 Disable Auto-Run', 'removeTrigger');
-  
-  // ZONE 3: Settings (Sub-menu for cleaner UI)
-  const settingsMenu = ui.createMenu('⚙️ Settings');
-  settingsMenu.addItem('🚀 Initial Setup', 'setupEnvironment')
-              .addSeparator()
-              .addItem('🔑 Set API Key', 'setApiKey')
-              .addItem('👀 View Status', 'checkStatus')
-              .addItem('🗑️ Clear Data', 'clearData');
-  
-  menu.addSeparator().addSubMenu(settingsMenu);
-  menu.addToUi();
-}
-\`\`\`
-
-APPS SCRIPT SPECIFIC KNOWLEDGE:
-- .gs files are server-side JavaScript (Google's V8 runtime)
-- .html files can include CSS/JS and use scriptlets: <?= ?>, <? ?>, <?!= ?>
-- Use google.script.run.functionName() to call server functions from HTML
-- SpreadsheetApp, DriveApp, GmailApp, etc. are available server-side
-- HtmlService.createHtmlOutputFromFile('filename') serves HTML pages
-
-IMPORTANT BEHAVIORS:
-- When user asks about code, refer to the current file context above
-- If they ask to modify code, use the AppsScript tools to make changes directly
-- Always explain what changes you're making and why
-- Be concise but thorough in your explanations
-- If the file content is truncated, mention that you're working with a partial view
-- You have access to all files in the AppsScript project via tools
-- NEVER pretend to execute a tool. Send the JSON request and wait for the system result.
-- RESPOND WITH JSON ONLY WHEN USING TOOLS.
-- When user asks to "create HTML" or "make a page", IMMEDIATELY create the file
-- For HTML files in Apps Script, use proper Apps Script HTML service patterns
-- Always generate COMPLETE, working code - don't use placeholders like "// your code here"
-
-Respond naturally and helpfully. If the user asks about code that isn't in the current context, use the tools to read that file first.`;
+Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
   }, [selectedFile, selectedCopy]);
 
   // Save message to DB
@@ -1131,11 +956,11 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
     }
   }, [selectedCopy]);
 
-  // Handle chat send
+  // Unify chat send using AIService
   const handleChatSend = useCallback(async () => {
-    if (!chatInput.trim() || isChatLoading || !ollamaReady) {
-      if (!ollamaReady) {
-        setOllamaError('Gemma is not ready. Complete the setup before chatting.');
+    if (!chatInput.trim() || isChatLoading || !aiReady) {
+      if (!aiReady) {
+        setOllamaError(`AI model ${selectedModel} is not ready. Check your settings.`);
       }
       return;
     }
@@ -1156,92 +981,129 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
     void saveMessageToDB('user', prompt);
 
     try {
-      // Build context from previous messages
-      const priorContext: OllamaChatMessage[] = chatMessages.map((msg) => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content,
-      }));
+      // Ensure AI Service is configured with current model
+      await AIService.configure({
+        model: selectedModel,
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        apiKey: '' // Uses stored key
+      });
 
-      // Get AI response
-      const { content: assistantContent, toolCalls } = await chatWithGemma(
+      // Track accumulated response for streaming
+      let fullResponse = '';
+
+      // DEBUG: Log what scriptId we're passing to AI
+      console.log('🤖 Starting AI conversation with context:', {
+        selectedCopy_id: selectedCopy?.id,
+        selectedCopy_scriptId: selectedCopy?.scriptId,
+        selectedCopy_spreadsheetId: selectedCopy?.spreadsheetId,
+        selectedCopy_templateScriptId: selectedCopy?.templateScriptId,
+        currentFile: selectedFile
+      });
+
+      // Start autonomous conversation with streaming
+      const { conversationId } = await AIService.startAutonomousConversation(
         prompt,
-        priorContext,
         {
-          systemPrompt: buildSystemPrompt(),
+          toolContext: 'apps-script', // ✅ Only expose Apps Script tools to AI
+          maxTurns: 10, // Increased turn limit for better task completion
+          autoExecuteTools: true, // Let backend handle tool execution loop
+          context: {
+            scriptId: selectedCopy?.scriptId,
+            currentFile: selectedFile,
+            projectContext: 'apps-script-editor',
+            systemPrompt: buildSystemPrompt()
+          }
+        },
+        (event: AIStreamEvent) => {
+          // Handle streaming events
+          switch (event.type) {
+            case 'content':
+              fullResponse += (event as any).content || '';
+              // Update the last assistant message or create new one
+              setChatMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                // Only update if it's an assistant message and NOT a tool status message
+                if (lastMsg?.role === 'assistant' && !lastMsg.content.startsWith('⚙️') && !lastMsg.content.startsWith('✅') && !lastMsg.content.startsWith('❌')) {
+                  return [...prev.slice(0, -1), { ...lastMsg, content: fullResponse }];
+                }
+                return [...prev, {
+                  role: 'assistant',
+                  content: fullResponse,
+                  timestamp: new Date()
+                }];
+              });
+              break;
+
+            case 'tool_call_request':
+              const toolCall = (event as any).toolCall;
+              setChatMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `⚙️ Executing: ${toolCall?.name || 'tool'}...`,
+                timestamp: new Date()
+              }]);
+              break;
+
+            case 'tool_call_response':
+              const toolResponse = (event as any).response;
+              // If it was a file modification tool, reload the copies to reflect changes in UI
+              if (['apps_script_write_file', 'apps_script_partial_edit', 'apps_script_delete_file', 'apps_script_rename_file'].includes(toolResponse?.name)) {
+                void loadTemplateCopies();
+              }
+              
+              const resultMsg = toolResponse?.success 
+                ? `✅ ${typeof toolResponse.result === 'string' ? toolResponse.result : JSON.stringify(toolResponse.result).substring(0, 200)}`
+                : `❌ ${toolResponse?.error || 'Tool execution failed'}`;
+              
+              setChatMessages(prev => [...prev, {
+                role: 'assistant',
+                content: resultMsg,
+                timestamp: new Date()
+              }]);
+              break;
+
+            case 'finished':
+              setIsChatLoading(false);
+              // Save the final response
+              if (fullResponse) {
+                void saveMessageToDB('assistant', fullResponse);
+              }
+              // Clean up listener
+              if (aiConversationIdRef.current) {
+                AIService.unregisterStreamEventListener(aiConversationIdRef.current);
+                aiConversationIdRef.current = null;
+              }
+              break;
+
+            case 'error':
+              const errorMsg = (event as any).error?.message || 'Unknown error';
+              console.error('AI error:', errorMsg);
+              setOllamaError(errorMsg);
+              setChatMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Error: ${errorMsg}`,
+                timestamp: new Date()
+              }]);
+              setIsChatLoading(false);
+              break;
+          }
         }
       );
 
-      // Process tool calls if any
-      let responseContent = assistantContent || '';
-      
-      // If we have tool calls, execute them
-      if (toolCalls && toolCalls.length > 0) {
-        // Add the assistant's thought process first
-        if (responseContent) {
-          setChatMessages(prev => [...prev, {
-            role: 'assistant',
-            content: responseContent,
-            timestamp: new Date(),
-          }]);
-          void saveMessageToDB('assistant', responseContent);
-        }
+      aiConversationIdRef.current = conversationId;
+      console.log('Started autonomous conversation:', conversationId);
 
-        // Execute each tool call
-        for (const toolCall of toolCalls) {
-          // Map 'file' to 'fileName' if needed (common mistake by models)
-          if (toolCall.args && toolCall.args.file && !toolCall.args.fileName) {
-            toolCall.args.fileName = toolCall.args.file;
-          }
-
-          // Show tool execution status
-          const toolMsgId = Date.now();
-          setChatMessages(prev => [...prev, {
-            role: 'assistant',
-            content: `⚙️ Executing tool: ${toolCall.name}...`,
-            timestamp: new Date(),
-          }]);
-
-          const result = await executeTool(toolCall);
-          
-          setChatMessages(prev => [...prev, {
-            role: 'assistant',
-            content: `✅ Tool Result:\n${result}`,
-            timestamp: new Date(),
-          }]);
-          
-          // Save tool execution and result
-          void saveMessageToDB('assistant', `Tool Execution: ${toolCall.name}\nResult: ${result}`, {
-            isTool: true,
-            toolName: toolCall.name,
-            toolArgs: toolCall.args,
-            toolResult: result
-          });
-          
-          // Append tool result to context for next turn (implicitly handled by chatMessages state)
-        }
-      } else {
-        // No tool calls, just show the message
-      const assistantMessage = {
-        role: 'assistant' as const,
-          content: responseContent || 'I apologize, but I could not generate a response.',
-        timestamp: new Date(),
-      };
-      setChatMessages(prev => [...prev, assistantMessage]);
-        void saveMessageToDB('assistant', assistantMessage.content);
-      }
     } catch (error) {
-      console.error('Chat error:', error);
-      setOllamaError(error instanceof Error ? error.message : 'Chat failed');
-      const errorMessage = {
-        role: 'assistant' as const,
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Please ensure Ollama is running and try again.`,
-        timestamp: new Date(),
-      };
-      setChatMessages(prev => [...prev, errorMessage]);
-    } finally {
+      console.error('AI chat error:', error);
+      setOllamaError(error instanceof Error ? error.message : 'AI chat failed');
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}.`,
+        timestamp: new Date()
+      }]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, ollamaReady, chatMessages, buildSystemPrompt]);
+  }, [chatInput, isChatLoading, aiReady, selectedModel, selectedCopy, selectedFile, buildSystemPrompt, saveMessageToDB, loadTemplateCopies]);
 
   // Handle Enter key in chat input
   const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1666,7 +1528,7 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
           <div className="editor-chat">
             <div className="chat-header">
               <div className="chat-header-left">
-              <FontAwesomeIcon icon={faRobot} />
+                <FontAwesomeIcon icon={faRobot} />
                 <div className="chat-title-container" onClick={() => setShowHistory(!showHistory)}>
                     <span className="chat-title">
                         {conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'}
@@ -1676,29 +1538,71 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
               </div>
               
               <div className="chat-header-actions">
-                 <button 
-                    className="undo-button"
-                    onClick={handleUndo}
-                    title="Undo Last Change (Ctrl+Z)"
-                    disabled={!currentConversationId}
-                 >
-                    <FontAwesomeIcon icon={faUndo} />
-                 </button>
-                 <button 
-                    className="new-chat-button"
-                    onClick={() => createNewConversation()}
-                    title="New Chat"
-                 >
-                    <FontAwesomeIcon icon={faPlus} />
-                 </button>
-              <span className={`chat-status ${ollamaReady ? 'chat-status--ready' : ''}`}>
-                {ollamaLoading
-                  ? 'Checking...'
-                  : ollamaReady
-                  ? '🟢'
-                  : '⚪ Setup Required'}
-              </span>
-            </div>
+                {/* Unified Model Selector */}
+                <div className="model-selector">
+                  <button 
+                    className={`model-dropdown-toggle ${aiReady ? 'ready' : ''}`}
+                    onClick={() => setShowModelDropdown(!showModelDropdown)}
+                    title="Select AI Model"
+                  >
+                    <span className="model-status-dot"></span>
+                    <span className="model-name">
+                      {selectedModel.startsWith('ollama:') 
+                        ? `🖥️ ${selectedModel.replace('ollama:', '')}` 
+                        : `☁️ ${selectedModel.replace('gemini-', '').replace('-latest', '')}`}
+                    </span>
+                    <FontAwesomeIcon icon={showModelDropdown ? faChevronUp : faChevronDown} />
+                  </button>
+                  
+                  {showModelDropdown && (
+                    <div className="model-dropdown">
+                      {/* Cloud Models Section */}
+                      <div className="model-group-label">Cloud Models (Gemini)</div>
+                      {availableModels.filter(m => !m.startsWith('ollama:')).map(model => (
+                        <button
+                          key={model}
+                          className={`model-option ${selectedModel === model ? 'active' : ''}`}
+                          onClick={() => handleModelChange(model)}
+                        >
+                          ☁️ {model}
+                        </button>
+                      ))}
+                      
+                      {/* Local Models Section */}
+                      <div className="model-group-label">Local Models (Ollama)</div>
+                      {availableModels.filter(m => m.startsWith('ollama:')).map(model => (
+                        <button
+                          key={model}
+                          className={`model-option ${selectedModel === model ? 'active' : ''}`}
+                          onClick={() => handleModelChange(model)}
+                        >
+                          🖥️ {model.replace('ollama:', '')}
+                        </button>
+                      ))}
+                      
+                      {availableModels.filter(m => m.startsWith('ollama:')).length === 0 && (
+                        <div className="model-option-hint">No local models found. Install Ollama to use offline AI.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  className="undo-button"
+                  onClick={handleUndo}
+                  title="Undo Last Change (Ctrl+Z)"
+                  disabled={!currentConversationId}
+                >
+                  <FontAwesomeIcon icon={faUndo} />
+                </button>
+                <button 
+                  className="new-chat-button"
+                  onClick={() => createNewConversation()}
+                  title="New Chat"
+                >
+                  <FontAwesomeIcon icon={faPlus} />
+                </button>
+              </div>
             </div>
             
             {showHistory && (
@@ -1723,48 +1627,97 @@ Respond naturally and helpfully. If the user asks about code that isn't in the c
                 </div>
             )}
 
-            {!ollamaReady ? (
+            {!aiReady ? (
               <div className="chat-setup">
-                <div className="chat-setup-card">
-                  <h3>🤖 Local AI Setup</h3>
-                  {ollamaLoading ? (
-                    <div className="chat-setup-status">
-                      <FontAwesomeIcon icon={faSpinner} spin />
-                      <span>Checking Ollama status...</span>
-                    </div>
-                  ) : ollamaError ? (
-                    <div className="chat-setup-error">
-                      <p>⚠️ {ollamaError}</p>
-                      <button type="button" onClick={checkOllamaStatus}>
-                        Retry
-                      </button>
-                    </div>
-                  ) : ollamaInstalled === false ? (
-                    <div className="chat-setup-install">
-                      <p>Ollama is not installed. Install it to use local AI models.</p>
-                      <button
-                        type="button"
-                        className="chat-setup-action"
-                        onClick={handleInstallOllama}
-                        disabled={ollamaLoading}
-                      >
-                        Install Ollama
-                      </button>
-                    </div>
-                  ) : !hasGemma ? (
-                    <div className="chat-setup-model">
-                      <p>Gemma 4B model is not installed. Pull it to start chatting.</p>
-                      <button
-                        type="button"
-                        className="chat-setup-action"
-                        onClick={handlePullGemma}
-                        disabled={isPullingModel}
-                      >
-                        {isPullingModel ? 'Pulling Gemma 4B...' : 'Pull Gemma 4B'}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                {/* Local Model Setup */}
+                {isOllamaSelected ? (
+                  <div className="chat-setup-card">
+                    <h3>🖥️ Local AI Setup</h3>
+                    {ollamaLoading ? (
+                      <div className="chat-setup-status">
+                        <FontAwesomeIcon icon={faSpinner} spin />
+                        <span>Checking Ollama status...</span>
+                      </div>
+                    ) : ollamaError ? (
+                      <div className="chat-setup-error">
+                        <p>⚠️ {ollamaError}</p>
+                        <button type="button" onClick={refreshAIStatus}>
+                          Retry
+                        </button>
+                      </div>
+                    ) : ollamaInstalled === false ? (
+                      <div className="chat-setup-install">
+                        <p>Ollama is not installed. Install it to use local AI models.</p>
+                        <button
+                          type="button"
+                          className="chat-setup-action"
+                          onClick={handleInstallOllama}
+                          disabled={ollamaLoading}
+                        >
+                          Install Ollama
+                        </button>
+                      </div>
+                    ) : !ollamaReady ? (
+                      <div className="chat-setup-model">
+                        <p>Model <strong>{selectedModel.replace('ollama:', '')}</strong> is not installed.</p>
+                        <button
+                          type="button"
+                          className="chat-setup-action"
+                          onClick={() => handlePullModel(selectedModel)}
+                          disabled={isPullingModel}
+                        >
+                          {isPullingModel ? `Pulling ${selectedModel}...` : `Pull ${selectedModel}`}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  /* Cloud Model Setup */
+                  <div className="chat-setup-card">
+                    <h3>☁️ Gemini Cloud AI</h3>
+                    {aiLoading ? (
+                      <div className="chat-setup-status">
+                        <FontAwesomeIcon icon={faSpinner} spin />
+                        <span>Connecting to Gemini...</span>
+                      </div>
+                    ) : ollamaError ? (
+                      <div className="chat-setup-error">
+                        <p>⚠️ {ollamaError}</p>
+                        <button type="button" onClick={refreshAIStatus}>
+                          Retry
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="chat-setup-install">
+                        <p>Gemini API key not configured.</p>
+                        <p className="chat-setup-hint">
+                          Add your Google API key in the AI Keys Manager to use cloud models.
+                        </p>
+                        <div className="chat-setup-buttons">
+                          <button
+                            type="button"
+                            className="chat-setup-action"
+                            onClick={refreshAIStatus}
+                            disabled={aiLoading}
+                          >
+                            Check Again
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-setup-secondary"
+                            onClick={() => {
+                              const localModel = availableModels.find(m => m.startsWith('ollama:'));
+                              if (localModel) setSelectedModel(localModel);
+                            }}
+                            disabled={!availableModels.some(m => m.startsWith('ollama:'))}
+                          >
+                            Use Local AI Instead
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <>

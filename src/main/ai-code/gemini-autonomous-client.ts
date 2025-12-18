@@ -8,13 +8,14 @@ import { GoogleGenerativeAI, GenerationConfig, Content, Part, FunctionCall, Tool
 import { ipcMain } from 'electron';
 const { v4: uuidv4 } = require('uuid');
 import { fetch as undiciFetch, Agent } from 'undici';
-import { toolRegistry } from './tool-executor';
+import { toolRegistry, getToolNamesForContext } from './tool-executor';
 import { loopDetectionService } from './loop-detection';
 import { projectContextBridge } from './project-context-bridge';
 import { getEGDeskSystemPrompt } from './prompts/system-prompt';
 import { getSQLiteManager } from '../sqlite/manager';
 import { AIChatDatabase, conversationMessageToAIMessage } from '../sqlite/ai';
 import { ollamaManager } from '../ollama/installer';
+import { getGoogleApiKey } from '../gemini/index';
 import type { 
   AIClientConfig, 
   ConversationMessage, 
@@ -98,7 +99,6 @@ export class AutonomousGeminiClient implements AIClientService {
     try {
       const targetModel = (config.model || 'gemini-2.5-flash').trim();
       this.currentModelId = targetModel;
-      this.config = { ...config, model: targetModel };
 
       if (this.isOllamaModel(targetModel)) {
         const normalizedModel = this.normalizeOllamaModel(targetModel);
@@ -131,7 +131,22 @@ export class AutonomousGeminiClient implements AIClientService {
       }
 
       // Default to Gemini cloud workflow
-      this.genAI = new GoogleGenerativeAI(config.apiKey);
+      // Get API key from config or key manager
+      let apiKey = config.apiKey;
+      if (!apiKey || apiKey.trim() === '') {
+        const keyInfo = getGoogleApiKey();
+        apiKey = keyInfo.apiKey || '';
+        if (!apiKey) {
+          console.warn('⚠️ No Google API key found in config or key manager');
+          throw new Error('No Google API key available. Please add one in the AI Keys Manager.');
+        }
+        console.log('✅ Retrieved API key from key manager');
+      }
+
+      // Store config with resolved API key
+      this.config = { ...config, model: targetModel, apiKey };
+
+      this.genAI = new GoogleGenerativeAI(apiKey);
 
       const projectContext = await this.getProjectContext();
       const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
@@ -149,7 +164,7 @@ export class AutonomousGeminiClient implements AIClientService {
       this.mode = 'gemini';
       this.ollamaChatHistory = [];
 
-      console.log('✅ Autonomous Gemini client configured with EGDesk system prompt');
+      console.log('✅ Autonomous Gemini client configured with EGDesk system prompt and API key');
       return true;
     } catch (error) {
       console.error('❌ Failed to configure Gemini client:', error);
@@ -175,6 +190,7 @@ export class AutonomousGeminiClient implements AIClientService {
     message: string, 
     options: {
       tools?: ToolDefinition[];
+      toolContext?: 'filesystem' | 'apps-script' | 'all';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;
@@ -208,6 +224,23 @@ export class AutonomousGeminiClient implements AIClientService {
       context: options.context
     };
 
+    // If a custom systemPrompt is provided in context, create a temporary model instance for this conversation
+    let conversationModel = this.model;
+    if (options.context?.systemPrompt && this.genAI) {
+      const customSystemPrompt = options.context.systemPrompt;
+      console.log('🔄 Creating temporary model instance with custom system prompt (length:', customSystemPrompt.length, 'chars)');
+      
+      conversationModel = this.genAI.getGenerativeModel({
+        model: this.config?.model || 'gemini-2.5-flash',
+        generationConfig: {
+          temperature: this.config?.temperature || 0.7,
+          topP: this.config?.topP || 0.8,
+          maxOutputTokens: this.config?.maxOutputTokens || 4096,
+        },
+        systemInstruction: customSystemPrompt
+      });
+    }
+
     // Create conversation in SQLite
     this.currentConversationId = sessionId;
     await this.createConversationInSQLite(sessionId, message, options.context);
@@ -223,17 +256,35 @@ export class AutonomousGeminiClient implements AIClientService {
 
     try {
       console.log('🛠️ Getting available tools...');
-      // Get available tools
-      const availableTools = options.tools || toolRegistry.getToolDefinitions();
+      
+      // Determine available tools based on context
+      let availableTools: ToolDefinition[];
+      
+      if (options.tools) {
+        // Manual tool definitions provided (existing behavior)
+        availableTools = options.tools;
+      } else if (options.toolContext) {
+        // Filter by context
+        const allowedToolNames = getToolNamesForContext(options.toolContext);
+        availableTools = toolRegistry.getToolDefinitions()
+          .filter(tool => allowedToolNames.includes(tool.name));
+        
+        console.log(`🔧 Tool context: ${options.toolContext}`);
+        console.log(`📋 Filtered to ${availableTools.length} tools:`, allowedToolNames);
+      } else {
+        // Default: all tools (backward compatibility)
+        availableTools = toolRegistry.getToolDefinitions();
+      }
+      
       console.log('📋 Available tools:', availableTools.map(t => t.name));
       
       const geminiTools: Tool[] = this.convertToolsForGemini(availableTools);
       const totalFunctions = geminiTools.reduce((sum, tool) => sum + ((tool as any).functionDeclarations?.length || 0), 0);
       console.log('🔧 Converted tools for Gemini:', `${geminiTools.length} tool objects containing ${totalFunctions} functions`);
 
-      // Start conversation loop
+      // Start conversation loop with the appropriate model instance
       console.log('🚀 Starting conversation loop...');
-      yield* this.conversationLoop(message, geminiTools, options.autoExecuteTools || true);
+      yield* this.conversationLoop(message, geminiTools, options.autoExecuteTools || true, conversationModel!);
 
     } catch (error) {
       yield {
@@ -255,6 +306,7 @@ export class AutonomousGeminiClient implements AIClientService {
     message: string,
     options: {
       tools?: ToolDefinition[];
+      toolContext?: 'filesystem' | 'apps-script' | 'all';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;
@@ -445,7 +497,8 @@ export class AutonomousGeminiClient implements AIClientService {
   private async *conversationLoop(
     initialMessage: string, 
     tools: Tool[], 
-    autoExecuteTools: boolean
+    autoExecuteTools: boolean,
+    model: any // Gemini GenerativeModel instance (can be base or custom)
   ): AsyncGenerator<AIStreamEvent> {
     console.log('🔄 Starting conversation loop with message:', initialMessage);
     console.log('🛠️ Available tools:', tools.length);
@@ -500,8 +553,8 @@ export class AutonomousGeminiClient implements AIClientService {
           contextualMessage = `${contextualMessage}\n\nAttached files: ${this.conversationState.context.attachedFiles.map((f: any) => f.filePath).join(', ')}`;
         }
 
-        // Send message to Gemini with tools
-        const result = await this.model!.generateContent({
+        // Send message to Gemini with tools (using the model instance passed to this function)
+        const result = await model.generateContent({
           contents: [
             ...this.getConversationHistoryForGemini(),
             { role: 'user', parts: [{ text: contextualMessage }] }
@@ -952,13 +1005,45 @@ export class AutonomousGeminiClient implements AIClientService {
     return this.conversationState?.isActive || false;
   }
 
-  getAvailableModels(): string[] {
-    const cloudModels = [
-      'gemini-2.5-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-pro-latest',
-      'gemini-1.0-pro'
-    ];
+  async getAvailableModels(apiKey?: string): Promise<string[]> {
+    let cloudModels: string[] = [];
+    
+    // Try to get API key from: parameter > config > key manager
+    let keyToUse = apiKey || this.config?.apiKey;
+    if (!keyToUse) {
+      const keyInfo = getGoogleApiKey();
+      keyToUse = keyInfo.apiKey || undefined;
+    }
+
+    // Try to fetch available models from Google API if API key is available
+    if (keyToUse) {
+      try {
+        const response = await undiciFetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${keyToUse}`
+        );
+        
+        if (response.ok) {
+          const data: any = await response.json();
+          if (data.models && Array.isArray(data.models)) {
+            cloudModels = data.models
+              .filter((m: any) => 
+                m.name.includes('gemini') && 
+                m.supportedGenerationMethods?.includes('generateContent')
+              )
+              .map((m: any) => m.name.replace('models/', ''))
+              .sort((a: string, b: string) => b.localeCompare(a));
+              
+            console.log('✅ Fetched Gemini models from API:', cloudModels);
+          }
+        } else {
+          console.warn(`⚠️ Failed to fetch Gemini models: ${response.status} ${response.statusText}`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to fetch Gemini models from API:', error);
+      }
+    } else {
+      console.log('ℹ️ No API key available (checked parameter, config, and key manager), skipping Gemini model fetch');
+    }
 
     const localModels = Array.from(this.availableOllamaModels).map(model => `ollama:${model}`);
 
@@ -1052,8 +1137,8 @@ export class AutonomousGeminiClient implements AIClientService {
       return true;
     });
 
-    ipcMain.handle('ai-get-models', async () => {
-      return this.getAvailableModels();
+    ipcMain.handle('ai-get-models', async (event, apiKey?: string) => {
+      return this.getAvailableModels(apiKey);
     });
 
     // Tool confirmation handlers

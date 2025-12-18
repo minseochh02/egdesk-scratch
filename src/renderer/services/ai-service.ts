@@ -48,6 +48,7 @@ export class AIService {
     message: string,
     options: {
       tools?: ToolDefinition[];
+      toolContext?: 'filesystem' | 'apps-script' | 'all';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;
@@ -191,9 +192,9 @@ export class AIService {
   /**
    * Get available AI models
    */
-  static async getAvailableModels(): Promise<string[]> {
+  static async getAvailableModels(apiKey?: string): Promise<string[]> {
     try {
-      return await window.electron.aiService.getAvailableModels();
+      return await window.electron.aiService.getAvailableModels(apiKey);
     } catch (error) {
       console.error('Error getting available models:', error);
       return [];
@@ -207,6 +208,7 @@ export class AIService {
     message: string,
     options: {
       tools?: ToolDefinition[];
+      toolContext?: 'filesystem' | 'apps-script' | 'all';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;

@@ -447,6 +447,51 @@ export class ToolRegistry {
 export const toolRegistry = new ToolRegistry();
 
 /**
+ * Get filesystem tools for local file operations
+ */
+export function getFilesystemTools(): ToolExecutor[] {
+  return [
+    new ReadFileTool(),
+    new WriteFileTool(),
+    new ListDirectoryTool(),
+    new MoveFileTool(),
+    new PartialEditTool(),
+    new ShellCommandTool(),
+    new AnalyzeProjectTool(),
+    new InitProjectTool(),
+  ];
+}
+
+/**
+ * Get Apps Script tools for database operations
+ */
+export function getAppsScriptTools(): ToolExecutor[] {
+  return [
+    new AppsScriptListFilesTool(),
+    new AppsScriptReadFileTool(),
+    new AppsScriptWriteFileTool(),
+    new AppsScriptPartialEditTool(),
+    new AppsScriptRenameFileTool(),
+    new AppsScriptDeleteFileTool(),
+  ];
+}
+
+/**
+ * Get tool names for a specific context
+ */
+export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'all'): string[] {
+  switch (context) {
+    case 'filesystem':
+      return getFilesystemTools().map(t => t.name);
+    case 'apps-script':
+      return getAppsScriptTools().map(t => t.name);
+    case 'all':
+    default:
+      return Array.from(toolRegistry['tools'].keys());
+  }
+}
+
+/**
  * Register IPC handlers for AppsScript tools
  */
 export function registerAppsScriptToolHandlers(): void {
