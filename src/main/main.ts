@@ -30,6 +30,9 @@ import { FacebookHandler } from './sns/facebook/facebook-handler';
 import { LocalServerManager } from './php/local-server';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
+import { exec } from 'child_process';
+import { isGitInstalled, GitError } from './utils/git';
+
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
   if (typeof existing === 'string' && existing.trim().length > 0) {
@@ -624,6 +627,47 @@ const createWindow = async () => {
               error instanceof Error
                 ? error.message || 'Failed to fetch website content.'
                 : 'Failed to fetch website content.',
+          };
+        }
+      });
+
+      // Git operations
+      ipcMain.handle('git-clone', async (event, repoUrl: string, destPath: string) => {
+        try {
+          // Pre-flight check: ensure Git is installed
+          if (!(await isGitInstalled())) {
+            return {
+              success: false,
+              error: GitError.GIT_NOT_INSTALLED,
+              message: 'Git is not installed on this system.',
+            };
+          }
+
+          // Ensure the destination path exists before cloning
+          if (!fs.existsSync(destPath)) {
+            fs.mkdirSync(destPath, { recursive: true });
+          }
+
+          // The `exec` function returns a Promise-like object, but not a native Promise.
+          // Wrap it in a Promise for async/await compatibility.
+          await new Promise<void>((resolve, reject) => {
+            exec(`git clone ${repoUrl} ${destPath}`, (error, stdout, stderr) => {
+              if (error) {
+                console.error(`Git clone stderr: ${stderr}`);
+                reject(new Error(`Git clone failed: ${error.message}. Stderr: ${stderr}`));
+              } else {
+                console.log(`Git clone stdout: ${stdout}`);
+                resolve();
+              }
+            });
+          });
+          return { success: true };
+        } catch (error) {
+          console.error('Error cloning repository:', error);
+          return { 
+            success: false, 
+            error: (error as any).error || GitError.CLONE_FAILED,
+            message: (error as Error).message 
           };
         }
       });
@@ -2379,6 +2423,20 @@ const createWindow = async () => {
       return { success: true };
     } catch (error) {
       console.error('[shell-open-path] Error opening file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Open external URL
+  ipcMain.handle('shell-open-external', async (_event, url: string) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      console.error('[shell-open-external] Error opening URL:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',

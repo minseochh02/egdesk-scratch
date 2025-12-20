@@ -153,6 +153,21 @@ export interface FileInfoResult {
   error?: string;
 }
 
+/**
+ * Result of Git clone operation
+ */
+export interface GitCloneResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Git operations API
+ */
+export interface GitAPI {
+  clone: (repoUrl: string, destPath: string) => Promise<GitCloneResult>;
+}
+
 // ============================================================================
 // API INTERFACES
 // ============================================================================
@@ -191,6 +206,7 @@ export interface FileSystemAPI {
   getFileInfoOnly: (filePath: string) => Promise<FileInfoResult>;
   writeFileWithParams: (params: WriteFileToolParams) => Promise<WriteFileResult>;
   writeFileSimple: (filePath: string, content: string) => Promise<WriteFileResult>;
+  joinPaths: (...paths: string[]) => Promise<{ success: boolean; joinedPath?: string; error?: string }>;
 }
 
 /**
@@ -1337,7 +1353,21 @@ const electronHandler = {
       ipcRenderer.invoke('fs-write-file', params),
     writeFileSimple: (filePath: string, content: string) =>
       ipcRenderer.invoke('fs-write-file', filePath, content),
+    joinPaths: (...paths: string[]) =>
+      ipcRenderer.invoke('fs-join-paths', ...paths),
   } as FileSystemAPI,
+
+  // ========================================================================
+  // GIT OPERATIONS
+  // ========================================================================
+
+  /**
+   * Git management API
+   */
+  git: {
+    clone: (repoUrl: string, destPath: string) =>
+      ipcRenderer.invoke('git-clone', repoUrl, destPath),
+  } as GitAPI,
   
   // ========================================================================
   // WEB UTILITIES
@@ -2122,6 +2152,7 @@ auth: {
   // ========================================================================
   shell: {
     openPath: (filePath: string) => ipcRenderer.invoke('shell-open-path', filePath),
+    openExternal: (url: string) => ipcRenderer.invoke('shell-open-external', url),
   },
 
   // ========================================================================
