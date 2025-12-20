@@ -1775,12 +1775,12 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={handleChatKeyDown}
                     rows={3}
-                    disabled={isChatLoading || !ollamaReady}
+                    disabled={isChatLoading || !aiReady}
                   />
                   <button
                     className="chat-send-button"
                     onClick={handleChatSend}
-                    disabled={!chatInput.trim() || isChatLoading || !ollamaReady}
+                    disabled={!chatInput.trim() || isChatLoading || !aiReady}
                   >
                     <FontAwesomeIcon icon={faPaperPlane} />
                   </button>
