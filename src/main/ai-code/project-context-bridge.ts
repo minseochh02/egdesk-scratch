@@ -13,6 +13,9 @@ export interface ProjectInfo {
   description?: string;
   lastAccessed: Date;
   isActive: boolean;
+  isInitialized: boolean;
+  isGit: boolean;
+  createdAt: Date;
   metadata: {
     hasWordPress?: boolean;
     hasPackageJson?: boolean;
@@ -22,6 +25,10 @@ export interface ProjectInfo {
     language?: string;
     framework?: string;
     version?: string;
+    repositoryUrl?: string;
+    hasBackupFolder?: boolean;
+    initializationDate?: Date;
+    initializationStatus?: 'pending' | 'completed' | 'failed';
   };
 }
 

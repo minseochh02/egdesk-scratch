@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './ProjectSelection.css';
 import ProjectContextService, { type ProjectInfo } from '../../../services/projectContextService';
 import { AIService } from '../../../services/ai-service';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 
 interface Project extends ProjectInfo {
   // Additional properties specific to the component can be added here
@@ -22,7 +24,13 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
+  const [destinationPath, setDestinationPath] = useState('');
   const [isInitializing, setIsInitializing] = useState(false);
+  const [showGitMissingModal, setShowGitMissingModal] = useState(false);
+
+  const isGithubUrl = (path: string) => {
+    return path.startsWith('https://github.com/') || path.startsWith('git@github.com');
+  };
 
   useEffect(() => {
     // Subscribe to project context changes
@@ -60,36 +68,89 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
     await ProjectContextService.getInstance().setCurrentProject(project.path);
   };
 
+  const handleRemoveProject = (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation(); // Prevent card selection
+    if (confirm('Are you sure you want to remove this project from the list?')) {
+      ProjectContextService.getInstance().removeProject(projectId);
+    }
+  };
+
   const handleCreateProject = async () => {
-    if (!newProjectName.trim() || !newProjectPath.trim()) {
+    const isUrl = isGithubUrl(newProjectPath);
+    const targetPath = isUrl ? destinationPath : newProjectPath;
+
+    if (!newProjectName.trim() || !newProjectPath.trim() || (isUrl && !destinationPath.trim())) {
       return;
     }
 
-    try {
-      setIsInitializing(true);
-      
-      // First, create the project in the context (this will analyze and save it)
-      const newProject = await ProjectContextService.getInstance().setCurrentProject(newProjectPath.trim());
-      
-      if (!newProject) {
-        console.error('Failed to create project');
-        alert('Failed to create project');
-        return;
-      }
+      try {
+        setIsInitializing(true);
+
+        let finalProjectPath = targetPath.trim();
+
+        if (isUrl) {
+          // For GitHub URLs, create a subdirectory within the destinationPath for the clone
+          const projectNameSlug = newProjectName.trim().replace(/[^a-zA-Z0-9-_]/g, '_'); // Sanitize project name for directory
+          const joinedPathResult = await window.electron.fileSystem.joinPaths(finalProjectPath, projectNameSlug);
+
+          if (!joinedPathResult.success || !joinedPathResult.joinedPath) {
+            throw new Error(joinedPathResult.error || 'Failed to construct clone path');
+          }
+          finalProjectPath = joinedPathResult.joinedPath;
+          
+          // Ensure the new subdirectory exists before cloning
+          await window.electron.fileSystem.createFolder(finalProjectPath);
+
+          // Perform git clone directly via IPC
+          console.log(`📡 Cloning repository ${newProjectPath.trim()} into ${finalProjectPath}...`);
+          const cloneResult = await window.electron.git.clone(
+            newProjectPath.trim(),
+            finalProjectPath,
+          );
+
+          if (!cloneResult.success) {
+            if (cloneResult.error === 'GIT_NOT_INSTALLED') {
+              setShowGitMissingModal(true);
+              return;
+            }
+            throw new Error(cloneResult.error || 'Git clone failed');
+          }
+          console.log('✅ Repository cloned successfully.');
+        } else {
+          // For local paths, ensure the directory exists
+          await window.electron.fileSystem.createFolder(finalProjectPath);
+        }
+        
+        // Now, create the project in the context (this will analyze and save it)
+        const newProject = await ProjectContextService.getInstance().setCurrentProject(
+          finalProjectPath,
+          isUrl, // Explicitly mark as Git project if it's a URL
+          isUrl ? newProjectPath.trim() : undefined, // Pass the GitHub URL as repositoryUrl
+        );
+
+        if (!newProject) {
+          console.error('Failed to create project');
+          alert('Failed to create project');
+          return;
+        }
 
       // Update the project name if it was auto-generated
       if (newProject.name !== newProjectName.trim()) {
         newProject.name = newProjectName.trim();
         // The context will be updated automatically through the subscription
-      }
+           }
 
-      // Mark project as pending initialization
-      ProjectContextService.getInstance().updateProjectInitializationStatus(newProject.id, 'pending');
+           // Mark project as pending initialization
+           ProjectContextService.getInstance().updateProjectInitializationStatus(newProject.id, 'pending');
 
-      // Initialize the project using the init-project tool
-      const initMessage = `Please initialize a new project in the folder: ${newProjectPath.trim()}`;
-      
-      // Use AI service to call the init-project tool
+           // For local projects, we still use AI for initialization tasks like installing dependencies
+           // For GitHub projects, the cloning is now handled directly above, so AI only for post-clone setup
+           let initMessage = `Please initialize a new project in the folder: ${finalProjectPath.trim()}`;
+           if (isUrl) {
+            initMessage = `Please perform post-clone initialization for the repository cloned into ${finalProjectPath.trim()}. This might include installing dependencies or other setup.`;
+           }
+           
+           // Use AI service to call the init-project tool
       const { conversationId } = await AIService.startAutonomousConversation(
         initMessage,
         {
@@ -122,6 +183,7 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
       
       setNewProjectName('');
       setNewProjectPath('');
+      setDestinationPath('');
       setShowNewProjectForm(false);
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -139,6 +201,17 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
       }
     } catch (error) {
       console.error('Failed to browse for folder:', error);
+    }
+  };
+
+  const handleBrowseDestination = async () => {
+    try {
+      const result = await window.electron.fileSystem.pickFolder();
+      if (result.success && result.folderPath) {
+        setDestinationPath(result.folderPath);
+      }
+    } catch (error) {
+      console.error('Failed to browse for destination folder:', error);
     }
   };
 
@@ -185,14 +258,14 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
             />
           </div>
           <div className="form-group">
-            <label htmlFor="project-path">Project Path</label>
+            <label htmlFor="project-path">Project Path or GitHub URL</label>
             <div className="path-input-group">
               <input
                 id="project-path"
                 type="text"
                 value={newProjectPath}
                 onChange={(e) => setNewProjectPath(e.target.value)}
-                placeholder="Select project folder"
+                placeholder="Select project folder or paste GitHub URL"
               />
               <button 
                 type="button"
@@ -203,10 +276,33 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
               </button>
             </div>
           </div>
+
+          {isGithubUrl(newProjectPath) && (
+            <div className="form-group">
+              <label htmlFor="destination-path">Destination Folder</label>
+              <div className="path-input-group">
+                <input
+                  id="destination-path"
+                  type="text"
+                  value={destinationPath}
+                  onChange={(e) => setDestinationPath(e.target.value)}
+                  placeholder="Select folder to clone into"
+                />
+                <button 
+                  type="button"
+                  onClick={handleBrowseDestination}
+                  className="browse-btn"
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="form-actions">
             <button 
               onClick={handleCreateProject}
-              disabled={!newProjectName.trim() || !newProjectPath.trim() || isInitializing}
+              disabled={!newProjectName.trim() || !newProjectPath.trim() || (isGithubUrl(newProjectPath) && !destinationPath.trim()) || isInitializing}
               className="create-btn"
             >
               {isInitializing ? 'Initializing...' : 'Create Project'}
@@ -238,7 +334,7 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
             >
               <div className="project-card-header">
                 <div className="project-icon">
-                  {project.type === 'node' ? '📦' : project.type === 'python' ? '🐍' : '📁'}
+                  {project.isGit ? '🐙' : project.type === 'node' ? '📦' : project.type === 'python' ? '🐍' : '📁'}
                 </div>
                 <div className="project-status">
                   {currentProject?.id === project.id ? (
@@ -291,14 +387,60 @@ const ProjectSelection: React.FC<ProjectSelectionProps> = ({
               </div>
               
               <div className="project-card-actions">
-                <button className="select-btn">
+                <button 
+                  className="select-btn"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent handleRemoveProject from triggering if select is also clicked
+                    handleProjectSelect(project);
+                  }}
+                >
                   {currentProject?.id === project.id ? '✓ Selected' : 'Select Project'}
+                </button>
+                <button 
+                  className="remove-project-btn"
+                  onClick={(e) => handleRemoveProject(e, project.id)}
+                  title="Remove from list"
+                >
+                  <FontAwesomeIcon icon={faTrash} />
                 </button>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {showGitMissingModal && (
+        <div className="git-missing-modal-overlay">
+          <div className="git-missing-modal">
+            <div className="modal-header">
+              <h2>⚠️ Git Not Found</h2>
+              <button className="close-btn" onClick={() => setShowGitMissingModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p>
+                To clone projects from GitHub, Git must be installed on your system and available in your PATH.
+              </p>
+              
+              <div className="installation-steps">
+                <h3>Installation Steps:</h3>
+                <ol>
+                  <li>Download Git from <button className="link-btn" onClick={() => window.electron.shell.openExternal('https://git-scm.com/downloads')}>git-scm.com/downloads</button></li>
+                  <li>Run the installer with default settings</li>
+                  <li>Restart this application</li>
+                </ol>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="download-btn" onClick={() => window.electron.shell.openExternal('https://git-scm.com/downloads')}>
+                Download Git
+              </button>
+              <button className="secondary-btn" onClick={() => setShowGitMissingModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

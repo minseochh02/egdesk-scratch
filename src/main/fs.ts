@@ -218,5 +218,21 @@ export function registerFileSystemHandlers(): void {
     }
   });
 
+  // Join paths
+  ipcMain.handle('fs-join-paths', async (event, ...pathsToJoin: string[]) => {
+    try {
+      return {
+        success: true,
+        joinedPath: path.join(...pathsToJoin)
+      };
+    } catch (error) {
+      console.error('Error joining paths:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
   console.log('✅ File system IPC handlers registered');
 }

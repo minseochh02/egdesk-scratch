@@ -7,6 +7,7 @@ export interface ProjectInfo {
   lastAccessed: Date;
   isActive: boolean;
   isInitialized: boolean; // New: tracks if project has been initialized (.backup folder exists)
+  isGit: boolean; // New: tracks if project is a Git repository
   createdAt: Date; // New: when project was first added
   metadata: {
     hasWordPress?: boolean;
@@ -21,6 +22,7 @@ export interface ProjectInfo {
     hasBackupFolder?: boolean;
     initializationDate?: Date;
     initializationStatus?: 'pending' | 'completed' | 'failed';
+    repositoryUrl?: string;
   };
 }
 
@@ -92,7 +94,11 @@ class ProjectContextService {
   /**
    * Set current active project
    */
-  async setCurrentProject(projectPath: string): Promise<ProjectInfo | null> {
+  async setCurrentProject(
+    projectPath: string,
+    explicitIsGit?: boolean,
+    explicitRepositoryUrl?: string,
+  ): Promise<ProjectInfo | null> {
     try {
       // Check if project already exists
       let project = this.context.availableProjects.find(
@@ -101,7 +107,11 @@ class ProjectContextService {
 
       if (!project) {
         // Analyze and create new project
-        project = await this.analyzeAndCreateProject(projectPath);
+        project = await this.analyzeAndCreateProject(
+          projectPath,
+          explicitIsGit,
+          explicitRepositoryUrl,
+        );
         if (project) {
           this.context.availableProjects.push(project);
         }
@@ -138,10 +148,23 @@ class ProjectContextService {
   }
 
   /**
+   * Deselect current project
+   */
+  deselectProject(): void {
+    if (this.context.currentProject) {
+      this.context.currentProject.isActive = false;
+      this.context.currentProject = null;
+      this.notifyListeners();
+    }
+  }
+
+  /**
    * Analyze a folder and create project info
    */
   private async analyzeAndCreateProject(
     projectPath: string,
+    explicitIsGit?: boolean,
+    explicitRepositoryUrl?: string,
   ): Promise<ProjectInfo | null> {
     try {
       const projectId = this.generateProjectId(projectPath);
@@ -153,6 +176,12 @@ class ProjectContextService {
       // Check if project is initialized (has .backup folder)
       const isInitialized = await this.checkFileExists(`${projectPath}/.backup`);
       
+      // Determine if it is a git project, prioritizing explicit value
+      const isGit = explicitIsGit ?? (!!metadata.repositoryUrl || (await this.checkFileExists(`${projectPath}/.git`)));
+      
+      // Use explicit repository URL if provided, otherwise fall back to analyzed metadata
+      const repositoryUrl = explicitRepositoryUrl ?? metadata.repositoryUrl;
+
       const project: ProjectInfo = {
         id: projectId,
         name: projectName,
@@ -162,9 +191,11 @@ class ProjectContextService {
         lastAccessed: new Date(),
         isActive: false,
         isInitialized,
+        isGit,
         createdAt: new Date(),
         metadata: {
           ...metadata,
+          repositoryUrl, // Use the determined or explicit repositoryUrl
           hasBackupFolder: isInitialized,
           initializationDate: isInitialized ? new Date() : undefined,
           initializationStatus: isInitialized ? 'completed' : 'pending',
@@ -230,11 +261,44 @@ class ProjectContextService {
         projectPath,
         metadata,
       );
+
+      // Extract Git Repository URL
+      metadata.repositoryUrl = await this.extractGitRemoteUrl(projectPath);
+
     } catch (error) {
       console.error('Error analyzing project structure:', error);
     }
 
     return metadata;
+  }
+
+  /**
+   * Extract Git Remote URL from .git/config
+   */
+  private async extractGitRemoteUrl(projectPath: string): Promise<string | undefined> {
+    try {
+      const result = await window.electron.fileSystem.readFile(`${projectPath}/.git/config`);
+      if (result.success && result.content) {
+        // Look for [remote "origin"] section and url = ...
+        const content = result.content;
+        const originMatch = content.match(/\[remote "origin"\][^\[]*url\s*=\s*([^\s]+)/);
+        if (originMatch && originMatch[1]) {
+          let url = originMatch[1];
+          // Convert SSH to HTTPS if needed
+          if (url.startsWith('git@')) {
+            url = url.replace(':', '/').replace('git@', 'https://');
+          }
+          // Remove .git suffix if present (optional, but cleaner for browser)
+          if (url.endsWith('.git')) {
+            url = url.substring(0, url.length - 4);
+          }
+          return url;
+        }
+      }
+    } catch (error) {
+      // Ignore errors, just means no git remote found
+    }
+    return undefined;
   }
 
   /**
@@ -395,13 +459,17 @@ class ProjectContextService {
    * Remove project from context
    */
   removeProject(projectId: string): void {
+    // Remove from available projects
     this.context.availableProjects = this.context.availableProjects.filter(
       (p) => p.id !== projectId,
     );
+    
+    // Remove from recent projects
     this.context.recentProjects = this.context.recentProjects.filter(
       (p) => p.id !== projectId,
     );
 
+    // If current project is the one being removed, deselect it
     if (this.context.currentProject?.id === projectId) {
       this.context.currentProject = null;
     }
@@ -456,6 +524,7 @@ class ProjectContextService {
           lastAccessed: new Date(p.lastAccessed),
           createdAt: new Date(p.createdAt || p.lastAccessed),
           isInitialized: p.isInitialized || false,
+          isGit: p.isGit ?? (!!p.metadata?.repositoryUrl || false),
           metadata: {
             ...p.metadata,
             hasBackupFolder: p.metadata?.hasBackupFolder || false,
@@ -469,6 +538,7 @@ class ProjectContextService {
           lastAccessed: new Date(p.lastAccessed),
           createdAt: new Date(p.createdAt || p.lastAccessed),
           isInitialized: p.isInitialized || false,
+          isGit: p.isGit ?? (!!p.metadata?.repositoryUrl || false),
           metadata: {
             ...p.metadata,
             hasBackupFolder: p.metadata?.hasBackupFolder || false,
@@ -480,6 +550,9 @@ class ProjectContextService {
         parsed.lastUpdated = new Date(parsed.lastUpdated);
 
         this.context = parsed;
+        
+        // Always start with no project selected to show the project list
+        this.context.currentProject = null;
       }
     } catch (error) {
       console.error('Failed to load project context:', error);

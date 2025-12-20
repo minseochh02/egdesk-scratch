@@ -109,7 +109,13 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
       const runningFolder = (status as any).folderPath || lastServerFolderPath;
       if (runningFolder && runningFolder === project.path) {
         console.log('Server already running for this project');
+        
+        // Prefer opening repo URL if available
+        if (project.isGit && project.metadata?.repositoryUrl) {
+          openPreviewWindow(project.metadata.repositoryUrl);
+        } else {
         openPreviewWindow(status.port || 8000);
+        }
         return;
       }
       console.log('Project changed, restarting local server for new project');
@@ -118,12 +124,28 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
       } catch (e) {
         console.warn('Failed to stop existing server before restart:', e);
       }
-      await startLocalServer(project.path);
+      const port = await startLocalServer(project.path);
+      if (port) {
+        // Prefer opening repo URL if available
+        if (project.isGit && project.metadata?.repositoryUrl) {
+          openPreviewWindow(project.metadata.repositoryUrl);
+        } else {
+          openPreviewWindow(port);
+        }
+      }
       return;
     }
 
     console.log('Auto-starting local server for project:', project.name);
-    await startLocalServer(project.path);
+    const port = await startLocalServer(project.path);
+    if (port) {
+      // Prefer opening repo URL if available
+      if (project.isGit && project.metadata?.repositoryUrl) {
+        openPreviewWindow(project.metadata.repositoryUrl);
+      } else {
+        openPreviewWindow(port);
+      }
+    }
   };
 
   // Toggle auto-start preference
@@ -172,14 +194,14 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
         });
         setLastServerFolderPath(folderPath);
         console.log(`Local server started successfully on port ${result.port}`);
-        // Open preview window after successful start
-        openPreviewWindow(result.port || 8000);
+        return result.port || 8000;
       } else {
         setServerStatus(prev => ({ 
           ...prev, 
           error: result.error || 'Failed to start server' 
         }));
         console.error('Failed to start server:', result.error);
+        return null;
       }
     } catch (error) {
       setServerStatus(prev => ({ 
@@ -187,18 +209,19 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
         error: error instanceof Error ? error.message : 'Unknown error' 
       }));
       console.error('Error starting server:', error);
+      return null;
     } finally {
       setIsStartingServer(false);
     }
   };
 
-  // Open a new Electron browser window pointing to the local server
-  const openPreviewWindow = (port: number) => {
+  // Open a new Electron browser window
+  const openPreviewWindow = (target: string | number) => {
     try {
-      const url = `http://localhost:${port}`;
+      const url = typeof target === 'number' ? `http://localhost:${target}` : target;
       window.electron.browserWindow.createWindow({
         url,
-        title: 'Local Preview',
+        title: typeof target === 'number' ? 'Local Preview' : 'Repository Preview',
         width: 1200,
         height: 800,
         show: true,
@@ -235,6 +258,9 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     if (serverStatus.isRunning) {
       await stopLocalServer();
     }
+    // Update service to deselect project
+    ProjectContextService.getInstance().deselectProject();
+    
     setShowAIChat(false);
     setCurrentProject(null);
   };

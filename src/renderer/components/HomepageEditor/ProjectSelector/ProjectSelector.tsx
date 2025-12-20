@@ -10,6 +10,8 @@ import {
   faPlus,
   faTimes,
   faChevronDown,
+  faGithub,
+  faTrash,
 } from '../../utils/fontAwesomeIcons';
 import ProjectContextService, {
   ProjectInfo,
@@ -62,6 +64,13 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
+  const handleRemoveProject = (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to remove this project from the list?')) {
+      ProjectContextService.getInstance().removeProject(projectId);
+    }
+  };
+
   const handleNewProject = async () => {
     try {
       const result = await window.electron.fileSystem.pickFolder();
@@ -82,6 +91,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   };
 
   const getProjectIcon = (project: ProjectInfo) => {
+    if (project.isGit) return faGithub;
+    
     switch (project.type) {
       case 'wordpress':
         return faCode;
@@ -186,6 +197,13 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                     {project.isActive && (
                       <span className="active-indicator">●</span>
                     )}
+                    <button
+                      className="remove-project-btn"
+                      onClick={(e) => handleRemoveProject(e, project.id)}
+                      title="Remove from list"
+                    >
+                      <FontAwesomeIcon icon={faTrash} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -221,6 +239,13 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                       {project.isActive && (
                         <span className="active-indicator">●</span>
                       )}
+                      <button
+                        className="remove-project-btn"
+                        onClick={(e) => handleRemoveProject(e, project.id)}
+                        title="Remove from list"
+                      >
+                        <FontAwesomeIcon icon={faTrash} />
+                      </button>
                     </div>
                   ))}
                 </div>

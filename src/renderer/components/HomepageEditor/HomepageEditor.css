@@ -3,9 +3,18 @@
   flex-direction: column;
   flex: 1; /* occupy space below the navigation header */
   min-height: 0; /* allow children to size/scroll correctly */
-  height: auto; /* avoid overlapping the header (no fixed 100vh) */
+  height: 100%; /* Force full height of parent */
+  overflow: hidden; /* Prevent page scrolling */
   background-color: #f5f5f5;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.project-selection-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 
