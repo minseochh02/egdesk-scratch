@@ -71,7 +71,7 @@ export class AppsScriptService {
   }
 
   /**
-   * Get project details including bound spreadsheet info
+   * Get project details including bound spreadsheet info and DEV environment
    */
   getProjectDetails(projectId: string): {
     id: string;
@@ -79,6 +79,10 @@ export class AppsScriptService {
     scriptId?: string;
     spreadsheetId: string;
     spreadsheetUrl: string;
+    // DEV environment (Local → DEV → PROD workflow)
+    devScriptId?: string;
+    devSpreadsheetId?: string;
+    devSpreadsheetUrl?: string;
     createdAt: string;
     fileCount: number;
   } | null {
@@ -100,13 +104,17 @@ export class AppsScriptService {
       scriptId: copy.scriptId,
       spreadsheetId: copy.spreadsheetId,
       spreadsheetUrl: copy.spreadsheetUrl,
+      // Include DEV environment info
+      devScriptId: copy.devScriptId,
+      devSpreadsheetId: copy.devSpreadsheetId,
+      devSpreadsheetUrl: copy.devSpreadsheetUrl,
       createdAt: copy.createdAt,
       fileCount: files.length,
     };
   }
 
   /**
-   * List all projects with their bound spreadsheet info
+   * List all projects with their bound spreadsheet info and DEV environment
    */
   listProjectsWithDetails(): Array<{
     id: string;
@@ -115,6 +123,10 @@ export class AppsScriptService {
     scriptId?: string;
     spreadsheetId: string;
     spreadsheetUrl: string;
+    // DEV environment (Local → DEV → PROD workflow)
+    devScriptId?: string;
+    devSpreadsheetId?: string;
+    devSpreadsheetUrl?: string;
     createdAt: string;
     fileCount: number;
   }> {
@@ -132,6 +144,10 @@ export class AppsScriptService {
         scriptId: copy.scriptId,
         spreadsheetId: copy.spreadsheetId,
         spreadsheetUrl: copy.spreadsheetUrl,
+        // Include DEV environment info
+        devScriptId: copy.devScriptId,
+        devSpreadsheetId: copy.devSpreadsheetId,
+        devSpreadsheetUrl: copy.devSpreadsheetUrl,
         createdAt: copy.createdAt,
         fileCount: files.length,
       };
