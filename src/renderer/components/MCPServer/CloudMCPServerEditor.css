@@ -10,7 +10,7 @@
   overflow: hidden;
 }
 
-.cloud-mcp-server-editor .editor-header {
+.cloud-mcp-server-editor .cloud-mcp-editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -52,14 +52,14 @@
   height: 16px;
 }
 
-.cloud-mcp-server-editor .editor-header h2 {
+.cloud-mcp-server-editor .cloud-mcp-editor-header h2 {
   font-size: 16px;
   font-weight: 600;
   margin: 0;
   color: white;
 }
 
-.cloud-mcp-server-editor .editor-header p {
+.cloud-mcp-server-editor .cloud-mcp-editor-header p {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
   margin: 0;
@@ -126,14 +126,14 @@
   background: rgba(239, 68, 68, 0.3);
 }
 
-.cloud-mcp-server-editor .editor-layout {
+.cloud-mcp-server-editor .cloud-mcp-editor-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
 /* Sidebar */
-.cloud-mcp-server-editor .editor-sidebar {
+.cloud-mcp-server-editor .cloud-mcp-editor-sidebar {
   width: 20%;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -237,7 +237,7 @@
 }
 
 /* Content area */
-.cloud-mcp-server-editor .editor-content {
+.cloud-mcp-server-editor .cloud-mcp-editor-content {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -500,6 +500,17 @@
   height: 14px;
 }
 
+/* Dev Spreadsheet Button - orange/amber for dev */
+.cloud-mcp-server-editor .dev-spreadsheet-button {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.cloud-mcp-server-editor .dev-spreadsheet-button:hover {
+  background: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
 .cloud-mcp-server-editor .code-content-script {
   flex: 1;
   overflow: auto;
@@ -589,7 +600,7 @@
 }
 
 /* Chat Interface */
-.cloud-mcp-server-editor .editor-chat {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat {
   width: 400px;
   display: flex;
   flex-direction: column;
@@ -916,7 +927,7 @@
    Chat Interface - Header & Actions
    ========================================================================== */
 
-.cloud-mcp-server-editor .editor-chat .chat-header {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -927,7 +938,7 @@
   min-height: 48px;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-header-left {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-header-left {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -935,12 +946,12 @@
   overflow: hidden;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-header-left svg {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-header-left svg {
   color: #667eea;
   flex-shrink: 0;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-title-container {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-title-container {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -951,11 +962,11 @@
   min-width: 0;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-title-container:hover {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-title-container:hover {
   background: #333;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-title {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-title {
   font-weight: 600;
   font-size: 13px;
   color: #fff;
@@ -965,24 +976,24 @@
   max-width: 180px;
 }
 
-.cloud-mcp-server-editor .editor-chat .history-icon {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .history-icon {
   font-size: 11px;
   color: #888;
   opacity: 0.7;
 }
 
-.cloud-mcp-server-editor .editor-chat .chat-header-actions {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .chat-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 /* Model Selector */
-.cloud-mcp-server-editor .editor-chat .model-selector {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-selector {
   position: relative;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -997,25 +1008,25 @@
   transition: all 0.2s ease;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle.ready {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown-toggle.ready {
   border-color: rgba(34, 197, 94, 0.3);
   background: rgba(34, 197, 94, 0.05);
   color: #fff;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-status-dot {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #444;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle.ready .model-status-dot {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown-toggle.ready .cloud-mcp-model-status-dot {
   background: #22c55e;
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
 }
 
-.cloud-mcp-server-editor .editor-chat .model-group-label {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-group-label {
   padding: 8px 12px 4px;
   font-size: 9px;
   text-transform: uppercase;
@@ -1026,7 +1037,7 @@
   background: rgba(0, 0, 0, 0.1);
 }
 
-.cloud-mcp-server-editor .editor-chat .model-option-hint {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-option-hint {
   padding: 12px;
   font-size: 10px;
   color: #555;
@@ -1034,19 +1045,19 @@
   text-align: center;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle:hover {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown-toggle .model-name {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown-toggle .cloud-mcp-model-name {
   max-width: 70px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-dropdown {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-dropdown {
   position: absolute;
   top: 100%;
   right: 0;
@@ -1061,7 +1072,7 @@
   z-index: 1000;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-option {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-option {
   display: block;
   width: 100%;
   padding: 8px 12px;
@@ -1074,18 +1085,18 @@
   transition: background 0.1s;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-option:hover {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-option:hover {
   background: #333;
 }
 
-.cloud-mcp-server-editor .editor-chat .model-option.active {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .cloud-mcp-model-option.active {
   background: rgba(102, 126, 234, 0.15);
   color: #a5b4fc;
 }
 
 /* Chat Header Buttons */
-.cloud-mcp-server-editor .editor-chat .undo-button,
-.cloud-mcp-server-editor .editor-chat .new-chat-button {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .undo-button,
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .new-chat-button {
   background: transparent;
   border: none;
   color: #aaa;
@@ -1098,13 +1109,13 @@
   transition: all 0.2s;
 }
 
-.cloud-mcp-server-editor .editor-chat .undo-button:hover:not(:disabled),
-.cloud-mcp-server-editor .editor-chat .new-chat-button:hover {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .undo-button:hover:not(:disabled),
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .new-chat-button:hover {
   background: #333;
   color: #fff;
 }
 
-.cloud-mcp-server-editor .editor-chat .undo-button:disabled {
+.cloud-mcp-server-editor .cloud-mcp-editor-chat .undo-button:disabled {
   color: #444;
   cursor: not-allowed;
 }
@@ -1232,9 +1243,126 @@
   color: #f59e0b;
 }
 
+.cloud-mcp-server-editor .sync-status-error {
+  color: #ef4444;
+}
+
 .cloud-mcp-server-editor .sync-status svg {
   width: 12px;
   height: 12px;
+}
+
+/* Dev Sync Buttons */
+.cloud-mcp-server-editor .dev-sync-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 4px;
+}
+
+.cloud-mcp-server-editor .dev-pull-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 6px;
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .dev-pull-button:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: white;
+}
+
+.cloud-mcp-server-editor .dev-pull-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cloud-mcp-server-editor .dev-push-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .dev-push-button:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.cloud-mcp-server-editor .dev-push-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Setup Dev Button */
+.cloud-mcp-server-editor .setup-dev-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 6px;
+  color: #e9d5ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .setup-dev-button:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.6);
+  color: white;
+}
+
+.cloud-mcp-server-editor .setup-dev-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Prod Push Button (Dangerous) */
+.cloud-mcp-server-editor .prod-push-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 6px;
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .prod-push-button:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: white;
+}
+
+.cloud-mcp-server-editor .prod-push-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Version Dropdown Styles - Sidebar placement */
@@ -1351,6 +1479,87 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Dev/Prod Version Dropdown Styles */
+.cloud-mcp-server-editor .version-dropdown-container.version-dev {
+  margin-top: 12px;
+  padding-bottom: 8px;
+}
+
+.cloud-mcp-server-editor .version-dropdown-container.version-prod {
+  margin-top: 4px;
+  border-top: none;
+  padding-top: 0;
+}
+
+.cloud-mcp-server-editor .version-env-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cloud-mcp-server-editor .version-env-label.dev {
+  color: #f59e0b;
+}
+
+.cloud-mcp-server-editor .version-env-label.prod {
+  color: #667eea;
+}
+
+.cloud-mcp-server-editor .version-dropdown-toggle.dev {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.cloud-mcp-server-editor .version-dropdown-toggle.dev:hover {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.cloud-mcp-server-editor .version-dropdown-toggle.prod {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.cloud-mcp-server-editor .version-dropdown-toggle.prod:hover {
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.cloud-mcp-server-editor .version-dropdown-container.version-dev .version-dropdown-item.active {
+  background: rgba(245, 158, 11, 0.2);
+  border-left: 3px solid #f59e0b;
+}
+
+.cloud-mcp-server-editor .version-dropdown-container.version-dev .version-dropdown-item:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.cloud-mcp-server-editor .restore-version-button.dev {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.cloud-mcp-server-editor .restore-version-button.dev:hover {
+  background: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
+.cloud-mcp-server-editor .restore-version-button.prod {
+  background: rgba(102, 126, 234, 0.2);
+  border-color: rgba(102, 126, 234, 0.4);
+}
+
+.cloud-mcp-server-editor .restore-version-button.prod:hover {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+/* File item styling for version view */
+.cloud-mcp-server-editor .file-item.dev-version {
+  border-left: 2px solid #f59e0b;
+}
+
+.cloud-mcp-server-editor .file-item.prod-version {
+  border-left: 2px solid #667eea;
 }
 
 .cloud-mcp-server-editor .version-empty {

@@ -13,6 +13,11 @@ export * from './apps-script-write-file';
 export * from './apps-script-partial-edit';
 export * from './apps-script-rename-file';
 export * from './apps-script-delete-file';
+export * from './apps-script-docs';
+export * from './apps-script-push-to-dev';
+export * from './apps-script-pull-from-dev';
+export * from './apps-script-push-dev-to-prod';
+export * from './apps-script-pull-prod-to-dev';
 
 /**
  * Tools Index
@@ -32,3 +37,8 @@ export { AppsScriptWriteFileTool } from './apps-script-write-file';
 export { AppsScriptPartialEditTool } from './apps-script-partial-edit';
 export { AppsScriptRenameFileTool } from './apps-script-rename-file';
 export { AppsScriptDeleteFileTool } from './apps-script-delete-file';
+export { AppsScriptDocsTool, AppsScriptDocsListTool } from './apps-script-docs';
+export { AppsScriptPushToDevTool } from './apps-script-push-to-dev';
+export { AppsScriptPullFromDevTool } from './apps-script-pull-from-dev';
+export { AppsScriptPushDevToProdTool } from './apps-script-push-dev-to-prod';
+export { AppsScriptPullProdToDevTool } from './apps-script-pull-prod-to-dev';

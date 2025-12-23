@@ -555,6 +555,12 @@ export interface IElectronAPI {
     partialEdit: (scriptId: string, fileName: string, oldString: string, newString: string, expectedReplacements?: number, flexibleMatching?: boolean, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
     renameFile: (scriptId: string, oldFileName: string, newFileName: string, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
     deleteFile: (scriptId: string, fileName: string, conversationId?: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    // Dev/Prod flow methods
+    cloneForDev: (projectId: string) => Promise<{ success: boolean; data?: { devScriptId: string; devSpreadsheetId?: string; devSpreadsheetUrl?: string; message: string }; error?: string }>;
+    pushToDev: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { message: string; versionNumber?: number }; error?: string }>;
+    pullFromDev: (projectId: string) => Promise<{ success: boolean; data?: { message: string; fileCount: number }; error?: string }>;
+    pushDevToProd: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { message: string; versionNumber?: number }; error?: string }>;
+    pullProdToDev: (projectId: string) => Promise<{ success: boolean; data?: { message: string; fileCount: number }; error?: string }>;
   };
   mcp: {
     register: (name: string, password?: string) => Promise<{ 
@@ -851,6 +857,22 @@ export interface IElectronAPI {
   };
 
   invoke: (channel: string, ...args: any[]) => Promise<any>;
+
+  egdeskDev: {
+    getConfig: () => Promise<{ success: boolean; config?: any; error?: string }>;
+    setConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
+    clearConfig: () => Promise<{ success: boolean; error?: string }>;
+    getDevFolder: () => Promise<{ success: boolean; config?: any; error?: string }>;
+    createDevFolder: () => Promise<{ success: boolean; folderId?: string; folderUrl?: string; error?: string }>;
+    createDevSpreadsheet: () => Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; message?: string; error?: string }>;
+    validateSchema: () => Promise<{ success: boolean; isValid?: boolean; publicHeaders?: string[]; devHeaders?: string[]; errors?: string[]; error?: string }>;
+    compareSchemas: () => Promise<{ success: boolean; diff?: any; error?: string }>;
+    syncPublicToDev: (createBackup?: boolean) => Promise<{ success: boolean; message?: string; backup?: any; rowsSynced?: number; error?: string }>;
+    syncDevToPublic: (createBackup?: boolean) => Promise<{ success: boolean; message?: string; backup?: any; rowsSynced?: number; error?: string }>;
+    applyMergeResolution: (targetSpreadsheet: 'public' | 'dev', resolvedRows: any[]) => Promise<{ success: boolean; message?: string; error?: string }>;
+    fetchSpreadsheetRows: (spreadsheetId: string, sheetName?: string) => Promise<{ success: boolean; rows?: any[]; error?: string }>;
+    createBackup: (spreadsheetId: string) => Promise<{ success: boolean; backup?: any; error?: string }>;
+  };
 }
 
 declare global {

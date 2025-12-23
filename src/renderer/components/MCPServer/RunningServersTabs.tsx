@@ -7,12 +7,13 @@ import {
   faCopy,
   faCode
 } from '../../utils/fontAwesomeIcons';
-import { faPlus, faSync, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faSync, faTrash, faCog } from '@fortawesome/free-solid-svg-icons';
 import RunningServersSection, { 
   RunningMCPServer,
   AccessLevelConfig 
 } from './RunningServersSection';
 import GoogleOAuthSignIn from './GoogleOAuthSignIn';
+import DevSpreadsheetConfig from './DevSpreadsheetConfig';
 import './RunningServersTabs.css';
 import './RunningServers.css';
 
@@ -149,6 +150,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const [loadingCopies, setLoadingCopies] = useState<boolean>(true);
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
   const [creatingCopyId, setCreatingCopyId] = useState<string | null>(null);
+  const [showDevConfig, setShowDevConfig] = useState<boolean>(false);
 
   // Load existing copies from electron-store and database
   const loadExistingCopies = async () => {
@@ -353,6 +355,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
         }
         
         // Save template copy to database
+        let savedCopyId: string | null = null;
         try {
           const saveResult = await window.electron.templateCopies.create({
             templateId: templateId,
@@ -368,6 +371,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
           
           if (saveResult.success) {
             console.log('✅ Template copy saved to database:', saveResult.data);
+            savedCopyId = saveResult.data?.id;
           } else {
             console.warn('⚠️ Failed to save template copy to database:', saveResult.error);
           }
@@ -376,13 +380,36 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
           // Don't throw - continue even if save fails
         }
         
+        // Create dev environment automatically (spreadsheet + script)
+        let devInfo: { devScriptId?: string; devSpreadsheetId?: string; devSpreadsheetUrl?: string } = {};
+        if (savedCopyId && copyResult.data.scriptId) {
+          try {
+            console.log('🔧 Creating dev environment (spreadsheet + script)...');
+            const devResult = await (window.electron as any).appsScriptTools.cloneForDev(savedCopyId);
+            
+            if (devResult.success && devResult.data) {
+              devInfo = devResult.data;
+              console.log('✅ Dev environment created:', devInfo);
+            } else {
+              console.warn('⚠️ Failed to create dev environment:', devResult.error);
+            }
+          } catch (devError) {
+            console.error('❌ Error creating dev environment:', devError);
+            // Don't throw - continue even if dev environment creation fails
+          }
+        }
+        
         // Show success message with link
         const message = `Template copied successfully!\n\n` +
-          `Title: ${data.content.properties.title}\n` +
-          `Sheets: ${data.content.sheets.length}\n` +
-          `Apps Script: ${data.content.appsScript ? 'Yes' : 'No'}\n\n` +
-          `New Spreadsheet ID: ${copyResult.data.spreadsheetId}\n` +
-          `URL: ${copyResult.data.spreadsheetUrl}`;
+          `📋 PRODUCTION:\n` +
+          `   Title: ${data.content.properties.title}\n` +
+          `   Spreadsheet: ${copyResult.data.spreadsheetId}\n` +
+          `   Apps Script: ${copyResult.data.scriptId ? 'Created' : 'No'}\n\n` +
+          `🔧 DEVELOPMENT:\n` +
+          `   Spreadsheet: ${devInfo.devSpreadsheetId ? 'Created' : 'Not created'}\n` +
+          `   Apps Script: ${devInfo.devScriptId ? 'Created' : 'Not created'}\n\n` +
+          `Production URL: ${copyResult.data.spreadsheetUrl}` +
+          (devInfo.devSpreadsheetUrl ? `\nDev URL: ${devInfo.devSpreadsheetUrl}` : '');
         
         alert(message);
         
@@ -583,6 +610,20 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                 <>
                   <div className="cloud-oauth-actions" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                     <button
+                      onClick={() => setShowDevConfig(!showDevConfig)}
+                      className="btn btn-secondary"
+                      style={{ 
+                        padding: '0.5rem 1rem', 
+                        fontSize: '0.875rem',
+                        background: showDevConfig ? 'rgba(139, 92, 246, 0.3)' : undefined,
+                        borderColor: showDevConfig ? 'rgba(139, 92, 246, 0.5)' : undefined
+                      }}
+                      title="Toggle development environment configuration"
+                    >
+                      <FontAwesomeIcon icon={faCog} style={{ marginRight: '0.5rem' }} />
+                      {showDevConfig ? 'Hide Dev Config' : 'Dev Environment'}
+                    </button>
+                    <button
                       onClick={handleReSignIn}
                       className="btn btn-secondary"
                       style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
@@ -592,6 +633,11 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                       Re-sign in to Update Scopes
                     </button>
                   </div>
+
+                  {/* Dev Spreadsheet Configuration */}
+                  {showDevConfig && (
+                    <DevSpreadsheetConfig />
+                  )}
 
                   {cloudLoading && (
                     <div className="loading-state">
