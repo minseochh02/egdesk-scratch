@@ -1250,6 +1250,83 @@ export interface DockerImage {
 /**
  * Docker management API
  */
+/**
+ * EGDesk Dev Spreadsheet types
+ */
+export interface EGDeskDevFolderConfig {
+  folderId: string;
+  folderUrl: string;
+  parentFolderId: string;
+  createdAt: string;
+}
+
+export interface EGDeskDevConfig {
+  devSpreadsheetId: string;
+  devSpreadsheetUrl: string;
+  devSheetGid: string;
+  publicSpreadsheetId: string;
+  publicSheetGid: string;
+  lastSyncedAt: string | null;
+  syncDirection: 'public-to-dev' | 'dev-to-public' | 'bidirectional';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SpreadsheetRow {
+  name: string;
+  description: string;
+  url: string;
+  scriptID: string;
+  rowIndex: number;
+}
+
+export interface SchemaDiff {
+  added: SpreadsheetRow[];
+  removed: SpreadsheetRow[];
+  modified: MergeConflict[];
+  unchanged: SpreadsheetRow[];
+}
+
+export interface MergeConflict {
+  name: string;
+  scriptID: string;
+  field: string;
+  publicValue: string;
+  devValue: string;
+  publicRow: SpreadsheetRow;
+  devRow: SpreadsheetRow;
+}
+
+export interface BackupInfo {
+  sheetName: string;
+  createdAt: string;
+  rowCount: number;
+}
+
+/**
+ * EGDesk Dev Spreadsheet API
+ */
+export interface EGDeskDevAPI {
+  // Configuration
+  getConfig: () => Promise<{ success: boolean; config?: EGDeskDevConfig | null; error?: string }>;
+  setConfig: (config: EGDeskDevConfig) => Promise<{ success: boolean; error?: string }>;
+  clearConfig: () => Promise<{ success: boolean; error?: string }>;
+  
+  // Dev Folder
+  getDevFolder: () => Promise<{ success: boolean; config?: EGDeskDevFolderConfig | null; error?: string }>;
+  createDevFolder: () => Promise<{ success: boolean; folderId?: string; folderUrl?: string; parentFolderId?: string; createdAt?: string; error?: string }>;
+  
+  // Spreadsheet operations
+  createDevSpreadsheet: () => Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; devFolderUrl?: string; message?: string; error?: string }>;
+  validateSchema: () => Promise<{ success: boolean; isValid?: boolean; publicHeaders?: string[]; devHeaders?: string[]; errors?: string[]; error?: string }>;
+  compareSchemas: () => Promise<{ success: boolean; diff?: SchemaDiff; error?: string }>;
+  syncPublicToDev: (createBackup?: boolean) => Promise<{ success: boolean; message?: string; backup?: BackupInfo; rowsSynced?: number; error?: string }>;
+  syncDevToPublic: (createBackup?: boolean) => Promise<{ success: boolean; message?: string; backup?: BackupInfo; rowsSynced?: number; error?: string }>;
+  applyMergeResolution: (targetSpreadsheet: 'public' | 'dev', resolvedRows: SpreadsheetRow[]) => Promise<{ success: boolean; message?: string; error?: string }>;
+  fetchSpreadsheetRows: (spreadsheetId: string, sheetName?: string) => Promise<{ success: boolean; rows?: SpreadsheetRow[]; error?: string }>;
+  createBackup: (spreadsheetId: string) => Promise<{ success: boolean; backup?: BackupInfo; error?: string }>;
+}
+
 export interface DockerAPI {
   // Connection
   checkConnection: () => Promise<{ connected: boolean; error?: string }>;
@@ -1623,6 +1700,12 @@ const electronHandler = {
     listVersions: (projectId: string) => ipcRenderer.invoke('apps-script-list-versions', projectId),
     getVersionContent: (projectId: string, versionNumber: number) => ipcRenderer.invoke('apps-script-get-version-content', projectId, versionNumber),
     runFunction: (scriptId: string, functionName: string, parameters?: any[]) => ipcRenderer.invoke('apps-script-run-function', scriptId, functionName, parameters),
+    // Dev/Prod flow methods
+    cloneForDev: (projectId: string) => ipcRenderer.invoke('apps-script-clone-for-dev', projectId),
+    pushToDev: (projectId: string, createVersion?: boolean, versionDescription?: string) => ipcRenderer.invoke('apps-script-push-to-dev', projectId, createVersion, versionDescription),
+    pullFromDev: (projectId: string) => ipcRenderer.invoke('apps-script-pull-from-dev', projectId),
+    pushDevToProd: (projectId: string, createVersion?: boolean, versionDescription?: string) => ipcRenderer.invoke('apps-script-push-dev-to-prod', projectId, createVersion, versionDescription),
+    pullProdToDev: (projectId: string) => ipcRenderer.invoke('apps-script-pull-prod-to-dev', projectId),
   } as AppsScriptToolsAPI,
   
   // ========================================================================
@@ -2146,6 +2229,35 @@ auth: {
     copyTemplateContent: (templateContent: any) =>
       ipcRenderer.invoke('workspace:copy-template-content', templateContent),
   } as WorkspaceAPI,
+
+  // ========================================================================
+  // EGDESK DEV SPREADSHEET
+  // ========================================================================
+  /**
+   * EGDesk Dev Spreadsheet management for development environment sync
+   */
+  egdeskDev: {
+    // Configuration
+    getConfig: () => ipcRenderer.invoke('egdesk-dev-config-get'),
+    setConfig: (config: EGDeskDevConfig) => ipcRenderer.invoke('egdesk-dev-config-set', config),
+    clearConfig: () => ipcRenderer.invoke('egdesk-dev-config-clear'),
+    
+    // Dev Folder
+    getDevFolder: () => ipcRenderer.invoke('egdesk-dev-folder-get'),
+    createDevFolder: () => ipcRenderer.invoke('egdesk-dev-folder-create'),
+    
+    // Spreadsheet operations
+    createDevSpreadsheet: () => ipcRenderer.invoke('egdesk-dev-spreadsheet-create'),
+    validateSchema: () => ipcRenderer.invoke('egdesk-validate-schema'),
+    compareSchemas: () => ipcRenderer.invoke('egdesk-compare-schemas'),
+    syncPublicToDev: (createBackup?: boolean) => ipcRenderer.invoke('egdesk-sync-public-to-dev', createBackup),
+    syncDevToPublic: (createBackup?: boolean) => ipcRenderer.invoke('egdesk-sync-dev-to-public', createBackup),
+    applyMergeResolution: (targetSpreadsheet: 'public' | 'dev', resolvedRows: SpreadsheetRow[]) => 
+      ipcRenderer.invoke('egdesk-apply-merge-resolution', targetSpreadsheet, resolvedRows),
+    fetchSpreadsheetRows: (spreadsheetId: string, sheetName?: string) => 
+      ipcRenderer.invoke('egdesk-fetch-spreadsheet-rows', spreadsheetId, sheetName),
+    createBackup: (spreadsheetId: string) => ipcRenderer.invoke('egdesk-create-backup', spreadsheetId),
+  } as EGDeskDevAPI,
 
   // ========================================================================
   // SHELL UTILITIES

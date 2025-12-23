@@ -78,7 +78,7 @@ export interface AppsScriptPartialEditParams {
 
 export class AppsScriptPartialEditTool implements ToolExecutor {
   name = 'apps_script_partial_edit';
-  description = 'Replace text within a file in a Google AppsScript project. Supports partial edits with exact or flexible matching. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
+  description = 'Replace text within a file in a Google Apps Script project. Supports partial edits with exact or flexible matching. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available). Changes to DEV should be tested before pushing to PROD.';
   dangerous = true;
   requiresConfirmation = true;
 
@@ -158,7 +158,8 @@ export class AppsScriptPartialEditTool implements ToolExecutor {
       const updated = templateCopiesManager.updateTemplateCopyScriptContent(params.scriptId, templateCopy.scriptContent);
       
       if (!updated) {
-        throw new Error(`Failed to update script content in database`);
+        const errorDetail = `Project not found with scriptId or devScriptId: ${params.scriptId}. Check logs for details.`;
+        throw new Error(`Failed to update script content in database: ${errorDetail}`);
       }
       
       const result = `Successfully replaced ${replacementResult.occurrences} occurrence(s) in AppsScript file ${params.fileName}`;

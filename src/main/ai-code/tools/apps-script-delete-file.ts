@@ -62,7 +62,7 @@ function getDisplayName(file: { name: string; type: string }): string {
 
 export class AppsScriptDeleteFileTool implements ToolExecutor {
   name = 'apps_script_delete_file';
-  description = 'Delete a file from a Google AppsScript project. The change is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
+  description = 'Delete a file from a Google Apps Script project. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available). CAUTION: This permanently removes the file.';
   dangerous = true;
   requiresConfirmation = true;
 
@@ -125,7 +125,8 @@ export class AppsScriptDeleteFileTool implements ToolExecutor {
       const updated = templateCopiesManager.updateTemplateCopyScriptContent(params.scriptId, updatedScriptContent);
       
       if (!updated) {
-        throw new Error(`Failed to update script content in database`);
+        const errorDetail = `Project not found with scriptId or devScriptId: ${params.scriptId}. Check logs for details.`;
+        throw new Error(`Failed to update script content in database: ${errorDetail}`);
       }
       
       const result = `Successfully deleted AppsScript file '${params.fileName}'`;

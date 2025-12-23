@@ -62,7 +62,7 @@ function getDisplayName(file: { name: string; type: string }): string {
 
 export class AppsScriptReadFileTool implements ToolExecutor {
   name = 'apps_script_read_file';
-  description = 'Read the contents of a specific file from a Google AppsScript project. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db). Returns the source code of the file.';
+  description = 'Read the contents of a specific file from a Google Apps Script project. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available). Returns the source code of the file.';
   dangerous = false;
   requiresConfirmation = false;
 

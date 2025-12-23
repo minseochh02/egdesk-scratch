@@ -32,6 +32,7 @@ import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
+import { getEGDeskDevSpreadsheetService } from './egdesk-dev-spreadsheet';
 
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
@@ -2335,6 +2336,10 @@ const createWindow = async () => {
     
     // Register AppsScript tool handlers
     registerAppsScriptToolHandlers();
+
+    // Register EGDesk Dev Spreadsheet handlers
+    const egdeskDevService = getEGDeskDevSpreadsheetService();
+    egdeskDevService.registerIPCHandlers();
 
     // Mark handlers as fully registered AFTER all handlers are registered
     handlersRegistered = true;

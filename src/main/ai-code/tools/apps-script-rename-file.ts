@@ -62,7 +62,7 @@ function getDisplayName(file: { name: string; type: string }): string {
 
 export class AppsScriptRenameFileTool implements ToolExecutor {
   name = 'apps_script_rename_file';
-  description = 'Rename a file in a Google AppsScript project. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
+  description = 'Rename a file in a Google Apps Script project. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available).';
   dangerous = false;
   requiresConfirmation = false;
 
@@ -127,7 +127,8 @@ export class AppsScriptRenameFileTool implements ToolExecutor {
       const updated = templateCopiesManager.updateTemplateCopyScriptContent(params.scriptId, templateCopy.scriptContent);
       
       if (!updated) {
-        throw new Error(`Failed to update script content in database`);
+        const errorDetail = `Project not found with scriptId or devScriptId: ${params.scriptId}. Check logs for details.`;
+        throw new Error(`Failed to update script content in database: ${errorDetail}`);
       }
       
       const result = `Successfully renamed AppsScript file from '${params.oldFileName}' to '${params.newFileName}'`;

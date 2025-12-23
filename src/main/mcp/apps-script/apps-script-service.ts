@@ -921,6 +921,547 @@ export class AppsScriptService {
   }
 
   /**
+   * Clone production environment to create dev environment
+   * Creates both a dev spreadsheet AND dev Apps Script project
+   */
+  async cloneScriptForDev(projectId: string): Promise<{
+    success: boolean;
+    devScriptId?: string;
+    devSpreadsheetId?: string;
+    devSpreadsheetUrl?: string;
+    message: string;
+  }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`Project ${targetId} has no production script to clone.`);
+    }
+
+    if (copy.devScriptId && copy.devSpreadsheetId) {
+      return {
+        success: true,
+        devScriptId: copy.devScriptId,
+        devSpreadsheetId: copy.devSpreadsheetId,
+        devSpreadsheetUrl: copy.devSpreadsheetUrl,
+        message: `Dev environment already exists`,
+      };
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    const { google } = require('googleapis');
+    const oauth2Client = new (require('google-auth-library').OAuth2Client)();
+    oauth2Client.setCredentials({
+      access_token: token.access_token,
+      refresh_token: token.refresh_token,
+    });
+
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
+    const projectName = copy.metadata?.serverName || copy.metadata?.name || 'Untitled';
+
+    // Step 1: Find or create EGDesk/Dev folder
+    console.log('📂 Finding or creating Dev folder...');
+    
+    // Find EGDesk folder
+    let egdeskFolderId: string | null = null;
+    const egdeskSearch = await drive.files.list({
+      q: "name = 'EGDesk' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+      fields: 'files(id)',
+      spaces: 'drive',
+    });
+    
+    if (egdeskSearch.data.files && egdeskSearch.data.files.length > 0) {
+      egdeskFolderId = egdeskSearch.data.files[0].id;
+    } else {
+      // Create EGDesk folder
+      const createEgdesk = await drive.files.create({
+        requestBody: {
+          name: 'EGDesk',
+          mimeType: 'application/vnd.google-apps.folder',
+        },
+        fields: 'id',
+      });
+      egdeskFolderId = createEgdesk.data.id;
+    }
+
+    // Find or create Dev folder inside EGDesk
+    let devFolderId: string | null = null;
+    const devFolderSearch = await drive.files.list({
+      q: `name = 'Dev' and mimeType = 'application/vnd.google-apps.folder' and '${egdeskFolderId}' in parents and trashed = false`,
+      fields: 'files(id)',
+      spaces: 'drive',
+    });
+    
+    if (devFolderSearch.data.files && devFolderSearch.data.files.length > 0) {
+      devFolderId = devFolderSearch.data.files[0].id;
+    } else {
+      const createDevFolder = await drive.files.create({
+        requestBody: {
+          name: 'Dev',
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [egdeskFolderId],
+        },
+        fields: 'id',
+      });
+      devFolderId = createDevFolder.data.id;
+    }
+
+    console.log(`✅ Dev folder ready: ${devFolderId}`);
+
+    // Step 2: Copy the production spreadsheet to create dev spreadsheet
+    console.log('📋 Copying production spreadsheet for dev...');
+    
+    const copySpreadsheet = await drive.files.copy({
+      fileId: copy.spreadsheetId,
+      requestBody: {
+        name: `[DEV] ${projectName}`,
+        parents: [devFolderId],
+      },
+      fields: 'id, webViewLink',
+    });
+
+    const devSpreadsheetId = copySpreadsheet.data.id;
+    const devSpreadsheetUrl = copySpreadsheet.data.webViewLink || 
+      `https://docs.google.com/spreadsheets/d/${devSpreadsheetId}`;
+
+    console.log(`✅ Created dev spreadsheet: ${devSpreadsheetId}`);
+
+    // Step 3: Get the production script content
+    const prodContentResponse = await fetch(
+      `https://script.googleapis.com/v1/projects/${copy.scriptId}/content`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+        },
+      }
+    );
+
+    if (!prodContentResponse.ok) {
+      const errorData = await prodContentResponse.json().catch(() => ({}));
+      throw new Error(`Failed to get production script content: ${errorData.error?.message || prodContentResponse.status}`);
+    }
+
+    const prodContent = await prodContentResponse.json();
+
+    // Step 4: Create a container-bound Apps Script project for the dev spreadsheet
+    console.log('📜 Creating dev Apps Script bound to dev spreadsheet...');
+    
+    const createScriptResponse = await fetch('https://script.googleapis.com/v1/projects', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: `[DEV] ${projectName}`,
+        parentId: devSpreadsheetId, // Bind to dev spreadsheet
+      }),
+    });
+
+    if (!createScriptResponse.ok) {
+      const errorData = await createScriptResponse.json().catch(() => ({}));
+      throw new Error(`Failed to create dev script project: ${errorData.error?.message || createScriptResponse.status}`);
+    }
+
+    const newProject = await createScriptResponse.json();
+    const devScriptId = newProject.scriptId;
+
+    console.log(`✅ Created dev script project: ${devScriptId}`);
+
+    // Step 5: Copy the content from prod script to dev script
+    const files = prodContent.files || [];
+    const updateResponse = await fetch(
+      `https://script.googleapis.com/v1/projects/${devScriptId}/content`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ files }),
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorData = await updateResponse.json().catch(() => ({}));
+      throw new Error(`Failed to copy content to dev script: ${errorData.error?.message || updateResponse.status}`);
+    }
+
+    console.log(`✅ Cloned ${files.length} files to dev script`);
+
+    // Step 6: Update the template copy with dev environment info
+    this.copiesManager.updateDevEnvironment(targetId, {
+      devSpreadsheetId,
+      devSpreadsheetUrl,
+      devScriptId,
+    });
+
+    console.log('✅ Dev environment setup complete!');
+    console.log(`   Dev Spreadsheet: ${devSpreadsheetUrl}`);
+    console.log(`   Dev Script: ${devScriptId}`);
+
+    return {
+      success: true,
+      devScriptId,
+      devSpreadsheetId,
+      devSpreadsheetUrl,
+      message: `Successfully created dev environment with spreadsheet and ${files.length} script files`,
+    };
+  }
+
+  /**
+   * Push local changes to Dev Apps Script
+   */
+  async pushToDev(
+    projectId: string,
+    createVersion?: boolean,
+    versionDescription?: string
+  ): Promise<{ success: boolean; message: string; versionNumber?: number }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.devScriptId) {
+      throw new Error(`No dev script configured. Please create a dev script first.`);
+    }
+
+    if (!copy.scriptContent || !copy.scriptContent.files) {
+      throw new Error(`Project ${targetId} has no files to push.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Prepare files for Google Apps Script API format
+    const files = copy.scriptContent.files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toUpperCase(),
+      source: f.source,
+    }));
+
+    // Push to DEV script
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.devScriptId}/content`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ files }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to push to dev: ${errorMsg}`);
+    }
+
+    // Optionally create a version
+    let versionNumber: number | undefined;
+    if (createVersion) {
+      try {
+        // Use the dev script ID for version creation
+        const versionResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.devScriptId}/versions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            description: versionDescription || `Dev version at ${new Date().toISOString()}`,
+          }),
+        });
+        
+        if (versionResponse.ok) {
+          const versionResult = await versionResponse.json();
+          versionNumber = versionResult.versionNumber;
+        }
+      } catch (versionError: any) {
+        console.warn('Push succeeded but version creation failed:', versionError.message);
+      }
+    }
+    
+    return {
+      success: true,
+      message: versionNumber 
+        ? `Successfully pushed ${files.length} file(s) to DEV and created version ${versionNumber}`
+        : `Successfully pushed ${files.length} file(s) to DEV script`,
+      versionNumber,
+    };
+  }
+
+  /**
+   * Pull from Dev Apps Script to local
+   */
+  async pullFromDev(projectId: string): Promise<{ success: boolean; message: string; fileCount: number }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.devScriptId) {
+      throw new Error(`No dev script configured. Please create a dev script first.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Pull from DEV script
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.devScriptId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to pull from dev: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    const files = result.files || [];
+
+    // Convert to our internal format (lowercase types)
+    const normalizedFiles = files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toLowerCase(),
+      source: f.source,
+    }));
+
+    // Update local SQLite using the prod scriptId as the key
+    this.copiesManager.updateTemplateCopyScriptContent(copy.scriptId!, { 
+      ...copy.scriptContent, 
+      files: normalizedFiles 
+    });
+
+    return {
+      success: true,
+      message: `Successfully pulled ${normalizedFiles.length} file(s) from DEV script`,
+      fileCount: normalizedFiles.length,
+    };
+  }
+
+  /**
+   * Push from Dev to Production (DANGEROUS)
+   * Copies content from dev script to production script
+   */
+  async pushDevToProd(
+    projectId: string,
+    createVersion?: boolean,
+    versionDescription?: string
+  ): Promise<{ success: boolean; message: string; versionNumber?: number }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.devScriptId) {
+      throw new Error(`No dev script configured. Cannot push to production.`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`No production script configured.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // First, get content from DEV script
+    const devResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.devScriptId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!devResponse.ok) {
+      const errorData = await devResponse.json().catch(() => ({}));
+      throw new Error(`Failed to get dev script content: ${errorData.error?.message || devResponse.status}`);
+    }
+
+    const devContent = await devResponse.json();
+    const files = devContent.files || [];
+
+    // Push to PRODUCTION script
+    const prodResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ files }),
+    });
+
+    if (!prodResponse.ok) {
+      const errorData = await prodResponse.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${prodResponse.status}`;
+      throw new Error(`Failed to push to production: ${errorMsg}`);
+    }
+
+    // Optionally create a version on production
+    let versionNumber: number | undefined;
+    if (createVersion) {
+      try {
+        const versionResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            description: versionDescription || `Production release at ${new Date().toISOString()}`,
+          }),
+        });
+        
+        if (versionResponse.ok) {
+          const versionResult = await versionResponse.json();
+          versionNumber = versionResult.versionNumber;
+        }
+      } catch (versionError: any) {
+        console.warn('Push succeeded but version creation failed:', versionError.message);
+      }
+    }
+    
+    return {
+      success: true,
+      message: versionNumber 
+        ? `Successfully pushed ${files.length} file(s) to PRODUCTION and created version ${versionNumber}`
+        : `Successfully pushed ${files.length} file(s) to PRODUCTION`,
+      versionNumber,
+    };
+  }
+
+  /**
+   * Pull from Production to Dev
+   * Copies content from production script to dev script
+   */
+  async pullProdToDev(projectId: string): Promise<{ success: boolean; message: string; fileCount: number }> {
+    // Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    const copy = this.copiesManager.getTemplateCopy(targetId);
+    if (!copy) {
+      throw new Error(`Project not found: ${targetId}`);
+    }
+
+    if (!copy.scriptId) {
+      throw new Error(`No production script configured.`);
+    }
+
+    if (!copy.devScriptId) {
+      throw new Error(`No dev script configured. Please create a dev script first.`);
+    }
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    // Get content from PRODUCTION script
+    const prodResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!prodResponse.ok) {
+      const errorData = await prodResponse.json().catch(() => ({}));
+      throw new Error(`Failed to get production content: ${errorData.error?.message || prodResponse.status}`);
+    }
+
+    const prodContent = await prodResponse.json();
+    const files = prodContent.files || [];
+
+    // Push to DEV script
+    const devResponse = await fetch(`https://script.googleapis.com/v1/projects/${copy.devScriptId}/content`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ files }),
+    });
+
+    if (!devResponse.ok) {
+      const errorData = await devResponse.json().catch(() => ({}));
+      throw new Error(`Failed to update dev script: ${errorData.error?.message || devResponse.status}`);
+    }
+
+    // Also update local content
+    const normalizedFiles = files.map((f: any) => ({
+      name: f.name,
+      type: f.type.toLowerCase(),
+      source: f.source,
+    }));
+
+    this.copiesManager.updateTemplateCopyScriptContent(copy.scriptId, { 
+      ...copy.scriptContent, 
+      files: normalizedFiles 
+    });
+
+    return {
+      success: true,
+      message: `Successfully pulled ${files.length} file(s) from PRODUCTION to DEV`,
+      fileCount: files.length,
+    };
+  }
+
+  /**
    * Get execution metrics for a script
    * GET /v1/projects/{scriptId}/metrics
    */

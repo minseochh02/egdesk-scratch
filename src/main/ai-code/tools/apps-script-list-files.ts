@@ -19,7 +19,7 @@ function getDisplayName(file: { name: string; type: string }): string {
 
 export class AppsScriptListFilesTool implements ToolExecutor {
   name = 'apps_script_list_files';
-  description = 'List all files in a Google AppsScript project. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db). Returns file names with extensions.';
+  description = 'List all files in a Google Apps Script project. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available). Returns file names with extensions.';
   dangerous = false;
   requiresConfirmation = false;
 

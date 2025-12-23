@@ -60,7 +60,7 @@ function findFileIndex(files: any[], fileName: string): number {
 
 export class AppsScriptWriteFileTool implements ToolExecutor {
   name = 'apps_script_write_file';
-  description = 'Write content to a file in a Google AppsScript project. Creates the file if it doesn\'t exist, or overwrites it if it does. The script content is stored in the EGDesk app\'s SQLite database (cloudmcp.db).';
+  description = 'Write content to a file in a Google Apps Script project. Creates the file if it doesn\'t exist, or overwrites it if it does. Projects may have both DEV and PROD scripts - use the scriptId provided in the context (defaults to DEV if available). Changes to DEV should be tested before pushing to PROD.';
   dangerous = true;
   requiresConfirmation = true;
 
@@ -131,7 +131,8 @@ export class AppsScriptWriteFileTool implements ToolExecutor {
       const updated = templateCopiesManager.updateTemplateCopyScriptContent(params.scriptId, updatedScriptContent);
       
       if (!updated) {
-        throw new Error(`Failed to update script content in database`);
+        const errorDetail = `Project not found with scriptId or devScriptId: ${params.scriptId}. Check logs for details.`;
+        throw new Error(`Failed to update script content in database: ${errorDetail}`);
       }
       
       const action = existingFileIndex >= 0 ? 'updated' : 'created';

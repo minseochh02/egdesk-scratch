@@ -36,9 +36,12 @@ interface TemplateCopy {
   id: string;
   templateId: string;
   templateScriptId?: string;
-  spreadsheetId: string;
-  spreadsheetUrl: string;
-  scriptId?: string;
+  spreadsheetId: string; // Production spreadsheet ID
+  spreadsheetUrl: string; // Production spreadsheet URL
+  scriptId?: string; // Production Apps Script ID
+  devSpreadsheetId?: string; // Development spreadsheet ID
+  devSpreadsheetUrl?: string; // Development spreadsheet URL
+  devScriptId?: string; // Development Apps Script ID
   scriptContent?: {
     files?: Array<{
       name: string;
@@ -87,20 +90,39 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const [isPullingModel, setIsPullingModel] = useState(false);
   const [hasGemma, setHasGemma] = useState(false);
 
-  // Push/Pull state
+  // Push/Pull state (Apps Script)
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pushed' | 'pulled' | 'error'>('idle');
   const [lastPushedVersion, setLastPushedVersion] = useState<number | null>(null);
 
-  // Version history state
-  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
-  const [versions, setVersions] = useState<Array<{ versionNumber: number; description?: string; createTime: string }>>([]);
-  const [loadingVersions, setLoadingVersions] = useState(false);
+  // Dev Script Sync state (Local ↔ Dev ↔ Prod flow)
+  const [hasDevScript, setHasDevScript] = useState(false);
+  const [isCreatingDevScript, setIsCreatingDevScript] = useState(false);
+  const [isDevPushing, setIsDevPushing] = useState(false);
+  const [isDevPulling, setIsDevPulling] = useState(false);
+  const [isProdPushing, setIsProdPushing] = useState(false);
+  const [isProdPulling, setIsProdPulling] = useState(false);
+  const [devSyncStatus, setDevSyncStatus] = useState<'idle' | 'dev-pushed' | 'dev-pulled' | 'prod-pushed' | 'prod-pulled' | 'error'>('idle');
+  const [devSyncMessage, setDevSyncMessage] = useState<string | null>(null);
+
+  // Version history state - DEV
+  const [showDevVersionDropdown, setShowDevVersionDropdown] = useState(false);
+  const [selectedDevVersion, setSelectedDevVersion] = useState<number | null>(null);
+  const [devVersions, setDevVersions] = useState<Array<{ versionNumber: number; description?: string; createTime: string }>>([]);
+  const [loadingDevVersions, setLoadingDevVersions] = useState(false);
+  
+  // Version history state - PROD
+  const [showProdVersionDropdown, setShowProdVersionDropdown] = useState(false);
+  const [selectedProdVersion, setSelectedProdVersion] = useState<number | null>(null);
+  const [prodVersions, setProdVersions] = useState<Array<{ versionNumber: number; description?: string; createTime: string }>>([]);
+  const [loadingProdVersions, setLoadingProdVersions] = useState(false);
+  
+  // Shared version content state
   const [versionContent, setVersionContent] = useState<Array<{ name: string; type: string; source: string }> | null>(null);
   const [loadingVersionContent, setLoadingVersionContent] = useState(false);
   const [viewingVersionFile, setViewingVersionFile] = useState<string | null>(null);
+  const [activeVersionEnv, setActiveVersionEnv] = useState<'dev' | 'prod' | null>(null);
   const filesListRef = useRef<HTMLDivElement>(null);
   const [showScrollLeft, setShowScrollLeft] = useState(false);
   const [showScrollRight, setShowScrollRight] = useState(false);
@@ -434,65 +456,105 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     return { source: 'ipc', result: ipcResult };
   };
 
-  // Load versions for the selected project
-  const loadVersions = async () => {
-    if (!selectedCopy?.id) return;
+  // Helper to normalize versions response
+  const normalizeVersionsResponse = (result: any): Array<{ versionNumber: number; description?: string; createTime: string }> => {
+    let versionsData: any = result.data ?? result;
 
-    setLoadingVersions(true);
+    // 1) Raw MCP text content
+    if (versionsData?.content?.[0]?.text) {
+      try {
+        const parsed = JSON.parse(versionsData.content[0].text);
+        versionsData = parsed.versions || parsed || [];
+      } catch {
+        versionsData = [];
+      }
+    }
+    // 2) useMCPTools parsed object with versions
+    else if (versionsData?.content && typeof versionsData.content === 'object' && !Array.isArray(versionsData.content)) {
+      versionsData = versionsData.content.versions || versionsData.content || [];
+    }
+    // 3) Direct { versions: [...] }
+    else if (versionsData?.versions) {
+      versionsData = versionsData.versions;
+    }
+
+    const normalized = Array.isArray(versionsData) ? versionsData : [];
+    return [...normalized].sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
+  };
+
+  // Load versions for DEV script
+  const loadDevVersions = async () => {
+    if (!selectedCopy?.devScriptId) {
+      setDevVersions([]);
+      return;
+    }
+
+    setLoadingDevVersions(true);
     try {
-      console.log('📜 Loading versions...');
+      console.log('📜 Loading DEV versions...');
       const { source, result } = await callListVersions(selectedCopy.id);
       
       if (result?.success ?? !result?.error) {
-        console.log(`✅ listVersions succeeded via ${source}`);
-
-        // Normalize all known response shapes
-        let versionsData: any = result.data ?? result;
-
-        // 1) Raw MCP text content
-        if (versionsData?.content?.[0]?.text) {
-          try {
-            const parsed = JSON.parse(versionsData.content[0].text);
-            versionsData = parsed.versions || parsed || [];
-          } catch {
-            versionsData = [];
-          }
-        }
-        // 2) useMCPTools parsed object with versions
-        else if (versionsData?.content && typeof versionsData.content === 'object' && !Array.isArray(versionsData.content)) {
-          versionsData = versionsData.content.versions || versionsData.content || [];
-        }
-        // 3) Direct { versions: [...] }
-        else if (versionsData?.versions) {
-          versionsData = versionsData.versions;
-        }
-
-        const normalized = Array.isArray(versionsData) ? versionsData : [];
-        const sortedVersions = [...normalized].sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
-        setVersions(sortedVersions);
-        console.log(`✅ Loaded ${sortedVersions.length} versions`);
+        const sortedVersions = normalizeVersionsResponse(result);
+        setDevVersions(sortedVersions);
+        console.log(`✅ Loaded ${sortedVersions.length} DEV versions`);
       } else {
-        console.warn(`Failed to load versions via ${source}:`, result?.error);
-        setVersions([]);
+        console.warn(`Failed to load DEV versions via ${source}:`, result?.error);
+        setDevVersions([]);
       }
     } catch (err) {
-      console.error('Error loading versions:', err);
-      setVersions([]);
+      console.error('Error loading DEV versions:', err);
+      setDevVersions([]);
     } finally {
-      setLoadingVersions(false);
+      setLoadingDevVersions(false);
     }
   };
 
-  // Load content for a specific version
-  const loadVersionContent = async (versionNumber: number) => {
+  // Load versions for PROD script
+  const loadProdVersions = async () => {
+    if (!selectedCopy?.scriptId) {
+      setProdVersions([]);
+      return;
+    }
+
+    setLoadingProdVersions(true);
+    try {
+      console.log('📜 Loading PROD versions...');
+      // For prod, we need to call with the prod script ID specifically
+      const { source, result } = await callListVersions(selectedCopy.id);
+      
+      if (result?.success ?? !result?.error) {
+        const sortedVersions = normalizeVersionsResponse(result);
+        setProdVersions(sortedVersions);
+        console.log(`✅ Loaded ${sortedVersions.length} PROD versions`);
+      } else {
+        console.warn(`Failed to load PROD versions via ${source}:`, result?.error);
+        setProdVersions([]);
+      }
+    } catch (err) {
+      console.error('Error loading PROD versions:', err);
+      setProdVersions([]);
+    } finally {
+      setLoadingProdVersions(false);
+    }
+  };
+
+  // Load all versions
+  const loadAllVersions = async () => {
+    await Promise.all([loadDevVersions(), loadProdVersions()]);
+  };
+
+  // Load content for a specific version (dev or prod)
+  const loadVersionContent = async (versionNumber: number, env: 'dev' | 'prod') => {
     if (!selectedCopy?.id) return;
 
     setLoadingVersionContent(true);
     setVersionContent(null);
     setViewingVersionFile(null);
+    setActiveVersionEnv(env);
 
     try {
-      console.log(`📜 Loading content for version ${versionNumber}...`);
+      console.log(`📜 Loading content for ${env.toUpperCase()} version ${versionNumber}...`);
       const result = await (window.electron as any).appsScriptTools.getVersionContent(selectedCopy.id, versionNumber);
       
       if (result.success && result.data) {
@@ -531,26 +593,44 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     }
   };
 
-  // Handle version selection
-  const handleVersionSelect = async (versionNumber: number | null) => {
-    setSelectedVersion(versionNumber);
-    setShowVersionDropdown(false);
+  // Handle DEV version selection
+  const handleDevVersionSelect = async (versionNumber: number | null) => {
+    setSelectedDevVersion(versionNumber);
+    setSelectedProdVersion(null); // Deselect prod version
+    setShowDevVersionDropdown(false);
     
     if (versionNumber === null) {
-      // Clear version content when selecting HEAD
       setVersionContent(null);
       setViewingVersionFile(null);
+      setActiveVersionEnv(null);
     } else {
-      // Load content for selected version
-      await loadVersionContent(versionNumber);
+      await loadVersionContent(versionNumber, 'dev');
+    }
+  };
+
+  // Handle PROD version selection
+  const handleProdVersionSelect = async (versionNumber: number | null) => {
+    setSelectedProdVersion(versionNumber);
+    setSelectedDevVersion(null); // Deselect dev version
+    setShowProdVersionDropdown(false);
+    
+    if (versionNumber === null) {
+      setVersionContent(null);
+      setViewingVersionFile(null);
+      setActiveVersionEnv(null);
+    } else {
+      await loadVersionContent(versionNumber, 'prod');
     }
   };
 
   // Restore version to local
   const handleRestoreVersion = async () => {
+    const selectedVersion = selectedDevVersion ?? selectedProdVersion;
+    const envLabel = activeVersionEnv === 'dev' ? 'DEV' : 'PROD';
+    
     if (!selectedCopy?.id || !versionContent || selectedVersion === null) return;
 
-    if (!confirm(`Restore version ${selectedVersion} to local?\n\nThis will replace your local content with this version's content.`)) {
+    if (!confirm(`Restore ${envLabel} version ${selectedVersion} to local?\n\nThis will replace your local content with this version's content.`)) {
       return;
     }
 
@@ -565,17 +645,20 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
         })),
       };
 
+      const scriptId = activeVersionEnv === 'dev' ? selectedCopy.devScriptId : selectedCopy.scriptId;
       const result = await window.electron.templateCopies.updateScriptContent(
-        selectedCopy.scriptId!,
+        scriptId!,
         scriptContent
       );
 
       if (result.success) {
-        alert(`Successfully restored version ${selectedVersion} to local!`);
+        alert(`Successfully restored ${envLabel} version ${selectedVersion} to local!`);
         // Reset to HEAD view
-        setSelectedVersion(null);
+        setSelectedDevVersion(null);
+        setSelectedProdVersion(null);
         setVersionContent(null);
         setViewingVersionFile(null);
+        setActiveVersionEnv(null);
         // Reload template copies to see updated content
         await loadTemplateCopies();
       } else {
@@ -589,14 +672,243 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
 
   // Load versions when project changes
   useEffect(() => {
-    if (selectedCopy?.scriptId) {
-      loadVersions();
+    if (selectedCopy?.scriptId || selectedCopy?.devScriptId) {
+      loadAllVersions();
     } else {
-      setVersions([]);
-      setSelectedVersion(null);
+      setDevVersions([]);
+      setProdVersions([]);
+      setSelectedDevVersion(null);
+      setSelectedProdVersion(null);
       setVersionContent(null);
+      setActiveVersionEnv(null);
     }
   }, [selectedCopy?.id]);
+
+  // Check if selected copy has a dev script
+  // Check if dev environment exists (both spreadsheet and script)
+  useEffect(() => {
+    setHasDevScript(!!(selectedCopy?.devScriptId && selectedCopy?.devSpreadsheetId));
+  }, [selectedCopy]);
+
+  // Create Dev Environment (clone production spreadsheet + script)
+  const handleCreateDevScript = async () => {
+    if (!selectedCopy?.id) {
+      alert('No project selected');
+      return;
+    }
+
+    if (!confirm('Create Dev Environment?\n\nThis will create:\n• Dev Spreadsheet (copy of production)\n• Dev Apps Script (bound to dev spreadsheet)')) {
+      return;
+    }
+
+    setIsCreatingDevScript(true);
+    setDevSyncMessage(null);
+
+    try {
+      console.log('🔧 Creating dev environment...');
+      const result = await (window.electron as any).appsScriptTools.cloneForDev(selectedCopy.id);
+
+      if (result.success) {
+        const devInfo = result.data;
+        let message = 'Dev environment created!';
+        if (devInfo?.devSpreadsheetId) {
+          message += ` Spreadsheet: ${devInfo.devSpreadsheetId}`;
+        }
+        if (devInfo?.devScriptId) {
+          message += ` Script: ${devInfo.devScriptId}`;
+        }
+        setDevSyncMessage(message);
+        setHasDevScript(true);
+        // Reload to get updated template copy with dev info
+        await loadTemplateCopies();
+        setTimeout(() => setDevSyncMessage(null), 5000);
+      } else {
+        setDevSyncStatus('error');
+        setDevSyncMessage(result.error || 'Failed to create dev environment');
+      }
+    } catch (error) {
+      console.error('Error creating dev environment:', error);
+      setDevSyncStatus('error');
+      setDevSyncMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsCreatingDevScript(false);
+    }
+  };
+
+  // Dev Pull: Pull FROM Dev script TO Local
+  const handleDevPull = async () => {
+    if (!selectedCopy?.id || !hasDevScript) {
+      alert('No dev script configured. Please create a dev script first.');
+      return;
+    }
+
+    if (!confirm('Pull from DEV script to local?\n\nThis will overwrite your local changes with the dev script content.')) {
+      return;
+    }
+
+    setIsDevPulling(true);
+    setDevSyncStatus('idle');
+    setDevSyncMessage(null);
+
+    try {
+      console.log('📥 Dev Pull: Pulling from dev script to local...');
+      const result = await (window.electron as any).appsScriptTools.pullFromDev(selectedCopy.id);
+
+      if (result.success) {
+        setDevSyncStatus('dev-pulled');
+        setDevSyncMessage(`Pulled ${result.data?.fileCount || 0} files from dev`);
+        await loadTemplateCopies();
+        setTimeout(() => {
+          setDevSyncStatus('idle');
+          setDevSyncMessage(null);
+        }, 4000);
+      } else {
+        setDevSyncStatus('error');
+        setDevSyncMessage(result.error || 'Pull failed');
+      }
+    } catch (error) {
+      console.error('Error pulling from dev:', error);
+      setDevSyncStatus('error');
+      setDevSyncMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsDevPulling(false);
+    }
+  };
+
+  // Dev Push: Push Local TO Dev script
+  const handleDevPush = async () => {
+    if (!selectedCopy?.id || !hasDevScript) {
+      alert('No dev script configured. Please create a dev script first.');
+      return;
+    }
+
+    if (!confirm('Push local changes to DEV script?\n\nThis will update the dev script with your local changes.')) {
+      return;
+    }
+
+    setIsDevPushing(true);
+    setDevSyncStatus('idle');
+    setDevSyncMessage(null);
+
+    try {
+      console.log('📤 Dev Push: Pushing local to dev script...');
+      const result = await (window.electron as any).appsScriptTools.pushToDev(selectedCopy.id, true, `Dev push at ${new Date().toLocaleString()}`);
+
+      if (result.success) {
+        setDevSyncStatus('dev-pushed');
+        setDevSyncMessage(result.data?.message || 'Pushed to dev');
+        setTimeout(() => {
+          setDevSyncStatus('idle');
+          setDevSyncMessage(null);
+        }, 4000);
+      } else {
+        setDevSyncStatus('error');
+        setDevSyncMessage(result.error || 'Push failed');
+      }
+    } catch (error) {
+      console.error('Error pushing to dev:', error);
+      setDevSyncStatus('error');
+      setDevSyncMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsDevPushing(false);
+    }
+  };
+
+  // Prod Pull: Pull FROM Prod script TO Dev script (and local)
+  const handleProdPull = async () => {
+    if (!selectedCopy?.id || !hasDevScript) {
+      alert('No dev script configured. Please create a dev script first.');
+      return;
+    }
+
+    if (!confirm('Pull from PRODUCTION to DEV?\n\nThis will update your dev script with the latest production code.')) {
+      return;
+    }
+
+    setIsProdPulling(true);
+    setDevSyncStatus('idle');
+    setDevSyncMessage(null);
+
+    try {
+      console.log('📥 Prod Pull: Pulling from production to dev...');
+      const result = await (window.electron as any).appsScriptTools.pullProdToDev(selectedCopy.id);
+
+      if (result.success) {
+        setDevSyncStatus('prod-pulled');
+        setDevSyncMessage(`Pulled ${result.data?.fileCount || 0} files from prod`);
+        await loadTemplateCopies();
+        setTimeout(() => {
+          setDevSyncStatus('idle');
+          setDevSyncMessage(null);
+        }, 4000);
+      } else {
+        setDevSyncStatus('error');
+        setDevSyncMessage(result.error || 'Pull failed');
+      }
+    } catch (error) {
+      console.error('Error pulling from prod:', error);
+      setDevSyncStatus('error');
+      setDevSyncMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsProdPulling(false);
+    }
+  };
+
+  // Prod Push: Push Dev TO Production (DANGEROUS)
+  const handleProdPush = async () => {
+    if (!selectedCopy?.id || !hasDevScript) {
+      alert('No dev script configured. Please create a dev script first.');
+      return;
+    }
+
+    // First confirmation
+    const confirmed = confirm(
+      '⚠️ WARNING: Push DEV to PRODUCTION?\n\n' +
+      'This will OVERWRITE the production script with your dev code.\n\n' +
+      'Are you sure you want to proceed?'
+    );
+    if (!confirmed) return;
+
+    // Double confirmation for safety
+    const doubleConfirm = confirm(
+      '⚠️ FINAL CONFIRMATION\n\n' +
+      'You are about to overwrite PRODUCTION code.\n' +
+      'A version will be created.\n\n' +
+      'Click OK to confirm:'
+    );
+    if (!doubleConfirm) return;
+
+    setIsProdPushing(true);
+    setDevSyncStatus('idle');
+    setDevSyncMessage(null);
+
+    try {
+      console.log('📤 Prod Push: Pushing dev to production...');
+      const result = await (window.electron as any).appsScriptTools.pushDevToProd(
+        selectedCopy.id, 
+        true, 
+        `Production release at ${new Date().toLocaleString()}`
+      );
+
+      if (result.success) {
+        setDevSyncStatus('prod-pushed');
+        setDevSyncMessage(result.data?.message || 'Pushed to production');
+        setTimeout(() => {
+          setDevSyncStatus('idle');
+          setDevSyncMessage(null);
+        }, 4000);
+      } else {
+        setDevSyncStatus('error');
+        setDevSyncMessage(result.error || 'Push failed');
+      }
+    } catch (error) {
+      console.error('Error pushing to prod:', error);
+      setDevSyncStatus('error');
+      setDevSyncMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsProdPushing(false);
+    }
+  };
 
   // Extract function names from script files
   const extractFunctions = useCallback(() => {
@@ -759,7 +1071,7 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
         window.removeEventListener('resize', handleScroll);
       };
     }
-  }, [handleScroll, selectedCopy, selectedVersion]);
+  }, [handleScroll, selectedCopy, selectedDevVersion, selectedProdVersion]);
 
   useEffect(() => {
     scrollChatToBottom();
@@ -770,15 +1082,27 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     const fileContent = getSelectedFileContent();
     const fileName = selectedFile || 'No file selected';
     const fileType = selectedCopy?.scriptContent?.files?.find(f => f.name === fileName)?.type || 'unknown';
-    const scriptId = selectedCopy?.scriptId;
     const allFiles = selectedCopy?.scriptContent?.files || [];
+    
+    // Get both dev and prod script IDs
+    const prodScriptId = selectedCopy?.scriptId;
+    const devScriptId = selectedCopy?.devScriptId;
+    const prodSpreadsheetId = selectedCopy?.spreadsheetId;
+    const devSpreadsheetId = selectedCopy?.devSpreadsheetId;
+    
+    // Determine which script to use - default to DEV if available, otherwise PROD
+    const activeScriptId = devScriptId || prodScriptId;
+    const activeEnvironment = devScriptId ? 'DEV' : 'PROD';
     
     // DEBUG: Log what we're using for scriptId
     console.log('🔍 buildSystemPrompt - selectedCopy:', {
       id: selectedCopy?.id,
-      scriptId: selectedCopy?.scriptId,
-      spreadsheetId: selectedCopy?.spreadsheetId,
-      templateScriptId: selectedCopy?.templateScriptId
+      prodScriptId,
+      devScriptId,
+      activeScriptId,
+      activeEnvironment,
+      prodSpreadsheetId,
+      devSpreadsheetId
     });
 
     let codeContext = '';
@@ -790,9 +1114,39 @@ ${fileContent.slice(0, 5000)}${fileContent.length > 5000 ? '\n... (truncated)' :
 `;
     }
 
-    return `You are an expert Google Apps Script developer. Your job is to TAKE ACTION IMMEDIATELY using tools.
+    // Build environment info section
+    let envInfo = '';
+    if (devScriptId && prodScriptId) {
+      envInfo = `
+🌍 ENVIRONMENT SETUP (Local → Dev → Prod flow):
+┌─────────────────────────────────────────────────────────────────┐
+│ 🔧 DEV ENVIRONMENT (for testing/development):                  │
+│    Script ID: "${devScriptId}"                                  │
+│    Spreadsheet: ${devSpreadsheetId || 'Not set'}               │
+├─────────────────────────────────────────────────────────────────┤
+│ 📋 PROD ENVIRONMENT (live/production):                          │
+│    Script ID: "${prodScriptId}"                                 │
+│    Spreadsheet: ${prodSpreadsheetId || 'Not set'}              │
+└─────────────────────────────────────────────────────────────────┘
 
-🔑 PROJECT ID: "${scriptId}"
+⚡ ACTIVE ENVIRONMENT: ${activeEnvironment}
+🔑 USE THIS SCRIPT ID: "${activeScriptId}"
+
+💡 Development Workflow:
+1. All code changes should go to DEV script first
+2. Test thoroughly in DEV environment
+3. Once verified, user will push DEV → PROD via UI buttons
+`;
+    } else {
+      envInfo = `
+🔑 PROJECT ID: "${activeScriptId}"
+📊 Spreadsheet: ${prodSpreadsheetId || 'Not set'}
+${!devScriptId ? '⚠️ DEV environment not set up - changes go directly to PROD' : ''}
+`;
+    }
+
+    return `You are an expert Google Apps Script developer. Your job is to TAKE ACTION IMMEDIATELY using tools.
+${envInfo}
 📂 Files: ${allFiles.map(f => f.name).join(', ') || 'None'}
 ${codeContext}
 
@@ -800,15 +1154,28 @@ ${codeContext}
 1. When user asks to CREATE, MODIFY, or FIX code → USE TOOLS IMMEDIATELY
 2. DO NOT explain what you would do → JUST DO IT with tools
 3. DO NOT write example code in chat → WRITE IT TO FILES with apps_script_write_file
-4. ALWAYS use scriptId="${scriptId}" in ALL tool calls
+4. ALWAYS use scriptId="${activeScriptId}" in ALL tool calls
 
 🛠️ AVAILABLE TOOLS (USE THESE - don't just talk about them):
-• apps_script_list_files - List all files
-• apps_script_read_file - Read a file
+
+📁 FILE OPERATIONS (edit LOCAL copy):
+• apps_script_list_files - List all files in a script project
+• apps_script_read_file - Read a file's contents
 • apps_script_write_file - Create/replace entire file (use for new files or complete rewrites)
 • apps_script_partial_edit - Edit existing code (search/replace)
 • apps_script_rename_file - Rename a file
 • apps_script_delete_file - Delete a file
+
+🔄 PUSH/PULL OPERATIONS (sync with Google):
+• apps_script_push_to_dev - Push local changes to DEV (makes changes LIVE in DEV spreadsheet)
+• apps_script_pull_from_dev - Pull DEV code to local
+• apps_script_push_dev_to_prod - ⚠️ DANGEROUS: Deploy DEV to PRODUCTION (only when user explicitly asks!)
+• apps_script_pull_prod_to_dev - Sync DEV with PRODUCTION code
+
+💡 WORKFLOW:
+1. Edit code using file operations (apps_script_write_file, apps_script_partial_edit)
+2. Push to DEV using apps_script_push_to_dev to make changes live
+3. NEVER push to PROD unless user explicitly requests deployment
 
 📝 APPS SCRIPT BEST PRACTICES:
 • Use PropertiesService for IDs/keys (NEVER hardcode)
@@ -1009,9 +1376,14 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
           maxTurns: 10, // Increased turn limit for better task completion
           autoExecuteTools: true, // Let backend handle tool execution loop
           context: {
-            scriptId: selectedCopy?.scriptId,
+            scriptId: selectedCopy?.devScriptId || selectedCopy?.scriptId, // Prefer dev script
+            devScriptId: selectedCopy?.devScriptId,
+            prodScriptId: selectedCopy?.scriptId,
+            devSpreadsheetId: selectedCopy?.devSpreadsheetId,
+            prodSpreadsheetId: selectedCopy?.spreadsheetId,
             currentFile: selectedFile,
             projectContext: 'apps-script-editor',
+            hasDevEnvironment: !!(selectedCopy?.devScriptId && selectedCopy?.devSpreadsheetId),
             systemPrompt: buildSystemPrompt()
           }
         },
@@ -1167,7 +1539,7 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
 
   return (
     <div className="cloud-mcp-server-editor">
-      <div className="editor-header">
+      <div className="cloud-mcp-editor-header">
         <div className="header-content">
           {onBack && (
             <button 
@@ -1181,20 +1553,36 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
           
         </div>
         <div className="header-actions">
-          {/* Open Spreadsheet Button */}
+          {/* Open Spreadsheet Buttons */}
           {selectedCopy && (
-            <button
-              className="open-spreadsheet-button"
-              onClick={() => {
-                if (selectedCopy.spreadsheetUrl) {
-                  window.open(selectedCopy.spreadsheetUrl, '_blank', 'noopener,noreferrer');
-                }
-              }}
-              title="Open spreadsheet in browser"
-            >
-              <FontAwesomeIcon icon={faExternalLinkAlt} />
-              Open
-            </button>
+            <>
+              <button
+                className="open-spreadsheet-button"
+                onClick={() => {
+                  if (selectedCopy.spreadsheetUrl) {
+                    window.open(selectedCopy.spreadsheetUrl, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                title="Open production spreadsheet in browser"
+              >
+                <FontAwesomeIcon icon={faExternalLinkAlt} />
+                Prod
+              </button>
+              {selectedCopy.devSpreadsheetUrl && (
+                <button
+                  className="open-spreadsheet-button dev-spreadsheet-button"
+                  onClick={() => {
+                    if (selectedCopy.devSpreadsheetUrl) {
+                      window.open(selectedCopy.devSpreadsheetUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                  title="Open dev spreadsheet in browser"
+                >
+                  <FontAwesomeIcon icon={faExternalLinkAlt} />
+                  Dev
+                </button>
+              )}
+            </>
           )}
           
           {/* Save Button */}
@@ -1209,49 +1597,125 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
             </button>
           )}
           
-          {/* Push/Pull Sync Buttons */}
+          {/* Dev Script Sync Buttons - Local ↔ Dev ↔ Prod flow */}
           {selectedCopy?.scriptId && (
             <>
-              <div className="sync-button-group">
+              {!hasDevScript ? (
+                /* No dev environment yet - show setup button */
                 <button
-                  className="push-button"
-                  onClick={handlePushToGoogle}
-                  disabled={isPushing || isPulling}
-                  title="Push and create version"
+                  className="setup-dev-button"
+                  onClick={handleCreateDevScript}
+                  disabled={isCreatingDevScript}
+                  title="Create Dev Environment (spreadsheet + script)"
                 >
-                  {isPushing ? (
+                  {isCreatingDevScript ? (
                     <FontAwesomeIcon icon={faSpinner} spin />
                   ) : (
-                    <FontAwesomeIcon icon={faCloudUpload} />
+                    <FontAwesomeIcon icon={faPlus} />
                   )}
-                  Push
+                  Setup Dev
                 </button>
-              </div>
-              
-              <button
-                className="pull-button"
-                onClick={handlePullFromGoogle}
-                disabled={isPushing || isPulling}
-                title="Pull latest from Google Apps Script"
-              >
-                {isPulling ? (
-                  <FontAwesomeIcon icon={faSpinner} spin />
-                ) : (
-                  <FontAwesomeIcon icon={faCloudDownload} />
-                )}
-                Pull
-              </button>
-              
-              {syncStatus === 'pushed' && (
-                <span className="sync-status sync-status-pushed">
-                  <FontAwesomeIcon icon={faCheckCircle} />
-                  {lastPushedVersion ? `Pushed! (v${lastPushedVersion})` : 'Pushed!'}
-                </span>
+              ) : (
+                /* Dev script exists - show full flow */
+                <>
+                  {/* Dev Pull: Dev → Local */}
+                  <button
+                    className="dev-pull-button"
+                    onClick={handleDevPull}
+                    disabled={isDevPulling || isDevPushing || isProdPulling || isProdPushing}
+                    title="Pull from DEV script to Local"
+                  >
+                    {isDevPulling ? (
+                      <FontAwesomeIcon icon={faSpinner} spin />
+                    ) : (
+                      <FontAwesomeIcon icon={faCloudDownload} />
+                    )}
+                    Dev Pull
+                  </button>
+
+                  {/* Dev Push: Local → Dev */}
+                  <button
+                    className="dev-push-button"
+                    onClick={handleDevPush}
+                    disabled={isDevPulling || isDevPushing || isProdPulling || isProdPushing}
+                    title="Push Local changes to DEV script"
+                  >
+                    {isDevPushing ? (
+                      <FontAwesomeIcon icon={faSpinner} spin />
+                    ) : (
+                      <FontAwesomeIcon icon={faCloudUpload} />
+                    )}
+                    Dev Push
+                  </button>
+
+                  <div className="dev-sync-divider" />
+
+                  {/* Prod Pull: Prod → Dev */}
+                  <button
+                    className="pull-button"
+                    onClick={handleProdPull}
+                    disabled={isDevPulling || isDevPushing || isProdPulling || isProdPushing}
+                    title="Pull from PRODUCTION to DEV script"
+                  >
+                    {isProdPulling ? (
+                      <FontAwesomeIcon icon={faSpinner} spin />
+                    ) : (
+                      <FontAwesomeIcon icon={faCloudDownload} />
+                    )}
+                    Prod Pull
+                  </button>
+
+                  {/* Prod Push: Dev → Prod (DANGEROUS) */}
+                  <button
+                    className="prod-push-button"
+                    onClick={handleProdPush}
+                    disabled={isDevPulling || isDevPushing || isProdPulling || isProdPushing}
+                    title="⚠️ Push DEV to PRODUCTION (Dangerous!)"
+                  >
+                    {isProdPushing ? (
+                      <FontAwesomeIcon icon={faSpinner} spin />
+                    ) : (
+                      <FontAwesomeIcon icon={faCloudUpload} />
+                    )}
+                    Prod Push ⚠️
+                  </button>
+                </>
               )}
-              {syncStatus === 'pulled' && (
+
+              {/* Status messages */}
+              {devSyncStatus === 'dev-pulled' && (
                 <span className="sync-status sync-status-pulled">
                   <FontAwesomeIcon icon={faCheckCircle} />
-                  Pulled!
+                  {devSyncMessage || 'Dev Pulled!'}
+                </span>
+              )}
+              {devSyncStatus === 'dev-pushed' && (
+                <span className="sync-status sync-status-pushed">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {devSyncMessage || 'Dev Pushed!'}
+                </span>
+              )}
+              {devSyncStatus === 'prod-pulled' && (
+                <span className="sync-status sync-status-pulled">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {devSyncMessage || 'Prod Pulled!'}
+                </span>
+              )}
+              {devSyncStatus === 'prod-pushed' && (
+                <span className="sync-status sync-status-pushed">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {devSyncMessage || 'Prod Pushed!'}
+                </span>
+              )}
+              {devSyncStatus === 'error' && (
+                <span className="sync-status sync-status-error">
+                  ❌ {devSyncMessage || 'Error'}
+                </span>
+              )}
+              {devSyncMessage && devSyncStatus === 'idle' && (
+                <span className="sync-status sync-status-pushed">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {devSyncMessage}
                 </span>
               )}
             </>
@@ -1299,9 +1763,9 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
       )}
 
       {!loading && !error && (
-        <div className="editor-layout">
+        <div className="cloud-mcp-editor-layout">
           {/* Left sidebar - Template copies list */}
-          <div className="editor-sidebar">
+          <div className="cloud-mcp-editor-sidebar">
             <div className="sidebar-header">
               <FontAwesomeIcon icon={faDatabase} />
               <span>Template Copies ({templateCopies.length})</span>
@@ -1333,32 +1797,32 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
               )}
             </div>
             
-            {/* Version History Dropdown - Below project selector */}
-            {selectedCopy?.scriptId && (
-              <div className="version-dropdown-container">
+            {/* Version History - DEV */}
+            {selectedCopy?.devScriptId && (
+              <div className="version-dropdown-container version-dev">
                 <div className="sidebar-header version-header">
                   <FontAwesomeIcon icon={faCodeBranch} />
-                  <span>Version History {loadingVersions && <FontAwesomeIcon icon={faSpinner} spin className="loading-spinner-small" />}</span>
+                  <span className="version-env-label dev">🔧 DEV Versions {loadingDevVersions && <FontAwesomeIcon icon={faSpinner} spin className="loading-spinner-small" />}</span>
                 </div>
                 <button 
-                  className="version-dropdown-toggle"
-                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
-                  disabled={loadingVersions}
+                  className="version-dropdown-toggle dev"
+                  onClick={() => setShowDevVersionDropdown(!showDevVersionDropdown)}
+                  disabled={loadingDevVersions}
                 >
                   <span className="version-toggle-label">
-                    {loadingVersionContent ? 'Loading...' : selectedVersion ? `v${selectedVersion}` : 'Current (HEAD)'}
+                    {loadingVersionContent && activeVersionEnv === 'dev' ? 'Loading...' : selectedDevVersion ? `v${selectedDevVersion}` : 'Current (HEAD)'}
                   </span>
                   <FontAwesomeIcon 
-                    icon={showVersionDropdown ? faChevronUp : faChevronDown} 
+                    icon={showDevVersionDropdown ? faChevronUp : faChevronDown} 
                     className="dropdown-chevron"
                   />
                 </button>
                 
-                {showVersionDropdown && (
+                {showDevVersionDropdown && (
                   <div className="version-dropdown-list">
                     <div 
-                      className={`version-dropdown-item ${selectedVersion === null ? 'active' : ''}`}
-                      onClick={() => handleVersionSelect(null)}
+                      className={`version-dropdown-item ${selectedDevVersion === null && activeVersionEnv !== 'prod' ? 'active' : ''}`}
+                      onClick={() => handleDevVersionSelect(null)}
                     >
                       <div className="version-item-header">
                         <span className="version-number">Current (HEAD)</span>
@@ -1366,17 +1830,17 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                       <span className="version-description">Local working copy</span>
                     </div>
                     
-                    {versions.length === 0 && !loadingVersions && (
+                    {devVersions.length === 0 && !loadingDevVersions && (
                       <div className="version-dropdown-item version-empty">
-                        <span className="version-description">No versions found. Push with version enabled to create one.</span>
+                        <span className="version-description">No DEV versions yet. Push to DEV to create one.</span>
                       </div>
                     )}
                     
-                    {versions.map((version) => (
+                    {devVersions.map((version) => (
                       <div 
                         key={version.versionNumber}
-                        className={`version-dropdown-item ${selectedVersion === version.versionNumber ? 'active' : ''}`}
-                        onClick={() => handleVersionSelect(version.versionNumber)}
+                        className={`version-dropdown-item ${selectedDevVersion === version.versionNumber ? 'active' : ''}`}
+                        onClick={() => handleDevVersionSelect(version.versionNumber)}
                       >
                         <div className="version-item-header">
                           <span className="version-number">v{version.versionNumber}</span>
@@ -1389,24 +1853,83 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Version History - PROD */}
+            {selectedCopy?.scriptId && (
+              <div className="version-dropdown-container version-prod">
+                <div className="sidebar-header version-header">
+                  <FontAwesomeIcon icon={faCodeBranch} />
+                  <span className="version-env-label prod">📋 PROD Versions {loadingProdVersions && <FontAwesomeIcon icon={faSpinner} spin className="loading-spinner-small" />}</span>
+                </div>
+                <button 
+                  className="version-dropdown-toggle prod"
+                  onClick={() => setShowProdVersionDropdown(!showProdVersionDropdown)}
+                  disabled={loadingProdVersions}
+                >
+                  <span className="version-toggle-label">
+                    {loadingVersionContent && activeVersionEnv === 'prod' ? 'Loading...' : selectedProdVersion ? `v${selectedProdVersion}` : 'Current (HEAD)'}
+                  </span>
+                  <FontAwesomeIcon 
+                    icon={showProdVersionDropdown ? faChevronUp : faChevronDown} 
+                    className="dropdown-chevron"
+                  />
+                </button>
                 
-                {/* Restore button when viewing a version */}
-                {selectedVersion !== null && versionContent && (
-                  <button 
-                    className="restore-version-button"
-                    onClick={handleRestoreVersion}
-                    title="Restore this version to local"
-                  >
-                    <FontAwesomeIcon icon={faUndo} />
-                    Restore v{selectedVersion} to Local
-                  </button>
+                {showProdVersionDropdown && (
+                  <div className="version-dropdown-list">
+                    <div 
+                      className={`version-dropdown-item ${selectedProdVersion === null && activeVersionEnv !== 'dev' ? 'active' : ''}`}
+                      onClick={() => handleProdVersionSelect(null)}
+                    >
+                      <div className="version-item-header">
+                        <span className="version-number">Current (HEAD)</span>
+                      </div>
+                      <span className="version-description">Production working copy</span>
+                    </div>
+                    
+                    {prodVersions.length === 0 && !loadingProdVersions && (
+                      <div className="version-dropdown-item version-empty">
+                        <span className="version-description">No PROD versions yet. Push to PROD to create one.</span>
+                      </div>
+                    )}
+                    
+                    {prodVersions.map((version) => (
+                      <div 
+                        key={version.versionNumber}
+                        className={`version-dropdown-item ${selectedProdVersion === version.versionNumber ? 'active' : ''}`}
+                        onClick={() => handleProdVersionSelect(version.versionNumber)}
+                      >
+                        <div className="version-item-header">
+                          <span className="version-number">v{version.versionNumber}</span>
+                          <span className="version-date">
+                            {new Date(version.createTime).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <span className="version-description">{version.description || 'No description'}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
+            )}
+            
+            {/* Restore button when viewing a version */}
+            {(selectedDevVersion !== null || selectedProdVersion !== null) && versionContent && (
+              <button 
+                className={`restore-version-button ${activeVersionEnv}`}
+                onClick={handleRestoreVersion}
+                title={`Restore this ${activeVersionEnv?.toUpperCase()} version to local`}
+              >
+                <FontAwesomeIcon icon={faUndo} />
+                Restore {activeVersionEnv === 'dev' ? '🔧' : '📋'} v{selectedDevVersion ?? selectedProdVersion} to Local
+              </button>
             )}
           </div>
 
           {/* Middle panel - Script content */}
-          <div className="editor-content">
+          <div className="cloud-mcp-editor-content">
             {!selectedCopy ? (
               <div className="empty-content">
                 <FontAwesomeIcon icon={faCode} className="empty-icon" />
@@ -1420,22 +1943,37 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                 <p>This template copy doesn't have any Apps Script files</p>
                 <div className="copy-info">
                   <div className="info-item">
-                    <strong>Spreadsheet ID:</strong> {selectedCopy.spreadsheetId}
-                  </div>
-                  <div className="info-item">
-                    <strong>Spreadsheet URL:</strong>{' '}
+                    <strong>📋 Production Spreadsheet:</strong>{' '}
                     <a 
                       href={selectedCopy.spreadsheetUrl} 
                       target="_blank" 
                       rel="noopener noreferrer"
                     >
-                      {selectedCopy.spreadsheetUrl}
+                      {selectedCopy.spreadsheetId}
                       <FontAwesomeIcon icon={faExternalLinkAlt} />
                     </a>
                   </div>
                   {selectedCopy.scriptId && (
                     <div className="info-item">
-                      <strong>Script ID:</strong> {selectedCopy.scriptId}
+                      <strong>📋 Production Script:</strong> {selectedCopy.scriptId}
+                    </div>
+                  )}
+                  {selectedCopy.devSpreadsheetUrl && (
+                    <div className="info-item">
+                      <strong>🔧 Dev Spreadsheet:</strong>{' '}
+                      <a 
+                        href={selectedCopy.devSpreadsheetUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        {selectedCopy.devSpreadsheetId}
+                        <FontAwesomeIcon icon={faExternalLinkAlt} />
+                      </a>
+                    </div>
+                  )}
+                  {selectedCopy.devScriptId && (
+                    <div className="info-item">
+                      <strong>🔧 Dev Script:</strong> {selectedCopy.devScriptId}
                     </div>
                   )}
                 </div>
@@ -1451,11 +1989,11 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                   )}
                   <div className="files-list" ref={filesListRef}>
                     {/* Show version content files or current files */}
-                    {selectedVersion !== null && versionContent ? (
+                    {(selectedDevVersion !== null || selectedProdVersion !== null) && versionContent ? (
                       versionContent.map((file, index) => (
                         <div
                           key={index}
-                          className={`file-item ${viewingVersionFile === file.name ? 'active' : ''}`}
+                          className={`file-item ${viewingVersionFile === file.name ? 'active' : ''} ${activeVersionEnv === 'dev' ? 'dev-version' : 'prod-version'}`}
                           onClick={() => setViewingVersionFile(file.name)}
                         >
                           <FontAwesomeIcon icon={faFileCode} />
@@ -1489,7 +2027,7 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
 
                   <div className="code-content-script">
                     {/* Show version content or current content */}
-                    {selectedVersion !== null ? (
+                    {(selectedDevVersion !== null || selectedProdVersion !== null) ? (
                       // Version content viewer
                       loadingVersionContent ? (
                         <div className="code-placeholder">
@@ -1525,7 +2063,7 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
           </div>
 
           {/* Right panel - Chat interface */}
-          <div className="editor-chat">
+          <div className="cloud-mcp-editor-chat">
             <div className="chat-header">
               <div className="chat-header-left">
                 <FontAwesomeIcon icon={faRobot} />
@@ -1539,14 +2077,14 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
               
               <div className="chat-header-actions">
                 {/* Unified Model Selector */}
-                <div className="model-selector">
+                <div className="cloud-mcp-model-selector">
                   <button 
-                    className={`model-dropdown-toggle ${aiReady ? 'ready' : ''}`}
+                    className={`cloud-mcp-model-dropdown-toggle ${aiReady ? 'ready' : ''}`}
                     onClick={() => setShowModelDropdown(!showModelDropdown)}
                     title="Select AI Model"
                   >
-                    <span className="model-status-dot"></span>
-                    <span className="model-name">
+                    <span className="cloud-mcp-model-status-dot"></span>
+                    <span className="cloud-mcp-model-name">
                       {selectedModel.startsWith('ollama:') 
                         ? `🖥️ ${selectedModel.replace('ollama:', '')}` 
                         : `☁️ ${selectedModel.replace('gemini-', '').replace('-latest', '')}`}
@@ -1555,13 +2093,13 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                   </button>
                   
                   {showModelDropdown && (
-                    <div className="model-dropdown">
+                    <div className="cloud-mcp-model-dropdown">
                       {/* Cloud Models Section */}
-                      <div className="model-group-label">Cloud Models (Gemini)</div>
+                      <div className="cloud-mcp-model-group-label">Cloud Models (Gemini)</div>
                       {availableModels.filter(m => !m.startsWith('ollama:')).map(model => (
                         <button
                           key={model}
-                          className={`model-option ${selectedModel === model ? 'active' : ''}`}
+                          className={`cloud-mcp-model-option ${selectedModel === model ? 'active' : ''}`}
                           onClick={() => handleModelChange(model)}
                         >
                           ☁️ {model}
@@ -1569,11 +2107,11 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                       ))}
                       
                       {/* Local Models Section */}
-                      <div className="model-group-label">Local Models (Ollama)</div>
+                      <div className="cloud-mcp-model-group-label">Local Models (Ollama)</div>
                       {availableModels.filter(m => m.startsWith('ollama:')).map(model => (
                         <button
                           key={model}
-                          className={`model-option ${selectedModel === model ? 'active' : ''}`}
+                          className={`cloud-mcp-model-option ${selectedModel === model ? 'active' : ''}`}
                           onClick={() => handleModelChange(model)}
                         >
                           🖥️ {model.replace('ollama:', '')}
@@ -1581,7 +2119,7 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                       ))}
                       
                       {availableModels.filter(m => m.startsWith('ollama:')).length === 0 && (
-                        <div className="model-option-hint">No local models found. Install Ollama to use offline AI.</div>
+                        <div className="cloud-mcp-model-option-hint">No local models found. Install Ollama to use offline AI.</div>
                       )}
                     </div>
                   )}

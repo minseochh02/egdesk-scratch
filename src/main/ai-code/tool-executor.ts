@@ -25,7 +25,13 @@ import {
   AppsScriptWriteFileTool,
   AppsScriptPartialEditTool,
   AppsScriptRenameFileTool,
-  AppsScriptDeleteFileTool
+  AppsScriptDeleteFileTool,
+  AppsScriptDocsTool,
+  AppsScriptDocsListTool,
+  AppsScriptPushToDevTool,
+  AppsScriptPullFromDevTool,
+  AppsScriptPushDevToProdTool,
+  AppsScriptPullProdToDevTool
 } from './tools';
 
 
@@ -295,6 +301,38 @@ export class ToolRegistry {
           required: ['script_id', 'file_name']
         };
       
+      case 'apps_script_docs':
+        return {
+          type: 'object',
+          properties: {
+            service: {
+              type: 'string',
+              description: 'The Apps Script service name (e.g., "spreadsheet", "document", "drive", "gmail", "calendar")'
+            },
+            class_name: {
+              type: 'string',
+              description: 'The class name to get documentation for (e.g., "Spreadsheet", "Sheet", "Range", "Document")'
+            },
+            method_filter: {
+              type: 'string',
+              description: 'Optional: Filter methods by name pattern (e.g., "getValue*" or "set*"). Supports wildcards.'
+            }
+          },
+          required: ['service', 'class_name']
+        };
+      
+      case 'apps_script_docs_list':
+        return {
+          type: 'object',
+          properties: {
+            service: {
+              type: 'string',
+              description: 'Optional: The Apps Script service name to list classes for. If not provided, lists all available documentation.'
+            }
+          },
+          required: []
+        };
+      
       default:
         return {
           type: 'object',
@@ -439,6 +477,16 @@ export class ToolRegistry {
     this.registerTool(new AppsScriptPartialEditTool());
     this.registerTool(new AppsScriptRenameFileTool());
     this.registerTool(new AppsScriptDeleteFileTool());
+    
+    // AppsScript Documentation Tools
+    this.registerTool(new AppsScriptDocsTool());
+    this.registerTool(new AppsScriptDocsListTool());
+    
+    // AppsScript Push/Pull Tools (DEV/PROD workflow)
+    this.registerTool(new AppsScriptPushToDevTool());
+    this.registerTool(new AppsScriptPullFromDevTool());
+    this.registerTool(new AppsScriptPushDevToProdTool());
+    this.registerTool(new AppsScriptPullProdToDevTool());
   }
 }
 
@@ -473,6 +521,12 @@ export function getAppsScriptTools(): ToolExecutor[] {
     new AppsScriptPartialEditTool(),
     new AppsScriptRenameFileTool(),
     new AppsScriptDeleteFileTool(),
+    new AppsScriptDocsTool(),
+    new AppsScriptDocsListTool(),
+    new AppsScriptPushToDevTool(),
+    new AppsScriptPullFromDevTool(),
+    new AppsScriptPushDevToProdTool(),
+    new AppsScriptPullProdToDevTool(),
   ];
 }
 
@@ -656,6 +710,111 @@ export function registerAppsScriptToolHandlers(): void {
       const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
       const service = AppsScriptService.getInstance();
       const result = await service.runFunction(scriptId, functionName, parameters);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Clone script to create dev environment
+  ipcMain.handle('apps-script-clone-for-dev', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.cloneScriptForDev(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Push to Dev Apps Script (Local → Dev)
+  ipcMain.handle('apps-script-push-to-dev', async (event, projectId: string, createVersion?: boolean, versionDescription?: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pushToDev(projectId, createVersion, versionDescription);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Pull from Dev Apps Script (Dev → Local)
+  ipcMain.handle('apps-script-pull-from-dev', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pullFromDev(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Push Dev to Production (Dev → Prod) - DANGEROUS
+  ipcMain.handle('apps-script-push-dev-to-prod', async (event, projectId: string, createVersion?: boolean, versionDescription?: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pushDevToProd(projectId, createVersion, versionDescription);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Pull Production to Dev (Prod → Dev)
+  ipcMain.handle('apps-script-pull-prod-to-dev', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.pullProdToDev(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Apps Script Documentation lookup
+  ipcMain.handle('apps-script-docs', async (event, service: string, className: string, methodFilter?: string) => {
+    try {
+      const { AppsScriptDocsTool } = require('./tools/apps-script-docs');
+      const docsTool = new AppsScriptDocsTool();
+      const result = await docsTool.execute({ service, className, methodFilter });
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Apps Script Documentation list
+  ipcMain.handle('apps-script-docs-list', async (event, service?: string) => {
+    try {
+      const { AppsScriptDocsListTool } = require('./tools/apps-script-docs');
+      const docsListTool = new AppsScriptDocsListTool();
+      const result = await docsListTool.execute({ service });
       return { success: true, data: result };
     } catch (error) {
       return {
