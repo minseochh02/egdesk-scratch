@@ -7,6 +7,7 @@ import type { AgenticResearchData } from '../../main/company-research-stage3';
 import type { DetailedReport } from '../../main/company-research-stage3b1';
 import type { ExecutiveSummary } from '../../main/company-research-stage3b2';
 import type { WorkflowProgress } from '../../main/company-research-workflow';
+import ResearchedCompanyPage from './ResearchedCompanyPage';
 import type { CompanyResearchRecord } from '../../main/sqlite/company-research';
 
 declare global {
@@ -40,72 +41,65 @@ declare global {
   }
 }
 
-interface CompanyResearchPageProps {}
+type ViewMode = 'research' | 'history';
+type ResultTab = 'summary' | 'detailed' | 'executive';
 
-const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
+const STAGES = [
+  { key: 'crawl', label: 'Crawling', icon: '🔍' },
+  { key: 'summary', label: 'Analyzing', icon: '📊' },
+  { key: 'research', label: 'Researching', icon: '🔬' },
+  { key: 'report-detailed', label: 'Detailed Report', icon: '📝' },
+  { key: 'report-exec', label: 'Executive Summary', icon: '📋' },
+];
+
+const CompanyResearchPage: React.FC = () => {
   const [companyUrl, setCompanyUrl] = useState('');
   const [isResearching, setIsResearching] = useState(false);
-  const [researchResult, setResearchResult] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [crawlResult, setCrawlResult] = useState<CrawlResult | null>(null);
   const [summaryResult, setSummaryResult] = useState<WebsiteSummary | null>(null);
   const [agenticResearchResult, setAgenticResearchResult] = useState<AgenticResearchData | null>(null);
   const [detailedReport, setDetailedReport] = useState<DetailedReport | null>(null);
   const [execSummary, setExecSummary] = useState<ExecutiveSummary | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowProgress | null>(null);
-  const [history, setHistory] = useState<CompanyResearchRecord[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-
-  const fetchHistory = async () => {
-    try {
-      const response = await window.electron.web.db.getAll();
-      if (response.success) {
-        setHistory(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch research history:', error);
-    }
-  };
+  const [viewMode, setViewMode] = useState<ViewMode>('research');
+  const [resultTab, setResultTab] = useState<ResultTab>('executive');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    fetchHistory();
-    // Listen for progress updates from the main process workflow
     const removeListener = window.electron.ipcRenderer.on(
       'company-research-progress',
       (progress: any) => {
         setWorkflowStatus(progress);
         if (progress.stage === 'error') {
-          setResearchResult(`Workflow Error: ${progress.message}`);
-        } else {
-          setResearchResult(`Current Stage: ${progress.stage.toUpperCase()} - ${progress.message}`);
+          setErrorMessage(progress.message);
         }
       }
     );
-
-    return () => {
-      removeListener();
-    };
+    return () => removeListener();
   }, []);
 
-  const handleFullResearch = async (bypassCache: boolean = false) => {
-    if (!companyUrl.trim()) {
-      alert('Please enter a company URL or name');
-      return;
-    }
-
-    setIsResearching(true);
-    setResearchResult(null);
+  const resetState = () => {
+    setErrorMessage(null);
     setCrawlResult(null);
     setSummaryResult(null);
     setAgenticResearchResult(null);
     setDetailedReport(null);
     setExecSummary(null);
     setWorkflowStatus(null);
+  };
+
+  const handleFullResearch = async (bypassCache: boolean = false) => {
+    if (!companyUrl.trim()) return;
+
+    setIsResearching(true);
+    resetState();
 
     try {
       const response = await window.electron.web.fullResearch(
         companyUrl,
-        {}, // inquiryData
-        { bypassCache, createGoogleDoc: false } // options
+        {},
+        { bypassCache, createGoogleDoc: false }
       );
 
       if (response.success && response.data) {
@@ -115,16 +109,13 @@ const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
         setAgenticResearchResult(full.research || null);
         setDetailedReport(full.detailedReport || null);
         setExecSummary(full.execSummary || null);
-        setResearchResult('Full research completed successfully.');
       } else {
-        setResearchResult(`Full Research Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Unknown error occurred');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Full Research: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred');
     } finally {
       setIsResearching(false);
-      fetchHistory(); // Refresh history after research completes
     }
   };
 
@@ -135,195 +126,92 @@ const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
     setAgenticResearchResult(record.researchData);
     setDetailedReport(record.detailedReport);
     setExecSummary(record.executiveSummary);
-    setResearchResult(`Loaded saved research for ${record.domain} (${record.companyName}) from ${new Date(record.createdAt).toLocaleString()}`);
-    setShowHistory(false);
+    setViewMode('research');
+    setErrorMessage(null);
   };
 
-  const deleteResearch = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this research record?')) return;
-    
-    try {
-      const response = await window.electron.web.db.delete(id);
-      if (response.success) {
-        fetchHistory();
-      }
-    } catch (error) {
-      console.error('Failed to delete research:', error);
-    }
-  };
-
-  const handleResearch = handleFullResearch; // Redirect "Start Research" to full research
-
+  // Advanced phase handlers
   const handlePhase1Test = async (bypassCache: boolean = false) => {
-    if (!companyUrl.trim()) {
-      alert('Please enter a company URL for Phase 1 Test');
-      return;
-    }
-
+    if (!companyUrl.trim()) return;
     setIsResearching(true);
-    setResearchResult(null);
-    setCrawlResult(null);
-    setSummaryResult(null);
-    setAgenticResearchResult(null);
-    setDetailedReport(null);
-    setExecSummary(null);
-
+    resetState();
     try {
-      const response = await window.electron.invoke(
-        'company-research-crawl-intelligent',
-        companyUrl,
-        bypassCache,
-      );
+      const response = await window.electron.invoke('company-research-crawl-intelligent', companyUrl, bypassCache);
       if (response.success) {
         setCrawlResult(response.data);
-        const statusMsg = response.data.cached ? '(Loaded from Cache) ' : '(Fresh Crawl) ';
-        setResearchResult(`${statusMsg}Phase 1 Test Completed for ${companyUrl}. Pages crawled: ${response.data.pageCount}`);
       } else {
-        setResearchResult(`Phase 1 Test Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Phase 1 failed');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Phase 1 Test: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'Error during Phase 1');
     } finally {
       setIsResearching(false);
     }
   };
 
   const handlePhase2Test = async (bypassCache: boolean = false) => {
-    if (!crawlResult) {
-      alert('Please run Phase 1 Test first to get crawl results');
-      return;
-    }
-
+    if (!crawlResult) return;
     setIsResearching(true);
-    setSummaryResult(null);
-    setAgenticResearchResult(null);
-    setDetailedReport(null);
-    setExecSummary(null);
-
     try {
-      const response = await window.electron.invoke(
-        'company-research-summarize',
-        crawlResult,
-        bypassCache,
-      );
+      const response = await window.electron.invoke('company-research-summarize', crawlResult, bypassCache);
       if (response.success) {
         setSummaryResult(response.data);
-        const statusMsg = response.data.cached ? '(Loaded from Cache) ' : '(Fresh Analysis) ';
-        setResearchResult(`${statusMsg}Phase 2 Test Completed for ${crawlResult.domain}`);
       } else {
-        setResearchResult(`Phase 2 Test Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Phase 2 failed');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Phase 2 Test: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'Error during Phase 2');
     } finally {
       setIsResearching(false);
     }
   };
 
   const handlePhase3Test = async (bypassCache: boolean = false) => {
-    if (!summaryResult) {
-      alert('Please run Phase 2 Test first to get company summary');
-      return;
-    }
-
+    if (!summaryResult) return;
     setIsResearching(true);
-    setAgenticResearchResult(null);
-    setDetailedReport(null);
-    setExecSummary(null);
-
     try {
-      const response = await window.electron.invoke(
-        'company-research-agentic-research',
-        companyUrl,
-        summaryResult,
-        bypassCache
-      );
+      const response = await window.electron.invoke('company-research-agentic-research', companyUrl, summaryResult, bypassCache);
       if (response.success) {
         setAgenticResearchResult(response.data);
-        const statusMsg = response.data.cached ? '(Loaded from Cache) ' : '(Fresh Research) ';
-        setResearchResult(`${statusMsg}Phase 3 Test Completed for ${companyUrl}`);
       } else {
-        setResearchResult(`Phase 3 Test Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Phase 3 failed');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Phase 3 Test: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'Error during Phase 3');
     } finally {
       setIsResearching(false);
     }
   };
 
   const handlePhase3B1Test = async (bypassCache: boolean = false) => {
-    if (!summaryResult || !agenticResearchResult) {
-      alert('Please run Phase 3 Test first to get research findings');
-      return;
-    }
-
+    if (!summaryResult || !agenticResearchResult) return;
     setIsResearching(true);
-    setDetailedReport(null);
-
     try {
-      const response = await window.electron.invoke(
-        'company-research-generate-3b1',
-        companyUrl,
-        summaryResult,
-        agenticResearchResult,
-        {}, // Placeholder for inquiryData
-        bypassCache
-      );
+      const response = await window.electron.invoke('company-research-generate-3b1', companyUrl, summaryResult, agenticResearchResult, {}, bypassCache);
       if (response.success) {
         setDetailedReport(response.data);
-        const statusMsg = response.data.cached ? '(Loaded from Cache) ' : '(Fresh Generation) ';
-        setResearchResult(`${statusMsg}Phase 3B-1: Detailed Report Generated for ${companyUrl}`);
       } else {
-        setResearchResult(`Phase 3B-1 Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Phase 3B-1 failed');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Phase 3B-1: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'Error during Phase 3B-1');
     } finally {
       setIsResearching(false);
     }
   };
 
   const handlePhase3B2Test = async (bypassCache: boolean = false) => {
-    if (!summaryResult || !agenticResearchResult) {
-      alert('Please run Phase 3 Test first to get research findings');
-      return;
-    }
-
+    if (!detailedReport || !summaryResult || !agenticResearchResult) return;
     setIsResearching(true);
-    setExecSummary(null);
-
     try {
-      if (!detailedReport) {
-        alert('Please run Phase 3B-1 first to get the detailed report content');
-        setIsResearching(false);
-        return;
-      }
-      
-      const response = await window.electron.invoke(
-        'company-research-generate-3b2',
-        companyUrl,
-        detailedReport.content,
-        {}, // Placeholder for inquiryData
-        summaryResult,
-        agenticResearchResult,
-        bypassCache
-      );
+      const response = await window.electron.invoke('company-research-generate-3b2', companyUrl, detailedReport.content, {}, summaryResult, agenticResearchResult, bypassCache);
       if (response.success) {
         setExecSummary(response.data);
-        const statusMsg = response.data.cached ? '(Loaded from Cache) ' : '(Fresh Generation) ';
-        setResearchResult(`${statusMsg}Phase 3B-2: Executive Summary Generated for ${companyUrl}`);
       } else {
-        setResearchResult(`Phase 3B-2 Failed: ${response.error || 'Unknown error'}`);
+        setErrorMessage(response.error || 'Phase 3B-2 failed');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setResearchResult(`Error during Phase 3B-2: ${errorMessage}`);
+      setErrorMessage(error instanceof Error ? error.message : 'Error during Phase 3B-2');
     } finally {
       setIsResearching(false);
     }
@@ -332,9 +220,7 @@ const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
   const handleExport = async (reportType: 'detailed' | 'executive') => {
     const content = reportType === 'detailed' ? detailedReport?.content : execSummary?.content;
     if (!content) return;
-
     const fileName = `${companyUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${reportType}_report`;
-    
     try {
       const response = await window.electron.invoke('company-research-export', fileName, content);
       if (response.success) {
@@ -347,321 +233,403 @@ const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
     }
   };
 
-  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCompanyUrl(e.target.value);
+  const getCurrentStageIndex = () => {
+    if (!workflowStatus) return -1;
+    return STAGES.findIndex(s => s.key === workflowStatus.stage);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleResearch();
-    }
-  };
+  const hasResults = crawlResult || summaryResult || agenticResearchResult || detailedReport || execSummary;
 
   return (
-    <div className="company-research-container">
-      <div className="company-research-scroll">
-        <div className="company-research">
-          <div className="company-research-header">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h1>Company Research</h1>
-                <p>Conduct in-depth analysis of companies with AI assistance</p>
-              </div>
-              <button 
-                onClick={() => setShowHistory(!showHistory)}
-                className="analyze-button history-toggle-button"
-                style={{ backgroundColor: '#6c757d' }}
-              >
-                {showHistory ? 'Close History' : 'View History'}
-              </button>
-            </div>
-          </div>
+    <div className="cr-container">
+      <div className="cr-scroll">
+        {/* Navigation */}
+        <nav className="cr-nav">
+          <button 
+            className={`cr-nav-btn ${viewMode === 'research' ? 'active' : ''}`}
+            onClick={() => setViewMode('research')}
+          >
+            <span className="cr-nav-icon">🔬</span>
+            New Research
+          </button>
+          <button 
+            className={`cr-nav-btn ${viewMode === 'history' ? 'active' : ''}`}
+            onClick={() => setViewMode('history')}
+          >
+            <span className="cr-nav-icon">📚</span>
+            Past Research
+          </button>
+        </nav>
 
-          {showHistory && (
-            <div className="history-section" style={{ marginBottom: '30px', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '12px', border: '1px solid #dee2e6' }}>
-              <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Research History</h2>
-              {history.length === 0 ? (
-                <p>No research history found.</p>
-              ) : (
-                <div className="history-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px' }}>
-                  {history.map((item) => (
-                    <div 
-                      key={item.id} 
-                      onClick={() => loadResearch(item)}
-                      style={{ 
-                        padding: '15px', 
-                        backgroundColor: '#fff', 
-                        borderRadius: '8px', 
-                        border: '1px solid #e1e5e9', 
-                        cursor: 'pointer',
-                        position: 'relative',
-                        transition: 'box-shadow 0.2s'
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)'}
-                      onMouseOut={(e) => e.currentTarget.style.boxShadow = 'none'}
+        {viewMode === 'history' && (
+          <ResearchedCompanyPage onLoadResearch={loadResearch} />
+        )}
+
+        {viewMode === 'research' && (
+          <div className="cr-main">
+            {/* Hero Section */}
+            <header className="cr-hero">
+              <h1 className="cr-title">Company Research</h1>
+              <p className="cr-subtitle">AI-powered company intelligence and analysis</p>
+            </header>
+
+            {/* Search Section */}
+            <section className="cr-search-section">
+              <div className="cr-search-box">
+                <div className="cr-input-wrapper">
+                  <span className="cr-input-icon">🌐</span>
+                  <input
+                    type="text"
+                    value={companyUrl}
+                    onChange={(e) => setCompanyUrl(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && !isResearching && handleFullResearch()}
+                    placeholder="Enter company website (e.g., company.com)"
+                    className="cr-input"
+                    disabled={isResearching}
+                  />
+                </div>
+                
+                <div className="cr-action-buttons">
+                  <button
+                    onClick={() => handleFullResearch(false)}
+                    disabled={isResearching || !companyUrl.trim()}
+                    className="cr-btn cr-btn-primary"
+                  >
+                    {isResearching ? (
+                      <>
+                        <span className="cr-spinner"></span>
+                        Researching...
+                      </>
+                    ) : (
+                      <>
+                        <span>🚀</span>
+                        Start Research
+                      </>
+                    )}
+                  </button>
+                  
+                  {hasResults && !isResearching && (
+                    <button
+                      onClick={() => handleFullResearch(true)}
+                      className="cr-btn cr-btn-secondary"
                     >
-                      <button 
-                        onClick={(e) => deleteResearch(item.id, e)}
-                        style={{ 
-                          position: 'absolute', 
-                          top: '10px', 
-                          right: '10px', 
-                          border: 'none', 
-                          background: 'none', 
-                          color: '#dc3545', 
-                          cursor: 'pointer',
-                          fontSize: '18px'
-                        }}
-                      >
-                        &times;
-                      </button>
-                      <h3 style={{ margin: '0 0 5px 0', color: '#4361EE', fontSize: '16px', paddingRight: '20px' }}>
-                        {item.companyName || item.domain}
-                      </h3>
-                      <p style={{ margin: '0', fontSize: '13px', color: '#6e6e73' }}>{item.domain}</p>
-                      <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 8px', 
-                          borderRadius: '10px', 
-                          backgroundColor: item.status === 'completed' ? '#d4edda' : '#f8d7da',
-                          color: item.status === 'completed' ? '#155724' : '#721c24'
-                        }}>
-                          {item.status.toUpperCase()}
-                        </span>
-                        <span style={{ fontSize: '11px', color: '#adb5bd' }}>
-                          {new Date(item.createdAt).toLocaleDateString()}
-                        </span>
+                      <span>🔄</span>
+                      Re-run
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Indicator */}
+              {isResearching && workflowStatus && (
+                <div className="cr-progress">
+                  <div className="cr-progress-stages">
+                    {STAGES.map((stage, idx) => {
+                      const currentIdx = getCurrentStageIndex();
+                      const isCompleted = currentIdx > idx;
+                      const isCurrent = currentIdx === idx;
+                      return (
+                        <div 
+                          key={stage.key} 
+                          className={`cr-stage ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}
+                        >
+                          <div className="cr-stage-dot">
+                            {isCompleted ? '✓' : stage.icon}
+                          </div>
+                          <span className="cr-stage-label">{stage.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="cr-progress-message">{workflowStatus.message}</p>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {errorMessage && (
+                <div className="cr-error">
+                  <span className="cr-error-icon">⚠️</span>
+                  <span>{errorMessage}</span>
+                  <button onClick={() => setErrorMessage(null)} className="cr-error-close">×</button>
+                </div>
+              )}
+
+              {/* Advanced Options Toggle */}
+              <button 
+                className="cr-advanced-toggle"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                <span>{showAdvanced ? '▼' : '▶'}</span>
+                Developer Options
+              </button>
+
+              {showAdvanced && (
+                <div className="cr-advanced-panel">
+                  <p className="cr-advanced-desc">Run individual research phases for testing or debugging.</p>
+                  <div className="cr-advanced-grid">
+                    <div className="cr-phase-group">
+                      <span className="cr-phase-label">Phase 1: Crawl</span>
+                      <div className="cr-phase-btns">
+                        <button 
+                          onClick={() => handlePhase1Test(false)} 
+                          disabled={isResearching || !companyUrl.trim()}
+                          className="cr-btn-sm"
+                        >
+                          Run
+                        </button>
+                        <button 
+                          onClick={() => handlePhase1Test(true)} 
+                          disabled={isResearching || !companyUrl.trim()}
+                          className="cr-btn-sm cr-btn-redo"
+                        >
+                          Redo
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="company-research-input-section">
-            <div className="input-group">
-              <input
-                type="text"
-                value={companyUrl}
-                onChange={handleUrlChange}
-                onKeyPress={handleKeyPress}
-                placeholder="Enter company URL or name (e.g., Google, https://www.google.com)"
-                className="url-input"
-                disabled={isResearching}
-              />
-              
-              {isResearching && workflowStatus && (
-                <div className="workflow-progress-container" style={{ marginTop: '15px', padding: '15px', backgroundColor: '#f0f4f8', borderRadius: '8px', border: '1px solid #d1d9e6' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontWeight: 'bold', color: '#1a365d' }}>
-                      Stage: {workflowStatus.stage.toUpperCase()}
-                    </span>
-                    <span style={{ color: '#4a5568', fontSize: '14px' }}>
-                      {workflowStatus.message}
-                    </span>
-                  </div>
-                  <div className="progress-bar-bg" style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div 
-                      className="progress-bar-fill" 
-                      style={{ 
-                        height: '100%', 
-                        backgroundColor: '#4299e1', 
-                        width: workflowStatus.stage === 'crawl' ? '20%' :
-                               workflowStatus.stage === 'summary' ? '40%' :
-                               workflowStatus.stage === 'research' ? '60%' :
-                               workflowStatus.stage === 'report-detailed' ? '80%' :
-                               workflowStatus.stage === 'report-exec' ? '90%' :
-                               workflowStatus.stage === 'complete' ? '100%' : '5%'
-                      }} 
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="button-group" style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => handleFullResearch(false)}
-                  disabled={isResearching || !companyUrl.trim()}
-                  className="analyze-button"
-                  style={{ backgroundColor: '#4361EE', fontWeight: 'bold' }}
-                >
-                  {isResearching ? 'Researching...' : 'Run Full Research (S1-S4)'}
-                </button>
-                {companyUrl.trim() && (
-                  <button
-                    onClick={() => handleFullResearch(true)}
-                    disabled={isResearching}
-                    className="analyze-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo Full Research'}
-                  </button>
-                )}
-                <button
-                  onClick={() => handlePhase1Test(false)}
-                  disabled={isResearching || !companyUrl.trim()}
-                  className="analyze-button phase1-test-button"
-                >
-                  {isResearching ? 'Running Phase 1...' : 'Phase 1 Test'}
-                </button>
-                {companyUrl.trim() && (
-                  <button
-                    onClick={() => handlePhase1Test(true)}
-                    disabled={isResearching}
-                    className="analyze-button phase1-redo-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo Phase 1'}
-                  </button>
-                )}
-                <button
-                  onClick={handlePhase2Test}
-                  disabled={isResearching || !crawlResult}
-                  className="analyze-button phase2-test-button"
-                >
-                  {isResearching ? 'Running Phase 2...' : 'Phase 2 Test'}
-                </button>
-                {crawlResult && (
-                  <button
-                    onClick={() => handlePhase2Test(true)}
-                    disabled={isResearching}
-                    className="analyze-button phase2-redo-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo Phase 2'}
-                  </button>
-                )}
-                <button
-                  onClick={() => handlePhase3Test(false)}
-                  disabled={isResearching || !summaryResult}
-                  className="analyze-button phase3-test-button"
-                >
-                  {isResearching ? 'Running Phase 3...' : 'Phase 3 Test'}
-                </button>
-                <button
-                  onClick={() => handlePhase3B1Test(false)}
-                  disabled={isResearching || !agenticResearchResult}
-                  className="analyze-button phase3b1-test-button"
-                  style={{ backgroundColor: '#4CC9F0', color: '#fff' }}
-                >
-                  {isResearching ? 'Generating 3B-1...' : 'Phase 3B-1: Detailed'}
-                </button>
-                {(summaryResult && agenticResearchResult) && (
-                  <button
-                    onClick={() => handlePhase3B1Test(true)}
-                    disabled={isResearching}
-                    className="analyze-button phase3b1-redo-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo 3B-1'}
-                  </button>
-                )}
-                <button
-                  onClick={() => handlePhase3B2Test(false)}
-                  disabled={isResearching || !agenticResearchResult}
-                  className="analyze-button phase3b2-test-button"
-                  style={{ backgroundColor: '#4895EF', color: '#fff' }}
-                >
-                  {isResearching ? 'Generating 3B-2...' : 'Phase 3B-2: Executive'}
-                </button>
-                {detailedReport && (
-                  <button
-                    onClick={() => handlePhase3B2Test(true)}
-                    disabled={isResearching}
-                    className="analyze-button phase3b2-redo-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo 3B-2'}
-                  </button>
-                )}
-                {summaryResult && (
-                  <button
-                    onClick={() => handlePhase3Test(true)}
-                    disabled={isResearching}
-                    className="analyze-button phase3-redo-button"
-                    style={{ backgroundColor: '#FF9F1C' }}
-                  >
-                    {isResearching ? 'Redoing...' : 'Redo Phase 3'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {(researchResult || crawlResult || summaryResult || agenticResearchResult || detailedReport || execSummary) && (
-            <div className="company-research-result">
-              <div className="result-content">
-                {researchResult && <pre style={{ backgroundColor: '#ffffff', color: '#000000', border: '1px solid #e1e5e9', padding: '15px', borderRadius: '8px' }}>{researchResult}</pre>}
-                
-                {detailedReport && (
-                  <div className="detailed-report-card" style={{ marginTop: '20px', backgroundColor: '#ffffff', color: '#000000', border: '1px solid #e1e5e9', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #4CC9F0', paddingBottom: '10px', marginBottom: '20px' }}>
-                      <h2 style={{ color: '#1d1d1f', margin: 0 }}>Phase 3B-1: Detailed Analysis Report</h2>
-                      <button 
-                        onClick={() => handleExport('detailed')}
-                        className="analyze-button"
-                        style={{ padding: '8px 15px', fontSize: '14px', backgroundColor: '#4CC9F0' }}
-                      >
-                        Export to Markdown
-                      </button>
-                    </div>
-                    <div className="report-content" style={{ lineHeight: '1.6' }}>
-                      <ReactMarkdown>{detailedReport.content}</ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-
-                {execSummary && (
-                  <div className="exec-summary-card" style={{ marginTop: '20px', backgroundColor: '#ffffff', color: '#000000', border: '1px solid #e1e5e9', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #4895EF', paddingBottom: '10px', marginBottom: '20px' }}>
-                      <h2 style={{ color: '#1d1d1f', margin: 0 }}>Phase 3B-2: Executive Summary</h2>
-                      <button 
-                        onClick={() => handleExport('executive')}
-                        className="analyze-button"
-                        style={{ padding: '8px 15px', fontSize: '14px', backgroundColor: '#4895EF' }}
-                      >
-                        Export to Markdown
-                      </button>
-                    </div>
-                    <div className="report-content" style={{ lineHeight: '1.6' }}>
-                      <ReactMarkdown>{execSummary.content}</ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-
-                {agenticResearchResult && !detailedReport && !execSummary && (
-                  <div className="agentic-research-card" style={{ marginTop: '20px', backgroundColor: '#ffffff', color: '#000000', border: '1px solid #e1e5e9', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <h2 style={{ borderBottom: '2px solid #4361EE', paddingBottom: '10px', color: '#1d1d1f' }}>Phase 3: Agentic Research Findings</h2>
                     
-                    {agenticResearchResult.validatedFindings.map((res, idx) => (
-                      <div key={idx} style={{ marginTop: '25px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                          <h3 style={{ color: '#4361EE', margin: 0 }}>Finding #{idx + 1}</h3>
-                          <span style={{ 
-                            padding: '4px 10px', 
-                            borderRadius: '12px', 
-                            fontSize: '12px', 
-                            fontWeight: 'bold',
-                            backgroundColor: res.confidenceLevel === 'high' ? '#4CAF50' : res.confidenceLevel === 'medium' ? '#FFC107' : '#F44336',
-                            color: 'white'
-                          }}>
-                            Confidence: {res.confidenceLevel.toUpperCase()}
-                          </span>
+                    <div className="cr-phase-group">
+                      <span className="cr-phase-label">Phase 2: Summarize</span>
+                      <div className="cr-phase-btns">
+                        <button 
+                          onClick={() => handlePhase2Test(false)} 
+                          disabled={isResearching || !crawlResult}
+                          className="cr-btn-sm"
+                        >
+                          Run
+                        </button>
+                        <button 
+                          onClick={() => handlePhase2Test(true)} 
+                          disabled={isResearching || !crawlResult}
+                          className="cr-btn-sm cr-btn-redo"
+                        >
+                          Redo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="cr-phase-group">
+                      <span className="cr-phase-label">Phase 3: Research</span>
+                      <div className="cr-phase-btns">
+                        <button 
+                          onClick={() => handlePhase3Test(false)} 
+                          disabled={isResearching || !summaryResult}
+                          className="cr-btn-sm"
+                        >
+                          Run
+                        </button>
+                        <button 
+                          onClick={() => handlePhase3Test(true)} 
+                          disabled={isResearching || !summaryResult}
+                          className="cr-btn-sm cr-btn-redo"
+                        >
+                          Redo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="cr-phase-group">
+                      <span className="cr-phase-label">Phase 3B-1: Detailed</span>
+                      <div className="cr-phase-btns">
+                        <button 
+                          onClick={() => handlePhase3B1Test(false)} 
+                          disabled={isResearching || !agenticResearchResult}
+                          className="cr-btn-sm"
+                        >
+                          Run
+                        </button>
+                        <button 
+                          onClick={() => handlePhase3B1Test(true)} 
+                          disabled={isResearching || !agenticResearchResult}
+                          className="cr-btn-sm cr-btn-redo"
+                        >
+                          Redo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="cr-phase-group">
+                      <span className="cr-phase-label">Phase 3B-2: Executive</span>
+                      <div className="cr-phase-btns">
+                        <button 
+                          onClick={() => handlePhase3B2Test(false)} 
+                          disabled={isResearching || !detailedReport}
+                          className="cr-btn-sm"
+                        >
+                          Run
+                        </button>
+                        <button 
+                          onClick={() => handlePhase3B2Test(true)} 
+                          disabled={isResearching || !detailedReport}
+                          className="cr-btn-sm cr-btn-redo"
+                        >
+                          Redo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Results Section */}
+            {hasResults && !isResearching && (
+              <section className="cr-results">
+                {/* Company Info Card */}
+                {summaryResult && (
+                  <div className="cr-company-card">
+                    <div className="cr-company-header">
+                      <div className="cr-company-avatar">
+                        {summaryResult.companyName?.charAt(0) || '?'}
+                      </div>
+                      <div className="cr-company-info">
+                        <h2 className="cr-company-name">{summaryResult.companyName || companyUrl}</h2>
+                        <p className="cr-company-meta">
+                          {summaryResult.headquarters && <span>📍 {summaryResult.headquarters}</span>}
+                          {summaryResult.establishedYear && <span>📅 Est. {summaryResult.establishedYear}</span>}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="cr-company-tags">
+                      {summaryResult.businessFields?.slice(0, 4).map((field, idx) => (
+                        <span key={idx} className="cr-tag">{field}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Report Tabs */}
+                {(execSummary || detailedReport || agenticResearchResult) && (
+                  <div className="cr-report-section">
+                    <div className="cr-tabs">
+                      {execSummary && (
+                        <button 
+                          className={`cr-tab ${resultTab === 'executive' ? 'active' : ''}`}
+                          onClick={() => setResultTab('executive')}
+                        >
+                          📋 Executive Summary
+                        </button>
+                      )}
+                      {detailedReport && (
+                        <button 
+                          className={`cr-tab ${resultTab === 'detailed' ? 'active' : ''}`}
+                          onClick={() => setResultTab('detailed')}
+                        >
+                          📝 Detailed Report
+                        </button>
+                      )}
+                      {summaryResult && (
+                        <button 
+                          className={`cr-tab ${resultTab === 'summary' ? 'active' : ''}`}
+                          onClick={() => setResultTab('summary')}
+                        >
+                          📊 Company Profile
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="cr-tab-content">
+                      {/* Executive Summary Tab */}
+                      {resultTab === 'executive' && execSummary && (
+                        <div className="cr-report">
+                          <div className="cr-report-header">
+                            <h3>Executive Summary</h3>
+                            <button onClick={() => handleExport('executive')} className="cr-btn-export">
+                              ⬇️ Export
+                            </button>
+                          </div>
+                          <div className="cr-markdown">
+                            <ReactMarkdown>{execSummary.content}</ReactMarkdown>
+                          </div>
                         </div>
-                        <p style={{ lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{res.validatedFinancials}</p>
-                        
-                        {res.validatedURLs.length > 0 && (
-                          <div style={{ marginTop: '15px' }}>
-                            <h4 style={{ fontSize: '14px', color: '#6e6e73', margin: '0 0 5px 0' }}>Validated Sources:</h4>
-                            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px' }}>
-                              {res.validatedURLs.map((source, sIdx) => (
-                                <li key={sIdx}>
-                                  <a href={source.url} target="_blank" rel="noopener noreferrer" style={{ color: '#4361EE' }}>{source.title}</a>
-                                </li>
+                      )}
+
+                      {/* Detailed Report Tab */}
+                      {resultTab === 'detailed' && detailedReport && (
+                        <div className="cr-report">
+                          <div className="cr-report-header">
+                            <h3>Detailed Analysis Report</h3>
+                            <button onClick={() => handleExport('detailed')} className="cr-btn-export">
+                              ⬇️ Export
+                            </button>
+                          </div>
+                          <div className="cr-markdown">
+                            <ReactMarkdown>{detailedReport.content}</ReactMarkdown>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Company Profile Tab */}
+                      {resultTab === 'summary' && summaryResult && (
+                        <div className="cr-profile">
+                          <div className="cr-profile-section">
+                            <h4>Products & Services</h4>
+                            <ul className="cr-list">
+                              {summaryResult.productsServices?.map((item, idx) => (
+                                <li key={idx}>{item}</li>
                               ))}
                             </ul>
+                          </div>
+
+                          <div className="cr-profile-section">
+                            <h4>Major Projects</h4>
+                            <ul className="cr-list">
+                              {summaryResult.majorProjects?.map((item, idx) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          {summaryResult.contactInfo && (
+                            <div className="cr-profile-section">
+                              <h4>Contact Information</h4>
+                              <div className="cr-contact">
+                                {summaryResult.contactInfo.email && (
+                                  <p><span className="cr-contact-label">Email:</span> {summaryResult.contactInfo.email}</p>
+                                )}
+                                {summaryResult.contactInfo.phone && (
+                                  <p><span className="cr-contact-label">Phone:</span> {summaryResult.contactInfo.phone}</p>
+                                )}
+                                {summaryResult.contactInfo.address && (
+                                  <p><span className="cr-contact-label">Address:</span> {summaryResult.contactInfo.address}</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {summaryResult.rawSummary && (
+                            <div className="cr-profile-section">
+                              <h4>Overview</h4>
+                              <p className="cr-overview">{summaryResult.rawSummary}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Research Findings (when no reports yet) */}
+                {agenticResearchResult && !detailedReport && !execSummary && (
+                  <div className="cr-findings">
+                    <h3>Research Findings</h3>
+                    {agenticResearchResult.validatedFindings?.map((finding, idx) => (
+                      <div key={idx} className="cr-finding-card">
+                        <div className="cr-finding-header">
+                          <span className="cr-finding-num">Finding #{idx + 1}</span>
+                          <span className={`cr-confidence cr-confidence-${finding.confidenceLevel}`}>
+                            {finding.confidenceLevel?.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="cr-finding-text">{finding.validatedFinancials}</p>
+                        {finding.validatedURLs?.length > 0 && (
+                          <div className="cr-sources">
+                            <span className="cr-sources-label">Sources:</span>
+                            {finding.validatedURLs.map((source, sIdx) => (
+                              <a key={sIdx} href={source.url} target="_blank" rel="noopener noreferrer">
+                                {source.title || 'Link'}
+                              </a>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -669,73 +637,18 @@ const CompanyResearchPage: React.FC<CompanyResearchPageProps> = () => {
                   </div>
                 )}
 
-                {summaryResult && !agenticResearchResult && !detailedReport && !execSummary && (
-                  <div className="summary-result-card" style={{ marginTop: '20px', backgroundColor: '#ffffff', color: '#000000', border: '1px solid #e1e5e9', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <h2 style={{ borderBottom: '2px solid #7209B7', paddingBottom: '10px', color: '#1d1d1f' }}>Phase 2: Company Summary ({summaryResult.companyName})</h2>
-                    <p><strong>Headquarters:</strong> {summaryResult.headquarters}</p>
-                    <p><strong>Established:</strong> {summaryResult.establishedYear}</p>
-                    
-                    <div style={{ marginTop: '20px' }}>
-                      <h3 style={{ color: '#3a0ca3' }}>Business Fields</h3>
-                      <ul style={{ paddingLeft: '20px' }}>
-                        {summaryResult.businessFields.map((field, idx) => <li key={idx} style={{ marginBottom: '5px' }}>{field}</li>)}
-                      </ul>
-                    </div>
-
-                    <div style={{ marginTop: '20px' }}>
-                      <h3 style={{ color: '#3a0ca3' }}>Products & Services</h3>
-                      <ul style={{ paddingLeft: '20px' }}>
-                        {summaryResult.productsServices.map((product, idx) => <li key={idx} style={{ marginBottom: '5px' }}>{product}</li>)}
-                      </ul>
-                    </div>
-
-                    <div style={{ marginTop: '20px' }}>
-                      <h3 style={{ color: '#3a0ca3' }}>Major Projects</h3>
-                      <ul style={{ paddingLeft: '20px' }}>
-                        {summaryResult.majorProjects.map((project, idx) => <li key={idx} style={{ marginBottom: '5px' }}>{project}</li>)}
-                      </ul>
-                    </div>
-
-                    <div style={{ marginTop: '20px' }}>
-                      <h3 style={{ color: '#3a0ca3' }}>Contact Information</h3>
-                      <div style={{ paddingLeft: '10px', borderLeft: '3px solid #f0f0f0' }}>
-                        {summaryResult.contactInfo.email && <p style={{ margin: '5px 0' }}><strong>Email:</strong> {summaryResult.contactInfo.email}</p>}
-                        {summaryResult.contactInfo.phone && <p style={{ margin: '5px 0' }}><strong>Phone:</strong> {summaryResult.contactInfo.phone}</p>}
-                        {summaryResult.contactInfo.address && <p style={{ margin: '5px 0' }}><strong>Address:</strong> {summaryResult.contactInfo.address}</p>}
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
-                      <h3 style={{ color: '#3a0ca3' }}>Comprehensive Summary</h3>
-                      <p style={{ lineHeight: '1.6', fontSize: '15px' }}>{summaryResult.rawSummary}</p>
-                    </div>
+                {/* Crawl Results Only */}
+                {crawlResult && !summaryResult && (
+                  <div className="cr-crawl-info">
+                    <h3>Crawl Complete</h3>
+                    <p>{crawlResult.pageCount} pages crawled from {crawlResult.domain}</p>
+                    <p className="cr-hint">Run Phase 2 to analyze the content.</p>
                   </div>
                 )}
-
-                {crawlResult && !summaryResult && !agenticResearchResult && !detailedReport && !execSummary && (
-                  <div style={{ marginTop: '20px' }}>
-                    <h2>Phase 1: Crawl Results for {crawlResult.domain}</h2>
-                    <p>Total Pages Crawled: {crawlResult.pageCount}</p>
-                    {crawlResult.error && <p className="error">Error: {crawlResult.error}</p>}
-                    {crawlResult.pages.length > 0 && (
-                      <div>
-                        <h3>Sample Pages:</h3>
-                        <ul>
-                          {crawlResult.pages.slice(0, 5).map((page, index) => (
-                            <li key={index}>
-                              <a href={page.url} target="_blank" rel="noopener noreferrer">{page.title || page.url}</a> (Depth: {page.depth})
-                            </li>
-                          ))}
-                          {crawlResult.pages.length > 5 && <li>... and {crawlResult.pages.length - 5} more.</li>}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
