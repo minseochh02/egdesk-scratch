@@ -534,3 +534,19 @@
     font-size: 18px;
   }
 }
+.egdesk-landing-company-research-card:hover {
+  border-color: #7209B7;
+}
+
+.egdesk-landing-company-research-card:hover::before {
+  background: linear-gradient(90deg, #7209B7, #3a0ca3);
+}
+
+.egdesk-landing-company-research-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #7209B7, #3a0ca3);
+}
+
+.egdesk-landing-company-research-card:hover .egdesk-landing-feature-tag {
+  background: #f2e6ff;
+  color: #7209B7;
+}

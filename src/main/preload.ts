@@ -1168,6 +1168,14 @@ export interface WebUtilitiesAPI {
   crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => Promise<MultiPageCrawlResult>;
   generateBusinessIdentity: (websiteText: string, rootUrl?: string, language?: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   generateSnsPlan: (identityData: any) => Promise<{ success: boolean; content?: string; error?: string }>;
+  fullResearch: (domain: string, inquiryData?: any, options?: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  db: {
+    save: (record: any) => Promise<any>;
+    getAll: () => Promise<any>;
+    getById: (id: string) => Promise<any>;
+    delete: (id: string) => Promise<any>;
+    findByDomain: (domain: string) => Promise<any>;
+  };
 }
 
 
@@ -1455,6 +1463,17 @@ const electronHandler = {
     crawlMultiplePages: (url: string, options?: { maxPages?: number; includePages?: string[] }) => ipcRenderer.invoke('web-crawl-multiple-pages', url, options),
     generateBusinessIdentity: (websiteText: string, rootUrl?: string, language?: string) => ipcRenderer.invoke('ai-search-generate-business-identity', websiteText, rootUrl, language),
     generateSnsPlan: (identityData: any) => ipcRenderer.invoke('ai-search-generate-sns-plan', identityData),
+    fullResearch: (domain: string, inquiryData?: any, options?: any) => ipcRenderer.invoke('company-research-full-process', domain, inquiryData, options),
+    db: {
+      save: (record: any) => ipcRenderer.invoke('company-research-db-save', record),
+      getAll: () => ipcRenderer.invoke('company-research-db-get-all'),
+      getById: (id: string) => ipcRenderer.invoke('company-research-db-get-by-id', id),
+      update: (id: string, updates: any) => ipcRenderer.invoke('company-research-db-update', id, updates),
+      delete: (id: string) => ipcRenderer.invoke('company-research-db-delete', id),
+      findByDomain: (domain: string) => ipcRenderer.invoke('company-research-db-find-by-domain', domain),
+      hasRecent: (domain: string, hoursAgo?: number) => ipcRenderer.invoke('company-research-db-has-recent', domain, hoursAgo),
+      getLatestCompleted: (domain: string) => ipcRenderer.invoke('company-research-db-get-latest-completed', domain),
+    },
   } as WebUtilitiesAPI,
   
   // ========================================================================

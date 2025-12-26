@@ -33,6 +33,13 @@ import { initializeStore, getStore } from './storage';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
 import { getEGDeskDevSpreadsheetService } from './egdesk-dev-spreadsheet';
+import { crawlWebsiteIntelligent, CrawlResult } from './company-research-stage1';
+import { summarizeWebsiteContent, WebsiteSummary } from './company-research-stage2';
+import { executeAgenticResearch, AgenticResearchData } from './company-research-stage3';
+import { generateDetailedReport, DetailedReport } from './company-research-stage3b1';
+import { generateExecutiveSummary, ExecutiveSummary } from './company-research-stage3b2';
+import { exportReport } from './company-research-stage4';
+import { processFullCompanyResearch } from './company-research-workflow';
 
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
@@ -211,12 +218,12 @@ class AppUpdater {
     });
   }
 
-  private notifyUpdateAvailable(info: { version: string; releaseDate: string; releaseNotes?: string }): void {
+  private notifyUpdateAvailable(info: any): void {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-available', {
         version: info.version,
         releaseDate: info.releaseDate,
-        releaseNotes: info.releaseNotes,
+        releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
       });
     }
   }
@@ -231,12 +238,12 @@ class AppUpdater {
     }
   }
 
-  private notifyUpdateDownloaded(info: { version: string; releaseDate: string; releaseNotes?: string }): void {
+  private notifyUpdateDownloaded(info: any): void {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-downloaded', {
         version: info.version,
         releaseDate: info.releaseDate,
-        releaseNotes: info.releaseNotes,
+        releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
       });
     }
   }
@@ -758,6 +765,123 @@ const createWindow = async () => {
         }
       });
 
+      // IPC handler for company research intelligent crawl
+      ipcMain.handle('company-research-crawl-intelligent', async (_event, domain: string, bypassCache: boolean = false) => {
+        try {
+          console.log(`[IPC] Starting intelligent crawl for domain: ${domain}${bypassCache ? ' (Bypassing cache)' : ''}`);
+          const result: CrawlResult = await crawlWebsiteIntelligent(domain, bypassCache);
+          return { success: true, data: result };
+        } catch (error: any) {
+          console.error(`❌ Intelligent crawl failed for ${domain}:`, error);
+          return { 
+            success: false, 
+            error: error.message || 'Unknown error during intelligent crawl' 
+          };
+        }
+      });
+
+      // IPC handler for company research website summary
+      ipcMain.handle('company-research-summarize', async (_event, crawlResult: CrawlResult, bypassCache: boolean = false) => {
+        try {
+          console.log(`[IPC] Starting website summary for domain: ${crawlResult.domain}${bypassCache ? ' (Bypassing cache)' : ''}`);
+          const result: WebsiteSummary | null = await summarizeWebsiteContent(crawlResult, bypassCache);
+          if (result) {
+            return { success: true, data: result };
+          } else {
+            return { success: false, error: 'Failed to generate summary' };
+          }
+        } catch (error: any) {
+          console.error(`❌ Website summary failed:`, error);
+          return { 
+            success: false, 
+            error: error.message || 'Unknown error during summary' 
+          };
+        }
+      });
+
+      // IPC handler for company research agentic research
+      ipcMain.handle('company-research-agentic-research', async (_event, domain: string, summary: WebsiteSummary, bypassCache: boolean = false) => {
+        try {
+          console.log(`[IPC] Starting agentic research for domain: ${domain}${bypassCache ? ' (Bypassing cache)' : ''}`);
+          const result: AgenticResearchData | null = await executeAgenticResearch(domain, summary, bypassCache);
+          if (result) {
+            return { success: true, data: result };
+          } else {
+            return { success: false, error: 'Failed to perform research' };
+          }
+        } catch (error: any) {
+          console.error(`❌ Agentic research failed:`, error);
+          return { 
+            success: false, 
+            error: error.message || 'Unknown error during research' 
+          };
+        }
+      });
+
+      // IPC handler for company research stage 3B1: Detailed Report
+      ipcMain.handle('company-research-generate-3b1', async (_event, domain: string, summary: WebsiteSummary, research: AgenticResearchData, inquiryData: any = {}, bypassCache: boolean = false) => {
+        try {
+          console.log(`[IPC] Starting Detailed Report (3B1) for domain: ${domain}${bypassCache ? ' (Bypassing cache)' : ''}`);
+          const result: DetailedReport | null = await generateDetailedReport(domain, summary, research, inquiryData, bypassCache);
+          if (result) {
+            return { success: true, data: result };
+          } else {
+            return { success: false, error: 'Failed to generate detailed report' };
+          }
+        } catch (error: any) {
+          console.error(`❌ Detailed report generation failed:`, error);
+          return { success: false, error: error.message || 'Unknown error' };
+        }
+      });
+
+      // IPC handler for company research stage 3B2: Executive Summary
+      ipcMain.handle('company-research-generate-3b2', async (_event, domain: string, detailedReportContent: string, inquiryData: any, summary: WebsiteSummary, research: AgenticResearchData, bypassCache: boolean = false) => {
+        try {
+          console.log(`[IPC] Starting Executive Summary (3B2) for domain: ${domain}${bypassCache ? ' (Bypassing cache)' : ''}`);
+          const result: ExecutiveSummary | null = await generateExecutiveSummary(domain, detailedReportContent, inquiryData, summary, research, bypassCache);
+          if (result) {
+            return { success: true, data: result };
+          } else {
+            return { success: false, error: 'Failed to generate executive summary' };
+          }
+        } catch (error: any) {
+          console.error(`❌ Executive summary generation failed:`, error);
+          return { success: false, error: error.message || 'Unknown error' };
+        }
+      });
+
+      // IPC handler for company research stage 4: Export to File
+      ipcMain.handle('company-research-export', async (_event, fileName: string, content: string, extension: 'md' | 'txt' = 'md') => {
+        try {
+          console.log(`[IPC] Exporting report: ${fileName}.${extension}`);
+          const result = await exportReport(fileName, content, 'local', { extension });
+          return result;
+        } catch (error: any) {
+          console.error(`❌ Export failed:`, error);
+          return { success: false, error: error.message || 'Unknown error' };
+        }
+      });
+
+      // IPC handler for FULL company research workflow (Stages 1-4)
+      ipcMain.handle('company-research-full-process', async (_event, domain: string, inquiryData: any = {}, options: any = {}) => {
+        try {
+          console.log(`[IPC] Starting full company research for: ${domain}`);
+          const result = await processFullCompanyResearch(
+            domain, 
+            inquiryData, 
+            options, 
+            mainWindow || undefined
+          );
+          return { success: !result.error, data: result, error: result.error };
+        } catch (error: any) {
+          console.error(`❌ Full research workflow failed for ${domain}:`, error);
+          return { 
+            success: false, 
+            error: error.message || 'Unknown error during full research workflow' 
+          };
+        }
+      });
+
       // Initialize EGChatting database before registering handlers
       console.log('[main] Initializing EGChatting database...');
       const egChattingInitResult = initializeEgChattingService();
@@ -1043,7 +1167,6 @@ const createWindow = async () => {
               console.log('❌ [contenteditable="true"] not found, trying iframe...');
               
               try {
-                // Try iframe
                 await page.waitForSelector('iframe', { timeout: 10000 });
                 console.log('✅ Iframe found, editor might be inside iframe');
               } catch (error3) {

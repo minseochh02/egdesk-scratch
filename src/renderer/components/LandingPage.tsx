@@ -14,6 +14,7 @@ import {
   faShare,
   faDocker,
   faDesktop,
+  faSearch,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -183,6 +184,22 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Auto Start</span>
               </div>
             </Link>
+
+            <Link to="/company-research" className="egdesk-landing-action-card egdesk-landing-company-research-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faSearch} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Company Research</h3>
+              <p className="egdesk-landing-card-description">
+                Conduct in-depth company research with AI assistance. Gather insights, analyze market trends, and make informed decisions.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">AI Analysis</span>
+                <span className="egdesk-landing-feature-tag">Market Trends</span>
+                <span className="egdesk-landing-feature-tag">Data Insights</span>
+              </div>
+            </Link>
+
           </div>
 
           {/* Additional Options */}
