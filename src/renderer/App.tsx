@@ -31,6 +31,7 @@ import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
+import CompanyResearchPage from './components/CompanyResearchPage/CompanyResearchPage';
 import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EGBlogging } from './components/EGBlog';
@@ -2415,6 +2416,7 @@ function AppContent() {
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
+            <Route path="/company-research" element={<CompanyResearchPage />} />
             <Route path="/seo-analyzer" element={<EGSEOAnalyzer />} />
             <Route path="/mcp-server" element={<MCPServer />} />
             <Route path="/egchatting" element={<EGChatting />} />

@@ -16,6 +16,7 @@ import {
   SQLiteDockerSchedulerManager,
   CreateDockerTaskData,
 } from './docker-scheduler';
+import { SQLiteCompanyResearchManager } from './company-research';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
@@ -51,6 +52,7 @@ export class SQLiteManager {
   private activityManager: SQLiteActivityManager | null = null;
   private templateCopiesManager: SQLiteTemplateCopiesManager | null = null;
   private dockerSchedulerManager: SQLiteDockerSchedulerManager | null = null;
+  private companyResearchManager: SQLiteCompanyResearchManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -91,6 +93,7 @@ export class SQLiteManager {
       this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb);
       this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
+      this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -276,6 +279,14 @@ export class SQLiteManager {
       this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb!);
     }
     return this.dockerSchedulerManager;
+  }
+
+  public getCompanyResearchManager(): SQLiteCompanyResearchManager {
+    this.ensureInitialized();
+    if (!this.companyResearchManager) {
+      this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb!);
+    }
+    return this.companyResearchManager;
   }
 
   /**
@@ -541,6 +552,7 @@ export class SQLiteManager {
     this.registerActivityHandlers();
     this.registerTemplateCopiesHandlers();
     this.registerDockerSchedulerHandlers();
+    this.registerCompanyResearchHandlers();
   }
 
   /**
@@ -1675,6 +1687,108 @@ export class SQLiteManager {
       try {
         await restartDockerScheduler();
         return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register Company Research IPC handlers
+   */
+  private registerCompanyResearchHandlers(): void {
+    ipcMain.handle('company-research-db-save', async (event, record) => {
+      try {
+        const saved = this.getCompanyResearchManager().saveResearch(record);
+        return { success: true, data: saved };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-get-all', async () => {
+      try {
+        // Use minimal data to avoid loading massive crawl_data fields
+        const all = this.getCompanyResearchManager().getAllResearchMinimal();
+        return { success: true, data: all };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-get-by-id', async (event, id) => {
+      try {
+        const record = this.getCompanyResearchManager().getResearchById(id);
+        return { success: true, data: record };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-delete', async (event, id) => {
+      try {
+        const success = this.getCompanyResearchManager().deleteResearch(id);
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-find-by-domain', async (event, domain) => {
+      try {
+        const records = this.getCompanyResearchManager().findByDomain(domain);
+        return { success: true, data: records };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-update', async (event, id, updates) => {
+      try {
+        const updated = this.getCompanyResearchManager().updateResearch(id, updates);
+        return { success: true, data: updated };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-has-recent', async (event, domain, hoursAgo = 24) => {
+      try {
+        const hasRecent = this.getCompanyResearchManager().hasRecentResearch(domain, hoursAgo);
+        return { success: true, data: hasRecent };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    ipcMain.handle('company-research-db-get-latest-completed', async (event, domain) => {
+      try {
+        const latest = this.getCompanyResearchManager().getLatestCompletedResearch(domain);
+        return { success: true, data: latest };
       } catch (error) {
         return {
           success: false,
