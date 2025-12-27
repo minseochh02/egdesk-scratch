@@ -1026,3 +1026,202 @@
     font-size: 22px;
   }
 }
+
+/* Existing Research Prompt Overlay */
+.cr-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: cr-overlayFadeIn 0.2s ease;
+}
+
+@keyframes cr-overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cr-prompt {
+  position: relative;
+  width: 90%;
+  max-width: 420px;
+  padding: 36px 32px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  text-align: center;
+  animation: cr-promptSlideIn 0.25s ease;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes cr-promptSlideIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.95) translateY(-10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
+}
+
+.cr-prompt-icon {
+  font-size: 52px;
+  margin-bottom: 20px;
+}
+
+.cr-prompt h3 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.cr-prompt p {
+  margin: 0 0 28px;
+  font-size: 15px;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+
+.cr-prompt p strong {
+  color: #e2e8f0;
+}
+
+.cr-prompt-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+}
+
+.cr-prompt-actions .cr-btn {
+  min-width: 150px;
+  justify-content: center;
+}
+
+.cr-prompt-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 22px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cr-prompt-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Email Button */
+.cr-btn-email {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(59, 130, 246, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cr-btn-email:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+/* Report Actions */
+.cr-report-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Email Modal */
+.cr-email-modal {
+  max-width: 440px;
+}
+
+.cr-email-input-wrap {
+  margin-bottom: 16px;
+}
+
+.cr-email-input {
+  width: 100%;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-size: 15px;
+  color: #fff;
+  transition: all 0.2s ease;
+}
+
+.cr-email-input::placeholder {
+  color: #64748b;
+}
+
+.cr-email-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.cr-email-note {
+  font-size: 13px !important;
+  color: #64748b !important;
+  margin-bottom: 24px !important;
+}
+
+.cr-export-info {
+  margin-bottom: 18px;
+  padding: 16px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 12px;
+}
+
+.cr-export-files {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.cr-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.cr-export-format {
+  font-size: 12px;
+  color: #60a5fa;
+  text-align: center;
+  margin: 0;
+}

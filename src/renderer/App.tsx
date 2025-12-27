@@ -1,3 +1,4 @@
+/// <reference types="./preload" />
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   HashRouter as Router,
@@ -1957,7 +1958,8 @@ function NavigationBar({
     '/blog-connector', 
     '/social-media', 
     '/seo-analyzer',
-    '/ssl-analyzer'
+    '/ssl-analyzer',
+    '/company-research'
   ].some(path => location.pathname.startsWith(path));
 
   const isSystemActive = [
@@ -2033,6 +2035,10 @@ function NavigationBar({
             <Link to="/ssl-analyzer" className={`nav-dropdown-item ${location.pathname.startsWith('/ssl-analyzer') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faShieldAlt} fixedWidth />
               <span>SSL-Checker</span>
+            </Link>
+            <Link to="/company-research" className={`nav-dropdown-item ${location.pathname.startsWith('/company-research') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faChartBar} fixedWidth />
+              <span>Company Research</span>
             </Link>
           </NavDropdown>
 

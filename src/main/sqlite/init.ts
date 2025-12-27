@@ -7,6 +7,7 @@ import { initializeActivityDatabaseSchema } from './activity';
 import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
 import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
+import { createSyncDatabase } from './sheet_sync';
 
 /**
  * SQLite Database Initialization
@@ -75,13 +76,15 @@ export interface DatabaseInitResult {
   taskDatabase?: Database.Database;
   wordpressDatabase?: Database.Database;
   activityDatabase?: Database.Database;
-  cloudmcpDatabase?: Database.Database;
-  taskManager?: SQLiteTaskManager;
-  conversationsDbPath?: string;
-  taskDbPath?: string;
-  wordpressDbPath?: string;
-  activityDbPath?: string;
-  cloudmcpDbPath?: string;
+      cloudmcpDatabase?: Database.Database;
+      taskManager?: SQLiteTaskManager;
+      conversationsDbPath?: string;
+      taskDbPath?: string;
+      wordpressDbPath?: string;
+      activityDbPath?: string;
+      cloudmcpDbPath?: string;
+      syncDatabase?: Database.Database;
+      syncDbPath?: string;
 }
 
 /**
@@ -103,6 +106,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const wordpressDbPath = path.join(dataDir, 'wordpress.db');
     const activityDbPath = path.join(dataDir, 'activity.db');
     const cloudmcpDbPath = path.join(dataDir, 'cloudmcp.db');
+    const syncDbPath = path.join(dataDir, 'egdesk.db');
     
     console.log('🔍 Database paths:');
     console.log('  Data directory:', dataDir);
@@ -111,12 +115,14 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     console.log('  WordPress DB:', wordpressDbPath);
     console.log('  Activity DB:', activityDbPath);
     console.log('  CloudMCP DB:', cloudmcpDbPath);
+    console.log('  Sync DB:', syncDbPath);
     
     const conversationsDb = new Database(conversationsDbPath);
     const taskDb = new Database(taskDbPath);
     const wordpressDb = new Database(wordpressDbPath);
     const activityDb = new Database(activityDbPath);
     const cloudmcpDb = new Database(cloudmcpDbPath);
+    const syncDb = createSyncDatabase({ dbPath: syncDbPath });
     
     // Initialize database schemas
     initializeConversationsDatabaseSchema(conversationsDb);
@@ -145,7 +151,9 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       taskDbPath,
       wordpressDbPath,
       activityDbPath,
-      cloudmcpDbPath
+      cloudmcpDbPath,
+      syncDatabase: syncDb,
+      syncDbPath
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

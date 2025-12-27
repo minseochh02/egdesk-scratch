@@ -247,7 +247,12 @@ export async function runSSLAnalysis(url: string): Promise<SSLAnalysisResult> {
     
     // If we still don't have a result, return error
     if (!result) {
-      throw new Error(errorMessage || 'SSL analysis failed and no result available');
+      return {
+        success: false,
+        url: originalUrl,
+        error: errorMessage || 'SSL analysis failed and no result available',
+        timestamp,
+      };
     }
     
     // Return success even if accessibility failed, as long as we have a result
