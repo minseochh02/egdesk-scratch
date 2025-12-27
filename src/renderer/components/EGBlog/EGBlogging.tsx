@@ -501,6 +501,7 @@ const EGBlogging: React.FC = () => {
         {/* Platform Selection - Use BlogConnector with navigation handlers */}
         <BlogConnector 
           onShowConnectionList={handleShowConnectionList}
+          onConnectionCreated={checkExistingConnections}
         />
       </div>
     </div>

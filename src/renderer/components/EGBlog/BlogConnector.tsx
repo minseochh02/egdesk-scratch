@@ -22,9 +22,10 @@ interface BlogPlatform {
 
 interface BlogConnectorProps {
   onShowConnectionList?: () => void;
+  onConnectionCreated?: () => void;
 }
 
-const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) => {
+const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList, onConnectionCreated }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('');
   const [showWordPressForm, setShowWordPressForm] = useState<boolean>(false);
   const [showNaverForm, setShowNaverForm] = useState<boolean>(false);
@@ -85,6 +86,11 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
     // Reset state on success
     setShowWordPressForm(false);
     setSelectedPlatform('');
+    
+    // Notify parent component about the new connection
+    if (onConnectionCreated) {
+      onConnectionCreated();
+    }
   };
 
   const handleNaverConnect = async (formData: any) => {
@@ -97,6 +103,11 @@ const BlogConnector: React.FC<BlogConnectorProps> = ({ onShowConnectionList }) =
     // Reset state on success
     setShowNaverForm(false);
     setSelectedPlatform('');
+    
+    // Notify parent component about the new connection
+    if (onConnectionCreated) {
+      onConnectionCreated();
+    }
   };
 
   const handleBackFromForm = () => {
