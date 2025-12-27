@@ -862,6 +862,19 @@ const createWindow = async () => {
         }
       });
 
+      // IPC handler for manual export of combined report
+      ipcMain.handle('company-research-export-combined', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
+        try {
+          console.log(`[IPC] Manually exporting combined report as DOCX for: ${domain}`);
+          const { exportCombinedReportToUserPath } = await import('./company-research-stage4');
+          const result = await exportCombinedReportToUserPath(domain, execSummaryContent, detailedReportContent);
+          return result;
+        } catch (error: any) {
+          console.error(`❌ Combined Export failed:`, error);
+          return { success: false, error: error.message || 'Unknown error' };
+        }
+      });
+
       // IPC handler for exporting both reports as DOCX
       ipcMain.handle('company-research-export-docx', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
         try {
