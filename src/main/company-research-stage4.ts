@@ -1,7 +1,7 @@
 import { dialog, shell, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak } from 'docx';
 
 /**
  * Stage 4: Exporting Reports
@@ -48,20 +48,23 @@ export async function autoSaveReport(
 }
 
 /**
- * Allows the user to manually save a report using a system dialog.
+ * Allows the user to manually save a combined report using a system dialog.
  */
-export async function exportReportToUserPath(
-  fileName: string, 
-  content: string, 
-  extension: 'md' | 'txt' = 'md'
+export async function exportCombinedReportToUserPath(
+  domain: string,
+  execSummaryContent: string | null,
+  detailedReportContent: string | null
 ): Promise<ExportResult> {
   try {
+    const safeDomain = domain.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const timestamp = new Date().toISOString().split('T')[0];
+    const defaultName = `${safeDomain}_research_report_${timestamp}.docx`;
+
     const { filePath, canceled } = await dialog.showSaveDialog({
-      title: 'Save Company Research Report',
-      defaultPath: path.join(app.getPath('documents'), `${fileName}.${extension}`),
+      title: 'Save Combined Company Research Report',
+      defaultPath: path.join(app.getPath('documents'), defaultName),
       filters: [
-        { name: 'Markdown', extensions: ['md'] },
-        { name: 'Text', extensions: ['txt'] }
+        { name: 'Word Document', extensions: ['docx'] }
       ]
     });
 
@@ -69,10 +72,32 @@ export async function exportReportToUserPath(
       return { success: false, error: 'User canceled export' };
     }
 
-    fs.writeFileSync(filePath, content, 'utf8');
+    // Combine contents
+    let combinedContent = '';
+    let title = `Company Research Report - ${domain}`;
+
+    if (execSummaryContent && detailedReportContent) {
+      combinedContent = `# Executive Summary\n\n${execSummaryContent}\n\n---\n\n# Detailed Research Report\n\n${detailedReportContent}`;
+      title = `Combined Research Report - ${domain}`;
+    } else if (execSummaryContent) {
+      combinedContent = execSummaryContent;
+      title = `Executive Summary - ${domain}`;
+    } else if (detailedReportContent) {
+      combinedContent = detailedReportContent;
+      title = `Detailed Research Report - ${domain}`;
+    }
+
+    if (!combinedContent) {
+      return { success: false, error: 'No content to export' };
+    }
+
+    const doc = markdownToDocx(combinedContent, title);
+    const buffer = await Packer.toBuffer(doc);
+    fs.writeFileSync(filePath, buffer);
+    
     return { success: true, filePath };
   } catch (error: any) {
-    console.error(`[Export] Manual export failed:`, error);
+    console.error(`[Export] Combined manual export failed:`, error);
     return { success: false, error: error.message };
   }
 }
@@ -139,6 +164,11 @@ function markdownToDocx(content: string, title: string): Document {
         text: trimmedLine.substring(5),
         heading: HeadingLevel.HEADING_4,
         spacing: { before: 150, after: 75 }
+      }));
+      inList = false;
+    } else if (trimmedLine === '---' || trimmedLine === '***') {
+      children.push(new Paragraph({
+        children: [new PageBreak()],
       }));
       inList = false;
     }
@@ -266,7 +296,7 @@ export async function exportReportAsDocx(
 }
 
 /**
- * Export both executive summary and detailed report as DOCX files
+ * Export executive summary and detailed report combined as a single DOCX file
  */
 export async function exportBothReportsAsDocx(
   domain: string,
@@ -283,29 +313,36 @@ export async function exportBothReportsAsDocx(
     const timestamp = new Date().toISOString().split('T')[0];
     const files: { type: string; filePath: string }[] = [];
 
-    if (execSummaryContent) {
-      const execFileName = `${safeDomain}_executive_summary_${timestamp}`;
-      const execPath = path.join(reportsDir, `${execFileName}.docx`);
-      const execDoc = markdownToDocx(execSummaryContent, `Executive Summary - ${domain}`);
-      const execBuffer = await Packer.toBuffer(execDoc);
-      fs.writeFileSync(execPath, execBuffer);
-      files.push({ type: 'executive', filePath: execPath });
-      console.log(`[Export] Saved Executive Summary DOCX to: ${execPath}`);
+    // Combine contents if both exist, otherwise use whichever is available
+    let combinedContent = '';
+    let title = `Company Research Report - ${domain}`;
+
+    if (execSummaryContent && detailedReportContent) {
+      combinedContent = `# Executive Summary\n\n${execSummaryContent}\n\n---\n\n# Detailed Research Report\n\n${detailedReportContent}`;
+      title = `Combined Research Report - ${domain}`;
+    } else if (execSummaryContent) {
+      combinedContent = execSummaryContent;
+      title = `Executive Summary - ${domain}`;
+    } else if (detailedReportContent) {
+      combinedContent = detailedReportContent;
+      title = `Detailed Research Report - ${domain}`;
     }
 
-    if (detailedReportContent) {
-      const detailedFileName = `${safeDomain}_detailed_report_${timestamp}`;
-      const detailedPath = path.join(reportsDir, `${detailedFileName}.docx`);
-      const detailedDoc = markdownToDocx(detailedReportContent, `Detailed Report - ${domain}`);
-      const detailedBuffer = await Packer.toBuffer(detailedDoc);
-      fs.writeFileSync(detailedPath, detailedBuffer);
-      files.push({ type: 'detailed', filePath: detailedPath });
-      console.log(`[Export] Saved Detailed Report DOCX to: ${detailedPath}`);
+    if (combinedContent) {
+      const fileName = `${safeDomain}_research_report_${timestamp}`;
+      const filePath = path.join(reportsDir, `${fileName}.docx`);
+      
+      const doc = markdownToDocx(combinedContent, title);
+      const buffer = await Packer.toBuffer(doc);
+      fs.writeFileSync(filePath, buffer);
+      
+      files.push({ type: 'combined', filePath });
+      console.log(`[Export] Saved Combined Report DOCX to: ${filePath}`);
     }
 
     return { success: true, files };
   } catch (error: any) {
-    console.error(`[Export] DOCX export failed:`, error);
+    console.error(`[Export] Combined DOCX export failed:`, error);
     return { success: false, files: [], error: error.message };
   }
 }
