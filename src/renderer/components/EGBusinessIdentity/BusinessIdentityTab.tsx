@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEdit, faCalendarAlt, faMagic, faRocket } from '../../utils/fontAwesomeIcons';
 import './EGBusinessIdentityResultDemo.css';
 import type { WebsiteContentSummary } from '../../main/preload';
+import CompanyResearchTab from '../CompanyResearchPage/CompanyResearchTab';
 import BusinessIdentityScheduledDemo, { BusinessIdentityScheduledTask } from './BusinessIdentityScheduledDemo';
 import { buildInstagramStructuredPrompt } from './instagramPrompt';
 import { SEOAnalysisDisplay } from './SEOAnalysisDisplay';
@@ -309,7 +310,7 @@ const INSTAGRAM_CREDENTIALS_KEY = 'businessIdentityInstagramCredentials';
 const BusinessIdentityTab: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'identity' | 'scheduled'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'scheduled' | 'research'>('identity');
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramPassword, setInstagramPassword] = useState('');
   const [credentialsStatus, setCredentialsStatus] = useState<string | null>(null);
@@ -824,6 +825,13 @@ const BusinessIdentityTab: React.FC = () => {
         >
           Scheduled Posts
         </button>
+        <button
+          type="button"
+          className={`egbusiness-identity-result__tab${activeTab === 'research' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('research')}
+        >
+          Company Research
+        </button>
       </div>
 
       {activeTab === 'identity' ? (
@@ -893,7 +901,7 @@ const BusinessIdentityTab: React.FC = () => {
 
           {/* SNS plan grid removed; use Scheduled Posts tab instead */}
         </>
-      ) : (
+      ) : activeTab === 'scheduled' ? (
         <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--scheduled">
           <div className="egbusiness-identity-result__panel-header">
             <span className="egbusiness-identity-result__icon">
@@ -1154,7 +1162,9 @@ const BusinessIdentityTab: React.FC = () => {
             hasAccountForChannel={hasAccountForChannel}
           />
         </section>
-      )}
+      ) : activeTab === 'research' ? (
+        <CompanyResearchTab initialDomain={insights.sourceMeta?.url} />
+      ) : null}
     </div>
   );
 };
@@ -1376,4 +1386,3 @@ function capitalize(value: string): string {
   if (!value) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
-

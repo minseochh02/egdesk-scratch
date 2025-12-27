@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'; // Import FontAwesomeIcon
+import { faGoogle } from '@fortawesome/free-brands-svg-icons'; // Import faGoogle
 import './CompanyResearchPage.css';
-import type { CrawlResult } from '../../main/company-research-stage1';
-import type { WebsiteSummary } from '../../main/company-research-stage2';
-import type { AgenticResearchData } from '../../main/company-research-stage3';
-import type { DetailedReport } from '../../main/company-research-stage3b1';
-import type { ExecutiveSummary } from '../../main/company-research-stage3b2';
-import type { WorkflowProgress } from '../../main/company-research-workflow';
+import type { CrawlResult } from '../../../main/company-research-stage1';
+import type { WebsiteSummary } from '../../../main/company-research-stage2';
+import type { AgenticResearchData } from '../../../main/company-research-stage3';
+import type { DetailedReport } from '../../../main/company-research-stage3b1';
+import type { ExecutiveSummary } from '../../../main/company-research-stage3b2';
+import type { WorkflowProgress } from '../../../main/company-research-workflow';
 import ResearchedCompanyPage from './ResearchedCompanyPage';
-import type { CompanyResearchRecord } from '../../main/sqlite/company-research';
+import type { CompanyResearchRecord } from '../../../main/sqlite/company-research';
 
 declare global {
   interface Window {
@@ -66,17 +68,150 @@ const CompanyResearchPage: React.FC = () => {
   const [resultTab, setResultTab] = useState<ResultTab>('executive');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  useEffect(() => {
-    const removeListener = window.electron.ipcRenderer.on(
-      'company-research-progress',
-      (progress: any) => {
-        setWorkflowStatus(progress);
-        if (progress.stage === 'error') {
-          setErrorMessage(progress.message);
+  // Existing research prompt
+  const [existingRecord, setExistingRecord] = useState<CompanyResearchRecord | null>(null);
+  const [showExistingPrompt, setShowExistingPrompt] = useState(false);
+  
+  // Email modal
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailAddress, setEmailAddress] = useState('');
+  const [emailType, setEmailType] = useState<'executive' | 'detailed'>('executive');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  
+  // Google OAuth State
+  const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean | null>(null);
+
+  // Required OAuth scopes for Gmail sending
+  const REQUIRED_GMAIL_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid'
+  ];
+
+  const checkAuthStatus = async () => {
+    try {
+      console.log('🔍 CompanyResearchPage: Checking Gmail auth status...');
+      
+      // Check Supabase session first
+      const sessionResult = await window.electron.auth.getSession();
+      
+      if (sessionResult.success && sessionResult.session && sessionResult.user) {
+        const user = sessionResult.user;
+        const isGoogleAuth = 
+          user.app_metadata?.provider === 'google' ||
+          user.identities?.some((id: any) => id.provider === 'google');
+        
+        if (isGoogleAuth) {
+          // Check if we have a valid token with access_token
+          const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
+          
+          if (tokenResult.success && tokenResult.token?.access_token) {
+            console.log('✅ CompanyResearchPage: Valid Gmail OAuth token found');
+            setHasValidOAuthToken(true);
+            return;
+          }
         }
       }
-    );
-    return () => removeListener();
+      
+      // Fallback: Check electron-store token directly
+      const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
+      
+      if (tokenResult.success && tokenResult.token?.access_token) {
+        console.log('✅ CompanyResearchPage: Gmail OAuth token found in electron-store');
+        setHasValidOAuthToken(true);
+        return;
+      }
+      
+      console.log('❌ CompanyResearchPage: No valid Gmail OAuth token');
+      setHasValidOAuthToken(false);
+    } catch (error) {
+      console.error('Failed to check Gmail auth status:', error);
+      setHasValidOAuthToken(false);
+    }
+  };
+
+  const handleSignIn = async () => {
+    try {
+      console.log('🚀 CompanyResearchPage: Starting Gmail OAuth sign-in...');
+      
+      // Sign in with required Gmail scopes
+      const scopes = REQUIRED_GMAIL_SCOPES.join(' ');
+      const result = await window.electron.auth.signInWithGoogle(scopes);
+      
+      if (!result.success) {
+        console.error('❌ CompanyResearchPage: OAuth sign-in failed:', result.error);
+        alert(`Google authentication failed: ${result.error || 'Unknown error'}\n\nPlease try again.`);
+        setHasValidOAuthToken(false);
+        return;
+      }
+      
+      console.log('✅ CompanyResearchPage: OAuth sign-in successful, checking token...');
+      
+      // Wait a moment for the OAuth flow to complete and token to be saved
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Verify token was saved and is valid
+      await checkAuthStatus();
+      
+      if (hasValidOAuthToken !== false) {
+        console.log('✅ CompanyResearchPage: Token verified, authentication complete');
+        alert('Successfully signed in with Google!');
+      } else {
+        console.warn('⚠️ CompanyResearchPage: Sign-in completed but token validation failed');
+        // Still check again in case state hasn't updated yet
+        setTimeout(checkAuthStatus, 1000);
+      }
+    } catch (error) {
+      console.error('❌ CompanyResearchPage: Failed to authenticate with Google:', error);
+      alert(`Failed to authenticate with Google: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`);
+      setHasValidOAuthToken(false);
+    }
+  };
+
+
+  useEffect(() => {
+    checkAuthStatus();
+
+    let removeProgressListener: (() => void) | undefined;
+    if (window.electron?.ipcRenderer?.on) {
+      removeProgressListener = window.electron.ipcRenderer.on(
+        'company-research-progress',
+        (progress: any) => {
+          setWorkflowStatus(progress);
+          if (progress.stage === 'error') {
+            setErrorMessage(progress.message);
+          }
+        }
+      );
+    }
+
+    let unsubscribeAuth: (() => void) | undefined;
+    if (window.electron?.auth) {
+      const authService = window.electron.auth;
+      if (authService.onAuthStateChanged && typeof authService.onAuthStateChanged === 'function') {
+        try {
+          const onAuthStateChanged = authService.onAuthStateChanged;
+          unsubscribeAuth = onAuthStateChanged((data: any) => {
+            console.log('🔄 CompanyResearchPage: Auth state changed, re-checking token...');
+            setTimeout(() => {
+              checkAuthStatus();
+            }, 1000);
+          });
+        } catch (error) {
+          console.warn('Failed to setup auth state listener:', error);
+        }
+      }
+    }
+
+    return () => {
+      if (typeof removeProgressListener === 'function') {
+        removeProgressListener();
+      }
+      if (typeof unsubscribeAuth === 'function') {
+        unsubscribeAuth();
+      }
+    };
   }, []);
 
   const resetState = () => {
@@ -87,6 +222,50 @@ const CompanyResearchPage: React.FC = () => {
     setDetailedReport(null);
     setExecSummary(null);
     setWorkflowStatus(null);
+  };
+
+  const checkExistingResearch = async (): Promise<CompanyResearchRecord | null> => {
+    try {
+      const response = await window.electron.web.db.getLatestCompleted(companyUrl.trim());
+      if (response.success && response.data) {
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Failed to check existing research:', error);
+    }
+    return null;
+  };
+
+  const handleResearchClick = async () => {
+    if (!companyUrl.trim() || isResearching) return;
+    
+    const existing = await checkExistingResearch();
+    if (existing) {
+      setExistingRecord(existing);
+      setShowExistingPrompt(true);
+    } else {
+      handleFullResearch(false);
+    }
+  };
+
+  const handleExistingChoice = (choice: 'view' | 'redo') => {
+    setShowExistingPrompt(false);
+    if (choice === 'view' && existingRecord) {
+      loadResearch(existingRecord);
+    } else {
+      handleFullResearch(true);
+    }
+    setExistingRecord(null);
+  };
+
+  const formatRelativeDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
   };
 
   const handleFullResearch = async (bypassCache: boolean = false) => {
@@ -233,6 +412,107 @@ const CompanyResearchPage: React.FC = () => {
     }
   };
 
+  const openEmailModal = (type: 'executive' | 'detailed') => {
+    setEmailType(type);
+    setEmailAddress('');
+    setShowEmailModal(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailAddress.trim()) return;
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailAddress.trim())) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    
+    try {
+      // Check if Gmail OAuth is authenticated (using auth service, not legacy gmail-service)
+      const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
+      
+      if (!tokenResult.success || !tokenResult.token?.access_token) {
+        console.log('⚠️ CompanyResearchPage: No valid OAuth token, initiating sign-in...');
+        
+        // Initiate OAuth sign-in
+        const scopes = REQUIRED_GMAIL_SCOPES.join(' ');
+        const authResult = await window.electron.auth.signInWithGoogle(scopes);
+        
+        if (!authResult.success) {
+          alert(`Gmail authentication failed: ${authResult.error || 'Unknown error'}\n\nPlease try again.`);
+          setIsSendingEmail(false);
+          return;
+        }
+        
+        // Wait for token to be saved
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Verify token was saved
+        const verifyResult = await window.electron.auth.getGoogleWorkspaceToken();
+        if (!verifyResult.success || !verifyResult.token?.access_token) {
+          alert('Gmail authentication completed but token is not available. Please try again.');
+          setIsSendingEmail(false);
+          return;
+        }
+      }
+
+      const companyName = summaryResult?.companyName || companyUrl;
+      
+      // Export reports as DOCX
+      const exportResult = await window.electron.invoke(
+        'company-research-export-docx',
+        companyUrl,
+        execSummary?.content || null,
+        detailedReport?.content || null
+      );
+      
+      if (!exportResult.success || exportResult.files.length === 0) {
+        alert('Failed to export reports');
+        setIsSendingEmail(false);
+        return;
+      }
+
+      // Prepare attachments
+      const attachments = exportResult.files.map((file: { type: string; filePath: string }) => ({
+        filename: file.filePath.split('/').pop() || file.filePath.split('\\').pop(),
+        path: file.filePath,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }));
+
+      const subject = `Company Research Report: ${companyName}`;
+      const body = `Hello,
+
+Please find attached the company research reports for ${companyName}.
+
+${execSummary ? '• Executive Summary\n' : ''}${detailedReport ? '• Detailed Report\n' : ''}
+---
+Generated by EGDesk Company Research`;
+
+      // Send via Gmail API (using the legacy gmail-send handler which accesses the token internally)
+      const result = await window.electron.invoke('gmail-send', {
+        to: emailAddress.trim(),
+        subject,
+        body,
+        attachments,
+      });
+
+      if (result.success) {
+        alert('Email sent successfully!');
+        setShowEmailModal(false);
+        setEmailAddress('');
+      } else {
+        alert(`Failed to send: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      alert(`Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const getCurrentStageIndex = () => {
     if (!workflowStatus) return -1;
     return STAGES.findIndex(s => s.key === workflowStatus.stage);
@@ -242,6 +522,105 @@ const CompanyResearchPage: React.FC = () => {
 
   return (
     <div className="cr-container">
+      {/* Existing Research Prompt */}
+      {showExistingPrompt && existingRecord && (
+        <div className="cr-overlay">
+          <div className="cr-prompt">
+            <div className="cr-prompt-icon">📋</div>
+            <h3>Existing Research Found</h3>
+            <p>
+              Research for <strong>{existingRecord.companyName || existingRecord.domain}</strong> was 
+              completed {formatRelativeDate(existingRecord.createdAt)}.
+            </p>
+            <div className="cr-prompt-actions">
+              <button 
+                className="cr-btn cr-btn-primary"
+                onClick={() => handleExistingChoice('view')}
+              >
+                👁️ View Existing
+              </button>
+              <button 
+                className="cr-btn cr-btn-secondary"
+                onClick={() => handleExistingChoice('redo')}
+              >
+                🔄 Research Again
+              </button>
+            </div>
+            <button 
+              className="cr-prompt-close"
+              onClick={() => {
+                setShowExistingPrompt(false);
+                setExistingRecord(null);
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div className="cr-overlay">
+          <div className="cr-prompt cr-email-modal">
+            <div className="cr-prompt-icon">✉️</div>
+            <h3>Send Reports via Email</h3>
+            <p>
+              Export and send research reports for{' '}
+              <strong>{summaryResult?.companyName || companyUrl}</strong>
+            </p>
+            <div className="cr-export-info">
+              <div className="cr-export-files">
+                {execSummary && <span className="cr-file-badge">📋 Executive Summary</span>}
+                {detailedReport && <span className="cr-file-badge">📝 Detailed Report</span>}
+              </div>
+              <p className="cr-export-format">Will be exported as DOCX files</p>
+            </div>
+            <div className="cr-email-input-wrap">
+              <input
+                type="email"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendEmail()}
+                placeholder="Enter recipient email..."
+                className="cr-email-input"
+                autoFocus
+              />
+            </div>
+            <p className="cr-email-note">
+              Files will be exported and the reports folder will open for easy attachment.
+            </p>
+            <div className="cr-prompt-actions">
+              <button 
+                className="cr-btn cr-btn-primary"
+                onClick={handleSendEmail}
+                disabled={isSendingEmail || !emailAddress.trim()}
+              >
+                {isSendingEmail ? <span className="cr-spinner"></span> : '📤'} Export & Email
+              </button>
+              <button 
+                className="cr-btn cr-btn-secondary"
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailAddress('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            <button 
+              className="cr-prompt-close"
+              onClick={() => {
+                setShowEmailModal(false);
+                setEmailAddress('');
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="cr-scroll">
         {/* Navigation */}
         <nav className="cr-nav">
@@ -282,7 +661,7 @@ const CompanyResearchPage: React.FC = () => {
                     type="text"
                     value={companyUrl}
                     onChange={(e) => setCompanyUrl(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && !isResearching && handleFullResearch()}
+                    onKeyPress={(e) => e.key === 'Enter' && !isResearching && handleResearchClick()}
                     placeholder="Enter company website (e.g., company.com)"
                     className="cr-input"
                     disabled={isResearching}
@@ -291,7 +670,7 @@ const CompanyResearchPage: React.FC = () => {
                 
                 <div className="cr-action-buttons">
                   <button
-                    onClick={() => handleFullResearch(false)}
+                    onClick={handleResearchClick}
                     disabled={isResearching || !companyUrl.trim()}
                     className="cr-btn cr-btn-primary"
                   >
@@ -308,7 +687,18 @@ const CompanyResearchPage: React.FC = () => {
                     )}
                   </button>
                   
+                  <button
+                    onClick={handleSignIn}
+                    className="cr-btn cr-btn-secondary cr-btn-google"
+                    title={hasValidOAuthToken ? 'Google Account Connected' : 'Sign in with Google'}
+                    disabled={isSendingEmail}
+                  >
+                    <FontAwesomeIcon icon={faGoogle} />
+                    {hasValidOAuthToken ? 'Google Connected' : 'Connect Google'}
+                  </button>
+                  
                   {hasResults && !isResearching && (
+                    <>
                     <button
                       onClick={() => handleFullResearch(true)}
                       className="cr-btn cr-btn-secondary"
@@ -316,6 +706,15 @@ const CompanyResearchPage: React.FC = () => {
                       <span>🔄</span>
                       Re-run
                     </button>
+                      <button
+                        onClick={() => openEmailModal(execSummary ? 'executive' : 'detailed')}
+                        className="cr-btn cr-btn-secondary"
+                        title="Send via email"
+                      >
+                        <span>✉️</span>
+                        Email
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -534,9 +933,14 @@ const CompanyResearchPage: React.FC = () => {
                         <div className="cr-report">
                           <div className="cr-report-header">
                             <h3>Executive Summary</h3>
+                            <div className="cr-report-actions">
                             <button onClick={() => handleExport('executive')} className="cr-btn-export">
                               ⬇️ Export
                             </button>
+                              <button onClick={() => openEmailModal('executive')} className="cr-btn-email">
+                                ✉️ Email
+                              </button>
+                            </div>
                           </div>
                           <div className="cr-markdown">
                             <ReactMarkdown>{execSummary.content}</ReactMarkdown>
@@ -549,9 +953,14 @@ const CompanyResearchPage: React.FC = () => {
                         <div className="cr-report">
                           <div className="cr-report-header">
                             <h3>Detailed Analysis Report</h3>
+                            <div className="cr-report-actions">
                             <button onClick={() => handleExport('detailed')} className="cr-btn-export">
                               ⬇️ Export
                             </button>
+                              <button onClick={() => openEmailModal('detailed')} className="cr-btn-email">
+                                ✉️ Email
+                              </button>
+                            </div>
                           </div>
                           <div className="cr-markdown">
                             <ReactMarkdown>{detailedReport.content}</ReactMarkdown>

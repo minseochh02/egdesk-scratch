@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import { Agent } from 'undici';
 
 export interface FormField {
   name?: string;
@@ -152,8 +153,70 @@ export async function fetchWebsiteContent(
             'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       lastError = error;
+
+      // Check for various SSL certificate errors
+      if (error instanceof Error) {
+        const sslErrors = [
+          'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+          'CERT_HAS_EXPIRED',
+          'DEPTH_ZERO_SELF_SIGNED_CERT',
+          'SELF_SIGNED_CERT_IN_CHAIN',
+          'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+          'unable to verify the first certificate',
+          'self signed certificate',
+          'certificate has expired',
+        ];
+        
+        // Check error.message and error.code
+        let isSSLError = sslErrors.some(sslErr => 
+          error.message.includes(sslErr) || 
+          (error as NodeJS.ErrnoException).code?.includes(sslErr)
+        );
+        
+        // Also check nested cause (Node.js fetch errors have SSL details in cause)
+        if (!isSSLError) {
+          const cause = (error as { cause?: unknown })?.cause;
+          if (cause && typeof cause === 'object' && cause !== null) {
+            const causeCode = (cause as NodeJS.ErrnoException).code;
+            const causeMessage = (cause as { message?: string }).message;
+            isSSLError = sslErrors.some(sslErr => 
+              causeCode?.includes(sslErr) || 
+              causeMessage?.includes(sslErr)
+            );
+          }
+        }
+        
+        if (isSSLError) {
+          // Retry with SSL verification disabled
+          console.log(`[content-fetcher] SSL certificate error for ${originalUrl}, retrying with SSL verification disabled...`);
+          try {
+            const insecureAgent = new Agent({
+              connect: {
+                rejectUnauthorized: false,
+              },
+            });
+            response = await fetch(originalUrl, {
+              redirect: 'follow',
+              signal: controller.signal,
+              // @ts-expect-error - dispatcher is valid but not in fetch types
+              dispatcher: insecureAgent,
+              headers: {
+                'User-Agent': options.userAgent ?? DEFAULT_USER_AGENT,
+                Accept:
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              },
+            });
+            console.log(`[content-fetcher] Successfully fetched ${originalUrl} with SSL verification disabled`);
+            // Continue with the response
+          } catch (insecureError) {
+            console.error(`[content-fetcher] Failed to fetch ${originalUrl} even with SSL verification disabled:`, insecureError);
+            lastError = insecureError;
+            // Fall through to return error
+          }
+        }
+      }
       
       // If it's a connection timeout on HTTPS and the domain doesn't have www,
       // try with www subdomain as a fallback (some domains like quus.cloud have

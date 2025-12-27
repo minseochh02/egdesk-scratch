@@ -50,50 +50,8 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/egchatting" className="egdesk-landing-action-card egdesk-landing-chat-card">
-              <div className="egdesk-landing-card-icon egdesk-landing-chat-icon">
-                <FontAwesomeIcon icon={faComments} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Chatting</h3>
-              <p className="egdesk-landing-card-description">
-                Collaborate with your team in real-time, chat with AI assistants, and move projects forward quickly.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">Real-time Collaboration</span>
-                <span className="egdesk-landing-feature-tag">AI Assistant</span>
-                <span className="egdesk-landing-feature-tag">Multi-tab</span>
-              </div>
-            </Link>
 
-            <Link to="/homepage-editor" className="egdesk-landing-action-card egdesk-landing-homepage-card">
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faCog} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Coding</h3>
-              <p className="egdesk-landing-card-description">
-                Efficiently manage and edit your homepage with AI assistance. Automate content creation and editing.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">AI Management</span>
-                <span className="egdesk-landing-feature-tag">Auto Edit</span>
-                <span className="egdesk-landing-feature-tag">Content Generation</span>
-              </div>
-            </Link>
 
-            <Link to="/blog-connector" className="egdesk-landing-action-card egdesk-landing-scheduler-card">
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faCalendarAlt} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Blogging</h3>
-              <p className="egdesk-landing-card-description">
-                Plan blog content and schedule posts with AI assistance. Set up automated posting and content management.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">AI Writing</span>
-                <span className="egdesk-landing-feature-tag">Auto Schedule</span>
-                <span className="egdesk-landing-feature-tag">Content Planning</span>
-              </div>
-            </Link>
 
             <Link to="/social-media" className="egdesk-landing-action-card egdesk-landing-social-card">
               <div className="egdesk-landing-card-icon">
@@ -137,6 +95,66 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">SEO Analysis</span>
                 <span className="egdesk-landing-feature-tag">Keyword Optimization</span>
                 <span className="egdesk-landing-feature-tag">Performance Improvement</span>
+              </div>
+            </Link>
+
+            <Link to="/company-research" className="egdesk-landing-action-card egdesk-landing-company-research-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faSearch} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Company Research</h3>
+              <p className="egdesk-landing-card-description">
+                Conduct in-depth company research with AI assistance. Gather insights, analyze market trends, and make informed decisions.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">AI Analysis</span>
+                <span className="egdesk-landing-feature-tag">Market Trends</span>
+                <span className="egdesk-landing-feature-tag">Data Insights</span>
+              </div>
+            </Link>
+
+            <Link to="/egchatting" className="egdesk-landing-action-card egdesk-landing-chat-card">
+              <div className="egdesk-landing-card-icon egdesk-landing-chat-icon">
+                <FontAwesomeIcon icon={faComments} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Chatting</h3>
+              <p className="egdesk-landing-card-description">
+                Collaborate with your team in real-time, chat with AI assistants, and move projects forward quickly.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Real-time Collaboration</span>
+                <span className="egdesk-landing-feature-tag">AI Assistant</span>
+                <span className="egdesk-landing-feature-tag">Multi-tab</span>
+              </div>
+            </Link>
+
+            <Link to="/homepage-editor" className="egdesk-landing-action-card egdesk-landing-homepage-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faCog} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Coding</h3>
+              <p className="egdesk-landing-card-description">
+                Efficiently manage and edit your homepage with AI assistance. Automate content creation and editing.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">AI Management</span>
+                <span className="egdesk-landing-feature-tag">Auto Edit</span>
+                <span className="egdesk-landing-feature-tag">Content Generation</span>
+              </div>
+            </Link>
+
+            <Link to="/blog-connector" className="egdesk-landing-action-card egdesk-landing-scheduler-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faCalendarAlt} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Blogging</h3>
+              <p className="egdesk-landing-card-description">
+                Plan blog content and schedule posts with AI assistance. Set up automated posting and content management.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">AI Writing</span>
+                <span className="egdesk-landing-feature-tag">Auto Schedule</span>
+                <span className="egdesk-landing-feature-tag">Content Planning</span>
               </div>
             </Link>
 
@@ -185,20 +203,6 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/company-research" className="egdesk-landing-action-card egdesk-landing-company-research-card">
-              <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faSearch} />
-              </div>
-              <h3 className="egdesk-landing-card-title">Company Research</h3>
-              <p className="egdesk-landing-card-description">
-                Conduct in-depth company research with AI assistance. Gather insights, analyze market trends, and make informed decisions.
-              </p>
-              <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">AI Analysis</span>
-                <span className="egdesk-landing-feature-tag">Market Trends</span>
-                <span className="egdesk-landing-feature-tag">Data Insights</span>
-              </div>
-            </Link>
 
           </div>
 

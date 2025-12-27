@@ -190,11 +190,32 @@ export class SSLAnalysisService {
       
       // If we get here, the connection was successful
       return { success: true };
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           return { success: false, error: 'Connection timeout' };
         }
+
+        const sslErrors = [
+          'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+          'CERT_HAS_EXPIRED',
+          'DEPTH_ZERO_SELF_SIGNED_CERT',
+          'SELF_SIGNED_CERT_IN_CHAIN',
+          'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+          'unable to verify the first certificate',
+          'self signed certificate',
+          'certificate has expired',
+        ];
+        
+        const isSSLError = sslErrors.some(sslErr => 
+          error.message.includes(sslErr) || 
+          (error as NodeJS.ErrnoException).code?.includes(sslErr)
+        );
+        
+        if (isSSLError) {
+          return { success: false, error: `SSL 인증서 문제: ${hostname} 서버의 SSL 인증서를 확인할 수 없습니다. 서버 인증서 체인이 올바르지 않거나 만료되었을 수 있습니다.` };
+        }
+
         return { success: false, error: error.message };
       }
       return { success: false, error: 'Connection failed' };

@@ -365,7 +365,7 @@ const installExtensions = async () => {
 
 
 import { registerEgChattingHandlers, initializeEgChattingService } from './sqlite/egchatting-service';
-
+import { registerGmailHandlers } from './gmail-ipc-register';
 const createWindow = async () => {
   // Initialize Electron Store first
   try {
@@ -858,6 +858,31 @@ const createWindow = async () => {
           return result;
         } catch (error: any) {
           console.error(`❌ Export failed:`, error);
+          return { success: false, error: error.message || 'Unknown error' };
+        }
+      });
+
+      // IPC handler for exporting both reports as DOCX
+      ipcMain.handle('company-research-export-docx', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
+        try {
+          console.log(`[IPC] Exporting both reports as DOCX for: ${domain}`);
+          const { exportBothReportsAsDocx } = await import('./company-research-stage4');
+          const result = await exportBothReportsAsDocx(domain, execSummaryContent, detailedReportContent);
+          return result;
+        } catch (error: any) {
+          console.error(`❌ DOCX Export failed:`, error);
+          return { success: false, files: [], error: error.message || 'Unknown error' };
+        }
+      });
+
+      // IPC handler for opening reports folder
+      ipcMain.handle('company-research-open-folder', async () => {
+        try {
+          const { openReportsFolder } = await import('./company-research-stage4');
+          await openReportsFolder();
+          return { success: true };
+        } catch (error: any) {
+          console.error(`❌ Open folder failed:`, error);
           return { success: false, error: error.message || 'Unknown error' };
         }
       });
@@ -2442,6 +2467,9 @@ const createWindow = async () => {
     
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();
+    
+    // Register Gmail handlers (for authentication and sending)
+    registerGmailHandlers(mainWindow);
     
     // Register MCP Server Manager handlers
     const mcpServerManager = getMCPServerManager();
