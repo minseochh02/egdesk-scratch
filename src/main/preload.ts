@@ -704,6 +704,13 @@ export interface AppsScriptToolsAPI {
   listVersions: (projectId: string) => Promise<{ success: boolean; data?: Array<{ versionNumber: number; description?: string; createTime: string }>; error?: string }>;
   getVersionContent: (projectId: string, versionNumber: number) => Promise<{ success: boolean; data?: { files: Array<{ name: string; type: string; source: string }>; versionNumber: number }; error?: string }>;
   runFunction: (scriptId: string, functionName: string, parameters?: any[]) => Promise<{ success: boolean; data?: { response?: { result?: any }; logs?: string[] }; error?: string }>;
+  listTriggers: (projectId: string) => Promise<{ success: boolean; data?: Array<{ triggerId: string; functionName: string; eventSource: any }>; error?: string }>;
+  // Dev/Prod flow methods
+  cloneForDev: (projectId: string) => Promise<{ success: boolean; data?: { devScriptId: string; devSpreadsheetId: string; devSpreadsheetUrl: string }; error?: string }>;
+  pushToDev: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; versionNumber?: number }; error?: string }>;
+  pullFromDev: (projectId: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; fileCount: number }; error?: string }>;
+  pushDevToProd: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; versionNumber?: number }; error?: string }>;
+  pullProdToDev: (projectId: string) => Promise<{ success: boolean; data?: { success: boolean; message: string; fileCount: number }; error?: string }>;
 }
 
 /**
@@ -1719,6 +1726,7 @@ const electronHandler = {
     listVersions: (projectId: string) => ipcRenderer.invoke('apps-script-list-versions', projectId),
     getVersionContent: (projectId: string, versionNumber: number) => ipcRenderer.invoke('apps-script-get-version-content', projectId, versionNumber),
     runFunction: (scriptId: string, functionName: string, parameters?: any[]) => ipcRenderer.invoke('apps-script-run-function', scriptId, functionName, parameters),
+    listTriggers: (projectId: string) => ipcRenderer.invoke('apps-script-list-triggers', projectId),
     // Dev/Prod flow methods
     cloneForDev: (projectId: string) => ipcRenderer.invoke('apps-script-clone-for-dev', projectId),
     pushToDev: (projectId: string, createVersion?: boolean, versionDescription?: string) => ipcRenderer.invoke('apps-script-push-to-dev', projectId, createVersion, versionDescription),

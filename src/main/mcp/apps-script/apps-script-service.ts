@@ -527,6 +527,50 @@ export class AppsScriptService {
   }
 
   /**
+   * Resolve project and script ID from a flexible ID (UUID or Google Script ID)
+   */
+  private resolveProject(projectId: string): { copy: TemplateCopy; scriptId: string } {
+    // 1. Handle "Name [ID]" format
+    let targetId = projectId;
+    const idMatch = projectId.match(/\[(.*?)\]$/);
+    if (idMatch) targetId = idMatch[1];
+
+    // 2. Try to find by UUID (primary key)
+    let copy = this.copiesManager.getTemplateCopy(targetId);
+    
+    // 3. If not found, try to find by script ID
+    if (!copy) {
+      copy = this.copiesManager.getTemplateCopyByScriptId(targetId);
+    }
+
+    if (!copy) {
+      throw new Error(`Project not found for ID: ${targetId}`);
+    }
+
+    // 4. Determine which Google Script ID to return
+    // Logic: 
+    // - If targetId matches devScriptId exactly, use it.
+    // - If targetId matches scriptId exactly, use it.
+    // - If targetId was a UUID, prefer scriptId (prod) but fallback to devScriptId.
+    let resolvedScriptId: string | undefined;
+    
+    if (targetId === copy.devScriptId) {
+      resolvedScriptId = copy.devScriptId;
+    } else if (targetId === copy.scriptId) {
+      resolvedScriptId = copy.scriptId;
+    } else {
+      // It was likely a UUID or display name
+      resolvedScriptId = copy.scriptId || copy.devScriptId;
+    }
+
+    if (!resolvedScriptId) {
+      throw new Error(`Project ${targetId} is not linked to any Google Apps Script.`);
+    }
+
+    return { copy, scriptId: resolvedScriptId };
+  }
+
+  /**
    * Run a function in the Apps Script project remotely
    * POST /v1/scripts/{scriptId}:run
    */
@@ -542,29 +586,13 @@ export class AppsScriptService {
       parameters: parameters,
     });
 
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
+    const { copy, scriptId } = this.resolveProject(projectId);
 
-    console.log(`[AppsScript:runFunction] Resolved targetId: ${targetId}`);
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      console.error(`[AppsScript:runFunction] ERROR: Project not found: ${targetId}`);
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    console.log(`[AppsScript:runFunction] Found project:`, {
+    console.log(`[AppsScript:runFunction] Resolved to:`, {
       copyId: copy.id,
-      scriptId: copy.scriptId,
-      name: copy.name,
+      scriptId: scriptId,
+      name: copy.metadata?.serverName || copy.metadata?.name || 'Untitled',
     });
-
-    if (!copy.scriptId) {
-      console.error(`[AppsScript:runFunction] ERROR: Missing scriptId for project ${targetId}`);
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
 
     // Get OAuth token
     const authService = getAuthService();
@@ -575,7 +603,7 @@ export class AppsScriptService {
       throw new Error('No Google OAuth token available. Please sign in with Google.');
     }
 
-    console.log(`[AppsScript:runFunction] OAuth token obtained, making API call to script: ${copy.scriptId}`);
+    console.log(`[AppsScript:runFunction] OAuth token obtained, making API call to script: ${scriptId}`);
 
     const requestBody = {
       function: functionName,
@@ -586,7 +614,7 @@ export class AppsScriptService {
     console.log(`[AppsScript:runFunction] Request body:`, JSON.stringify(requestBody, null, 2));
 
     // Call Google Apps Script API to run function
-    const apiUrl = `https://script.googleapis.com/v1/scripts/${copy.scriptId}:run`;
+    const apiUrl = `https://script.googleapis.com/v1/scripts/${scriptId}:run`;
     console.log(`[AppsScript:runFunction] API URL: ${apiUrl}`);
 
     let response: Response;
@@ -705,19 +733,7 @@ export class AppsScriptService {
     description?: string;
     createTime?: string;
   }> {
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    if (!copy.scriptId) {
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
+    const { scriptId } = this.resolveProject(projectId);
 
     // Get OAuth token
     const authService = getAuthService();
@@ -727,7 +743,7 @@ export class AppsScriptService {
       throw new Error('No Google OAuth token available. Please sign in with Google.');
     }
 
-    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token.access_token}`,
@@ -763,19 +779,7 @@ export class AppsScriptService {
     description?: string;
     createTime: string;
   }>> {
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    if (!copy.scriptId) {
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
+    const { scriptId } = this.resolveProject(projectId);
 
     // Get OAuth token
     const authService = getAuthService();
@@ -785,7 +789,7 @@ export class AppsScriptService {
       throw new Error('No Google OAuth token available. Please sign in with Google.');
     }
 
-    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/versions`, {
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token.access_token}`,
@@ -819,19 +823,7 @@ export class AppsScriptService {
     }>;
     versionNumber: number;
   }> {
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    if (!copy.scriptId) {
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
+    const { scriptId } = this.resolveProject(projectId);
 
     // Get OAuth token
     const authService = getAuthService();
@@ -842,7 +834,7 @@ export class AppsScriptService {
     }
 
     const response = await fetch(
-      `https://script.googleapis.com/v1/projects/${copy.scriptId}/content?versionNumber=${versionNumber}`,
+      `https://script.googleapis.com/v1/projects/${scriptId}/content?versionNumber=${versionNumber}`,
       {
         method: 'GET',
         headers: {
@@ -890,19 +882,7 @@ export class AppsScriptService {
       webApp?: { url: string };
     }>;
   }>> {
-    // Handle "Name [ID]" format
-    let targetId = projectId;
-    const idMatch = projectId.match(/\[(.*?)\]$/);
-    if (idMatch) targetId = idMatch[1];
-
-    const copy = this.copiesManager.getTemplateCopy(targetId);
-    if (!copy) {
-      throw new Error(`Project not found: ${targetId}`);
-    }
-
-    if (!copy.scriptId) {
-      throw new Error(`Project ${targetId} is not linked to a Google Apps Script. Missing scriptId.`);
-    }
+    const { scriptId } = this.resolveProject(projectId);
 
     // Get OAuth token
     const authService = getAuthService();
@@ -912,7 +892,7 @@ export class AppsScriptService {
       throw new Error('No Google OAuth token available. Please sign in with Google.');
     }
 
-    const response = await fetch(`https://script.googleapis.com/v1/projects/${copy.scriptId}/deployments`, {
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token.access_token}`,
@@ -1804,6 +1784,120 @@ export class AppsScriptService {
       webAppUrl: webAppEntry?.webApp?.url,
       entryPoints: result.entryPoints,
     };
+  }
+
+  /**
+   * List all triggers for a script
+   * GET /v1/projects/{scriptId}/triggers
+   */
+  async listTriggers(projectId: string): Promise<Array<{
+    triggerId: string;
+    functionName: string;
+    eventSource: any;
+  }>> {
+    const { scriptId } = this.resolveProject(projectId);
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    console.log(`📜 Listing triggers for script ID: ${scriptId}`);
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/triggers`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      
+      // Special handling for 404 to help debug
+      if (response.status === 404) {
+        throw new Error(`Failed to list triggers: Script project not found (404). Please check if the script ID [${scriptId}] is correct and the Apps Script API is enabled.`);
+      }
+      
+      throw new Error(`Failed to list triggers: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    
+    return result.triggers || [];
+  }
+
+  /**
+   * Create a new trigger
+   * POST /v1/projects/{scriptId}/triggers
+   */
+  async createTrigger(projectId: string, trigger: {
+    functionName: string;
+    eventSource: any;
+  }): Promise<any> {
+    const { scriptId } = this.resolveProject(projectId);
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    console.log(`📜 Creating trigger for script ID: ${scriptId}`);
+    const response = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/triggers`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(trigger),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to create trigger: ${errorMsg}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Delete a trigger
+   * DELETE /v1/projects/{scriptId}/triggers/{triggerId}
+   */
+  async deleteTrigger(projectId: string, triggerId: string): Promise<void> {
+    const { scriptId } = this.resolveProject(projectId);
+
+    // Get OAuth token
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+    
+    if (!token?.access_token) {
+      throw new Error('No Google OAuth token available. Please sign in with Google.');
+    }
+
+    console.log(`📜 Deleting trigger ${triggerId} for script ID: ${scriptId}`);
+    const response = await fetch(
+      `https://script.googleapis.com/v1/projects/${scriptId}/triggers/${triggerId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token.access_token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Failed to delete trigger: ${errorMsg}`);
+    }
   }
 }
 

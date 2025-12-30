@@ -719,6 +719,21 @@ export function registerAppsScriptToolHandlers(): void {
     }
   });
 
+  // List triggers for a script
+  ipcMain.handle('apps-script-list-triggers', async (event, projectId: string) => {
+    try {
+      const { AppsScriptService } = require('../mcp/apps-script/apps-script-service');
+      const service = AppsScriptService.getInstance();
+      const result = await service.listTriggers(projectId);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
   // Clone script to create dev environment
   ipcMain.handle('apps-script-clone-for-dev', async (event, projectId: string) => {
     try {

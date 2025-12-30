@@ -16,33 +16,10 @@ import GoogleOAuthSignIn from './GoogleOAuthSignIn';
 import DevSpreadsheetConfig from './DevSpreadsheetConfig';
 import './RunningServersTabs.css';
 import './RunningServers.css';
+import { GOOGLE_OAUTH_SCOPES } from '../../constants/googleScopes';
 
 // Required OAuth scopes for cloud MCP servers
-const REQUIRED_OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.addons.current.action.compose',
-  'https://www.googleapis.com/auth/gmail.addons.current.message.action',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-  'openid',
-  'https://www.googleapis.com/auth/sites',
-  'https://www.googleapis.com/auth/forms',
-  'https://www.googleapis.com/auth/gmail.addons.current.message.metadata',
-  'https://www.googleapis.com/auth/gmail.addons.current.message.readonly',
-  'https://www.googleapis.com/auth/script.projects',
-  'https://www.googleapis.com/auth/script.projects.readonly',
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/contacts',
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/script.scriptapp',
-  'https://www.googleapis.com/auth/script.send_mail',
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://mail.google.com/',
-  'https://www.googleapis.com/auth/gmail.modify',
-  'https://www.googleapis.com/auth/gmail.compose',
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.metadata',
-  'https://www.googleapis.com/auth/gmail.insert',
-];
+const REQUIRED_OAUTH_SCOPES = GOOGLE_OAUTH_SCOPES;
 
 interface RunningServersTabsProps {
   // Local servers props (passed to RunningServersSection)

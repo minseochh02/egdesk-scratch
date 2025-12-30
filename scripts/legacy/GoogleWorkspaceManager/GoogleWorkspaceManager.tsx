@@ -229,28 +229,15 @@ const GoogleWorkspaceManager: React.FC = () => {
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile',
       'openid',
-      'http://sites.google.com/feeds',
-      'https://www.googleapis.com/auth/forms',
       // Sensitive scopes
-      'https://www.googleapis.com/auth/gmail.addons.current.message.metadata',
-      'https://www.googleapis.com/auth/gmail.addons.current.message.readonly',
       'https://www.googleapis.com/auth/script.projects',
-      'https://www.googleapis.com/auth/script.projects.readonly',
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/contacts',
-      'https://www.googleapis.com/auth/documents',
       'https://www.googleapis.com/auth/script.scriptapp',
-      'https://www.googleapis.com/auth/script.send_mail',
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/script.deployments',
+      'https://www.googleapis.com/auth/script.external_request',
+      'https://www.googleapis.com/auth/script.webapp.deploy',
       'https://www.googleapis.com/auth/drive.file',
       // Restricted scopes
-      'https://mail.google.com/',
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/gmail.compose',
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.metadata',
-      'https://www.googleapis.com/auth/gmail.insert',
     ].join(' ');
 
     // Use Supabase OAuth with custom scopes

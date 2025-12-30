@@ -671,14 +671,17 @@ async function createServiceAccountJWT(
   // - iat, exp: issued at and expiration times (required)
   // - sub: ONLY include if using domain-wide delegation to impersonate users
   //        Since we're NOT using domain-wide delegation, we omit 'sub'
-  // Required scopes for template copying:
-  // - spreadsheets: Read spreadsheet content
-  // - drive: Access Drive files (if needed)
-  // - script.projects.readonly: View Google Apps Script projects (read Apps Script content)
+  // Required scopes for template copying (least privilege):
   const scopeString = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/script.projects.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.projects",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/script.deployments",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.webapp.deploy",
+    "https://www.googleapis.com/auth/drive.scripts",
   ].join(" ");
   
   const payload = {

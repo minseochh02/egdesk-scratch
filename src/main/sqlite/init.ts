@@ -7,7 +7,7 @@ import { initializeActivityDatabaseSchema } from './activity';
 import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
 import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
-import { createSyncDatabase } from './sheet_sync';
+import { createSyncDatabase } from './sheet-sync-init';
 
 /**
  * SQLite Database Initialization

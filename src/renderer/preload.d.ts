@@ -204,6 +204,7 @@ interface AppsScriptToolsAPI {
   listVersions: (projectId: string) => Promise<{ success: boolean; data?: Array<{ versionNumber: number; description?: string; createTime: string }>; error?: string }>;
   getVersionContent: (projectId: string, versionNumber: number) => Promise<{ success: boolean; data?: { files: Array<{ name: string; type: string; source: string }>; versionNumber: number }; error?: string }>;
   runFunction: (scriptId: string, functionName: string, parameters?: any[]) => Promise<{ success: boolean; data?: { response?: { result?: any }; logs?: string[] }; error?: string }>;
+  listTriggers: (projectId: string) => Promise<{ success: boolean; data?: Array<{ triggerId: string; functionName: string; eventSource: any }>; error?: string }>;
     cloneForDev: (projectId: string) => Promise<{ success: boolean; data?: { devScriptId: string; devSpreadsheetId?: string; devSpreadsheetUrl?: string; message: string }; error?: string }>;
     pushToDev: (projectId: string, createVersion?: boolean, versionDescription?: string) => Promise<{ success: boolean; data?: { message: string; versionNumber?: number }; error?: string }>;
     pullFromDev: (projectId: string) => Promise<{ success: boolean; data?: { message: string; fileCount: number }; error?: string }>;
