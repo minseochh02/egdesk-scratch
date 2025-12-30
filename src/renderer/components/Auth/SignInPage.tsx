@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import './SignInPage.css';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 export default function SignInPage() {
   const { signInWithGoogle, signInWithGithub, switchAccount } = useAuth();
@@ -42,19 +43,8 @@ export default function SignInPage() {
     
     try {
       if (providerName === 'google') {
-        // Request full scopes for Google to ensure Apps Script and Drive features work
-        const scopes = [
-          'https://www.googleapis.com/auth/userinfo.email',
-          'https://www.googleapis.com/auth/userinfo.profile',
-          'openid',
-          'https://www.googleapis.com/auth/script.projects',
-          'https://www.googleapis.com/auth/script.projects.readonly',
-          'https://www.googleapis.com/auth/script.scriptapp',
-          'https://www.googleapis.com/auth/script.send_mail',
-          'https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/drive',
-        ].join(' ');
-        await signInMethod(scopes);
+        // Request specific scopes for Google to ensure Apps Script and Drive features work
+        await signInMethod(GOOGLE_OAUTH_SCOPES_STRING);
       } else {
       await signInMethod();
       }

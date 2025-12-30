@@ -101,6 +101,17 @@ export class AppsScriptMCPService implements IMCPService {
         }
       },
       {
+        name: 'apps_script_list_triggers',
+        description: 'List all triggers for an Apps Script project. Triggers allow functions to run automatically on events (edit, open, time-driven).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', description: 'The project ID or Google Script ID' }
+          },
+          required: ['projectId']
+        }
+      },
+      {
         name: 'apps_script_push_to_google',
         description: 'Push local changes to the actual Google Apps Script project. This will overwrite the cloud version with local changes. Optionally creates an immutable version snapshot after pushing.',
         inputSchema: {
@@ -307,6 +318,15 @@ export class AppsScriptMCPService implements IMCPService {
             content: [{
               type: 'text',
               text: `Successfully deleted ${args.fileName} in project ${args.projectId}`
+            }]
+          };
+
+        case 'apps_script_list_triggers':
+          const triggers = await this.service.listTriggers(args.projectId);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(triggers, null, 2)
             }]
           };
 

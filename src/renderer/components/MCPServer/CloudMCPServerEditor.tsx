@@ -129,9 +129,12 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
 
   // Run function state
   const [showRunDialog, setShowRunDialog] = useState(false);
+  const [showTriggerDialog, setShowTriggerDialog] = useState(false);
   const [functionToRun, setFunctionToRun] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [runResult, setRunResult] = useState<{ success: boolean; result?: any; error?: string; logs?: string[] } | null>(null);
+  const [triggers, setTriggers] = useState<Array<{ triggerId: string; functionName: string; eventSource: any }>>([]);
+  const [loadingTriggers, setLoadingTriggers] = useState(false);
   const [availableFunctions, setAvailableFunctions] = useState<string[]>([]);
   const [loadingFunctions, setLoadingFunctions] = useState(false);
 
@@ -1022,6 +1025,45 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     setRunResult(null);
   };
 
+  // Open trigger dialog
+  const openTriggerDialog = () => {
+    setShowTriggerDialog(true);
+    if (selectedCopy) {
+      // Use dev script ID if available, otherwise prod
+      const scriptId = selectedCopy.devScriptId || selectedCopy.scriptId;
+      if (scriptId) {
+        fetchTriggers(scriptId);
+      }
+    }
+  };
+
+  // Fetch triggers for a project
+  const fetchTriggers = async (projectId: string) => {
+    setLoadingTriggers(true);
+    try {
+      console.log('📜 [fetchTriggers] Requesting triggers for project:', projectId);
+      const result = await window.electron.appsScriptTools.listTriggers(projectId);
+      console.log('📜 [fetchTriggers] IPC Result:', result);
+      if (result.success && result.data) {
+        setTriggers(result.data);
+        console.log(`✅ [fetchTriggers] Loaded ${result.data.length} triggers`);
+      } else {
+        console.warn('❌ [fetchTriggers] Failed to load triggers:', result.error);
+        setTriggers([]);
+      }
+    } catch (err) {
+      console.error('❌ [fetchTriggers] Exception fetching triggers:', err);
+      setTriggers([]);
+    } finally {
+      setLoadingTriggers(false);
+    }
+  };
+
+  // Close trigger dialog
+  const closeTriggerDialog = () => {
+    setShowTriggerDialog(false);
+  };
+
   // Format date
   const formatDate = (dateString: string): string => {
     try {
@@ -1721,8 +1763,8 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
             </>
           )}
           
-          {/* Run Function Button */}
-          {selectedCopy?.scriptId && (
+          {/* Run Function Button - Temporarily Hidden */}
+          {/* {selectedCopy?.scriptId && (
             <button
               className="run-button"
               onClick={openRunDialog}
@@ -1736,7 +1778,19 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
               )}
               Run
             </button>
-          )}
+          )} */}
+          
+          {/* Trigger Button - Hidden by request */}
+          {/* {selectedCopy?.scriptId && (
+            <button
+              className="run-button trigger-button"
+              onClick={openTriggerDialog}
+              title="Manage Triggers"
+            >
+              <FontAwesomeIcon icon={faCalendarAlt} />
+              Trigger
+            </button>
+          )} */}
           
           <button 
             className="refresh-button"
@@ -2429,6 +2483,68 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                     Run
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trigger Dialog */}
+      {showTriggerDialog && (
+        <div className="run-dialog-overlay" onClick={closeTriggerDialog}>
+          <div className="run-dialog" onClick={e => e.stopPropagation()}>
+            <div className="run-dialog-header">
+              <h3>
+                <FontAwesomeIcon icon={faCalendarAlt} />
+                Manage Triggers
+              </h3>
+              <button className="run-dialog-close" onClick={closeTriggerDialog}>
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+            
+            <div className="run-dialog-content">
+              {loadingTriggers ? (
+                <div className="loading-triggers">
+                  <FontAwesomeIcon icon={faSpinner} spin />
+                  <p>Loading triggers...</p>
+                </div>
+              ) : triggers.length > 0 ? (
+                <div className="triggers-list">
+                  <table className="triggers-table">
+                    <thead>
+                      <tr>
+                        <th>Function</th>
+                        <th>Event Source</th>
+                        <th>ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {triggers.map((trigger) => (
+                        <tr key={trigger.triggerId}>
+                          <td>{trigger.functionName}</td>
+                          <td>{trigger.eventSource}</td>
+                          <td className="trigger-id-cell">{trigger.triggerId}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="run-dialog-hint">
+                  <p>No triggers found for this project.</p>
+                  <p style={{ marginTop: '0.5rem', color: '#888' }}>Apps Script triggers allow you to run functions automatically on specific events or schedules.</p>
+                </div>
+              )}
+              
+              <div className="run-dialog-hint footer-hint">
+                <p style={{ marginTop: '1rem', color: '#888' }}>Trigger management (Create/Delete) UI coming soon. For now, use ScriptApp.newTrigger() in your code.</p>
+              </div>
+            </div>
+
+            <div className="run-dialog-actions">
+              <button className="run-dialog-cancel" onClick={closeTriggerDialog}>
+                Close
               </button>
             </div>
           </div>

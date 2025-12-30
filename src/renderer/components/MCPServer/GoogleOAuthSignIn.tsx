@@ -8,6 +8,7 @@ import {
   faTimes
 } from '../../utils/fontAwesomeIcons';
 import './GoogleOAuthSignIn.css';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 interface GoogleOAuthSignInProps {
   onSignInSuccess?: (user: User, session: Session) => void;
@@ -236,21 +237,7 @@ const GoogleOAuthSignIn: React.FC<GoogleOAuthSignInProps> = ({
 
       // Sign in with Google OAuth using Electron IPC
       // This will open a new window for OAuth flow
-      const scopes = [
-        // Basic auth scopes (required for OAuth)
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'openid',
-        // Apps Script scopes
-        'https://www.googleapis.com/auth/script.projects',
-        'https://www.googleapis.com/auth/script.projects.readonly',
-        'https://www.googleapis.com/auth/script.scriptapp',
-        'https://www.googleapis.com/auth/script.send_mail',
-        'https://www.googleapis.com/auth/script.deployments', // Required for listing/creating/updating web app deployments
-        // Google Sheets and Drive scopes (required for template copying)
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive',
-      ].join(' ');
+      const scopes = GOOGLE_OAUTH_SCOPES_STRING;
 
       const result = await window.electron.auth.signInWithGoogle(scopes);
 

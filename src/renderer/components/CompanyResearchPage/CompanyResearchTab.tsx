@@ -9,6 +9,7 @@ import type { WebsiteSummary } from '../../../main/company-research-stage2';
 import type { AgenticResearchData } from '../../../main/company-research-stage3';
 import type { DetailedReport } from '../../../main/company-research-stage3b1';
 import type { ExecutiveSummary } from '../../../main/company-research-stage3b2';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 import type { WorkflowProgress } from '../../../main/company-research-workflow';
 import type { CompanyResearchRecord } from '../../../main/sqlite/company-research';
 
@@ -121,13 +122,8 @@ const CompanyResearchTab: React.FC<CompanyResearchTabProps> = ({
     }
   };
 
-  // Required OAuth scopes for Gmail sending
-  const REQUIRED_GMAIL_SCOPES = [
-    'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'openid'
-  ];
+  // Required OAuth scopes for EGDesk (Non-sensitive, Sensitive, Restricted)
+  const REQUIRED_SCOPES = [GOOGLE_OAUTH_SCOPES_STRING];
 
   const checkAuthStatus = async () => {
     try {
@@ -175,8 +171,8 @@ const CompanyResearchTab: React.FC<CompanyResearchTabProps> = ({
     try {
       console.log('🚀 CompanyResearchTab: Starting Gmail OAuth sign-in...');
       
-      // Sign in with required Gmail scopes
-      const scopes = REQUIRED_GMAIL_SCOPES.join(' ');
+      // Sign in with required scopes
+      const scopes = GOOGLE_OAUTH_SCOPES_STRING;
       const result = await window.electron.auth.signInWithGoogle(scopes);
       
       if (!result.success) {
