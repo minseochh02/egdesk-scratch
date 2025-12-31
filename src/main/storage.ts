@@ -66,6 +66,11 @@ export function initializeStore(): Promise<void> {
             enableLogging: true,
             logLevel: 'info',
           },
+          // Finance Hub: Bank credentials and settings
+          financeHub: {
+            savedCredentials: {}, // { bankId: { userId, password } }
+            connectedBanks: [],
+          },
         },
         // MCP Servers list
         mcpServers: [
@@ -97,6 +102,7 @@ export function initializeStore(): Promise<void> {
       migrateFilesystemServer();
       migrateFileConversionServer();
       migrateAppsScriptServer();
+      migrateFinanceHub();
       
       resolve();
     } catch (error) {
@@ -187,6 +193,24 @@ function migrateAppsScriptServer() {
     }
   } catch (error) {
     console.error('Error during apps-script server migration:', error);
+  }
+}
+
+/**
+ * Migration: Add financeHub to existing stores if not present
+ */
+function migrateFinanceHub() {
+  try {
+    if (!store.has('financeHub')) {
+      console.log('🔄 Migrating: Adding financeHub to store');
+      store.set('financeHub', {
+        savedCredentials: {},
+        connectedBanks: [],
+      });
+      console.log('✅ financeHub added to store');
+    }
+  } catch (error) {
+    console.error('Error during financeHub migration:', error);
   }
 }
 
@@ -1065,5 +1089,56 @@ ipcMain.handle('photo-remove-from-project', async (event, absoluteFilePath: stri
     return { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// ========================================================================
+// FINANCE HUB HANDLERS
+// ========================================================================
+
+/**
+ * Save bank credentials
+ */
+ipcMain.handle('finance-hub:save-credentials', async (event, { bankId, credentials }) => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+    if (!fhConfig.savedCredentials) fhConfig.savedCredentials = {};
+    fhConfig.savedCredentials[bankId] = credentials;
+    store.set('financeHub', fhConfig);
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving bank credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get saved bank credentials
+ */
+ipcMain.handle('finance-hub:get-saved-credentials', async (event, bankId) => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+    const credentials = (fhConfig.savedCredentials && fhConfig.savedCredentials[bankId]) || null;
+    return { success: true, credentials };
+  } catch (error) {
+    console.error('Error getting bank credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Remove saved bank credentials
+ */
+ipcMain.handle('finance-hub:remove-credentials', async (event, bankId) => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+    if (fhConfig.savedCredentials) {
+      delete fhConfig.savedCredentials[bankId];
+      store.set('financeHub', fhConfig);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing bank credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

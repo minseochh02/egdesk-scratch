@@ -2093,10 +2093,24 @@ const electronHandler = {
    * Finance Hub API
    */
   financeHub: {
+    openBrowser: (bankId: string, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:open-browser', { bankId, proxyUrl }),
     login: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:login', { bankId, credentials, proxyUrl }),
-    getAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
+    getAccounts: (bankId: string, credentials?: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:get-accounts', { bankId, credentials, proxyUrl }),
+    loginAndGetAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:login-and-get-accounts', { bankId, credentials, proxyUrl }),
+    getConnectedBanks: () =>
+      ipcRenderer.invoke('finance-hub:get-connected-banks'),
+    disconnect: (bankId: string) =>
+      ipcRenderer.invoke('finance-hub:disconnect', bankId),
+    saveCredentials: (bankId: string, credentials: BankCredentials) =>
+      ipcRenderer.invoke('finance-hub:save-credentials', { bankId, credentials }),
+    getSavedCredentials: (bankId: string) =>
+      ipcRenderer.invoke('finance-hub:get-saved-credentials', bankId),
+    removeCredentials: (bankId: string) =>
+      ipcRenderer.invoke('finance-hub:remove-credentials', bankId),
   },
 
   /**

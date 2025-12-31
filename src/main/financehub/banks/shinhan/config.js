@@ -21,9 +21,9 @@ const SHINHAN_BANK_INFO = {
  */
 const SHINHAN_XPATHS = {
   // Login form inputs
-  idInput: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/input',
-  passwordInput: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/div/input[1]',
-  loginButton: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/a',
+  idInput: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[5]/div[3]/div[3]/div[1]/div/input',
+  passwordInput: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[5]/div[3]/div[3]/div[1]/div/div/input[1]',
+  loginButton: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[5]/div[3]/div[3]/div[1]/div/a',
   
   // Virtual keyboard - LOWER (default state, lowercase)
   keyboardLower: '//div[@id="비밀번호_layoutLower"]',
@@ -45,12 +45,15 @@ const SHINHAN_XPATHS = {
   userProfileGroup: '//div[@id="grp_user" and contains(@class, "user")]',
   userNameText: '//strong[@id="txt_name"]',
   
+  // Login warning popups
+  idLoginConfirm: '//a[@id="btn_alertLayer_yes" and contains(text(), "확인")]',
+  
   // Session management
   timerGroup: '//div[@id="grp_timer" and contains(@class, "time")]',
   extendSessionButton: '//div[@id="grp_timer"]//a[contains(text(), "연장")]',
 
   // Transaction inquiry
-  inquiryUrl: 'https://bank.shinhan.com/index.jsp#011100000000',
+  inquiryUrl: 'https://bank.shinhan.com/index.jsp#010101100010',
   inquiryButton: '//button[contains(@id, "btn_search") or contains(text(), "조회")]',
   accountRow: '//div[contains(@class, "account_info")]', // This is a guess, I'll need to refine this based on the provided text
   accountList: '//ul[contains(@class, "account_list")]',

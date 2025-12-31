@@ -51,6 +51,36 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     return handleSecurityPopup(page, this.log.bind(this), this.warn.bind(this));
   }
 
+  /**
+   * Handles ID login warning alert that appears after login
+   * @param {Object} page - Playwright page object
+   * @returns {Promise<boolean>} Success status
+   */
+  async handleIdLoginAlert(page) {
+    try {
+      this.log('Checking for ID login warning alert...');
+      const confirmXPath = `xpath=${this.config.xpaths.idLoginConfirm}`;
+      
+      const confirmLocator = page.locator(confirmXPath);
+      
+      try {
+        // Wait up to 5 seconds for the alert to appear
+        await confirmLocator.waitFor({ state: 'visible', timeout: 5000 });
+        this.log('ID login warning alert detected. Clicking "확인" (Confirm)...');
+        await confirmLocator.click();
+        await page.waitForTimeout(1000); // Short wait after click
+        return true;
+      } catch (waitError) {
+        // If it doesn't appear within 5 seconds, that's fine
+        this.log('ID login warning alert did not appear within 5s.');
+        return false;
+      }
+    } catch (error) {
+      this.warn('Error handling ID login alert:', error.message);
+      return false;
+    }
+  }
+
   // ============================================================================
   // VIRTUAL KEYBOARD HANDLING
   // ============================================================================
@@ -369,47 +399,152 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
     try {
       this.log('Navigating to transaction inquiry page...');
-      await this.page.goto(this.config.xpaths.inquiryUrl, { waitUntil: 'domcontentloaded' });
+      
+      // Navigate to the inquiry page
+      await this.page.goto(this.config.xpaths.inquiryUrl, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
+      });
       await this.page.waitForTimeout(3000);
 
       // Handle any security popups that might appear during navigation
       await this.handleSecurityPopup(this.page);
 
-      this.log('Clicking "조회" (Inquiry) button...');
-      await this.clickButton(this.page, this.config.xpaths.inquiryButton, 'Inquiry (조회)');
-      await this.page.waitForTimeout(3000);
+      // Try to click the inquiry button if it exists
+      try {
+        this.log('Looking for inquiry button...');
+        const inquiryButton = this.page.locator(`xpath=${this.config.xpaths.inquiryButton}`);
+        const buttonExists = await inquiryButton.count() > 0;
+        
+        if (buttonExists) {
+          this.log('Clicking "조회" (Inquiry) button...');
+          await inquiryButton.click({ timeout: 5000 });
+          await this.page.waitForTimeout(3000);
+        }
+      } catch (btnError) {
+        this.warn('Could not find or click inquiry button:', btnError.message);
+      }
 
       this.log('Searching for accounts...');
-      // Extract account information based on the provided text pattern
-      // Pattern like: 110-451-909119 [[금융거래한도계좌1]신한 ...]
+      
+      // Multiple strategies to find accounts
       const accounts = await this.page.evaluate(() => {
         const results = [];
+        const seenAccounts = new Set();
         
-        // Strategy: Look for all text nodes or elements containing the account pattern
-        const elements = Array.from(document.querySelectorAll('*'));
-        const accountRegex = /(\d{3}-\d{3}-\d{6})/;
+        // Account number patterns for Korean banks
+        // Format: XXX-XXX-XXXXXX or XXXXXXXXXXXX (12 digits)
+        const accountPatterns = [
+          /(\d{3}-\d{3}-\d{6})/g,           // 110-451-909119
+          /(\d{3}-\d{2,4}-\d{4,6})/g,       // 110-45-909119 or 110-4519-091
+          /(\d{12,14})/g,                    // 110451909119 (no dashes)
+        ];
         
-        elements.forEach(el => {
-          // Check if this element directly contains an account number and has minimal children (likely a leaf or near-leaf node)
-          if (el.children.length <= 2 && accountRegex.test(el.innerText)) {
-            const text = el.innerText.trim();
-            const match = text.match(accountRegex);
-            
-            if (match) {
-              const accNum = match[1];
-              // Avoid duplicates
-              if (!results.some(r => r.accountNumber === accNum)) {
-                // Extract clean name from format: 110-451-909119 [[금융거래한도계좌1]신한 ...]
-                let cleanName = text.replace(accNum, '').trim();
-                // Match the [[...]] pattern if present
-                const nameMatch = cleanName.match(/\[\[(.*?)\]\]/);
-                if (nameMatch) {
-                  cleanName = nameMatch[1];
+        // Get all text content from the page
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+        
+        let node;
+        while ((node = walker.nextNode())) {
+          const text = node.textContent.trim();
+          if (!text) continue;
+          
+          for (const pattern of accountPatterns) {
+            const matches = text.matchAll(pattern);
+            for (const match of matches) {
+              let accountNum = match[1];
+              
+              // Normalize: remove dashes for comparison
+              const normalized = accountNum.replace(/-/g, '');
+              
+              // Skip if too short or already seen
+              if (normalized.length < 10 || seenAccounts.has(normalized)) continue;
+              seenAccounts.add(normalized);
+              
+              // Format as XXX-XXX-XXXXXX if not already formatted
+              if (!accountNum.includes('-') && accountNum.length >= 12) {
+                accountNum = `${accountNum.slice(0, 3)}-${accountNum.slice(3, 6)}-${accountNum.slice(6)}`;
+              }
+              
+              // Try to find account name from surrounding context
+              let accountName = '';
+              const parent = node.parentElement;
+              if (parent) {
+                // Look for common patterns in parent or sibling elements
+                const parentText = parent.textContent || '';
+                
+                // Pattern: [[accountName]bankName ...]
+                const bracketMatch = parentText.match(/\[\[(.*?)\]\]/);
+                if (bracketMatch) {
+                  accountName = bracketMatch[1];
                 }
-
+                
+                // Pattern: account name in nearby element
+                if (!accountName) {
+                  const siblings = parent.querySelectorAll('span, div, td');
+                  for (const sibling of siblings) {
+                    const sibText = sibling.textContent.trim();
+                    if (sibText && !sibText.includes(accountNum) && sibText.length < 50) {
+                      // Likely an account name
+                      if (sibText.includes('계좌') || sibText.includes('예금') || sibText.includes('적금')) {
+                        accountName = sibText;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              results.push({
+                accountNumber: accountNum,
+                accountName: accountName || '신한은행 계좌',
+                bankId: 'shinhan',
+                balance: 0,
+                currency: 'KRW',
+                lastUpdated: new Date().toISOString()
+              });
+            }
+          }
+        }
+        
+        // Also try to find accounts in table rows
+        const tables = document.querySelectorAll('table');
+        tables.forEach(table => {
+          const rows = table.querySelectorAll('tr');
+          rows.forEach(row => {
+            const text = row.textContent;
+            for (const pattern of accountPatterns) {
+              const matches = text.matchAll(pattern);
+              for (const match of matches) {
+                let accountNum = match[1];
+                const normalized = accountNum.replace(/-/g, '');
+                
+                if (normalized.length < 10 || seenAccounts.has(normalized)) continue;
+                seenAccounts.add(normalized);
+                
+                if (!accountNum.includes('-') && accountNum.length >= 12) {
+                  accountNum = `${accountNum.slice(0, 3)}-${accountNum.slice(3, 6)}-${accountNum.slice(6)}`;
+                }
+                
+                // Try to extract name from other cells
+                const cells = row.querySelectorAll('td');
+                let accountName = '';
+                cells.forEach(cell => {
+                  const cellText = cell.textContent.trim();
+                  if (cellText && !cellText.includes(accountNum) && cellText.length < 50) {
+                    if (!accountName && (cellText.includes('계좌') || cellText.includes('예금'))) {
+                      accountName = cellText;
+                    }
+                  }
+                });
+                
                 results.push({
-                  accountNumber: accNum,
-                  accountName: cleanName,
+                  accountNumber: accountNum,
+                  accountName: accountName || '신한은행 계좌',
                   bankId: 'shinhan',
                   balance: 0,
                   currency: 'KRW',
@@ -417,10 +552,21 @@ class ShinhanBankAutomator extends BaseBankAutomator {
                 });
               }
             }
-          }
+          });
         });
         
-        return results;
+        // Deduplicate by account number
+        const unique = [];
+        const seen = new Set();
+        for (const acc of results) {
+          const key = acc.accountNumber.replace(/-/g, '');
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(acc);
+          }
+        }
+        
+        return unique;
       });
 
       this.log(`Found ${accounts.length} accounts:`, accounts.map(a => a.accountNumber).join(', '));
@@ -457,15 +603,25 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       this.page = await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
-      // Step 2: Navigate to login page
-      this.log('Navigating to:', this.config.targetUrl);
-      await this.page.goto(this.config.targetUrl, { waitUntil: 'domcontentloaded' });
+      // Step 2: Navigate to inquiry page (which will redirect to login if needed)
+      // This is more reliable as it lands us on the inquiry page after login
+      const navigationUrl = this.config.xpaths.inquiryUrl || this.config.targetUrl;
+      this.log('Navigating to:', navigationUrl);
+      await this.page.goto(navigationUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(this.config.timeouts.pageLoad);
 
       // Step 3: Handle security popup
       this.log('Checking for security popup...');
       await this.handleSecurityPopup(this.page);
       await this.page.waitForTimeout(2000);
+
+      // Check if we need to click a login link/button first (if we are not on login page)
+      // Sometimes direct navigation lands on a main page where we need to click "Login"
+      const currentUrl = this.page.url();
+      if (!currentUrl.includes('login') && !currentUrl.includes('index.jsp')) {
+        this.log('Not on login page, checking for login button...');
+        // Add logic here if needed to click a "Login" button to get to the actual login form
+      }
 
       // Step 4: Fill user ID
       await this.fillInputField(
@@ -496,17 +652,30 @@ class ShinhanBankAutomator extends BaseBankAutomator {
           this.log(`Typed ${keyboardResult.typedChars}/${keyboardResult.totalChars} characters`);
 
           // Step 7: Click login button
-          this.log('Clicking login button...');
+          this.log('Clicking login button (1st attempt)...');
           await this.page.waitForTimeout(500);
 
+          await this.clickButton(
+            this.page,
+            this.config.xpaths.loginButton,
+            '로그인 button (1st)'
+          );
+
+          // For debug: click twice
+          this.log('Clicking login button (2nd attempt for debug)...');
+          await this.page.waitForTimeout(500);
           const loginSuccess = await this.clickButton(
             this.page,
             this.config.xpaths.loginButton,
-            '로그인 button'
+            '로그인 button (2nd)'
           );
 
           if (loginSuccess) {
             this.log('Login button clicked, waiting for response...');
+            
+            // Handle ID login warning alert if it appears
+            await this.handleIdLoginAlert(this.page);
+            
             await this.page.waitForTimeout(5000); // Wait for login to process
 
             // Verify login status
