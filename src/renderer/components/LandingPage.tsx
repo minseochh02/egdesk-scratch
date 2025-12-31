@@ -15,6 +15,7 @@ import {
   faDocker,
   faDesktop,
   faSearch,
+  faUniversity,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -110,6 +111,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">AI Analysis</span>
                 <span className="egdesk-landing-feature-tag">Market Trends</span>
                 <span className="egdesk-landing-feature-tag">Data Insights</span>
+              </div>
+            </Link>
+
+            <Link to="/finance-hub" className="egdesk-landing-action-card egdesk-landing-finance-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faUniversity} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Finance Hub</h3>
+              <p className="egdesk-landing-card-description">
+                Automatically log into bank accounts and extract transaction lists. Manage your business finances with AI-powered insights.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Auto-Login</span>
+                <span className="egdesk-landing-feature-tag">Transaction Export</span>
+                <span className="egdesk-landing-feature-tag">Financial AI</span>
               </div>
             </Link>
 
