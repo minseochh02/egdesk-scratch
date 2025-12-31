@@ -429,6 +429,28 @@ const createWindow = async () => {
         // Note: ROBOFLOW_API_KEY should be set in environment variables
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
       });
+      ipcMain.handle('finance-hub:login', async (_event, { bankId, credentials, proxyUrl }) => {
+        try {
+          const { createAutomator } = require('./financehub');
+          const automator = createAutomator(bankId, { headless: false });
+          return await automator.login(credentials, proxyUrl);
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Login failed for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+      ipcMain.handle('finance-hub:get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
+        try {
+          const { createAutomator } = require('./financehub');
+          const automator = createAutomator(bankId, { headless: false });
+          await automator.login(credentials, proxyUrl);
+          const accounts = await automator.getAccounts();
+          return { success: true, accounts };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Failed to get accounts for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
       ipcMain.handle('launch-chrome', async () => {
         try {
           const { chromium } = require('playwright');

@@ -404,6 +404,52 @@
   color: var(--fh-error);
 }
 
+.finance-hub__btn--small {
+  padding: 4px 12px;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.finance-hub__accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.finance-hub__account-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--fh-bg-card-hover);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  transition: var(--fh-transition);
+}
+
+.finance-hub__account-item:hover {
+  border-color: var(--fh-primary);
+  transform: translateX(4px);
+}
+
+.finance-hub__account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finance-hub__account-number {
+  font-family: var(--fh-font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fh-primary);
+}
+
+.finance-hub__account-name {
+  font-size: 13px;
+  color: var(--fh-text-secondary);
+}
+
 .finance-hub__bank-card-footer {
   margin-top: 12px;
   padding-top: 12px;

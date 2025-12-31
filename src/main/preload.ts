@@ -2089,8 +2089,15 @@ const electronHandler = {
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
   },
 
-
-
+  /**
+   * Finance Hub API
+   */
+  financeHub: {
+    login: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:login', { bankId, credentials, proxyUrl }),
+    getAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:get-accounts', { bankId, credentials, proxyUrl }),
+  },
 
   /**
    * MCP Registration API
