@@ -682,6 +682,7 @@ async function createServiceAccountJWT(
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/script.webapp.deploy",
     "https://www.googleapis.com/auth/drive.scripts",
+    'https://www.googleapis.com/auth/spreadsheets',
   ].join(" ");
   
   const payload = {

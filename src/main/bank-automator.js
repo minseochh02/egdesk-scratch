@@ -86,7 +86,8 @@ const CONFIG = {
     SECURITY_POPUP: '//div[@id="wq_uuid_28" and contains(@class, "layerContent")]',
     SECURITY_POPUP_CLOSE: '//a[@id="no_install" and contains(@class, "btnTyGray02")]',
     SECURITY_POPUP_ALT: '//div[contains(@class, "layerContent") and contains(., "보안프로그램")]',
-    SECURITY_POPUP_CLOSE_ALT: '//a[contains(text(), "설치하지 않음")]'
+    SECURITY_POPUP_CLOSE_ALT: '//a[contains(text(), "설치하지 않음")]',
+    LOGIN_BUTTON: '/html/body/div[1]/div[2]/div/div/div[2]/div/div[6]/div[3]/div[2]/div[1]/div/a',
   },
   TIMEOUTS: {
     ELEMENT_WAIT: 10000,
@@ -263,7 +264,6 @@ async function setupBrowserContext(context, targetUrl, page) {
  * @returns {Promise<Object>} Browser and context objects
  */
 async function createBrowser(proxy) {
-  // Use explicit profile only if provided. Otherwise, create an isolated temp profile
   const explicitProfilePath = (CONFIG.CHROME_PROFILE && String(CONFIG.CHROME_PROFILE).trim()) ? CONFIG.CHROME_PROFILE : null;
 
   let persistentProfileDir = explicitProfilePath;
@@ -275,32 +275,51 @@ async function createBrowser(proxy) {
       persistentProfileDir = fs.mkdtempSync(tempPrefix);
       console.log('[SHINHAN] Using temporary Chrome profile directory:', persistentProfileDir);
     } catch (e) {
-      console.warn('[SHINHAN] Failed to create temp Chrome profile, falling back to non-persistent context:', e && e.message ? e.message : e);
+      console.warn('[SHINHAN] Failed to create temp Chrome profile:', e?.message || e);
     }
   }
 
   if (persistentProfileDir) {
-    // Preferred: persistent context with isolated profile to avoid ProcessSingleton conflicts
     const context = await chromium.launchPersistentContext(persistentProfileDir, {
       headless: CONFIG.HEADLESS,
       channel: 'chrome',
       proxy,
       locale: 'ko-KR',
-      viewport: { width: 1280, height: 1024 }
+      viewport: { width: 1280, height: 1024 },
+      // Grant permissions including local network access
+      permissions: ['clipboard-read', 'clipboard-write'],
+      // Chrome flags to allow local network access and disable security prompts
+      args: [
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--allow-running-insecure-content',
+        // This flag helps with local network access in enterprise environments
+        '--disable-features=PrivateNetworkAccessSendPreflights',
+        '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+      ]
     });
     return { browser: context, context: context };
   }
 
-  // Fallback: non-persistent browser/context
+  // Fallback non-persistent context
   const browser = await chromium.launch({
     headless: CONFIG.HEADLESS,
     channel: 'chrome',
-    proxy
+    proxy,
+    args: [
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--allow-running-insecure-content',
+      '--disable-features=PrivateNetworkAccessSendPreflights',
+      '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+    ]
   });
+  
   const context = await browser.newContext({
     locale: 'ko-KR',
     viewport: { width: 1280, height: 1024 }
   });
+  
   return { browser, context };
 }
 
@@ -763,6 +782,68 @@ async function typePasswordWithJSON(keyboardJSON, password, page) {
   }
 }
 
+/**
+ * Clicks the login (로그인) button on Shinhan Bank
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<boolean>} Success status
+ */
+async function clickLoginButton(page) {
+  const LOGIN_BUTTON_XPATH = CONFIG.XPATHS.LOGIN_BUTTON;
+  
+  try {
+    console.log('[SHINHAN] Attempting to click 로그인 button...');
+    
+    const loginLocator = page.locator(`xpath=${LOGIN_BUTTON_XPATH}`);
+    
+    // Wait for the button to be visible
+    await loginLocator.waitFor({ state: 'visible', timeout: 10000 });
+    
+    // Scroll into view if needed
+    await loginLocator.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    
+    // Click the button
+    await loginLocator.click({ timeout: 5000 });
+    
+    console.log('[SHINHAN] Successfully clicked 로그인 button');
+    return true;
+    
+  } catch (error) {
+    console.error('[SHINHAN] Failed to click 로그인 button:', error.message);
+    
+    // Fallback: try force click
+    try {
+      console.log('[SHINHAN] Trying force click...');
+      const loginLocator = page.locator(`xpath=${LOGIN_BUTTON_XPATH}`);
+      await loginLocator.click({ force: true, timeout: 5000 });
+      console.log('[SHINHAN] Force click succeeded');
+      return true;
+    } catch (forceError) {
+      console.error('[SHINHAN] Force click also failed:', forceError.message);
+    }
+    
+    // Fallback: JavaScript click
+    try {
+      console.log('[SHINHAN] Trying JavaScript click...');
+      await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue;
+        if (element) {
+          element.click();
+          return true;
+        }
+        throw new Error('Element not found');
+      }, LOGIN_BUTTON_XPATH);
+      console.log('[SHINHAN] JavaScript click succeeded');
+      return true;
+    } catch (jsError) {
+      console.error('[SHINHAN] JavaScript click also failed:', jsError.message);
+    }
+    
+    return false;
+  }
+}
+
 // ============================================================================
 // MAIN AUTOMATION FUNCTION
 // ============================================================================
@@ -1007,8 +1088,21 @@ async function runShinhanAutomation(username, password, id, proxyUrl) {
                   const typingResult = await typePasswordWithJSON(keyboardJSON, password, page);
                   
                   if (typingResult.success) {
-          console.log('[SHINHAN] Successfully typed password using virtual keyboard!');
+                    console.log('[SHINHAN] Successfully typed password using virtual keyboard!');
                     console.log(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
+
+                    // After typing password, click login button
+                    console.log('[SHINHAN] Password typed, clicking login button...');
+                    await page.waitForTimeout(500); // Small delay before clicking login
+
+                    const loginSuccess = await clickLoginButton(page);
+
+                    if (loginSuccess) {
+                      console.log('[SHINHAN] Login button clicked, waiting for response...');
+                      await page.waitForTimeout(3000); // Wait for login to process
+                    } else {
+                      console.warn('[SHINHAN] Could not click login button');
+                    }
                   } else {
                     console.warn('[SHINHAN] Password typing completed with errors');
                     console.warn(`[SHINHAN] Typed ${typingResult.typedChars}/${typingResult.totalChars} characters`);
@@ -1071,5 +1165,6 @@ module.exports = {
   toggleShiftKey,
   pressShiftKey,
   unpressShiftKey,
-  typePasswordWithJSON
+  typePasswordWithJSON,
+  clickLoginButton
 };
