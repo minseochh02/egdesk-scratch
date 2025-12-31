@@ -425,7 +425,7 @@ const createWindow = async () => {
         return await runAutomation(creds?.id, creds?.pw, creds?.proxy, creds?.title, creds?.content, creds?.tags);
       });
       ipcMain.handle('start-woori-automation', async (_event, opts?: { id?: string; password?: string; proxy?: string }) => {
-        const { runShinhanAutomation } = require('./bank-automator');
+        const { runShinhanAutomation } = require('./financehub/bank-automator');
         // Note: ROBOFLOW_API_KEY should be set in environment variables
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
       });

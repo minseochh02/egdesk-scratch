@@ -28,6 +28,8 @@ export {
   faFlask,
   faKey,
   faBuilding,
+  faUniversity,
+  faWallet,
   faCalendarAlt,
   faCalendarDay,
   faCalendarWeek,

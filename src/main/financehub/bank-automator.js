@@ -4,7 +4,7 @@ const fs = require('fs');
 const { analyzeKeyboardAndType } = require('./ai-keyboard-analyzer');
 const { generateKeyboardVisualization } = require('./keyboard-visualization');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('./bilingual-keyboard-parser');
-const { getStore } = require('./storage');
+const { getStore } = require('../storage');
 
 
 // Gemini 3 Vision API for keyboard detection

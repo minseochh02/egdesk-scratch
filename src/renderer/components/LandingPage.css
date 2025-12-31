@@ -546,6 +546,23 @@
   background: linear-gradient(135deg, #7209B7, #3a0ca3);
 }
 
+.egdesk-landing-finance-card:hover {
+  border-color: #00A86B;
+}
+
+.egdesk-landing-finance-card:hover::before {
+  background: linear-gradient(90deg, #00A86B, #FFD700);
+}
+
+.egdesk-landing-finance-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #00A86B, #FFD700);
+}
+
+.egdesk-landing-finance-card:hover .egdesk-landing-feature-tag {
+  background: #e6f7ef;
+  color: #00A86B;
+}
+
 .egdesk-landing-company-research-card:hover .egdesk-landing-feature-tag {
   background: #f2e6ff;
   color: #7209B7;

@@ -48,6 +48,7 @@ import EGSEOAnalyzer from './components/EG SEO Analyzer/EGSEOAnalyzer';
 import EGChatting from './components/EGChatting';
 import EGBusinessIdentity from './components/EGBusinessIdentity';
 import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
+import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 
@@ -2428,6 +2429,7 @@ function AppContent() {
             <Route path="/egchatting" element={<EGChatting />} />
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
+            <Route path="/finance-hub" element={<FinanceHub />} />
             <Route path="/docker" element={<DockerManager />} />
             
             {/* Fallback to home for unknown routes */}
