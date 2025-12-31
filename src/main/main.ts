@@ -429,25 +429,140 @@ const createWindow = async () => {
         // Note: ROBOFLOW_API_KEY should be set in environment variables
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
       });
-      ipcMain.handle('finance-hub:login', async (_event, { bankId, credentials, proxyUrl }) => {
+      // Store active automator instances by bankId
+      const activeAutomators = new Map();
+
+      ipcMain.handle('finance-hub:open-browser', async (_event, { bankId, proxyUrl }) => {
         try {
           const { createAutomator } = require('./financehub');
           const automator = createAutomator(bankId, { headless: false });
+          
+          // Build proxy configuration
+          const proxy = automator.buildProxyOption(proxyUrl);
+          
+          // Create browser using the automator's method
+          console.log('[FINANCE-HUB] Creating browser for', bankId);
+          const { browser, context } = await automator.createBrowser(proxy);
+          automator.browser = browser;
+          automator.context = context;
+          
+          // Setup context
+          await automator.setupBrowserContext(context, null);
+          
+          // Create page
+          automator.page = await context.newPage();
+          await automator.setupBrowserContext(context, automator.page);
+          
+          // Navigate to URL (prefer inquiry URL for debug flow, otherwise login URL)
+          const navigationUrl = automator.config.xpaths.inquiryUrl || automator.config.targetUrl;
+          console.log('[FINANCE-HUB] Navigating to:', navigationUrl);
+          await automator.page.goto(navigationUrl, { waitUntil: 'domcontentloaded' });
+          await automator.page.waitForTimeout(2000);
+          
+          // Handle security popup if any
+          if (automator.handleSecurityPopup) {
+            await automator.handleSecurityPopup(automator.page);
+          }
+          
+          // Store the automator instance
+          activeAutomators.set(bankId, automator);
+          
+          console.log(`[FINANCE-HUB] Browser opened for ${bankId}. You can now manually log in.`);
+          return { success: true, message: 'Browser opened. You can manually log in now.' };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Failed to open browser for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle('finance-hub:login', async (_event, { bankId, credentials, proxyUrl }) => {
+        try {
+          // Check if we have an existing automator instance
+          let automator = activeAutomators.get(bankId);
+          
+          if (!automator) {
+            const { createAutomator } = require('./financehub');
+            automator = createAutomator(bankId, { headless: false });
+            activeAutomators.set(bankId, automator);
+          }
+          
           return await automator.login(credentials, proxyUrl);
         } catch (error) {
           console.error(`[FINANCE-HUB] Login failed for ${bankId}:`, error);
           return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
       });
+
       ipcMain.handle('finance-hub:get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
-          const { createAutomator } = require('./financehub');
-          const automator = createAutomator(bankId, { headless: false });
-          await automator.login(credentials, proxyUrl);
+          // Check if we have an existing automator instance
+          let automator = activeAutomators.get(bankId);
+          
+          if (!automator) {
+            const { createAutomator } = require('./financehub');
+            automator = createAutomator(bankId, { headless: false });
+            activeAutomators.set(bankId, automator);
+            
+            if (credentials) {
+              await automator.login(credentials, proxyUrl);
+            }
+          }
+          
           const accounts = await automator.getAccounts();
           return { success: true, accounts };
         } catch (error) {
           console.error(`[FINANCE-HUB] Failed to get accounts for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
+        try {
+          // Check if we have an existing automator instance
+          let automator = activeAutomators.get(bankId);
+          
+          if (!automator) {
+            const { createAutomator } = require('./financehub');
+            automator = createAutomator(bankId, { headless: false });
+            activeAutomators.set(bankId, automator);
+          }
+          
+          const loginResult = await automator.login(credentials, proxyUrl);
+          if (!loginResult.success) return loginResult;
+          
+          const accounts = await automator.getAccounts();
+          return { ...loginResult, accounts };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Login and get accounts failed for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle('finance-hub:get-connected-banks', async () => {
+        // Return list of banks with active browser sessions
+        const connectedBanks = [];
+        for (const [bankId, automator] of activeAutomators.entries()) {
+          if (automator.page && !automator.page.isClosed()) {
+            connectedBanks.push({
+              bankId,
+              isLoggedIn: automator.isLoggedIn || false,
+              userName: automator.userName || null
+            });
+          }
+        }
+        return connectedBanks;
+      });
+
+      ipcMain.handle('finance-hub:disconnect', async (_event, bankId) => {
+        try {
+          const automator = activeAutomators.get(bankId);
+          if (automator) {
+            await automator.cleanup();
+            activeAutomators.delete(bankId);
+          }
+          return { success: true };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Disconnect failed for ${bankId}:`, error);
           return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
       });

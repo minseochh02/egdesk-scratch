@@ -646,8 +646,15 @@ interface UpdaterAPI {
  * Interface for Finance Hub API.
  */
 interface FinanceHubAPI {
+  openBrowser: (bankId: string, proxyUrl?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   login: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; error?: string; [key: string]: any }>;
-  getAccounts: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
+  getAccounts: (bankId: string, credentials?: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
+  loginAndGetAccounts: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; isLoggedIn: boolean; userName?: string; accounts?: any[]; error?: string }>;
+  getConnectedBanks: () => Promise<any[]>;
+  disconnect: (bankId: string) => Promise<{ success: boolean; error?: string }>;
+  saveCredentials: (bankId: string, credentials: any) => Promise<{ success: boolean; error?: string }>;
+  getSavedCredentials: (bankId: string) => Promise<{ success: boolean; credentials?: any; error?: string }>;
+  removeCredentials: (bankId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 
