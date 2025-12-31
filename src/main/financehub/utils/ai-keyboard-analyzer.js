@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenAI } = require('@google/genai');
-const { getStore } = require('../storage');
+const { getStore } = require('../../storage');
 
 // ============================================================================
 // TYPES AND INTERFACES

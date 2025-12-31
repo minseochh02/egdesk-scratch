@@ -642,6 +642,14 @@ interface UpdaterAPI {
     onUpdateError: (callback: (error: { message: string }) => void) => () => void;
 }
 
+/**
+ * Interface for Finance Hub API.
+ */
+interface FinanceHubAPI {
+  login: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; error?: string; [key: string]: any }>;
+  getAccounts: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
+}
+
 
 /**
  * Main Electron API handler that exposes functionality to the renderer process
@@ -695,6 +703,7 @@ export interface IElectronAPI {
   shell: ShellAPI;
   docker: DockerAPI;
   updater: UpdaterAPI;
+  financeHub: FinanceHubAPI;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

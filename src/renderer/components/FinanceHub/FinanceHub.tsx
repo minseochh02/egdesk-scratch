@@ -231,6 +231,7 @@ const FinanceHub: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [transactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
   const [credentials, setCredentials] = useState<BankCredentials>({
     bankId: '',
@@ -238,6 +239,7 @@ const FinanceHub: React.FC = () => {
     password: '',
   });
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isFetchingAccounts, setIsFetchingAccounts] = useState(false);
 
   const filteredBanks = KOREAN_BANKS.filter((bank) => {
     const matchesCategory = selectedCategory === 'all' || bank.category === selectedCategory;
@@ -253,6 +255,28 @@ const FinanceHub: React.FC = () => {
     special: '특수은행',
     regional: '지방은행',
     internet: '인터넷전문은행',
+  };
+
+  const handleFetchAccounts = async (bankId: string) => {
+    // This assumes we have credentials stored or prompted
+    // For now, we'll just log that we're fetching
+    console.log(`Fetching accounts for ${bankId}...`);
+    setIsFetchingAccounts(true);
+    try {
+      // In a real scenario, you'd retrieve stored credentials
+      // For this demo, we'll prompt if they aren't there
+      const result = await window.electron.financeHub.getAccounts(bankId, credentials);
+      if (result.success) {
+        setAccounts(result.accounts || []);
+        alert('계좌 정보를 성공적으로 불러왔습니다.');
+      } else {
+        alert(`계좌 정보 불러오기 실패: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Fetch accounts error:', error);
+    } finally {
+      setIsFetchingAccounts(false);
+    }
   };
 
   const handleSelectBank = (bank: BankConfig) => {
@@ -282,26 +306,46 @@ const FinanceHub: React.FC = () => {
 
     setIsConnecting(true);
 
-    // Here you would trigger the Playwright automation
-    console.log(`Connecting to ${selectedBank.nameKo} at ${selectedBank.loginUrl}`);
-    console.log(`User ID: ${credentials.userId}`);
-    
-    // Simulate connection delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Use the exposed IPC handler
+      console.log(`[FinanceHub] Connecting to ${selectedBank.nameKo} via IPC...`);
+      
+      const result = await window.electron.financeHub.login(selectedBank.id, {
+        userId: credentials.userId,
+        password: credentials.password
+      });
 
-    setConnectedBanks([
-      ...connectedBanks,
-      {
-        bankId: selectedBank.id,
-        status: 'pending',
-        lastSync: new Date(),
-      },
-    ]);
-
-    setIsConnecting(false);
-    setSelectedBank(null);
-    setCredentials({ bankId: '', userId: '', password: '' });
-    setShowBankSelector(false);
+      if (result.success) {
+        setConnectedBanks([
+          ...connectedBanks,
+          {
+            bankId: selectedBank.id,
+            status: 'connected',
+            alias: result.userName || undefined,
+            lastSync: new Date(),
+          },
+        ]);
+        alert(`${selectedBank.nameKo}${result.userName ? ` (${result.userName}님)` : ''} 연결에 성공했습니다.`);
+      } else {
+        alert(`${selectedBank.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
+        setConnectedBanks([
+          ...connectedBanks,
+          {
+            bankId: selectedBank.id,
+            status: 'error',
+            lastSync: new Date(),
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Login IPC error:', error);
+      alert('은행 연결 중 오류가 발생했습니다.');
+    } finally {
+      setIsConnecting(false);
+      setSelectedBank(null);
+      setCredentials({ bankId: '', userId: '', password: '' });
+      setShowBankSelector(false);
+    }
   };
 
   const handleCloseModal = () => {
@@ -406,10 +450,12 @@ const FinanceHub: React.FC = () => {
                   >
                     <div className="finance-hub__bank-card-header">
                       <span className="finance-hub__bank-icon">{bank.icon}</span>
-                      <div className="finance-hub__bank-info">
-                        <h4>{bank.nameKo}</h4>
-                        <span className="finance-hub__bank-name-en">{bank.name}</span>
-                      </div>
+                       <div className="finance-hub__bank-info">
+                         <h4>{bank.nameKo}</h4>
+                         <span className="finance-hub__bank-name-en">
+                           {connection.alias ? `${connection.alias}님` : bank.name}
+                         </span>
+                       </div>
                       <span
                         className={`finance-hub__status finance-hub__status--${connection.status}`}
                       >
@@ -418,19 +464,48 @@ const FinanceHub: React.FC = () => {
                         {connection.status === 'error' && '오류'}
                       </span>
                     </div>
-                    {connection.lastSync && (
-                      <div className="finance-hub__bank-card-footer">
-                        <span>마지막 동기화: {connection.lastSync.toLocaleString('ko-KR')}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                     {connection.lastSync && (
+                       <div className="finance-hub__bank-card-footer">
+                         <span>마지막 동기화: {connection.lastSync.toLocaleString('ko-KR')}</span>
+                         <button 
+                           className="finance-hub__btn finance-hub__btn--small" 
+                           onClick={() => handleFetchAccounts(connection.bankId)}
+                           disabled={isFetchingAccounts}
+                         >
+                           {isFetchingAccounts ? '불러오는 중...' : '계좌 조회'}
+                         </button>
+                       </div>
+                     )}
+                   </div>
+                 );
+               })}
+             </div>
+           )}
+         </section>
 
-        {/* Transactions Section */}
+         {/* Accounts Section (New) */}
+         {accounts.length > 0 && (
+           <section className="finance-hub__section">
+             <div className="finance-hub__section-header">
+               <h2>
+                 <span className="finance-hub__section-icon">🏦</span>
+                 조회된 계좌 목록
+               </h2>
+             </div>
+             <div className="finance-hub__accounts-list">
+               {accounts.map((acc, idx) => (
+                 <div key={idx} className="finance-hub__account-item">
+                   <div className="finance-hub__account-info">
+                     <span className="finance-hub__account-number">{acc.accountNumber}</span>
+                     <span className="finance-hub__account-name">{acc.accountName}</span>
+                   </div>
+                 </div>
+               ))}
+             </div>
+           </section>
+         )}
+
+         {/* Transactions Section */}
         <section className="finance-hub__section">
           <div className="finance-hub__section-header">
             <h2>
