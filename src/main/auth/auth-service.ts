@@ -367,8 +367,9 @@ export class AuthService {
         redirectTo: 'egdesk://auth/callback',
         queryParams: {
           // Use 'consent' if we need a refresh token (Google only returns it on consent)
+          // and we are requesting specific scopes.
           // Otherwise use 'select_account' for better UX (just account picker)
-          prompt: (provider === 'google' && needsRefreshToken) ? 'consent' : 'select_account',
+          prompt: (provider === 'google' && needsRefreshToken && scopes) ? 'consent' : 'select_account',
           access_type: 'offline', // Request refresh token to keep session alive
         },
       };

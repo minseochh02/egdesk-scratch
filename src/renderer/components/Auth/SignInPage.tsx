@@ -42,12 +42,9 @@ export default function SignInPage() {
     setError(null);
     
     try {
-      if (providerName === 'google') {
-        // Request specific scopes for Google to ensure Apps Script and Drive features work
-        await signInMethod(GOOGLE_OAUTH_SCOPES_STRING);
-      } else {
+      // For initial login, we don't request extra scopes to avoid overwhelming the user.
+      // Scopes will be requested later when specific features (like Apps Script or Drive) are accessed.
       await signInMethod();
-      }
       // The auth state will be updated when the OAuth callback is received
     } catch (err: any) {
       console.error('Sign in failed:', err);
