@@ -1,0 +1,297 @@
+// ============================================
+// Finance Hub - Shared Types
+// ============================================
+
+// ============================================
+// Bank Types
+// ============================================
+
+export interface BankConfig {
+  id: string;
+  name: string;
+  nameKo: string;
+  loginUrl: string;
+  category: 'major' | 'regional' | 'special' | 'internet';
+  color: string;
+  icon: string;
+  supportsAutomation: boolean;
+}
+
+export interface BankInfo {
+  id: string;
+  name: string;
+  nameKo: string;
+  color: string;
+  icon: string;
+  supportsAutomation: boolean;
+}
+
+// ============================================
+// Account Types
+// ============================================
+
+export interface AccountInfo {
+  accountNumber: string;
+  accountName: string;
+  bankId: string;
+  balance: number;
+  currency: string;
+  lastUpdated: string;
+}
+
+export interface BankAccount {
+  id: string;
+  bankId: string;
+  accountNumber: string;
+  accountName: string;
+  customerName: string;
+  balance: number;
+  availableBalance: number;
+  currency: string;
+  accountType: string;
+  openDate: string | null;
+  lastSyncedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, any> | null;
+}
+
+export interface ConnectedBank {
+  bankId: string;
+  accountNumber?: string;
+  alias?: string;
+  lastSync?: Date;
+  status: 'connected' | 'pending' | 'error' | 'disconnected';
+  accounts?: AccountInfo[];
+}
+
+// ============================================
+// Transaction Types
+// ============================================
+
+export interface Transaction {
+  id: string;
+  accountId: string;
+  bankId: string;
+  date: string;
+  time: string | null;
+  type: string | null;
+  category: string | null;
+  description: string | null;
+  memo: string | null;
+  withdrawal: number;
+  deposit: number;
+  balance: number;
+  branch: string | null;
+  counterparty: string | null;
+  transactionId: string | null;
+  createdAt: string;
+  metadata: Record<string, any> | null;
+}
+
+export interface TransactionStats {
+  totalTransactions: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  depositCount: number;
+  withdrawalCount: number;
+  netChange: number;
+}
+
+export interface MonthlySummary {
+  yearMonth: string;
+  depositCount: number;
+  withdrawalCount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  netChange: number;
+}
+
+// ============================================
+// Filter & Pagination Types
+// ============================================
+
+export interface TransactionFilters {
+  bankId: string;
+  accountId: string;
+  startDate: string;
+  endDate: string;
+  type: 'all' | 'deposit' | 'withdrawal';
+  minAmount: string;
+  maxAmount: string;
+  searchText: string;
+  category: string;
+}
+
+export interface PaginationState {
+  currentPage: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface SortState {
+  field: 'date' | 'amount' | 'balance' | 'description';
+  direction: 'asc' | 'desc';
+}
+
+// ============================================
+// Sync Operation Types
+// ============================================
+
+export interface SyncOperation {
+  id: string;
+  accountId: string;
+  accountNumber: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  duration?: number;
+  totalCount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  errorMessage?: string;
+}
+
+// ============================================
+// Credential Types
+// ============================================
+
+export interface BankCredentials {
+  bankId: string;
+  userId: string;
+  password: string;
+}
+
+// ============================================
+// Database Stats Types
+// ============================================
+
+export interface DbStats {
+  totalAccounts: number;
+  totalTransactions: number;
+  totalSyncOperations: number;
+  lastSyncAt: string | null;
+}
+
+// ============================================
+// Constants
+// ============================================
+
+export const KOREAN_BANKS: BankConfig[] = [
+  {
+    id: 'shinhan',
+    name: 'Shinhan Bank',
+    nameKo: '신한은행',
+    loginUrl: 'https://bank.shinhan.com/?cr=252400000000',
+    category: 'major',
+    color: '#0046FF',
+    icon: '🏦',
+    supportsAutomation: true,
+  },
+  {
+    id: 'kookmin',
+    name: 'KB Kookmin Bank',
+    nameKo: 'KB국민은행',
+    loginUrl: 'https://www.kbstar.com/',
+    category: 'major',
+    color: '#FFBC00',
+    icon: '⭐',
+    supportsAutomation: false,
+  },
+  {
+    id: 'woori',
+    name: 'Woori Bank',
+    nameKo: '우리은행',
+    loginUrl: 'https://svc.wooribank.com/svc/Dream?withyou=PSTAX0069',
+    category: 'major',
+    color: '#0072BC',
+    icon: '🏛️',
+    supportsAutomation: false,
+  },
+  {
+    id: 'hana',
+    name: 'Hana Bank',
+    nameKo: '하나은행',
+    loginUrl: 'https://www.kebhana.com/',
+    category: 'major',
+    color: '#009775',
+    icon: '🌿',
+    supportsAutomation: false,
+  },
+  {
+    id: 'nh',
+    name: 'NH Bank',
+    nameKo: 'NH농협은행',
+    loginUrl: 'https://banking.nonghyup.com/',
+    category: 'special',
+    color: '#00B140',
+    icon: '🌾',
+    supportsAutomation: false,
+  },
+  {
+    id: 'ibk',
+    name: 'IBK Bank',
+    nameKo: 'IBK기업은행',
+    loginUrl: 'https://www.ibk.co.kr/',
+    category: 'special',
+    color: '#004A98',
+    icon: '🏢',
+    supportsAutomation: false,
+  },
+  {
+    id: 'kakao',
+    name: 'Kakao Bank',
+    nameKo: '카카오뱅크',
+    loginUrl: '',
+    category: 'internet',
+    color: '#FFEB00',
+    icon: '💬',
+    supportsAutomation: false,
+  },
+  {
+    id: 'toss',
+    name: 'Toss Bank',
+    nameKo: '토스뱅크',
+    loginUrl: '',
+    category: 'internet',
+    color: '#0064FF',
+    icon: '💸',
+    supportsAutomation: false,
+  },
+];
+
+export const DEFAULT_BANK_INFO: Record<string, BankInfo> = {
+  shinhan: { id: 'shinhan', name: 'Shinhan Bank', nameKo: '신한은행', color: '#0046FF', icon: '🏦', supportsAutomation: true },
+  kookmin: { id: 'kookmin', name: 'KB Kookmin Bank', nameKo: 'KB국민은행', color: '#FFBC00', icon: '⭐', supportsAutomation: false },
+  woori: { id: 'woori', name: 'Woori Bank', nameKo: '우리은행', color: '#0072BC', icon: '🏛️', supportsAutomation: false },
+  hana: { id: 'hana', name: 'Hana Bank', nameKo: '하나은행', color: '#009775', icon: '🌿', supportsAutomation: false },
+  nh: { id: 'nh', name: 'NH Bank', nameKo: 'NH농협은행', color: '#00B140', icon: '🌾', supportsAutomation: false },
+  ibk: { id: 'ibk', name: 'IBK Bank', nameKo: 'IBK기업은행', color: '#004A98', icon: '🏢', supportsAutomation: false },
+  kakao: { id: 'kakao', name: 'Kakao Bank', nameKo: '카카오뱅크', color: '#FFEB00', icon: '💬', supportsAutomation: false },
+  toss: { id: 'toss', name: 'Toss Bank', nameKo: '토스뱅크', color: '#0064FF', icon: '💸', supportsAutomation: false },
+};
+
+export const TRANSACTION_CATEGORIES = [
+  { id: 'all', label: '전체', icon: '📋' },
+  { id: 'salary', label: '급여', icon: '💰' },
+  { id: 'transfer', label: '이체', icon: '↔️' },
+  { id: 'payment', label: '결제', icon: '💳' },
+  { id: 'utility', label: '공과금', icon: '🏠' },
+  { id: 'food', label: '식비', icon: '🍽️' },
+  { id: 'transport', label: '교통', icon: '🚗' },
+  { id: 'shopping', label: '쇼핑', icon: '🛒' },
+  { id: 'entertainment', label: '여가', icon: '🎮' },
+  { id: 'healthcare', label: '의료', icon: '🏥' },
+  { id: 'education', label: '교육', icon: '📚' },
+  { id: 'other', label: '기타', icon: '📌' },
+];
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  all: '전체',
+  major: '시중은행',
+  special: '특수은행',
+  regional: '지방은행',
+  internet: '인터넷전문은행',
+};

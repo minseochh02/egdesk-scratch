@@ -1,0 +1,210 @@
+/* ============================================
+   TransactionFilters - Shared Component Styles
+   ============================================ */
+
+.tx-filters {
+  --tx-bg-card: #111827;
+  --tx-bg-dark: #0A0E1A;
+  --tx-bg-hover: #1F2937;
+  --tx-border: #1F2937;
+  --tx-border-light: #374151;
+  --tx-text-primary: #F9FAFB;
+  --tx-text-secondary: #9CA3AF;
+  --tx-text-muted: #6B7280;
+  --tx-primary: #0046FF;
+  --tx-radius: 12px;
+  --tx-radius-sm: 8px;
+  --tx-transition: all 0.2s ease;
+}
+
+/* Container */
+.tx-filters {
+  background: var(--tx-bg-card);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius);
+  padding: 20px;
+  animation: tx-slideDown 0.2s ease-out;
+}
+
+@keyframes tx-slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Row */
+.tx-filters__row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.tx-filters__row:last-child {
+  margin-bottom: 0;
+}
+
+/* Group */
+.tx-filters__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.tx-filters__group--search {
+  flex: 2;
+  min-width: 250px;
+}
+
+.tx-filters__group--actions {
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: auto;
+}
+
+/* Label */
+.tx-filters__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Input & Select */
+.tx-filters__input,
+.tx-filters__select {
+  padding: 10px 14px;
+  background: var(--tx-bg-dark);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius-sm);
+  color: var(--tx-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  transition: var(--tx-transition);
+}
+
+.tx-filters__input:focus,
+.tx-filters__select:focus {
+  outline: none;
+  border-color: var(--tx-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.15);
+}
+
+.tx-filters__input::placeholder {
+  color: var(--tx-text-muted);
+}
+
+.tx-filters__select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+/* Buttons */
+.tx-filters__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--tx-bg-hover);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius-sm);
+  color: var(--tx-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--tx-transition);
+  white-space: nowrap;
+}
+
+.tx-filters__btn:hover {
+  border-color: var(--tx-border-light);
+  background: var(--tx-bg-card);
+}
+
+.tx-filters__btn--reset:hover {
+  border-color: var(--tx-primary);
+  color: var(--tx-primary);
+}
+
+/* Quick Date Filters */
+.tx-filters__quick-dates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tx-border);
+  flex-wrap: wrap;
+}
+
+.tx-filters__quick-label {
+  font-size: 13px;
+  color: var(--tx-text-secondary);
+  margin-right: 8px;
+}
+
+.tx-filters__quick-btn {
+  padding: 6px 14px;
+  background: var(--tx-bg-dark);
+  border: 1px solid var(--tx-border);
+  border-radius: 20px;
+  color: var(--tx-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--tx-transition);
+}
+
+.tx-filters__quick-btn:hover {
+  border-color: var(--tx-primary);
+  color: var(--tx-primary);
+  background: rgba(0, 70, 255, 0.1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tx-filters__row {
+    flex-direction: column;
+  }
+  
+  .tx-filters__group {
+    min-width: 100%;
+  }
+  
+  .tx-filters__group--actions {
+    margin-top: 8px;
+  }
+  
+  .tx-filters__btn {
+    width: 100%;
+  }
+  
+  .tx-filters__quick-dates {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .tx-filters__quick-label {
+    margin-right: 0;
+    margin-bottom: 4px;
+  }
+  
+  .tx-filters__quick-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
