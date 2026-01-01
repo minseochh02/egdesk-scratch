@@ -81,7 +81,6 @@ function parseTransactionExcel(filePath, ctx) {
     
     if (headerRowIndex === -1) {
       if (ctx && ctx.warn) ctx.warn('Could not find header row in Excel file, using default mapping if possible or failing');
-      // Fallback logic could go here
       throw new Error('Could not find header row in Excel file');
     }
     
@@ -115,7 +114,7 @@ function parseTransactionExcel(filePath, ctx) {
     
     return {
       transactions,
-      metadata: {}, // Could extract metadata from rows < headerRowIndex
+      metadata: {},
       summary: {}
     };
     
@@ -126,7 +125,331 @@ function parseTransactionExcel(filePath, ctx) {
 }
 
 /**
- * Extracts transaction data directly from the HTML page and creates an Excel file
+ * Extracts transaction data directly from the rendered HTML page
+ * Uses structural/label-based selectors instead of fragile dynamic IDs
+ * @param {Object} ctx - Automation context
+ * @returns {Promise<Object>} Extracted data including metadata, summary, and transactions
+ */
+async function extractTransactionsFromPage(ctx) {
+  const data = await ctx.page.evaluate(() => {
+    const result = {
+      metadata: {
+        accountName: '',
+        accountNumber: '',
+        customerName: '',
+        balance: 0,
+        availableBalance: 0,
+        openDate: '',
+      },
+      summary: {
+        totalDeposits: 0,
+        depositCount: 0,
+        totalWithdrawals: 0,
+        withdrawalCount: 0,
+        totalCount: 0,
+        queryDate: '',
+        queryPeriod: '',
+      },
+      transactions: [],
+      headers: [],
+    };
+
+    // === Helper: Find value in table row by header text ===
+    function findTableValue(headerText) {
+      // Find all th elements containing the header text
+      const ths = Array.from(document.querySelectorAll('th'));
+      for (const th of ths) {
+        if (th.textContent.includes(headerText)) {
+          // Get the next td sibling
+          const td = th.nextElementSibling;
+          if (td && td.tagName === 'TD') {
+            // Try to get text from span or div inside, or direct text
+            const span = td.querySelector('span');
+            const div = td.querySelector('div.w2textbox');
+            if (span) return span.textContent.trim();
+            if (div) return div.textContent.trim();
+            return td.textContent.trim();
+          }
+        }
+      }
+      return '';
+    }
+
+    // === Extract Account Info from tableTyOutput ===
+    try {
+      // Account name: 계좌명(계좌별명)
+      result.metadata.accountName = findTableValue('계좌명');
+      
+      // Customer name: 고객명
+      result.metadata.customerName = findTableValue('고객명');
+      
+      // Account number: 계좌번호
+      result.metadata.accountNumber = findTableValue('계좌번호');
+      
+      // Balance: 계좌잔액(원)
+      const balanceStr = findTableValue('계좌잔액');
+      result.metadata.balance = parseInt(balanceStr.replace(/[,\s원]/g, ''), 10) || 0;
+      
+      // Available balance: 출금가능금액(원)
+      const availStr = findTableValue('출금가능금액');
+      result.metadata.availableBalance = parseInt(availStr.replace(/[,\s원]/g, ''), 10) || 0;
+      
+      // Open date: 신규일자
+      result.metadata.openDate = findTableValue('신규일자');
+      
+      console.log('[EXTRACT] Metadata:', result.metadata);
+    } catch (e) {
+      console.error('[EXTRACT] Error extracting metadata:', e);
+    }
+
+    // === Extract Summary from funcBox area ===
+    try {
+      // Total count: Find [총 X건] pattern
+      const totalCountEl = document.querySelector('.total em, .w2group.total em');
+      if (totalCountEl) {
+        result.summary.totalCount = parseInt(totalCountEl.textContent.trim(), 10) || 0;
+      }
+      
+      // Query date/time and period: Look for .time elements
+      const timeElements = document.querySelectorAll('.time, em.time, span.time');
+      for (const el of timeElements) {
+        const text = el.textContent.trim();
+        // Check if it's a date-time format (YYYY.MM.DD HH:MM:SS)
+        if (text.match(/\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2}/)) {
+          result.summary.queryDate = text;
+        }
+        // Check if it's a date range (YYYY.MM.DD ~ YYYY.MM.DD)
+        if (text.match(/\d{4}\.\d{2}\.\d{2}\s*~\s*\d{4}\.\d{2}\.\d{2}/)) {
+          result.summary.queryPeriod = text;
+        }
+      }
+      
+      // Deposit/Withdrawal totals from tableTyGrid.result table
+      const resultTable = document.querySelector('table.tableTyGrid.result');
+      if (resultTable) {
+        const rows = resultTable.querySelectorAll('tr');
+        rows.forEach(row => {
+          const ths = row.querySelectorAll('th');
+          const tds = row.querySelectorAll('td');
+          
+          ths.forEach((th, idx) => {
+            const headerText = th.textContent || '';
+            const td = tds[idx];
+            if (!td) return;
+            
+            // Extract all spans from the td
+            const spans = td.querySelectorAll('span');
+            if (spans.length >= 1) {
+              // First span typically has the amount
+              const amountText = spans[0].textContent.trim();
+              const amount = parseInt(amountText.replace(/[,\s]/g, ''), 10) || 0;
+              
+              // Find count - look for span containing just a number (usually 3rd or 4th span)
+              let count = 0;
+              for (let i = 1; i < spans.length; i++) {
+                const spanText = spans[i].textContent.trim();
+                // Check if it's just a number (the count)
+                if (/^\d+$/.test(spanText)) {
+                  count = parseInt(spanText, 10) || 0;
+                  break;
+                }
+              }
+              
+              if (headerText.includes('입금')) {
+                result.summary.totalDeposits = amount;
+                result.summary.depositCount = count;
+              } else if (headerText.includes('출금')) {
+                result.summary.totalWithdrawals = amount;
+                result.summary.withdrawalCount = count;
+              }
+            }
+          });
+        });
+      }
+      
+      console.log('[EXTRACT] Summary:', result.summary);
+    } catch (e) {
+      console.error('[EXTRACT] Error extracting summary:', e);
+    }
+
+    // === Extract Headers from grid ===
+    try {
+      const headerCells = document.querySelectorAll('#grd_list thead th');
+      headerCells.forEach(th => {
+        const nobr = th.querySelector('nobr');
+        if (nobr) {
+          result.headers.push(nobr.textContent.trim());
+        }
+      });
+      console.log('[EXTRACT] Headers:', result.headers);
+    } catch (e) {
+      console.error('[EXTRACT] Error extracting headers:', e);
+    }
+
+    // === Extract Transactions from grid body ===
+    try {
+      const rows = document.querySelectorAll('#grd_list tbody tr.grid_body_row');
+      console.log('[EXTRACT] Found', rows.length, 'transaction rows');
+      
+      rows.forEach((row, rowIndex) => {
+        const cells = row.querySelectorAll('td');
+        const transaction = { _rowIndex: rowIndex };
+        
+        cells.forEach((cell, cellIndex) => {
+          const nobr = cell.querySelector('nobr.w2grid_input');
+          const value = nobr ? nobr.textContent.trim() : '';
+          
+          // Map by column index based on known Shinhan Bank structure:
+          // 0: 거래일자, 1: 거래시간, 2: 적요, 3: 출금(원), 4: 입금(원), 5: 내용, 6: 잔액(원), 7: 거래점
+          switch (cellIndex) {
+            case 0:
+              transaction.date = value;
+              break;
+            case 1:
+              transaction.time = value;
+              break;
+            case 2:
+              transaction.type = value;
+              break;
+            case 3:
+              transaction.withdrawal = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
+              break;
+            case 4:
+              transaction.deposit = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
+              break;
+            case 5:
+              transaction.description = value;
+              break;
+            case 6:
+              transaction.balance = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
+              break;
+            case 7:
+              transaction.branch = value;
+              break;
+          }
+        });
+        
+        // Only add if it looks like a valid transaction
+        if (transaction.date || transaction.withdrawal > 0 || transaction.deposit > 0) {
+          result.transactions.push(transaction);
+        }
+      });
+      
+      console.log('[EXTRACT] Extracted', result.transactions.length, 'transactions');
+    } catch (e) {
+      console.error('[EXTRACT] Error extracting transactions:', e);
+    }
+
+    return result;
+  });
+
+  ctx.log(`Extracted ${data.transactions.length} transactions from page`);
+  ctx.log(`Account: ${data.metadata.accountNumber} (${data.metadata.accountName})`);
+  ctx.log(`Customer: ${data.metadata.customerName}`);
+  ctx.log(`Balance: ${data.metadata.balance.toLocaleString()}원`);
+  ctx.log(`Period: ${data.summary.queryPeriod}`);
+  ctx.log(`Summary: ${data.summary.depositCount} deposits (+${data.summary.totalDeposits.toLocaleString()}원), ${data.summary.withdrawalCount} withdrawals (-${data.summary.totalWithdrawals.toLocaleString()}원)`);
+
+  return data;
+}
+
+/**
+ * Creates an Excel file from extracted transaction data
+ * @param {Object} ctx - Automation context
+ * @param {Object} data - Extracted data from extractTransactionsFromPage
+ * @returns {Promise<string>} Path to created Excel file
+ */
+async function createExcelFromData(ctx, data) {
+  ctx.ensureOutputDirectory(ctx.outputDir);
+  
+  const timestamp = ctx.generateTimestamp ? ctx.generateTimestamp() : Date.now();
+  const accountNum = data.metadata.accountNumber ? data.metadata.accountNumber.replace(/-/g, '') : 'unknown';
+  const filename = `신한은행_거래내역_${accountNum}_${timestamp}.xlsx`;
+  const filePath = path.join(ctx.outputDir, filename);
+
+  ctx.log(`Creating Excel file: ${filename}`);
+
+  // Create workbook
+  const workbook = XLSX.utils.book_new();
+
+  // === Sheet 1: Transaction Data ===
+  const sheetData = [];
+
+  // Title row
+  sheetData.push(['거래내역조회']);
+  sheetData.push([]);  // Empty row
+
+  // Metadata rows
+  sheetData.push(['계좌번호', data.metadata.accountNumber || '']);
+  sheetData.push(['계좌명', data.metadata.accountName || '']);
+  sheetData.push(['고객명', data.metadata.customerName || '']);
+  sheetData.push(['계좌잔액', data.metadata.balance || 0]);
+  sheetData.push(['출금가능금액', data.metadata.availableBalance || 0]);
+  sheetData.push(['신규일자', data.metadata.openDate || '']);
+  sheetData.push(['조회기간', data.summary.queryPeriod || '']);
+  sheetData.push(['조회일시', data.summary.queryDate || '']);
+  sheetData.push(['총건수', data.summary.totalCount || data.transactions.length]);
+  sheetData.push([]);  // Empty row
+
+  // Summary row
+  sheetData.push([
+    '입금합계', data.summary.totalDeposits || 0, `(${data.summary.depositCount || 0}건)`,
+    '출금합계', data.summary.totalWithdrawals || 0, `(${data.summary.withdrawalCount || 0}건)`
+  ]);
+  sheetData.push([]);  // Empty row
+
+  // Headers
+  const headers = ['거래일자', '거래시간', '적요', '출금(원)', '입금(원)', '내용', '잔액(원)', '거래점'];
+  sheetData.push(headers);
+
+  // Transaction rows
+  if (data.transactions && data.transactions.length > 0) {
+    data.transactions.forEach(tx => {
+      sheetData.push([
+        tx.date || '',
+        tx.time || '',
+        tx.type || '',
+        tx.withdrawal || '',
+        tx.deposit || '',
+        tx.description || '',
+        tx.balance || '',
+        tx.branch || '',
+      ]);
+    });
+  }
+
+  // Create worksheet
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+  // Set column widths
+  worksheet['!cols'] = [
+    { wch: 12 },  // 거래일자
+    { wch: 10 },  // 거래시간
+    { wch: 15 },  // 적요
+    { wch: 12 },  // 출금
+    { wch: 12 },  // 입금
+    { wch: 20 },  // 내용
+    { wch: 12 },  // 잔액
+    { wch: 10 },  // 거래점
+  ];
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(workbook, worksheet, '거래내역');
+
+  // Write file using fs to avoid potential path issues with XLSX.writeFile
+  try {
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+    fs.writeFileSync(filePath, buffer);
+    ctx.log(`Excel file created: ${filePath}`);
+    return filePath;
+  } catch (writeError) {
+    ctx.error(`Failed to write Excel file: ${writeError.message}`);
+    throw new Error(`Failed to save Excel file to ${filePath}: ${writeError.message}`);
+  }
+}
+
+/**
+ * Extracts transaction data and creates Excel file
  * @param {Object} ctx - Automation context (this)
  * @param {string} accountNumber - Account number to query
  * @param {string} [startDate] - Start date (YYYYMMDD format)
@@ -185,7 +508,7 @@ async function getTransactions(ctx, accountNumber, startDate, endDate) {
     await ctx.page.keyboard.press('Tab');
     await ctx.page.waitForTimeout(500);
 
-    // 5. Unfocus by clicking on page title
+    // 5. Unfocus by clicking on page title or neutral element
     ctx.log('Unfocusing date picker...');
     try {
       const formLabel = ctx.page.locator('th:has-text("조회계좌번호")').first();
@@ -235,6 +558,7 @@ async function getTransactions(ctx, accountNumber, startDate, endDate) {
       extractedData.status = 'success';
     } else {
       extractedData.status = 'no_data';
+      ctx.warn('No transactions found on the page');
     }
 
     return extractedData;
@@ -252,265 +576,6 @@ async function getTransactions(ctx, accountNumber, startDate, endDate) {
     }
     
     return { status: 'error', error: error.message, transactions: [] };
-  }
-}
-
-/**
- * Extracts transaction data directly from the rendered HTML page
- * @param {Object} ctx - Automation context
- * @returns {Promise<Object>} Extracted data including metadata, summary, and transactions
- */
-async function extractTransactionsFromPage(ctx) {
-  const data = await ctx.page.evaluate(() => {
-    const result = {
-      metadata: {
-        accountName: '',
-        accountNumber: '',
-        customerName: '',
-        balance: 0,
-        availableBalance: 0,
-        openDate: '',
-      },
-      summary: {
-        totalDeposits: 0,
-        depositCount: 0,
-        totalWithdrawals: 0,
-        withdrawalCount: 0,
-        totalCount: 0,
-        queryDate: '',
-      },
-      transactions: [],
-      headers: [],
-    };
-
-    // === Extract Account Info ===
-    try {
-      // Account name
-      const accountNameEl = document.querySelector('#wq_uuid_7038');
-      if (accountNameEl) result.metadata.accountName = accountNameEl.textContent.trim();
-
-      // Customer name
-      const customerNameEl = document.querySelector('#wq_uuid_7042');
-      if (customerNameEl) result.metadata.customerName = customerNameEl.textContent.trim();
-
-      // Account number
-      const accountNumEl = document.querySelector('#wq_uuid_7045');
-      if (accountNumEl) result.metadata.accountNumber = accountNumEl.textContent.trim();
-
-      // Balance
-      const balanceEl = document.querySelector('#wq_uuid_7049');
-      if (balanceEl) {
-        result.metadata.balance = parseInt(balanceEl.textContent.replace(/[,\s]/g, ''), 10) || 0;
-      }
-
-      // Available balance
-      const availBalEl = document.querySelector('#wq_uuid_7052');
-      if (availBalEl) {
-        result.metadata.availableBalance = parseInt(availBalEl.textContent.replace(/[,\s]/g, ''), 10) || 0;
-      }
-
-      // Open date
-      const openDateEl = document.querySelector('#wq_uuid_7056');
-      if (openDateEl) result.metadata.openDate = openDateEl.textContent.trim();
-    } catch (e) {
-      console.error('Error extracting metadata:', e);
-    }
-
-    // === Extract Summary ===
-    try {
-      // Total count
-      const totalCountEl = document.querySelector('#wq_uuid_7143');
-      if (totalCountEl) {
-        result.summary.totalCount = parseInt(totalCountEl.textContent.trim(), 10) || 0;
-      }
-
-      // Query date/time
-      const queryDateEl = document.querySelector('#wq_uuid_7148');
-      if (queryDateEl) result.summary.queryDate = queryDateEl.textContent.trim();
-
-      // Deposit total and count
-      const depositTotalEl = document.querySelector('#wq_uuid_7158');
-      if (depositTotalEl) {
-        result.summary.totalDeposits = parseInt(depositTotalEl.textContent.replace(/[,\s]/g, ''), 10) || 0;
-      }
-      const depositCountEl = document.querySelector('#wq_uuid_7161');
-      if (depositCountEl) {
-        result.summary.depositCount = parseInt(depositCountEl.textContent.trim(), 10) || 0;
-      }
-
-      // Withdrawal total and count
-      const withdrawalTotalEl = document.querySelector('#wq_uuid_7165');
-      if (withdrawalTotalEl) {
-        result.summary.totalWithdrawals = parseInt(withdrawalTotalEl.textContent.replace(/[,\s]/g, ''), 10) || 0;
-      }
-      const withdrawalCountEl = document.querySelector('#wq_uuid_7168');
-      if (withdrawalCountEl) {
-        result.summary.withdrawalCount = parseInt(withdrawalCountEl.textContent.trim(), 10) || 0;
-      }
-    } catch (e) {
-      console.error('Error extracting summary:', e);
-    }
-
-    // === Extract Headers ===
-    try {
-      const headerCells = document.querySelectorAll('#grd_list thead th');
-      headerCells.forEach(th => {
-        const nobr = th.querySelector('nobr');
-        if (nobr) {
-          result.headers.push(nobr.textContent.trim());
-        }
-      });
-    } catch (e) {
-      console.error('Error extracting headers:', e);
-    }
-
-    // === Extract Transactions ===
-    try {
-      const rows = document.querySelectorAll('#grd_list tbody tr.grid_body_row');
-      
-      rows.forEach((row, rowIndex) => {
-        const cells = row.querySelectorAll('td');
-        const transaction = { _rowIndex: rowIndex };
-        
-        cells.forEach((cell, cellIndex) => {
-          const nobr = cell.querySelector('nobr.w2grid_input');
-          const value = nobr ? nobr.textContent.trim() : '';
-          
-          // Map by column index based on known structure
-          switch (cellIndex) {
-            case 0: // 거래일자
-              transaction.date = value;
-              break;
-            case 1: // 거래시간
-              transaction.time = value;
-              break;
-            case 2: // 적요
-              transaction.type = value;
-              break;
-            case 3: // 출금(원)
-              transaction.withdrawal = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
-              break;
-            case 4: // 입금(원)
-              transaction.deposit = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
-              break;
-            case 5: // 내용
-              transaction.description = value;
-              break;
-            case 6: // 잔액(원)
-              transaction.balance = value ? parseInt(value.replace(/[,\s]/g, ''), 10) || 0 : 0;
-              break;
-            case 7: // 거래점
-              transaction.branch = value;
-              break;
-          }
-        });
-        
-        // Only add if it looks like a valid transaction
-        if (transaction.date || transaction.withdrawal > 0 || transaction.deposit > 0) {
-          result.transactions.push(transaction);
-        }
-      });
-    } catch (e) {
-      console.error('Error extracting transactions:', e);
-    }
-
-    return result;
-  });
-
-  ctx.log(`Extracted ${data.transactions.length} transactions from page`);
-  ctx.log(`Account: ${data.metadata.accountNumber} (${data.metadata.accountName})`);
-  ctx.log(`Summary: ${data.summary.depositCount} deposits (+${data.summary.totalDeposits}), ${data.summary.withdrawalCount} withdrawals (-${data.summary.totalWithdrawals})`);
-
-  return data;
-}
-
-/**
- * Creates an Excel file from extracted transaction data
- * @param {Object} ctx - Automation context
- * @param {Object} data - Extracted data from extractTransactionsFromPage
- * @returns {Promise<string>} Path to created Excel file
- */
-async function createExcelFromData(ctx, data) {
-  ctx.ensureOutputDirectory(ctx.outputDir);
-  
-  const timestamp = ctx.generateTimestamp ? ctx.generateTimestamp() : Date.now();
-  const filename = `신한은행_거래내역_${data.metadata.accountNumber.replace(/-/g, '')}_${timestamp}.xlsx`;
-  const filePath = path.join(ctx.outputDir, filename);
-
-  ctx.log(`Creating Excel file: ${filename}`);
-
-  // Create workbook
-  const workbook = XLSX.utils.book_new();
-
-  // === Sheet 1: Transaction Data ===
-  const sheetData = [];
-
-  // Title row
-  sheetData.push(['거래내역조회']);
-  sheetData.push([]);  // Empty row
-
-  // Metadata rows
-  sheetData.push(['계좌번호', data.metadata.accountNumber]);
-  sheetData.push(['계좌명', data.metadata.accountName]);
-  sheetData.push(['고객명', data.metadata.customerName]);
-  sheetData.push(['계좌잔액', data.metadata.balance]);
-  sheetData.push(['출금가능금액', data.metadata.availableBalance]);
-  sheetData.push(['조회일시', data.summary.queryDate]);
-  sheetData.push(['총건수', data.summary.totalCount]);
-  sheetData.push([]);  // Empty row
-
-  // Summary row
-  sheetData.push([
-    '입금합계', data.summary.totalDeposits, `(${data.summary.depositCount}건)`,
-    '출금합계', data.summary.totalWithdrawals, `(${data.summary.withdrawalCount}건)`
-  ]);
-  sheetData.push([]);  // Empty row
-
-  // Headers
-  const headers = ['거래일자', '거래시간', '적요', '출금(원)', '입금(원)', '내용', '잔액(원)', '거래점'];
-  sheetData.push(headers);
-
-  // Transaction rows
-  data.transactions.forEach(tx => {
-    sheetData.push([
-      tx.date || '',
-      tx.time || '',
-      tx.type || '',
-      tx.withdrawal || '',
-      tx.deposit || '',
-      tx.description || '',
-      tx.balance || '',
-      tx.branch || '',
-    ]);
-  });
-
-  // Create worksheet
-  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-
-  // Set column widths
-  worksheet['!cols'] = [
-    { wch: 12 },  // 거래일자
-    { wch: 10 },  // 거래시간
-    { wch: 15 },  // 적요
-    { wch: 12 },  // 출금
-    { wch: 12 },  // 입금
-    { wch: 20 },  // 내용
-    { wch: 12 },  // 잔액
-    { wch: 10 },  // 거래점
-  ];
-
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, '거래내역');
-
-  // Write file using fs to avoid potential path issues with XLSX.writeFile
-  try {
-    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
-    fs.writeFileSync(filePath, buffer);
-    ctx.log(`Excel file created: ${filePath}`);
-    return filePath;
-  } catch (writeError) {
-    ctx.error(`Failed to write Excel file: ${writeError.message}`);
-    throw new Error(`Failed to save Excel file to ${filePath}: ${writeError.message}`);
   }
 }
 

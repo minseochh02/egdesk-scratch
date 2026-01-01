@@ -17,6 +17,7 @@ import {
   CreateDockerTaskData,
 } from './docker-scheduler';
 import { SQLiteCompanyResearchManager } from './company-research';
+import { SQLiteShinhanTransactionsManager } from './shinhan-transactions';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
@@ -53,6 +54,7 @@ export class SQLiteManager {
   private templateCopiesManager: SQLiteTemplateCopiesManager | null = null;
   private dockerSchedulerManager: SQLiteDockerSchedulerManager | null = null;
   private companyResearchManager: SQLiteCompanyResearchManager | null = null;
+  private shinhanTransactionsManager: SQLiteShinhanTransactionsManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -94,6 +96,7 @@ export class SQLiteManager {
       this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
+      this.shinhanTransactionsManager = new SQLiteShinhanTransactionsManager(this.conversationsDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -201,6 +204,7 @@ export class SQLiteManager {
       this.businessIdentityManager = null;
       this.activityManager = null;
       this.dockerSchedulerManager = null;
+      this.shinhanTransactionsManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
     } catch (error) {
@@ -287,6 +291,14 @@ export class SQLiteManager {
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb!);
     }
     return this.companyResearchManager;
+  }
+
+  public getShinhanTransactionsManager(): SQLiteShinhanTransactionsManager {
+    this.ensureInitialized();
+    if (!this.shinhanTransactionsManager) {
+      this.shinhanTransactionsManager = new SQLiteShinhanTransactionsManager(this.conversationsDb!);
+    }
+    return this.shinhanTransactionsManager;
   }
 
   /**
@@ -553,6 +565,120 @@ export class SQLiteManager {
     this.registerTemplateCopiesHandlers();
     this.registerDockerSchedulerHandlers();
     this.registerCompanyResearchHandlers();
+    this.registerShinhanHandlers();
+  }
+
+  /**
+   * Register Shinhan Transactions IPC handlers
+   */
+  private registerShinhanHandlers(): void {
+    // Get overall stats
+    ipcMain.handle('sqlite-shinhan-get-overall-stats', async () => {
+      try {
+        const stats = this.getShinhanTransactionsManager().getOverallStats();
+        return { success: true, data: stats };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get recent sync operations
+    ipcMain.handle('sqlite-shinhan-get-recent-sync-operations', async (event, limit) => {
+      try {
+        const ops = this.getShinhanTransactionsManager().getRecentSyncOperations(limit);
+        return { success: true, data: ops };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get transactions by account
+    ipcMain.handle('sqlite-shinhan-get-transactions-by-account', async (event, accountId, limit) => {
+      try {
+        const transactions = this.getShinhanTransactionsManager().getTransactionsByAccount(accountId, limit);
+        return { success: true, data: transactions };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get transaction stats
+    ipcMain.handle('sqlite-shinhan-get-transaction-stats', async (event, accountId) => {
+      try {
+        const stats = this.getShinhanTransactionsManager().getTransactionStats(accountId);
+        return { success: true, data: stats };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get monthly summary
+    ipcMain.handle('sqlite-shinhan-get-monthly-summary', async (event, accountId) => {
+      try {
+        const summary = this.getShinhanTransactionsManager().getMonthlySummary(accountId);
+        return { success: true, data: summary };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Upsert account
+    ipcMain.handle('sqlite-shinhan-upsert-account', async (event, accountData) => {
+      try {
+        const account = this.getShinhanTransactionsManager().upsertAccount(accountData);
+        return { success: true, data: account };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get all accounts
+    ipcMain.handle('sqlite-shinhan-get-all-accounts', async () => {
+      try {
+        const accounts = this.getShinhanTransactionsManager().getAllAccounts();
+        return { success: true, data: accounts };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Import transactions
+    ipcMain.handle('sqlite-shinhan-import-transactions', async (event, accountData, transactionsData, syncMetadata) => {
+      try {
+        const result = this.getShinhanTransactionsManager().importFromParsedData(
+          accountData,
+          transactionsData,
+          syncMetadata
+        );
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
   }
 
   /**

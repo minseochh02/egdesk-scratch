@@ -2116,6 +2116,27 @@ const electronHandler = {
   },
 
   /**
+   * Shinhan Database API
+   */
+  shinhanDb: {
+    getOverallStats: () => ipcRenderer.invoke('sqlite-shinhan-get-overall-stats'),
+    getRecentSyncOperations: (limit?: number) => 
+      ipcRenderer.invoke('sqlite-shinhan-get-recent-sync-operations', limit),
+    getTransactionsByAccount: (accountId: string, limit?: number) => 
+      ipcRenderer.invoke('sqlite-shinhan-get-transactions-by-account', accountId, limit),
+    getTransactionStats: (accountId: string) => 
+      ipcRenderer.invoke('sqlite-shinhan-get-transaction-stats', accountId),
+    getMonthlySummary: (accountId: string) => 
+      ipcRenderer.invoke('sqlite-shinhan-get-monthly-summary', accountId),
+    upsertAccount: (accountData: any) => 
+      ipcRenderer.invoke('sqlite-shinhan-upsert-account', accountData),
+    getAllAccounts: () => 
+      ipcRenderer.invoke('sqlite-shinhan-get-all-accounts'),
+    importTransactions: (accountData: any, transactionsData: any[], syncMetadata: any) => 
+      ipcRenderer.invoke('sqlite-shinhan-import-transactions', accountData, transactionsData, syncMetadata),
+  },
+
+  /**
    * MCP Registration API
    */
   mcp: {
