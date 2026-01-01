@@ -1,0 +1,293 @@
+/* ============================================
+   TransactionTable - Shared Component Styles
+   ============================================ */
+
+.tx-table {
+  --tx-bg-card: #111827;
+  --tx-bg-hover: rgba(255, 255, 255, 0.03);
+  --tx-border: #1F2937;
+  --tx-text-primary: #F9FAFB;
+  --tx-text-secondary: #9CA3AF;
+  --tx-text-muted: #6B7280;
+  --tx-primary: #0046FF;
+  --tx-deposit: #10B981;
+  --tx-withdrawal: #9CA3AF;
+  --tx-radius: 12px;
+}
+
+/* Container */
+.tx-table__container {
+  background: var(--tx-bg-card);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius);
+  overflow: hidden;
+}
+
+/* Table */
+.tx-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+/* Header */
+.tx-table__head {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--tx-border);
+}
+
+.tx-table__header {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tx-table__header--sortable {
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.tx-table__header--sortable:hover {
+  color: var(--tx-primary);
+}
+
+.tx-table__header--right {
+  text-align: right;
+}
+
+/* Sort Icon */
+.tx-table__sort-icon {
+  margin-left: 4px;
+  opacity: 0.5;
+  font-size: 12px;
+}
+
+.tx-table__sort-icon--active {
+  opacity: 1;
+  color: var(--tx-primary);
+}
+
+/* Body */
+.tx-table__row {
+  border-bottom: 1px solid var(--tx-border);
+  transition: background 0.15s ease;
+}
+
+.tx-table__row:last-child {
+  border-bottom: none;
+}
+
+.tx-table__row:hover {
+  background: var(--tx-bg-hover);
+}
+
+.tx-table__row--clickable {
+  cursor: pointer;
+}
+
+/* Cells */
+.tx-table__cell {
+  padding: 14px 16px;
+  color: var(--tx-text-primary);
+  vertical-align: middle;
+}
+
+.tx-table__cell--date {
+  width: 120px;
+}
+
+.tx-table__cell--time {
+  width: 80px;
+  color: var(--tx-text-muted);
+}
+
+.tx-table__cell--bank {
+  width: 130px;
+}
+
+.tx-table__cell--type {
+  width: 100px;
+  color: var(--tx-text-secondary);
+}
+
+.tx-table__cell--description {
+  min-width: 180px;
+}
+
+.tx-table__cell--amount {
+  width: 130px;
+  text-align: right;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.tx-table__cell--withdrawal {
+  color: var(--tx-text-primary);
+}
+
+.tx-table__cell--deposit {
+  color: var(--tx-deposit);
+}
+
+.tx-table__cell--balance {
+  width: 120px;
+  text-align: right;
+  color: var(--tx-text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Date */
+.tx-table__date {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tx-table__date-day {
+  font-weight: 500;
+}
+
+.tx-table__date-time {
+  font-size: 11px;
+  color: var(--tx-text-muted);
+}
+
+/* Bank Badge */
+.tx-table__bank-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--bank-color, var(--tx-primary));
+  border-radius: 4px;
+}
+
+.tx-table__bank-icon {
+  font-size: 14px;
+}
+
+.tx-table__bank-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--tx-text-secondary);
+}
+
+/* Description */
+.tx-table__description {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tx-table__description-text {
+  font-weight: 500;
+  color: var(--tx-text-primary);
+}
+
+.tx-table__description-counterparty {
+  font-size: 12px;
+  color: var(--tx-text-muted);
+}
+
+/* More Link */
+.tx-table__more {
+  padding: 14px;
+  text-align: center;
+  color: var(--tx-text-secondary);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--tx-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tx-table__more:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--tx-primary);
+}
+
+/* Loading State */
+.tx-table__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: var(--tx-bg-card);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius);
+  color: var(--tx-text-secondary);
+  gap: 16px;
+}
+
+.tx-table__spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--tx-border);
+  border-top-color: var(--tx-primary);
+  border-radius: 50%;
+  animation: tx-spin 0.8s linear infinite;
+}
+
+@keyframes tx-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Empty State */
+.tx-table__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: var(--tx-bg-card);
+  border: 1px solid var(--tx-border);
+  border-radius: var(--tx-radius);
+  text-align: center;
+}
+
+.tx-table__empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.tx-table__empty p {
+  margin: 0;
+  color: var(--tx-text-muted);
+  font-size: 14px;
+}
+
+/* Compact Mode */
+.tx-table--compact .tx-table__cell {
+  padding: 12px 14px;
+}
+
+.tx-table--compact .tx-table__header {
+  padding: 12px 14px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tx-table__container {
+    overflow-x: auto;
+  }
+  
+  .tx-table__table {
+    min-width: 700px;
+  }
+  
+  .tx-table__cell,
+  .tx-table__header {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}
