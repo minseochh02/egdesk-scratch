@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './FinanceHub.css';
+import TransactionsPage from './TransactionsPage';
 
 // ============================================
 // Types
@@ -140,6 +141,7 @@ const KOREAN_BANKS: BankConfig[] = [
 
 const FinanceHub: React.FC = () => {
   // === State ===
+  const [currentView, setCurrentView] = useState<'dashboard' | 'transactions'>('dashboard');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -305,7 +307,7 @@ const FinanceHub: React.FC = () => {
       };
 
       const transactionsData = (result.transactions || []).map((tx: any) => ({
-        date: tx.date,
+        date: tx.date ? tx.date.replace(/[-.]/g, '') : '', // Normalize date to YYYYMMDD
         time: tx.time || '',
         type: tx.type || '',
         withdrawal: tx.withdrawal || 0,
@@ -803,7 +805,24 @@ const FinanceHub: React.FC = () => {
           <p className="finance-hub__tagline">
             여러 은행에 따로 로그인할 필요 없이, 모든 계좌와 지출 내역을 한 곳에서 확인하세요
           </p>
+
+          {/* Navigation */}
+          <nav className="finance-hub__nav">
+            <button 
+              className={`finance-hub__nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setCurrentView('dashboard')}
+            >
+              대시보드
+            </button>
+            <button 
+              className={`finance-hub__nav-item ${currentView === 'transactions' ? 'active' : ''}`}
+              onClick={() => setCurrentView('transactions')}
+            >
+              전체 거래내역
+            </button>
+          </nav>
         </div>
+
         <div className="finance-hub__header-stats">
           <div className="finance-hub__stat">
             <span className="finance-hub__stat-value">
@@ -918,341 +937,360 @@ const FinanceHub: React.FC = () => {
 
       {/* Main Content */}
       <main className="finance-hub__main">
-        {/* Connected Banks Section */}
-        <section className="finance-hub__section">
-          <div className="finance-hub__section-header">
-            <h2>
-              <span className="finance-hub__section-icon">🔗</span>
-              연결된 계좌
-            </h2>
-            <button
-              className="finance-hub__btn finance-hub__btn--primary"
-              onClick={() => setShowBankSelector(true)}
-            >
-              <span>+</span> 은행 연결하기
-            </button>
-          </div>
+        {currentView === 'dashboard' ? (
+          <>
+            {/* Connected Banks Section */}
+            <section className="finance-hub__section">
+              <div className="finance-hub__section-header">
+                <h2>
+                  <span className="finance-hub__section-icon">🔗</span>
+                  연결된 계좌
+                </h2>
+                <button
+                  className="finance-hub__btn finance-hub__btn--primary"
+                  onClick={() => setShowBankSelector(true)}
+                >
+                  <span>+</span> 은행 연결하기
+                </button>
+              </div>
 
-          {connectedBanks.length === 0 ? (
-            <div className="finance-hub__empty-state">
-              <div className="finance-hub__empty-icon">🏦</div>
-              <h3>연결된 은행이 없습니다</h3>
-              <p>은행을 연결하면 모든 거래 내역을 자동으로 불러옵니다</p>
-              <button
-                className="finance-hub__btn finance-hub__btn--primary"
-                onClick={() => setShowBankSelector(true)}
-              >
-                첫 번째 은행 연결하기
-              </button>
-            </div>
-          ) : (
-            <div className="finance-hub__connected-banks">
-              {connectedBanks.map((connection) => {
-                const bank = getBankById(connection.bankId);
-                if (!bank) return null;
-                return (
-                  <div
-                    key={connection.bankId}
-                    className="finance-hub__bank-card"
-                    style={{ '--bank-color': bank.color } as React.CSSProperties}
+              {connectedBanks.length === 0 ? (
+                <div className="finance-hub__empty-state">
+                  <div className="finance-hub__empty-icon">🏦</div>
+                  <h3>연결된 은행이 없습니다</h3>
+                  <p>은행을 연결하면 모든 거래 내역을 자동으로 불러옵니다</p>
+                  <button
+                    className="finance-hub__btn finance-hub__btn--primary"
+                    onClick={() => setShowBankSelector(true)}
                   >
-                    <div className="finance-hub__bank-card-header">
-                      <span className="finance-hub__bank-icon">{bank.icon}</span>
-                      <div className="finance-hub__bank-info">
-                        <h4>{bank.nameKo}</h4>
-                        <span className="finance-hub__bank-name-en">
-                          {connection.alias ? `${connection.alias}님` : bank.name}
-                        </span>
-                      </div>
-                      <span className={`finance-hub__status finance-hub__status--${connection.status}`}>
-                        {connection.status === 'connected' && '연결됨'}
-                        {connection.status === 'pending' && '연결중...'}
-                        {connection.status === 'error' && '오류'}
-                        {connection.status === 'disconnected' && '연결 끊김'}
-                      </span>
-                    </div>
-
-                    {/* Account List with Sync Button */}
-                    {connection.accounts && connection.accounts.length > 0 && (
-                      <div className="finance-hub__accounts-list">
-                        {connection.accounts.map((account, idx) => (
-                          <div key={idx} className="finance-hub__account-item">
-                            <div className="finance-hub__account-info">
-                              <span className="finance-hub__account-number">
-                                {formatAccountNumber(account.accountNumber)}
-                              </span>
-                              <span className="finance-hub__account-name">
-                                {account.accountName || '계좌'}
-                              </span>
-                            </div>
-                            <div className="finance-hub__account-actions">
-                              {account.balance > 0 && (
-                                <span className="finance-hub__account-balance">
-                                  {formatCurrency(account.balance)}
-                                </span>
-                              )}
-                              {/* NEW: Sync to SQLite button */}
-                              <button
-                                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--sync"
-                                onClick={() => handleSyncAndSaveTransactions(connection.bankId, account.accountNumber)}
-                                disabled={isSyncingTransactions}
-                                title="거래내역 동기화 및 저장"
-                              >
-                                {isSyncingTransactions ? '⏳' : '🔄'} 동기화
-                              </button>
-                            </div>
+                    첫 번째 은행 연결하기
+                  </button>
+                </div>
+              ) : (
+                <div className="finance-hub__connected-banks">
+                  {connectedBanks.map((connection) => {
+                    const bank = getBankById(connection.bankId);
+                    if (!bank) return null;
+                    return (
+                      <div
+                        key={connection.bankId}
+                        className="finance-hub__bank-card"
+                        style={{ '--bank-color': bank.color } as React.CSSProperties}
+                      >
+                        <div className="finance-hub__bank-card-header">
+                          <span className="finance-hub__bank-icon">{bank.icon}</span>
+                          <div className="finance-hub__bank-info">
+                            <h4>{bank.nameKo}</h4>
+                            <span className="finance-hub__bank-name-en">
+                              {connection.alias ? `${connection.alias}님` : bank.name}
+                            </span>
                           </div>
-                        ))}
+                          <span className={`finance-hub__status finance-hub__status--${connection.status}`}>
+                            {connection.status === 'connected' && '연결됨'}
+                            {connection.status === 'pending' && '연결중...'}
+                            {connection.status === 'error' && '오류'}
+                            {connection.status === 'disconnected' && '연결 끊김'}
+                          </span>
+                        </div>
+
+                        {/* Account List with Sync Button */}
+                        {connection.accounts && connection.accounts.length > 0 && (
+                          <div className="finance-hub__accounts-list">
+                            {connection.accounts.map((account, idx) => (
+                              <div key={idx} className="finance-hub__account-item">
+                                <div className="finance-hub__account-info">
+                                  <span className="finance-hub__account-number">
+                                    {formatAccountNumber(account.accountNumber)}
+                                  </span>
+                                  <span className="finance-hub__account-name">
+                                    {account.accountName || '계좌'}
+                                  </span>
+                                </div>
+                                <div className="finance-hub__account-actions">
+                                  {account.balance > 0 && (
+                                    <span className="finance-hub__account-balance">
+                                      {formatCurrency(account.balance)}
+                                    </span>
+                                  )}
+                                  {/* NEW: Sync to SQLite button */}
+                                  <button
+                                    className="finance-hub__btn finance-hub__btn--small finance-hub__btn--sync"
+                                    onClick={() => handleSyncAndSaveTransactions(connection.bankId, account.accountNumber)}
+                                    disabled={isSyncingTransactions}
+                                    title="거래내역 동기화 및 저장"
+                                  >
+                                    {isSyncingTransactions ? '⏳' : '🔄'} 동기화
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="finance-hub__bank-card-footer">
+                          <span>
+                            {connection.lastSync
+                              ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}`
+                              : '동기화 안됨'}
+                          </span>
+                          <div className="finance-hub__bank-actions">
+                            <button
+                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                              onClick={() => handleFetchAccounts(connection.bankId)}
+                              disabled={isFetchingAccounts === connection.bankId}
+                            >
+                              {isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}
+                            </button>
+                            <button
+                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger"
+                              onClick={() => handleDisconnect(connection.bankId)}
+                            >
+                              연결 해제
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    )}
-
-                    <div className="finance-hub__bank-card-footer">
-                      <span>
-                        {connection.lastSync
-                          ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}`
-                          : '동기화 안됨'}
-                      </span>
-                      <div className="finance-hub__bank-actions">
-                        <button
-                          className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
-                          onClick={() => handleFetchAccounts(connection.bankId)}
-                          disabled={isFetchingAccounts === connection.bankId}
-                        >
-                          {isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}
-                        </button>
-                        <button
-                          className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger"
-                          onClick={() => handleDisconnect(connection.bankId)}
-                        >
-                          연결 해제
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* NEW: Transactions Section with SQLite Data */}
-        <section className="finance-hub__section">
-          <div className="finance-hub__section-header">
-            <h2>
-              <span className="finance-hub__section-icon">📊</span>
-              최근 거래 내역
-            </h2>
-            {selectedAccountId && (
-              <button
-                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
-                onClick={() => {
-                  setSelectedAccountId(null);
-                  setTransactions([]);
-                  setTransactionStats(null);
-                }}
-              >
-                전체 보기
-              </button>
-            )}
-          </div>
-
-          {/* Transaction Stats */}
-          {transactionStats && (
-            <div className="finance-hub__transaction-stats">
-              <div className="finance-hub__stat-card finance-hub__stat-card--deposit">
-                <span className="finance-hub__stat-card-label">총 입금</span>
-                <span className="finance-hub__stat-card-value">
-                  {formatCurrency(transactionStats.totalDeposits)}
-                </span>
-                <span className="finance-hub__stat-card-count">
-                  {transactionStats.depositCount}건
-                </span>
-              </div>
-              <div className="finance-hub__stat-card finance-hub__stat-card--withdrawal">
-                <span className="finance-hub__stat-card-label">총 출금</span>
-                <span className="finance-hub__stat-card-value">
-                  {formatCurrency(transactionStats.totalWithdrawals)}
-                </span>
-                <span className="finance-hub__stat-card-count">
-                  {transactionStats.withdrawalCount}건
-                </span>
-              </div>
-              <div className="finance-hub__stat-card">
-                <span className="finance-hub__stat-card-label">순 변동</span>
-                <span className={`finance-hub__stat-card-value ${
-                  transactionStats.totalDeposits - transactionStats.totalWithdrawals >= 0 
-                    ? 'finance-hub__stat-card-value--positive' 
-                    : 'finance-hub__stat-card-value--negative'
-                }`}>
-                  {formatCurrency(transactionStats.totalDeposits - transactionStats.totalWithdrawals)}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Transaction List */}
-          {isLoadingTransactions ? (
-            <div className="finance-hub__loading">
-              <span className="finance-hub__spinner"></span>
-              거래내역 불러오는 중...
-            </div>
-          ) : transactions.length === 0 ? (
-            <div className="finance-hub__empty-state finance-hub__empty-state--small">
-              <div className="finance-hub__empty-icon">📋</div>
-              <p>
-                {selectedAccountId 
-                  ? '이 계좌의 저장된 거래내역이 없습니다.'
-                  : '계좌를 선택하고 "동기화" 버튼을 눌러 거래내역을 저장하세요.'}
-              </p>
-            </div>
-          ) : (
-            <div className="finance-hub__transactions-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>날짜</th>
-                    <th>시간</th>
-                    <th>적요</th>
-                    <th>내용</th>
-                    <th className="finance-hub__cell--right">출금</th>
-                    <th className="finance-hub__cell--right">입금</th>
-                    <th className="finance-hub__cell--right">잔액</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.slice(0, 50).map((tx) => (
-                    <tr key={tx.id}>
-                      <td>{formatDate(tx.date)}</td>
-                      <td>{tx.time}</td>
-                      <td>{tx.type}</td>
-                      <td>{tx.description}</td>
-                      <td className="finance-hub__cell--right finance-hub__cell--withdrawal">
-                        {tx.withdrawal > 0 ? formatCurrency(tx.withdrawal) : '-'}
-                      </td>
-                      <td className="finance-hub__cell--right finance-hub__cell--deposit">
-                        {tx.deposit > 0 ? formatCurrency(tx.deposit) : '-'}
-                      </td>
-                      <td className="finance-hub__cell--right">
-                        {formatCurrency(tx.balance)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {transactions.length > 50 && (
-                <div className="finance-hub__transactions-more">
-                  ...외 {transactions.length - 50}건
+                    );
+                  })}
                 </div>
               )}
-            </div>
-          )}
-        </section>
+            </section>
 
-        {/* NEW: Monthly Summary */}
-        {monthlySummary.length > 0 && (
-          <section className="finance-hub__section">
-            <div className="finance-hub__section-header">
-              <h2>
-                <span className="finance-hub__section-icon">📅</span>
-                월별 요약
-              </h2>
-            </div>
-            <div className="finance-hub__monthly-summary">
-              {monthlySummary.slice(0, 6).map((month) => (
-                <div key={month.yearMonth} className="finance-hub__monthly-card">
-                  <h4>{month.yearMonth}</h4>
-                  <div className="finance-hub__monthly-stats">
-                    <div className="finance-hub__monthly-stat finance-hub__monthly-stat--deposit">
-                      <span>입금</span>
-                      <strong>{formatCurrency(month.totalDeposits)}</strong>
-                      <small>{month.depositCount}건</small>
-                    </div>
-                    <div className="finance-hub__monthly-stat finance-hub__monthly-stat--withdrawal">
-                      <span>출금</span>
-                      <strong>{formatCurrency(month.totalWithdrawals)}</strong>
-                      <small>{month.withdrawalCount}건</small>
-                    </div>
-                    <div className={`finance-hub__monthly-stat ${
-                      month.netChange >= 0 
-                        ? 'finance-hub__monthly-stat--positive' 
-                        : 'finance-hub__monthly-stat--negative'
+            {/* NEW: Transactions Section with SQLite Data */}
+            <section className="finance-hub__section">
+              <div className="finance-hub__section-header">
+                <h2>
+                  <span className="finance-hub__section-icon">📊</span>
+                  최근 거래 내역
+                </h2>
+                {selectedAccountId ? (
+                  <button
+                    className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                    onClick={() => {
+                      setSelectedAccountId(null);
+                      setTransactions([]);
+                      setTransactionStats(null);
+                    }}
+                  >
+                    전체 보기
+                  </button>
+                ) : (
+                  <button
+                    className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                    onClick={() => setCurrentView('transactions')}
+                  >
+                    더 보기 →
+                  </button>
+                )}
+              </div>
+
+              {/* Transaction Stats */}
+              {transactionStats && (
+                <div className="finance-hub__transaction-stats">
+                  <div className="finance-hub__stat-card finance-hub__stat-card--deposit">
+                    <span className="finance-hub__stat-card-label">총 입금</span>
+                    <span className="finance-hub__stat-card-value">
+                      {formatCurrency(transactionStats.totalDeposits)}
+                    </span>
+                    <span className="finance-hub__stat-card-count">
+                      {transactionStats.depositCount}건
+                    </span>
+                  </div>
+                  <div className="finance-hub__stat-card finance-hub__stat-card--withdrawal">
+                    <span className="finance-hub__stat-card-label">총 출금</span>
+                    <span className="finance-hub__stat-card-value">
+                      {formatCurrency(transactionStats.totalWithdrawals)}
+                    </span>
+                    <span className="finance-hub__stat-card-count">
+                      {transactionStats.withdrawalCount}건
+                    </span>
+                  </div>
+                  <div className="finance-hub__stat-card">
+                    <span className="finance-hub__stat-card-label">순 변동</span>
+                    <span className={`finance-hub__stat-card-value ${
+                      transactionStats.totalDeposits - transactionStats.totalWithdrawals >= 0 
+                        ? 'finance-hub__stat-card-value--positive' 
+                        : 'finance-hub__stat-card-value--negative'
                     }`}>
-                      <span>순변동</span>
-                      <strong>{formatCurrency(month.netChange)}</strong>
+                      {formatCurrency(transactionStats.totalDeposits - transactionStats.totalWithdrawals)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Transaction List */}
+              {isLoadingTransactions ? (
+                <div className="finance-hub__loading">
+                  <span className="finance-hub__spinner"></span>
+                  거래내역 불러오는 중...
+                </div>
+              ) : transactions.length === 0 ? (
+                <div className="finance-hub__empty-state finance-hub__empty-state--small">
+                  <div className="finance-hub__empty-icon">📋</div>
+                  <p>
+                    {selectedAccountId 
+                      ? '이 계좌의 저장된 거래내역이 없습니다.'
+                      : '계좌를 선택하고 "동기화" 버튼을 눌러 거래내역을 저장하세요.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="finance-hub__transactions-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>시간</th>
+                        <th>적요</th>
+                        <th>내용</th>
+                        <th className="finance-hub__cell--right">출금</th>
+                        <th className="finance-hub__cell--right">입금</th>
+                        <th className="finance-hub__cell--right">잔액</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.slice(0, 10).map((tx) => (
+                        <tr key={tx.id}>
+                          <td>{formatDate(tx.date)}</td>
+                          <td>{tx.time}</td>
+                          <td>{tx.type}</td>
+                          <td>{tx.description}</td>
+                          <td className="finance-hub__cell--right finance-hub__cell--withdrawal">
+                            {tx.withdrawal > 0 ? formatCurrency(tx.withdrawal) : '-'}
+                          </td>
+                          <td className="finance-hub__cell--right finance-hub__cell--deposit">
+                            {tx.deposit > 0 ? formatCurrency(tx.deposit) : '-'}
+                          </td>
+                          <td className="finance-hub__cell--right">
+                            {formatCurrency(tx.balance)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {transactions.length > 10 && (
+                    <div 
+                      className="finance-hub__transactions-more"
+                      onClick={() => setCurrentView('transactions')}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      전체 거래내역 보러가기 →
                     </div>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
+              )}
+            </section>
 
-        {/* Recent Sync Operations */}
-        {recentSyncOps.length > 0 && (
-          <section className="finance-hub__section">
-            <div className="finance-hub__section-header">
-              <h2>
-                <span className="finance-hub__section-icon">🔄</span>
-                최근 동기화 기록
-              </h2>
-            </div>
-            <div className="finance-hub__sync-history">
-              {recentSyncOps.slice(0, 5).map((op) => (
-                <div key={op.id} className={`finance-hub__sync-item finance-hub__sync-item--${op.status}`}>
-                  <div className="finance-hub__sync-info">
-                    <span className="finance-hub__sync-account">
-                      {formatAccountNumber(op.accountNumber)}
-                    </span>
-                    <span className="finance-hub__sync-date">
-                      {new Date(op.startedAt).toLocaleString('ko-KR')}
-                    </span>
-                  </div>
-                  <div className="finance-hub__sync-stats">
-                    <span>{op.totalCount}건</span>
-                    <span className="finance-hub__sync-deposit">+{formatCurrency(op.totalDeposits)}</span>
-                    <span className="finance-hub__sync-withdrawal">-{formatCurrency(op.totalWithdrawals)}</span>
-                  </div>
-                  <span className={`finance-hub__sync-status finance-hub__sync-status--${op.status}`}>
-                    {op.status === 'completed' ? '✓' : op.status === 'failed' ? '✗' : '⏳'}
-                  </span>
+            {/* NEW: Monthly Summary */}
+            {monthlySummary.length > 0 && (
+              <section className="finance-hub__section">
+                <div className="finance-hub__section-header">
+                  <h2>
+                    <span className="finance-hub__section-icon">📅</span>
+                    월별 요약
+                  </h2>
                 </div>
-              ))}
-            </div>
-          </section>
+                <div className="finance-hub__monthly-summary">
+                  {monthlySummary.slice(0, 6).map((month) => (
+                    <div key={month.yearMonth} className="finance-hub__monthly-card">
+                      <h4>{month.yearMonth}</h4>
+                      <div className="finance-hub__monthly-stats">
+                        <div className="finance-hub__monthly-stat finance-hub__monthly-stat--deposit">
+                          <span>입금</span>
+                          <strong>{formatCurrency(month.totalDeposits)}</strong>
+                          <small>{month.depositCount}건</small>
+                        </div>
+                        <div className="finance-hub__monthly-stat finance-hub__monthly-stat--withdrawal">
+                          <span>출금</span>
+                          <strong>{formatCurrency(month.totalWithdrawals)}</strong>
+                          <small>{month.withdrawalCount}건</small>
+                        </div>
+                        <div className={`finance-hub__monthly-stat ${
+                          month.netChange >= 0 
+                            ? 'finance-hub__monthly-stat--positive' 
+                            : 'finance-hub__monthly-stat--negative'
+                        }`}>
+                          <span>순변동</span>
+                          <strong>{formatCurrency(month.netChange)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recent Sync Operations */}
+            {recentSyncOps.length > 0 && (
+              <section className="finance-hub__section">
+                <div className="finance-hub__section-header">
+                  <h2>
+                    <span className="finance-hub__section-icon">🔄</span>
+                    최근 동기화 기록
+                  </h2>
+                </div>
+                <div className="finance-hub__sync-history">
+                  {recentSyncOps.slice(0, 5).map((op) => (
+                    <div key={op.id} className={`finance-hub__sync-item finance-hub__sync-item--${op.status}`}>
+                      <div className="finance-hub__sync-info">
+                        <span className="finance-hub__sync-account">
+                          {formatAccountNumber(op.accountNumber)}
+                        </span>
+                        <span className="finance-hub__sync-date">
+                          {new Date(op.startedAt).toLocaleString('ko-KR')}
+                        </span>
+                      </div>
+                      <div className="finance-hub__sync-stats">
+                        <span>{op.totalCount}건</span>
+                        <span className="finance-hub__sync-deposit">+{formatCurrency(op.totalDeposits)}</span>
+                        <span className="finance-hub__sync-withdrawal">-{formatCurrency(op.totalWithdrawals)}</span>
+                      </div>
+                      <span className={`finance-hub__sync-status finance-hub__sync-status--${op.status}`}>
+                        {op.status === 'completed' ? '✓' : op.status === 'failed' ? '✗' : '⏳'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* AI Insights Section */}
+            <section className="finance-hub__section finance-hub__section--full">
+              <div className="finance-hub__section-header">
+                <h2>
+                  <span className="finance-hub__section-icon">🤖</span>
+                  AI 재무 분석
+                </h2>
+              </div>
+
+              <div className="finance-hub__insights">
+                <div className="finance-hub__insight-card">
+                  <div className="finance-hub__insight-icon">📈</div>
+                  <h4>지출 분석</h4>
+                  <p>AI가 자동으로 거래를 분류하고 지출 패턴을 분석합니다</p>
+                </div>
+                <div className="finance-hub__insight-card">
+                  <div className="finance-hub__insight-icon">🎯</div>
+                  <h4>예산 추천</h4>
+                  <p>과거 데이터를 기반으로 최적의 예산 계획을 제안합니다</p>
+                </div>
+                <div className="finance-hub__insight-card">
+                  <div className="finance-hub__insight-icon">⚠️</div>
+                  <h4>이상 거래 감지</h4>
+                  <p>비정상적인 거래 패턴을 실시간으로 감지합니다</p>
+                </div>
+                <div className="finance-hub__insight-card">
+                  <div className="finance-hub__insight-icon">📑</div>
+                  <h4>세금 보고서</h4>
+                  <p>연말정산 및 세금 신고용 보고서를 자동 생성합니다</p>
+                </div>
+              </div>
+            </section>
+          </>
+        ) : (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <TransactionsPage />
+          </div>
         )}
-
-        {/* AI Insights Section */}
-        <section className="finance-hub__section finance-hub__section--full">
-          <div className="finance-hub__section-header">
-            <h2>
-              <span className="finance-hub__section-icon">🤖</span>
-              AI 재무 분석
-            </h2>
-          </div>
-
-          <div className="finance-hub__insights">
-            <div className="finance-hub__insight-card">
-              <div className="finance-hub__insight-icon">📈</div>
-              <h4>지출 분석</h4>
-              <p>AI가 자동으로 거래를 분류하고 지출 패턴을 분석합니다</p>
-            </div>
-            <div className="finance-hub__insight-card">
-              <div className="finance-hub__insight-icon">🎯</div>
-              <h4>예산 추천</h4>
-              <p>과거 데이터를 기반으로 최적의 예산 계획을 제안합니다</p>
-            </div>
-            <div className="finance-hub__insight-card">
-              <div className="finance-hub__insight-icon">⚠️</div>
-              <h4>이상 거래 감지</h4>
-              <p>비정상적인 거래 패턴을 실시간으로 감지합니다</p>
-            </div>
-            <div className="finance-hub__insight-card">
-              <div className="finance-hub__insight-icon">📑</div>
-              <h4>세금 보고서</h4>
-              <p>연말정산 및 세금 신고용 보고서를 자동 생성합니다</p>
-            </div>
-          </div>
-        </section>
       </main>
 
       {/* Bank Selector Modal - Keep your existing modal code */}
