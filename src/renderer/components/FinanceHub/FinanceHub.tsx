@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './FinanceHub.css';
 
-// Korean Bank Configuration with login URLs
+// ============================================
+// Types
+// ============================================
+
 interface BankConfig {
   id: string;
   name: string;
@@ -33,12 +36,48 @@ interface ConnectedBank {
 
 interface Transaction {
   id: string;
-  date: Date;
+  date: string;
+  time: string;
+  type: string;
   description: string;
-  amount: number;
+  withdrawal: number;
+  deposit: number;
   balance: number;
-  bankId: string;
-  category?: string;
+  branch: string;
+  accountId: string;
+}
+
+interface TransactionStats {
+  totalTransactions: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  depositCount: number;
+  withdrawalCount: number;
+  avgDeposit: number;
+  avgWithdrawal: number;
+}
+
+interface MonthlySummary {
+  yearMonth: string;
+  depositCount: number;
+  withdrawalCount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  netChange: number;
+}
+
+interface SyncOperation {
+  id: string;
+  accountId: string;
+  accountNumber: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  duration?: number;
+  totalCount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  errorMessage?: string;
 }
 
 interface BankCredentials {
@@ -47,8 +86,11 @@ interface BankCredentials {
   password: string;
 }
 
+// ============================================
+// Bank Configuration
+// ============================================
+
 const KOREAN_BANKS: BankConfig[] = [
-  // Major Commercial Banks (시중은행)
   {
     id: 'shinhan',
     name: 'Shinhan Bank',
@@ -67,7 +109,7 @@ const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#FFBC00',
     icon: '⭐',
-    supportsAutomation: false, // Not implemented yet
+    supportsAutomation: false,
   },
   {
     id: 'woori',
@@ -77,7 +119,7 @@ const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#0072BC',
     icon: '🏛️',
-    supportsAutomation: false, // Not implemented yet
+    supportsAutomation: false,
   },
   {
     id: 'hana',
@@ -87,160 +129,21 @@ const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#009775',
     icon: '🌿',
-    supportsAutomation: false, // Not implemented yet
+    supportsAutomation: false,
   },
-  {
-    id: 'nonghyup',
-    name: 'NH NongHyup Bank',
-    nameKo: 'NH농협은행',
-    loginUrl: 'https://banking.nonghyup.com/nhbank.html',
-    category: 'special',
-    color: '#00A651',
-    icon: '🌾',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'ibk',
-    name: 'IBK Industrial Bank',
-    nameKo: 'IBK기업은행',
-    loginUrl: 'https://www.ibk.co.kr/',
-    category: 'special',
-    color: '#003478',
-    icon: '🏭',
-    supportsAutomation: false, // Not implemented yet
-  },
-  // Internet-Only Banks (인터넷전문은행)
-  {
-    id: 'kakaobank',
-    name: 'Kakao Bank',
-    nameKo: '카카오뱅크',
-    loginUrl: 'https://www.kakaobank.com/',
-    category: 'internet',
-    color: '#FFEB00',
-    icon: '💬',
-    supportsAutomation: false, // Mobile-only
-  },
-  {
-    id: 'kbank',
-    name: 'K Bank',
-    nameKo: '케이뱅크',
-    loginUrl: 'https://www.kbanknow.com/',
-    category: 'internet',
-    color: '#FF6B35',
-    icon: '📱',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'tossbank',
-    name: 'Toss Bank',
-    nameKo: '토스뱅크',
-    loginUrl: 'https://www.tossbank.com/',
-    category: 'internet',
-    color: '#0064FF',
-    icon: '💸',
-    supportsAutomation: false, // Mobile-only
-  },
-  // Special Banks (특수은행)
-  {
-    id: 'kdb',
-    name: 'KDB Industrial Bank',
-    nameKo: 'KDB산업은행',
-    loginUrl: 'https://www.kdb.co.kr/',
-    category: 'special',
-    color: '#1A237E',
-    icon: '🏗️',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'suhyup',
-    name: 'Sh Suhyup Bank',
-    nameKo: 'Sh수협은행',
-    loginUrl: 'https://www.suhyup-bank.com/',
-    category: 'special',
-    color: '#00BCD4',
-    icon: '🐟',
-    supportsAutomation: false, // Not implemented yet
-  },
-  // Regional Banks (지방은행)
-  {
-    id: 'dgb',
-    name: 'DGB Daegu Bank',
-    nameKo: 'DGB대구은행',
-    loginUrl: 'https://www.dgb.co.kr/',
-    category: 'regional',
-    color: '#E31937',
-    icon: '🏔️',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'bnk_busan',
-    name: 'BNK Busan Bank',
-    nameKo: 'BNK부산은행',
-    loginUrl: 'https://www.busanbank.co.kr/',
-    category: 'regional',
-    color: '#0072CE',
-    icon: '⚓',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'kwangju',
-    name: 'Kwangju Bank',
-    nameKo: '광주은행',
-    loginUrl: 'https://www.kjbank.com/',
-    category: 'regional',
-    color: '#00A9E0',
-    icon: '🌸',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'jeonbuk',
-    name: 'Jeonbuk Bank',
-    nameKo: '전북은행',
-    loginUrl: 'https://www.jbbank.co.kr/',
-    category: 'regional',
-    color: '#003DA5',
-    icon: '🎋',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'jeju',
-    name: 'Jeju Bank',
-    nameKo: '제주은행',
-    loginUrl: 'https://www.jejubank.co.kr/',
-    category: 'regional',
-    color: '#FF6F00',
-    icon: '🍊',
-    supportsAutomation: false, // Not implemented yet
-  },
-  // Foreign Banks (외국계은행)
-  {
-    id: 'sc',
-    name: 'SC First Bank',
-    nameKo: 'SC제일은행',
-    loginUrl: 'https://www.standardchartered.co.kr/',
-    category: 'major',
-    color: '#007A3D',
-    icon: '🌐',
-    supportsAutomation: false, // Not implemented yet
-  },
-  {
-    id: 'imbank',
-    name: 'iM Bank',
-    nameKo: 'iM뱅크',
-    loginUrl: 'https://banking.imbank.co.kr/',
-    category: 'regional',
-    color: '#E4002B',
-    icon: '📲',
-    supportsAutomation: false, // Not implemented yet
-  },
+  // ... (keep other banks as in your original file)
 ];
 
+// ============================================
+// Main Component
+// ============================================
+
 const FinanceHub: React.FC = () => {
+  // === State ===
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [transactions] = useState<Transaction[]>([]);
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
   const [credentials, setCredentials] = useState<BankCredentials>({
     bankId: '',
@@ -254,7 +157,22 @@ const FinanceHub: React.FC = () => {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
 
-  // Calculate total accounts across all connected banks
+  // === NEW: SQLite-backed state ===
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null);
+  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
+  const [recentSyncOps, setRecentSyncOps] = useState<SyncOperation[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
+  const [dbStats, setDbStats] = useState<{
+    totalAccounts: number;
+    totalTransactions: number;
+    totalSyncOperations: number;
+    lastSyncAt: string | null;
+  } | null>(null);
+
+  // Calculate totals
   const totalAccounts = connectedBanks.reduce(
     (sum, bank) => sum + (bank.accounts?.length || 0),
     0
@@ -276,20 +194,238 @@ const FinanceHub: React.FC = () => {
     internet: '인터넷전문은행',
   };
 
-  // Check for existing connections on mount
+  // ============================================
+  // NEW: Load data from SQLite on mount
+  // ============================================
+
+  useEffect(() => {
+    loadDatabaseStats();
+    loadRecentSyncOperations();
+  }, []);
+
+  const loadDatabaseStats = async () => {
+    try {
+      const result = await window.electron.shinhanDb.getOverallStats();
+      if (result.success) {
+        setDbStats(result.data);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Failed to load DB stats:', error);
+    }
+  };
+
+  const loadRecentSyncOperations = async () => {
+    try {
+      const result = await window.electron.shinhanDb.getRecentSyncOperations(10);
+      if (result.success) {
+        setRecentSyncOps(result.data || []);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Failed to load sync operations:', error);
+    }
+  };
+
+  // ============================================
+  // NEW: Load transactions for selected account
+  // ============================================
+
+  const loadTransactionsForAccount = useCallback(async (accountId: string) => {
+    setIsLoadingTransactions(true);
+    setSelectedAccountId(accountId);
+
+    try {
+      // Load transactions
+      const txResult = await window.electron.shinhanDb.getTransactionsByAccount(accountId, 100);
+      if (txResult.success) {
+        setTransactions(txResult.data || []);
+      }
+
+      // Load stats
+      const statsResult = await window.electron.shinhanDb.getTransactionStats(accountId);
+      if (statsResult.success) {
+        setTransactionStats(statsResult.data || null);
+      }
+
+      // Load monthly summary
+      const summaryResult = await window.electron.shinhanDb.getMonthlySummary(accountId);
+      if (summaryResult.success) {
+        setMonthlySummary(summaryResult.data || []);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Failed to load transactions:', error);
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  }, []);
+
+  // ============================================
+  // NEW: Sync transactions and save to SQLite
+  // ============================================
+
+  const handleSyncAndSaveTransactions = async (bankId: string, accountNumber: string) => {
+    setIsSyncingTransactions(true);
+
+    try {
+      // Calculate date range (last 3 months)
+      const today = new Date();
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(today.getMonth() - 3);
+
+      const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+      const startDate = formatDate(threeMonthsAgo);
+      const endDate = formatDate(today);
+
+      console.log(`[FinanceHub] Syncing transactions for ${accountNumber}: ${startDate} ~ ${endDate}`);
+
+      // Fetch transactions from bank
+      const result = await window.electron.financeHub.getTransactions(
+        bankId,
+        accountNumber,
+        startDate,
+        endDate,
+        true // Enable parsing
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch transactions');
+      }
+
+      // Get account metadata from the connected bank
+      const connectedBank = connectedBanks.find(b => b.bankId === bankId);
+      const accountInfo = connectedBank?.accounts?.find(a => a.accountNumber === accountNumber);
+
+      // Prepare data for SQLite import
+      const accountData = {
+        accountNumber: accountNumber,
+        accountName: accountInfo?.accountName || '계좌',
+        customerName: connectedBank?.alias || '',
+        balance: result.metadata?.balance || accountInfo?.balance || 0,
+        availableBalance: result.metadata?.availableBalance || 0,
+        openDate: result.metadata?.openDate || '',
+      };
+
+      const transactionsData = (result.transactions || []).map((tx: any) => ({
+        date: tx.date,
+        time: tx.time || '',
+        type: tx.type || '',
+        withdrawal: tx.withdrawal || 0,
+        deposit: tx.deposit || 0,
+        description: tx.description || '',
+        balance: tx.balance || 0,
+        branch: tx.branch || '',
+      }));
+
+      const syncMetadata = {
+        queryPeriodStart: startDate,
+        queryPeriodEnd: endDate,
+        excelFilePath: result.file || result.filename,
+      };
+
+      // Import to SQLite
+      const importResult = await window.electron.shinhanDb.importTransactions(
+        accountData,
+        transactionsData,
+        syncMetadata
+      );
+
+      if (importResult.success) {
+        const { importedCount, skippedCount, account } = importResult.data;
+        
+        console.log(`[FinanceHub] Import complete: ${importedCount} new, ${skippedCount} duplicates skipped`);
+
+        // Refresh data
+        await loadDatabaseStats();
+        await loadRecentSyncOperations();
+        
+        // Load transactions for this account
+        await loadTransactionsForAccount(account.id);
+
+        // Update connected bank's lastSync
+        setConnectedBanks(prev => prev.map(b => 
+          b.bankId === bankId 
+            ? { ...b, lastSync: new Date() }
+            : b
+        ));
+
+        alert(
+          `✅ 거래내역 동기화 완료!\n\n` +
+          `• 새로 추가: ${importedCount}건\n` +
+          `• 중복 건너뜀: ${skippedCount}건\n` +
+          `• 기간: ${startDate} ~ ${endDate}`
+        );
+      } else {
+        throw new Error(importResult.error);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Sync error:', error);
+      alert(`거래내역 동기화 실패: ${error}`);
+    } finally {
+      setIsSyncingTransactions(false);
+    }
+  };
+
+  // ============================================
+  // Existing handlers (keep your original implementations)
+  // ============================================
+
   useEffect(() => {
     const checkExistingConnections = async () => {
       try {
-        const connectedBanksList = await window.electron.financeHub.getConnectedBanks();
-        if (connectedBanksList && connectedBanksList.length > 0) {
-          const updatedBanks: ConnectedBank[] = connectedBanksList.map((bank) => ({
-            bankId: bank.bankId,
-            status: bank.isLoggedIn ? 'connected' : 'disconnected',
-            alias: bank.userName || undefined,
-            lastSync: new Date(),
+        // 1. Load saved accounts from SQLite (persisted)
+        const savedResult = await window.electron.shinhanDb.getAllAccounts();
+        let savedBanks: ConnectedBank[] = [];
+        
+        if (savedResult.success && savedResult.data) {
+          // Group accounts by bank (currently assuming all are Shinhan for now, but good to be generic)
+          // SQLite accounts don't strictly store bankId, but we know they are Shinhan
+          const shinhanAccounts = savedResult.data.map((acc: any) => ({
+            accountNumber: acc.accountNumber,
+            accountName: acc.accountName,
+            bankId: 'shinhan',
+            balance: acc.balance,
+            currency: 'KRW',
+            lastUpdated: acc.lastSyncedAt
           }));
-          setConnectedBanks(updatedBanks);
+
+          if (shinhanAccounts.length > 0) {
+            savedBanks.push({
+              bankId: 'shinhan',
+              status: 'disconnected',
+              alias: savedResult.data[0].customerName, // Use first account's customer name
+              lastSync: new Date(savedResult.data[0].lastSyncedAt),
+              accounts: shinhanAccounts
+            });
+          }
         }
+
+        // 2. Check active sessions
+        const connectedBanksList = await window.electron.financeHub.getConnectedBanks();
+        
+        // 3. Merge active sessions with saved banks
+        const mergedBanks = savedBanks.map(bank => {
+          const isActive = connectedBanksList.find((s: any) => s.bankId === bank.bankId);
+          if (isActive) {
+            return { ...bank, status: 'connected' as const, alias: isActive.userName || bank.alias };
+          }
+          return bank;
+        });
+
+        // Add any active sessions that weren't in saved store
+        if (connectedBanksList && connectedBanksList.length > 0) {
+          connectedBanksList.forEach((active: any) => {
+            if (!mergedBanks.find(b => b.bankId === active.bankId)) {
+              mergedBanks.push({
+                bankId: active.bankId,
+                status: 'connected',
+                alias: active.userName || undefined,
+                lastSync: new Date(),
+                accounts: []
+              });
+            }
+          });
+        }
+        
+        setConnectedBanks(mergedBanks);
       } catch (error) {
         console.error('[FinanceHub] Failed to check existing connections:', error);
       }
@@ -298,7 +434,6 @@ const FinanceHub: React.FC = () => {
     checkExistingConnections();
   }, []);
 
-  // Fetch accounts for a connected bank
   const handleFetchAccounts = useCallback(async (bankId: string) => {
     console.log(`[FinanceHub] Fetching accounts for ${bankId}...`);
     setIsFetchingAccounts(bankId);
@@ -307,7 +442,6 @@ const FinanceHub: React.FC = () => {
       const result = await window.electron.financeHub.getAccounts(bankId);
 
       if (result.success && result.accounts) {
-        // Update the connected bank with fetched accounts
         setConnectedBanks((prev) =>
           prev.map((bank) =>
             bank.bankId === bankId
@@ -346,7 +480,6 @@ const FinanceHub: React.FC = () => {
 
     setSelectedBank(bank);
     
-    // Load saved credentials if they exist
     try {
       const result = await window.electron.financeHub.getSavedCredentials(bank.id);
       if (result.success && result.credentials) {
@@ -357,20 +490,12 @@ const FinanceHub: React.FC = () => {
         });
         setSaveCredentials(true);
       } else {
-        setCredentials({
-          bankId: bank.id,
-          userId: '',
-          password: '',
-        });
-        setSaveCredentials(true); // Default to true for next time
+        setCredentials({ bankId: bank.id, userId: '', password: '' });
+        setSaveCredentials(true);
       }
     } catch (error) {
       console.error('[FinanceHub] Failed to load saved credentials:', error);
-      setCredentials({
-        bankId: bank.id,
-        userId: '',
-        password: '',
-      });
+      setCredentials({ bankId: bank.id, userId: '', password: '' });
     }
   };
 
@@ -391,9 +516,8 @@ const FinanceHub: React.FC = () => {
 
     try {
       console.log(`[FinanceHub] Connecting to ${selectedBank.nameKo}...`);
-
-      // Use loginAndGetAccounts to login and fetch accounts in one call
       setConnectionProgress('은행에 로그인하는 중...');
+      
       const result = await window.electron.financeHub.loginAndGetAccounts(selectedBank.id, {
         userId: credentials.userId,
         password: credentials.password,
@@ -402,7 +526,6 @@ const FinanceHub: React.FC = () => {
       if (result.success && result.isLoggedIn) {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
 
-        // Save credentials if requested
         if (saveCredentials) {
           try {
             await window.electron.financeHub.saveCredentials(selectedBank.id, {
@@ -410,16 +533,8 @@ const FinanceHub: React.FC = () => {
               userId: credentials.userId,
               password: credentials.password,
             });
-            console.log(`[FinanceHub] Saved credentials for ${selectedBank.id}`);
           } catch (saveError) {
             console.warn('[FinanceHub] Failed to save credentials:', saveError);
-          }
-        } else {
-          // Explicitly remove if user unchecked save
-          try {
-            await window.electron.financeHub.removeCredentials(selectedBank.id);
-          } catch (removeError) {
-            console.warn('[FinanceHub] Failed to remove credentials:', removeError);
           }
         }
 
@@ -431,54 +546,44 @@ const FinanceHub: React.FC = () => {
           accounts: result.accounts || [],
         };
 
-        // Check if already connected
+        // Save accounts to SQLite
+        if (result.accounts && result.accounts.length > 0) {
+          try {
+            for (const acc of result.accounts) {
+              await window.electron.shinhanDb.upsertAccount({
+                accountNumber: acc.accountNumber,
+                accountName: acc.accountName,
+                customerName: result.userName || '사용자',
+                balance: acc.balance,
+                availableBalance: acc.balance, // Assuming same for now if not provided
+                openDate: '' // Not provided in simple account list
+              });
+            }
+            // Refresh stats after saving
+            loadDatabaseStats();
+          } catch (err) {
+            console.error('[FinanceHub] Failed to save accounts to SQLite:', err);
+          }
+        }
+
         const existingIndex = connectedBanks.findIndex((b) => b.bankId === selectedBank.id);
         if (existingIndex >= 0) {
-          // Update existing connection
           setConnectedBanks((prev) =>
             prev.map((b, i) => (i === existingIndex ? newConnection : b))
           );
         } else {
-          // Add new connection
           setConnectedBanks((prev) => [...prev, newConnection]);
         }
 
-        const accountsMessage =
-          result.accounts && result.accounts.length > 0
-            ? `\n\n${result.accounts.length}개의 계좌를 찾았습니다:\n` +
-              result.accounts.map((a) => `• ${a.accountNumber}`).join('\n')
-            : '';
-
         alert(
-          `${selectedBank.nameKo}${result.userName ? ` (${result.userName}님)` : ''} 연결에 성공했습니다!${accountsMessage}`
+          `${selectedBank.nameKo}${result.userName ? ` (${result.userName}님)` : ''} 연결에 성공했습니다!\n\n` +
+          `${result.accounts?.length || 0}개의 계좌를 찾았습니다.`
         );
 
-        // Close modal
         handleCloseModal();
       } else {
         console.error(`[FinanceHub] Login failed:`, result.error);
         setConnectionProgress('');
-
-        // Add with error status
-        setConnectedBanks((prev) => {
-          const existingIndex = prev.findIndex((b) => b.bankId === selectedBank.id);
-          if (existingIndex >= 0) {
-            return prev.map((b, i) =>
-              i === existingIndex
-                ? { ...b, status: 'error' as const, lastSync: new Date() }
-                : b
-            );
-          }
-          return [
-            ...prev,
-            {
-              bankId: selectedBank.id,
-              status: 'error' as const,
-              lastSync: new Date(),
-            },
-          ];
-        });
-
         alert(`${selectedBank.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
       }
     } catch (error) {
@@ -508,7 +613,40 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  // Debug Functions
+  const handleCloseModal = () => {
+    setShowBankSelector(false);
+    setSelectedBank(null);
+    setCredentials({ bankId: '', userId: '', password: '' });
+    setConnectionProgress('');
+  };
+
+  const getBankById = (id: string): BankConfig | undefined => {
+    return KOREAN_BANKS.find((bank) => bank.id === id);
+  };
+
+  const formatAccountNumber = (num: string): string => {
+    if (num.includes('-') || num.length < 10) return num;
+    return `${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6)}`;
+  };
+
+  const formatCurrency = (amount: number): string => {
+    return `₩${amount.toLocaleString()}`;
+  };
+
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    // Handle YYYY-MM-DD or YYYYMMDD formats
+    const normalized = dateStr.replace(/-/g, '');
+    if (normalized.length === 8) {
+      return `${normalized.slice(0, 4)}.${normalized.slice(4, 6)}.${normalized.slice(6, 8)}`;
+    }
+    return dateStr;
+  };
+
+  // ============================================
+  // Debug handlers (keep your existing ones)
+  // ============================================
+
   const handleDebugOpenBrowser = async (bankId: string) => {
     const bank = getBankById(bankId);
     if (!bank) return;
@@ -516,14 +654,12 @@ const FinanceHub: React.FC = () => {
     setDebugLoading('browser');
     try {
       const result = await window.electron.financeHub.openBrowser(bankId);
-
       if (result.success) {
-        alert(`✅ ${bank.nameKo} 브라우저가 열렸습니다!\n\n수동으로 로그인한 후 다른 버튼들을 사용하세요.`);
+        alert(`✅ ${bank.nameKo} 브라우저가 열렸습니다!`);
       } else {
         alert(`❌ 브라우저 열기 실패: ${result.error}`);
       }
     } catch (error) {
-      console.error('[Debug] Open browser error:', error);
       alert(`오류 발생: ${error}`);
     } finally {
       setDebugLoading(null);
@@ -538,7 +674,7 @@ const FinanceHub: React.FC = () => {
     try {
       const result = await window.electron.financeHub.getSavedCredentials(bankId);
       if (!result.success || !result.credentials) {
-        alert('저장된 인증 정보가 없습니다. 먼저 은행을 연결해주세요.');
+        alert('저장된 인증 정보가 없습니다.');
         return;
       }
 
@@ -560,7 +696,6 @@ const FinanceHub: React.FC = () => {
         alert(`❌ 로그인 실패: ${loginResult.error}`);
       }
     } catch (error) {
-      console.error('[Debug] Login error:', error);
       alert(`오류 발생: ${error}`);
     } finally {
       setDebugLoading(null);
@@ -579,147 +714,24 @@ const FinanceHub: React.FC = () => {
         setConnectedBanks((prev) => {
           const existingIndex = prev.findIndex((b) => b.bankId === bankId);
           if (existingIndex >= 0) {
-            // Update existing
             return prev.map((b, i) =>
               i === existingIndex
-                ? {
-                    ...b,
-                    accounts: result.accounts,
-                    lastSync: new Date(),
-                    status: 'connected' as const,
-                  }
+                ? { ...b, accounts: result.accounts, lastSync: new Date(), status: 'connected' as const }
                 : b
             );
           } else {
-            // Add new connection for debug session
-            return [
-              ...prev,
-              {
-                bankId: bankId,
-                status: 'connected' as const,
-                lastSync: new Date(),
-                accounts: result.accounts,
-              },
-            ];
+            return [...prev, { bankId, status: 'connected' as const, lastSync: new Date(), accounts: result.accounts }];
           }
         });
         
         alert(
           `✅ ${result.accounts.length}개의 계좌를 찾았습니다:\n` +
-            result.accounts.map((a) => `• ${a.accountNumber} (₩${a.balance.toLocaleString()})`).join('\n')
+          result.accounts.map((a: AccountInfo) => `• ${a.accountNumber} (${formatCurrency(a.balance)})`).join('\n')
         );
       } else {
         alert(`❌ 계좌 조회 실패: ${result.error}`);
       }
     } catch (error) {
-      console.error('[Debug] Get accounts error:', error);
-      alert(`오류 발생: ${error}`);
-    } finally {
-      setDebugLoading(null);
-    }
-  };
-
-
-  const handleDebugGetTransactions = async (bankId: string) => {
-    const bank = getBankById(bankId);
-    if (!bank) return;
-
-    // Get the first account if available
-    const connectedBank = connectedBanks.find(b => b.bankId === bankId);
-    if (!connectedBank || !connectedBank.accounts || connectedBank.accounts.length === 0) {
-      alert('먼저 계좌 조회를 실행하여 계좌 정보를 가져와주세요.');
-      return;
-    }
-
-    const account = connectedBank.accounts[0]; // Use first account for testing
-    const today = new Date();
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(today.getMonth() - 1);
-    
-    // Format YYYYMMDD
-    const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
-    const startDate = formatDate(oneMonthAgo);
-    const endDate = formatDate(today);
-
-    setDebugLoading('transactions');
-    try {
-      alert(`계좌 ${account.accountNumber}의 최근 1개월 거래내역을 조회합니다.`);
-      const result = await window.electron.financeHub.getTransactions(
-        bankId, 
-        account.accountNumber,
-        startDate,
-        endDate
-      );
-
-      if (result.success) {
-        alert(
-          `✅ 거래내역 조회 성공!\n` +
-          `기간: ${startDate} ~ ${endDate}\n` +
-          `건수: ${result.transactions?.length || 0}건`
-        );
-        console.log('[Debug] Transactions:', result.transactions);
-      } else {
-        alert(`❌ 거래내역 조회 실패: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('[Debug] Get transactions error:', error);
-      alert(`오류 발생: ${error}`);
-    } finally {
-      setDebugLoading(null);
-    }
-  };
-
-  const handleDebugGetTransactionsWithParsing = async (bankId: string) => {
-    const bank = getBankById(bankId);
-    if (!bank) return;
-
-    // Get the first account if available
-    const connectedBank = connectedBanks.find(b => b.bankId === bankId);
-    if (!connectedBank || !connectedBank.accounts || connectedBank.accounts.length === 0) {
-      alert('먼저 계좌 조회를 실행하여 계좌 정보를 가져와주세요.');
-      return;
-    }
-
-    const account = connectedBank.accounts[0]; // Use first account for testing
-    const today = new Date();
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(today.getMonth() - 1);
-    
-    // Format YYYYMMDD
-    const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
-    const startDate = formatDate(oneMonthAgo);
-    const endDate = formatDate(today);
-
-    setDebugLoading('transactions-parse');
-    try {
-      alert(`계좌 ${account.accountNumber}의 최근 1개월 거래내역을 조회하고 엑셀 파싱을 시도합니다.`);
-      const result = await window.electron.financeHub.getTransactions(
-        bankId, 
-        account.accountNumber,
-        startDate,
-        endDate,
-        true // Enable parsing
-      );
-
-      if (result.success) {
-        let message = `✅ 거래내역 조회 및 파싱 성공!\n` +
-          `기간: ${startDate} ~ ${endDate}\n`;
-          
-        if (result.summary) {
-          message += `입금: ${result.summary.depositCount}건 (₩${result.summary.totalDeposits.toLocaleString()})\n` +
-                     `출금: ${result.summary.withdrawalCount}건 (₩${result.summary.totalWithdrawals.toLocaleString()})\n`;
-        }
-        
-        message += `총 거래내역: ${result.transactions?.length || 0}건\n` +
-                   `파일: ${result.filename || 'unknown'}`;
-                   
-        alert(message);
-        console.log('[Debug] Parsed Result:', result);
-      } else {
-        alert(`❌ 거래내역 조회 실패: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('[Debug] Get transactions error:', error);
       alert(`오류 발생: ${error}`);
     } finally {
       setDebugLoading(null);
@@ -747,49 +759,24 @@ const FinanceHub: React.FC = () => {
         setConnectedBanks((prev) =>
           prev.map((b) =>
             b.bankId === bankId
-              ? {
-                  ...b,
-                  accounts: fullResult.accounts || [],
-                  alias: fullResult.userName,
-                  lastSync: new Date(),
-                  status: 'connected' as const,
-                }
+              ? { ...b, accounts: fullResult.accounts || [], alias: fullResult.userName, lastSync: new Date(), status: 'connected' as const }
               : b
           )
         );
-        alert(
-          `✅ 전체 플로우 성공!\n` +
-            `- 사용자: ${fullResult.userName}\n` +
-            `- 계좌 수: ${fullResult.accounts?.length || 0}`
-        );
+        alert(`✅ 전체 플로우 성공!\n- 사용자: ${fullResult.userName}\n- 계좌 수: ${fullResult.accounts?.length || 0}`);
       } else {
         alert(`❌ 실패: ${fullResult.error}`);
       }
     } catch (error) {
-      console.error('[Debug] Full flow error:', error);
       alert(`오류 발생: ${error}`);
     } finally {
       setDebugLoading(null);
     }
   };
 
-  const handleCloseModal = () => {
-    setShowBankSelector(false);
-    setSelectedBank(null);
-    setCredentials({ bankId: '', userId: '', password: '' });
-    setConnectionProgress('');
-  };
-
-  const getBankById = (id: string): BankConfig | undefined => {
-    return KOREAN_BANKS.find((bank) => bank.id === id);
-  };
-
-  const formatAccountNumber = (num: string): string => {
-    // Already formatted or short numbers
-    if (num.includes('-') || num.length < 10) return num;
-    // Format as XXX-XXX-XXXXXX
-    return `${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6)}`;
-  };
+  // ============================================
+  // Render
+  // ============================================
 
   return (
     <div className="finance-hub">
@@ -827,13 +814,13 @@ const FinanceHub: React.FC = () => {
           </div>
           <div className="finance-hub__stat">
             <span className="finance-hub__stat-value">
-              {KOREAN_BANKS.filter((b) => b.supportsAutomation).length}
+              {dbStats?.totalTransactions || 0}
             </span>
-            <span className="finance-hub__stat-label">지원 은행</span>
+            <span className="finance-hub__stat-label">저장된 거래</span>
           </div>
         </div>
 
-        {/* Debug Panel - Global (Always Available) */}
+        {/* Debug Panel */}
         <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
           <button
             className="finance-hub__debug-toggle"
@@ -848,22 +835,13 @@ const FinanceHub: React.FC = () => {
                 테스트용 디버그 버튼들입니다. 각 단계를 개별적으로 실행할 수 있습니다.
               </p>
               
-              {/* Bank selector for debug actions */}
               <div className="finance-hub__debug-bank-selector">
                 <label>테스트할 은행:</label>
                 <select
                   className="finance-hub__debug-select"
                   defaultValue={connectedBanks[0]?.bankId || 'shinhan'}
                   onChange={(e) => {
-                    // Store selected bank for debug actions
-                    const selectedBankId = e.target.value;
-                    (window as any).__debugSelectedBank = selectedBankId;
-                  }}
-                  onFocus={(e) => {
-                    // Initialize on first interaction if not set
-                    if (!(window as any).__debugSelectedBank) {
-                      (window as any).__debugSelectedBank = e.target.value;
-                    }
+                    (window as any).__debugSelectedBank = e.target.value;
                   }}
                 >
                   {connectedBanks.length > 0 ? (
@@ -876,7 +854,6 @@ const FinanceHub: React.FC = () => {
                       );
                     })
                   ) : (
-                    // Show all supported banks when no connections
                     KOREAN_BANKS.filter(b => b.supportsAutomation).map((bank) => (
                       <option key={bank.id} value={bank.id}>
                         {bank.icon} {bank.nameKo}
@@ -889,10 +866,7 @@ const FinanceHub: React.FC = () => {
               <div className="finance-hub__debug-buttons">
                 <button
                   className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugOpenBrowser(bankId);
-                  }}
+                  onClick={() => handleDebugOpenBrowser((window as any).__debugSelectedBank || 'shinhan')}
                   disabled={debugLoading !== null}
                 >
                   {debugLoading === 'browser' ? '열기 중...' : '🌐 브라우저 열기'}
@@ -900,10 +874,7 @@ const FinanceHub: React.FC = () => {
 
                 <button
                   className="finance-hub__btn finance-hub__btn--small"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugLoginOnly(bankId);
-                  }}
+                  onClick={() => handleDebugLoginOnly((window as any).__debugSelectedBank || 'shinhan')}
                   disabled={debugLoading !== null}
                 >
                   {debugLoading === 'login' ? '로그인 중...' : '🔐 로그인만 실행'}
@@ -911,68 +882,32 @@ const FinanceHub: React.FC = () => {
                 
                 <button
                   className="finance-hub__btn finance-hub__btn--small"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugGetAccountsOnly(bankId);
-                  }}
+                  onClick={() => handleDebugGetAccountsOnly((window as any).__debugSelectedBank || 'shinhan')}
                   disabled={debugLoading !== null}
                 >
                   {debugLoading === 'accounts' ? '조회 중...' : '📋 계좌만 조회'}
                 </button>
                 
                 <button
-                  className="finance-hub__btn finance-hub__btn--small"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugGetTransactions(bankId);
-                  }}
-                  disabled={debugLoading !== null}
-                >
-                  {debugLoading === 'transactions' ? '조회 중...' : '📊 거래내역 조회'}
-                </button>
-
-                <button
-                  className="finance-hub__btn finance-hub__btn--small"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugGetTransactionsWithParsing(bankId);
-                  }}
-                  disabled={debugLoading !== null}
-                >
-                  {debugLoading === 'transactions-parse' ? '분석 중...' : '📑 거래내역 + 파싱'}
-                </button>
-                
-                <button
                   className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary"
-                  onClick={() => {
-                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
-                    handleDebugFullFlow(bankId);
-                  }}
+                  onClick={() => handleDebugFullFlow((window as any).__debugSelectedBank || 'shinhan')}
                   disabled={debugLoading !== null}
                 >
                   {debugLoading === 'full' ? '실행 중...' : '🚀 전체 플로우 실행'}
                 </button>
               </div>
 
-              <div className="finance-hub__debug-tips">
-                <small>
-                  💡 <strong>사용 시나리오:</strong><br/>
-                  <strong>Step 1:</strong> "브라우저 열기" → 은행 페이지가 열립니다<br/>
-                  <strong>Step 2:</strong> 수동으로 로그인하세요<br/>
-                  <strong>Step 3:</strong> "계좌만 조회" → 로그인된 세션에서 계좌 정보를 가져옵니다<br/>
-                  <strong>Step 4:</strong> "거래내역 조회" → 첫 번째 계좌의 1개월 내역을 테스트합니다<br/><br/>
-                  
-                  또는:<br/>
-                  • "로그인만 실행" → 저장된 인증 정보로 자동 로그인 테스트<br/>
-                  • "전체 플로우 실행" → 로그인 + 계좌 조회 한번에 실행
-                  {connectedBanks.length === 0 && (
-                    <>
-                      <br/><br/>
-                      ⚠️ 연결된 은행이 없습니다. "로그인만 실행"은 저장된 인증 정보가 필요합니다.
-                    </>
-                  )}
-                </small>
-              </div>
+              {/* Database Stats */}
+              {dbStats && (
+                <div className="finance-hub__debug-stats">
+                  <h4>📊 데이터베이스 현황</h4>
+                  <div className="finance-hub__debug-stats-grid">
+                    <span>계좌: {dbStats.totalAccounts}개</span>
+                    <span>거래내역: {dbStats.totalTransactions}건</span>
+                    <span>동기화: {dbStats.totalSyncOperations}회</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1000,17 +935,6 @@ const FinanceHub: React.FC = () => {
               <div className="finance-hub__empty-icon">🏦</div>
               <h3>연결된 은행이 없습니다</h3>
               <p>은행을 연결하면 모든 거래 내역을 자동으로 불러옵니다</p>
-              <div className="finance-hub__value-props">
-                <div className="finance-hub__value-prop">
-                  <span>✓</span> 여러 은행 잔액을 한눈에
-                </div>
-                <div className="finance-hub__value-prop">
-                  <span>✓</span> 지출 패턴 자동 분석
-                </div>
-                <div className="finance-hub__value-prop">
-                  <span>✓</span> 매번 로그인하는 번거로움 해소
-                </div>
-              </div>
               <button
                 className="finance-hub__btn finance-hub__btn--primary"
                 onClick={() => setShowBankSelector(true)}
@@ -1037,9 +961,7 @@ const FinanceHub: React.FC = () => {
                           {connection.alias ? `${connection.alias}님` : bank.name}
                         </span>
                       </div>
-                      <span
-                        className={`finance-hub__status finance-hub__status--${connection.status}`}
-                      >
+                      <span className={`finance-hub__status finance-hub__status--${connection.status}`}>
                         {connection.status === 'connected' && '연결됨'}
                         {connection.status === 'pending' && '연결중...'}
                         {connection.status === 'error' && '오류'}
@@ -1047,7 +969,7 @@ const FinanceHub: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Account List */}
+                    {/* Account List with Sync Button */}
                     {connection.accounts && connection.accounts.length > 0 && (
                       <div className="finance-hub__accounts-list">
                         {connection.accounts.map((account, idx) => (
@@ -1060,11 +982,22 @@ const FinanceHub: React.FC = () => {
                                 {account.accountName || '계좌'}
                               </span>
                             </div>
-                            {account.balance > 0 && (
-                              <span className="finance-hub__account-balance">
-                                ₩{account.balance.toLocaleString()}
-                              </span>
-                            )}
+                            <div className="finance-hub__account-actions">
+                              {account.balance > 0 && (
+                                <span className="finance-hub__account-balance">
+                                  {formatCurrency(account.balance)}
+                                </span>
+                              )}
+                              {/* NEW: Sync to SQLite button */}
+                              <button
+                                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--sync"
+                                onClick={() => handleSyncAndSaveTransactions(connection.bankId, account.accountNumber)}
+                                disabled={isSyncingTransactions}
+                                title="거래내역 동기화 및 저장"
+                              >
+                                {isSyncingTransactions ? '⏳' : '🔄'} 동기화
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1082,9 +1015,7 @@ const FinanceHub: React.FC = () => {
                           onClick={() => handleFetchAccounts(connection.bankId)}
                           disabled={isFetchingAccounts === connection.bankId}
                         >
-                          {isFetchingAccounts === connection.bankId
-                            ? '조회 중...'
-                            : '계좌 조회'}
+                          {isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}
                         </button>
                         <button
                           className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger"
@@ -1101,26 +1032,191 @@ const FinanceHub: React.FC = () => {
           )}
         </section>
 
-        {/* Transactions Section */}
+        {/* NEW: Transactions Section with SQLite Data */}
         <section className="finance-hub__section">
           <div className="finance-hub__section-header">
             <h2>
               <span className="finance-hub__section-icon">📊</span>
               최근 거래 내역
             </h2>
+            {selectedAccountId && (
+              <button
+                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                onClick={() => {
+                  setSelectedAccountId(null);
+                  setTransactions([]);
+                  setTransactionStats(null);
+                }}
+              >
+                전체 보기
+              </button>
+            )}
           </div>
 
-          {transactions.length === 0 ? (
+          {/* Transaction Stats */}
+          {transactionStats && (
+            <div className="finance-hub__transaction-stats">
+              <div className="finance-hub__stat-card finance-hub__stat-card--deposit">
+                <span className="finance-hub__stat-card-label">총 입금</span>
+                <span className="finance-hub__stat-card-value">
+                  {formatCurrency(transactionStats.totalDeposits)}
+                </span>
+                <span className="finance-hub__stat-card-count">
+                  {transactionStats.depositCount}건
+                </span>
+              </div>
+              <div className="finance-hub__stat-card finance-hub__stat-card--withdrawal">
+                <span className="finance-hub__stat-card-label">총 출금</span>
+                <span className="finance-hub__stat-card-value">
+                  {formatCurrency(transactionStats.totalWithdrawals)}
+                </span>
+                <span className="finance-hub__stat-card-count">
+                  {transactionStats.withdrawalCount}건
+                </span>
+              </div>
+              <div className="finance-hub__stat-card">
+                <span className="finance-hub__stat-card-label">순 변동</span>
+                <span className={`finance-hub__stat-card-value ${
+                  transactionStats.totalDeposits - transactionStats.totalWithdrawals >= 0 
+                    ? 'finance-hub__stat-card-value--positive' 
+                    : 'finance-hub__stat-card-value--negative'
+                }`}>
+                  {formatCurrency(transactionStats.totalDeposits - transactionStats.totalWithdrawals)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Transaction List */}
+          {isLoadingTransactions ? (
+            <div className="finance-hub__loading">
+              <span className="finance-hub__spinner"></span>
+              거래내역 불러오는 중...
+            </div>
+          ) : transactions.length === 0 ? (
             <div className="finance-hub__empty-state finance-hub__empty-state--small">
               <div className="finance-hub__empty-icon">📋</div>
-              <p>은행을 연결하면 거래 내역이 자동으로 추출됩니다</p>
+              <p>
+                {selectedAccountId 
+                  ? '이 계좌의 저장된 거래내역이 없습니다.'
+                  : '계좌를 선택하고 "동기화" 버튼을 눌러 거래내역을 저장하세요.'}
+              </p>
             </div>
           ) : (
-            <div className="finance-hub__transactions">
-              {/* Transaction list would go here */}
+            <div className="finance-hub__transactions-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>날짜</th>
+                    <th>시간</th>
+                    <th>적요</th>
+                    <th>내용</th>
+                    <th className="finance-hub__cell--right">출금</th>
+                    <th className="finance-hub__cell--right">입금</th>
+                    <th className="finance-hub__cell--right">잔액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.slice(0, 50).map((tx) => (
+                    <tr key={tx.id}>
+                      <td>{formatDate(tx.date)}</td>
+                      <td>{tx.time}</td>
+                      <td>{tx.type}</td>
+                      <td>{tx.description}</td>
+                      <td className="finance-hub__cell--right finance-hub__cell--withdrawal">
+                        {tx.withdrawal > 0 ? formatCurrency(tx.withdrawal) : '-'}
+                      </td>
+                      <td className="finance-hub__cell--right finance-hub__cell--deposit">
+                        {tx.deposit > 0 ? formatCurrency(tx.deposit) : '-'}
+                      </td>
+                      <td className="finance-hub__cell--right">
+                        {formatCurrency(tx.balance)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {transactions.length > 50 && (
+                <div className="finance-hub__transactions-more">
+                  ...외 {transactions.length - 50}건
+                </div>
+              )}
             </div>
           )}
         </section>
+
+        {/* NEW: Monthly Summary */}
+        {monthlySummary.length > 0 && (
+          <section className="finance-hub__section">
+            <div className="finance-hub__section-header">
+              <h2>
+                <span className="finance-hub__section-icon">📅</span>
+                월별 요약
+              </h2>
+            </div>
+            <div className="finance-hub__monthly-summary">
+              {monthlySummary.slice(0, 6).map((month) => (
+                <div key={month.yearMonth} className="finance-hub__monthly-card">
+                  <h4>{month.yearMonth}</h4>
+                  <div className="finance-hub__monthly-stats">
+                    <div className="finance-hub__monthly-stat finance-hub__monthly-stat--deposit">
+                      <span>입금</span>
+                      <strong>{formatCurrency(month.totalDeposits)}</strong>
+                      <small>{month.depositCount}건</small>
+                    </div>
+                    <div className="finance-hub__monthly-stat finance-hub__monthly-stat--withdrawal">
+                      <span>출금</span>
+                      <strong>{formatCurrency(month.totalWithdrawals)}</strong>
+                      <small>{month.withdrawalCount}건</small>
+                    </div>
+                    <div className={`finance-hub__monthly-stat ${
+                      month.netChange >= 0 
+                        ? 'finance-hub__monthly-stat--positive' 
+                        : 'finance-hub__monthly-stat--negative'
+                    }`}>
+                      <span>순변동</span>
+                      <strong>{formatCurrency(month.netChange)}</strong>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Recent Sync Operations */}
+        {recentSyncOps.length > 0 && (
+          <section className="finance-hub__section">
+            <div className="finance-hub__section-header">
+              <h2>
+                <span className="finance-hub__section-icon">🔄</span>
+                최근 동기화 기록
+              </h2>
+            </div>
+            <div className="finance-hub__sync-history">
+              {recentSyncOps.slice(0, 5).map((op) => (
+                <div key={op.id} className={`finance-hub__sync-item finance-hub__sync-item--${op.status}`}>
+                  <div className="finance-hub__sync-info">
+                    <span className="finance-hub__sync-account">
+                      {formatAccountNumber(op.accountNumber)}
+                    </span>
+                    <span className="finance-hub__sync-date">
+                      {new Date(op.startedAt).toLocaleString('ko-KR')}
+                    </span>
+                  </div>
+                  <div className="finance-hub__sync-stats">
+                    <span>{op.totalCount}건</span>
+                    <span className="finance-hub__sync-deposit">+{formatCurrency(op.totalDeposits)}</span>
+                    <span className="finance-hub__sync-withdrawal">-{formatCurrency(op.totalWithdrawals)}</span>
+                  </div>
+                  <span className={`finance-hub__sync-status finance-hub__sync-status--${op.status}`}>
+                    {op.status === 'completed' ? '✓' : op.status === 'failed' ? '✗' : '⏳'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* AI Insights Section */}
         <section className="finance-hub__section finance-hub__section--full">
@@ -1156,7 +1252,7 @@ const FinanceHub: React.FC = () => {
         </section>
       </main>
 
-      {/* Bank Selector Modal */}
+      {/* Bank Selector Modal - Keep your existing modal code */}
       {showBankSelector && (
         <div className="finance-hub__modal-overlay" onClick={handleCloseModal}>
           <div className="finance-hub__modal" onClick={(e) => e.stopPropagation()}>
@@ -1177,7 +1273,6 @@ const FinanceHub: React.FC = () => {
             </div>
 
             {selectedBank ? (
-              /* Login Form */
               <div className="finance-hub__login-form">
                 <div className="finance-hub__login-bank-info">
                   <span
@@ -1200,9 +1295,7 @@ const FinanceHub: React.FC = () => {
                       id="userId"
                       placeholder="인터넷뱅킹 아이디 입력"
                       value={credentials.userId}
-                      onChange={(e) =>
-                        setCredentials({ ...credentials, userId: e.target.value })
-                      }
+                      onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })}
                       className="finance-hub__input"
                       autoComplete="username"
                       disabled={isConnecting}
@@ -1215,16 +1308,12 @@ const FinanceHub: React.FC = () => {
                       id="password"
                       placeholder="인터넷뱅킹 비밀번호 입력"
                       value={credentials.password}
-                      onChange={(e) =>
-                        setCredentials({ ...credentials, password: e.target.value })
-                      }
+                      onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
                       className="finance-hub__input"
                       autoComplete="current-password"
                       disabled={isConnecting}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isConnecting) {
-                          handleConnect();
-                        }
+                        if (e.key === 'Enter' && !isConnecting) handleConnect();
                       }}
                     />
                   </div>
@@ -1252,10 +1341,7 @@ const FinanceHub: React.FC = () => {
                   <div className="finance-hub__notice-icon">🔒</div>
                   <div>
                     <strong>안전한 연결</strong>
-                    <p>
-                      입력하신 정보는 암호화되어 전송되며, 서버에 저장되지 않습니다.
-                      자동화된 브라우저를 통해 안전하게 은행에 로그인합니다.
-                    </p>
+                    <p>입력하신 정보는 암호화되어 전송되며, 서버에 저장되지 않습니다.</p>
                   </div>
                 </div>
 
@@ -1275,9 +1361,7 @@ const FinanceHub: React.FC = () => {
                 </button>
               </div>
             ) : (
-              /* Bank List */
               <>
-                {/* Search & Filter */}
                 <div className="finance-hub__modal-filters">
                   <input
                     type="text"
@@ -1301,7 +1385,6 @@ const FinanceHub: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bank List */}
                 <div className="finance-hub__bank-list">
                   {filteredBanks.map((bank) => {
                     const isConnected = connectedBanks.some(

@@ -7,6 +7,7 @@ import { initializeActivityDatabaseSchema } from './activity';
 import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
 import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
+import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 import { createSyncDatabase } from './sheet-sync-init';
 
 /**
@@ -133,6 +134,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeActivityDatabaseSchema(activityDb);
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
+    initializeShinhanTransactionsSchema(conversationsDb); // Use conversations DB for Shinhan transactions
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
