@@ -502,11 +502,16 @@ async function createExcelFromData(ctx, data) {
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(workbook, worksheet, '거래내역');
 
-  // Write file
-  XLSX.writeFile(workbook, filePath);
-
-  ctx.log(`Excel file created: ${filePath}`);
-  return filePath;
+  // Write file using fs to avoid potential path issues with XLSX.writeFile
+  try {
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+    fs.writeFileSync(filePath, buffer);
+    ctx.log(`Excel file created: ${filePath}`);
+    return filePath;
+  } catch (writeError) {
+    ctx.error(`Failed to write Excel file: ${writeError.message}`);
+    throw new Error(`Failed to save Excel file to ${filePath}: ${writeError.message}`);
+  }
 }
 
 /**
