@@ -13,7 +13,11 @@ const {
   getLowerKeyboardSelectors,
   getUpperKeyboardSelectors,
 } = require('./virtualKeyboard');
-
+const { 
+  parseTransactionExcel,
+  extractTransactionsFromPage,
+  createExcelFromData
+} = require('../../utils/transactionParser');
 // Import AI keyboard analysis utilities
 const { analyzeKeyboardAndType } = require('../../utils/ai-keyboard-analyzer');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../../utils/bilingual-keyboard-parser');
@@ -718,6 +722,248 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     }
   }
 
+  async getTransactions(accountNumber, startDate, endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
+    
+    try {
+      // 1. Navigate to inquiry page if needed
+      if (!this.page.url().includes('010101100010')) {
+        await this.page.goto(this.config.xpaths.inquiryUrl, { waitUntil: 'domcontentloaded' });
+        await this.page.waitForTimeout(3000);
+      }
+
+      // 2. Click account selector dropdown
+      this.log('Clicking account dropdown...');
+      const dropdownSelector = `xpath=${this.config.xpaths.accountDropdown}`;
+      await this.page.click(dropdownSelector);
+      await this.page.waitForTimeout(1000);
+
+      // 3. Select the specified account
+      this.log(`Selecting account ${accountNumber}...`);
+      const accountOption = this.page.locator(`//div[contains(@class, "w2selectbox_layer")]//div[contains(text(), "${accountNumber}")]`).first();
+      
+      if (await accountOption.count() > 0) {
+        await accountOption.click();
+      } else {
+        this.log('Account not found in dropdown, using current selection...');
+      }
+      await this.page.waitForTimeout(1000);
+
+      // 4. Set start date
+      this.log('Setting start date...');
+      const dateInputSelector = `xpath=${this.config.xpaths.startDateInput}`;
+      
+      let targetStartDate = startDate;
+      if (!targetStartDate) {
+        const d = new Date();
+        d.setFullYear(d.getFullYear() - 10);
+        targetStartDate = d.toISOString().split('T')[0].replace(/-/g, '');
+      }
+      const formattedDate = targetStartDate.replace(/[^0-9]/g, '');
+      await this.page.fill(dateInputSelector, formattedDate);
+      await this.page.waitForTimeout(500);
+
+          // 5. Unfocus by clicking on a neutral area (the page title or form header)
+    this.log('Unfocusing date picker...');
+    try {
+      // Click on the page title "거래내역조회" to unfocus
+      const pageTitleSelector = 'h1.titH01, h1[id*="title"], .pageTop h1';
+      const pageTitle = this.page.locator(pageTitleSelector).first();
+      if (await pageTitle.count() > 0) {
+        await pageTitle.click();
+        this.log('Clicked on page title to unfocus');
+      } else {
+        // Alternative: click on form label
+        const formLabel = this.page.locator('th:has-text("조회계좌번호")').first();
+        if (await formLabel.count() > 0) {
+          await formLabel.click();
+          this.log('Clicked on form label to unfocus');
+        } else {
+          // Last resort: click body at a safe position
+          await this.page.mouse.click(100, 100);
+          this.log('Clicked on page body to unfocus');
+        }
+      }
+    } catch (unfocusError) {
+      this.warn('Unfocus click failed:', unfocusError.message);
+      // Try clicking at coordinates outside the date picker area
+      await this.page.mouse.click(200, 150);
+    }
+    
+    await this.page.waitForTimeout(500);
+
+      // 5. Click "조회" (Inquiry) button
+      this.log('Clicking Inquiry button...');
+      await this.page.click(`xpath=${this.config.xpaths.inquiryButton}`);
+      await this.page.waitForTimeout(3000);
+
+      // 6. Click "파일저장" (File Save) button
+      this.log('Clicking File Save button...');
+      const fileSaveBtn = this.page.locator(`xpath=${this.config.xpaths.fileSaveButton}`);
+      
+      if (await fileSaveBtn.isVisible({ timeout: 5000 })) {
+        await fileSaveBtn.click();
+        await this.page.waitForTimeout(2000);
+      } else {
+        this.warn('File Save button not found');
+        return [];
+      }
+
+      // 7. Wait for popup window and its iframe
+      this.log('Waiting for file save popup...');
+      
+      // First wait for the w2window popup to appear
+      const popupWindowSelector = `div.w2window[id*="${this.config.xpaths.popupIframePattern}"]`;
+      await this.page.waitForSelector(popupWindowSelector, { state: 'visible', timeout: 10000 });
+      this.log('Popup window appeared');
+
+      // Now find the iframe inside the popup
+      const iframeSelector = `iframe[id*="${this.config.xpaths.popupIframePattern}"][id$="_iframe"]`;
+      await this.page.waitForSelector(iframeSelector, { state: 'attached', timeout: 10000 });
+      this.log('Iframe found');
+
+      // Get the frame using frameLocator (more reliable than contentFrame)
+      const frameLocator = this.page.frameLocator(iframeSelector);
+      
+      // Wait for iframe content to load by checking for an element inside
+      await this.page.waitForTimeout(2000); // Give iframe time to load content
+
+      // 8. Check "전체" (Select All) checkbox inside the iframe
+      this.log('Looking for Select All checkbox in iframe...');
+      
+      // Use frameLocator to interact with elements inside iframe
+      const checkboxSelectors = [
+        `input[id*="${this.config.xpaths.selectAllCheckboxPattern}"]`,
+        'input[id*="columnAll"]',
+        'input[id*="cbx_All"]',
+        'input.w2checkbox_input'
+      ];
+      
+      let checkboxClicked = false;
+      for (const selector of checkboxSelectors) {
+        try {
+          const checkbox = frameLocator.locator(selector).first();
+          
+          // Check if element exists
+          if (await checkbox.count() > 0) {
+            this.log(`Found checkbox with selector: ${selector}`);
+            
+            // Check current state and click if not checked
+            const isChecked = await checkbox.isChecked().catch(() => false);
+            if (!isChecked) {
+              await checkbox.click({ timeout: 5000 });
+              this.log('Checkbox clicked');
+            } else {
+              this.log('Checkbox already checked');
+            }
+            checkboxClicked = true;
+            break;
+          }
+        } catch (e) {
+          this.log(`Selector ${selector} failed: ${e.message}`);
+        }
+      }
+
+      if (!checkboxClicked) {
+        this.warn('Could not find or click Select All checkbox, continuing anyway...');
+      }
+
+      await this.page.waitForTimeout(500);
+
+      // 9. Click "엑셀저장" (Save as Excel) button inside the iframe
+      this.log('Looking for Save as Excel button in iframe...');
+      
+      // Setup download handler BEFORE clicking
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 30000 });
+      
+      const excelButtonSelectors = [
+        `a[id*="${this.config.xpaths.excelSaveButtonPattern}"]`,
+        'a[id*="saveXls"]',
+        'a[id*="btn_saveXls"]',
+        'a.btnTyBlue01',  // Based on typical Shinhan button styling
+      ];
+      
+      let buttonClicked = false;
+      for (const selector of excelButtonSelectors) {
+        try {
+          const button = frameLocator.locator(selector).first();
+          
+          if (await button.count() > 0) {
+            this.log(`Found Excel save button with selector: ${selector}`);
+            await button.click({ timeout: 5000 });
+            this.log('Excel save button clicked');
+            buttonClicked = true;
+            break;
+          }
+        } catch (e) {
+          this.log(`Selector ${selector} failed: ${e.message}`);
+        }
+      }
+
+      if (!buttonClicked) {
+        // Try by text content
+        try {
+          const buttonByText = frameLocator.locator('a:has-text("엑셀저장")').first();
+          if (await buttonByText.count() > 0) {
+            await buttonByText.click({ timeout: 5000 });
+            this.log('Excel save button clicked (by text)');
+            buttonClicked = true;
+          }
+        } catch (e) {
+          this.log(`Text selector failed: ${e.message}`);
+        }
+      }
+
+      if (!buttonClicked) {
+        throw new Error('Could not find or click Excel save button');
+      }
+
+      // 10. Wait for download
+      this.log('Waiting for download...');
+      const download = await downloadPromise;
+      const suggestedFilename = download.suggestedFilename();
+
+      // Save to output directory
+      this.ensureOutputDirectory(this.outputDir);
+      const outputPath = path.join(this.outputDir, suggestedFilename);
+      await download.saveAs(outputPath);
+      this.log(`File saved to: ${outputPath}`);
+
+      // Close the popup (optional)
+      try {
+        const closeButton = this.page.locator(`div.w2window[id*="${this.config.xpaths.popupIframePattern}"] .w2window_close a`);
+        if (await closeButton.count() > 0) {
+          await closeButton.click();
+          this.log('Popup closed');
+        }
+      } catch (e) {
+        // Ignore close errors
+      }
+
+      return [{
+        status: 'downloaded',
+        filename: suggestedFilename,
+        path: outputPath
+      }];
+
+    } catch (error) {
+      this.error('Error fetching transactions:', error.message);
+      
+      // Debug: Take screenshot on error
+      try {
+        this.ensureOutputDirectory(this.outputDir);
+        const errorScreenshot = path.join(this.outputDir, `error-${Date.now()}.png`);
+        await this.page.screenshot({ path: errorScreenshot, fullPage: true });
+        this.log(`Error screenshot saved to: ${errorScreenshot}`);
+      } catch (ssErr) {
+        // Ignore screenshot errors
+      }
+      
+      return [];
+    }
+  }
+
   /**
    * Closes browser - override to keep open for debugging
    * @param {boolean} [keepOpen=true] - Whether to keep browser open
@@ -730,6 +976,40 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       return;
     }
     await super.cleanup();
+  }
+
+  /**
+   * Downloads transactions and parses them into structured data
+   * @param {string} accountNumber - Account number to query
+   * @param {string} [startDate] - Start date (YYYYMMDD format)
+   * @param {string} [endDate] - End date (YYYYMMDD format)
+   * @returns {Promise<Object>} Parsed transaction data with download info
+   */
+  async getTransactionsWithParsing(accountNumber, startDate, endDate) {
+    // We reuse the getTransactions method which now does parsing internally
+    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    
+    if (!downloadResult || downloadResult.length === 0 || downloadResult[0].status !== 'downloaded') {
+      return {
+        success: false,
+        error: 'Data extraction failed',
+        downloadResult,
+      };
+    }
+
+    const resultItem = downloadResult[0];
+    const extractedData = resultItem.extractedData;
+    
+    // Return combined result
+    return {
+      success: true,
+      file: resultItem.path,
+      filename: resultItem.filename,
+      metadata: extractedData.metadata,
+      summary: extractedData.summary,
+      transactions: extractedData.transactions,
+      headers: extractedData.headers
+    };
   }
 }
 

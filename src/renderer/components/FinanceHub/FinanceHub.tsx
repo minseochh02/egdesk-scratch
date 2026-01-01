@@ -253,11 +253,6 @@ const FinanceHub: React.FC = () => {
   const [saveCredentials, setSaveCredentials] = useState(true);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
-  const [debugCredentials, setDebugCredentials] = useState<BankCredentials>({
-    bankId: '',
-    userId: '',
-    password: '',
-  });
 
   // Calculate total accounts across all connected banks
   const totalAccounts = connectedBanks.reduce(
@@ -397,27 +392,6 @@ const FinanceHub: React.FC = () => {
     try {
       console.log(`[FinanceHub] Connecting to ${selectedBank.nameKo}...`);
 
-      // Save credentials immediately (before login attempt)
-      if (saveCredentials) {
-        try {
-          await window.electron.financeHub.saveCredentials(selectedBank.id, {
-            bankId: selectedBank.id,
-            userId: credentials.userId,
-            password: credentials.password,
-          });
-          console.log(`[FinanceHub] Saved credentials for ${selectedBank.id}`);
-        } catch (saveError) {
-          console.warn('[FinanceHub] Failed to save credentials:', saveError);
-        }
-      } else {
-        // Explicitly remove if user unchecked save
-        try {
-          await window.electron.financeHub.removeCredentials(selectedBank.id);
-        } catch (removeError) {
-          console.warn('[FinanceHub] Failed to remove credentials:', removeError);
-        }
-      }
-
       // Use loginAndGetAccounts to login and fetch accounts in one call
       setConnectionProgress('은행에 로그인하는 중...');
       const result = await window.electron.financeHub.loginAndGetAccounts(selectedBank.id, {
@@ -427,6 +401,27 @@ const FinanceHub: React.FC = () => {
 
       if (result.success && result.isLoggedIn) {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
+
+        // Save credentials if requested
+        if (saveCredentials) {
+          try {
+            await window.electron.financeHub.saveCredentials(selectedBank.id, {
+              bankId: selectedBank.id,
+              userId: credentials.userId,
+              password: credentials.password,
+            });
+            console.log(`[FinanceHub] Saved credentials for ${selectedBank.id}`);
+          } catch (saveError) {
+            console.warn('[FinanceHub] Failed to save credentials:', saveError);
+          }
+        } else {
+          // Explicitly remove if user unchecked save
+          try {
+            await window.electron.financeHub.removeCredentials(selectedBank.id);
+          } catch (removeError) {
+            console.warn('[FinanceHub] Failed to remove credentials:', removeError);
+          }
+        }
 
         const newConnection: ConnectedBank = {
           bankId: selectedBank.id,
@@ -518,20 +513,6 @@ const FinanceHub: React.FC = () => {
     const bank = getBankById(bankId);
     if (!bank) return;
 
-    // Save credentials if entered
-    if (debugCredentials.userId || debugCredentials.password) {
-      try {
-        await window.electron.financeHub.saveCredentials(bankId, {
-          bankId,
-          userId: debugCredentials.userId,
-          password: debugCredentials.password,
-        });
-        console.log(`[Debug] Saved credentials for ${bankId}`);
-      } catch (error) {
-        console.warn('[Debug] Failed to save credentials:', error);
-      }
-    }
-
     setDebugLoading('browser');
     try {
       const result = await window.electron.financeHub.openBrowser(bankId);
@@ -553,24 +534,11 @@ const FinanceHub: React.FC = () => {
     const bank = getBankById(bankId);
     if (!bank) return;
 
-    // Save credentials if entered
-    if (debugCredentials.userId || debugCredentials.password) {
-      try {
-        await window.electron.financeHub.saveCredentials(bankId, {
-          bankId,
-          userId: debugCredentials.userId,
-          password: debugCredentials.password,
-        });
-      } catch (error) {
-        console.warn('[Debug] Failed to save credentials:', error);
-      }
-    }
-
     setDebugLoading('login');
     try {
       const result = await window.electron.financeHub.getSavedCredentials(bankId);
       if (!result.success || !result.credentials) {
-        alert('저장된 인증 정보가 없습니다. 먼저 아이디/비밀번호를 입력하거나 은행을 연결해주세요.');
+        alert('저장된 인증 정보가 없습니다. 먼저 은행을 연결해주세요.');
         return;
       }
 
@@ -608,18 +576,34 @@ const FinanceHub: React.FC = () => {
       const result = await window.electron.financeHub.getAccounts(bankId);
 
       if (result.success && result.accounts) {
-        setConnectedBanks((prev) =>
-          prev.map((b) =>
-            b.bankId === bankId
-              ? {
-                  ...b,
-                  accounts: result.accounts,
-                  lastSync: new Date(),
-                  status: 'connected' as const,
-                }
-              : b
-          )
-        );
+        setConnectedBanks((prev) => {
+          const existingIndex = prev.findIndex((b) => b.bankId === bankId);
+          if (existingIndex >= 0) {
+            // Update existing
+            return prev.map((b, i) =>
+              i === existingIndex
+                ? {
+                    ...b,
+                    accounts: result.accounts,
+                    lastSync: new Date(),
+                    status: 'connected' as const,
+                  }
+                : b
+            );
+          } else {
+            // Add new connection for debug session
+            return [
+              ...prev,
+              {
+                bankId: bankId,
+                status: 'connected' as const,
+                lastSync: new Date(),
+                accounts: result.accounts,
+              },
+            ];
+          }
+        });
+        
         alert(
           `✅ ${result.accounts.length}개의 계좌를 찾았습니다:\n` +
             result.accounts.map((a) => `• ${a.accountNumber} (₩${a.balance.toLocaleString()})`).join('\n')
@@ -636,22 +620,115 @@ const FinanceHub: React.FC = () => {
   };
 
 
-  const handleDebugFullFlow = async (bankId: string) => {
+  const handleDebugGetTransactions = async (bankId: string) => {
     const bank = getBankById(bankId);
     if (!bank) return;
 
-    // Save credentials if entered
-    if (debugCredentials.userId || debugCredentials.password) {
-      try {
-        await window.electron.financeHub.saveCredentials(bankId, {
-          bankId,
-          userId: debugCredentials.userId,
-          password: debugCredentials.password,
-        });
-      } catch (error) {
-        console.warn('[Debug] Failed to save credentials:', error);
-      }
+    // Get the first account if available
+    const connectedBank = connectedBanks.find(b => b.bankId === bankId);
+    if (!connectedBank || !connectedBank.accounts || connectedBank.accounts.length === 0) {
+      alert('먼저 계좌 조회를 실행하여 계좌 정보를 가져와주세요.');
+      return;
     }
+
+    const account = connectedBank.accounts[0]; // Use first account for testing
+    const today = new Date();
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(today.getMonth() - 1);
+    
+    // Format YYYYMMDD
+    const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+    const startDate = formatDate(oneMonthAgo);
+    const endDate = formatDate(today);
+
+    setDebugLoading('transactions');
+    try {
+      alert(`계좌 ${account.accountNumber}의 최근 1개월 거래내역을 조회합니다.`);
+      const result = await window.electron.financeHub.getTransactions(
+        bankId, 
+        account.accountNumber,
+        startDate,
+        endDate
+      );
+
+      if (result.success) {
+        alert(
+          `✅ 거래내역 조회 성공!\n` +
+          `기간: ${startDate} ~ ${endDate}\n` +
+          `건수: ${result.transactions?.length || 0}건`
+        );
+        console.log('[Debug] Transactions:', result.transactions);
+      } else {
+        alert(`❌ 거래내역 조회 실패: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('[Debug] Get transactions error:', error);
+      alert(`오류 발생: ${error}`);
+    } finally {
+      setDebugLoading(null);
+    }
+  };
+
+  const handleDebugGetTransactionsWithParsing = async (bankId: string) => {
+    const bank = getBankById(bankId);
+    if (!bank) return;
+
+    // Get the first account if available
+    const connectedBank = connectedBanks.find(b => b.bankId === bankId);
+    if (!connectedBank || !connectedBank.accounts || connectedBank.accounts.length === 0) {
+      alert('먼저 계좌 조회를 실행하여 계좌 정보를 가져와주세요.');
+      return;
+    }
+
+    const account = connectedBank.accounts[0]; // Use first account for testing
+    const today = new Date();
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(today.getMonth() - 1);
+    
+    // Format YYYYMMDD
+    const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+    const startDate = formatDate(oneMonthAgo);
+    const endDate = formatDate(today);
+
+    setDebugLoading('transactions-parse');
+    try {
+      alert(`계좌 ${account.accountNumber}의 최근 1개월 거래내역을 조회하고 엑셀 파싱을 시도합니다.`);
+      const result = await window.electron.financeHub.getTransactions(
+        bankId, 
+        account.accountNumber,
+        startDate,
+        endDate,
+        true // Enable parsing
+      );
+
+      if (result.success) {
+        let message = `✅ 거래내역 조회 및 파싱 성공!\n` +
+          `기간: ${startDate} ~ ${endDate}\n`;
+          
+        if (result.summary) {
+          message += `입금: ${result.summary.depositCount}건 (₩${result.summary.totalDeposits.toLocaleString()})\n` +
+                     `출금: ${result.summary.withdrawalCount}건 (₩${result.summary.totalWithdrawals.toLocaleString()})\n`;
+        }
+        
+        message += `총 거래내역: ${result.transactions?.length || 0}건\n` +
+                   `파일: ${result.filename || 'unknown'}`;
+                   
+        alert(message);
+        console.log('[Debug] Parsed Result:', result);
+      } else {
+        alert(`❌ 거래내역 조회 실패: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('[Debug] Get transactions error:', error);
+      alert(`오류 발생: ${error}`);
+    } finally {
+      setDebugLoading(null);
+    }
+  };
+
+  const handleDebugFullFlow = async (bankId: string) => {
+    const bank = getBankById(bankId);
+    if (!bank) return;
 
     setDebugLoading('full');
     try {
@@ -809,28 +886,6 @@ const FinanceHub: React.FC = () => {
                 </select>
               </div>
               
-              {/* Debug Credentials Input */}
-              <div className="finance-hub__debug-credentials">
-                <input
-                  type="text"
-                  placeholder="아이디 (선택사항)"
-                  value={debugCredentials.userId}
-                  onChange={(e) =>
-                    setDebugCredentials({ ...debugCredentials, userId: e.target.value })
-                  }
-                  className="finance-hub__debug-input"
-                />
-                <input
-                  type="password"
-                  placeholder="비밀번호 (선택사항)"
-                  value={debugCredentials.password}
-                  onChange={(e) =>
-                    setDebugCredentials({ ...debugCredentials, password: e.target.value })
-                  }
-                  className="finance-hub__debug-input"
-                />
-              </div>
-
               <div className="finance-hub__debug-buttons">
                 <button
                   className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
@@ -866,6 +921,28 @@ const FinanceHub: React.FC = () => {
                 </button>
                 
                 <button
+                  className="finance-hub__btn finance-hub__btn--small"
+                  onClick={() => {
+                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
+                    handleDebugGetTransactions(bankId);
+                  }}
+                  disabled={debugLoading !== null}
+                >
+                  {debugLoading === 'transactions' ? '조회 중...' : '📊 거래내역 조회'}
+                </button>
+
+                <button
+                  className="finance-hub__btn finance-hub__btn--small"
+                  onClick={() => {
+                    const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
+                    handleDebugGetTransactionsWithParsing(bankId);
+                  }}
+                  disabled={debugLoading !== null}
+                >
+                  {debugLoading === 'transactions-parse' ? '분석 중...' : '📑 거래내역 + 파싱'}
+                </button>
+                
+                <button
                   className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary"
                   onClick={() => {
                     const bankId = (window as any).__debugSelectedBank || connectedBanks[0]?.bankId || 'shinhan';
@@ -882,7 +959,8 @@ const FinanceHub: React.FC = () => {
                   💡 <strong>사용 시나리오:</strong><br/>
                   <strong>Step 1:</strong> "브라우저 열기" → 은행 페이지가 열립니다<br/>
                   <strong>Step 2:</strong> 수동으로 로그인하세요<br/>
-                  <strong>Step 3:</strong> "계좌만 조회" → 로그인된 세션에서 계좌 정보를 가져옵니다<br/><br/>
+                  <strong>Step 3:</strong> "계좌만 조회" → 로그인된 세션에서 계좌 정보를 가져옵니다<br/>
+                  <strong>Step 4:</strong> "거래내역 조회" → 첫 번째 계좌의 1개월 내역을 테스트합니다<br/><br/>
                   
                   또는:<br/>
                   • "로그인만 실행" → 저장된 인증 정보로 자동 로그인 테스트<br/>

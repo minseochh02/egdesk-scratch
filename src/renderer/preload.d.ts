@@ -649,6 +649,7 @@ interface FinanceHubAPI {
   openBrowser: (bankId: string, proxyUrl?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   login: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; error?: string; [key: string]: any }>;
   getAccounts: (bankId: string, credentials?: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
+  getTransactions: (bankId: string, accountNumber: string, startDate: string, endDate: string, parse?: boolean) => Promise<{ success: boolean; transactions?: any[]; summary?: any; filename?: string; file?: string; error?: string }>;
   loginAndGetAccounts: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; isLoggedIn: boolean; userName?: string; accounts?: any[]; error?: string }>;
   getConnectedBanks: () => Promise<any[]>;
   disconnect: (bankId: string) => Promise<{ success: boolean; error?: string }>;
