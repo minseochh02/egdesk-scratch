@@ -798,154 +798,26 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       await this.page.click(`xpath=${this.config.xpaths.inquiryButton}`);
       await this.page.waitForTimeout(3000);
 
-      // 6. Click "파일저장" (File Save) button
-      this.log('Clicking File Save button...');
-      const fileSaveBtn = this.page.locator(`xpath=${this.config.xpaths.fileSaveButton}`);
-      
-      if (await fileSaveBtn.isVisible({ timeout: 5000 })) {
-        await fileSaveBtn.click();
-        await this.page.waitForTimeout(2000);
+      // 6. Extract data directly from HTML (No download)
+      this.log('Extracting transaction data from page...');
+      const extractedData = await extractTransactionsFromPage(this);
+
+      // 7. Create Excel file from extracted data
+      if (extractedData.transactions.length > 0) {
+        const excelPath = await createExcelFromData(this, extractedData);
+        extractedData.file = excelPath;
+        extractedData.status = 'success';
+        
+        return [{
+          status: 'downloaded',
+          filename: path.basename(excelPath),
+          path: excelPath,
+          extractedData: extractedData
+        }];
       } else {
-        this.warn('File Save button not found');
+        extractedData.status = 'no_data';
         return [];
       }
-
-      // 7. Wait for popup window and its iframe
-      this.log('Waiting for file save popup...');
-      
-      // First wait for the w2window popup to appear
-      const popupWindowSelector = `div.w2window[id*="${this.config.xpaths.popupIframePattern}"]`;
-      await this.page.waitForSelector(popupWindowSelector, { state: 'visible', timeout: 10000 });
-      this.log('Popup window appeared');
-
-      // Now find the iframe inside the popup
-      const iframeSelector = `iframe[id*="${this.config.xpaths.popupIframePattern}"][id$="_iframe"]`;
-      await this.page.waitForSelector(iframeSelector, { state: 'attached', timeout: 10000 });
-      this.log('Iframe found');
-
-      // Get the frame using frameLocator (more reliable than contentFrame)
-      const frameLocator = this.page.frameLocator(iframeSelector);
-      
-      // Wait for iframe content to load by checking for an element inside
-      await this.page.waitForTimeout(2000); // Give iframe time to load content
-
-      // 8. Check "전체" (Select All) checkbox inside the iframe
-      this.log('Looking for Select All checkbox in iframe...');
-      
-      // Use frameLocator to interact with elements inside iframe
-      const checkboxSelectors = [
-        `input[id*="${this.config.xpaths.selectAllCheckboxPattern}"]`,
-        'input[id*="columnAll"]',
-        'input[id*="cbx_All"]',
-        'input.w2checkbox_input'
-      ];
-      
-      let checkboxClicked = false;
-      for (const selector of checkboxSelectors) {
-        try {
-          const checkbox = frameLocator.locator(selector).first();
-          
-          // Check if element exists
-          if (await checkbox.count() > 0) {
-            this.log(`Found checkbox with selector: ${selector}`);
-            
-            // Check current state and click if not checked
-            const isChecked = await checkbox.isChecked().catch(() => false);
-            if (!isChecked) {
-              await checkbox.click({ timeout: 5000 });
-              this.log('Checkbox clicked');
-            } else {
-              this.log('Checkbox already checked');
-            }
-            checkboxClicked = true;
-            break;
-          }
-        } catch (e) {
-          this.log(`Selector ${selector} failed: ${e.message}`);
-        }
-      }
-
-      if (!checkboxClicked) {
-        this.warn('Could not find or click Select All checkbox, continuing anyway...');
-      }
-
-      await this.page.waitForTimeout(500);
-
-      // 9. Click "엑셀저장" (Save as Excel) button inside the iframe
-      this.log('Looking for Save as Excel button in iframe...');
-      
-      // Setup download handler BEFORE clicking
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 30000 });
-      
-      const excelButtonSelectors = [
-        `a[id*="${this.config.xpaths.excelSaveButtonPattern}"]`,
-        'a[id*="saveXls"]',
-        'a[id*="btn_saveXls"]',
-        'a.btnTyBlue01',  // Based on typical Shinhan button styling
-      ];
-      
-      let buttonClicked = false;
-      for (const selector of excelButtonSelectors) {
-        try {
-          const button = frameLocator.locator(selector).first();
-          
-          if (await button.count() > 0) {
-            this.log(`Found Excel save button with selector: ${selector}`);
-            await button.click({ timeout: 5000 });
-            this.log('Excel save button clicked');
-            buttonClicked = true;
-            break;
-          }
-        } catch (e) {
-          this.log(`Selector ${selector} failed: ${e.message}`);
-        }
-      }
-
-      if (!buttonClicked) {
-        // Try by text content
-        try {
-          const buttonByText = frameLocator.locator('a:has-text("엑셀저장")').first();
-          if (await buttonByText.count() > 0) {
-            await buttonByText.click({ timeout: 5000 });
-            this.log('Excel save button clicked (by text)');
-            buttonClicked = true;
-          }
-        } catch (e) {
-          this.log(`Text selector failed: ${e.message}`);
-        }
-      }
-
-      if (!buttonClicked) {
-        throw new Error('Could not find or click Excel save button');
-      }
-
-      // 10. Wait for download
-      this.log('Waiting for download...');
-      const download = await downloadPromise;
-      const suggestedFilename = download.suggestedFilename();
-
-      // Save to output directory
-      this.ensureOutputDirectory(this.outputDir);
-      const outputPath = path.join(this.outputDir, suggestedFilename);
-      await download.saveAs(outputPath);
-      this.log(`File saved to: ${outputPath}`);
-
-      // Close the popup (optional)
-      try {
-        const closeButton = this.page.locator(`div.w2window[id*="${this.config.xpaths.popupIframePattern}"] .w2window_close a`);
-        if (await closeButton.count() > 0) {
-          await closeButton.click();
-          this.log('Popup closed');
-        }
-      } catch (e) {
-        // Ignore close errors
-      }
-
-      return [{
-        status: 'downloaded',
-        filename: suggestedFilename,
-        path: outputPath
-      }];
 
     } catch (error) {
       this.error('Error fetching transactions:', error.message);
