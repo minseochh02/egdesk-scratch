@@ -260,6 +260,86 @@ const FinanceHub: React.FC = () => {
     }
   }, []);
 
+
+  // ============================================
+  // NEW: Reconnect handler
+  // ============================================
+
+  const handleReconnect = async (bankId: string) => {
+    const bank = getBankById(bankId);
+    
+    try {
+      // Update UI to show connecting state
+      setConnectedBanks(prev => prev.map(b => 
+        b.bankId === bankId 
+          ? { ...b, status: 'pending' as const }
+          : b
+      ));
+
+      // Try to get saved credentials
+      const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
+      
+      if (!credResult.success || !credResult.credentials) {
+        // No saved credentials - open the bank selector modal for manual login
+        setSelectedBank(bank || null);
+        setShowBankSelector(true);
+        
+        // Reset status
+        setConnectedBanks(prev => prev.map(b => 
+          b.bankId === bankId 
+            ? { ...b, status: 'disconnected' as const }
+            : b
+        ));
+        return;
+      }
+
+      console.log(`[FinanceHub] Reconnecting to ${bankId}...`);
+
+      const loginResult = await window.electron.financeHub.loginAndGetAccounts(bankId, {
+        userId: credResult.credentials.userId,
+        password: credResult.credentials.password,
+      });
+
+      if (loginResult.success && loginResult.isLoggedIn) {
+        setConnectedBanks(prev => prev.map(b => 
+          b.bankId === bankId 
+            ? { 
+                ...b, 
+                status: 'connected' as const, 
+                alias: loginResult.userName || b.alias,
+                accounts: loginResult.accounts || b.accounts,
+                lastSync: new Date() 
+              }
+            : b
+        ));
+
+        alert(`✅ ${bank?.nameKo || bankId} 재연결 성공!`);
+      } else {
+        setConnectedBanks(prev => prev.map(b => 
+          b.bankId === bankId 
+            ? { ...b, status: 'error' as const }
+            : b
+        ));
+
+        alert(
+          `${bank?.nameKo || bankId} 재연결 실패\n\n` +
+          `오류: ${loginResult.error || '알 수 없는 오류'}\n\n` +
+          `"은행 연결하기" 버튼을 눌러 다시 로그인해주세요.`
+        );
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Reconnect error:', error);
+      
+      setConnectedBanks(prev => prev.map(b => 
+        b.bankId === bankId 
+          ? { ...b, status: 'error' as const }
+          : b
+      ));
+
+      alert(`재연결 중 오류가 발생했습니다: ${error}`);
+    }
+  };
+
   // ============================================
   // NEW: Sync transactions and save to SQLite
   // ============================================
@@ -268,7 +348,55 @@ const FinanceHub: React.FC = () => {
     setIsSyncingTransactions(true);
 
     try {
-      // Calculate date range (last 3 months)
+      // Step 1: Check if we need to reconnect
+      const connection = connectedBanks.find(b => b.bankId === bankId);
+      
+      if (!connection || connection.status === 'disconnected' || connection.status === 'error') {
+        console.log(`[FinanceHub] Connection status is ${connection?.status || 'unknown'}, attempting to reconnect...`);
+        
+        // Try to get saved credentials
+        const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
+        
+        if (!credResult.success || !credResult.credentials) {
+          // No saved credentials - need user to login manually
+          const bank = getBankById(bankId);
+          alert(
+            `${bank?.nameKo || bankId} 세션이 만료되었습니다.\n\n` +
+            `저장된 인증 정보가 없어 자동 재연결이 불가능합니다.\n` +
+            `"은행 연결하기" 버튼을 눌러 다시 로그인해주세요.`
+          );
+          return;
+        }
+
+        // Attempt auto-reconnect
+        console.log(`[FinanceHub] Auto-reconnecting to ${bankId}...`);
+        
+        const loginResult = await window.electron.financeHub.login(bankId, {
+          userId: credResult.credentials.userId,
+          password: credResult.credentials.password,
+        });
+
+        if (!loginResult.success || !loginResult.isLoggedIn) {
+          const bank = getBankById(bankId);
+          alert(
+            `${bank?.nameKo || bankId} 자동 재연결에 실패했습니다.\n\n` +
+            `오류: ${loginResult.error || '알 수 없는 오류'}\n\n` +
+            `"은행 연결하기" 버튼을 눌러 다시 로그인해주세요.`
+          );
+          return;
+        }
+
+        // Update connection status
+        setConnectedBanks(prev => prev.map(b => 
+          b.bankId === bankId 
+            ? { ...b, status: 'connected' as const, alias: loginResult.userName || b.alias, lastSync: new Date() }
+            : b
+        ));
+
+        console.log(`[FinanceHub] Auto-reconnect successful for ${bankId}`);
+      }
+
+      // Step 2: Calculate date range (last 3 months)
       const today = new Date();
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(today.getMonth() - 3);
@@ -279,7 +407,7 @@ const FinanceHub: React.FC = () => {
 
       console.log(`[FinanceHub] Syncing transactions for ${accountNumber}: ${startDate} ~ ${endDate}`);
 
-      // Fetch transactions from bank
+      // Step 3: Fetch transactions from bank
       const result = await window.electron.financeHub.getTransactions(
         bankId,
         accountNumber,
@@ -292,11 +420,11 @@ const FinanceHub: React.FC = () => {
         throw new Error(result.error || 'Failed to fetch transactions');
       }
 
-      // Get account metadata from the connected bank
+      // Step 4: Get account metadata from the connected bank
       const connectedBank = connectedBanks.find(b => b.bankId === bankId);
       const accountInfo = connectedBank?.accounts?.find(a => a.accountNumber === accountNumber);
 
-      // Prepare data for SQLite import
+      // Step 5: Prepare data for SQLite import
       const accountData = {
         accountNumber: accountNumber,
         accountName: accountInfo?.accountName || '계좌',
@@ -323,7 +451,7 @@ const FinanceHub: React.FC = () => {
         excelFilePath: result.file || result.filename,
       };
 
-      // Import to SQLite
+      // Step 6: Import to SQLite
       const importResult = await window.electron.financeHubDb.importTransactions(
         bankId,
         accountData,
@@ -343,10 +471,10 @@ const FinanceHub: React.FC = () => {
         // Load transactions for this account
         await loadTransactionsForAccount(account.id);
 
-        // Update connected bank's lastSync
+        // Update connected bank's lastSync and status
         setConnectedBanks(prev => prev.map(b => 
           b.bankId === bankId 
-            ? { ...b, lastSync: new Date() }
+            ? { ...b, status: 'connected' as const, lastSync: new Date() }
             : b
         ));
 
@@ -359,9 +487,22 @@ const FinanceHub: React.FC = () => {
       } else {
         throw new Error(importResult.error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[FinanceHub] Sync error:', error);
-      alert(`거래내역 동기화 실패: ${error}`);
+      
+      // Check if it's a session error and provide helpful message
+      const errorMessage = error?.message || String(error);
+      
+      if (errorMessage.includes('No active browser session') || errorMessage.includes('not initialized')) {
+        const bank = getBankById(bankId);
+        alert(
+          `${bank?.nameKo || bankId} 세션이 만료되었습니다.\n\n` +
+          `자동 재연결을 시도했으나 실패했습니다.\n` +
+          `"은행 연결하기" 버튼을 눌러 다시 로그인해주세요.`
+        );
+      } else {
+        alert(`거래내역 동기화 실패: ${errorMessage}`);
+      }
     } finally {
       setIsSyncingTransactions(false);
     }
@@ -1016,10 +1157,15 @@ const FinanceHub: React.FC = () => {
                                   <button
                                     className="finance-hub__btn finance-hub__btn--small finance-hub__btn--sync"
                                     onClick={() => handleSyncAndSaveTransactions(connection.bankId, account.accountNumber)}
-                                    disabled={isSyncingTransactions}
-                                    title="거래내역 동기화 및 저장"
+                                    disabled={isSyncingTransactions || connection.status === 'pending'}
+                                    title={
+                                      connection.status === 'disconnected' 
+                                        ? "클릭하면 자동으로 재연결 후 동기화합니다" 
+                                        : "거래내역 동기화 및 저장"
+                                    }
                                   >
-                                    {isSyncingTransactions ? '⏳' : '🔄'} 동기화
+                                    {isSyncingTransactions ? '⏳' : connection.status === 'disconnected' ? '🔗' : '🔄'} 
+                                    {connection.status === 'disconnected' ? '재연결 & 동기화' : '동기화'}
                                   </button>
                                 </div>
                               </div>
@@ -1034,13 +1180,28 @@ const FinanceHub: React.FC = () => {
                               : '동기화 안됨'}
                           </span>
                           <div className="finance-hub__bank-actions">
-                            <button
-                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
-                              onClick={() => handleFetchAccounts(connection.bankId)}
-                              disabled={isFetchingAccounts === connection.bankId}
-                            >
-                              {isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}
-                            </button>
+                            {/* Show reconnect button when disconnected or pending */}
+                            {(connection.status === 'disconnected' || connection.status === 'error' || connection.status === 'pending') && (
+                              <button
+                                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary"
+                                onClick={() => handleReconnect(connection.bankId)}
+                                disabled={connection.status === 'pending'}
+                              >
+                                {connection.status === 'pending' ? '연결 중...' : '🔄 재연결'}
+                              </button>
+                            )}
+                            
+                            {/* Only show these buttons when connected */}
+                            {connection.status === 'connected' && (
+                              <button
+                                className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                                onClick={() => handleFetchAccounts(connection.bankId)}
+                                disabled={isFetchingAccounts === connection.bankId}
+                              >
+                                {isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}
+                              </button>
+                            )}
+                            
                             <button
                               className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger"
                               onClick={() => handleDisconnect(connection.bankId)}
