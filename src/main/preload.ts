@@ -2116,24 +2116,20 @@ const electronHandler = {
   },
 
   /**
-   * Shinhan Database API
+   * Finance Hub Database API
    */
-  shinhanDb: {
-    getOverallStats: () => ipcRenderer.invoke('sqlite-shinhan-get-overall-stats'),
-    getRecentSyncOperations: (limit?: number) => 
-      ipcRenderer.invoke('sqlite-shinhan-get-recent-sync-operations', limit),
-    getTransactionsByAccount: (accountId: string, limit?: number) => 
-      ipcRenderer.invoke('sqlite-shinhan-get-transactions-by-account', accountId, limit),
-    getTransactionStats: (accountId: string) => 
-      ipcRenderer.invoke('sqlite-shinhan-get-transaction-stats', accountId),
-    getMonthlySummary: (accountId: string) => 
-      ipcRenderer.invoke('sqlite-shinhan-get-monthly-summary', accountId),
-    upsertAccount: (accountData: any) => 
-      ipcRenderer.invoke('sqlite-shinhan-upsert-account', accountData),
-    getAllAccounts: () => 
-      ipcRenderer.invoke('sqlite-shinhan-get-all-accounts'),
-    importTransactions: (accountData: any, transactionsData: any[], syncMetadata: any) => 
-      ipcRenderer.invoke('sqlite-shinhan-import-transactions', accountData, transactionsData, syncMetadata),
+  financeHubDb: {
+    getAllBanks: () => ipcRenderer.invoke('sqlite-financehub-get-all-banks'),
+    getAllAccounts: () => ipcRenderer.invoke('sqlite-financehub-get-all-accounts'),
+    getAccountsByBank: (bankId: string) => ipcRenderer.invoke('sqlite-financehub-get-accounts-by-bank', bankId),
+    queryTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-query-transactions', options),
+    getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
+    getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),
+    getOverallStats: () => ipcRenderer.invoke('sqlite-financehub-get-overall-stats'),
+    getRecentSyncOperations: (limit?: number) => ipcRenderer.invoke('sqlite-financehub-get-recent-sync-operations', limit),
+    upsertAccount: (accountData: any) => ipcRenderer.invoke('sqlite-financehub-upsert-account', accountData),
+    importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => 
+      ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata),
   },
 
   /**

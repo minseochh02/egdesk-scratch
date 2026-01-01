@@ -659,17 +659,19 @@ interface FinanceHubAPI {
 }
 
 /**
- * Interface for Shinhan Database API.
+ * Interface for Finance Hub Database API.
  */
-interface ShinhanDbAPI {
+interface FinanceHubDbAPI {
+  getAllBanks: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  queryTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getOverallStats: () => Promise<{ success: boolean; data?: any; error?: string }>;
   getRecentSyncOperations: (limit?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
-  getTransactionsByAccount: (accountId: string, limit?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
-  getTransactionStats: (accountId: string) => Promise<{ success: boolean; data?: any; error?: string }>;
-  getMonthlySummary: (accountId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   upsertAccount: (accountData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
-  getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
-  importTransactions: (accountData: any, transactionsData: any[], syncMetadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
 
@@ -726,7 +728,7 @@ export interface IElectronAPI {
   docker: DockerAPI;
   updater: UpdaterAPI;
   financeHub: FinanceHubAPI;
-  shinhanDb: ShinhanDbAPI;
+  financeHubDb: FinanceHubDbAPI;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 
