@@ -54,7 +54,13 @@ const SHINHAN_XPATHS = {
 
   // Transaction inquiry
   inquiryUrl: 'https://bank.shinhan.com/index.jsp#010101100010',
-  inquiryButton: '//button[contains(@id, "btn_search") or contains(text(), "조회")]',
+  inquiryButton: '//*[@id="btn_inquiry"]',
+  accountDropdown: '//*[@id="sbx_accno_input_0"]',
+  startDateInput: '//*[@id="wfr_searchCalendar_ica_fr_input"]',
+  fileSaveButton: '//a[@id="wfr_grd_inq_btngrp_div_btn_downFile"]',
+  popupIframePattern: 'CO00012RP',
+  selectAllCheckboxPattern: 'cbx_columnAll_input',
+  excelSaveButtonPattern: 'btn_saveXls',
   accountRow: '//div[contains(@class, "account_info")]', // This is a guess, I'll need to refine this based on the provided text
   accountList: '//ul[contains(@class, "account_list")]',
 };

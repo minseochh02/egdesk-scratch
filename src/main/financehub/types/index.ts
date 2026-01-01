@@ -38,6 +38,34 @@ export interface BankXPaths {
   securityPopupClose?: string;
   securityPopupAlt?: string;
   securityPopupCloseAlt?: string;
+  
+  // Transaction history XPaths
+  accountSelector?: string;
+  accountSelectorContainer?: string;
+  accountSelectorAlt?: string;
+  startDateInput?: string;
+  startDateInputAlt?: string;
+  startDateInputTitle?: string;
+  endDateInput?: string;
+  endDateInputAlt?: string;
+  endDateInputTitle?: string;
+  historyInquiryButton?: string;
+  historyInquiryButtonAlt?: string;
+  historyInquiryButtonClass?: string;
+  fileSaveButton?: string;
+  fileSaveButtonAlt?: string;
+  fileSaveButtonText?: string;
+  selectAllCheckbox?: string;
+  selectAllCheckboxAlt?: string;
+  selectAllCheckboxClass?: string;
+  excelSaveButton?: string;
+  excelSaveButtonAlt?: string;
+  excelSaveButtonClass?: string;
+  transactionTable?: string;
+  transactionTableAlt?: string;
+  transactionRow?: string;
+  downloadDialog?: string;
+  downloadCloseButton?: string;
 }
 
 export interface BankTimeouts {
@@ -47,6 +75,8 @@ export interface BankTimeouts {
   passwordWait: number;
   pageLoad: number;
   scrollWait: number;
+  downloadWait?: number;
+  transactionLoad?: number;
 }
 
 export interface BankDelays {
@@ -56,6 +86,8 @@ export interface BankDelays {
   shiftDeactivate: number;
   keyboardUpdate: number;
   keyboardReturn: number;
+  betweenAccounts?: number;
+  afterInquiry?: number;
 }
 
 export interface BankAutomationConfig {
@@ -248,6 +280,51 @@ export interface ProxyConfig {
 }
 
 // ============================================================================
+// TRANSACTION HISTORY TYPES
+// ============================================================================
+
+export interface TransactionHistoryOptions {
+  /** Number of years to go back (default: 10) */
+  yearsBack?: number;
+  /** Index of account to query (default: 0 for first) */
+  accountIndex?: number;
+  /** Custom output path for the Excel file */
+  outputPath?: string | null;
+}
+
+export interface TransactionHistoryResult {
+  success: boolean;
+  /** Path to the downloaded Excel file */
+  filePath?: string | null;
+  /** Date range for the query */
+  dateRange?: {
+    from: string;
+    to: string;
+  };
+  /** Number of years queried */
+  yearsBack?: number;
+  /** Account index that was queried */
+  accountIndex?: number;
+  /** Error message if failed */
+  error?: string;
+}
+
+export interface AllTransactionHistoryResult {
+  success: boolean;
+  /** Total number of accounts found */
+  totalAccounts?: number;
+  /** Number of successful downloads */
+  successfulDownloads?: number;
+  /** Results for each account */
+  results?: Array<TransactionHistoryResult & {
+    accountNumber: string;
+    accountName: string;
+  }>;
+  /** Error message if failed */
+  error?: string;
+}
+
+// ============================================================================
 // BANK AUTOMATOR INTERFACE
 // ============================================================================
 
@@ -260,6 +337,13 @@ export interface IBankAutomator {
   // Optional methods that banks can override
   handleSecurityPopup?(page: Page): Promise<boolean>;
   handleVirtualKeyboard?(page: Page, password: string): Promise<TypingResult>;
+  
+  // Account methods
+  getAccounts?(): Promise<AccountInfo[]>;
+  
+  // Transaction history methods
+  getTransactionHistory?(options?: TransactionHistoryOptions): Promise<TransactionHistoryResult>;
+  getAllTransactionHistory?(options?: TransactionHistoryOptions): Promise<AllTransactionHistoryResult>;
 }
 
 // ============================================================================
@@ -283,7 +367,7 @@ export interface AccountInfo {
   bankId: string;
   balance: number;
   currency: string;
-  lastUpdated: Date;
+  lastUpdated: Date | string;
 }
 
 export interface ConnectedBank {

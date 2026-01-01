@@ -2099,6 +2099,8 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:login', { bankId, credentials, proxyUrl }),
     getAccounts: (bankId: string, credentials?: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:get-accounts', { bankId, credentials, proxyUrl }),
+    getTransactions: (bankId: string, accountNumber: string, startDate: string, endDate: string, parse?: boolean) =>
+      ipcRenderer.invoke('finance-hub:get-transactions', { bankId, accountNumber, startDate, endDate, parse }),
     loginAndGetAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:login-and-get-accounts', { bankId, credentials, proxyUrl }),
     getConnectedBanks: () =>

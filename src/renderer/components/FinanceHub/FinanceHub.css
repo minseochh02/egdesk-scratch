@@ -1226,30 +1226,6 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-.finance-hub__debug-credentials {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.finance-hub__debug-input {
-  width: 100%;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: var(--fh-text-primary);
-  font-size: 13px;
-  transition: all 0.2s ease;
-}
-
-.finance-hub__debug-input:focus {
-  outline: none;
-  border-color: rgba(139, 92, 246, 0.6);
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .finance-hub__debug-buttons {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

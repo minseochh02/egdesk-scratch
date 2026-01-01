@@ -516,6 +516,25 @@ const createWindow = async () => {
         }
       });
 
+      ipcMain.handle('finance-hub:get-transactions', async (_event, { bankId, accountNumber, startDate, endDate, parse }) => {
+        try {
+          const automator = activeAutomators.get(bankId);
+          if (!automator) {
+            throw new Error('No active browser session found. Please open browser or login first.');
+          }
+          
+          if (parse && typeof automator.getTransactionsWithParsing === 'function') {
+            return await automator.getTransactionsWithParsing(accountNumber, startDate, endDate);
+          }
+          
+          const transactions = await automator.getTransactions(accountNumber, startDate, endDate);
+          return { success: true, transactions };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Failed to get transactions for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance
