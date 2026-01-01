@@ -205,7 +205,7 @@ const FinanceHub: React.FC = () => {
 
   const loadDatabaseStats = async () => {
     try {
-      const result = await window.electron.shinhanDb.getOverallStats();
+      const result = await window.electron.financeHubDb.getOverallStats();
       if (result.success) {
         setDbStats(result.data);
       }
@@ -216,7 +216,7 @@ const FinanceHub: React.FC = () => {
 
   const loadRecentSyncOperations = async () => {
     try {
-      const result = await window.electron.shinhanDb.getRecentSyncOperations(10);
+      const result = await window.electron.financeHubDb.getRecentSyncOperations(10);
       if (result.success) {
         setRecentSyncOps(result.data || []);
       }
@@ -235,19 +235,19 @@ const FinanceHub: React.FC = () => {
 
     try {
       // Load transactions
-      const txResult = await window.electron.shinhanDb.getTransactionsByAccount(accountId, 100);
+      const txResult = await window.electron.financeHubDb.queryTransactions({ accountId, limit: 100 });
       if (txResult.success) {
         setTransactions(txResult.data || []);
       }
 
       // Load stats
-      const statsResult = await window.electron.shinhanDb.getTransactionStats(accountId);
+      const statsResult = await window.electron.financeHubDb.getTransactionStats({ accountId });
       if (statsResult.success) {
         setTransactionStats(statsResult.data || null);
       }
 
       // Load monthly summary
-      const summaryResult = await window.electron.shinhanDb.getMonthlySummary(accountId);
+      const summaryResult = await window.electron.financeHubDb.getMonthlySummary({ accountId });
       if (summaryResult.success) {
         setMonthlySummary(summaryResult.data || []);
       }
@@ -322,7 +322,8 @@ const FinanceHub: React.FC = () => {
       };
 
       // Import to SQLite
-      const importResult = await window.electron.shinhanDb.importTransactions(
+      const importResult = await window.electron.financeHubDb.importTransactions(
+        bankId,
         accountData,
         transactionsData,
         syncMetadata
@@ -372,7 +373,7 @@ const FinanceHub: React.FC = () => {
     const checkExistingConnections = async () => {
       try {
         // 1. Load saved accounts from SQLite (persisted)
-        const savedResult = await window.electron.shinhanDb.getAllAccounts();
+        const savedResult = await window.electron.financeHubDb.getAllAccounts();
         let savedBanks: ConnectedBank[] = [];
         
         if (savedResult.success && savedResult.data) {
@@ -550,7 +551,8 @@ const FinanceHub: React.FC = () => {
         if (result.accounts && result.accounts.length > 0) {
           try {
             for (const acc of result.accounts) {
-              await window.electron.shinhanDb.upsertAccount({
+              await window.electron.financeHubDb.upsertAccount({
+                bankId: selectedBank.id,
                 accountNumber: acc.accountNumber,
                 accountName: acc.accountName,
                 customerName: result.userName || '사용자',
@@ -624,7 +626,8 @@ const FinanceHub: React.FC = () => {
     return KOREAN_BANKS.find((bank) => bank.id === id);
   };
 
-  const formatAccountNumber = (num: string): string => {
+  const formatAccountNumber = (num: string | undefined | null): string => {
+    if (!num) return '';
     if (num.includes('-') || num.length < 10) return num;
     return `${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6)}`;
   };
