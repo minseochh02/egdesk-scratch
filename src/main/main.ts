@@ -366,6 +366,7 @@ const installExtensions = async () => {
 
 import { registerEgChattingHandlers, initializeEgChattingService } from './sqlite/egchatting-service';
 import { registerGmailHandlers } from './gmail-ipc-register';
+import { registerSheetsHandlers } from './sheets-ipc-handler';
 const createWindow = async () => {
   // Initialize Electron Store first
   try {
@@ -2639,6 +2640,9 @@ const createWindow = async () => {
     
     // Register Gmail handlers (for authentication and sending)
     registerGmailHandlers(mainWindow);
+    
+    // Register Sheets handlers
+    registerSheetsHandlers();
     
     // Register MCP Server Manager handlers
     const mcpServerManager = getMCPServerManager();

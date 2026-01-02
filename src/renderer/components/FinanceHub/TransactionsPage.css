@@ -22,7 +22,7 @@
     --txp-warning: #F59E0B;
     --txp-error: #EF4444;
     --txp-deposit: #10B981;
-    --txp-withdrawal: #9CA3AF;
+    --txp-withdrawal: #EF4444;
     --txp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --txp-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
     --txp-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
@@ -862,7 +862,7 @@
   }
   
   .txp-detail__amount--withdrawal {
-    color: var(--txp-text-primary);
+    color: var(--txp-withdrawal);
   }
   
   .txp-detail__type-badge {
@@ -872,6 +872,16 @@
     font-weight: 600;
     background: rgba(255, 255, 255, 0.1);
     color: var(--txp-text-secondary);
+  }
+  
+  .txp-detail__type-badge--deposit {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--txp-deposit);
+  }
+  
+  .txp-detail__type-badge--withdrawal {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--txp-withdrawal);
   }
   
   .txp-detail__rows {

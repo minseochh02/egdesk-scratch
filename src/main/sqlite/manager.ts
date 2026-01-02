@@ -566,6 +566,22 @@ export class SQLiteManager {
     this.registerDockerSchedulerHandlers();
     this.registerCompanyResearchHandlers();
     this.registerFinanceHubHandlers();
+    
+    // Register Finance Hub scheduler handlers
+    try {
+      const { registerFinanceHubSchedulerHandlers } = require('../financehub/scheduler/scheduler-ipc-handler');
+      registerFinanceHubSchedulerHandlers();
+      
+      // Start the scheduler if enabled
+      const { getFinanceHubScheduler } = require('../financehub/scheduler/FinanceHubScheduler');
+      const scheduler = getFinanceHubScheduler();
+      const settings = scheduler.getSettings();
+      if (settings.enabled) {
+        scheduler.start();
+      }
+    } catch (error) {
+      console.error('Failed to register Finance Hub scheduler handlers:', error);
+    }
   }
 
   /**
@@ -671,6 +687,16 @@ export class SQLiteManager {
           transactionsData,
           syncMetadata
         );
+        return { success: true, data: result };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Update account status (active/inactive)
+    ipcMain.handle('sqlite-financehub-update-account-status', async (event, accountNumber, isActive) => {
+      try {
+        const result = this.getFinanceHubManager().updateAccountStatus(accountNumber, isActive);
         return { success: true, data: result };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

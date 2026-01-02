@@ -103,6 +103,7 @@ export function initializeStore(): Promise<void> {
       migrateFileConversionServer();
       migrateAppsScriptServer();
       migrateFinanceHub();
+      migrateFinanceHubScheduler();
       
       resolve();
     } catch (error) {
@@ -211,6 +212,34 @@ function migrateFinanceHub() {
     }
   } catch (error) {
     console.error('Error during financeHub migration:', error);
+  }
+}
+
+/**
+ * Migration: Add financeHubScheduler with default enabled state
+ */
+function migrateFinanceHubScheduler() {
+  try {
+    const schedulerConfig = store.get('financeHubScheduler');
+    
+    // If scheduler config doesn't exist, create it with defaults
+    if (!schedulerConfig) {
+      console.log('🔄 Migrating: Adding financeHubScheduler to store with default enabled');
+      store.set('financeHubScheduler', {
+        enabled: true,
+        time: '06:00',
+        retryCount: 3,
+        retryDelayMinutes: 5,
+      });
+      console.log('✅ financeHubScheduler added to store with auto-sync enabled');
+    } else if (schedulerConfig.enabled === undefined) {
+      // If config exists but enabled is not set, default to true
+      console.log('🔄 Migrating: Setting financeHubScheduler enabled to true');
+      store.set('financeHubScheduler.enabled', true);
+      console.log('✅ financeHubScheduler enabled set to true');
+    }
+  } catch (error) {
+    console.error('Error during financeHubScheduler migration:', error);
   }
 }
 

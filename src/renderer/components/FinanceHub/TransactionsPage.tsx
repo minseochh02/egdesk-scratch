@@ -20,7 +20,7 @@ import {
   BankAccount,
   TRANSACTION_CATEGORIES,
 } from './types';
-import { formatCurrency, formatDate, formatAccountNumber, getBankInfo, downloadCSV } from './utils';
+import { formatCurrency, formatDate, formatAccountNumber, getBankInfo } from './utils';
 
 // ============================================
 // Props Interface
@@ -71,31 +71,31 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
     onFilterChange({ [key]: value });
   };
 
-  const handleExportCSV = () => {
+  const handleOpenInSpreadsheet = async () => {
     if (transactions.length === 0) {
       alert('내보낼 거래내역이 없습니다.');
       return;
     }
     
-    const headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
-    const rows = transactions.map(tx => {
-      const bank = getBankInfo(tx.bankId, banks);
-      const account = accounts.find(a => a.id === tx.accountId);
-      return [
-        formatDate(tx.date),
-        tx.time || '',
-        bank.nameKo,
-        account?.accountNumber || '',
-        tx.type || '',
-        tx.description || '',
-        tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
-        tx.deposit > 0 ? tx.deposit.toString() : '',
-        tx.balance.toString(),
-        tx.branch || '',
-      ].map(cell => `"${cell}"`).join(',');
-    });
-    const csv = [headers.join(','), ...rows].join('\n');
-    downloadCSV(csv, `transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    try {
+      const title = `거래내역_${new Date().toISOString().slice(0, 10)}`;
+      const result = await window.electron.sheets.createTransactionsSpreadsheet({
+        title,
+        transactions,
+        banks,
+        accounts,
+      });
+
+      if (result.success) {
+        // Open the spreadsheet in a new browser tab
+        window.open(result.spreadsheetUrl, '_blank');
+      } else {
+        alert('스프레드시트 생성 실패: ' + (result.error || '알 수 없는 오류'));
+      }
+    } catch (error) {
+      console.error('Error creating spreadsheet:', error);
+      alert('스프레드시트 생성 중 오류가 발생했습니다.');
+    }
   };
 
   // Render Helpers
@@ -194,7 +194,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           <button className="txp-btn txp-btn--outline" onClick={() => setShowFilters(!showFilters)}>
             🔍 {showFilters ? '필터 숨기기' : '필터 보기'}
           </button>
-          <button className="txp-btn txp-btn--outline" onClick={handleExportCSV}>📥 CSV 내보내기</button>
+          <button className="txp-btn txp-btn--outline" onClick={handleOpenInSpreadsheet}>📊 스프레드시트에서 열기</button>
           <div className="txp-view-toggle">
             <button className={`txp-view-toggle__btn ${viewMode === 'table' ? 'txp-view-toggle__btn--active' : ''}`} onClick={() => setViewMode('table')} title="테이블 보기">📋</button>
             <button className={`txp-view-toggle__btn ${viewMode === 'cards' ? 'txp-view-toggle__btn--active' : ''}`} onClick={() => setViewMode('cards')} title="카드 보기">🃏</button>
@@ -289,7 +289,9 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       <div className={`txp-detail__amount ${isDeposit ? 'txp-detail__amount--deposit' : 'txp-detail__amount--withdrawal'}`}>
                         {isDeposit ? '+' : '-'}{formatCurrency(amount)}
                       </div>
-                      <div className="txp-detail__type-badge">{isDeposit ? '입금' : '출금'}</div>
+                      <div className={`txp-detail__type-badge ${isDeposit ? 'txp-detail__type-badge--deposit' : 'txp-detail__type-badge--withdrawal'}`}>
+                        {isDeposit ? '입금' : '출금'}
+                      </div>
                     </div>
                     
                     <div className="txp-detail__rows">

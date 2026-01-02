@@ -5,12 +5,30 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import './FinanceHub.css';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { 
+  faSync, 
+  faTimes, 
+  faBank, 
+  faChartLine, 
+  faPlus, 
+  faWallet,
+  faLink,
+  faUnlink,
+  faExchangeAlt,
+  faClock,
+  faCheckCircle,
+  faTimesCircle,
+  faExclamationTriangle,
+  faSpinner
+} from '@fortawesome/free-solid-svg-icons';
 
 // Hooks
 import { useTransactions } from '../../hooks/useTransactions';
 
 // Shared Components
 import { TransactionTable, TransactionStats } from './shared';
+import { SchedulerSettings } from './SchedulerSettings';
 
 // Types & Utils
 import {
@@ -78,6 +96,8 @@ const FinanceHub: React.FC = () => {
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [recentSyncOps, setRecentSyncOps] = useState<SyncOperation[]>([]);
+  const [showSyncOptions, setShowSyncOptions] = useState<string | null>(null); // accountNumber that's showing options
+  const [showSchedulerModal, setShowSchedulerModal] = useState(false);
 
   // ============================================
   // Computed Values
@@ -207,7 +227,40 @@ const FinanceHub: React.FC = () => {
   // Sync Transactions Handler
   // ============================================
 
-  const handleSyncAndSaveTransactions = async (bankId: string, accountNumber: string) => {
+  // Date range helper
+  const getDateRange = (period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year') => {
+    const today = new Date();
+    const startDate = new Date();
+    
+    switch (period) {
+      case 'day':
+        startDate.setDate(today.getDate() - 1);
+        break;
+      case 'week':
+        startDate.setDate(today.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(today.getMonth() - 1);
+        break;
+      case '3months':
+        startDate.setMonth(today.getMonth() - 3);
+        break;
+      case '6months':
+        startDate.setMonth(today.getMonth() - 6);
+        break;
+      case 'year':
+        startDate.setFullYear(today.getFullYear() - 1);
+        break;
+    }
+    
+    const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+    return {
+      startDate: formatDateStr(startDate),
+      endDate: formatDateStr(today)
+    };
+  };
+
+  const handleSyncAndSaveTransactions = async (bankId: string, accountNumber: string, period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year' = '3months') => {
     setIsSyncing(accountNumber);
     try {
       const connection = connectedBanks.find(b => b.bankId === bankId);
@@ -227,13 +280,7 @@ const FinanceHub: React.FC = () => {
         setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, alias: loginResult.userName || b.alias, lastSync: new Date() } : b));
       }
 
-      const today = new Date();
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(today.getMonth() - 3);
-      const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
-      const startDate = formatDateStr(threeMonthsAgo);
-      const endDate = formatDateStr(today);
-
+      const { startDate, endDate } = getDateRange(period);
       const result = await window.electron.financeHub.getTransactions(bankId, accountNumber, startDate, endDate, true);
       if (!result.success) throw new Error(result.error || 'Failed to fetch transactions');
 
@@ -264,10 +311,10 @@ const FinanceHub: React.FC = () => {
       const importResult = await window.electron.financeHubDb.importTransactions(bankId, accountData, transactionsData, syncMetadata);
 
       if (importResult.success) {
-        const { importedCount, skippedCount } = importResult.data;
+        const { inserted, skipped } = importResult.data;
         await Promise.all([loadDatabaseStats(), loadRecentSyncOperations(), refreshAll()]);
         setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, lastSync: new Date() } : b));
-        alert(`✅ 거래내역 동기화 완료!\n\n• 새로 추가: ${importedCount}건\n• 중복 건너뜀: ${skippedCount}건`);
+        alert(`✅ 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
       } else {
         throw new Error(importResult.error);
       }
@@ -369,6 +416,42 @@ const FinanceHub: React.FC = () => {
       setConnectedBanks(prev => prev.filter(b => b.bankId !== bankId));
     } catch (error) {
       console.error('[FinanceHub] Disconnect error:', error);
+    }
+  };
+
+  const handleDisconnectAccount = async (bankId: string, accountNumber: string) => {
+    const bank = getBankConfigById(bankId);
+    if (!window.confirm(`${bank?.nameKo || bankId}의 계좌 ${formatAccountNumber(accountNumber)}를 비활성화하시겠습니까?\n\n이 계좌의 동기화가 중단되지만, 기존 거래내역은 유지됩니다.`)) return;
+    
+    try {
+      // Call API to disable the account
+      const result = await window.electron.financeHubDb.updateAccountStatus(accountNumber, false);
+      if (result.success) {
+        // Update the UI - mark account as inactive
+        await loadConnectedBanks();
+        await loadBanksAndAccounts(); // Refresh accounts list
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Disconnect account error:', error);
+      alert('계좌 비활성화 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleReconnectAccount = async (bankId: string, accountNumber: string) => {
+    const bank = getBankConfigById(bankId);
+    if (!window.confirm(`${bank?.nameKo || bankId}의 계좌 ${formatAccountNumber(accountNumber)}를 다시 활성화하시겠습니까?`)) return;
+    
+    try {
+      // Call API to enable the account
+      const result = await window.electron.financeHubDb.updateAccountStatus(accountNumber, true);
+      if (result.success) {
+        // Update the UI - mark account as active
+        await loadConnectedBanks();
+        await loadBanksAndAccounts(); // Refresh accounts list
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Reconnect account error:', error);
+      alert('계좌 활성화 중 오류가 발생했습니다.');
     }
   };
 
@@ -496,7 +579,7 @@ const FinanceHub: React.FC = () => {
                 <button className="finance-hub__btn finance-hub__btn--small" onClick={() => handleDebugGetAccountsOnly((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'accounts' ? '조회 중...' : '📋 계좌만 조회'}</button>
                 <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleDebugFullFlow((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'full' ? '실행 중...' : '🚀 전체 플로우'}</button>
               </div>
-              {dbStats && (<div className="finance-hub__debug-stats"><h4>📊 데이터베이스 현황</h4><div className="finance-hub__debug-stats-grid"><span>계좌: {dbStats.totalAccounts}개</span><span>거래내역: {dbStats.totalTransactions}건</span><span>동기화: {dbStats.totalSyncOperations}회</span></div></div>)}
+              {dbStats && (<div className="finance-hub__debug-stats"><h4><FontAwesomeIcon icon={faChartLine} /> 데이터베이스 현황</h4><div className="finance-hub__debug-stats-grid"><span>계좌: {dbStats.totalAccounts}개</span><span>거래내역: {dbStats.totalTransactions}건</span><span>동기화: {dbStats.totalSyncOperations}회</span></div></div>)}
             </div>
           )}
         </div>
@@ -535,26 +618,70 @@ const FinanceHub: React.FC = () => {
                         </div>
                         {connection.accounts && connection.accounts.length > 0 && (
                           <div className="finance-hub__accounts-list">
-                            {connection.accounts.map((account, idx) => (
-                              <div key={idx} className="finance-hub__account-item">
-                                <div className="finance-hub__account-info">
-                                  <span className="finance-hub__account-number">{formatAccountNumber(account.accountNumber)}</span>
-                                  <span className="finance-hub__account-name">{account.accountName || '계좌'}</span>
+                            {connection.accounts.map((account, idx) => {
+                              // Find if this account is active from the accounts data
+                              const fullAccount = accounts.find(a => a.accountNumber === account.accountNumber);
+                              const isActive = fullAccount?.isActive !== false; // Default to true if not found
+                              
+                              return (
+                                <div key={idx} className={`finance-hub__account-item ${!isActive ? 'finance-hub__account-item--inactive' : ''}`}>
+                                  <div className="finance-hub__account-info">
+                                    <span className="finance-hub__account-number">{formatAccountNumber(account.accountNumber)}</span>
+                                    <span className="finance-hub__account-name">
+                                      {account.accountName || '계좌'} 
+                                      {!isActive && <span className="finance-hub__inactive-badge">비활성</span>}
+                                    </span>
+                                  </div>
+                                  <div className="finance-hub__account-actions">
+                                    {account.balance > 0 && <span className="finance-hub__account-balance">{formatCurrency(account.balance)}</span>}
+                                    {isActive ? (
+                                      <>
+                                        <div className="finance-hub__sync-dropdown">
+                                          <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => setShowSyncOptions(showSyncOptions === account.accountNumber ? null : account.accountNumber)} disabled={isSyncing !== null || connection.status === 'pending'} title="동기화">
+                                            <FontAwesomeIcon icon={isSyncing === account.accountNumber ? faSpinner : faSync} spin={isSyncing === account.accountNumber} />
+                                          </button>
+                                          {showSyncOptions === account.accountNumber && !isSyncing && (
+                                            <div className="finance-hub__sync-options">
+                                              <button className="finance-hub__sync-option" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, 'day'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 1일
+                                              </button>
+                                              <button className="finance-hub__sync-option" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, 'week'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 1주일
+                                              </button>
+                                              <button className="finance-hub__sync-option" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, 'month'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 1개월
+                                              </button>
+                                              <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, '3months'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 3개월 (기본)
+                                              </button>
+                                              <button className="finance-hub__sync-option" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, '6months'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 6개월
+                                              </button>
+                                              <button className="finance-hub__sync-option" onClick={() => { handleSyncAndSaveTransactions(connection.bankId, account.accountNumber, 'year'); setShowSyncOptions(null); }}>
+                                                <FontAwesomeIcon icon={faClock} /> 1년
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleDisconnectAccount(connection.bankId, account.accountNumber)} title="이 계좌 비활성화">
+                                          <FontAwesomeIcon icon={faUnlink} />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnectAccount(connection.bankId, account.accountNumber)}>
+                                        활성화
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="finance-hub__account-actions">
-                                  {account.balance > 0 && <span className="finance-hub__account-balance">{formatCurrency(account.balance)}</span>}
-                                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--sync" onClick={() => handleSyncAndSaveTransactions(connection.bankId, account.accountNumber)} disabled={isSyncing !== null || connection.status === 'pending'}>
-                                    {isSyncing === account.accountNumber ? '⏳' : '🔄'} 동기화
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
-                            {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}>🔄 재연결</button>}
+                            {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}><FontAwesomeIcon icon={faSync} /> 재연결</button>}
                             {connection.status === 'connected' && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleFetchAccounts(connection.bankId)} disabled={isFetchingAccounts === connection.bankId}>{isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}</button>}
                             <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger" onClick={() => handleDisconnect(connection.bankId)}>연결 해제</button>
                           </div>
@@ -569,8 +696,17 @@ const FinanceHub: React.FC = () => {
             {/* Recent Transactions - Using Shared Components */}
             <section className="finance-hub__section">
               <div className="finance-hub__section-header">
-                <h2><span className="finance-hub__section-icon">📊</span> 최근 거래 내역</h2>
-                <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => setCurrentView('transactions')}>전체 보기 →</button>
+                <h2><span className="finance-hub__section-icon"><FontAwesomeIcon icon={faExchangeAlt} /></span> 최근 거래 내역</h2>
+                <div className="finance-hub__section-actions">
+                  <button 
+                    className="finance-hub__btn finance-hub__btn--icon" 
+                    onClick={() => setShowSchedulerModal(true)}
+                    title="자동 동기화 설정"
+                  >
+                    <FontAwesomeIcon icon={faClock} />
+                  </button>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => setCurrentView('transactions')}>전체 보기 →</button>
+                </div>
               </div>
               {stats && <TransactionStats stats={stats} compact />}
               <TransactionTable transactions={recentTransactions} banks={banks} accounts={accounts} isLoading={isLoadingRecent} compact maxRows={10} onShowMore={() => setCurrentView('transactions')} emptyMessage="계좌를 선택하고 '동기화' 버튼을 눌러 거래내역을 저장하세요." />
@@ -586,7 +722,7 @@ const FinanceHub: React.FC = () => {
                       <h4>{month.yearMonth}</h4>
                       <div className="finance-hub__monthly-stats">
                         <div className="finance-hub__monthly-stat finance-hub__monthly-stat--deposit"><span>입금</span><strong>{formatCurrency(month.totalDeposits)}</strong><small>{month.depositCount}건</small></div>
-                        <div className="finance-hub__monthly-stat"><span>출금</span><strong>{formatCurrency(month.totalWithdrawals)}</strong><small>{month.withdrawalCount}건</small></div>
+                        <div className="finance-hub__monthly-stat finance-hub__monthly-stat--withdrawal"><span>출금</span><strong>{formatCurrency(month.totalWithdrawals)}</strong><small>{month.withdrawalCount}건</small></div>
                         <div className={`finance-hub__monthly-stat ${month.netChange >= 0 ? 'finance-hub__monthly-stat--positive' : 'finance-hub__monthly-stat--negative'}`}><span>순변동</span><strong>{formatCurrency(month.netChange)}</strong></div>
                       </div>
                     </div>
@@ -598,7 +734,7 @@ const FinanceHub: React.FC = () => {
             {/* Sync History */}
             {recentSyncOps.length > 0 && (
               <section className="finance-hub__section">
-                <div className="finance-hub__section-header"><h2><span className="finance-hub__section-icon">🔄</span> 최근 동기화 기록</h2></div>
+                <div className="finance-hub__section-header"><h2><span className="finance-hub__section-icon"><FontAwesomeIcon icon={faSync} /></span> 최근 동기화 기록</h2></div>
                 <div className="finance-hub__sync-history">
                   {recentSyncOps.slice(0, 5).map((op) => (
                     <div key={op.id} className="finance-hub__sync-item">
@@ -675,6 +811,21 @@ const FinanceHub: React.FC = () => {
                 <div className="finance-hub__modal-footer"><p className="finance-hub__modal-note">💡 현재 신한은행만 자동화가 지원됩니다.</p></div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Scheduler Modal */}
+      {showSchedulerModal && (
+        <div className="finance-hub__modal-overlay" onClick={() => setShowSchedulerModal(false)}>
+          <div className="finance-hub__modal finance-hub__modal--scheduler" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              <h2><FontAwesomeIcon icon={faClock} /> 자동 동기화 설정</h2>
+              <button className="finance-hub__modal-close" onClick={() => setShowSchedulerModal(false)}>✕</button>
+            </div>
+            <div className="finance-hub__modal-body">
+              <SchedulerSettings />
+            </div>
           </div>
         </div>
       )}

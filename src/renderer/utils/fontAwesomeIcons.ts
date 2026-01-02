@@ -116,6 +116,19 @@ export {
   faSyncAlt,
 } from '@fortawesome/free-solid-svg-icons';
 
+// Finance icons
+export {
+  faUniversity as faBank,
+  faPiggyBank,
+  faMoneyBillWave,
+  faChartPie,
+  faFileInvoiceDollar,
+  faCoins,
+  faCreditCard,
+  faExchangeAlt,
+  faHandHoldingUsd,
+} from '@fortawesome/free-solid-svg-icons';
+
 // Security icons
 export {
   faShieldAlt,

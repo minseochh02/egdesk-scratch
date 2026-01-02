@@ -2130,6 +2130,36 @@ const electronHandler = {
     upsertAccount: (accountData: any) => ipcRenderer.invoke('sqlite-financehub-upsert-account', accountData),
     importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => 
       ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata),
+    updateAccountStatus: (accountNumber: string, isActive: boolean) => 
+      ipcRenderer.invoke('sqlite-financehub-update-account-status', accountNumber, isActive),
+  },
+  /**
+   * Finance Hub Scheduler API
+   */
+  financeHubScheduler: {
+    getSettings: () => ipcRenderer.invoke('finance-hub:scheduler:get-settings'),
+    updateSettings: (settings: any) => ipcRenderer.invoke('finance-hub:scheduler:update-settings', settings),
+    start: () => ipcRenderer.invoke('finance-hub:scheduler:start'),
+    stop: () => ipcRenderer.invoke('finance-hub:scheduler:stop'),
+    syncNow: () => ipcRenderer.invoke('finance-hub:scheduler:sync-now'),
+    getLastSyncInfo: () => ipcRenderer.invoke('finance-hub:scheduler:last-sync-info'),
+    // Event listeners
+    onSyncStarted: (callback: () => void) => {
+      ipcRenderer.on('finance-hub:scheduler:sync-started', callback);
+      return () => ipcRenderer.removeListener('finance-hub:scheduler:sync-started', callback);
+    },
+    onSyncCompleted: (callback: (data: any) => void) => {
+      ipcRenderer.on('finance-hub:scheduler:sync-completed', (event, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('finance-hub:scheduler:sync-completed');
+    },
+    onSyncFailed: (callback: (data: any) => void) => {
+      ipcRenderer.on('finance-hub:scheduler:sync-failed', (event, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('finance-hub:scheduler:sync-failed');
+    },
+    onSettingsUpdated: (callback: (settings: any) => void) => {
+      ipcRenderer.on('finance-hub:scheduler:settings-updated', (event, settings) => callback(settings));
+      return () => ipcRenderer.removeAllListeners('finance-hub:scheduler:settings-updated');
+    },
   },
 
   /**
@@ -2218,6 +2248,22 @@ gmailMCP: {
   searchMessages: (connectionId: string, query: string, maxResults?: number) => ipcRenderer.invoke('gmail-mcp-search-messages', connectionId, query, maxResults),
   getMessage: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-get-message', connectionId, messageId),
   testConnection: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-test-connection', connectionId),
+},
+
+/**
+ * Google Sheets API
+ */
+sheets: {
+  createTransactionsSpreadsheet: (params: { title: string; transactions: any[]; banks: Record<string, any>; accounts: any[] }) => 
+    ipcRenderer.invoke('sheets:create-transactions-spreadsheet', params),
+  createSpreadsheet: (params: { title: string; data?: string[][] }) => 
+    ipcRenderer.invoke('sheets:create-spreadsheet', params),
+  getSpreadsheet: (spreadsheetId: string) => 
+    ipcRenderer.invoke('sheets:get-spreadsheet', spreadsheetId),
+  getRange: (params: { spreadsheetId: string; range: string }) => 
+    ipcRenderer.invoke('sheets:get-range', params),
+  updateRange: (params: { spreadsheetId: string; range: string; values: string[][] }) => 
+    ipcRenderer.invoke('sheets:update-range', params),
 },
 
 /**

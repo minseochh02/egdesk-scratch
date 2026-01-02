@@ -274,6 +274,12 @@
   border-bottom: 1px solid var(--fh-border);
 }
 
+.finance-hub__section-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .finance-hub__section-header h2 {
   margin: 0;
   font-family: var(--fh-font-display);
@@ -285,7 +291,9 @@
 }
 
 .finance-hub__section-icon {
-  font-size: 24px;
+  font-size: 20px;
+  margin-right: 8px;
+  color: var(--fh-primary);
 }
 
 /* Buttons */
@@ -343,6 +351,30 @@
   font-size: 12px;
 }
 
+.finance-hub__btn--icon {
+  padding: 4px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+  line-height: 1;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--fh-bg-primary);
+  border: 1px solid var(--fh-border);
+  color: var(--fh-text-secondary);
+}
+
+.finance-hub__btn--icon:hover:not(:disabled) {
+  background: var(--fh-bg-secondary);
+  border-color: var(--fh-primary);
+  color: var(--fh-primary);
+}
+
+.finance-hub__btn--icon:disabled {
+  opacity: 0.5;
+}
+
 .finance-hub__btn--full {
   width: 100%;
   justify-content: center;
@@ -365,6 +397,53 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* Sync Dropdown */
+.finance-hub__sync-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.finance-hub__sync-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 140px;
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  box-shadow: var(--fh-shadow-lg);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.finance-hub__sync-option {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--fh-text-secondary);
+  font-family: var(--fh-font-body);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--fh-transition);
+}
+
+.finance-hub__sync-option:hover {
+  background: var(--fh-bg-card-hover);
+  color: var(--fh-primary);
+}
+
+.finance-hub__sync-option:active {
+  background: rgba(0, 70, 255, 0.1);
+}
+
+.finance-hub__sync-option:not(:last-child) {
+  border-bottom: 1px solid var(--fh-border);
 }
 
 /* Empty State */
@@ -532,6 +611,30 @@
   transform: translateX(4px);
 }
 
+.finance-hub__account-item--inactive {
+  opacity: 0.6;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.finance-hub__account-item--inactive:hover {
+  transform: none;
+  border-color: var(--fh-border);
+}
+
+.finance-hub__inactive-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+  background: var(--fh-bg-secondary);
+  border: 1px solid var(--fh-border);
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .finance-hub__account-info {
   display: flex;
   flex-direction: column;
@@ -561,7 +664,7 @@
 .finance-hub__account-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .finance-hub__bank-card-footer {
@@ -735,6 +838,10 @@
 
 .finance-hub__monthly-stat--deposit strong {
   color: var(--fh-success);
+}
+
+.finance-hub__monthly-stat--withdrawal strong {
+  color: var(--fh-error);
 }
 
 .finance-hub__monthly-stat--positive strong {
@@ -1111,6 +1218,22 @@
   font-size: 13px;
   color: var(--fh-text-muted);
   text-align: center;
+}
+
+/* Modal Body */
+.finance-hub__modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Scheduler Modal */
+.finance-hub__modal--scheduler {
+  max-width: 480px;
+}
+
+.finance-hub__modal--scheduler .finance-hub__modal-body {
+  padding: 0;
 }
 
 /* Login Form */

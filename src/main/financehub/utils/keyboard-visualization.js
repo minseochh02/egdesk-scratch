@@ -38,9 +38,6 @@ function generateKeyboardVisualization(options) {
   let overlayHTML = '';
   let keyIndex = 0;
 
-  console.log('[VISUALIZATION] Keyboard box:', keyboardBox);
-  console.log('[VISUALIZATION] Processing', Object.keys(keyboardKeys).length, 'keys');
-
   Object.entries(keyboardKeys).forEach(([keyLabel, keyData]) => {
     const color = colors[keyIndex % colors.length];
     keyIndex++;
@@ -60,8 +57,6 @@ function generateKeyboardVisualization(options) {
     // Center point as percentage within the key
     const centerXPercent = 50; // Center horizontally
     const centerYPercent = 50; // Center vertically
-
-    console.log(`[VISUALIZATION] ${keyLabel}: normalized(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)}) -> percent(${leftPercent.toFixed(1)}%, ${topPercent.toFixed(1)}%) size(${widthPercent.toFixed(1)}%, ${heightPercent.toFixed(1)}%)`);
 
     overlayHTML += `
     <div class="key-overlay bbox" style="
@@ -460,7 +455,6 @@ function generateKeyboardVisualization(options) {
 </html>`;
 
   fs.writeFileSync(outputPath, html, 'utf8');
-  console.log('[VISUALIZATION] HTML visualization saved to:', outputPath);
   
   return outputPath;
 }

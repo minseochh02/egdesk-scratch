@@ -47,14 +47,16 @@ export class SheetsService {
   /**
    * Make authenticated request to Google Sheets API
    */
-  private async fetchSheets<T>(endpoint: string): Promise<T> {
+  private async fetchSheets<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const accessToken = await this.getAccessToken();
     
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'GET',
+      ...options,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
+        ...options.headers,
       },
     });
 
@@ -186,6 +188,167 @@ export class SheetsService {
       metadata,
       sheetsData,
     };
+  }
+
+  /**
+   * Create a new spreadsheet
+   */
+  async createSpreadsheet(title: string, data?: string[][]): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
+    const body: any = {
+      properties: {
+        title,
+      },
+    };
+
+    // If data is provided, configure the first sheet with data
+    if (data && data.length > 0) {
+      body.sheets = [{
+        properties: {
+          title: 'Sheet1',
+          gridProperties: {
+            rowCount: data.length,
+            columnCount: data[0]?.length || 1,
+          },
+        },
+      }];
+    }
+
+    const response = await this.fetchSheets<any>('', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+
+    // If data is provided, write it to the sheet
+    if (data && data.length > 0 && response.spreadsheetId) {
+      await this.updateRange(response.spreadsheetId, 'Sheet1!A1', data);
+    }
+
+    return {
+      spreadsheetId: response.spreadsheetId,
+      spreadsheetUrl: response.spreadsheetUrl,
+    };
+  }
+
+  /**
+   * Update values in a range
+   */
+  async updateRange(spreadsheetId: string, range: string, values: string[][]): Promise<void> {
+    const encodedRange = encodeURIComponent(range);
+    const endpoint = `/${spreadsheetId}/values/${encodedRange}?valueInputOption=USER_ENTERED`;
+    
+    await this.fetchSheets<any>(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify({
+        range,
+        majorDimension: 'ROWS',
+        values,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  /**
+   * Append values to a sheet
+   */
+  async appendValues(spreadsheetId: string, range: string, values: string[][]): Promise<void> {
+    const encodedRange = encodeURIComponent(range);
+    const endpoint = `/${spreadsheetId}/values/${encodedRange}:append`;
+    
+    await this.fetchSheets<any>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({
+        range,
+        majorDimension: 'ROWS',
+        values,
+        valueInputOption: 'USER_ENTERED',
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  /**
+   * Format sheet with headers
+   */
+  async formatHeaders(spreadsheetId: string, sheetId: number = 0): Promise<void> {
+    const requests = [
+      {
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: 0,
+            endRowIndex: 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
+              textFormat: {
+                fontSize: 10,
+                bold: true,
+              },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+    ];
+
+    await this.fetchSheets<any>(`/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({ requests }),
+    });
+  }
+
+  /**
+   * Create and open a spreadsheet from transactions data
+   */
+  async createTransactionsSpreadsheet(
+    title: string,
+    transactions: any[],
+    banks: Record<string, any>,
+    accounts: any[]
+  ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
+    // Prepare headers
+    const headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
+    
+    // Prepare data rows
+    const rows = transactions.map(tx => {
+      const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
+      const account = accounts.find(a => a.id === tx.accountId);
+      return [
+        tx.date || '',
+        tx.time || '',
+        bank.nameKo || '',
+        account?.accountNumber || '',
+        tx.type || '',
+        tx.description || '',
+        tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
+        tx.deposit > 0 ? tx.deposit.toString() : '',
+        tx.balance.toString(),
+        tx.branch || '',
+      ];
+    });
+
+    // Combine headers and data
+    const data = [headers, ...rows];
+
+    // Create the spreadsheet
+    const result = await this.createSpreadsheet(title, data);
+
+    // Format the headers
+    if (result.spreadsheetId) {
+      try {
+        await this.formatHeaders(result.spreadsheetId);
+      } catch (error) {
+        console.warn('Failed to format headers:', error);
+        // Continue even if formatting fails
+      }
+    }
+
+    return result;
   }
 }
 

@@ -424,10 +424,21 @@ export class FinanceHubDbManager {
 
   getAllAccounts(): BankAccount[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts WHERE is_active = 1
+      SELECT * FROM accounts 
       ORDER BY bank_id, account_number
     `);
     return stmt.all().map((row: any) => this.mapRowToAccount(row));
+  }
+
+  updateAccountStatus(accountNumber: string, isActive: boolean): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE accounts 
+      SET is_active = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE account_number = ?
+    `);
+    
+    const result = stmt.run(isActive ? 1 : 0, accountNumber);
+    return result.changes > 0;
   }
 
   // ========================================
