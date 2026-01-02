@@ -21,6 +21,23 @@ export function registerSheetsHandlers(): void {
     }
   });
 
+  // Get or create persistent transactions spreadsheet
+  ipcMain.handle('sheets:get-or-create-transactions-spreadsheet', async (_, { transactions, banks, accounts, persistentSpreadsheetId }) => {
+    try {
+      const result = await sheetsService.getOrCreateTransactionsSpreadsheet(transactions, banks, accounts, persistentSpreadsheetId);
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error: any) {
+      console.error('Error getting/creating persistent transactions spreadsheet:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to get or create spreadsheet',
+      };
+    }
+  });
+
   // Generic create spreadsheet
   ipcMain.handle('sheets:create-spreadsheet', async (_, { title, data }) => {
     try {

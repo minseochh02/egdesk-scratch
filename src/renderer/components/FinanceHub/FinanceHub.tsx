@@ -73,6 +73,7 @@ const FinanceHub: React.FC = () => {
     setPage,
     toggleSort,
     loadBanksAndAccounts,
+    loadAllTransactions,
     refreshAll,
     setIsSyncing,
   } = useTransactions();
@@ -760,7 +761,7 @@ const FinanceHub: React.FC = () => {
           </>
         ) : (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
-            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} />
+            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} />
           </div>
         )}
       </main>

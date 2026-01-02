@@ -70,6 +70,12 @@ export function initializeStore(): Promise<void> {
           financeHub: {
             savedCredentials: {}, // { bankId: { userId, password } }
             connectedBanks: [],
+            persistentSpreadsheet: {
+              spreadsheetId: null, // Google Sheets ID for persistent transactions spreadsheet
+              lastUpdated: null,
+              title: null,
+              spreadsheetUrl: null,
+            },
           },
         },
         // MCP Servers list
@@ -202,13 +208,31 @@ function migrateAppsScriptServer() {
  */
 function migrateFinanceHub() {
   try {
-    if (!store.has('financeHub')) {
+    const fhConfig = store.get('financeHub');
+    
+    if (!fhConfig) {
       console.log('🔄 Migrating: Adding financeHub to store');
       store.set('financeHub', {
         savedCredentials: {},
         connectedBanks: [],
+        persistentSpreadsheet: {
+          spreadsheetId: null,
+          lastUpdated: null,
+          title: null,
+          spreadsheetUrl: null,
+        },
       });
       console.log('✅ financeHub added to store');
+    } else if (!fhConfig.persistentSpreadsheet) {
+      console.log('🔄 Migrating: Adding persistentSpreadsheet to financeHub');
+      fhConfig.persistentSpreadsheet = {
+        spreadsheetId: null,
+        lastUpdated: null,
+        title: null,
+        spreadsheetUrl: null,
+      };
+      store.set('financeHub', fhConfig);
+      console.log('✅ persistentSpreadsheet added to financeHub');
     }
   } catch (error) {
     console.error('Error during financeHub migration:', error);
@@ -1168,6 +1192,58 @@ ipcMain.handle('finance-hub:remove-credentials', async (event, bankId) => {
     return { success: true };
   } catch (error) {
     console.error('Error removing bank credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get persistent spreadsheet info
+ */
+ipcMain.handle('finance-hub:get-persistent-spreadsheet', async () => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: { spreadsheetId: null, lastUpdated: null, title: null, spreadsheetUrl: null } };
+    return { success: true, persistentSpreadsheet: fhConfig.persistentSpreadsheet || { spreadsheetId: null, lastUpdated: null, title: null, spreadsheetUrl: null } };
+  } catch (error) {
+    console.error('Error getting persistent spreadsheet:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Save persistent spreadsheet info
+ */
+ipcMain.handle('finance-hub:save-persistent-spreadsheet', async (event, spreadsheetInfo) => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: {} };
+    fhConfig.persistentSpreadsheet = {
+      ...fhConfig.persistentSpreadsheet,
+      ...spreadsheetInfo,
+      lastUpdated: new Date().toISOString(),
+    };
+    store.set('financeHub', fhConfig);
+    return { success: true, persistentSpreadsheet: fhConfig.persistentSpreadsheet };
+  } catch (error) {
+    console.error('Error saving persistent spreadsheet:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Clear persistent spreadsheet info
+ */
+ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async () => {
+  try {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: {} };
+    fhConfig.persistentSpreadsheet = {
+      spreadsheetId: null,
+      lastUpdated: null,
+      title: null,
+      spreadsheetUrl: null,
+    };
+    store.set('financeHub', fhConfig);
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing persistent spreadsheet:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
