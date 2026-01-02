@@ -80,6 +80,7 @@ export interface UseTransactionsReturn {
   // Data Actions
   loadTransactions: () => Promise<void>;
   loadRecentTransactions: (limit?: number) => Promise<void>;
+  loadAllTransactions: () => Promise<Transaction[]>;
   loadBanksAndAccounts: () => Promise<void>;
   refreshAll: () => Promise<void>;
   
@@ -168,6 +169,35 @@ export function useTransactions(): UseTransactionsReturn {
       console.error('[useTransactions] Failed to load recent:', err);
     } finally {
       setIsLoadingRecent(false);
+    }
+  }, []);
+
+  // ============================================
+  // Load All Transactions (for Export)
+  // ============================================
+  
+  const loadAllTransactions = useCallback(async (): Promise<Transaction[]> => {
+    try {
+      console.log('[useTransactions] Loading all transactions for export...');
+      
+      const result = await window.electron.financeHubDb.queryTransactions({
+        limit: 100000, // Large limit to get all transactions
+        offset: 0,
+        orderBy: 'date',
+        orderDir: 'desc',
+      });
+      
+      if (result.success) {
+        const allTransactions = result.data || [];
+        console.log(`[useTransactions] Loaded ${allTransactions.length} total transactions for export`);
+        return allTransactions;
+      } else {
+        console.error('[useTransactions] Failed to load all transactions:', result.error);
+        return [];
+      }
+    } catch (err) {
+      console.error('[useTransactions] Failed to load all transactions:', err);
+      return [];
     }
   }, []);
 
@@ -385,6 +415,7 @@ export function useTransactions(): UseTransactionsReturn {
     // Data Actions
     loadTransactions,
     loadRecentTransactions,
+    loadAllTransactions,
     loadBanksAndAccounts,
     refreshAll,
     

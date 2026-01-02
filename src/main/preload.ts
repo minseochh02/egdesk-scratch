@@ -2113,6 +2113,12 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:get-saved-credentials', bankId),
     removeCredentials: (bankId: string) =>
       ipcRenderer.invoke('finance-hub:remove-credentials', bankId),
+    getPersistentSpreadsheet: () =>
+      ipcRenderer.invoke('finance-hub:get-persistent-spreadsheet'),
+    savePersistentSpreadsheet: (spreadsheetInfo: any) =>
+      ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo),
+    clearPersistentSpreadsheet: () =>
+      ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet'),
   },
 
   /**
@@ -2256,6 +2262,8 @@ gmailMCP: {
 sheets: {
   createTransactionsSpreadsheet: (params: { title: string; transactions: any[]; banks: Record<string, any>; accounts: any[] }) => 
     ipcRenderer.invoke('sheets:create-transactions-spreadsheet', params),
+  getOrCreateTransactionsSpreadsheet: (params: { transactions: any[]; banks: Record<string, any>; accounts: any[]; persistentSpreadsheetId?: string }) => 
+    ipcRenderer.invoke('sheets:get-or-create-transactions-spreadsheet', params),
   createSpreadsheet: (params: { title: string; data?: string[][] }) => 
     ipcRenderer.invoke('sheets:create-spreadsheet', params),
   getSpreadsheet: (spreadsheetId: string) => 

@@ -271,35 +271,152 @@ export class SheetsService {
   }
 
   /**
+   * Clear values in a range
+   */
+  async clearRange(spreadsheetId: string, range: string): Promise<void> {
+    const encodedRange = encodeURIComponent(range);
+    const endpoint = `/${spreadsheetId}/values/${encodedRange}:clear`;
+    
+    await this.fetchSheets<any>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  /**
    * Format sheet with headers
    */
-  async formatHeaders(spreadsheetId: string, sheetId: number = 0): Promise<void> {
-    const requests = [
-      {
-        repeatCell: {
-          range: {
-            sheetId,
-            startRowIndex: 0,
-            endRowIndex: 1,
-          },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
-              textFormat: {
-                fontSize: 10,
-                bold: true,
+  async formatHeaders(spreadsheetId: string, sheetName: string = 'Sheet1'): Promise<void> {
+    try {
+      // Get the spreadsheet metadata to find the correct sheet ID
+      const metadata = await this.getSpreadsheet(spreadsheetId);
+      const sheet = metadata.sheets.find(s => s.title === sheetName) || metadata.sheets[0];
+      
+      if (!sheet) {
+        console.warn('No sheet found for formatting headers');
+        return;
+      }
+
+      const requests = [
+        {
+          repeatCell: {
+            range: {
+              sheetId: sheet.sheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
+                textFormat: {
+                  fontSize: 10,
+                  bold: true,
+                },
               },
             },
+            fields: 'userEnteredFormat(backgroundColor,textFormat)',
           },
-          fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
-      },
-    ];
+      ];
 
-    await this.fetchSheets<any>(`/${spreadsheetId}:batchUpdate`, {
-      method: 'POST',
-      body: JSON.stringify({ requests }),
+      await this.fetchSheets<any>(`/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        body: JSON.stringify({ requests }),
+      });
+    } catch (error) {
+      console.warn('Failed to format headers:', error);
+      // Don't throw error - formatting is not critical
+    }
+  }
+
+  /**
+   * Get or create a persistent transactions spreadsheet
+   */
+  async getOrCreateTransactionsSpreadsheet(
+    transactions: any[],
+    banks: Record<string, any>,
+    accounts: any[],
+    persistentSpreadsheetId?: string
+  ): Promise<{ spreadsheetId: string; spreadsheetUrl: string; wasCreated: boolean }> {
+    // Try to use existing spreadsheet if provided
+    if (persistentSpreadsheetId) {
+      try {
+        // Check if spreadsheet still exists and is accessible
+        await this.getSpreadsheet(persistentSpreadsheetId);
+        
+        // Update with new data
+        await this.updateTransactionsData(persistentSpreadsheetId, transactions, banks, accounts);
+        
+        return {
+          spreadsheetId: persistentSpreadsheetId,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${persistentSpreadsheetId}/edit`,
+          wasCreated: false
+        };
+      } catch (error) {
+        console.warn('Persistent spreadsheet not accessible, creating new one:', error);
+        // Fall through to create new spreadsheet
+      }
+    }
+
+    // Create new spreadsheet
+    const title = `EGDesk 거래내역 ${new Date().toISOString().slice(0, 10)}`;
+    const result = await this.createTransactionsSpreadsheet(title, transactions, banks, accounts);
+    
+    return {
+      ...result,
+      wasCreated: true
+    };
+  }
+
+  /**
+   * Update existing spreadsheet with new transactions data
+   */
+  async updateTransactionsData(
+    spreadsheetId: string,
+    transactions: any[],
+    banks: Record<string, any>,
+    accounts: any[]
+  ): Promise<void> {
+    // Prepare headers
+    const headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
+    
+    // Prepare data rows
+    const rows = transactions.map(tx => {
+      const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
+      const account = accounts.find(a => a.id === tx.accountId);
+      return [
+        tx.date || '',
+        tx.time || '',
+        bank.nameKo || '',
+        account?.accountNumber || '',
+        tx.type || '',
+        tx.description || '',
+        tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
+        tx.deposit > 0 ? tx.deposit.toString() : '',
+        tx.balance.toString(),
+        tx.branch || '',
+      ];
     });
+
+    // Combine headers and data
+    const data = [headers, ...rows];
+
+    // Clear existing data and add new data
+    try {
+      // Clear the entire sheet
+      await this.clearRange(spreadsheetId, 'Sheet1');
+    } catch (error) {
+      console.warn('Failed to clear existing data, continuing anyway:', error);
+    }
+
+    // Add new data
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+
+    // Format headers
+    await this.formatHeaders(spreadsheetId, 'Sheet1');
   }
 
   /**
@@ -340,12 +457,7 @@ export class SheetsService {
 
     // Format the headers
     if (result.spreadsheetId) {
-      try {
-        await this.formatHeaders(result.spreadsheetId);
-      } catch (error) {
-        console.warn('Failed to format headers:', error);
-        // Continue even if formatting fails
-      }
+      await this.formatHeaders(result.spreadsheetId, 'Sheet1');
     }
 
     return result;

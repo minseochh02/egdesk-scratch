@@ -3,7 +3,9 @@
 // Now receives data and callbacks via props from parent
 // ============================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import './TransactionsPage.css';
 
 // Shared Components
@@ -21,6 +23,7 @@ import {
   TRANSACTION_CATEGORIES,
 } from './types';
 import { formatCurrency, formatDate, formatAccountNumber, getBankInfo } from './utils';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 // ============================================
 // Props Interface
@@ -40,6 +43,7 @@ interface TransactionsPageProps {
   onResetFilters: () => void;
   onPageChange: (page: number) => void;
   onSort: (field: SortState['field']) => void;
+  loadAllTransactions: () => Promise<Transaction[]>;
 }
 
 // ============================================
@@ -60,11 +64,29 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   onResetFilters,
   onPageChange,
   onSort,
+  loadAllTransactions,
 }) => {
   // Local UI State
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [showGoogleAuth, setShowGoogleAuth] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [hasPersistentSpreadsheet, setHasPersistentSpreadsheet] = useState(false);
+
+  // Check persistent spreadsheet status on mount
+  useEffect(() => {
+    const checkPersistentSpreadsheet = async () => {
+      try {
+        const result = await window.electron.financeHub.getPersistentSpreadsheet();
+        setHasPersistentSpreadsheet(result.success && !!result.persistentSpreadsheet?.spreadsheetId);
+      } catch (error) {
+        console.error('Error checking persistent spreadsheet:', error);
+      }
+    };
+    
+    checkPersistentSpreadsheet();
+  }, []);
 
   // Handlers
   const handleFilterChange = (key: keyof Filters, value: string) => {
@@ -72,29 +94,94 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   };
 
   const handleOpenInSpreadsheet = async () => {
-    if (transactions.length === 0) {
-      alert('내보낼 거래내역이 없습니다.');
-      return;
-    }
-    
     try {
-      const title = `거래내역_${new Date().toISOString().slice(0, 10)}`;
-      const result = await window.electron.sheets.createTransactionsSpreadsheet({
-        title,
-        transactions,
+      // Load all transactions (not just filtered ones)
+      const allTransactions = await loadAllTransactions();
+      
+      if (allTransactions.length === 0) {
+        alert('내보낼 거래내역이 없습니다.');
+        return;
+      }
+      
+      // Get persistent spreadsheet info
+      const persistentResult = await window.electron.financeHub.getPersistentSpreadsheet();
+      const persistentSpreadsheetId = persistentResult.success ? persistentResult.persistentSpreadsheet?.spreadsheetId : null;
+      
+      // Use the new get-or-create method
+      const result = await window.electron.sheets.getOrCreateTransactionsSpreadsheet({
+        transactions: allTransactions,
         banks,
         accounts,
+        persistentSpreadsheetId,
       });
 
       if (result.success) {
+        // Save persistent spreadsheet info if it was created or updated
+        if (result.wasCreated) {
+          await window.electron.financeHub.savePersistentSpreadsheet({
+            spreadsheetId: result.spreadsheetId,
+            spreadsheetUrl: result.spreadsheetUrl,
+            title: `EGDesk 거래내역 ${new Date().toISOString().slice(0, 10)}`,
+          });
+          setHasPersistentSpreadsheet(true);
+        }
+        
         // Open the spreadsheet in a new browser tab
         window.open(result.spreadsheetUrl, '_blank');
       } else {
-        alert('스프레드시트 생성 실패: ' + (result.error || '알 수 없는 오류'));
+        // Check if it's an authentication error
+        const errorMsg = result.error || '알 수 없는 오류';
+        if (errorMsg.toLowerCase().includes('auth') || 
+            errorMsg.toLowerCase().includes('token') || 
+            errorMsg.toLowerCase().includes('permission') ||
+            errorMsg.toLowerCase().includes('sign in with google')) {
+          setShowGoogleAuth(true);
+          // Don't show alert for auth errors, just show the Google login UI
+        } else {
+          alert('스프레드시트 생성 실패: ' + errorMsg);
+        }
       }
     } catch (error) {
       console.error('Error creating spreadsheet:', error);
-      alert('스프레드시트 생성 중 오류가 발생했습니다.');
+      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
+      
+      // Check if it's an authentication error
+      if (errorMsg.toLowerCase().includes('auth') || 
+          errorMsg.toLowerCase().includes('token') || 
+          errorMsg.toLowerCase().includes('permission') ||
+          errorMsg.toLowerCase().includes('sign in with google')) {
+        setShowGoogleAuth(true);
+        // Don't show alert for auth errors, just show the Google login UI
+      } else {
+        alert('스프레드시트 생성 중 오류가 발생했습니다: ' + errorMsg);
+      }
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setSigningIn(true);
+    
+    try {
+      // Use the same Google OAuth flow as MCP servers with proper scopes
+      const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING);
+      
+      if (result.success && result.session) {
+        console.log('Google sign-in successful:', result.session.user.email);
+        setShowGoogleAuth(false);
+        // Automatically retry the spreadsheet creation
+        setTimeout(() => {
+          handleOpenInSpreadsheet();
+        }, 1000);
+      } else {
+        console.error('Google sign-in failed:', result);
+        throw new Error(result.error || 'Failed to sign in with Google');
+      }
+    } catch (err) {
+      console.error('Error signing in with Google:', err);
+      // Don't show alert for OAuth errors - user might have just cancelled the window
+      // Keep the Google login UI visible so they can try again
+    } finally {
+      setSigningIn(false);
     }
   };
 
@@ -191,10 +278,49 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           <p className="txp-header__subtitle">모든 은행 계좌의 거래내역을 한 곳에서 확인하세요</p>
         </div>
         <div className="txp-header__actions">
+          {showGoogleAuth && (
+            <div className="txp-google-auth-container">
+              <span className="txp-google-auth-message">스프레드시트 접근을 위해 Google 로그인이 필요합니다</span>
+              <button 
+                className="txp-btn txp-btn--google" 
+                onClick={handleGoogleSignIn}
+                disabled={signingIn}
+              >
+                {signingIn ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    <span>로그인 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="txp-google-icon">G</span>
+                    <span>Google 로그인</span>
+                  </>
+                )}
+              </button>
+              <button 
+                className="txp-btn txp-btn--outline txp-btn--small" 
+                onClick={() => setShowGoogleAuth(false)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <button className="txp-btn txp-btn--outline" onClick={() => setShowFilters(!showFilters)}>
             🔍 {showFilters ? '필터 숨기기' : '필터 보기'}
           </button>
-          <button className="txp-btn txp-btn--outline" onClick={handleOpenInSpreadsheet}>📊 스프레드시트에서 열기</button>
+          <button className="txp-btn txp-btn--outline" onClick={handleOpenInSpreadsheet}>
+            📊 스프레드시트에서 열기 {hasPersistentSpreadsheet && '(기존 시트 업데이트)'}
+          </button>
+          {hasPersistentSpreadsheet && (
+            <button className="txp-btn txp-btn--outline txp-btn--small" onClick={async () => {
+              if (confirm('기존 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?')) {
+                await window.electron.financeHub.clearPersistentSpreadsheet();
+                setHasPersistentSpreadsheet(false);
+                alert('스프레드시트 연결이 해제되었습니다. 다음번에 새로운 스프레드시트가 생성됩니다.');
+              }
+            }} title="기존 스프레드시트 연결 해제">🔄 새 시트</button>
+          )}
           <div className="txp-view-toggle">
             <button className={`txp-view-toggle__btn ${viewMode === 'table' ? 'txp-view-toggle__btn--active' : ''}`} onClick={() => setViewMode('table')} title="테이블 보기">📋</button>
             <button className={`txp-view-toggle__btn ${viewMode === 'cards' ? 'txp-view-toggle__btn--active' : ''}`} onClick={() => setViewMode('cards')} title="카드 보기">🃏</button>
