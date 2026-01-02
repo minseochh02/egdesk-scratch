@@ -5,3 +5,4 @@
 export { default as TransactionTable } from './TransactionTable';
 export { default as TransactionStats } from './TransactionStats';
 export { default as TransactionFilters } from './TransactionFilters';
+export { default as SessionStatusIndicator } from './SessionStatusIndicator';

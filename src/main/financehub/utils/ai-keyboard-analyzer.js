@@ -556,9 +556,6 @@ function processSegmentationResults(segmentationResults, targetImageBox) {
           x: Math.round(centerX),
           y: Math.round(centerY)
         };
-        console.log(`[AI-KEYBOARD] Using box center for ${keyLabel} (mask centroid failed)`);
-      } else {
-        console.log(`[AI-KEYBOARD] Using mask centroid for ${keyLabel}`);
       }
       
       keyboardKeys[keyLabel] = {
@@ -578,9 +575,6 @@ function processSegmentationResults(segmentationResults, targetImageBox) {
       };
     });
     
-    // Log keyboard keys by category
-    console.log('\n[AI-KEYBOARD] ===== KEYBOARD KEY POSITIONS =====');
-    
     // Group by label type
     const byType = {};
     Object.entries(keyboardKeys).forEach(([key, data]) => {
@@ -588,19 +582,6 @@ function processSegmentationResults(segmentationResults, targetImageBox) {
       byType[data.label][key] = data;
     });
     
-    // Log each type
-    Object.entries(byType).forEach(([type, keys]) => {
-      console.log(`\n[AI-KEYBOARD] ${type.toUpperCase()} KEYS:`);
-      Object.entries(keys).forEach(([keyLabel, keyData]) => {
-        console.log(`[AI-KEYBOARD] ${keyLabel}: position(${keyData.position.x}, ${keyData.position.y}) bounds(${keyData.bounds.x}, ${keyData.bounds.y}, ${keyData.bounds.width}, ${keyData.bounds.height})`);
-      });
-    });
-    
-    // Log all keys in a single summary
-    console.log('\n[AI-KEYBOARD] ===== ALL KEYS SUMMARY =====');
-    Object.entries(keyboardKeys).forEach(([keyLabel, keyData]) => {
-      console.log(`[AI-KEYBOARD] ${keyLabel}: (${keyData.position.x}, ${keyData.position.y})`);
-    });
     
     return { success: true, processed: segmentationResults.length, keyboardKeys };
   } catch (error) {

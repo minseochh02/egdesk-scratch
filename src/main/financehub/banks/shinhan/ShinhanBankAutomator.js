@@ -21,7 +21,6 @@ const {
 // Import AI keyboard analysis utilities
 const { analyzeKeyboardAndType } = require('../../utils/ai-keyboard-analyzer');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../../utils/bilingual-keyboard-parser');
-const { generateKeyboardVisualization } = require('../../utils/keyboard-visualization');
 const { getGeminiApiKey } = require('../../utils/api-keys');
 
 /**
@@ -224,25 +223,6 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       upperAnalysisResult?.keyboardKeys || null
     );
     this.log('Keyboard JSON exported to:', jsonPath);
-
-    // Generate HTML visualization
-    try {
-      const visualizationFilename = `keyboard-visualization-${timestamp}.html`;
-      const visualizationPath = path.join(this.outputDir, visualizationFilename);
-
-      generateKeyboardVisualization({
-        screenshotPath: lowerScreenshotPath,
-        keyboardBox: lowerKeyboardBox,
-        keyboardKeys: lowerAnalysisResult.keyboardKeys,
-        segmentationResults: lowerAnalysisResult.segmentationResults,
-        password: '***',
-        outputPath: visualizationPath
-      });
-
-      this.log('HTML visualization saved to:', visualizationPath);
-    } catch (vizError) {
-      this.warn('Failed to generate HTML visualization:', vizError);
-    }
 
     return {
       keyboardJSON,
@@ -656,22 +636,12 @@ class ShinhanBankAutomator extends BaseBankAutomator {
           this.log(`Typed ${keyboardResult.typedChars}/${keyboardResult.totalChars} characters`);
 
           // Step 7: Click login button
-          this.log('Clicking login button (1st attempt)...');
-          await this.page.waitForTimeout(500);
-
-          await this.clickButton(
-            this.page,
-            this.config.xpaths.loginButton,
-            '로그인 button (1st)'
-          );
-
-          // For debug: click twice
-          this.log('Clicking login button (2nd attempt for debug)...');
+          this.log('Clicking login button...');
           await this.page.waitForTimeout(500);
           const loginSuccess = await this.clickButton(
             this.page,
             this.config.xpaths.loginButton,
-            '로그인 button (2nd)'
+            '로그인'
           );
 
           if (loginSuccess) {
@@ -733,21 +703,55 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(3000);
       }
 
-      // 2. Click account selector dropdown
-      this.log('Clicking account dropdown...');
-      const dropdownSelector = `xpath=${this.config.xpaths.accountDropdown}`;
-      await this.page.click(dropdownSelector);
-      await this.page.waitForTimeout(1000);
-
-      // 3. Select the specified account
-      this.log(`Selecting account ${accountNumber}...`);
-      const accountOption = this.page.locator(`//div[contains(@class, "w2selectbox_layer")]//div[contains(text(), "${accountNumber}")]`).first();
+      // 2. Handle account selection
+      this.log('Selecting account...');
       
-      if (await accountOption.count() > 0) {
-        await accountOption.click();
+      // Check if it's a native select element
+      const selectSelector = '//select[@id="sbx_accno_input_0"]';
+      const isNativeSelect = await this.page.locator(selectSelector).count() > 0;
+      
+      if (isNativeSelect) {
+        this.log('Native select element detected');
+        
+        // Get all options from the select element
+        const options = await this.page.locator(`${selectSelector}/option`).all();
+        this.log(`Found ${options.length} account options`);
+        
+        // Find the option that contains our account number
+        let matchFound = false;
+        for (let i = 0; i < options.length; i++) {
+          const optionText = await options[i].textContent();
+          this.log(`Option ${i}: ${optionText}`);
+          
+          if (optionText && optionText.includes(accountNumber)) {
+            // Select by value or index
+            await this.page.selectOption(selectSelector, { index: i });
+            this.log(`Selected account: ${optionText}`);
+            matchFound = true;
+            break;
+          }
+        }
+        
+        if (!matchFound) {
+          this.log('Account not found in select options, using current selection...');
+        }
       } else {
-        this.log('Account not found in dropdown, using current selection...');
+        // Fallback to clicking dropdown (for custom dropdowns)
+        this.log('Attempting custom dropdown selection...');
+        const dropdownSelector = `xpath=${this.config.xpaths.accountDropdown}`;
+        await this.page.click(dropdownSelector);
+        await this.page.waitForTimeout(1000);
+        
+        // Try to find and click the account option
+        const accountOption = this.page.locator(`//div[contains(@class, "w2selectbox_layer")]//div[contains(text(), "${accountNumber}")]`).first();
+        if (await accountOption.count() > 0) {
+          await accountOption.click();
+          this.log('Account selected from custom dropdown');
+        } else {
+          this.log('Account not found in dropdown, using current selection...');
+        }
       }
+      
       await this.page.waitForTimeout(1000);
 
       // 4. Set start date
@@ -796,28 +800,46 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       // 5. Click "조회" (Inquiry) button
       this.log('Clicking Inquiry button...');
       await this.page.click(`xpath=${this.config.xpaths.inquiryButton}`);
-      await this.page.waitForTimeout(3000);
+      
+      // Wait for transaction data to load
+      this.log('Waiting for transaction data to load...');
+      try {
+        // Wait for either transaction rows or "no data" message
+        await Promise.race([
+          // Wait for transaction table rows
+          this.page.waitForSelector('#grd_list tbody tr.grid_body_row', { timeout: 10000 }),
+          // Or wait for the total count element
+          this.page.waitForSelector('.total em', { timeout: 10000 }),
+          // Or wait for no data message
+          this.page.waitForSelector('.no-data, .empty-message', { timeout: 10000 })
+        ]);
+        
+        // Additional wait to ensure data is fully rendered
+        await this.page.waitForTimeout(2000);
+      } catch (waitError) {
+        this.log('Warning: Transaction data wait timed out, proceeding anyway...');
+      }
 
       // 6. Extract data directly from HTML (No download)
       this.log('Extracting transaction data from page...');
       const extractedData = await extractTransactionsFromPage(this);
 
-      // 7. Create Excel file from extracted data
-      if (extractedData.transactions.length > 0) {
-        const excelPath = await createExcelFromData(this, extractedData);
-        extractedData.file = excelPath;
-        extractedData.status = 'success';
-        
-        return [{
-          status: 'downloaded',
-          filename: path.basename(excelPath),
-          path: excelPath,
-          extractedData: extractedData
-        }];
-      } else {
-        extractedData.status = 'no_data';
-        return [];
+      // 7. Create Excel file from extracted data (even if no transactions)
+      const excelPath = await createExcelFromData(this, extractedData);
+      extractedData.file = excelPath;
+      extractedData.status = 'success';
+      
+      // Log summary
+      if (extractedData.transactions.length === 0) {
+        this.log('No transactions found for the specified period - this is normal');
       }
+      
+      return [{
+        status: 'downloaded',
+        filename: path.basename(excelPath),
+        path: excelPath,
+        extractedData: extractedData
+      }];
 
     } catch (error) {
       this.error('Error fetching transactions:', error.message);
@@ -861,25 +883,35 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     // We reuse the getTransactions method which now does parsing internally
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
     
-    if (!downloadResult || downloadResult.length === 0 || downloadResult[0].status !== 'downloaded') {
+    // Check if the method returned any result
+    if (!downloadResult || downloadResult.length === 0) {
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data - no result returned',
+        downloadResult,
+      };
+    }
+    
+    // Check if the download was successful
+    const resultItem = downloadResult[0];
+    if (resultItem.status !== 'downloaded') {
       return {
         success: false,
         error: 'Data extraction failed',
         downloadResult,
       };
     }
-
-    const resultItem = downloadResult[0];
+    
     const extractedData = resultItem.extractedData;
     
-    // Return combined result
+    // Success - return data even if no transactions (0 transactions is valid)
     return {
       success: true,
       file: resultItem.path,
       filename: resultItem.filename,
       metadata: extractedData.metadata,
       summary: extractedData.summary,
-      transactions: extractedData.transactions,
+      transactions: extractedData.transactions,  // Can be empty array
       headers: extractedData.headers
     };
   }

@@ -11,7 +11,7 @@
   --tx-text-muted: #6B7280;
   --tx-primary: #0046FF;
   --tx-deposit: #10B981;
-  --tx-withdrawal: #9CA3AF;
+  --tx-withdrawal: #EF4444;
   --tx-radius: 12px;
 }
 
@@ -59,6 +59,14 @@
 
 .tx-table__header--right {
   text-align: right;
+}
+
+.tx-table__header--withdrawal {
+  color: var(--tx-withdrawal);
+}
+
+.tx-table__header--deposit {
+  color: var(--tx-deposit);
 }
 
 /* Sort Icon */
@@ -128,7 +136,7 @@
 }
 
 .tx-table__cell--withdrawal {
-  color: var(--tx-text-primary);
+  color: var(--tx-withdrawal);
 }
 
 .tx-table__cell--deposit {

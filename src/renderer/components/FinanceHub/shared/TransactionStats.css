@@ -84,7 +84,11 @@
 }
 
 .tx-stats__card--withdrawal {
-  border-left: 3px solid var(--tx-text-secondary);
+  border-left: 3px solid var(--tx-error);
+}
+
+.tx-stats__card--withdrawal .tx-stats__value {
+  color: var(--tx-error);
 }
 
 .tx-stats__card--positive {

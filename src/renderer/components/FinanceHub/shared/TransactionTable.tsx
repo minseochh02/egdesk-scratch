@@ -108,8 +108,8 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
               >
                 내용 {renderSortIcon('description')}
               </th>
-              <th className="tx-table__header tx-table__header--right">출금</th>
-              <th className="tx-table__header tx-table__header--right">입금</th>
+              <th className="tx-table__header tx-table__header--right tx-table__header--withdrawal">출금</th>
+              <th className="tx-table__header tx-table__header--right tx-table__header--deposit">입금</th>
               <th 
                 className={`tx-table__header tx-table__header--right ${onSort ? 'tx-table__header--sortable' : ''}`}
                 onClick={() => handleHeaderClick('balance')}

@@ -1,0 +1,212 @@
+/* ============================================
+   SessionStatusIndicator - Session Health Display
+   ============================================ */
+
+.session-indicator {
+  --session-active: #10B981;
+  --session-extending: #F59E0B;
+  --session-expired: #EF4444;
+  --session-error: #DC2626;
+  --session-disconnected: #6B7280;
+  --session-none: #4B5563;
+  
+  --bg-card: #111827;
+  --bg-hover: #1F2937;
+  --border: #1F2937;
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
+  --radius: 8px;
+}
+
+/* Base Indicator */
+.session-indicator {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--status-color, var(--session-none));
+  border-radius: var(--radius);
+  font-size: 13px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.session-indicator:hover {
+  border-color: var(--status-color, var(--session-none));
+}
+
+/* Pulse Animation */
+.session-indicator--pulse .session-indicator__icon {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Header */
+.session-indicator__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.session-indicator__header:hover {
+  background: var(--bg-hover);
+}
+
+.session-indicator__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--status-color);
+  color: white;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.session-indicator__text {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.session-indicator__countdown {
+  margin-left: auto;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.session-indicator__toggle {
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+/* Details Panel */
+.session-indicator__details {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.session-indicator__detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.session-indicator__detail-label {
+  color: var(--text-muted);
+}
+
+.session-indicator__detail-value {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Actions */
+.session-indicator__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.session-indicator__btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.session-indicator__btn--extend {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--session-active);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.session-indicator__btn--extend:hover {
+  background: var(--session-active);
+  color: white;
+}
+
+.session-indicator__btn--reconnect {
+  background: rgba(0, 70, 255, 0.1);
+  color: #0046FF;
+  border: 1px solid rgba(0, 70, 255, 0.3);
+}
+
+.session-indicator__btn--reconnect:hover {
+  background: #0046FF;
+  color: white;
+}
+
+/* Compact Mode */
+.session-indicator--compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 20px;
+}
+
+.session-indicator--compact .session-indicator__icon {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+}
+
+.session-indicator--compact .session-indicator__countdown {
+  margin-left: 0;
+  padding: 1px 6px;
+  font-size: 10px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+  border-radius: 10px;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Status Variants */
+.session-indicator--active .session-indicator__icon {
+  background: var(--session-active);
+}
+
+.session-indicator--extending .session-indicator__icon {
+  background: var(--session-extending);
+}
+
+.session-indicator--expired .session-indicator__icon {
+  background: var(--session-expired);
+}
+
+.session-indicator--error .session-indicator__icon {
+  background: var(--session-error);
+}
+
+.session-indicator--disconnected .session-indicator__icon {
+  background: var(--session-disconnected);
+}

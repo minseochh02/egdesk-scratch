@@ -1,0 +1,324 @@
+.scheduler-settings {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.scheduler-settings--loading,
+.scheduler-settings--error {
+  text-align: center;
+  color: var(--fh-text-secondary);
+  padding: 24px;
+  font-size: 13px;
+}
+
+/* Header */
+.scheduler-settings__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Compact Layout */
+.scheduler-settings--compact .scheduler-settings__header {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.scheduler-settings__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scheduler-settings--compact .scheduler-settings__content {
+  display: none;
+}
+
+.scheduler-settings__header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fh-text-primary);
+}
+
+.scheduler-settings__header h3 svg {
+  color: var(--fh-primary);
+}
+
+.scheduler-settings__sync-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--fh-primary);
+  color: white;
+  border: none;
+  border-radius: var(--fh-radius-md);
+  font-family: var(--fh-font-body);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--fh-transition);
+}
+
+/* Icon-only button in compact mode */
+.scheduler-settings--compact .scheduler-settings__sync-now {
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--fh-text-primary);
+  border: 1px solid var(--fh-border);
+}
+
+.scheduler-settings--compact .scheduler-settings__sync-now:hover:not(:disabled) {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-primary);
+  color: var(--fh-primary);
+}
+
+.scheduler-settings__sync-now:hover:not(:disabled) {
+  background: var(--fh-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--fh-shadow-md);
+}
+
+.scheduler-settings__sync-now:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Content */
+.scheduler-settings__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.scheduler-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scheduler-settings__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fh-text-primary);
+  min-width: 120px;
+}
+
+/* Toggle Switch */
+.scheduler-settings__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.scheduler-settings__switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 18px;
+}
+
+.scheduler-settings__switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.scheduler-settings__slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--fh-bg-card-hover);
+  border: 1px solid var(--fh-border);
+  transition: var(--fh-transition);
+  border-radius: 18px;
+}
+
+.scheduler-settings__slider:before {
+  position: absolute;
+  content: "";
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
+  background-color: var(--fh-text-secondary);
+  transition: var(--fh-transition);
+  border-radius: 50%;
+}
+
+.scheduler-settings__switch input:checked + .scheduler-settings__slider {
+  background-color: var(--fh-primary);
+  border-color: var(--fh-primary);
+}
+
+.scheduler-settings__switch input:checked + .scheduler-settings__slider:before {
+  transform: translateX(18px);
+  background-color: white;
+}
+
+.scheduler-settings__switch input:disabled + .scheduler-settings__slider {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scheduler-settings__status {
+  font-size: 13px;
+  color: var(--fh-text-secondary);
+}
+
+/* Time Input */
+.scheduler-settings__time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  flex: 1;
+}
+
+.scheduler-settings__time-input {
+  padding: 8px 12px;
+  background: var(--fh-bg-dark);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-sm);
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-body);
+  font-size: 14px;
+  width: 120px;
+  transition: var(--fh-transition);
+}
+
+.scheduler-settings__time-input:focus {
+  outline: none;
+  border-color: var(--fh-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.2);
+}
+
+.scheduler-settings__time-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scheduler-settings__time-hint {
+  font-size: 12px;
+  color: var(--fh-text-muted);
+}
+
+/* Last Sync */
+.scheduler-settings__last-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* Compact mode adjustments */
+.scheduler-settings--compact .scheduler-settings__last-sync {
+  flex: none;
+  gap: 4px;
+}
+
+.scheduler-settings__status-icon {
+  font-size: 12px;
+}
+
+.scheduler-settings__status-icon--success {
+  color: var(--fh-success);
+}
+
+.scheduler-settings__status-icon--failed {
+  color: var(--fh-error);
+}
+
+.scheduler-settings__status-icon--running {
+  color: var(--fh-primary);
+}
+
+.scheduler-settings__last-sync-time {
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+}
+
+/* Action Row */
+.scheduler-settings__action-row {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--fh-border);
+  display: flex;
+  justify-content: center;
+}
+
+/* Info */
+.scheduler-settings__info {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(0, 70, 255, 0.05);
+  border: 1px solid rgba(0, 70, 255, 0.1);
+  border-radius: var(--fh-radius-md);
+}
+
+.scheduler-settings__info p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fh-text-secondary);
+  line-height: 1.5;
+}
+
+.scheduler-settings__info p:last-child {
+  margin-bottom: 0;
+}
+
+.scheduler-settings__info strong {
+  color: var(--fh-text-primary);
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .scheduler-settings {
+    padding: 12px;
+  }
+
+  .scheduler-settings__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .scheduler-settings__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .scheduler-settings__label {
+    min-width: auto;
+  }
+
+  .scheduler-settings__toggle,
+  .scheduler-settings__time,
+  .scheduler-settings__last-sync {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .scheduler-settings__time-input {
+    width: 100%;
+  }
+}
