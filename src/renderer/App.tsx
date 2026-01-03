@@ -1970,6 +1970,10 @@ function NavigationBar({
     '/ai-keys'
   ].some(path => location.pathname.startsWith(path));
 
+  const isOperationsActive = [
+    '/finance-hub'
+  ].some(path => location.pathname.startsWith(path));
+
   // Check environment
   const isDev = process.env.NODE_ENV === 'development';
 
@@ -2065,6 +2069,19 @@ function NavigationBar({
             <Link to="/ai-keys" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-keys') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faRobot} fixedWidth />
               <span>API Keys</span>
+            </Link>
+          </NavDropdown>
+
+          {/* Operations Group */}
+          <NavDropdown 
+            title="Operations" 
+            icon={faChartBar} 
+            isActive={isOperationsActive}
+            isNarrow={isNarrow}
+          >
+            <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faChartBar} fixedWidth />
+              <span>Finance Hub</span>
             </Link>
           </NavDropdown>
 

@@ -218,7 +218,11 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
         <td className="txp-table__cell txp-table__cell--account">
           <span className="txp-account-number">{formatAccountNumber(account?.accountNumber)}</span>
         </td>
-        <td className="txp-table__cell txp-table__cell--type">{tx.type || '-'}</td>
+        <td className="txp-table__cell txp-table__cell--type">
+          <span className="txp-type-text" title={tx.type || '-'}>
+            {tx.type || '-'}
+          </span>
+        </td>
         <td className="txp-table__cell txp-table__cell--description">
           <div className="txp-description">
             <span className="txp-description__text">{tx.description || '-'}</span>

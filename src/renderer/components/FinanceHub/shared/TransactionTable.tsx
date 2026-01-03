@@ -155,7 +155,9 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     </td>
                   )}
                   <td className="tx-table__cell tx-table__cell--type">
-                    {tx.type || '-'}
+                    <span className="tx-table__type-text" title={tx.type || '-'}>
+                      {tx.type || '-'}
+                    </span>
                   </td>
                   <td className="tx-table__cell tx-table__cell--description">
                     <div className="tx-table__description">
