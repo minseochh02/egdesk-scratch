@@ -9,6 +9,7 @@ import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
 import { migrateToUnifiedSchema } from './migrations/001-unified-schema';
 import { createSyncDatabase } from './sheet-sync-init';
+import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 
 /**
  * SQLite Database Initialization
@@ -134,6 +135,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeActivityDatabaseSchema(activityDb);
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
+    initializeShinhanTransactionsSchema(conversationsDb); // Initialize Shinhan transactions schema
     migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema and migrate Shinhan data
     
     // Initialize task manager
