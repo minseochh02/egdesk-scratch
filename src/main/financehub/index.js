@@ -11,6 +11,7 @@ const { BaseBankAutomator } = require('./core');
 
 // Banks
 const shinhan = require('./banks/shinhan');
+const kookmin = require('./banks/kookmin');
 
 // Utils
 const utils = require('./utils');
@@ -22,6 +23,12 @@ const BANKS = {
     Automator: shinhan.ShinhanBankAutomator,
     create: shinhan.createShinhanAutomator,
     run: shinhan.runShinhanAutomation,
+  },
+  kookmin: {
+    config: kookmin.KOOKMIN_BANK_INFO,
+    Automator: kookmin.KookminBankAutomator,
+    create: kookmin.createKookminAutomator,
+    run: kookmin.runKookminAutomation,
   },
   // Future banks will be added here:
   // kb: { ... },
@@ -86,6 +93,7 @@ module.exports = {
   
   // Banks (direct access)
   shinhan,
+  kookmin,
   
   // Bank registry
   BANKS,

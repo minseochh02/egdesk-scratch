@@ -1,4 +1,4 @@
-import { generateTextWithAI, getGoogleApiKey, generateStructuredText } from './gemini';
+import { generateTextWithAI, getGoogleApiKey, generateStructuredText } from '../gemini';
 import { WebsiteSummary } from './company-research-stage2';
 import fs from 'fs';
 import path from 'path';

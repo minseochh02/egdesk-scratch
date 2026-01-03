@@ -33,13 +33,13 @@ import { initializeStore, getStore } from './storage';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
 import { getEGDeskDevSpreadsheetService } from './egdesk-dev-spreadsheet';
-import { crawlWebsiteIntelligent, CrawlResult } from './company-research-stage1';
-import { summarizeWebsiteContent, WebsiteSummary } from './company-research-stage2';
-import { executeAgenticResearch, AgenticResearchData } from './company-research-stage3';
-import { generateDetailedReport, DetailedReport } from './company-research-stage3b1';
-import { generateExecutiveSummary, ExecutiveSummary } from './company-research-stage3b2';
-import { exportReport } from './company-research-stage4';
-import { processFullCompanyResearch } from './company-research-workflow';
+import { crawlWebsiteIntelligent, CrawlResult } from './company-research/company-research-stage1';
+import { summarizeWebsiteContent, WebsiteSummary } from './company-research/company-research-stage2';
+import { executeAgenticResearch, AgenticResearchData } from './company-research/company-research-stage3';
+import { generateDetailedReport, DetailedReport } from './company-research/company-research-stage3b1';
+import { generateExecutiveSummary, ExecutiveSummary } from './company-research/company-research-stage3b2';
+import { exportReport } from './company-research/company-research-stage4';
+import { processFullCompanyResearch } from './company-research/company-research-workflow';
 
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
