@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import { fetch } from 'undici';
-import { generateTextWithAI, getGoogleApiKey } from './gemini';
+import { generateTextWithAI, getGoogleApiKey } from '../gemini';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';

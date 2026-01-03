@@ -5,7 +5,7 @@ import { generateDetailedReport, DetailedReport } from './company-research-stage
 import { generateExecutiveSummary, ExecutiveSummary } from './company-research-stage3b2';
 import { autoSaveReport } from './company-research-stage4';
 import { BrowserWindow, shell } from 'electron';
-import { getSQLiteManager } from './sqlite/manager';
+import { getSQLiteManager } from '../sqlite/manager';
 import path from 'path';
 
 export interface WorkflowProgress {
