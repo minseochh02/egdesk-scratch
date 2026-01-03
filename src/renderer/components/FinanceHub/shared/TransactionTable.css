@@ -122,6 +122,7 @@
 .tx-table__cell--type {
   width: 100px;
   color: var(--tx-text-secondary);
+  max-width: 100px;
 }
 
 .tx-table__cell--description {
@@ -185,6 +186,15 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--tx-text-secondary);
+}
+
+/* Type */
+.tx-table__type-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 /* Description */

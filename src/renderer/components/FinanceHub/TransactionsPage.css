@@ -529,6 +529,7 @@
   .txp-table__cell--type {
     width: 100px;
     color: var(--txp-text-secondary);
+    max-width: 100px;
   }
   
   .txp-table__cell--description {
@@ -600,6 +601,15 @@
   }
   
   /* Description */
+  /* Type text with ellipsis */
+  .txp-type-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
   .txp-description {
     display: flex;
     flex-direction: column;
