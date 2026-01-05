@@ -2939,15 +2939,13 @@ app.on('before-quit', async () => {
   // Tunnel cleanup removed
 });
 
-// IMPORTANT: Register protocol BEFORE single instance lock on Windows
-// This is required for Windows to properly handle protocol URLs
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    // In development mode, we need to pass the script path
-    app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
-  }
+// Only register protocol in production
+// In development, we'll use localhost redirect to avoid Windows path issues
+if (!app.isPackaged) {
+  // Development mode - don't register protocol, use localhost instead
+  console.log('Development mode: Using localhost for OAuth redirects');
 } else {
-  // In production, just register the protocol
+  // Production mode - register the protocol
   app.setAsDefaultProtocolClient('egdesk');
 }
 
@@ -2984,7 +2982,49 @@ app
     
     createWindow();
     
-    // Set up deep link handler for OAuth callbacks
+    // In development on Windows, create a local server to catch OAuth callbacks
+    if (!app.isPackaged && process.platform === 'win32') {
+      const server = createServer((req, res) => {
+        if (req.url?.startsWith('/auth/callback')) {
+          const fullUrl = `http://localhost:54321${req.url}`;
+          console.log('OAuth callback received on localhost:', fullUrl);
+          
+          // Convert to egdesk:// URL format for the auth service to handle
+          const egdeskUrl = fullUrl.replace('http://localhost:54321', 'egdesk://');
+          
+          // Let the auth service handle the OAuth callback
+          authService.handleOAuthCallback(egdeskUrl).then(result => {
+            console.log('OAuth callback handled:', result);
+            
+            // Notify renderer about auth state change
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const authData = {
+                success: result.success,
+                session: authService.currentSession,
+                user: authService.currentSession?.user || null,
+              };
+              mainWindow.webContents.send('auth:state-changed', authData);
+            }
+          });
+          
+          // Send response to browser
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body><script>window.close()</script>Logged in! You can close this tab.</body></html>');
+        } else {
+          res.writeHead(404);
+          res.end('Not found');
+        }
+      });
+      
+      server.listen(54321, () => {
+        console.log('OAuth callback server listening on http://localhost:54321');
+      });
+      
+      // Store server reference for cleanup
+      (global as any).oauthCallbackServer = server;
+    }
+    
+    // Set up deep link handler for OAuth callbacks (for production and non-Windows dev)
     // Pass a function that returns the current main window
     authService.setupDeepLinkHandler(() => mainWindow);
     
