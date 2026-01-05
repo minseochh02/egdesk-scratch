@@ -2941,13 +2941,17 @@ app.on('before-quit', async () => {
 
 // Set up protocol for OAuth deep links
 if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    // On Windows, wrap the path in quotes to handle spaces and special characters
-    const scriptPath = path.resolve(process.argv[1]);
-    const args = process.platform === 'win32' ? [`"${scriptPath}"`] : [scriptPath];
-    app.setAsDefaultProtocolClient('egdesk', process.execPath, args);
+  // In development, don't pass any arguments on Windows to avoid path parsing issues
+  if (process.platform === 'win32') {
+    app.setAsDefaultProtocolClient('egdesk', process.execPath, []);
+  } else {
+    // On macOS/Linux, keep the original behavior
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
+    }
   }
 } else {
+  // In production, just register the protocol
   app.setAsDefaultProtocolClient('egdesk');
 }
 
