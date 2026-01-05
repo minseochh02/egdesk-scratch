@@ -1976,3 +1976,77 @@
   margin-top: 16px;
   padding-top: 8px;
 }
+
+/* Import to SQL Button */
+.cloud-mcp-server-editor .import-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 6px;
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .import-button:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.6);
+  color: white;
+}
+
+.cloud-mcp-server-editor .import-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* SQL Viewer Button */
+.cloud-mcp-server-editor .sql-viewer-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(34, 211, 238, 0.2);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 6px;
+  color: #a5f3fc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cloud-mcp-server-editor .sql-viewer-button:hover {
+  background: rgba(34, 211, 238, 0.3);
+  border-color: rgba(34, 211, 238, 0.6);
+  color: white;
+}
+
+/* SQL Viewer Modal */
+.sql-viewer-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.sql-viewer-modal-content {
+  width: 90%;
+  max-width: 1200px;
+  height: 80vh;
+  background: #1a1a1a;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}

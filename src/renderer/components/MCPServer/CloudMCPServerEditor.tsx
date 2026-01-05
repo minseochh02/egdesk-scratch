@@ -25,11 +25,13 @@ import {
   faChevronLeft,
   faChevronRight,
   faPlay,
-  faTimes
+  faTimes,
+  faTable
 } from '../../utils/fontAwesomeIcons';
 import { AIService } from '../../services/ai-service';
 import type { AIStreamEvent } from '../../../main/types/ai-types';
 import CodeViewerWithLineNumbers from './CodeViewerWithLineNumbers';
+import SQLDataViewer from './SQLDataViewer';
 import './CloudMCPServerEditor.css';
 
 interface TemplateCopy {
@@ -137,6 +139,12 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
   const [loadingTriggers, setLoadingTriggers] = useState(false);
   const [availableFunctions, setAvailableFunctions] = useState<string[]>([]);
   const [loadingFunctions, setLoadingFunctions] = useState(false);
+
+  // Sheet import state
+  const [showSQLViewer, setShowSQLViewer] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [importMessage, setImportMessage] = useState<string | null>(null);
 
   const GEMMA_MODEL = 'gemma3:4b';
 
@@ -1100,6 +1108,44 @@ const CloudMCPServerEditor: React.FC<CloudMCPServerEditorProps> = ({ initialCopy
     }
   };
 
+  // Handle sheet import to SQL
+  const handleSheetImport = async () => {
+    if (!selectedCopy?.spreadsheetId) {
+      alert('No spreadsheet selected');
+      return;
+    }
+
+    setIsImporting(true);
+    setImportStatus('idle');
+    setImportMessage(null);
+
+    try {
+      console.log('📊 Importing sheet to SQL...');
+      const result = await window.electron.sheets.importToSQL({
+        spreadsheetId: selectedCopy.spreadsheetId
+      });
+
+      if (result.success) {
+        setImportStatus('success');
+        const tableCount = result.tables?.length || 0;
+        setImportMessage(`Successfully imported ${tableCount} table${tableCount !== 1 ? 's' : ''}`);
+        setTimeout(() => {
+          setImportStatus('idle');
+          setImportMessage(null);
+        }, 3000);
+      } else {
+        setImportStatus('error');
+        setImportMessage(result.error || 'Import failed');
+      }
+    } catch (error) {
+      console.error('Error importing sheet:', error);
+      setImportStatus('error');
+      setImportMessage(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Add scroll and resize listeners for file tabs
   useEffect(() => {
     const filesListElement = filesListRef.current;
@@ -1758,6 +1804,45 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                 <span className="sync-status sync-status-pushed">
                   <FontAwesomeIcon icon={faCheckCircle} />
                   {devSyncMessage}
+                </span>
+              )}
+            </>
+          )}
+
+          {/* Sheet Import Button */}
+          {selectedCopy?.spreadsheetId && (
+            <>
+              <div className="dev-sync-divider" />
+              <button
+                className="import-button"
+                onClick={handleSheetImport}
+                disabled={isImporting}
+                title="Import sheet data to SQL"
+              >
+                {isImporting ? (
+                  <FontAwesomeIcon icon={faSpinner} spin />
+                ) : (
+                  <FontAwesomeIcon icon={faDatabase} />
+                )}
+                Import to SQL
+              </button>
+              <button
+                className="sql-viewer-button"
+                onClick={() => setShowSQLViewer(true)}
+                title="View imported SQL data"
+              >
+                <FontAwesomeIcon icon={faTable} />
+                View SQL
+              </button>
+              {importStatus === 'success' && (
+                <span className="sync-status sync-status-pushed">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                  {importMessage}
+                </span>
+              )}
+              {importStatus === 'error' && (
+                <span className="sync-status sync-status-error">
+                  ❌ {importMessage}
                 </span>
               )}
             </>
@@ -2547,6 +2632,18 @@ Remember: You have tools. USE THEM. Don't just describe what to do - DO IT.`;
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SQL Data Viewer Modal */}
+      {showSQLViewer && selectedCopy?.spreadsheetId && (
+        <div className="sql-viewer-modal">
+          <div className="sql-viewer-modal-content">
+            <SQLDataViewer 
+              spreadsheetId={selectedCopy.spreadsheetId}
+              onClose={() => setShowSQLViewer(false)}
+            />
           </div>
         </div>
       )}

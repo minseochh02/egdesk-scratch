@@ -1,0 +1,266 @@
+.sql-data-viewer {
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.sql-viewer-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.refresh-button,
+.close-button {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.refresh-button:hover,
+.close-button:hover {
+  background: #333;
+  color: #fff;
+  border-color: #555;
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sql-error {
+  background: #3a1618;
+  color: #f87171;
+  padding: 12px 16px;
+  margin: 0;
+  border-bottom: 1px solid #511;
+}
+
+.sql-viewer-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Tables Sidebar */
+.tables-sidebar {
+  width: 280px;
+  background: #181818;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+}
+
+.tables-sidebar h4 {
+  margin: 0;
+  padding: 12px 16px;
+  color: #888;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-bottom: 1px solid #333;
+}
+
+.tables-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tables-list li {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #2a2a2a;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.2s;
+}
+
+.tables-list li:hover {
+  background: #222;
+}
+
+.tables-list li.selected {
+  background: #2a2a2a;
+  border-left: 3px solid #4a9eff;
+  padding-left: 13px;
+}
+
+.tables-list svg {
+  color: #666;
+  font-size: 14px;
+}
+
+.table-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.table-name {
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.table-stats {
+  color: #666;
+  font-size: 12px;
+}
+
+.no-tables {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Table Content */
+.table-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.table-header h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination button {
+  background: #333;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+  background: #444;
+  color: #fff;
+}
+
+.pagination button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  color: #888;
+  font-size: 13px;
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow: auto;
+  background: #1a1a1a;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table thead {
+  position: sticky;
+  top: 0;
+  background: #222;
+  z-index: 10;
+}
+
+.data-table th {
+  padding: 10px 12px;
+  text-align: left;
+  color: #aaa;
+  font-weight: 600;
+  border-bottom: 2px solid #333;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  color: #ddd;
+  border-bottom: 1px solid #2a2a2a;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table tr:hover td {
+  background: #222;
+}
+
+.no-selection {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 14px;
+}
+
+.loading-indicator {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  color: #666;
+}
