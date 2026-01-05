@@ -1087,28 +1087,17 @@ export class AuthService {
         handleUrl(url);
       });
     } else if (process.platform === 'win32') {
-      // Windows - handled via second-instance
+      // Windows - handled via second-instance in main process
       const { app } = require('electron');
-      const gotTheLock = app.requestSingleInstanceLock();
-
-      if (!gotTheLock) {
-        app.quit();
-      } else {
-        app.on('second-instance', (event, commandLine) => {
-          // Protocol URL is in command line on Windows
-          const url = commandLine.find(arg => arg.startsWith('egdesk://'));
-          if (url) {
-            handleUrl(url);
-          }
-
-          // Focus the window
-          const mainWindow = getMainWindow();
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
-          }
-        });
-      }
+      
+      // Listen for second-instance events (already set up in main.ts)
+      app.on('second-instance', (event, commandLine) => {
+        // Protocol URL is in command line on Windows
+        const url = commandLine.find(arg => arg.startsWith('egdesk://'));
+        if (url) {
+          handleUrl(url);
+        }
+      });
     }
   }
 }
