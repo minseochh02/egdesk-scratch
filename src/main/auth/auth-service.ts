@@ -361,10 +361,17 @@ export class AuthService {
         }
       }
 
-      // Use custom redirect URL for Electron
+      // Use different redirect URLs for development vs production
+      const { app } = require('electron');
+      const redirectUri = !app.isPackaged && process.platform === 'win32'
+        ? 'http://localhost:54321/auth/callback'  // Windows dev mode uses localhost
+        : 'egdesk://auth/callback';  // Production and other platforms use protocol
+      
+      console.log(`🔗 OAuth redirect URI: ${redirectUri}`);
+      
       const options: any = {
         skipBrowserRedirect: false,
-        redirectTo: 'egdesk://auth/callback',
+        redirectTo: redirectUri,
         queryParams: {
           // Use 'consent' if we need a refresh token (Google only returns it on consent)
           // and we are requesting specific scopes.
@@ -423,17 +430,31 @@ export class AuthService {
       autoHideMenuBar: true,
     });
 
+    // Check if we should use localhost redirect (Windows dev mode)
+    const { app } = require('electron');
+    const isLocalhostRedirect = !app.isPackaged && process.platform === 'win32';
+    
     // Listen for navigation to detect OAuth callback
     this.oauthWindow.webContents.on('will-navigate', (event, navigationUrl) => {
       console.log('OAuth window navigating to:', navigationUrl);
       
-      if (navigationUrl.startsWith('egdesk://auth/callback')) {
+      const isCallback = isLocalhostRedirect 
+        ? navigationUrl.startsWith('http://localhost:54321/auth/callback')
+        : navigationUrl.startsWith('egdesk://auth/callback');
+        
+      if (isCallback) {
         event.preventDefault();
         console.log('Intercepted OAuth callback, handling and closing window...');
         // Close window immediately
         this.closeOAuthWindow();
-        // Handle callback (protocol handler will also catch it)
-        this.handleOAuthCallback(navigationUrl).then((result) => {
+        
+        // Convert localhost URL to egdesk:// format if needed
+        const callbackUrl = isLocalhostRedirect 
+          ? navigationUrl.replace('http://localhost:54321', 'egdesk://')
+          : navigationUrl;
+          
+        // Handle callback
+        this.handleOAuthCallback(callbackUrl).then((result) => {
           console.log('OAuth callback handled:', result);
         });
       }
@@ -443,12 +464,22 @@ export class AuthService {
     this.oauthWindow.webContents.on('did-navigate', (event, navigationUrl) => {
       console.log('OAuth window navigated to:', navigationUrl);
       
-      if (navigationUrl.startsWith('egdesk://auth/callback')) {
+      const isCallback = isLocalhostRedirect 
+        ? navigationUrl.startsWith('http://localhost:54321/auth/callback')
+        : navigationUrl.startsWith('egdesk://auth/callback');
+        
+      if (isCallback) {
         console.log('Detected OAuth callback in did-navigate, handling and closing window...');
         // Close window immediately
         this.closeOAuthWindow();
-        // Handle callback (protocol handler will also catch it)
-        this.handleOAuthCallback(navigationUrl).then((result) => {
+        
+        // Convert localhost URL to egdesk:// format if needed
+        const callbackUrl = isLocalhostRedirect 
+          ? navigationUrl.replace('http://localhost:54321', 'egdesk://')
+          : navigationUrl;
+          
+        // Handle callback
+        this.handleOAuthCallback(callbackUrl).then((result) => {
           console.log('OAuth callback handled:', result);
         });
       }
@@ -460,21 +491,39 @@ export class AuthService {
       
       // Check if we're on a callback page by checking the URL
       const currentUrl = this.oauthWindow?.webContents.getURL();
-      if (currentUrl && currentUrl.includes('egdesk://auth/callback')) {
+      const isCallbackUrl = isLocalhostRedirect 
+        ? currentUrl?.includes('localhost:54321/auth/callback')
+        : currentUrl?.includes('egdesk://auth/callback');
+        
+      if (currentUrl && isCallbackUrl) {
         console.log('Detected callback in title update, handling and closing window...');
         // Close window immediately
         this.closeOAuthWindow();
-        // Handle callback (protocol handler will also catch it)
-        const result = await this.handleOAuthCallback(currentUrl);
+        // Convert localhost URL to egdesk:// format if needed
+        const callbackUrl = isLocalhostRedirect 
+          ? currentUrl.replace('http://localhost:54321', 'egdesk://')
+          : currentUrl;
+          
+        // Handle callback
+        const result = await this.handleOAuthCallback(callbackUrl);
         console.log('OAuth callback handled:', result);
       } else if (title.toLowerCase().includes('approved') || title.toLowerCase().includes('success')) {
         // If title shows "approved" but URL hasn't changed yet, check URL after a short delay
         setTimeout(() => {
           const url = this.oauthWindow?.webContents.getURL();
-          if (url && url.includes('egdesk://auth/callback')) {
+          const isCallbackUrl = isLocalhostRedirect 
+            ? url?.includes('localhost:54321/auth/callback')
+            : url?.includes('egdesk://auth/callback');
+            
+          if (url && isCallbackUrl) {
             console.log('Detected callback after title update, handling and closing window...');
             this.closeOAuthWindow();
-            this.handleOAuthCallback(url).then((result) => {
+            // Convert localhost URL to egdesk:// format if needed
+            const callbackUrl = isLocalhostRedirect 
+              ? url.replace('http://localhost:54321', 'egdesk://')
+              : url;
+              
+            this.handleOAuthCallback(callbackUrl).then((result) => {
               console.log('OAuth callback handled:', result);
             });
           }
