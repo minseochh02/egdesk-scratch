@@ -2272,6 +2272,12 @@ sheets: {
     ipcRenderer.invoke('sheets:get-range', params),
   updateRange: (params: { spreadsheetId: string; range: string; values: string[][] }) => 
     ipcRenderer.invoke('sheets:update-range', params),
+  importToSQL: (params: { spreadsheetId: string; sheetName?: string }) =>
+    ipcRenderer.invoke('sheets:import-to-sql', params),
+  getImportedTables: (spreadsheetId: string) =>
+    ipcRenderer.invoke('sheets:get-imported-tables', spreadsheetId),
+  queryImportedTable: (params: { tableName: string; limit?: number; offset?: number }) =>
+    ipcRenderer.invoke('sheets:query-imported-table', params),
 },
 
 /**
