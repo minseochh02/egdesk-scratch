@@ -2939,20 +2939,44 @@ app.on('before-quit', async () => {
   // Tunnel cleanup removed
 });
 
-// Set up protocol for OAuth deep links
-if (process.defaultApp) {
-  // In development, don't pass any arguments on Windows to avoid path parsing issues
-  if (process.platform === 'win32') {
-    app.setAsDefaultProtocolClient('egdesk', process.execPath, []);
-  } else {
-    // On macOS/Linux, keep the original behavior
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
-    }
-  }
+// Set up single instance lock first (important for Windows protocol handling)
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  app.quit();
 } else {
-  // In production, just register the protocol
-  app.setAsDefaultProtocolClient('egdesk');
+  // Set up handler for when another instance tries to start
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Protocol URL is in command line on Windows
+    const url = commandLine.find(arg => arg.startsWith('egdesk://'));
+    if (url) {
+      // The auth service will handle the OAuth callback
+      console.log('Second instance received protocol URL:', url);
+    }
+    
+    // Focus existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  // Set up protocol for OAuth deep links
+  if (process.defaultApp) {
+    // In development, don't pass any arguments on Windows to avoid path parsing issues
+    if (process.platform === 'win32') {
+      app.setAsDefaultProtocolClient('egdesk', process.execPath, []);
+    } else {
+      // On macOS/Linux, keep the original behavior
+      if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
+      }
+    }
+  } else {
+    // In production, just register the protocol
+    app.setAsDefaultProtocolClient('egdesk');
+  }
 }
 
 app
