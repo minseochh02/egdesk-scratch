@@ -2939,7 +2939,19 @@ app.on('before-quit', async () => {
   // Tunnel cleanup removed
 });
 
-// Set up single instance lock first (important for Windows protocol handling)
+// IMPORTANT: Register protocol BEFORE single instance lock on Windows
+// This is required for Windows to properly handle protocol URLs
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    // In development mode, we need to pass the script path
+    app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  // In production, just register the protocol
+  app.setAsDefaultProtocolClient('egdesk');
+}
+
+// Set up single instance lock (after protocol registration)
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -2961,22 +2973,6 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
-
-  // Set up protocol for OAuth deep links
-  if (process.defaultApp) {
-    // In development, don't pass any arguments on Windows to avoid path parsing issues
-    if (process.platform === 'win32') {
-      app.setAsDefaultProtocolClient('egdesk', process.execPath, []);
-    } else {
-      // On macOS/Linux, keep the original behavior
-      if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('egdesk', process.execPath, [path.resolve(process.argv[1])]);
-      }
-    }
-  } else {
-    // In production, just register the protocol
-    app.setAsDefaultProtocolClient('egdesk');
-  }
 }
 
 app
