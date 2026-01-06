@@ -1,5 +1,5 @@
 // browser-controller.ts
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
 import { 
   convertHtmlToSmartEditorJson as htmlToJson_convertHtmlToSmartEditorJson,
   convertHtmlToSmartEditorJsonWithImages as htmlToJson_convertHtmlToSmartEditorJsonWithImages,

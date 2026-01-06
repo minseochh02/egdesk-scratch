@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { app } from "electron";
 
-import { chromium, Browser, BrowserContext, Page, LaunchOptions } from "playwright";
+import { chromium, Browser, BrowserContext, Page, LaunchOptions } from 'playwright-core';
 
 import { createFacebookPost, FacebookPostOptions } from "./facebook-post";
 

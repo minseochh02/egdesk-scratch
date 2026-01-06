@@ -588,7 +588,7 @@ const createWindow = async () => {
       });
       ipcMain.handle('launch-chrome', async () => {
         try {
-          const { chromium } = require('playwright');
+          const { chromium } = require('playwright-core');
           const browser = await chromium.launch({ 
             headless: false,
             channel: 'chrome'
@@ -605,7 +605,7 @@ const createWindow = async () => {
       });
       ipcMain.handle('crawl-website', async (event, { url, proxy, openDevTools }) => {
         try {
-          const { chromium } = require('playwright');
+          const { chromium } = require('playwright-core');
           const fs = require('fs');
           const path = require('path');
           
@@ -1318,7 +1318,7 @@ const createWindow = async () => {
       
       ipcMain.handle('test-paste-component', async () => {
         try {
-          const { chromium } = require('playwright');
+          const { chromium } = require('playwright-core');
           const browser = await chromium.launch({ 
             headless: false,
             channel: 'chrome'

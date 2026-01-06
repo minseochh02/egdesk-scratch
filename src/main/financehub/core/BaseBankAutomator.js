@@ -3,7 +3,7 @@
 // ============================================================================
 // Abstract base class that all bank automators should extend
 
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');

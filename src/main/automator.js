@@ -1,5 +1,5 @@
 // automator.js
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 const { clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');

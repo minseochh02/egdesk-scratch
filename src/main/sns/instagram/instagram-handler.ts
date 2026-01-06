@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { Page } from 'playwright';
+import { Page } from 'playwright-core';
 import { getAuthenticatedPage } from './login';
 
 export interface InstagramConnection {

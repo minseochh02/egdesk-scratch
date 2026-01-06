@@ -483,7 +483,7 @@ function saveToJson(data: ServiceDocumentation | ServiceIndex, outputPath: strin
  */
 async function parseServiceIndexWithPlaywright(url: string): Promise<ServiceIndex | null> {
   try {
-    const { chromium } = require('playwright');
+    const { chromium } = require('playwright-core');
     
     console.log('\n🎭 Launching Playwright browser...');
     const browser = await chromium.launch();
@@ -635,7 +635,7 @@ async function parseServiceIndexWithPlaywright(url: string): Promise<ServiceInde
  */
 async function parseClassPageWithPlaywright(classUrl: string): Promise<ClassDefinition | null> {
   try {
-    const { chromium } = require('playwright');
+    const { chromium } = require('playwright-core');
     
     console.log('\n🎭 Launching Playwright browser...');
     const browser = await chromium.launch();
@@ -827,7 +827,7 @@ async function parseClassPageWithPlaywright(classUrl: string): Promise<ClassDefi
  */
 async function parseAppsScriptDocumentationWithPlaywright(url: string): Promise<ServiceDocumentation | null> {
   try {
-    const { chromium } = require('playwright');
+    const { chromium } = require('playwright-core');
     
     console.log('\n🎭 Launching Playwright browser...');
     const browser = await chromium.launch();
