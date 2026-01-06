@@ -1850,6 +1850,8 @@ const electronHandler = {
       ipcRenderer.invoke('browser-window-close-external', pid),
     navigateExternalBrowser: (pid: number, url: string) =>
       ipcRenderer.invoke('browser-window-navigate-external', pid, url),
+    getClickEvents: (windowId: number) =>
+      ipcRenderer.invoke('browser-window-get-click-events', windowId),
     onUrlChanged: (windowId: number, callback: (url: string) => void) => {
       const listener = (_event: IpcRendererEvent, id: number, url: string) => {
         if (id === windowId) {
@@ -2050,6 +2052,9 @@ const electronHandler = {
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
+    launchPlaywrightCodegen: (url: string) => ipcRenderer.invoke('launch-playwright-codegen', { url }),
+    getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
+    runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
     openInstagramWithProfile: (options: {
       planId?: string;
       profilePath?: string;

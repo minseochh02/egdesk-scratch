@@ -941,6 +941,193 @@ Please provide:
     }
   });
 
+  // Launch Playwright Codegen
+  ipcMain.handle('launch-playwright-codegen', async (event, { url }) => {
+    try {
+      const { spawn } = require('child_process');
+      
+      console.log('🎭 Launching Playwright Codegen for URL:', url);
+      
+      // Generate output file path
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const outputFile = path.join(getOutputDir(), `playwright-test-${timestamp}.spec.js`);
+      
+      // Launch codegen with system Chrome browser and save to file
+      const codegen = spawn('npx', [
+        'playwright', 
+        'codegen',
+        '--browser=chromium',
+        '--channel=chrome', // Use system Chrome installation
+        '--output', outputFile, // Save generated code to file
+        url
+      ], {
+        stdio: 'inherit',
+        shell: true
+      });
+      
+      codegen.on('error', (error) => {
+        console.error('Failed to launch Playwright Codegen:', error);
+      });
+      
+      codegen.on('close', (code) => {
+        console.log(`Playwright Codegen process exited with code ${code}`);
+        
+        // Check if output file was created
+        if (fs.existsSync(outputFile)) {
+          console.log(`✅ Test code saved to: ${outputFile}`);
+          
+          // Read the generated code
+          const generatedCode = fs.readFileSync(outputFile, 'utf8');
+          
+          // Notify renderer about the saved test
+          event.sender.send('playwright-test-saved', {
+            filePath: outputFile,
+            code: generatedCode,
+            timestamp
+          });
+        }
+      });
+      
+      return { 
+        success: true,
+        message: 'Playwright Codegen launched successfully. The generated test will be saved when you close the inspector.',
+        outputFile
+      };
+    } catch (error: any) {
+      console.error('Error launching Playwright Codegen:', error);
+      return { 
+        success: false, 
+        error: error?.message || 'Failed to launch Playwright Codegen'
+      };
+    }
+  });
+
+  // Run saved Playwright test
+  ipcMain.handle('run-playwright-test', async (event, { testFile }) => {
+    try {
+      const { spawn } = require('child_process');
+      
+      console.log('🎭 Running Playwright test:', testFile);
+      
+      // Read the generated code
+      let generatedCode = fs.readFileSync(testFile, 'utf8');
+      
+      console.log('Original code first few lines:', generatedCode.substring(0, 200));
+      
+      // Convert the test code to a runnable script
+      if (generatedCode.includes('@playwright/test')) {
+        // It's a test format, convert it to a standalone script
+        generatedCode = `
+const { chromium } = require('playwright');
+
+(async () => {
+  // Launch browser with system Chrome
+  const browser = await chromium.launch({ 
+    headless: false, 
+    channel: 'chrome' 
+  });
+  
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  
+  try {
+    // Extract test steps from the generated code
+    ${generatedCode
+      .split('\n')
+      .filter(line => line.includes('await page.'))
+      .join('\n    ')}
+    
+    console.log('✅ Test completed successfully');
+  } catch (error) {
+    console.error('❌ Test failed:', error);
+  } finally {
+    await browser.close();
+  }
+})();
+`;
+      } else {
+        // It's already a script format, just modify browser launch
+        generatedCode = generatedCode.replace(
+          /const browser = await chromium\.launch\(\);/g,
+          "const browser = await chromium.launch({ headless: false, channel: 'chrome' });"
+        );
+      }
+      
+      // Create a temporary file with the modified code
+      const tempFile = testFile.replace('.spec.js', '.run.js');
+      fs.writeFileSync(tempFile, generatedCode);
+      
+      // Run the script directly with Node
+      const testRun = spawn('node', [tempFile], {
+        stdio: 'inherit',
+        shell: true
+      });
+      
+      testRun.on('error', (error) => {
+        console.error('Failed to run Playwright test:', error);
+      });
+      
+      testRun.on('close', (code) => {
+        console.log(`Playwright test process exited with code ${code}`);
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFile);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        event.sender.send('playwright-test-completed', {
+          success: code === 0,
+          testFile
+        });
+      });
+      
+      return { 
+        success: true,
+        message: 'Playwright test started.'
+      };
+    } catch (error: any) {
+      console.error('Error running Playwright test:', error);
+      return { 
+        success: false, 
+        error: error?.message || 'Failed to run Playwright test'
+      };
+    }
+  });
+
+  // Get list of saved Playwright tests
+  ipcMain.handle('get-playwright-tests', async () => {
+    try {
+      const outputDir = getOutputDir();
+      const files = fs.readdirSync(outputDir);
+      
+      const tests = files
+        .filter(file => file.startsWith('playwright-test-') && file.endsWith('.spec.js'))
+        .map(file => {
+          const filePath = path.join(outputDir, file);
+          const stats = fs.statSync(filePath);
+          const code = fs.readFileSync(filePath, 'utf8');
+          
+          return {
+            name: file,
+            path: filePath,
+            createdAt: stats.birthtime,
+            size: stats.size,
+            preview: code.substring(0, 200) + '...'
+          };
+        })
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+      return { success: true, tests };
+    } catch (error: any) {
+      console.error('Error getting Playwright tests:', error);
+      return { 
+        success: false, 
+        error: error?.message || 'Failed to get Playwright tests',
+        tests: []
+      };
+    }
+  });
+
   console.log('✅ Chrome browser automation IPC handlers registered');
 }
 

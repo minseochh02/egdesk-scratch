@@ -119,6 +119,42 @@ export class BrowserController {
           },
         );
 
+        // Inject click tracking script when page loads
+        browserWindow.webContents.on('did-finish-load', () => {
+          const clickTrackingScript = `
+            (function() {
+              // Initialize click events array in window
+              if (!window.__debugClickEvents) {
+                window.__debugClickEvents = [];
+              }
+              
+              document.addEventListener('click', function(event) {
+                const element = event.target;
+                const clickData = {
+                  timestamp: Date.now(),
+                  x: event.pageX,
+                  y: event.pageY,
+                  elementTag: element.tagName.toLowerCase(),
+                  elementId: element.id || undefined,
+                  elementClass: element.className || undefined,
+                  elementText: element.innerText ? element.innerText.substring(0, 100) : undefined,
+                  url: window.location.href
+                };
+                
+                // Store click event
+                window.__debugClickEvents.push(clickData);
+                
+                // Also log for debugging
+                console.log('[Click Recorded]', clickData);
+              }, true);
+            })();
+          `;
+          
+          browserWindow.webContents.executeJavaScript(clickTrackingScript).catch(err => {
+            console.error('Failed to inject click tracking script:', err);
+          });
+        });
+
         return {
           success: true,
           windowId,
@@ -180,6 +216,25 @@ export class BrowserController {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    // Get click events from browser window
+    ipcMain.handle('browser-window-get-click-events', async (event, windowId: number) => {
+      try {
+        const browserWindow = this.browserWindows.get(windowId);
+        if (browserWindow) {
+          const clickEvents = await browserWindow.webContents.executeJavaScript('window.__debugClickEvents || []');
+          return { success: true, clickEvents };
+        }
+        return { success: false, error: 'Window not found' };
+      } catch (error) {
+        console.error('Failed to get click events:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          clickEvents: []
         };
       }
     });
