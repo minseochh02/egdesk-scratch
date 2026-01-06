@@ -287,6 +287,7 @@ interface BrowserWindowAPI {
   launchExternalBrowser: (browserType: string, url: string) => Promise<{ success: boolean; process?: any; error?: string }>;
   closeExternalBrowser: (pid: number) => Promise<{ success: boolean; error?: string }>;
   navigateExternalBrowser: (pid: number, url: string) => Promise<{ success: boolean; error?: string }>;
+  getClickEvents: (windowId: number) => Promise<{ success: boolean; clickEvents?: any[]; error?: string }>;
   onUrlChanged: (windowId: number, callback: (url: string) => void) => () => void;
   onClosed: (windowId: number, callback: () => void) => () => void;
 }
@@ -424,6 +425,9 @@ interface DebugAPI {
   startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => Promise<{ success: boolean; error?: string; boxes?: any; clickedPoint?: any; screenshotPath?: string }>;
   launchChrome: () => Promise<{ success: boolean; error?: string }>;
   launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => Promise<{ success: boolean; error?: string }>;
+  launchPlaywrightCodegen: (url: string) => Promise<{ success: boolean; error?: string; outputFile?: string }>;
+  getPlaywrightTests: () => Promise<{ success: boolean; tests: any[]; error?: string }>;
+  runPlaywrightTest: (testFile: string) => Promise<{ success: boolean; error?: string }>;
   openInstagramWithProfile: (options: any) => Promise<{ success: boolean; error?: string }>;
   testYouTubeUpload: (options: any) => Promise<{ success: boolean; error?: string }>;
   pickVideoFile: () => Promise<{ success: boolean; filePath?: string; error?: string }>;

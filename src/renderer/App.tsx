@@ -583,6 +583,49 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [facebookPassword, setFacebookPassword] = useState('');
   const [facebookImagePath, setFacebookImagePath] = useState('');
   const [facebookText, setFacebookText] = useState('');
+  const [recordClicks, setRecordClicks] = useState(false);
+  const [clickEvents, setClickEvents] = useState<any[]>([]);
+  const [debugWindowId, setDebugWindowId] = useState<number | null>(null);
+  const [savedTests, setSavedTests] = useState<any[]>([]);
+  const [showSavedTests, setShowSavedTests] = useState(false);
+
+  // Listen for click events from browser windows
+  useEffect(() => {
+    if (!debugWindowId || !recordClicks) return;
+
+    // Poll for click events from the browser window
+    const checkForClicks = setInterval(async () => {
+      try {
+        const result = await (window as any).electron.browserWindow.getClickEvents(debugWindowId);
+        if (result.success && result.clickEvents) {
+          // Only add new events
+          setClickEvents(prev => {
+            const existingTimestamps = new Set(prev.map(e => e.timestamp));
+            const newEvents = result.clickEvents.filter((e: any) => !existingTimestamps.has(e.timestamp));
+            return [...prev, ...newEvents];
+          });
+        }
+      } catch (error) {
+        console.error('Failed to get click events:', error);
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(checkForClicks);
+    };
+  }, [debugWindowId, recordClicks]);
+
+  // Load saved tests when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      (async () => {
+        const result = await (window as any).electron.debug.getPlaywrightTests();
+        if (result.success) {
+          setSavedTests(result.tests);
+        }
+      })();
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -715,7 +758,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 onChange={(e) => setChromeProxy(e.target.value)}
                 style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
               />
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -734,8 +777,18 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   />
                   <span>Run Lighthouse</span>
                 </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={recordClicks}
+                    onChange={(e) => setRecordClicks(e.target.checked)}
+                    style={{ transform: 'scale(1.2)' }}
+                  />
+                  <span>Record Clicks</span>
+                </label>
               </div>
             </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={async () => {
                 if (!chromeUrl.trim()) {
@@ -806,6 +859,235 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             >
               Open URL in Chrome
             </button>
+            <button
+              onClick={async () => {
+                if (!chromeUrl.trim()) {
+                  alert('Please enter a URL');
+                  return;
+                }
+                
+                try {
+                  const result = await (window as any).electron.debug.launchPlaywrightCodegen(
+                    chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
+                  );
+                  
+                  if (!result?.success) {
+                    alert(`Failed to launch Playwright Codegen: ${result?.error || 'Unknown error'}`);
+                  } else {
+                    addDebugLog('✅ Playwright Codegen launched successfully');
+                    addDebugLog('📝 Click on elements in the browser to generate test code');
+                  }
+                } catch (error) {
+                  console.error('Failed to launch Playwright Codegen:', error);
+                  alert('Failed to launch Playwright Codegen');
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#9C27B0',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Open with Playwright Codegen
+            </button>
+            <button
+              onClick={async () => {
+                const result = await (window as any).electron.debug.getPlaywrightTests();
+                if (result.success) {
+                  setSavedTests(result.tests);
+                  setShowSavedTests(!showSavedTests);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#607D8B',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              View Saved Tests ({savedTests.length})
+            </button>
+            </div>
+            {recordClicks && (
+              <>
+                <button
+                  onClick={async () => {
+                    if (!chromeUrl.trim()) {
+                      alert('Please enter a URL');
+                      return;
+                    }
+                    
+                    try {
+                      const result = await (window as any).electron.browserWindow.createWindow({
+                        url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
+                        title: 'Debug Browser - Click Recording',
+                        width: 1200,
+                        height: 800,
+                        webPreferences: {
+                          devTools: openDevTools,
+                        }
+                      });
+
+                      if (result.success && result.windowId) {
+                        setDebugWindowId(result.windowId);
+                        setClickEvents([]);
+                        alert('Browser window opened. Click recording is active!');
+                      }
+                    } catch (error) {
+                      console.error('Failed to open debug window:', error);
+                      alert('Failed to open debug window');
+                    }
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#2196F3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    marginTop: '10px'
+                  }}
+                >
+                  Open in New Window (Record Clicks)
+                </button>
+                
+                {/* Click Events Display */}
+                {clickEvents.length > 0 && (
+                  <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <h4 style={{ color: '#fff', margin: 0 }}>Recorded Clicks ({clickEvents.length})</h4>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => setClickEvents([])}
+                          style={{
+                            padding: '5px 10px',
+                            backgroundColor: '#666',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          onClick={() => {
+                            const data = JSON.stringify(clickEvents, null, 2);
+                            const blob = new Blob([data], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `click-events-${Date.now()}.json`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          style={{
+                            padding: '5px 10px',
+                            backgroundColor: '#4CAF50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Export JSON
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {clickEvents.map((event, index) => (
+                        <div key={index} style={{ 
+                          padding: '8px', 
+                          marginBottom: '5px', 
+                          backgroundColor: '#1e1e1e', 
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          color: '#fff',
+                          fontFamily: 'monospace'
+                        }}>
+                          <div>#{index + 1} - {new Date(event.timestamp).toLocaleTimeString()}</div>
+                          <div>Element: &lt;{event.elementTag}&gt; {event.elementId ? `#${event.elementId}` : ''} {event.elementClass ? `.${event.elementClass}` : ''}</div>
+                          <div>Position: ({event.x}, {event.y})</div>
+                          {event.elementText && <div>Text: "{event.elementText}"</div>}
+                          <div style={{ fontSize: '11px', color: '#888' }}>URL: {event.url}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {/* Saved Tests Display */}
+            {showSavedTests && savedTests.length > 0 && (
+              <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+                <h4 style={{ color: '#fff', margin: '0 0 15px 0' }}>Saved Playwright Tests</h4>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {savedTests.map((test, index) => (
+                    <div key={index} style={{ 
+                      padding: '10px', 
+                      marginBottom: '10px', 
+                      backgroundColor: '#1e1e1e', 
+                      borderRadius: '4px',
+                      border: '1px solid #333'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div>
+                          <strong style={{ color: '#fff', fontSize: '14px' }}>{test.name}</strong>
+                          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                            Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
+                            if (result.success) {
+                              console.log(`🎬 Running test: ${test.name}`);
+                              setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🎬 Running test: ${test.name}`]);
+                            } else {
+                              alert(`Failed to run test: ${result.error}`);
+                            }
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#4CAF50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          ▶️ Replay
+                        </button>
+                      </div>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        color: '#aaa', 
+                        fontFamily: 'monospace',
+                        backgroundColor: '#0a0a0a',
+                        padding: '8px',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        whiteSpace: 'pre-wrap'
+                      }}>
+                        {test.preview}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Web Crawler Section */}
