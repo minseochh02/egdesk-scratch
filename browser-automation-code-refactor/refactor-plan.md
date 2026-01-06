@@ -1,3 +1,4 @@
+
 # Browser Automation Code Refactor Plan
 
 ## Overview
