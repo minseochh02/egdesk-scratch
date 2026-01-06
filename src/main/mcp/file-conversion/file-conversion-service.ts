@@ -11,7 +11,7 @@ import Jimp from 'jimp';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import { marked } from 'marked';
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
 
 export interface ConversionResult {
   success: boolean;

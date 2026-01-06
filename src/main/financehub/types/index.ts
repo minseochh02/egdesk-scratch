@@ -2,7 +2,7 @@
 // FINANCE HUB - TYPE DEFINITIONS
 // ============================================================================
 
-import { Page, BrowserContext } from 'playwright';
+import { Page, BrowserContext } from 'playwright-core';
 
 // ============================================================================
 // BANK CONFIGURATION TYPES

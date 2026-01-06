@@ -46,7 +46,7 @@ export function registerChromeHandlers(): void {
   // Launch Chrome with a specific URL
   ipcMain.handle('launch-chrome-with-url', async (event, { url, proxy, openDevTools, runLighthouse }) => {
     try {
-      const { chromium } = require('playwright');
+      const { chromium } = require('playwright-core');
       
       // Normalize URL - try www version for root domains
       url = normalizeUrl(url);
@@ -338,7 +338,7 @@ export function registerChromeHandlers(): void {
   // Generate Lighthouse reports for multiple URLs
   ipcMain.handle('generate-lighthouse-reports', async (event, { urls, proxy }) => {
     try {
-      const { chromium } = require('playwright');
+      const { chromium } = require('playwright-core');
       const { playAudit } = require('playwright-lighthouse');
       const fs = require('fs');
       
@@ -1018,7 +1018,7 @@ Please provide:
       if (generatedCode.includes('@playwright/test')) {
         // It's a test format, convert it to a standalone script
         generatedCode = `
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 
 (async () => {
   // Launch browser with system Chrome

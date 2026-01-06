@@ -3,7 +3,7 @@
  * Handles Instagram post creation for business identity SNS plans
  */
 
-import { Page } from 'playwright';
+import { Page } from 'playwright-core';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -536,7 +536,7 @@ async function createPostWithChromeProfile(options: {
     };
   }
 
-  const { chromium } = require('playwright');
+  const { chromium } = require('playwright-core');
   console.log(
     `[BusinessIdentityInstagram] Opening Instagram with profile: ${targetProfileDirPath} (root: ${resolvedRootPath})`
   );

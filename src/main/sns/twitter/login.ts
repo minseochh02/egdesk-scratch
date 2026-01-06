@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { chromium, devices, Page, Browser, BrowserContext } from "playwright";
+import { chromium, devices, Page, Browser, BrowserContext } from 'playwright-core';
 
 function randomDelay(min = 75, max = 200) {
   return Math.floor(Math.random() * (max - min + 1)) + min;

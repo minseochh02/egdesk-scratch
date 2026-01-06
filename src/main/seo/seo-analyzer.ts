@@ -4,7 +4,7 @@ import { ipcMain, app } from 'electron';
 export function registerSEOHandlers() {
   ipcMain.handle('generate-lighthouse-reports', async (event, { urls, proxy }) => {
     try {
-      const { chromium } = require('playwright');
+      const { chromium } = require('playwright-core');
       const { playAudit } = require('playwright-lighthouse');
       const fs = require('fs');
       // Use userData directory in production, cwd in development
