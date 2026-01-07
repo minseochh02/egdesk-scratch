@@ -43,48 +43,49 @@ export class PlaywrightRecorder {
     const browserX = width - browserWidth;
     const browserY = 0;
 
-    // Launch browser with user's Chrome
-    const platform = process.platform;
-    let chromePath: string | undefined;
-    
-    // Find Chrome executable path based on platform
-    if (platform === 'darwin') {
-      // macOS
-      chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    } else if (platform === 'win32') {
-      // Windows
-      chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-      // Alternative path
-      if (!require('fs').existsSync(chromePath)) {
-        chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-      }
-    } else {
-      // Linux
-      chromePath = '/usr/bin/google-chrome';
-    }
+    // Launch browser using Playwright's channel detection
+    console.log('🎭 Launching browser with Playwright channel detection');
+    console.log('📐 Window dimensions:', {
+      browserWidth,
+      browserHeight,
+      position: { x: browserX, y: browserY }
+    });
     
     try {
-      this.browser = await chromium.launch({
-        headless: false,
-        executablePath: chromePath,
-        args: [
-          `--window-size=${browserWidth},${browserHeight}`,
-          `--window-position=${browserX},${browserY}`,
-          '--no-default-browser-check'
-        ]
-      });
-    } catch (err) {
-      console.error('Failed to launch Chrome:', err);
-      // Try without executable path (will use system Chrome if available)
+      // Use Playwright's channel option which automatically finds Chrome
       this.browser = await chromium.launch({
         headless: false,
         channel: 'chrome',
         args: [
           `--window-size=${browserWidth},${browserHeight}`,
           `--window-position=${browserX},${browserY}`,
-          '--no-default-browser-check'
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run'
         ]
       });
+      console.log('✅ Browser launched successfully with channel: chrome');
+    } catch (err) {
+      console.error('❌ Failed to launch with channel chrome:', err);
+      
+      // Fallback: try without channel (uses Playwright's bundled Chromium)
+      try {
+        console.log('🔄 Trying fallback: Playwright bundled Chromium');
+        this.browser = await chromium.launch({
+          headless: false,
+          args: [
+            `--window-size=${browserWidth},${browserHeight}`,
+            `--window-position=${browserX},${browserY}`,
+            '--no-default-browser-check',
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run'
+          ]
+        });
+        console.log('✅ Browser launched successfully with bundled Chromium');
+      } catch (fallbackErr) {
+        console.error('❌ Failed to launch bundled Chromium:', fallbackErr);
+        throw new Error('Could not launch any browser. Please ensure Chrome is installed or allow Playwright to download Chromium.');
+      }
     }
 
     this.context = await this.browser.newContext({

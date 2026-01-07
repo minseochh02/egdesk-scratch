@@ -25,6 +25,7 @@ import {
 
 // Hooks
 import { useTransactions } from '../../hooks/useTransactions';
+import { FullDiskAccessWarning } from '../../hooks/useFullDiskAccess';
 
 // Shared Components
 import { TransactionTable, TransactionStats } from './shared';
@@ -540,6 +541,12 @@ const FinanceHub: React.FC = () => {
             </div>
           </div>
           <p className="finance-hub__tagline">여러 은행에 따로 로그인할 필요 없이, 모든 계좌와 지출 내역을 한 곳에서 확인하세요</p>
+
+          {/* Full Disk Access Warning for macOS */}
+          <FullDiskAccessWarning onRequestAccess={() => {
+            // Optional: Show a message that the user needs to restart the app
+            alert('Full Disk Access 설정을 변경한 후 앱을 재시작해주세요.');
+          }} />
 
           <nav className="finance-hub__nav">
             <button className={`finance-hub__nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => setCurrentView('dashboard')}>대시보드</button>

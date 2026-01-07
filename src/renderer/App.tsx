@@ -661,6 +661,55 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
     };
   }, []);
 
+  // Listen for Playwright test errors
+  useEffect(() => {
+    const handleTestError = (event: any, data: any) => {
+      console.error('Playwright test error:', data);
+      addDebugLog(`❌ Test error: ${data.error}`);
+      
+      // Show user-friendly alert if it's a user-friendly error
+      if (data.userFriendly) {
+        alert(data.error);
+        
+        // Log technical details to console for debugging
+        if (data.details || data.technicalDetails) {
+          console.log('Technical details:', data.details || data.technicalDetails);
+        }
+      }
+    };
+
+    const handleTestInfo = (event: any, data: any) => {
+      console.log('Playwright test info:', data);
+      addDebugLog(`ℹ️ ${data.message}`);
+    };
+
+    const handleTestCompleted = (event: any, data: any) => {
+      if (data.success) {
+        addDebugLog(`✅ Test completed successfully`);
+      } else {
+        addDebugLog(`❌ Test failed: ${data.error || 'Unknown error'}`);
+        
+        // Show alert for test failures
+        alert(`Test replay failed: ${data.error || 'Unknown error'}`);
+        
+        // Log details for debugging
+        if (data.details) {
+          console.log('Test failure details:', data.details);
+        }
+      }
+    };
+
+    (window as any).electron.ipcRenderer.on('playwright-test-error', handleTestError);
+    (window as any).electron.ipcRenderer.on('playwright-test-info', handleTestInfo);
+    (window as any).electron.ipcRenderer.on('playwright-test-completed', handleTestCompleted);
+
+    return () => {
+      (window as any).electron.ipcRenderer.removeListener('playwright-test-error', handleTestError);
+      (window as any).electron.ipcRenderer.removeListener('playwright-test-info', handleTestInfo);
+      (window as any).electron.ipcRenderer.removeListener('playwright-test-completed', handleTestCompleted);
+    };
+  }, []);
+
   if (!isOpen) return null;
 
   return (
