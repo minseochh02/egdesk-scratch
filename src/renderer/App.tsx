@@ -882,46 +882,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </button>
             <button
               onClick={async () => {
-                if (!chromeUrl.trim()) {
-                  alert('Please enter a URL');
-                  return;
-                }
-                
-                addDebugLog('🚀 Launching Playwright recorder...');
-                
-                // Fire and forget - don't wait for response since Playwright opens immediately
-                (window as any).electron.debug.launchPlaywrightCodegen(
-                  chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
-                ).then((result: any) => {
-                  console.log('Playwright launch result:', result);
-                  if (result?.success) {
-                    addDebugLog('✅ Browser recorder launched successfully');
-                    addDebugLog('📝 Click on elements in the browser to record your actions');
-                    addDebugLog('⏱️ Timing between actions will be captured automatically');
-                    addDebugLog('💾 Test will be saved when you close the recorder');
-                  }
-                }).catch((error: any) => {
-                  console.log('Note: Playwright may have launched successfully despite this message:', error);
-                });
-                
-                // Show success immediately since Playwright opens its own window
-                addDebugLog('✨ Opening Playwright recorder...');
-                addDebugLog('💡 A new browser window should appear shortly');
-              }}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#9C27B0',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              🎬 Record Browser Actions
-            </button>
-            <button
-              onClick={async () => {
                 try {
                   if (!chromeUrl) {
                     addDebugLog('⚠️ Please enter a URL first');
@@ -1084,6 +1044,29 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={async () => {
+                                const result = await (window as any).electron.debug.viewPlaywrightTest(test.path);
+                                if (result.success) {
+                                  console.log(`👁️ Viewing test: ${test.name}`);
+                                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 👁️ Opened test in code viewer: ${test.name}`]);
+                                } else {
+                                  alert(`Failed to view test: ${result.error}`);
+                                }
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#2196F3',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                              title="View code"
+                            >
+                              👁️ View
+                            </button>
                             <button
                               onClick={async () => {
                                 const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
@@ -2409,17 +2392,15 @@ function NavigationBar({
           </NavDropdown>
 
           {/* Help & Tools - Kept as icons/buttons */}
-          {isDev && (
-            <button
-              className="nav-link"
-              onClick={() => setShowDebugModal(true)}
-              style={{ cursor: 'pointer' }}
-              title="Open Debug Panel (Dev Only)"
-            >
-              <FontAwesomeIcon icon={faRobot} />
-              {!isNarrow && <span>Debug</span>}
-            </button>
-          )}
+          <button
+            className="nav-link"
+            onClick={() => setShowDebugModal(true)}
+            style={{ cursor: 'pointer' }}
+            title="Open Debug Panel"
+          >
+            <FontAwesomeIcon icon={faRobot} />
+            {!isNarrow && <span>Debug</span>}
+          </button>
           <button
             className="nav-link"
             onClick={() => setShowSupportModal(true)}

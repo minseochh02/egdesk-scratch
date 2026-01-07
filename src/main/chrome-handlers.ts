@@ -1470,6 +1470,38 @@ const { chromium } = require('playwright-core');
     }
   });
 
+  // View a Playwright test in the code viewer window
+  ipcMain.handle('view-playwright-test', async (event, { testPath }) => {
+    try {
+      console.log('👁️ Viewing test:', testPath);
+      
+      // Read the test file
+      if (!fs.existsSync(testPath)) {
+        return { 
+          success: false, 
+          error: 'Test file not found'
+        };
+      }
+      
+      const testCode = fs.readFileSync(testPath, 'utf8');
+      
+      // Open the code viewer window
+      await codeViewerWindow.create();
+      codeViewerWindow.updateCode(testCode);
+      
+      return { 
+        success: true,
+        message: 'Test opened in code viewer'
+      };
+    } catch (error: any) {
+      console.error('Error viewing test:', error);
+      return { 
+        success: false, 
+        error: error?.message || 'Failed to view test'
+      };
+    }
+  });
+
   console.log('✅ Chrome browser automation IPC handlers registered');
 }
 
