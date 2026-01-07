@@ -89,11 +89,7 @@ export class PlaywrightRecorder {
     }
 
     this.context = await this.browser.newContext({
-      viewport: null,
-      recordVideo: {
-        dir: 'videos/',
-        size: { width: 1280, height: 720 }
-      }
+      viewport: null
     });
     
     // Set up browser close detection
