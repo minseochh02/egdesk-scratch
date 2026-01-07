@@ -40,3 +40,5 @@ gmail-tokens.json
 
 # Playwright authentication state (contains sensitive session data)
 playwright/.auth/
+
+videos/

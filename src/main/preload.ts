@@ -2053,8 +2053,11 @@ const electronHandler = {
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
     launchPlaywrightCodegen: (url: string) => ipcRenderer.invoke('launch-playwright-codegen', { url }),
+    launchPlaywrightRecorderEnhanced: (url: string) => ipcRenderer.invoke('launch-playwright-recorder-enhanced', { url }),
+    stopPlaywrightRecorderEnhanced: () => ipcRenderer.invoke('stop-playwright-recorder-enhanced'),
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
+    deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
     openInstagramWithProfile: (options: {
       planId?: string;
       profilePath?: string;

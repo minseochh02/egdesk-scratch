@@ -428,6 +428,7 @@ interface DebugAPI {
   launchPlaywrightCodegen: (url: string) => Promise<{ success: boolean; error?: string; outputFile?: string }>;
   getPlaywrightTests: () => Promise<{ success: boolean; tests: any[]; error?: string }>;
   runPlaywrightTest: (testFile: string) => Promise<{ success: boolean; error?: string }>;
+  deletePlaywrightTest: (testPath: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   openInstagramWithProfile: (options: any) => Promise<{ success: boolean; error?: string }>;
   testYouTubeUpload: (options: any) => Promise<{ success: boolean; error?: string }>;
   pickVideoFile: () => Promise<{ success: boolean; filePath?: string; error?: string }>;

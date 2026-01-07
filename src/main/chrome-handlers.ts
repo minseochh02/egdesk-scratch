@@ -1,7 +1,9 @@
 // IPC handlers for Chrome browser automation and Lighthouse reports
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { PlaywrightRecorder } from './playwright-recorder';
+import { codeViewerWindow } from './code-viewer-window';
 
 /**
  * Get output directory path - uses userData in production, cwd in development
@@ -948,49 +950,52 @@ Please provide:
       
       console.log('🎭 Launching Playwright Codegen for URL:', url);
       
-      // Generate output file path
+      // Generate output file paths
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const outputFile = path.join(getOutputDir(), `playwright-test-${timestamp}.spec.js`);
+      const timingFile = path.join(getOutputDir(), `playwright-timing-${timestamp}.json`);
       
-      // Launch codegen with system Chrome browser and save to file
+      // We'll capture timing by monitoring the Playwright Codegen output
+      let recordingStarted = Date.now();
+      let actionTimings: any[] = [];
+      
+      // Launch Playwright Codegen
       const codegen = spawn('npx', [
         'playwright', 
         'codegen',
         '--browser=chromium',
-        '--channel=chrome', // Use system Chrome installation
-        '--output', outputFile, // Save generated code to file
+        '--channel=chrome',
+        '--output', outputFile,
         url
       ], {
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        windowsHide: true
       });
       
-      codegen.on('error', (error) => {
-        console.error('Failed to launch Playwright Codegen:', error);
-      });
-      
-      codegen.on('close', (code) => {
+      codegen.on('close', async (code) => {
         console.log(`Playwright Codegen process exited with code ${code}`);
         
-        // Check if output file was created
-        if (fs.existsSync(outputFile)) {
-          console.log(`✅ Test code saved to: ${outputFile}`);
-          
-          // Read the generated code
-          const generatedCode = fs.readFileSync(outputFile, 'utf8');
-          
-          // Notify renderer about the saved test
-          event.sender.send('playwright-test-saved', {
-            filePath: outputFile,
-            code: generatedCode,
-            timestamp
-          });
-        }
+        // Just notify that recording is done
+        setTimeout(() => {
+          if (fs.existsSync(outputFile)) {
+            console.log(`✅ Test saved to: ${outputFile}`);
+            const generatedCode = fs.readFileSync(outputFile, 'utf8');
+            
+            event.sender.send('playwright-test-saved', {
+              filePath: outputFile,
+              code: generatedCode,
+              timestamp
+            });
+          } else {
+            console.log('🤷 No test file created - user may have closed without recording');
+          }
+        }, 2000);
       });
       
       return { 
         success: true,
-        message: 'Playwright Codegen launched successfully. The generated test will be saved when you close the inspector.',
+        message: 'Playwright Codegen launched.',
         outputFile
       };
     } catch (error: any) {
@@ -1002,6 +1007,267 @@ Please provide:
     }
   });
 
+  // Enhanced Playwright recorder with keyboard tracking
+  let activeRecorder: PlaywrightRecorder | null = null;
+  
+  ipcMain.handle('launch-playwright-recorder-enhanced', async (event, { url }) => {
+    try {
+      console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
+      
+      // Clean up any existing recorder
+      if (activeRecorder) {
+        try {
+          await activeRecorder.stop();
+        } catch (err) {
+          console.error('Error stopping previous recorder:', err);
+        }
+      }
+      
+      // Generate output file path
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const outputFile = path.join(getOutputDir(), `playwright-test-${timestamp}.spec.js`);
+      
+      // Create initial file with empty test
+      const initialCode = `import { test, expect } from '@playwright/test';
+
+test('recorded test', async ({ page }) => {
+  // Recording in progress...
+});`;
+      fs.writeFileSync(outputFile, initialCode);
+      
+      // Open our code viewer window
+      await codeViewerWindow.create();
+      codeViewerWindow.updateCode(initialCode);
+      
+      // Create new recorder
+      activeRecorder = new PlaywrightRecorder();
+      activeRecorder.setOutputFile(outputFile);
+      
+      // Set up real-time updates
+      activeRecorder.setUpdateCallback((code) => {
+        console.log('🔔 Update callback triggered, code length:', code.length);
+        
+        // Update code viewer window
+        codeViewerWindow.updateCode(code);
+        
+        // Send update to renderer
+        event.sender.send('playwright-test-update', {
+          filePath: outputFile,
+          code: code,
+          timestamp
+        });
+      });
+      
+      try {
+        await activeRecorder.start(url, async () => {
+        // Browser was closed by user - auto-stop recording
+        console.log('🔌 Browser closed - stopping recording automatically');
+        
+        // Stop the recorder
+        if (activeRecorder) {
+          const testCode = await activeRecorder.stop();
+          const recordedActions = activeRecorder.getActions();
+          activeRecorder = null;
+          
+          // Create timed version
+          const timedCode = createTimedTestFromCode(testCode);
+          const timedFile = outputFile.replace('.spec.js', '.timed.spec.js');
+          fs.writeFileSync(timedFile, timedCode);
+          
+          // Close the code viewer window
+          codeViewerWindow.close();
+          
+          // Notify renderer
+          event.sender.send('playwright-test-saved', {
+            filePath: outputFile,
+            code: testCode,
+            timestamp: new Date().toISOString()
+          });
+          
+          event.sender.send('recorder-auto-stopped', {
+            reason: 'Browser window closed by user'
+          });
+        }
+      });
+      } catch (startError: any) {
+        console.error('Failed to start recorder:', startError);
+        throw startError;
+      }
+      
+      return {
+        success: true,
+        message: 'Enhanced recorder started with code viewer.',
+        filePath: outputFile
+      };
+    } catch (error: any) {
+      console.error('Error launching enhanced recorder:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to launch enhanced recorder'
+      };
+    }
+  });
+  
+  ipcMain.handle('stop-playwright-recorder-enhanced', async (event) => {
+    try {
+      if (!activeRecorder) {
+        return {
+          success: false,
+          error: 'No active recorder'
+        };
+      }
+      
+      const testCode = await activeRecorder.stop();
+      const recordedActions = activeRecorder.getActions();
+      activeRecorder = null;
+      
+      // The test file has already been created and updated in real-time
+      // Just create the timed version
+      const outputFiles = fs.readdirSync(getOutputDir())
+        .filter(f => f.startsWith('playwright-test-') && f.endsWith('.spec.js'))
+        .map(f => path.join(getOutputDir(), f))
+        .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime());
+      
+      if (outputFiles.length > 0) {
+        const outputFile = outputFiles[0]; // Most recent file
+        const timedCode = createTimedTestFromCode(testCode);
+        const timedFile = outputFile.replace('.spec.js', '.timed.spec.js');
+        fs.writeFileSync(timedFile, timedCode);
+        
+        console.log(`✅ Enhanced test saved to: ${outputFile}`);
+        
+        // Close the code viewer window
+        codeViewerWindow.close();
+        
+        // Notify renderer
+        event.sender.send('playwright-test-saved', {
+          filePath: outputFile,
+          code: testCode,
+          timestamp: new Date().toISOString()
+        });
+        
+        return {
+          success: true,
+          filePath: outputFile,
+          code: testCode
+        };
+      } else {
+        return {
+          success: false,
+          error: 'No test file found'
+        };
+      }
+    } catch (error: any) {
+      console.error('Error stopping recorder:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to stop recorder'
+      };
+    }
+  });
+  
+  // Create test with actual captured timing
+  function createTimedTestWithActualTiming(originalCode: string, timingData: any[]): string {
+    let enhancedCode = originalCode;
+    
+    // Add comment about actual timing
+    enhancedCode = enhancedCode.replace(
+      "import { test, expect } from '@playwright/test';",
+      `import { test, expect } from '@playwright/test';
+// This test includes actual timing delays captured during recording`
+    );
+    
+    // Get all the page action lines
+    const lines = originalCode.split('\n');
+    const actionLines = lines.filter(line => line.includes('await page.'));
+    
+    // Match timing data to actions and insert delays
+    let timingIndex = 0;
+    actionLines.forEach((actionLine, index) => {
+      if (index > 0 && timingIndex < timingData.length) {
+        const timing = timingData[timingIndex];
+        if (timing.timeSinceLastAction > 100) { // Only add meaningful delays
+          const delay = Math.round(timing.timeSinceLastAction);
+          const delayLine = `  await page.waitForTimeout(${delay}); // Actual recorded delay: ${delay}ms`;
+          enhancedCode = enhancedCode.replace(actionLine, delayLine + '\n' + actionLine);
+        }
+        timingIndex++;
+      }
+    });
+    
+    return enhancedCode;
+  }
+  
+  // Helper function to create timed test from code
+  function createTimedTestFromCode(originalCode: string): string {
+    // Split into lines
+    const lines = originalCode.split('\n');
+    let enhancedLines: string[] = [];
+    let isInTest = false;
+    let actionCount = 0;
+    
+    // Realistic human delays
+    const delays = [500, 1000, 1500, 2000, 800, 1200];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Check if we're entering a test
+      if (line.includes('test(') && line.includes('async')) {
+        isInTest = true;
+      }
+      
+      // Add timing comment at the top
+      if (i === 0 && line.includes("import { test, expect }")) {
+        enhancedLines.push(line);
+        enhancedLines.push('// This test includes realistic timing delays for human-like interaction');
+        continue;
+      }
+      
+      // Add the current line
+      enhancedLines.push(line);
+      
+      // If we're in a test and this line has a page action, add delay before next action
+      if (isInTest && line.trim().startsWith('await page.')) {
+        actionCount++;
+        
+        // Don't add delay after the first action (usually goto) or the last action
+        if (actionCount > 1 && i < lines.length - 2) {
+          const nextLine = lines[i + 1];
+          
+          // Check if next line is also a page action
+          if (nextLine && nextLine.trim().startsWith('await page.')) {
+            const delay = delays[(actionCount - 2) % delays.length] + Math.floor(Math.random() * 500);
+            const indent = line.match(/^(\s*)/)?.[1] || '  ';
+            enhancedLines.push(`${indent}await page.waitForTimeout(${delay}); // Human-like delay`);
+          }
+        }
+      }
+      
+      // Handle Enter key press
+      if (isInTest && line.includes('.press') && line.includes('Enter')) {
+        // Already handled by Playwright
+      } else if (isInTest && line.includes('.fill') && !lines[i + 1]?.includes('.press')) {
+        // Check if we should add Enter press after fill
+        const nextLine = lines[i + 1];
+        if (nextLine && !nextLine.includes('.press') && !nextLine.includes('.click')) {
+          // This might be a search or form field that needs Enter
+          if (line.includes('Search') || line.includes('search') || line.includes('query')) {
+            const indent = line.match(/^(\s*)/)?.[1] || '  ';
+            enhancedLines.push(`${indent}await page.keyboard.press('Enter'); // Submit form`);
+          }
+        }
+      }
+      
+      // Check if we're leaving the test
+      if (line.includes('});') && isInTest) {
+        isInTest = false;
+      }
+    }
+    
+    return enhancedLines.join('\n');
+  }
+
   // Run saved Playwright test
   ipcMain.handle('run-playwright-test', async (event, { testFile }) => {
     try {
@@ -1009,14 +1275,47 @@ Please provide:
       
       console.log('🎭 Running Playwright test:', testFile);
       
+      // Check if there's a timed version
+      const timedFile = testFile.replace('.spec.js', '.timed.spec.js');
+      let fileToRun = testFile;
+      
+      // Create timed version on-the-fly if it doesn't exist
+      if (!fs.existsSync(timedFile)) {
+        console.log('🔧 Creating timed version on-the-fly...');
+        const originalCode = fs.readFileSync(testFile, 'utf8');
+        const timedCode = createTimedTestFromCode(originalCode);
+        fs.writeFileSync(timedFile, timedCode);
+        console.log(`✅ Timed test created: ${timedFile}`);
+      }
+      
+      // Always use the timed version
+      fileToRun = timedFile;
+      console.log(`Using file: ${fileToRun}`);
+      
       // Read the generated code
-      let generatedCode = fs.readFileSync(testFile, 'utf8');
+      let generatedCode = fs.readFileSync(fileToRun, 'utf8');
       
       console.log('Original code first few lines:', generatedCode.substring(0, 200));
       
       // Convert the test code to a runnable script
       if (generatedCode.includes('@playwright/test')) {
-        // It's a test format, convert it to a standalone script
+        // Extract the test body - find everything between test({ and the final })
+        const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
+        let testBody = '';
+        
+        if (testMatch && testMatch[1]) {
+          testBody = testMatch[1].trim();
+        } else {
+          // Fallback: more careful extraction
+          const lines = generatedCode.split('\n');
+          const startIndex = lines.findIndex(line => line.includes('test(') && line.includes('{'));
+          const endIndex = lines.lastIndexOf('});');
+          
+          if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
+            testBody = lines.slice(startIndex + 1, endIndex).join('\n').trim();
+          }
+        }
+        
         generatedCode = `
 const { chromium } = require('playwright-core');
 
@@ -1031,12 +1330,8 @@ const { chromium } = require('playwright-core');
   const page = await context.newPage();
   
   try {
-    // Extract test steps from the generated code
-    ${generatedCode
-      .split('\n')
-      .filter(line => line.includes('await page.'))
-      .join('\n    ')}
-    
+    console.log('🎬 Starting test replay...');
+    ${testBody}
     console.log('✅ Test completed successfully');
   } catch (error) {
     console.error('❌ Test failed:', error);
@@ -1054,7 +1349,7 @@ const { chromium } = require('playwright-core');
       }
       
       // Create a temporary file with the modified code
-      const tempFile = testFile.replace('.spec.js', '.run.js');
+      const tempFile = fileToRun.replace('.spec.js', '.run.js');
       fs.writeFileSync(tempFile, generatedCode);
       
       // Run the script directly with Node
@@ -1071,7 +1366,9 @@ const { chromium } = require('playwright-core');
         console.log(`Playwright test process exited with code ${code}`);
         // Clean up temp file
         try {
-          fs.unlinkSync(tempFile);
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
         } catch (e) {
           // Ignore cleanup errors
         }
@@ -1083,7 +1380,7 @@ const { chromium } = require('playwright-core');
       
       return { 
         success: true,
-        message: 'Playwright test started.'
+        message: 'Playwright test started with timing.'
       };
     } catch (error: any) {
       console.error('Error running Playwright test:', error);
@@ -1124,6 +1421,51 @@ const { chromium } = require('playwright-core');
         success: false, 
         error: error?.message || 'Failed to get Playwright tests',
         tests: []
+      };
+    }
+  });
+  
+  // Delete a Playwright test
+  ipcMain.handle('delete-playwright-test', async (event, { testPath }) => {
+    try {
+      console.log('🗑️ Deleting test:', testPath);
+      
+      // Delete the main test file
+      if (fs.existsSync(testPath)) {
+        fs.unlinkSync(testPath);
+        console.log('✅ Deleted main test file');
+      }
+      
+      // Delete the timed version if it exists
+      const timedPath = testPath.replace('.spec.js', '.timed.spec.js');
+      if (fs.existsSync(timedPath)) {
+        fs.unlinkSync(timedPath);
+        console.log('✅ Deleted timed test file');
+      }
+      
+      // Delete the run file if it exists
+      const runPath = testPath.replace('.spec.js', '.run.js');
+      if (fs.existsSync(runPath)) {
+        fs.unlinkSync(runPath);
+        console.log('✅ Deleted run file');
+      }
+      
+      // Delete the mjs file if it exists (from earlier attempts)
+      const mjsPath = testPath.replace('.spec.js', '.run.mjs');
+      if (fs.existsSync(mjsPath)) {
+        fs.unlinkSync(mjsPath);
+        console.log('✅ Deleted mjs file');
+      }
+      
+      return { 
+        success: true,
+        message: 'Test deleted successfully'
+      };
+    } catch (error: any) {
+      console.error('Error deleting test:', error);
+      return { 
+        success: false, 
+        error: error?.message || 'Failed to delete test'
       };
     }
   });
