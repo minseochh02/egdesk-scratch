@@ -583,37 +583,10 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [facebookPassword, setFacebookPassword] = useState('');
   const [facebookImagePath, setFacebookImagePath] = useState('');
   const [facebookText, setFacebookText] = useState('');
-  const [recordClicks, setRecordClicks] = useState(false);
-  const [clickEvents, setClickEvents] = useState<any[]>([]);
-  const [debugWindowId, setDebugWindowId] = useState<number | null>(null);
   const [savedTests, setSavedTests] = useState<any[]>([]);
   const [showSavedTests, setShowSavedTests] = useState(false);
-
-  // Listen for click events from browser windows
-  useEffect(() => {
-    if (!debugWindowId || !recordClicks) return;
-
-    // Poll for click events from the browser window
-    const checkForClicks = setInterval(async () => {
-      try {
-        const result = await (window as any).electron.browserWindow.getClickEvents(debugWindowId);
-        if (result.success && result.clickEvents) {
-          // Only add new events
-          setClickEvents(prev => {
-            const existingTimestamps = new Set(prev.map(e => e.timestamp));
-            const newEvents = result.clickEvents.filter((e: any) => !existingTimestamps.has(e.timestamp));
-            return [...prev, ...newEvents];
-          });
-        }
-      } catch (error) {
-        console.error('Failed to get click events:', error);
-      }
-    }, 1000);
-
-    return () => {
-      clearInterval(checkForClicks);
-    };
-  }, [debugWindowId, recordClicks]);
+  const [isRecordingEnhanced, setIsRecordingEnhanced] = useState(false);
+  const [currentTestCode, setCurrentTestCode] = useState<string>('');
 
   // Load saved tests when modal opens
   useEffect(() => {
@@ -626,6 +599,67 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
       })();
     }
   }, [isOpen]);
+
+  // Define addDebugLog function at the component level
+  const addDebugLog = (message: string) => {
+    setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  };
+
+  // Listen for Playwright test saved events
+  useEffect(() => {
+    const handleTestSaved = (event: any, data: any) => {
+      addDebugLog(`📁 Test saved: ${data.filePath}`);
+      // Refresh test list
+      (async () => {
+        const result = await (window as any).electron.debug.getPlaywrightTests();
+        if (result.success) {
+          setSavedTests(result.tests);
+        }
+      })();
+    };
+
+    (window as any).electron.ipcRenderer.on('playwright-test-saved', handleTestSaved);
+
+    return () => {
+      (window as any).electron.ipcRenderer.removeListener('playwright-test-saved', handleTestSaved);
+    };
+  }, []);
+
+  // Listen for real-time test updates
+  useEffect(() => {
+    const handleTestUpdate = (event: any, data: any) => {
+      setCurrentTestCode(data.code);
+    };
+
+    (window as any).electron.ipcRenderer.on('playwright-test-update', handleTestUpdate);
+
+    return () => {
+      (window as any).electron.ipcRenderer.removeListener('playwright-test-update', handleTestUpdate);
+    };
+  }, []);
+
+  // Listen for auto-stop events
+  useEffect(() => {
+    const handleAutoStop = (event: any, data: any) => {
+      addDebugLog(`🔌 Recording auto-stopped: ${data.reason}`);
+      setIsRecordingEnhanced(false);
+      setCurrentTestCode('');
+      
+      // Refresh test list
+      (async () => {
+        const result = await (window as any).electron.debug.getPlaywrightTests();
+        if (result.success) {
+          setSavedTests(result.tests);
+        }
+      })();
+    };
+
+    (window as any).electron.ipcRenderer.on('recorder-auto-stopped', handleAutoStop);
+
+    return () => {
+      (window as any).electron.ipcRenderer.removeListener('recorder-auto-stopped', handleAutoStop);
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -777,15 +811,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   />
                   <span>Run Lighthouse</span>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={recordClicks}
-                    onChange={(e) => setRecordClicks(e.target.checked)}
-                    style={{ transform: 'scale(1.2)' }}
-                  />
-                  <span>Record Clicks</span>
-                </label>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -800,10 +825,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 setDebugLogs([]);
                 
                 // Add initial debug log
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
-                
                 addDebugLog('Starting Chrome launch process...');
                 
                 try {
@@ -866,20 +887,66 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   return;
                 }
                 
+                addDebugLog('🚀 Launching Playwright recorder...');
+                
+                // Fire and forget - don't wait for response since Playwright opens immediately
+                (window as any).electron.debug.launchPlaywrightCodegen(
+                  chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
+                ).then((result: any) => {
+                  console.log('Playwright launch result:', result);
+                  if (result?.success) {
+                    addDebugLog('✅ Browser recorder launched successfully');
+                    addDebugLog('📝 Click on elements in the browser to record your actions');
+                    addDebugLog('⏱️ Timing between actions will be captured automatically');
+                    addDebugLog('💾 Test will be saved when you close the recorder');
+                  }
+                }).catch((error: any) => {
+                  console.log('Note: Playwright may have launched successfully despite this message:', error);
+                });
+                
+                // Show success immediately since Playwright opens its own window
+                addDebugLog('✨ Opening Playwright recorder...');
+                addDebugLog('💡 A new browser window should appear shortly');
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#9C27B0',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              🎬 Record Browser Actions
+            </button>
+            <button
+              onClick={async () => {
                 try {
-                  const result = await (window as any).electron.debug.launchPlaywrightCodegen(
+                  if (!chromeUrl) {
+                    addDebugLog('⚠️ Please enter a URL first');
+                    return;
+                  }
+                  
+                  addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
+                  
+                  const result = await (window as any).electron.debug.launchPlaywrightRecorderEnhanced(
                     chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
                   );
                   
-                  if (!result?.success) {
-                    alert(`Failed to launch Playwright Codegen: ${result?.error || 'Unknown error'}`);
+                  if (result?.success) {
+                  addDebugLog('✅ Enhanced recorder launched successfully');
+                  addDebugLog('📝 All keyboard events including Enter will be captured');
+                  addDebugLog(`📁 Test file: ${result.filePath}`);
+                  addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
+                  addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
+                  setIsRecordingEnhanced(true);
                   } else {
-                    addDebugLog('✅ Playwright Codegen launched successfully');
-                    addDebugLog('📝 Click on elements in the browser to generate test code');
+                    addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
                   }
                 } catch (error) {
-                  console.error('Failed to launch Playwright Codegen:', error);
-                  alert('Failed to launch Playwright Codegen');
+                  console.error('Error launching recorder:', error);
+                  addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 }
               }}
               style={{
@@ -892,8 +959,43 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 fontWeight: 'bold'
               }}
             >
-              Open with Playwright Codegen
+              🎹 Record with Keyboard Tracking
             </button>
+            {isRecordingEnhanced && (
+              <button
+                onClick={async () => {
+                  addDebugLog('⏹️ Stopping enhanced recorder...');
+                  
+                  const result = await (window as any).electron.debug.stopPlaywrightRecorderEnhanced();
+                  
+                  if (result?.success) {
+                    addDebugLog('✅ Recording saved successfully');
+                    addDebugLog(`📁 Test saved to: ${result.filePath}`);
+                    setIsRecordingEnhanced(false);
+                    setCurrentTestCode(''); // Clear the code viewer
+                    
+                    // Refresh test list
+                    const testsResult = await (window as any).electron.debug.getPlaywrightTests();
+                    if (testsResult.success) {
+                      setSavedTests(testsResult.tests);
+                    }
+                  } else {
+                    addDebugLog(`❌ Failed to stop recorder: ${result?.error}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                ⏹️ Stop Recording
+              </button>
+            )}
             <button
               onClick={async () => {
                 const result = await (window as any).electron.debug.getPlaywrightTests();
@@ -915,117 +1017,34 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               View Saved Tests ({savedTests.length})
             </button>
             </div>
-            {recordClicks && (
-              <>
-                <button
-                  onClick={async () => {
-                    if (!chromeUrl.trim()) {
-                      alert('Please enter a URL');
-                      return;
-                    }
-                    
-                    try {
-                      const result = await (window as any).electron.browserWindow.createWindow({
-                        url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
-                        title: 'Debug Browser - Click Recording',
-                        width: 1200,
-                        height: 800,
-                        webPreferences: {
-                          devTools: openDevTools,
-                        }
-                      });
-
-                      if (result.success && result.windowId) {
-                        setDebugWindowId(result.windowId);
-                        setClickEvents([]);
-                        alert('Browser window opened. Click recording is active!');
-                      }
-                    } catch (error) {
-                      console.error('Failed to open debug window:', error);
-                      alert('Failed to open debug window');
-                    }
-                  }}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#2196F3',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                    marginTop: '10px'
-                  }}
-                >
-                  Open in New Window (Record Clicks)
-                </button>
-                
-                {/* Click Events Display */}
-                {clickEvents.length > 0 && (
-                  <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h4 style={{ color: '#fff', margin: 0 }}>Recorded Clicks ({clickEvents.length})</h4>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                          onClick={() => setClickEvents([])}
-                          style={{
-                            padding: '5px 10px',
-                            backgroundColor: '#666',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Clear
-                        </button>
-                        <button
-                          onClick={() => {
-                            const data = JSON.stringify(clickEvents, null, 2);
-                            const blob = new Blob([data], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `click-events-${Date.now()}.json`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          }}
-                          style={{
-                            padding: '5px 10px',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Export JSON
-                        </button>
-                      </div>
-                    </div>
-                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                      {clickEvents.map((event, index) => (
-                        <div key={index} style={{ 
-                          padding: '8px', 
-                          marginBottom: '5px', 
-                          backgroundColor: '#1e1e1e', 
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          color: '#fff',
-                          fontFamily: 'monospace'
-                        }}>
-                          <div>#{index + 1} - {new Date(event.timestamp).toLocaleTimeString()}</div>
-                          <div>Element: &lt;{event.elementTag}&gt; {event.elementId ? `#${event.elementId}` : ''} {event.elementClass ? `.${event.elementClass}` : ''}</div>
-                          <div>Position: ({event.x}, {event.y})</div>
-                          {event.elementText && <div>Text: "{event.elementText}"</div>}
-                          <div style={{ fontSize: '11px', color: '#888' }}>URL: {event.url}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+            
+            {/* Real-time Test Code Display */}
+            {isRecordingEnhanced && currentTestCode && (
+              <div style={{ 
+                marginTop: '20px', 
+                padding: '15px', 
+                backgroundColor: '#1a1a1a', 
+                borderRadius: '4px',
+                border: '1px solid #444'
+              }}>
+                <h4 style={{ color: '#fff', margin: '0 0 10px 0' }}>
+                  📝 Generated Test Code (Real-time)
+                </h4>
+                <pre style={{
+                  backgroundColor: '#0d0d0d',
+                  padding: '15px',
+                  borderRadius: '4px',
+                  overflow: 'auto',
+                  maxHeight: '400px',
+                  color: '#e0e0e0',
+                  fontSize: '12px',
+                  fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                  lineHeight: '1.5',
+                  margin: 0
+                }}>
+                  <code>{currentTestCode}</code>
+                </pre>
+              </div>
             )}
             
             {/* Saved Tests Display */}
@@ -1033,58 +1052,106 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
                 <h4 style={{ color: '#fff', margin: '0 0 15px 0' }}>Saved Playwright Tests</h4>
                 <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                  {savedTests.map((test, index) => (
-                    <div key={index} style={{ 
-                      padding: '10px', 
-                      marginBottom: '10px', 
-                      backgroundColor: '#1e1e1e', 
-                      borderRadius: '4px',
-                      border: '1px solid #333'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <div>
-                          <strong style={{ color: '#fff', fontSize: '14px' }}>{test.name}</strong>
-                          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                            Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
+                  {savedTests
+                    .filter(test => !test.name.includes('.timed.spec.js')) // Hide timed versions from UI
+                    .map((test, index) => {
+                    
+                    return (
+                      <div key={index} style={{ 
+                        padding: '10px', 
+                        marginBottom: '10px', 
+                        backgroundColor: '#1e1e1e', 
+                        borderRadius: '4px',
+                        border: '1px solid #333'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <strong style={{ color: '#fff', fontSize: '14px' }}>{test.name}</strong>
+                              <span style={{ 
+                                fontSize: '11px', 
+                                color: '#4CAF50',
+                                backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                border: '1px solid #4CAF50'
+                              }}>
+                                ⏱️ Auto-Timed
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                              Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={async () => {
+                                const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
+                                if (result.success) {
+                                  console.log(`🎬 Running test with timing: ${test.name}`);
+                                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🎬⏱️ Running test with timing: ${test.name}`]);
+                                } else {
+                                  alert(`Failed to run test: ${result.error}`);
+                                }
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#4CAF50',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                            >
+                              ▶️ Replay
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to delete "${test.name}"?`)) {
+                                  const result = await (window as any).electron.debug.deletePlaywrightTest(test.path);
+                                  if (result.success) {
+                                    // Refresh the test list
+                                    const refreshResult = await (window as any).electron.debug.getPlaywrightTests();
+                                    if (refreshResult.success) {
+                                      setSavedTests(refreshResult.tests);
+                                    }
+                                    setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🗑️ Deleted test: ${test.name}`]);
+                                  } else {
+                                    alert(`Failed to delete test: ${result.error}`);
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#f44336',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                              title="Delete test"
+                            >
+                              🗑️
+                            </button>
                           </div>
                         </div>
-                        <button
-                          onClick={async () => {
-                            const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
-                            if (result.success) {
-                              console.log(`🎬 Running test: ${test.name}`);
-                              setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🎬 Running test: ${test.name}`]);
-                            } else {
-                              alert(`Failed to run test: ${result.error}`);
-                            }
-                          }}
-                          style={{
-                            padding: '6px 12px',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          ▶️ Replay
-                        </button>
+                        <div style={{ 
+                          fontSize: '11px', 
+                          color: '#aaa', 
+                          fontFamily: 'monospace',
+                          backgroundColor: '#0a0a0a',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          overflow: 'hidden',
+                          whiteSpace: 'pre-wrap'
+                        }}>
+                          {test.preview}
+                        </div>
                       </div>
-                      <div style={{ 
-                        fontSize: '11px', 
-                        color: '#aaa', 
-                        fontFamily: 'monospace',
-                        backgroundColor: '#0a0a0a',
-                        padding: '8px',
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        whiteSpace: 'pre-wrap'
-                      }}>
-                        {test.preview}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1140,10 +1207,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 setDebugLogs([]);
                 
                 // Add initial debug log
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
-                
                 addDebugLog('Starting web crawler...');
                 
                 try {
@@ -1215,10 +1278,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   alert('Please enter a URL');
                   return;
                 }
-                
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
                 
                 addDebugLog('Starting homepage crawl for business identity...');
                 setHomepageCrawlResults(null);
@@ -1299,10 +1358,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   alert('Please enter a URL');
                   return;
                 }
-                
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
                 
                 addDebugLog('Starting multi-page crawl for business identity...');
                 setMultiPageCrawlResults(null);
@@ -1831,9 +1886,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                       const result = await (window as any).electron.debug.pickVideoFile();
                       if (result?.success && result?.filePath) {
                         setYoutubeVideoPath(result.filePath);
-                        const addDebugLog = (message: string) => {
-                          setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                        };
                         addDebugLog(`📁 Selected video file: ${result.filePath}`);
                       }
                     } catch (error) {
@@ -1912,10 +1964,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   alert('Please enter video title');
                   return;
                 }
-
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
 
                 addDebugLog('Starting YouTube video upload test...');
                 
@@ -2020,9 +2068,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                       const result = await (window as any).electron.debug.pickImageFile();
                       if (result?.success && result?.filePath) {
                         setFacebookImagePath(result.filePath);
-                        const addDebugLog = (message: string) => {
-                          setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                        };
                         addDebugLog(`📁 Selected image file: ${result.filePath}`);
                       }
                     } catch (error) {
@@ -2062,10 +2107,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   alert('Please enter post text or select an image');
                   return;
                 }
-
-                const addDebugLog = (message: string) => {
-                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-                };
 
                 addDebugLog('Starting Facebook post test...');
                 
