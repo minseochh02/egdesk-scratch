@@ -425,7 +425,6 @@ interface DebugAPI {
   startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => Promise<{ success: boolean; error?: string; boxes?: any; clickedPoint?: any; screenshotPath?: string }>;
   launchChrome: () => Promise<{ success: boolean; error?: string }>;
   launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => Promise<{ success: boolean; error?: string }>;
-  launchPlaywrightCodegen: (url: string) => Promise<{ success: boolean; error?: string; outputFile?: string }>;
   getPlaywrightTests: () => Promise<{ success: boolean; tests: any[]; error?: string }>;
   runPlaywrightTest: (testFile: string) => Promise<{ success: boolean; error?: string }>;
   deletePlaywrightTest: (testPath: string) => Promise<{ success: boolean; message?: string; error?: string }>;
