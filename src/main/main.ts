@@ -367,7 +367,20 @@ const installExtensions = async () => {
 import { registerEgChattingHandlers, initializeEgChattingService } from './sqlite/egchatting-service';
 import { registerGmailHandlers } from './gmail-ipc-register';
 import { registerSheetsHandlers } from './sheets-ipc-handler';
+import { handleFullDiskAccess, checkFullDiskAccess, requestFullDiskAccess } from './utils/full-disk-access';
+
 const createWindow = async () => {
+  // Check Full Disk Access on macOS (non-blocking notification)
+  if (process.platform === 'darwin') {
+    handleFullDiskAccess('notification').then(hasAccess => {
+      if (!hasAccess) {
+        console.log('[Main] Full Disk Access not granted, notification shown to user');
+      } else {
+        console.log('[Main] Full Disk Access granted');
+      }
+    });
+  }
+
   // Initialize Electron Store first
   try {
     await initializeStore();
@@ -2795,6 +2808,27 @@ const createWindow = async () => {
     }
     
     return absolutePath;
+  });
+
+  // Full Disk Access handlers for macOS
+  ipcMain.handle('check-full-disk-access', async () => {
+    try {
+      const hasAccess = await checkFullDiskAccess();
+      return { success: true, hasAccess };
+    } catch (error: any) {
+      console.error('[Full Disk Access] Check error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('request-full-disk-access', async () => {
+    try {
+      const userOpened = await requestFullDiskAccess();
+      return { success: true, userOpened };
+    } catch (error: any) {
+      console.error('[Full Disk Access] Request error:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   // Initialize auto-updater

@@ -2,6 +2,8 @@
 import { ipcMain, app, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import { pathToFileURL } from 'url';
 import { PlaywrightRecorder } from './playwright-recorder';
 import { codeViewerWindow } from './code-viewer-window';
 
@@ -248,7 +250,7 @@ export function registerChromeHandlers(): void {
               
               // Load the generated HTML report
               const outputDir = getOutputDir();
-              const htmlReportPath = `file://${path.join(outputDir, `${reportName}.html`)}`;
+              const htmlReportPath = pathToFileURL(path.join(outputDir, `${reportName}.html`)).href;
               const pdfPage = await context.newPage();
               
               await pdfPage.goto(htmlReportPath);
@@ -556,7 +558,7 @@ export function registerChromeHandlers(): void {
           
           // Generate PDF with expanded sections
           try {
-            const htmlReportPath = `file://${path.join(outputDir, `${reportName}.html`)}`;
+            const htmlReportPath = pathToFileURL(path.join(outputDir, `${reportName}.html`)).href;
             const pdfPage = await context.newPage();
             
             await pdfPage.goto(htmlReportPath);
@@ -888,7 +890,7 @@ Please provide:
       let mergedPdfPath: string | null = null;
       try {
         const pdfPage = await context.newPage();
-        await pdfPage.goto(`file://${finalReportPath}`);
+        await pdfPage.goto(pathToFileURL(finalReportPath).href);
         await pdfPage.waitForLoadState('networkidle');
         await pdfPage.waitForTimeout(2000);
         
@@ -1208,12 +1210,235 @@ test('recorded test', async ({ page }) => {
   // Run saved Playwright test
   ipcMain.handle('run-playwright-test', async (event, { testFile }) => {
     try {
-      const { spawn } = require('child_process');
-      
       console.log('🎭 Running Playwright test:', testFile);
+      console.log('📁 App packaged:', app.isPackaged);
+      console.log('📍 Current directory:', process.cwd());
+      
+      // Validate test file exists
+      if (!fs.existsSync(testFile)) {
+        // Send user-friendly error
+        event.sender.send('playwright-test-error', {
+          error: `Test file not found: ${testFile}. The file may have been moved or deleted.`,
+          testFile,
+          userFriendly: true
+        });
+        throw new Error(`Test file not found: ${testFile}`);
+      }
+      
+      // In production, run the test directly in the main process
+      if (app.isPackaged) {
+        console.log('🚀 Running test directly in main process (production mode)');
+        
+        const { chromium } = require('playwright-core');
+        
+        // Check if there's a timed version
+        const dir = path.dirname(testFile);
+        const basename = path.basename(testFile, '.spec.js');
+        const timedFile = path.join(dir, `${basename}.timed.spec.js`);
+        let fileToRun = testFile;
+        
+        // Create timed version on-the-fly if it doesn't exist
+        if (!fs.existsSync(timedFile)) {
+          console.log('🔧 Creating timed version on-the-fly...');
+          const originalCode = fs.readFileSync(testFile, 'utf8');
+          const timedCode = createTimedTestFromCode(originalCode);
+          fs.writeFileSync(timedFile, timedCode);
+          console.log(`✅ Timed test created: ${timedFile}`);
+        }
+        
+        // Always use the timed version
+        fileToRun = timedFile;
+        console.log(`Using file: ${fileToRun}`);
+        
+        // Read the generated code
+        let generatedCode = fs.readFileSync(fileToRun, 'utf8');
+        
+        // Extract the test body
+        let testBody = '';
+        
+        if (generatedCode.includes('@playwright/test')) {
+          // Extract the test body - find everything between test({ and the final })
+          const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
+          
+          if (testMatch && testMatch[1]) {
+            testBody = testMatch[1].trim();
+          } else {
+            // Fallback: more careful extraction
+            const lines = generatedCode.split('\n');
+            const startIndex = lines.findIndex(line => line.includes('test(') && line.includes('{'));
+            const endIndex = lines.lastIndexOf('});');
+            
+            if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
+              testBody = lines.slice(startIndex + 1, endIndex).join('\n').trim();
+            }
+          }
+        }
+        
+        if (!testBody) {
+          throw new Error('Could not extract test body from file');
+        }
+        
+        // Send info to renderer
+        event.sender.send('playwright-test-info', {
+          message: 'Starting test replay in production mode...',
+          testFile
+        });
+        
+        // Run the test
+        const browser = await chromium.launch({ 
+          headless: false, 
+          channel: 'chrome' 
+        });
+        
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        
+        try {
+          console.log('🎬 Starting test replay...');
+          
+          // Create a function from the test body and execute it
+          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+          const testFunction = new AsyncFunction('page', 'expect', testBody);
+          
+          // Simple expect implementation for basic assertions
+          const expect = (value: any) => ({
+            toBe: (expected: any) => {
+              if (value !== expected) {
+                throw new Error(`Expected ${value} to be ${expected}`);
+              }
+            },
+            toContain: (expected: any) => {
+              if (!value.includes(expected)) {
+                throw new Error(`Expected ${value} to contain ${expected}`);
+              }
+            }
+          });
+          
+          await testFunction(page, expect);
+          
+          console.log('✅ Test completed successfully');
+          
+          // Send success event
+          event.sender.send('playwright-test-completed', {
+            success: true,
+            testFile,
+            exitCode: 0
+          });
+          
+        } catch (error: any) {
+          console.error('❌ Test failed:', error);
+          
+          // Send failure event
+          event.sender.send('playwright-test-completed', {
+            success: false,
+            testFile,
+            exitCode: 1,
+            error: error?.message || 'Test execution failed'
+          });
+          
+        } finally {
+          await browser.close();
+        }
+        
+        return { 
+          success: true,
+          message: 'Test executed in production mode'
+        };
+      }
+      
+      // For development mode, use the spawn approach
+      const { spawn, execSync } = require('child_process');
+      
+      // Check if Node.js is available in production
+      let nodeExecutable = 'node';
+      let nodeVersion = 'unknown';
+      let isElectronNode = false;
+      
+      if (app.isPackaged) {
+        try {
+          // Try to find Node.js in the system
+          if (process.platform === 'darwin') {
+            // Common Node.js locations on macOS
+            const nodePaths = [
+              '/usr/local/bin/node',
+              '/opt/homebrew/bin/node',
+              '/usr/bin/node',
+              '/System/Volumes/Data/usr/local/bin/node',
+              path.join(os.homedir(), '.nvm/versions/node/*/bin/node'), // NVM installations
+            ];
+            
+            // Expand glob patterns
+            const expandedPaths: string[] = [];
+            for (const nodePath of nodePaths) {
+              if (nodePath.includes('*')) {
+                try {
+                  const glob = require('glob');
+                  const matches = glob.sync(nodePath);
+                  expandedPaths.push(...matches);
+                } catch (e) {
+                  // If glob fails, just skip
+                }
+              } else {
+                expandedPaths.push(nodePath);
+              }
+            }
+            
+            for (const nodePath of expandedPaths) {
+              if (fs.existsSync(nodePath)) {
+                nodeExecutable = nodePath;
+                console.log(`✅ Found Node.js at: ${nodePath}`);
+                break;
+              }
+            }
+          } else if (process.platform === 'win32') {
+            // Common Node.js locations on Windows
+            const nodePaths = [
+              'C:\\Program Files\\nodejs\\node.exe',
+              'C:\\Program Files (x86)\\nodejs\\node.exe',
+              path.join(process.env.APPDATA || '', '..', 'Local', 'Programs', 'nodejs', 'node.exe')
+            ];
+            
+            for (const nodePath of nodePaths) {
+              if (fs.existsSync(nodePath)) {
+                nodeExecutable = nodePath;
+                console.log(`✅ Found Node.js at: ${nodePath}`);
+                break;
+              }
+            }
+          }
+          
+          // Test if node works and get version
+          try {
+            nodeVersion = execSync(`"${nodeExecutable}" --version`, { stdio: 'pipe' }).toString().trim();
+            console.log(`📌 Node.js version: ${nodeVersion}`);
+          } catch (versionError) {
+            throw new Error('Node.js found but unable to execute');
+          }
+        } catch (nodeError) {
+          console.error('Node.js not found in system, trying Electron built-in:', nodeError);
+          // Fall back to using Electron's Node.js
+          nodeExecutable = process.execPath;
+          isElectronNode = true;
+          try {
+            nodeVersion = process.versions.node;
+            console.log(`📌 Using Electron's Node.js version: ${nodeVersion}`);
+          } catch (e) {
+            nodeVersion = 'Electron built-in';
+          }
+        }
+      } else {
+        // In development, check node version
+        try {
+          nodeVersion = execSync('node --version', { stdio: 'pipe' }).toString().trim();
+        } catch (e) {
+          nodeVersion = process.versions.node || 'unknown';
+        }
+      }
       
       // Check if there's a timed version
-      const timedFile = testFile.replace('.spec.js', '.timed.spec.js');
+      const dir = path.dirname(testFile);
+      const basename = path.basename(testFile, '.spec.js');
+      const timedFile = path.join(dir, `${basename}.timed.spec.js`);
       let fileToRun = testFile;
       
       // Create timed version on-the-fly if it doesn't exist
@@ -1286,32 +1511,232 @@ const { chromium } = require('playwright-core');
       }
       
       // Create a temporary file with the modified code
-      const tempFile = fileToRun.replace('.spec.js', '.run.js');
+      const tempDir = path.dirname(fileToRun);
+      const tempBasename = path.basename(fileToRun, path.extname(fileToRun));
+      const tempFile = path.join(tempDir, `${tempBasename}.run.js`);
       fs.writeFileSync(tempFile, generatedCode);
       
       // Run the script directly with Node
-      const testRun = spawn('node', [tempFile], {
-        stdio: 'inherit',
-        shell: true
+      console.log(`🚀 Executing with: ${nodeExecutable} ${tempFile}`);
+      
+      // In production, we might need special handling for script execution
+      const isUsingElectron = nodeExecutable === process.execPath;
+      let args: string[];
+      
+      if (isUsingElectron) {
+        // When using Electron's executable, we need to use different approach
+        // Try to use Node.js that comes with npm (if available)
+        try {
+          const npmPath = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+          const npmPrefix = execSync(`${npmPath} prefix -g`, { encoding: 'utf8' }).trim();
+          const npmNodePath = path.join(npmPrefix, 'node');
+          
+          if (fs.existsSync(npmNodePath)) {
+            nodeExecutable = npmNodePath;
+            isElectronNode = false;
+            console.log('📌 Found Node.js via npm:', npmNodePath);
+            args = [tempFile];
+          } else {
+            // If that fails, we can't use Electron directly to run scripts
+            throw new Error('Cannot use Electron executable to run Node.js scripts');
+          }
+        } catch (npmError) {
+          console.error('Could not find Node.js via npm:', npmError);
+          // Last resort: try executing the script differently
+          args = ['-e', fs.readFileSync(tempFile, 'utf8')];
+        }
+      } else {
+        args = [tempFile];
+      }
+      
+      // Prepare environment variables
+      const testEnv = {
+        ...process.env,
+        // Ensure Playwright can find Chrome
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+        // Add node_modules to PATH for production
+        NODE_PATH: app.isPackaged 
+          ? path.join(process.resourcesPath, 'app', 'node_modules')
+          : path.join(__dirname, '..', '..', 'node_modules')
+      };
+      
+      // Log environment info for debugging
+      console.log('🔧 Test execution details:', {
+        nodeExecutable,
+        nodeVersion,
+        isElectronNode,
+        isPackaged: app.isPackaged,
+        NODE_PATH: testEnv.NODE_PATH,
+        tempFile
       });
       
+      // Try to spawn the process
+      let testRun;
+      let spawnError: Error | null = null;
+      
+      try {
+        testRun = spawn(nodeExecutable, args, {
+          stdio: 'inherit',
+          shell: true,
+          env: testEnv,
+          cwd: path.dirname(tempFile)
+        });
+      } catch (spawnErr: any) {
+        spawnError = spawnErr;
+        console.error('❌ Spawn failed immediately:', spawnErr);
+        
+        // Try alternative execution method
+        if (isElectronNode) {
+          console.log('🔄 Attempting to execute script directly with eval...');
+          try {
+            // Read and execute the script in the main process
+            const scriptContent = fs.readFileSync(tempFile, 'utf8');
+            
+            // Send message to user about alternative execution
+            event.sender.send('playwright-test-info', {
+              message: 'Running test in alternative mode. Chrome browser will open shortly...',
+              testFile
+            });
+            
+            // Execute using eval (careful with this approach)
+            eval(scriptContent);
+            
+            return { 
+              success: true,
+              message: 'Test executed using alternative method',
+              warning: 'Test is running in main process context'
+            };
+          } catch (evalErr: any) {
+            console.error('❌ Alternative execution also failed:', evalErr);
+            spawnError = evalErr;
+          }
+        }
+      }
+      
+      if (spawnError || !testRun) {
+        const errorMessage = app.isPackaged 
+          ? `Unable to run test in production. Please ensure Node.js is installed on your system. Error: ${spawnError?.message}`
+          : `Failed to start test process: ${spawnError?.message}`;
+          
+        event.sender.send('playwright-test-error', {
+          error: errorMessage,
+          testFile,
+          userFriendly: true,
+          details: {
+            nodeExecutable,
+            nodeVersion,
+            isElectronNode,
+            originalError: spawnError?.message
+          }
+        });
+        
+        throw new Error(errorMessage);
+      }
+      
+      let errorOutput = '';
+      let hasReceivedData = false;
+      
+      // Set up error handler
       testRun.on('error', (error) => {
-        console.error('Failed to run Playwright test:', error);
+        console.error('Failed to start Playwright test process:', error);
+        errorOutput = error.message;
+        
+        // Provide user-friendly error messages
+        let userMessage = 'Failed to run the test. ';
+        
+        if (error.message.includes('ENOENT')) {
+          if (isElectronNode) {
+            userMessage += 'The test runner is not properly configured for production use. Please install Node.js on your system.';
+          } else {
+            userMessage += 'Required files are missing. Please check your installation.';
+          }
+        } else if (error.message.includes('EACCES') || error.message.includes('EPERM')) {
+          userMessage += 'Permission denied. The app may not have the necessary permissions to run tests.';
+        } else if (error.message.includes('playwright')) {
+          userMessage += 'Playwright is not properly installed or configured. Please check the app installation.';
+        } else {
+          userMessage += error.message;
+        }
+        
+        // Send error to renderer immediately
+        event.sender.send('playwright-test-error', {
+          error: userMessage,
+          testFile,
+          userFriendly: true,
+          technicalDetails: {
+            originalError: error.message,
+            nodeInfo: { nodeExecutable, nodeVersion, isElectronNode }
+          }
+        });
       });
+      
+      // Monitor if we receive any output
+      if (testRun.stdout) {
+        testRun.stdout.on('data', () => {
+          hasReceivedData = true;
+        });
+      }
+      
+      if (testRun.stderr) {
+        testRun.stderr.on('data', (data) => {
+          hasReceivedData = true;
+          const errorText = data.toString();
+          errorOutput += errorText;
+          
+          // Check for common errors
+          if (errorText.includes('Cannot find module')) {
+            const missingModule = errorText.match(/Cannot find module '([^']+)'/)?.[1];
+            event.sender.send('playwright-test-error', {
+              error: `Missing required module: ${missingModule}. The app may need to be reinstalled.`,
+              testFile,
+              userFriendly: true
+            });
+          }
+        });
+      }
       
       testRun.on('close', (code) => {
         console.log(`Playwright test process exited with code ${code}`);
+        
         // Clean up temp file
         try {
           if (fs.existsSync(tempFile)) {
             fs.unlinkSync(tempFile);
           }
         } catch (e) {
-          // Ignore cleanup errors
+          console.error('Cleanup error:', e);
         }
+        
+        // Determine error message based on exit code and output
+        let errorMessage: string | undefined;
+        
+        if (code !== 0) {
+          if (!hasReceivedData && code === 1) {
+            errorMessage = 'Test failed to start. This often happens in production builds. Please ensure Node.js is installed on your system.';
+          } else if (errorOutput) {
+            // Parse error output for user-friendly messages
+            if (errorOutput.includes('Cannot find module')) {
+              errorMessage = 'Required test dependencies are missing. Please check your installation.';
+            } else if (errorOutput.includes('chrome') || errorOutput.includes('chromium')) {
+              errorMessage = 'Chrome browser not found. Please ensure Chrome is installed on your system.';
+            } else {
+              errorMessage = errorOutput;
+            }
+          } else {
+            errorMessage = `Test failed with exit code ${code}`;
+          }
+        }
+        
+        // Send completion event with detailed error info
         event.sender.send('playwright-test-completed', {
           success: code === 0,
-          testFile
+          testFile,
+          exitCode: code,
+          error: errorMessage,
+          details: code !== 0 ? {
+            nodeInfo: { nodeExecutable, nodeVersion, isElectronNode },
+            hasOutput: hasReceivedData
+          } : undefined
         });
       });
       
@@ -1374,21 +1799,23 @@ const { chromium } = require('playwright-core');
       }
       
       // Delete the timed version if it exists
-      const timedPath = testPath.replace('.spec.js', '.timed.spec.js');
+      const deleteDir = path.dirname(testPath);
+      const deleteBasename = path.basename(testPath, '.spec.js');
+      const timedPath = path.join(deleteDir, `${deleteBasename}.timed.spec.js`);
       if (fs.existsSync(timedPath)) {
         fs.unlinkSync(timedPath);
         console.log('✅ Deleted timed test file');
       }
       
       // Delete the run file if it exists
-      const runPath = testPath.replace('.spec.js', '.run.js');
+      const runPath = path.join(deleteDir, `${deleteBasename}.run.js`);
       if (fs.existsSync(runPath)) {
         fs.unlinkSync(runPath);
         console.log('✅ Deleted run file');
       }
       
       // Delete the mjs file if it exists (from earlier attempts)
-      const mjsPath = testPath.replace('.spec.js', '.run.mjs');
+      const mjsPath = path.join(deleteDir, `${deleteBasename}.run.mjs`);
       if (fs.existsSync(mjsPath)) {
         fs.unlinkSync(mjsPath);
         console.log('✅ Deleted mjs file');

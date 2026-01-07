@@ -634,6 +634,14 @@ interface DockerAPI {
 }
 
 /**
+ * Interface for Full Disk Access API (macOS).
+ */
+interface FullDiskAccessAPI {
+    check: () => Promise<{ success: boolean; hasAccess?: boolean; error?: string }>;
+    request: () => Promise<{ success: boolean; userOpened?: boolean; error?: string }>;
+}
+
+/**
  * Interface for Updater API.
  */
 interface UpdaterAPI {
@@ -730,6 +738,7 @@ export interface IElectronAPI {
   egdeskDev: EgdeskDevAPI;
   shell: ShellAPI;
   docker: DockerAPI;
+  fullDiskAccess: FullDiskAccessAPI;
   updater: UpdaterAPI;
   financeHub: FinanceHubAPI;
   financeHubDb: FinanceHubDbAPI;
