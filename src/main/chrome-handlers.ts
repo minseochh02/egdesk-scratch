@@ -943,69 +943,6 @@ Please provide:
     }
   });
 
-  // Launch Playwright Codegen
-  ipcMain.handle('launch-playwright-codegen', async (event, { url }) => {
-    try {
-      const { spawn } = require('child_process');
-      
-      console.log('🎭 Launching Playwright Codegen for URL:', url);
-      
-      // Generate output file paths
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const outputFile = path.join(getOutputDir(), `playwright-test-${timestamp}.spec.js`);
-      const timingFile = path.join(getOutputDir(), `playwright-timing-${timestamp}.json`);
-      
-      // We'll capture timing by monitoring the Playwright Codegen output
-      let recordingStarted = Date.now();
-      let actionTimings: any[] = [];
-      
-      // Launch Playwright Codegen
-      const codegen = spawn('npx', [
-        'playwright', 
-        'codegen',
-        '--browser=chromium',
-        '--channel=chrome',
-        '--output', outputFile,
-        url
-      ], {
-        stdio: 'inherit',
-        shell: true,
-        windowsHide: true
-      });
-      
-      codegen.on('close', async (code) => {
-        console.log(`Playwright Codegen process exited with code ${code}`);
-        
-        // Just notify that recording is done
-        setTimeout(() => {
-          if (fs.existsSync(outputFile)) {
-            console.log(`✅ Test saved to: ${outputFile}`);
-            const generatedCode = fs.readFileSync(outputFile, 'utf8');
-            
-            event.sender.send('playwright-test-saved', {
-              filePath: outputFile,
-              code: generatedCode,
-              timestamp
-            });
-          } else {
-            console.log('🤷 No test file created - user may have closed without recording');
-          }
-        }, 2000);
-      });
-      
-      return { 
-        success: true,
-        message: 'Playwright Codegen launched.',
-        outputFile
-      };
-    } catch (error: any) {
-      console.error('Error launching Playwright Codegen:', error);
-      return { 
-        success: false, 
-        error: error?.message || 'Failed to launch Playwright Codegen'
-      };
-    }
-  });
 
   // Enhanced Playwright recorder with keyboard tracking
   let activeRecorder: PlaywrightRecorder | null = null;
