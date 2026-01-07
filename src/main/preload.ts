@@ -2058,6 +2058,7 @@ const electronHandler = {
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
+    viewPlaywrightTest: (testPath: string) => ipcRenderer.invoke('view-playwright-test', { testPath }),
     openInstagramWithProfile: (options: {
       planId?: string;
       profilePath?: string;
