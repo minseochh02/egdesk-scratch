@@ -133,8 +133,131 @@ export class PlaywrightRecorder {
       timestamp: Date.now() - this.startTime
     });
     
-    // Show helpful message about highlighting feature
+    // Add controller UI
     await this.page.evaluate(() => {
+      // Create controller container
+      const controller = document.createElement('div');
+      controller.id = 'playwright-recorder-controller';
+      controller.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 12px;
+        padding: 8px;
+        z-index: 999999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+      `;
+      
+      // Create highlight toggle button
+      const highlightBtn = document.createElement('button');
+      highlightBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+        <span>Highlight</span>
+      `;
+      highlightBtn.style.cssText = `
+        background: #333;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      `;
+      
+      // Recording indicator
+      const recordingIndicator = document.createElement('div');
+      recordingIndicator.innerHTML = `
+        <span style="
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          background: #ff4444;
+          border-radius: 50%;
+          margin-right: 8px;
+          animation: pulse 1.5s infinite;
+        "></span>
+        Recording
+      `;
+      recordingIndicator.style.cssText = `
+        color: #fff;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+      `;
+      
+      // Add styles
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+        
+        #playwright-recorder-controller button:hover {
+          background: #444 !important;
+          border-color: #555 !important;
+        }
+        
+        #playwright-recorder-controller button.active {
+          background: #4CAF50 !important;
+          border-color: #4CAF50 !important;
+        }
+        
+        #playwright-recorder-controller button.active:hover {
+          background: #45a049 !important;
+          border-color: #45a049 !important;
+        }
+      `;
+      
+      controller.appendChild(recordingIndicator);
+      controller.appendChild(highlightBtn);
+      
+      try {
+        if (document.head) {
+          document.head.appendChild(style);
+        }
+        if (document.body) {
+          document.body.appendChild(controller);
+        }
+      } catch (e) {
+        console.warn('Failed to add recorder controller:', e);
+      }
+      
+      // Set up highlight toggle functionality
+      let highlightMode = false;
+      
+      highlightBtn.addEventListener('click', () => {
+        highlightMode = !highlightMode;
+        highlightBtn.classList.toggle('active', highlightMode);
+        
+        // Trigger highlight mode
+        const event = new CustomEvent('playwright-recorder-highlight-toggle', { 
+          detail: { enabled: highlightMode } 
+        });
+        document.dispatchEvent(event);
+        
+        // Update cursor
+        document.body.style.cursor = highlightMode ? 'crosshair' : '';
+      });
+      
+      // Show notification
       const notification = document.createElement('div');
       notification.style.cssText = `
         position: fixed;
@@ -152,11 +275,11 @@ export class PlaywrightRecorder {
       `;
       notification.innerHTML = `
         <strong>🎯 Playwright Recorder</strong><br>
-        Hold <strong>Alt</strong> (Option on Mac) to highlight elements before clicking
+        Use the controller at the bottom right to toggle element highlighting
       `;
       
-      const style = document.createElement('style');
-      style.textContent = `
+      const notificationStyle = document.createElement('style');
+      notificationStyle.textContent = `
         @keyframes slideIn {
           from {
             transform: translateX(100%);
@@ -168,9 +291,10 @@ export class PlaywrightRecorder {
           }
         }
       `;
+      
       try {
         if (document.head) {
-          document.head.appendChild(style);
+          document.head.appendChild(notificationStyle);
         }
         if (document.body) {
           document.body.appendChild(notification);
@@ -358,11 +482,36 @@ export class PlaywrightRecorder {
         }
       }, true);
       
+      // Listen for highlight toggle from controller
+      document.addEventListener('playwright-recorder-highlight-toggle', (e: any) => {
+        isHighlightKeyPressed = e.detail.enabled;
+        document.body.style.cursor = isHighlightKeyPressed ? 'crosshair' : '';
+        
+        // If disabling, remove any existing highlights
+        if (!isHighlightKeyPressed) {
+          if (highlightedElement) {
+            highlightedElement.classList.remove('playwright-recorder-highlight');
+            highlightedElement = null;
+          }
+          
+          if (tooltipElement) {
+            tooltipElement.remove();
+            tooltipElement = null;
+          }
+        }
+      });
+      
       // Listen for highlight key (Alt/Option)
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Alt' && !isHighlightKeyPressed) {
           isHighlightKeyPressed = true;
           document.body.style.cursor = 'crosshair';
+          
+          // Update the controller button state
+          const highlightBtn = document.querySelector('#playwright-recorder-controller button');
+          if (highlightBtn) {
+            highlightBtn.classList.add('active');
+          }
         }
       }, true);
       
@@ -370,6 +519,12 @@ export class PlaywrightRecorder {
         if (e.key === 'Alt' && isHighlightKeyPressed) {
           isHighlightKeyPressed = false;
           document.body.style.cursor = '';
+          
+          // Update the controller button state
+          const highlightBtn = document.querySelector('#playwright-recorder-controller button');
+          if (highlightBtn) {
+            highlightBtn.classList.remove('active');
+          }
           
           // Remove highlight
           if (highlightedElement) {
@@ -452,6 +607,11 @@ export class PlaywrightRecorder {
       // Track clicks
       document.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
+        
+        // Skip recording clicks on the recorder controller UI
+        if (target.closest('#playwright-recorder-controller')) {
+          return;
+        }
         
         // Generate a more specific selector
         let selector = '';
