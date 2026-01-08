@@ -133,6 +133,59 @@ export class PlaywrightRecorder {
       timestamp: Date.now() - this.startTime
     });
     
+    // Show helpful message about highlighting feature
+    await this.page.evaluate(() => {
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        z-index: 999999;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        animation: slideIn 0.3s ease-out;
+      `;
+      notification.innerHTML = `
+        <strong>🎯 Playwright Recorder</strong><br>
+        Hold <strong>Alt</strong> (Option on Mac) to highlight elements before clicking
+      `;
+      
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `;
+      try {
+        if (document.head) {
+          document.head.appendChild(style);
+        }
+        if (document.body) {
+          document.body.appendChild(notification);
+        }
+      } catch (e) {
+        console.warn('Failed to show recorder notification:', e);
+      }
+      
+      // Remove notification after 5 seconds
+      setTimeout(() => {
+        notification.style.animation = 'slideIn 0.3s ease-out reverse';
+        setTimeout(() => notification.remove(), 300);
+      }, 5000);
+    });
+    
     this.isRecording = true;
     this.updateGeneratedCode();
   }
@@ -175,6 +228,161 @@ export class PlaywrightRecorder {
       
       // Store events
       (window as any).__recordedEvents = [];
+      
+      // Function to add styles when DOM is ready
+      const addHighlightStyles = () => {
+        if (!document.head) {
+          // If head doesn't exist yet, wait and try again
+          setTimeout(addHighlightStyles, 10);
+          return;
+        }
+        
+        // Check if styles already exist
+        if (document.getElementById('playwright-recorder-styles')) {
+          return;
+        }
+        
+        const highlightStyle = document.createElement('style');
+        highlightStyle.id = 'playwright-recorder-styles';
+        highlightStyle.textContent = `
+          .playwright-recorder-highlight {
+            outline: 2px solid #ff0000 !important;
+            outline-offset: 2px !important;
+            background-color: rgba(255, 0, 0, 0.1) !important;
+            cursor: pointer !important;
+            position: relative !important;
+          }
+          
+          .playwright-recorder-tooltip {
+            position: absolute !important;
+            background: #333 !important;
+            color: white !important;
+            padding: 4px 8px !important;
+            font-size: 12px !important;
+            border-radius: 4px !important;
+            z-index: 999999 !important;
+            pointer-events: none !important;
+            white-space: nowrap !important;
+            top: -30px !important;
+            left: 0 !important;
+            font-family: monospace !important;
+          }
+        `;
+        
+        try {
+          document.head.appendChild(highlightStyle);
+        } catch (e) {
+          console.warn('Failed to add Playwright recorder styles:', e);
+        }
+      };
+      
+      // Start trying to add styles
+      addHighlightStyles();
+      
+      let highlightedElement: HTMLElement | null = null;
+      let tooltipElement: HTMLElement | null = null;
+      let isHighlightKeyPressed = false;
+      
+      // Function to show selector tooltip
+      const showTooltip = (element: HTMLElement, selector: string) => {
+        try {
+          if (tooltipElement) {
+            tooltipElement.remove();
+            tooltipElement = null;
+          }
+          
+          // Make sure element still exists and is in the DOM
+          if (!element || !element.parentNode) {
+            return;
+          }
+          
+          tooltipElement = document.createElement('div');
+          tooltipElement.className = 'playwright-recorder-tooltip';
+          tooltipElement.textContent = selector;
+          
+          // Try to append to element, but if it fails, append to body
+          try {
+            element.appendChild(tooltipElement);
+          } catch (e) {
+            // If element doesn't support appendChild, position it absolutely
+            tooltipElement.style.position = 'fixed';
+            const rect = element.getBoundingClientRect();
+            tooltipElement.style.left = rect.left + 'px';
+            tooltipElement.style.top = (rect.top - 30) + 'px';
+            document.body.appendChild(tooltipElement);
+          }
+        } catch (e) {
+          console.warn('Failed to show tooltip:', e);
+        }
+      };
+      
+      // Function to highlight element on hover
+      const highlightElement = (element: HTMLElement) => {
+        // Remove previous highlight
+        if (highlightedElement && highlightedElement !== element) {
+          highlightedElement.classList.remove('playwright-recorder-highlight');
+          if (tooltipElement) {
+            tooltipElement.remove();
+            tooltipElement = null;
+          }
+        }
+        
+        // Add highlight to new element
+        element.classList.add('playwright-recorder-highlight');
+        highlightedElement = element;
+        
+        // Generate and show selector
+        let selector = '';
+        if (element.id) {
+          selector = `#${element.id}`;
+        } else if (element.tagName === 'BUTTON' || element.getAttribute('role') === 'button') {
+          selector = `button:has-text("${element.textContent?.trim() || ''}")`;
+        } else if (element.tagName === 'A') {
+          selector = `a:has-text("${element.textContent?.trim() || ''}")`;
+        } else if (element.className) {
+          selector = `.${element.className.split(' ')[0]}`;
+        } else {
+          selector = element.tagName.toLowerCase();
+        }
+        
+        showTooltip(element, selector);
+      };
+      
+      // Mouse move handler for highlighting
+      document.addEventListener('mousemove', (e) => {
+        if (!isHighlightKeyPressed) return;
+        
+        const target = e.target as HTMLElement;
+        if (target && target !== document.body && target !== document.documentElement) {
+          highlightElement(target);
+        }
+      }, true);
+      
+      // Listen for highlight key (Alt/Option)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Alt' && !isHighlightKeyPressed) {
+          isHighlightKeyPressed = true;
+          document.body.style.cursor = 'crosshair';
+        }
+      }, true);
+      
+      document.addEventListener('keyup', (e) => {
+        if (e.key === 'Alt' && isHighlightKeyPressed) {
+          isHighlightKeyPressed = false;
+          document.body.style.cursor = '';
+          
+          // Remove highlight
+          if (highlightedElement) {
+            highlightedElement.classList.remove('playwright-recorder-highlight');
+            highlightedElement = null;
+          }
+          
+          if (tooltipElement) {
+            tooltipElement.remove();
+            tooltipElement = null;
+          }
+        }
+      }, true);
       
       // Listen for all keyboard events
       document.addEventListener('keydown', (e) => {
