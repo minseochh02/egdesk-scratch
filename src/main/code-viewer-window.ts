@@ -191,7 +191,7 @@ test('recorded test', async ({ page }) => {
           .replace(/\\b(import|from|async|await|const|let|var|function|return|if|else|for|while)\\b/g, '<span class="keyword">$1</span>')
           .replace(/('([^']*)'|"([^"]*)"|${'`'}([^${'`'}]*)${'`'})/g, '<span class="string">$1</span>')
           .replace(/\\/\\/.*/g, '<span class="comment">$&</span>')
-          .replace(/\\b(test|expect|page)\\b/g, '<span class="function">$1</span>')
+          .replace(/\\b(test|expect|page|locator|element|selectors|bounds|attributes|styles)\\b/g, '<span class="function">$1</span>')
           .replace(/[\\{\\}\\(\\)\\[\\]]/g, '<span class="bracket">$&</span>');
       } catch (e) {
         console.error('Error in highlightCode:', e);
@@ -204,6 +204,18 @@ test('recorded test', async ({ page }) => {
     window.updateCode = function(code) {
       console.log('Updating code display, length:', code.length);
       const codeElement = document.getElementById('code-display');
+      const headerTitle = document.querySelector('.header h2');
+      const statusText = document.querySelector('.status span');
+      
+      // Check if this is Gemini element analysis
+      if (code.includes('// Gemini Element Analysis')) {
+        if (headerTitle) headerTitle.textContent = '🔍 Gemini Element Analysis';
+        if (statusText) statusText.textContent = 'Element Info';
+      } else {
+        if (headerTitle) headerTitle.textContent = '📝 Playwright Test Code (Real-time)';
+        if (statusText) statusText.textContent = 'Recording...';
+      }
+      
       if (codeElement) {
         console.log('Found code element, updating innerHTML');
         try {
