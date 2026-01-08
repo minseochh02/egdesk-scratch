@@ -21,6 +21,7 @@ export class PlaywrightRecorder {
   private isRecording: boolean = false;
   private outputFile: string = '';
   private updateCallback?: (code: string) => void;
+  private controllerCheckInterval: NodeJS.Timeout | null = null;
 
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
@@ -134,7 +135,49 @@ export class PlaywrightRecorder {
     });
     
     // Add controller UI
+    await this.injectControllerUI();
+    
+    this.isRecording = true;
+    this.updateGeneratedCode();
+    
+    // Start periodic controller check
+    this.startControllerCheck();
+  }
+
+  private startControllerCheck(): void {
+    // Clear any existing interval
+    if (this.controllerCheckInterval) {
+      clearInterval(this.controllerCheckInterval);
+    }
+    
+    // Check every 2 seconds if controller exists
+    this.controllerCheckInterval = setInterval(async () => {
+      if (!this.page || !this.isRecording) return;
+      
+      try {
+        const hasController = await this.page.evaluate(() => {
+          return !!document.getElementById('playwright-recorder-controller');
+        });
+        
+        if (!hasController) {
+          console.log('🔍 Controller missing, re-injecting...');
+          await this.injectControllerUI();
+        }
+      } catch (err) {
+        // Page might be navigating, ignore
+      }
+    }, 2000);
+  }
+
+  private async injectControllerUI(): Promise<void> {
+    if (!this.page) return;
+    
     await this.page.evaluate(() => {
+      // Check if controller already exists
+      if (document.getElementById('playwright-recorder-controller')) {
+        return;
+      }
+      
       // Create controller container
       const controller = document.createElement('div');
       controller.id = 'playwright-recorder-controller';
@@ -154,6 +197,7 @@ export class PlaywrightRecorder {
         align-items: center;
         gap: 8px;
         transition: all 0.3s ease;
+        pointer-events: all;
       `;
       
       // Create highlight toggle button
@@ -179,6 +223,33 @@ export class PlaywrightRecorder {
         transition: all 0.2s ease;
         font-size: 14px;
       `;
+      
+      // Create Gemini button
+      const geminiBtn = document.createElement('button');
+      geminiBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        <span>Call Gemini</span>
+      `;
+      geminiBtn.style.cssText = `
+        background: #333;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+        position: relative;
+        z-index: 10;
+        pointer-events: all;
+      `;
+      geminiBtn.disabled = true;
+      geminiBtn.style.opacity = '0.5';
       
       // Recording indicator
       const recordingIndicator = document.createElement('div');
@@ -228,6 +299,7 @@ export class PlaywrightRecorder {
       
       controller.appendChild(recordingIndicator);
       controller.appendChild(highlightBtn);
+      controller.appendChild(geminiBtn);
       
       try {
         if (document.head) {
@@ -242,6 +314,20 @@ export class PlaywrightRecorder {
       
       // Set up highlight toggle functionality
       let highlightMode = false;
+      let currentHighlightedElement: HTMLElement | null = null;
+      
+      // Listen for element highlight updates
+      document.addEventListener('playwright-recorder-element-highlighted', (e: any) => {
+        currentHighlightedElement = e.detail.element;
+        // Enable/disable Gemini button based on whether an element is highlighted AND shift is pressed
+        const shouldEnableGemini = currentHighlightedElement && e.detail.isShiftPressed;
+        geminiBtn.disabled = !shouldEnableGemini;
+        geminiBtn.style.opacity = shouldEnableGemini ? '1' : '0.5';
+        geminiBtn.style.cursor = shouldEnableGemini ? 'pointer' : 'not-allowed';
+        
+        // Debug log
+        console.log('Element highlighted:', currentHighlightedElement ? currentHighlightedElement.tagName : 'none', 'Shift:', e.detail.isShiftPressed);
+      });
       
       highlightBtn.addEventListener('click', () => {
         highlightMode = !highlightMode;
@@ -255,6 +341,211 @@ export class PlaywrightRecorder {
         
         // Update cursor
         document.body.style.cursor = highlightMode ? 'crosshair' : '';
+        
+        // If turning off, disable Gemini button
+        if (!highlightMode) {
+          currentHighlightedElement = null;
+          geminiBtn.disabled = true;
+          geminiBtn.style.opacity = '0.5';
+        }
+      });
+      
+      // Set up Gemini button functionality  
+      geminiBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        if (!currentHighlightedElement) {
+          console.log('No element highlighted');
+          return;
+        }
+        
+        console.log('Call Gemini clicked for element:', currentHighlightedElement);
+        
+        // Send element info to parent window for code viewer
+        if ((window as any).__playwrightRecorderOnGemini) {
+          const rect = currentHighlightedElement.getBoundingClientRect();
+          const elementInfo = {
+            tagName: currentHighlightedElement.tagName,
+            id: currentHighlightedElement.id,
+            className: currentHighlightedElement.className,
+            text: currentHighlightedElement.textContent?.trim() || '',
+            innerHTML: currentHighlightedElement.innerHTML,
+            outerHTML: currentHighlightedElement.outerHTML,
+            attributes: {} as any,
+            styles: {} as any,
+            bounds: {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            }
+          };
+          
+          // Collect attributes
+          for (let i = 0; i < currentHighlightedElement.attributes.length; i++) {
+            const attr = currentHighlightedElement.attributes[i];
+            elementInfo.attributes[attr.name] = attr.value;
+          }
+          
+          // Collect computed styles
+          const computedStyles = window.getComputedStyle(currentHighlightedElement);
+          elementInfo.styles = {
+            display: computedStyles.display,
+            position: computedStyles.position,
+            backgroundColor: computedStyles.backgroundColor,
+            color: computedStyles.color,
+            fontSize: computedStyles.fontSize,
+            fontFamily: computedStyles.fontFamily,
+            padding: computedStyles.padding,
+            margin: computedStyles.margin,
+            border: computedStyles.border,
+            width: computedStyles.width,
+            height: computedStyles.height
+          };
+          
+          (window as any).__playwrightRecorderOnGemini(elementInfo);
+        }
+        
+        try {
+          // Get element bounds
+          const rect = currentHighlightedElement.getBoundingClientRect();
+          console.log('Element bounds:', rect);
+          
+          // Create a canvas to draw the element
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('Could not get canvas context');
+          
+          // Set canvas size with some padding
+          const padding = 20;
+          canvas.width = rect.width + (padding * 2);
+          canvas.height = rect.height + (padding * 2);
+          
+          // Fill background
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Draw the element using DOM-to-image approach
+          // This is a simplified version - in production you'd use html2canvas or similar
+          const elementClone = currentHighlightedElement.cloneNode(true) as HTMLElement;
+          
+          // Create a temporary container
+          const container = document.createElement('div');
+          container.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 999999;
+            background: white;
+          `;
+          
+          // Clone and style the element
+          elementClone.style.cssText = window.getComputedStyle(currentHighlightedElement).cssText;
+          elementClone.style.position = 'static';
+          elementClone.style.margin = '0';
+          container.appendChild(elementClone);
+          document.body.appendChild(container);
+          
+          // Use a more sophisticated approach with foreignObject
+          const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}">
+              <foreignObject width="100%" height="100%">
+                <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif;">
+                  ${container.innerHTML}
+                </div>
+              </foreignObject>
+            </svg>
+          `;
+          
+          const img = new Image();
+          const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          
+          img.onload = () => {
+            ctx.drawImage(img, padding, padding);
+            URL.revokeObjectURL(url);
+            document.body.removeChild(container);
+            
+            // Convert to data URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Create preview modal
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+              position: fixed;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: rgba(0, 0, 0, 0.8);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              z-index: 999999;
+              cursor: pointer;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+              background: white;
+              padding: 20px;
+              border-radius: 8px;
+              max-width: 80%;
+              max-height: 80%;
+              overflow: auto;
+              position: relative;
+            `;
+            
+            modalContent.innerHTML = `
+              <h3 style="margin: 0 0 10px 0; font-family: Arial, sans-serif;">Element Preview (PNG)</h3>
+              <p style="margin: 0 0 10px 0; font-family: Arial, sans-serif; font-size: 14px; color: #666;">
+                This is what would be sent to Gemini AI for analysis
+              </p>
+              <img src="${dataUrl}" style="max-width: 100%; height: auto; border: 1px solid #ddd;" />
+              <div style="margin-top: 10px; font-family: monospace; font-size: 12px; background: #f0f0f0; padding: 10px; border-radius: 4px;">
+                <strong>Element:</strong> ${currentHighlightedElement.tagName.toLowerCase()}${currentHighlightedElement.id ? '#' + currentHighlightedElement.id : ''}${currentHighlightedElement.className ? '.' + currentHighlightedElement.className.split(' ').join('.') : ''}<br>
+                <strong>Dimensions:</strong> ${Math.round(rect.width)}x${Math.round(rect.height)}px<br>
+                <strong>Position:</strong> (${Math.round(rect.x)}, ${Math.round(rect.y)})
+              </div>
+              <button style="margin-top: 15px; padding: 8px 16px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: Arial, sans-serif;">
+                Close
+              </button>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close modal on click
+            modal.addEventListener('click', (e) => {
+              if (e.target === modal || (e.target as HTMLElement).tagName === 'BUTTON') {
+                modal.remove();
+              }
+            });
+            
+            modalContent.addEventListener('click', (e) => {
+              e.stopPropagation();
+            });
+          };
+          
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            document.body.removeChild(container);
+            
+            // Fallback: Just show element info
+            alert(`Element captured:\n\nTag: ${currentHighlightedElement.tagName}\nText: ${currentHighlightedElement.textContent?.trim() || '(no text)'}\nSize: ${Math.round(rect.width)}x${Math.round(rect.height)}px`);
+          };
+          
+          img.src = url;
+          
+        } catch (error) {
+          console.error('Error capturing element:', error);
+          alert('Failed to capture element as image. See console for details.');
+        }
       });
       
       // Show notification
@@ -275,7 +566,8 @@ export class PlaywrightRecorder {
       `;
       notification.innerHTML = `
         <strong>🎯 Playwright Recorder</strong><br>
-        Use the controller at the bottom right to toggle element highlighting
+        • Press <kbd>Option</kbd> to highlight elements<br>
+        • Press <kbd>Option</kbd> + <kbd>Shift</kbd> to enable Call Gemini
       `;
       
       const notificationStyle = document.createElement('style');
@@ -289,6 +581,20 @@ export class PlaywrightRecorder {
             transform: translateX(0);
             opacity: 1;
           }
+        }
+        
+        kbd {
+          background-color: rgba(255, 255, 255, 0.2);
+          border: 1px solid rgba(255, 255, 255, 0.3);
+          border-radius: 3px;
+          box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 2px 0 0 rgba(255, 255, 255, 0.3) inset;
+          color: white;
+          display: inline-block;
+          font-size: 12px;
+          font-weight: bold;
+          line-height: 1;
+          padding: 2px 6px;
+          white-space: nowrap;
         }
       `;
       
@@ -309,9 +615,6 @@ export class PlaywrightRecorder {
         setTimeout(() => notification.remove(), 300);
       }, 5000);
     });
-    
-    this.isRecording = true;
-    this.updateGeneratedCode();
   }
 
   private async setupInitScripts(): Promise<void> {
@@ -319,6 +622,35 @@ export class PlaywrightRecorder {
 
     // Add init script to capture all events
     await this.context.addInitScript(() => {
+      // Monitor for controller removal and notify parent
+      const checkControllerExists = () => {
+        const controller = document.getElementById('playwright-recorder-controller');
+        if (!controller && (window as any).__playwrightRecorderControllerExists) {
+          console.log('🚨 Controller disappeared, notifying parent...');
+          (window as any).__playwrightRecorderControllerExists = false;
+          if ((window as any).__playwrightRecorderOnControllerLost) {
+            (window as any).__playwrightRecorderOnControllerLost();
+          }
+        } else if (controller && !(window as any).__playwrightRecorderControllerExists) {
+          (window as any).__playwrightRecorderControllerExists = true;
+        }
+      };
+
+      // Set up MutationObserver to watch for controller removal
+      const observer = new MutationObserver(() => {
+        checkControllerExists();
+      });
+
+      // Start observing when DOM is ready
+      if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+        checkControllerExists();
+      } else {
+        document.addEventListener('DOMContentLoaded', () => {
+          observer.observe(document.body, { childList: true, subtree: true });
+          checkControllerExists();
+        });
+      }
       // Continuously monitor and fix Array.prototype.toJSON
       // This prevents "serializedArgs is not an array" errors
       const fixArrayToJSON = () => {
@@ -406,6 +738,7 @@ export class PlaywrightRecorder {
       let highlightedElement: HTMLElement | null = null;
       let tooltipElement: HTMLElement | null = null;
       let isHighlightKeyPressed = false;
+      let isShiftKeyPressed = false;
       
       // Function to show selector tooltip
       const showTooltip = (element: HTMLElement, selector: string) => {
@@ -470,6 +803,12 @@ export class PlaywrightRecorder {
         }
         
         showTooltip(element, selector);
+        
+        // Dispatch event to notify controller about highlighted element
+        const event = new CustomEvent('playwright-recorder-element-highlighted', {
+          detail: { element: element, isShiftPressed: isShiftKeyPressed }
+        });
+        document.dispatchEvent(event);
       };
       
       // Mouse move handler for highlighting
@@ -477,7 +816,8 @@ export class PlaywrightRecorder {
         if (!isHighlightKeyPressed) return;
         
         const target = e.target as HTMLElement;
-        if (target && target !== document.body && target !== document.documentElement) {
+        // Don't highlight recorder UI elements
+        if (target && target !== document.body && target !== document.documentElement && !target.closest('#playwright-recorder-controller')) {
           highlightElement(target);
         }
       }, true);
@@ -498,10 +838,16 @@ export class PlaywrightRecorder {
             tooltipElement.remove();
             tooltipElement = null;
           }
+          
+          // Notify controller that no element is highlighted
+          const event = new CustomEvent('playwright-recorder-element-highlighted', {
+            detail: { element: null, isShiftPressed: isShiftKeyPressed }
+          });
+          document.dispatchEvent(event);
         }
       });
       
-      // Listen for highlight key (Alt/Option)
+      // Listen for highlight key (Alt/Option) and Shift
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Alt' && !isHighlightKeyPressed) {
           isHighlightKeyPressed = true;
@@ -511,6 +857,26 @@ export class PlaywrightRecorder {
           const highlightBtn = document.querySelector('#playwright-recorder-controller button');
           if (highlightBtn) {
             highlightBtn.classList.add('active');
+          }
+          
+          // Re-dispatch event if element is highlighted
+          if (highlightedElement) {
+            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+              detail: { element: highlightedElement, isShiftPressed: isShiftKeyPressed }
+            });
+            document.dispatchEvent(event);
+          }
+        }
+        
+        if (e.key === 'Shift' && !isShiftKeyPressed) {
+          isShiftKeyPressed = true;
+          
+          // Re-dispatch event if element is highlighted to update Gemini button
+          if (highlightedElement && isHighlightKeyPressed) {
+            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+              detail: { element: highlightedElement, isShiftPressed: true }
+            });
+            document.dispatchEvent(event);
           }
         }
       }, true);
@@ -535,6 +901,24 @@ export class PlaywrightRecorder {
           if (tooltipElement) {
             tooltipElement.remove();
             tooltipElement = null;
+          }
+          
+          // Notify controller that no element is highlighted
+          const event = new CustomEvent('playwright-recorder-element-highlighted', {
+            detail: { element: null, isShiftPressed: isShiftKeyPressed }
+          });
+          document.dispatchEvent(event);
+        }
+        
+        if (e.key === 'Shift' && isShiftKeyPressed) {
+          isShiftKeyPressed = false;
+          
+          // Re-dispatch event if element is highlighted to update Gemini button
+          if (highlightedElement && isHighlightKeyPressed) {
+            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+              detail: { element: highlightedElement, isShiftPressed: false }
+            });
+            document.dispatchEvent(event);
           }
         }
       }, true);
@@ -715,20 +1099,107 @@ export class PlaywrightRecorder {
       console.log('🖱️ Captured click on:', data.selector);
       this.updateGeneratedCode();
     });
+    
+    await this.page.exposeFunction('__playwrightRecorderOnGemini', async (elementInfo: any) => {
+      console.log('🌟 Gemini button clicked for element:', elementInfo);
+      
+      // Update code viewer with element info instead of test code
+      const elementDisplay = `// Gemini Element Analysis
+// ========================
+
+// Selected Element: ${elementInfo.tagName}${elementInfo.id ? '#' + elementInfo.id : ''}${elementInfo.className ? '.' + elementInfo.className.split(' ').join('.') : ''}
+
+// Element Properties:
+const element = {
+  tagName: "${elementInfo.tagName}",
+  id: "${elementInfo.id}",
+  className: "${elementInfo.className}",
+  text: ${JSON.stringify(elementInfo.text)},
+  
+  // Bounding Box:
+  bounds: {
+    x: ${elementInfo.bounds.x},
+    y: ${elementInfo.bounds.y},
+    width: ${elementInfo.bounds.width},
+    height: ${elementInfo.bounds.height}
+  },
+  
+  // Attributes:
+  attributes: ${JSON.stringify(elementInfo.attributes, null, 2)},
+  
+  // Computed Styles:
+  styles: ${JSON.stringify(elementInfo.styles, null, 2)},
+  
+  // HTML Structure:
+  outerHTML: ${JSON.stringify(elementInfo.outerHTML)}
+};
+
+// Playwright Selector Suggestions:
+const selectors = [
+  ${elementInfo.id ? `'#${elementInfo.id}',` : ''}
+  ${elementInfo.className ? `'.${elementInfo.className.split(' ')[0]}',` : ''}
+  ${elementInfo.attributes['data-testid'] ? `'[data-testid="${elementInfo.attributes['data-testid']}"]',` : ''}
+  ${elementInfo.tagName === 'BUTTON' && elementInfo.text ? `'button:has-text("${elementInfo.text}")',` : ''}
+  ${elementInfo.tagName === 'A' && elementInfo.text ? `'a:has-text("${elementInfo.text}")',` : ''}
+  '${elementInfo.tagName.toLowerCase()}'
+].filter(Boolean);
+
+// Example Usage:
+await page.locator(selectors[0]).click();
+await page.locator(selectors[0]).fill('value');
+await expect(page.locator(selectors[0])).toBeVisible();
+`;
+      
+      // Send to code viewer
+      if (this.updateCallback) {
+        this.updateCallback(elementDisplay);
+      }
+    });
+
+    await this.page.exposeFunction('__playwrightRecorderOnControllerLost', async () => {
+      console.log('🚨 Controller lost, re-injecting...');
+      await this.injectControllerUI();
+    });
   }
 
   private setupPageListeners(): void {
     if (!this.page) return;
 
-    // Listen for navigation and re-inject functions
+    // Listen for various navigation events
     this.page.on('load', async () => {
+      console.log('🔄 Page load event detected');
       await this.injectKeyboardListener();
+      await this.injectControllerUI();
+    });
+
+    // Also listen for DOM content changes
+    this.page.on('domcontentloaded', async () => {
+      console.log('🔄 DOM content loaded');
+      // Wait a bit for any dynamic content to settle
+      await this.page.waitForTimeout(500);
+      await this.injectControllerUI();
+    });
+
+    // Monitor for navigation within the same page
+    this.page.on('framenavigated', async (frame) => {
+      if (frame === this.page.mainFrame()) {
+        console.log('🔄 Main frame navigated');
+        await this.page.waitForTimeout(500);
+        await this.injectKeyboardListener();
+        await this.injectControllerUI();
+      }
     });
   }
 
 
   async stop(): Promise<string> {
     this.isRecording = false;
+    
+    // Stop controller check
+    if (this.controllerCheckInterval) {
+      clearInterval(this.controllerCheckInterval);
+      this.controllerCheckInterval = null;
+    }
     
     // Generate test code
     const testCode = this.generateTestCode();
