@@ -61,7 +61,13 @@ export class PlaywrightRecorder {
           `--window-position=${browserX},${browserY}`,
           '--no-default-browser-check',
           '--disable-blink-features=AutomationControlled',
-          '--no-first-run'
+          '--no-first-run',
+          // Permission handling for localhost and private network access
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--allow-running-insecure-content',
+          '--disable-features=PrivateNetworkAccessSendPreflights',
+          '--disable-features=PrivateNetworkAccessRespectPreflightResults'
         ]
       });
       console.log('✅ Browser launched successfully with channel: chrome');
@@ -78,7 +84,13 @@ export class PlaywrightRecorder {
             `--window-position=${browserX},${browserY}`,
             '--no-default-browser-check',
             '--disable-blink-features=AutomationControlled',
-            '--no-first-run'
+            '--no-first-run',
+            // Permission handling for localhost and private network access
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--allow-running-insecure-content',
+            '--disable-features=PrivateNetworkAccessSendPreflights',
+            '--disable-features=PrivateNetworkAccessRespectPreflightResults'
           ]
         });
         console.log('✅ Browser launched successfully with bundled Chromium');
@@ -89,7 +101,8 @@ export class PlaywrightRecorder {
     }
 
     this.context = await this.browser.newContext({
-      viewport: null
+      viewport: null,
+      permissions: ['clipboard-read', 'clipboard-write']
     });
     
     // Set up browser close detection
@@ -129,6 +142,37 @@ export class PlaywrightRecorder {
 
     // Add init script to capture all events
     await this.context.addInitScript(() => {
+      // Continuously monitor and fix Array.prototype.toJSON
+      // This prevents "serializedArgs is not an array" errors
+      const fixArrayToJSON = () => {
+        if (Array.prototype.toJSON) {
+          // Store the custom implementation if not already stored
+          if (!(window as any).__customArrayToJSON) {
+            (window as any).__customArrayToJSON = Array.prototype.toJSON;
+          }
+          delete Array.prototype.toJSON;
+        }
+      };
+      
+      // Fix it immediately
+      fixArrayToJSON();
+      
+      // Use Object.defineProperty to prevent re-definition
+      Object.defineProperty(Array.prototype, 'toJSON', {
+        get: function() {
+          return undefined;
+        },
+        set: function(value) {
+          // Store the attempted override but don't actually set it
+          (window as any).__customArrayToJSON = value;
+          console.warn('Blocked Array.prototype.toJSON override for Playwright compatibility');
+        },
+        configurable: false
+      });
+      
+      // Also fix it periodically in case the site finds a way around our blocker
+      setInterval(fixArrayToJSON, 100);
+      
       // Store events
       (window as any).__recordedEvents = [];
       
@@ -200,10 +244,58 @@ export class PlaywrightRecorder {
       // Track clicks
       document.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
+        
+        // Generate a more specific selector
+        let selector = '';
+        
+        // Priority 1: Use ID if available
+        if (target.id) {
+          selector = `#${target.id}`;
+        } 
+        // Priority 2: For buttons, use role selector
+        else if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
+          const text = target.textContent?.trim() || '';
+          selector = `button:has-text("${text}")`;
+        }
+        // Priority 3: For links, use role selector
+        else if (target.tagName === 'A') {
+          const text = target.textContent?.trim() || '';
+          selector = `a:has-text("${text}")`;
+        }
+        // Priority 4: For inputs, use name or type
+        else if (target.tagName === 'INPUT') {
+          const type = target.getAttribute('type') || 'text';
+          const name = target.getAttribute('name');
+          const placeholder = target.getAttribute('placeholder');
+          
+          if (name) {
+            selector = `input[name="${name}"]`;
+          } else if (placeholder) {
+            selector = `input[placeholder="${placeholder}"]`;
+          } else {
+            selector = `input[type="${type}"]`;
+          }
+        }
+        // Priority 5: Use data attributes if available
+        else if (target.hasAttribute('data-testid')) {
+          selector = `[data-testid="${target.getAttribute('data-testid')}"]`;
+        }
+        // Priority 6: Use nth-child for specific element
+        else {
+          const parent = target.parentElement;
+          if (parent) {
+            const siblings = Array.from(parent.children);
+            const index = siblings.indexOf(target) + 1;
+            const parentSelector = parent.id ? `#${parent.id}` : parent.className ? `.${parent.className.split(' ')[0]}` : parent.tagName.toLowerCase();
+            selector = `${parentSelector} > ${target.tagName.toLowerCase()}:nth-child(${index})`;
+          } else {
+            // Fallback to basic selector
+            selector = target.className ? `.${target.className.split(' ')[0]}` : target.tagName.toLowerCase();
+          }
+        }
+        
         const event = {
-          selector: target.id ? `#${target.id}` : 
-                   target.className ? `.${target.className.split(' ')[0]}` :
-                   target.tagName.toLowerCase(),
+          selector: selector,
           text: target.textContent?.trim() || ''
         };
         
@@ -307,12 +399,8 @@ export class PlaywrightRecorder {
           lines.push(`  await page.goto('${action.url}');`);
           break;
         case 'click':
-          // Try to use text content for better selector if available
-          if (action.value && action.value.length > 0 && action.value.length < 50) {
-            lines.push(`  await page.getByText('${action.value}').click();`);
-          } else {
-            lines.push(`  await page.click('${action.selector}');`);
-          }
+          // Use the generated selector which should be more specific
+          lines.push(`  await page.locator('${action.selector}').click();`);
           break;
         case 'fill':
           // Escape single quotes in value
