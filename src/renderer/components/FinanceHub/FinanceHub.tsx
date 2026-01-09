@@ -20,7 +20,8 @@ import {
   faCheckCircle,
   faTimesCircle,
   faExclamationTriangle,
-  faSpinner
+  faSpinner,
+  faTrash
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hooks
@@ -151,22 +152,34 @@ const FinanceHub: React.FC = () => {
       let savedBanks: ConnectedBank[] = [];
       
       if (savedResult.success && savedResult.data && savedResult.data.length > 0) {
-        const shinhanAccounts = savedResult.data.map((acc: any) => ({
-          accountNumber: acc.accountNumber,
-          accountName: acc.accountName,
-          bankId: 'shinhan',
-          balance: acc.balance,
-          currency: 'KRW',
-          lastUpdated: acc.lastSyncedAt
-        }));
+        // Group accounts by bankId
+        const accountsByBank = savedResult.data.reduce((acc: any, account: any) => {
+          const bankId = account.bankId;
+          if (!acc[bankId]) {
+            acc[bankId] = [];
+          }
+          acc[bankId].push({
+            accountNumber: account.accountNumber,
+            accountName: account.accountName,
+            bankId: account.bankId,
+            balance: account.balance,
+            currency: account.currency || 'KRW',
+            lastUpdated: account.lastSyncedAt
+          });
+          return acc;
+        }, {});
 
-        savedBanks.push({
-          bankId: 'shinhan',
-          status: 'disconnected',
-          alias: savedResult.data[0].customerName,
-          lastSync: new Date(savedResult.data[0].lastSyncedAt),
-          accounts: shinhanAccounts
-        });
+        // Create ConnectedBank entries for each bank
+        for (const [bankId, accounts] of Object.entries(accountsByBank)) {
+          const firstAccount = savedResult.data.find((acc: any) => acc.bankId === bankId);
+          savedBanks.push({
+            bankId: bankId,
+            status: 'disconnected',
+            alias: firstAccount?.customerName || '',
+            lastSync: firstAccount?.lastSyncedAt ? new Date(firstAccount.lastSyncedAt) : new Date(),
+            accounts: accounts as any[]
+          });
+        }
       }
 
       const connectedBanksList = await window.electron.financeHub.getConnectedBanks();
@@ -195,6 +208,11 @@ const FinanceHub: React.FC = () => {
   // ============================================
 
   const getBankConfigById = (id: string): BankConfig | undefined => KOREAN_BANKS.find(bank => bank.id === id);
+
+  // Function to reload connected banks
+  const loadConnectedBanks = async () => {
+    await checkExistingConnections();
+  };
 
   const handleReconnect = async (bankId: string) => {
     const bank = getBankConfigById(bankId);
@@ -383,7 +401,9 @@ const FinanceHub: React.FC = () => {
 
         if (result.accounts && result.accounts.length > 0) {
           for (const acc of result.accounts) {
-            await window.electron.financeHubDb.upsertAccount({ bankId: selectedBank.id, accountNumber: acc.accountNumber, accountName: acc.accountName, customerName: result.userName || '사용자', balance: acc.balance, availableBalance: acc.balance, openDate: '' });
+            // Use the bankId from the account if available, otherwise fall back to selectedBank.id
+            const accountBankId = acc.bankId || selectedBank.id;
+            await window.electron.financeHubDb.upsertAccount({ bankId: accountBankId, accountNumber: acc.accountNumber, accountName: acc.accountName, customerName: result.userName || '사용자', balance: acc.balance, availableBalance: acc.balance, openDate: '' });
           }
           loadDatabaseStats();
           loadBanksAndAccounts();
@@ -454,6 +474,27 @@ const FinanceHub: React.FC = () => {
     } catch (error) {
       console.error('[FinanceHub] Reconnect account error:', error);
       alert('계좌 활성화 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeleteAccount = async (bankId: string, accountNumber: string) => {
+    const bank = getBankConfigById(bankId);
+    if (!window.confirm(`⚠️ 주의: ${bank?.nameKo || bankId}의 계좌 ${formatAccountNumber(accountNumber)}를 완전히 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 거래 내역이 삭제됩니다.\n\n정말로 삭제하시겠습니까?`)) return;
+    
+    try {
+      // Call API to delete the account
+      const result = await window.electron.financeHubDb.deleteAccount(accountNumber);
+      if (result.success) {
+        // Update the UI - remove account
+        await loadConnectedBanks();
+        await loadBanksAndAccounts(); // Refresh accounts list
+        alert('✅ 계좌가 삭제되었습니다.');
+      } else {
+        alert(`❌ 계좌 삭제 실패: ${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Delete account error:', error);
+      alert('계좌 삭제 중 오류가 발생했습니다.');
     }
   };
 
@@ -674,6 +715,11 @@ const FinanceHub: React.FC = () => {
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleDisconnectAccount(connection.bankId, account.accountNumber)} title="이 계좌 비활성화">
                                           <FontAwesomeIcon icon={faUnlink} />
                                         </button>
+                                        {showDebugPanel && (
+                                          <button className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger" onClick={() => handleDeleteAccount(connection.bankId, account.accountNumber)} title="계좌 삭제 (DEBUG)">
+                                            <FontAwesomeIcon icon={faTrash} />
+                                          </button>
+                                        )}
                                       </>
                                     ) : (
                                       <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnectAccount(connection.bankId, account.accountNumber)}>
@@ -816,7 +862,7 @@ const FinanceHub: React.FC = () => {
                     );
                   })}
                 </div>
-                <div className="finance-hub__modal-footer"><p className="finance-hub__modal-note">💡 현재 신한은행만 자동화가 지원됩니다.</p></div>
+                <div className="finance-hub__modal-footer"><p className="finance-hub__modal-note">💡 현재 신한은행과 NH농협은행 자동화가 지원됩니다.</p></div>
               </>
             )}
           </div>

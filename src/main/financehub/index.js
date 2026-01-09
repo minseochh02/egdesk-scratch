@@ -12,6 +12,7 @@ const { BaseBankAutomator } = require('./core');
 // Banks
 const shinhan = require('./banks/shinhan');
 const kookmin = require('./banks/kookmin');
+const nh = require('./banks/nh');
 
 // Utils
 const utils = require('./utils');
@@ -29,6 +30,15 @@ const BANKS = {
     Automator: kookmin.KookminBankAutomator,
     create: kookmin.createKookminAutomator,
     run: kookmin.runKookminAutomation,
+  },
+  nh: {
+    config: nh.NH_BANK_INFO,
+    Automator: nh.NHBankAutomator,
+    create: nh.createNHAutomator,
+    run: async (username, password, id, proxyUrl) => {
+      const automator = nh.createNHAutomator();
+      return automator.login({ userId: id, password }, proxyUrl);
+    },
   },
   // Future banks will be added here:
   // kb: { ... },
@@ -94,6 +104,7 @@ module.exports = {
   // Banks (direct access)
   shinhan,
   kookmin,
+  nh,
   
   // Bank registry
   BANKS,

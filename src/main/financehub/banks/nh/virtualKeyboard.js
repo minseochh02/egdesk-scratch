@@ -1,5 +1,5 @@
 /**
- * Shinhan Bank Virtual Keyboard Utilities
+ * NH Bank Virtual Keyboard Utilities
  */
 
 /**
@@ -38,9 +38,9 @@ async function findVisibleKeyboard(page, selectors, label, log = console.log) {
  */
 function getLowerKeyboardSelectors() {
   return [
-    '//div[@id="비밀번호_layoutLower"]',
-    '//div[contains(@id, "_layoutLower") and contains(@class, "transkey_lower")]',
-    '//div[contains(@class, "transkey_lower")]'
+    '//div[@id="Tk_loginUserPwd_layoutLower"]',
+    '//div[contains(@id, "_layoutLower") and contains(@style, "visibility: visible")]',
+    '//img[@id="imgTwinLower"]'
   ];
 }
 
@@ -50,9 +50,9 @@ function getLowerKeyboardSelectors() {
  */
 function getUpperKeyboardSelectors() {
   return [
-    '//div[@id="비밀번호_layoutUpper"]',
-    '//div[contains(@id, "_layoutUpper") and contains(@class, "transkey_upper")]',
-    '//div[contains(@class, "transkey_upper")]'
+    '//div[@id="Tk_loginUserPwd_layoutUpper"]',
+    '//div[contains(@id, "_layoutUpper") and contains(@style, "visibility: visible")]',
+    '//img[@id="imgTwinUpper"]'
   ];
 }
 
@@ -164,4 +164,3 @@ module.exports = {
   getUpperKeyboardSelectors,
   typePasswordWithKeyboard,
 };
-

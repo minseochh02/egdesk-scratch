@@ -441,6 +441,26 @@ export class FinanceHubDbManager {
     return result.changes > 0;
   }
 
+  deleteAccount(accountNumber: string): boolean {
+    // Start a transaction to ensure data integrity
+    const deleteTransactions = this.db.prepare(`
+      DELETE FROM transactions 
+      WHERE account_id IN (SELECT id FROM accounts WHERE account_number = ?)
+    `);
+    
+    const deleteAccount = this.db.prepare(`
+      DELETE FROM accounts WHERE account_number = ?
+    `);
+    
+    const transaction = this.db.transaction(() => {
+      deleteTransactions.run(accountNumber);
+      const result = deleteAccount.run(accountNumber);
+      return result.changes > 0;
+    });
+    
+    return transaction();
+  }
+
   // ========================================
   // Transaction Operations (Multi-Bank)
   // ========================================

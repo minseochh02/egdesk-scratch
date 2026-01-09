@@ -362,9 +362,17 @@ async function extractTransactionsFromPage(ctx) {
 async function createExcelFromData(ctx, data) {
   ctx.ensureOutputDirectory(ctx.outputDir);
   
+  // Determine bank name based on context or data
+  let bankName = '신한은행'; // Default for backward compatibility
+  if (ctx.config?.bank?.nameKo) {
+    bankName = ctx.config.bank.nameKo;
+  } else if (data.metadata?.bankName) {
+    bankName = data.metadata.bankName;
+  }
+  
   const timestamp = ctx.generateTimestamp ? ctx.generateTimestamp() : Date.now();
   const accountNum = data.metadata.accountNumber ? data.metadata.accountNumber.replace(/-/g, '') : 'unknown';
-  const filename = `신한은행_거래내역_${accountNum}_${timestamp}.xlsx`;
+  const filename = `${bankName}_거래내역_${accountNum}_${timestamp}.xlsx`;
   const filePath = path.join(ctx.outputDir, filename);
 
   ctx.log(`Creating Excel file: ${filename}`);
