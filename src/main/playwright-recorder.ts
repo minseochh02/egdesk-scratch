@@ -4,11 +4,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement';
   selector?: string;
   value?: string;
   key?: string;
   url?: string;
+  waitCondition?: 'visible' | 'hidden' | 'enabled' | 'disabled';
+  timeout?: number;
   timestamp: number;
 }
 
@@ -224,6 +226,53 @@ export class PlaywrightRecorder {
         font-size: 14px;
       `;
       
+      // Create wait for element button
+      const waitBtn = document.createElement('button');
+      waitBtn.setAttribute('data-wait-mode', 'true');
+      waitBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
+        </svg>
+        <span>Wait</span>
+      `;
+      waitBtn.style.cssText = `
+        background: #2196F3;
+        color: #fff;
+        border: 1px solid #1976D2;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      `;
+
+      // Create stop recording button
+      const stopBtn = document.createElement('button');
+      stopBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="6" y="6" width="12" height="12" fill="currentColor"></rect>
+        </svg>
+        <span>Stop</span>
+      `;
+      stopBtn.style.cssText = `
+        background: #ff4444;
+        color: #fff;
+        border: 1px solid #cc0000;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
       // Create Gemini button
       const geminiBtn = document.createElement('button');
       geminiBtn.innerHTML = `
@@ -299,6 +348,8 @@ export class PlaywrightRecorder {
       
       controller.appendChild(recordingIndicator);
       controller.appendChild(highlightBtn);
+      controller.appendChild(waitBtn);
+      controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
       
       try {
@@ -347,6 +398,128 @@ export class PlaywrightRecorder {
           currentHighlightedElement = null;
           geminiBtn.disabled = true;
           geminiBtn.style.opacity = '0.5';
+        }
+      });
+      
+      // Set up stop button functionality
+      stopBtn.addEventListener('click', () => {
+        // Send stop signal to Playwright recorder
+        if ((window as any).__playwrightRecorderOnStop) {
+          (window as any).__playwrightRecorderOnStop();
+        }
+        
+        // Hide the controller to indicate stopping
+        controller.style.opacity = '0.5';
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = `
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+          </svg>
+          <span>Stopping...</span>
+        `;
+        
+        // Show notification
+        const stopNotification = document.createElement('div');
+        stopNotification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #ff4444;
+          color: white;
+          padding: 16px 24px;
+          border-radius: 8px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 14px;
+          z-index: 999999;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        `;
+        stopNotification.innerHTML = `
+          <strong>⏹️ Recording Stopped</strong><br>
+          Generating test code...
+        `;
+        
+        try {
+          if (document.body) {
+            document.body.appendChild(stopNotification);
+          }
+        } catch (e) {
+          console.warn('Failed to show stop notification:', e);
+        }
+        
+        // Remove notification after 3 seconds
+        setTimeout(() => {
+          stopNotification.remove();
+        }, 3000);
+      });
+      
+      // Set up wait for element button functionality
+      let waitMode = false;
+      waitBtn.addEventListener('click', () => {
+        waitMode = !waitMode;
+        waitBtn.classList.toggle('active', waitMode);
+        
+        if (waitMode) {
+          waitBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+              <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
+            </svg>
+            <span>Select Element</span>
+          `;
+          waitBtn.style.background = '#4CAF50';
+          waitBtn.style.borderColor = '#45a049';
+          
+          // Show instructions
+          const waitInstructions = document.createElement('div');
+          waitInstructions.id = 'wait-instructions';
+          waitInstructions.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #2196F3;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 250px;
+          `;
+          waitInstructions.innerHTML = `
+            <strong>🎯 Wait Mode Active</strong><br>
+            Click on an element to wait for it to load
+          `;
+          
+          try {
+            if (document.body) {
+              document.body.appendChild(waitInstructions);
+            }
+          } catch (e) {
+            console.warn('Failed to show wait instructions:', e);
+          }
+          
+          // Change cursor to indicate wait mode
+          document.body.style.cursor = 'crosshair';
+        } else {
+          waitBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
+            </svg>
+            <span>Wait</span>
+          `;
+          waitBtn.style.background = '#2196F3';
+          waitBtn.style.borderColor = '#1976D2';
+          
+          // Remove instructions
+          const instructions = document.getElementById('wait-instructions');
+          if (instructions) {
+            instructions.remove();
+          }
+          
+          // Reset cursor
+          document.body.style.cursor = '';
         }
       });
       
@@ -997,6 +1170,144 @@ export class PlaywrightRecorder {
           return;
         }
         
+        // Check if we're in wait mode
+        const waitBtn = document.querySelector('#playwright-recorder-controller [data-wait-mode="true"]') as HTMLElement;
+        const isWaitMode = waitBtn && waitBtn.classList.contains('active');
+        
+        if (isWaitMode) {
+          // Handle wait for element action
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Show wait condition selection modal
+          const modal = document.createElement('div');
+          modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          `;
+          
+          const modalContent = document.createElement('div');
+          modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          `;
+          
+          modalContent.innerHTML = `
+            <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #333;">Wait for Element</h3>
+            <p style="margin: 0 0 20px 0; color: #666; font-size: 14px;">
+              Selected element: <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${target.tagName}${target.id ? '#' + target.id : ''}</code>
+            </p>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display: block; margin-bottom: 8px; font-weight: 500;">Wait Condition:</label>
+              <select id="wait-condition" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                <option value="visible">Element becomes visible</option>
+                <option value="hidden">Element becomes hidden</option>
+                <option value="enabled">Element becomes enabled</option>
+                <option value="disabled">Element becomes disabled</option>
+              </select>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display: block; margin-bottom: 8px; font-weight: 500;">Timeout (ms):</label>
+              <input type="number" id="wait-timeout" value="5000" min="1000" max="30000" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+            </div>
+            
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+              <button id="wait-cancel" style="padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px;">Cancel</button>
+              <button id="wait-confirm" style="padding: 8px 16px; background: #2196F3; color: white; border: 1px solid #2196F3; border-radius: 6px; cursor: pointer; font-size: 14px;">Add Wait</button>
+            </div>
+          `;
+          
+          modal.appendChild(modalContent);
+          document.body.appendChild(modal);
+          
+          // Handle modal actions
+          const cancelBtn = modalContent.querySelector('#wait-cancel') as HTMLElement;
+          const confirmBtn = modalContent.querySelector('#wait-confirm') as HTMLElement;
+          const conditionSelect = modalContent.querySelector('#wait-condition') as HTMLSelectElement;
+          const timeoutInput = modalContent.querySelector('#wait-timeout') as HTMLInputElement;
+          
+          cancelBtn.addEventListener('click', () => {
+            modal.remove();
+          });
+          
+          confirmBtn.addEventListener('click', () => {
+            // Generate selector for the target element (same logic as regular clicks)
+            let selector = '';
+            if (target.id) {
+              selector = '#' + target.id;
+            } else if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
+              const text = target.textContent?.trim() || '';
+              selector = 'button:has-text("' + text + '")';
+            } else if (target.tagName === 'A') {
+              const text = target.textContent?.trim() || '';
+              selector = 'a:has-text("' + text + '")';
+            } else if (target.tagName === 'INPUT') {
+              const type = target.getAttribute('type') || 'text';
+              const name = target.getAttribute('name');
+              const placeholder = target.getAttribute('placeholder');
+              
+              if (name) {
+                selector = 'input[name="' + name + '"]';
+              } else if (placeholder) {
+                selector = 'input[placeholder="' + placeholder + '"]';
+              } else {
+                selector = 'input[type="' + type + '"]';
+              }
+            } else if (target.hasAttribute('data-testid')) {
+              selector = '[data-testid="' + target.getAttribute('data-testid') + '"]';
+            } else {
+              const parent = target.parentElement;
+              if (parent) {
+                const siblings = Array.from(parent.children);
+                const index = siblings.indexOf(target) + 1;
+                const parentSelector = parent.id ? '#' + parent.id : parent.className ? '.' + parent.className.split(' ')[0] : parent.tagName.toLowerCase();
+                selector = parentSelector + ' > ' + target.tagName.toLowerCase() + ':nth-child(' + index + ')';
+              } else {
+                selector = target.className ? '.' + target.className.split(' ')[0] : target.tagName.toLowerCase();
+              }
+            }
+            
+            const waitAction = {
+              selector: selector,
+              condition: conditionSelect.value,
+              timeout: parseInt(timeoutInput.value)
+            };
+            
+            // Send wait action to recorder
+            if ((window as any).__playwrightRecorderOnWaitForElement) {
+              (window as any).__playwrightRecorderOnWaitForElement(waitAction);
+            }
+            
+            modal.remove();
+            
+            // Exit wait mode
+            waitBtn.click();
+          });
+          
+          // Close modal on backdrop click
+          modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+              modal.remove();
+            }
+          });
+          
+          return; // Don't process as regular click
+        }
+        
         // Generate a more specific selector
         let selector = '';
         
@@ -1160,6 +1471,57 @@ await expect(page.locator(selectors[0])).toBeVisible();
       console.log('🚨 Controller lost, re-injecting...');
       await this.injectControllerUI();
     });
+
+    await this.page.exposeFunction('__playwrightRecorderOnStop', async () => {
+      console.log('⏹️ Stop recording requested from browser UI');
+      this.isRecording = false;
+      
+      // Generate final test code
+      const testCode = this.generateTestCode();
+      
+      // Update code viewer with final code
+      if (this.updateCallback) {
+        this.updateCallback(testCode);
+      }
+      
+      // Write final code to file if outputFile is set
+      if (this.outputFile) {
+        try {
+          const fs = require('fs');
+          fs.writeFileSync(this.outputFile, testCode);
+          console.log('💾 Final test code saved to:', this.outputFile);
+        } catch (err) {
+          console.error('Failed to write final test file:', err);
+        }
+      }
+      
+      // Close browser after a short delay to allow UI feedback
+      setTimeout(async () => {
+        if (this.browser) {
+          try {
+            await this.browser.close();
+            console.log('🚪 Browser closed after stop request');
+          } catch (err) {
+            console.log('Browser already closed or error closing:', err);
+          }
+        }
+      }, 1000);
+    });
+
+    await this.page.exposeFunction('__playwrightRecorderOnWaitForElement', async (data: any) => {
+      console.log('⏳ Wait for element action recorded:', data);
+      
+      this.actions.push({
+        type: 'waitForElement',
+        selector: data.selector,
+        waitCondition: data.condition as 'visible' | 'hidden' | 'enabled' | 'disabled',
+        timeout: data.timeout,
+        timestamp: Date.now() - this.startTime
+      });
+      
+      console.log('⏳ Wait for element added:', data.selector, 'condition:', data.condition, 'timeout:', data.timeout + 'ms');
+      this.updateGeneratedCode();
+    });
   }
 
   private setupPageListeners(): void {
@@ -1251,6 +1613,26 @@ await expect(page.locator(selectors[0])).toBeVisible();
             lines.push(`  await page.keyboard.press('Enter'); // Submit form`);
           } else {
             lines.push(`  await page.keyboard.press('${action.key}');`);
+          }
+          break;
+        case 'waitForElement':
+          const condition = action.waitCondition || 'visible';
+          const timeout = action.timeout || 5000;
+          
+          // Generate appropriate wait command based on condition
+          switch (condition) {
+            case 'visible':
+              lines.push(`  await page.waitForSelector('${action.selector}', { state: 'visible', timeout: ${timeout} });`);
+              break;
+            case 'hidden':
+              lines.push(`  await page.waitForSelector('${action.selector}', { state: 'hidden', timeout: ${timeout} });`);
+              break;
+            case 'enabled':
+              lines.push(`  await page.waitForFunction(() => !document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
+              break;
+            case 'disabled':
+              lines.push(`  await page.waitForFunction(() => document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
+              break;
           }
           break;
       }

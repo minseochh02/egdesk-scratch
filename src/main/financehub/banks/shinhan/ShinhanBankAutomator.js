@@ -13,6 +13,14 @@ const {
   getLowerKeyboardSelectors,
   getUpperKeyboardSelectors,
 } = require('./virtualKeyboard');
+const {
+  isWindows,
+  handleWindowsPasswordInput
+} = require('./windowsKeyboardInput');
+const {
+  fillIdInputEnhanced,
+  diagnoseIdInput
+} = require('./shinhan-id-fix');
 const { 
   parseTransactionExcel,
   extractTransactionsFromPage,
@@ -231,6 +239,75 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       lowerScreenshotPath,
       upperScreenshotPath,
     };
+  }
+
+  /**
+   * Handles password entry based on platform - Windows uses keyboard, others use virtual keyboard
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>}
+   */
+  async handlePasswordInput(page, password) {
+    try {
+      // Check if Windows platform and if Windows keyboard mode is enabled
+      if (isWindows() && this.config.useWindowsKeyboard !== false) {
+        this.log('Windows platform detected, using keyboard input method...');
+        return await this.handleWindowsPasswordInput(page, password);
+      } else {
+        this.log('Using virtual keyboard method...');
+        return await this.handleVirtualKeyboard(page, password);
+      }
+    } catch (error) {
+      this.error('Password input failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        totalChars: password.length,
+        typedChars: 0,
+        failedChars: [],
+        shiftClicks: 0,
+        details: []
+      };
+    }
+  }
+
+  /**
+   * Windows keyboard input handler
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>}
+   */
+  async handleWindowsPasswordInput(page, password) {
+    try {
+      this.log('Using Windows keyboard input for password entry...');
+      
+      const typingResult = await handleWindowsPasswordInput(
+        page,
+        password,
+        this.config.delays,
+        this.log.bind(this),
+        this.config.windowsInputMethod || 'auto',
+        this.config.xpaths.passwordInput
+      );
+
+      return {
+        ...typingResult,
+        keyboardAnalysis: null, // No AI analysis needed for Windows keyboard
+      };
+
+    } catch (error) {
+      this.error('Windows keyboard password typing failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        totalChars: password.length,
+        typedChars: 0,
+        failedChars: [],
+        shiftClicks: 0,
+        details: [],
+        method: 'windows_keyboard_failed'
+      };
+    }
   }
 
   /**
@@ -608,12 +685,48 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       }
 
       // Step 4: Fill user ID
-      await this.fillInputField(
-        this.page,
-        this.config.xpaths.idInput,
-        userId,
-        'User ID'
-      );
+      if (this.config.useEnhancedIdInput) {
+        this.log('Using enhanced ID input handling...');
+        
+        // First, run diagnostics if in debug mode
+        if (this.config.debug || process.env.DEBUG_SHINHAN) {
+          await diagnoseIdInput(
+            this.page,
+            this.config.xpaths.idInput,
+            this.log.bind(this)
+          );
+        }
+        
+        // Try enhanced fill method
+        const idFillSuccess = await fillIdInputEnhanced(
+          this.page,
+          this.config.xpaths.idInput,
+          userId,
+          this.config,
+          this.log.bind(this)
+        );
+        
+        if (!idFillSuccess) {
+          this.warn('Enhanced ID fill failed, trying standard method as fallback...');
+          await this.fillInputField(
+            this.page,
+            this.config.xpaths.idInput,
+            userId,
+            'User ID'
+          );
+        }
+      } else {
+        // Use standard method
+        await this.fillInputField(
+          this.page,
+          this.config.xpaths.idInput,
+          userId,
+          'User ID'
+        );
+      }
+      
+      // Add a wait after ID input to ensure it's properly registered
+      await this.page.waitForTimeout(1000);
 
       // Step 5: Click password field to trigger virtual keyboard
       this.log('Clicking password field to trigger virtual keyboard...');
@@ -629,7 +742,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       // Step 6: Handle virtual keyboard and type password
       let keyboardResult = null;
       try {
-        keyboardResult = await this.handleVirtualKeyboard(this.page, password);
+        keyboardResult = await this.handlePasswordInput(this.page, password);
 
         if (keyboardResult.success) {
           this.log('Successfully typed password using virtual keyboard!');
