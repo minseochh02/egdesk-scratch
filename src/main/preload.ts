@@ -2146,6 +2146,8 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata),
     updateAccountStatus: (accountNumber: string, isActive: boolean) => 
       ipcRenderer.invoke('sqlite-financehub-update-account-status', accountNumber, isActive),
+    deleteAccount: (accountNumber: string) => 
+      ipcRenderer.invoke('sqlite-financehub-delete-account', accountNumber),
   },
   /**
    * Finance Hub Scheduler API

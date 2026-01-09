@@ -702,6 +702,16 @@ export class SQLiteManager {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });
+
+    // Delete account (for debugging malformed data)
+    ipcMain.handle('sqlite-financehub-delete-account', async (event, accountNumber) => {
+      try {
+        const result = this.getFinanceHubManager().deleteAccount(accountNumber);
+        return { success: result, data: result };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
   }
 
   /**

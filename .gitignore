@@ -42,3 +42,9 @@ gmail-tokens.json
 playwright/.auth/
 
 videos/
+Default/
+after-double-click.png
+after-long-press.png
+after-offset-click.png
+after-shift-click.png
+before-shift-click.png
