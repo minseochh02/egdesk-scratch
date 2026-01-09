@@ -101,6 +101,14 @@ const SHINHAN_CONFIG = {
   xpaths: SHINHAN_XPATHS,
   timeouts: SHINHAN_TIMEOUTS,
   delays: SHINHAN_DELAYS,
+  
+  // Windows keyboard input settings
+  useWindowsKeyboard: true,  // Set to false to force virtual keyboard on Windows
+  windowsInputMethod: 'auto', // 'auto', 'keyboard', 'fill', 'clipboard'
+  
+  // Enhanced ID input settings
+  useEnhancedIdInput: true,  // Use enhanced ID input with retries and diagnostics
+  debug: false,  // Enable debug diagnostics for ID input
 };
 
 module.exports = {

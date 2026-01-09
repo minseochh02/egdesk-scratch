@@ -14,6 +14,10 @@ const {
 const {
   typePasswordWithKeyboard
 } = require('./virtualKeyboard');
+const {
+  isWindows,
+  handleWindowsPasswordInput
+} = require('./windowsKeyboardInput');
 // Import AI keyboard analysis utilities
 const { analyzeKeyboardAndType } = require('../../utils/ai-keyboard-analyzer');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../../utils/bilingual-keyboard-parser');
@@ -283,6 +287,75 @@ class NHBankAutomator extends BaseBankAutomator {
       return {
         success: false,
         error: error.message
+      };
+    }
+  }
+
+  /**
+   * Handles password entry based on platform - Windows uses keyboard, others use virtual keyboard
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>}
+   */
+  async handlePasswordInput(page, password) {
+    try {
+      // Check if Windows platform and if Windows keyboard mode is enabled
+      if (isWindows() && this.config.useWindowsKeyboard !== false) {
+        this.log('Windows platform detected, using keyboard input method...');
+        return await this.handleWindowsPasswordInput(page, password);
+      } else {
+        this.log('Using virtual keyboard method...');
+        return await this.handleVirtualKeyboard(page, password);
+      }
+    } catch (error) {
+      this.error('Password input failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        totalChars: password.length,
+        typedChars: 0,
+        failedChars: [],
+        shiftClicks: 0,
+        details: []
+      };
+    }
+  }
+
+  /**
+   * Windows keyboard input handler
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>}
+   */
+  async handleWindowsPasswordInput(page, password) {
+    try {
+      this.log('Using Windows keyboard input for password entry...');
+      
+      const typingResult = await handleWindowsPasswordInput(
+        page,
+        password,
+        this.config.delays,
+        this.log.bind(this),
+        this.config.windowsInputMethod || 'auto',
+        this.config.xpaths.passwordInput
+      );
+
+      return {
+        ...typingResult,
+        keyboardAnalysis: null, // No AI analysis needed for Windows keyboard
+      };
+
+    } catch (error) {
+      this.error('Windows keyboard password typing failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        totalChars: password.length,
+        typedChars: 0,
+        failedChars: [],
+        shiftClicks: 0,
+        details: [],
+        method: 'windows_keyboard_failed'
       };
     }
   }
@@ -577,9 +650,9 @@ class NHBankAutomator extends BaseBankAutomator {
       await passwordField.click();
       await this.page.waitForTimeout(1000);
 
-      // Step 7: Handle virtual keyboard password entry
-      this.log('Starting virtual keyboard password entry...');
-      const keyboardResult = await this.handleVirtualKeyboard(this.page, password);
+      // Step 7: Handle password entry (virtual keyboard or Windows keyboard)
+      this.log('Starting password entry...');
+      const keyboardResult = await this.handlePasswordInput(this.page, password);
 
       if (keyboardResult.success) {
         this.log(`Successfully typed ${keyboardResult.typedChars} characters`);

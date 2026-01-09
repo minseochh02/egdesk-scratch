@@ -91,6 +91,10 @@ const NH_CONFIG = {
     keyPress: 200,
     keyboardUpdate: 1000,
   },
+  
+  // Windows keyboard input settings
+  useWindowsKeyboard: true,  // Set to false to force virtual keyboard on Windows
+  windowsInputMethod: 'auto', // 'auto', 'keyboard', 'fill', 'clipboard'
 };
 
 module.exports = {
