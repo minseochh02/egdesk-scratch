@@ -1098,6 +1098,24 @@ export class PlaywrightRecorder {
       
       // Listen for all keyboard events
       document.addEventListener('keydown', (e) => {
+        const target = e.target as HTMLElement;
+        
+        // Skip recording keyboard events on recorder UI elements
+        if (target.closest('#playwright-recorder-controller') || 
+            target.closest('#playwright-wait-modal') ||
+            target.closest('.playwright-recorder-modal') ||
+            target.closest('.playwright-recorder-modal-content') ||
+            target.id === 'wait-instructions' ||
+            target.id === 'wait-condition' ||
+            target.id === 'wait-timeout' ||
+            target.id === 'wait-cancel' ||
+            target.id === 'wait-confirm' ||
+            target.closest('[id^="wait-"]') ||
+            target.closest('.playwright-recorder-') ||
+            target.style.zIndex === '999999') {
+          return;
+        }
+        
         const event = {
           type: 'keydown',
           key: e.key,
@@ -1107,10 +1125,10 @@ export class PlaywrightRecorder {
           altKey: e.altKey,
           metaKey: e.metaKey,
           target: {
-            tagName: (e.target as HTMLElement).tagName,
-            id: (e.target as HTMLElement).id,
-            className: (e.target as HTMLElement).className,
-            name: (e.target as HTMLElement).getAttribute('name'),
+            tagName: target.tagName,
+            id: target.id,
+            className: target.className,
+            name: target.getAttribute('name'),
             selector: null as string | null
           },
           timestamp: Date.now()
@@ -1143,6 +1161,23 @@ export class PlaywrightRecorder {
       // Track input changes
       document.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
+        
+        // Skip recording input events on recorder UI elements
+        if (target.closest('#playwright-recorder-controller') || 
+            target.closest('#playwright-wait-modal') ||
+            target.closest('.playwright-recorder-modal') ||
+            target.closest('.playwright-recorder-modal-content') ||
+            target.id === 'wait-instructions' ||
+            target.id === 'wait-condition' ||
+            target.id === 'wait-timeout' ||
+            target.id === 'wait-cancel' ||
+            target.id === 'wait-confirm' ||
+            target.closest('[id^="wait-"]') ||
+            target.closest('.playwright-recorder-') ||
+            target.style.zIndex === '999999') {
+          return;
+        }
+        
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
           const event = {
             selector: target.id ? `#${target.id}` : 
@@ -1175,12 +1210,30 @@ export class PlaywrightRecorder {
         const isWaitMode = waitBtn && waitBtn.classList.contains('active');
         
         if (isWaitMode) {
+          // Skip wait recording on ANY recorder UI elements
+          if (target.closest('#playwright-recorder-controller') || 
+              target.closest('#playwright-wait-modal') ||
+              target.closest('.playwright-recorder-modal') ||
+              target.closest('.playwright-recorder-modal-content') ||
+              target.id === 'wait-instructions' ||
+              target.id === 'wait-condition' ||
+              target.id === 'wait-timeout' ||
+              target.id === 'wait-cancel' ||
+              target.id === 'wait-confirm' ||
+              target.closest('[id^="wait-"]') ||
+              target.closest('.playwright-recorder-') ||
+              target.style.zIndex === '999999') {
+            return;
+          }
+          
           // Handle wait for element action
           e.preventDefault();
           e.stopPropagation();
           
           // Show wait condition selection modal
           const modal = document.createElement('div');
+          modal.id = 'playwright-wait-modal';
+          modal.className = 'playwright-recorder-modal';
           modal.style.cssText = `
             position: fixed;
             top: 0;
@@ -1196,6 +1249,7 @@ export class PlaywrightRecorder {
           `;
           
           const modalContent = document.createElement('div');
+          modalContent.className = 'playwright-recorder-modal-content';
           modalContent.style.cssText = `
             background: white;
             padding: 24px;
@@ -1580,9 +1634,33 @@ await expect(page.locator(selectors[0])).toBeVisible();
 
   private generateTestCode(): string {
     const lines: string[] = [
-      "import { test, expect } from '@playwright/test';",
+      "import { test, expect, chromium } from '@playwright/test';",
       "",
-      "test('recorded test', async ({ page }) => {"
+      "test('recorded test', async () => {",
+      "  // Launch browser with same flags as recording",
+      "  const browser = await chromium.launch({",
+      "    headless: false,",
+      "    channel: 'chrome', // Uses installed Chrome",
+      "    args: [",
+      "      '--no-default-browser-check',",
+      "      '--disable-blink-features=AutomationControlled',",
+      "      '--no-first-run',",
+      "      // Permission handling for localhost and private network access",
+      "      '--disable-web-security',",
+      "      '--disable-features=IsolateOrigins,site-per-process',",
+      "      '--allow-running-insecure-content',",
+      "      '--disable-features=PrivateNetworkAccessSendPreflights',",
+      "      '--disable-features=PrivateNetworkAccessRespectPreflightResults'",
+      "    ]",
+      "  });",
+      "",  
+      "  const context = await browser.newContext({",
+      "    viewport: null,",
+      "    permissions: ['clipboard-read', 'clipboard-write']",
+      "  });",
+      "  const page = await context.newPage();",
+      "",
+      "  try {"
     ];
 
     let lastTimestamp = 0;
@@ -1591,28 +1669,28 @@ await expect(page.locator(selectors[0])).toBeVisible();
       // Add delay if needed (but not after navigation)
       const delay = action.timestamp - lastTimestamp;
       if (delay > 1000 && lastTimestamp > 0 && action.type !== 'navigate') {
-        lines.push(`  await page.waitForTimeout(${Math.min(delay, 3000)}); // Human-like delay`);
+        lines.push(`    await page.waitForTimeout(${Math.min(delay, 3000)}); // Human-like delay`);
       }
       lastTimestamp = action.timestamp;
       
       switch (action.type) {
         case 'navigate':
-          lines.push(`  await page.goto('${action.url}');`);
+          lines.push(`    await page.goto('${action.url}');`);
           break;
         case 'click':
           // Use the generated selector which should be more specific
-          lines.push(`  await page.locator('${action.selector}').click();`);
+          lines.push(`    await page.locator('${action.selector}').click();`);
           break;
         case 'fill':
           // Escape single quotes in value
           const escapedValue = action.value?.replace(/'/g, "\\'") || '';
-          lines.push(`  await page.fill('${action.selector}', '${escapedValue}');`);
+          lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
           break;
         case 'keypress':
           if (action.key === 'Enter') {
-            lines.push(`  await page.keyboard.press('Enter'); // Submit form`);
+            lines.push(`    await page.keyboard.press('Enter'); // Submit form`);
           } else {
-            lines.push(`  await page.keyboard.press('${action.key}');`);
+            lines.push(`    await page.keyboard.press('${action.key}');`);
           }
           break;
         case 'waitForElement':
@@ -1622,22 +1700,25 @@ await expect(page.locator(selectors[0])).toBeVisible();
           // Generate appropriate wait command based on condition
           switch (condition) {
             case 'visible':
-              lines.push(`  await page.waitForSelector('${action.selector}', { state: 'visible', timeout: ${timeout} });`);
+              lines.push(`    await page.waitForSelector('${action.selector}', { state: 'visible', timeout: ${timeout} });`);
               break;
             case 'hidden':
-              lines.push(`  await page.waitForSelector('${action.selector}', { state: 'hidden', timeout: ${timeout} });`);
+              lines.push(`    await page.waitForSelector('${action.selector}', { state: 'hidden', timeout: ${timeout} });`);
               break;
             case 'enabled':
-              lines.push(`  await page.waitForFunction(() => !document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
+              lines.push(`    await page.waitForFunction(() => !document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
               break;
             case 'disabled':
-              lines.push(`  await page.waitForFunction(() => document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
+              lines.push(`    await page.waitForFunction(() => document.querySelector('${action.selector}')?.disabled, {}, { timeout: ${timeout} });`);
               break;
           }
           break;
       }
     }
     
+    lines.push("  } finally {");
+    lines.push("    await browser.close();");
+    lines.push("  }");
     lines.push("});");
     
     return lines.join('\n');
