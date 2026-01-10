@@ -12,6 +12,7 @@ interface RecordedAction {
   waitCondition?: 'visible' | 'hidden' | 'enabled' | 'disabled';
   timeout?: number;
   timestamp: number;
+  coordinates?: { x: number; y: number }; // For coordinate-based clicks
 }
 
 export class PlaywrightRecorder {
@@ -200,6 +201,8 @@ export class PlaywrightRecorder {
         gap: 8px;
         transition: all 0.3s ease;
         pointer-events: all;
+        cursor: move;
+        user-select: none;
       `;
       
       // Create highlight toggle button
@@ -213,6 +216,31 @@ export class PlaywrightRecorder {
         <span>Highlight</span>
       `;
       highlightBtn.style.cssText = `
+        background: #333;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      `;
+      
+      // Create coordinate mode button
+      const coordBtn = document.createElement('button');
+      coordBtn.setAttribute('data-coord-mode', 'true');
+      coordBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="23"></line>
+          <line x1="1" y1="12" x2="23" y2="12"></line>
+          <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+        </svg>
+        <span>Coords</span>
+      `;
+      coordBtn.style.cssText = `
         background: #333;
         color: #fff;
         border: 1px solid #444;
@@ -319,6 +347,8 @@ export class PlaywrightRecorder {
         display: flex;
         align-items: center;
         padding: 0 12px;
+        cursor: inherit;
+        pointer-events: none;
       `;
       
       // Add styles
@@ -328,6 +358,10 @@ export class PlaywrightRecorder {
           0% { opacity: 1; }
           50% { opacity: 0.5; }
           100% { opacity: 1; }
+        }
+        
+        #playwright-recorder-controller button {
+          cursor: pointer !important;
         }
         
         #playwright-recorder-controller button:hover {
@@ -344,10 +378,15 @@ export class PlaywrightRecorder {
           background: #45a049 !important;
           border-color: #45a049 !important;
         }
+        
+        #playwright-recorder-controller:active {
+          cursor: grabbing !important;
+        }
       `;
       
       controller.appendChild(recordingIndicator);
       controller.appendChild(highlightBtn);
+      controller.appendChild(coordBtn);
       controller.appendChild(waitBtn);
       controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
@@ -363,9 +402,98 @@ export class PlaywrightRecorder {
         console.warn('Failed to add recorder controller:', e);
       }
       
+      // Make the controller draggable
+      let isDragging = false;
+      let startX = 0;
+      let startY = 0;
+      let startRight = 0;
+      let startBottom = 0;
+      
+      function dragStart(e: any) {
+        // Only drag if clicking on the controller itself or its direct children (not buttons)
+        const isButton = e.target.tagName === 'BUTTON' || e.target.closest('button');
+        if (isButton) {
+          return;
+        }
+        
+        // Get initial mouse position
+        if (e.type === "touchstart") {
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+        } else {
+          startX = e.clientX;
+          startY = e.clientY;
+        }
+        
+        // Get current right/bottom values
+        const computedStyle = window.getComputedStyle(controller);
+        startRight = parseInt(computedStyle.right) || 0;
+        startBottom = parseInt(computedStyle.bottom) || 0;
+        
+        isDragging = true;
+        controller.style.transition = 'none';
+        controller.style.cursor = 'grabbing';
+      }
+      
+      function dragEnd(e: any) {
+        isDragging = false;
+        controller.style.transition = 'all 0.3s ease';
+        controller.style.cursor = 'move';
+      }
+      
+      function drag(e: any) {
+        if (!isDragging) return;
+        
+        e.preventDefault();
+        
+        let currentX, currentY;
+        if (e.type === "touchmove") {
+          currentX = e.touches[0].clientX;
+          currentY = e.touches[0].clientY;
+        } else {
+          currentX = e.clientX;
+          currentY = e.clientY;
+        }
+        
+        // Calculate the difference from start position
+        const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        
+        // Calculate new position (inverted because we're using right/bottom)
+        const newRight = startRight - deltaX;
+        const newBottom = startBottom - deltaY;
+        
+        // Get controller dimensions
+        const rect = controller.getBoundingClientRect();
+        
+        // Constrain to viewport with some margin
+        const margin = 10;
+        const maxRight = window.innerWidth - rect.width - margin;
+        const maxBottom = window.innerHeight - rect.height - margin;
+        
+        // Apply constraints
+        const constrainedRight = Math.max(margin, Math.min(newRight, maxRight));
+        const constrainedBottom = Math.max(margin, Math.min(newBottom, maxBottom));
+        
+        // Apply new position
+        controller.style.right = constrainedRight + 'px';
+        controller.style.bottom = constrainedBottom + 'px';
+      }
+      
+      // Add event listeners for drag
+      controller.addEventListener('mousedown', dragStart, true);
+      document.addEventListener('mouseup', dragEnd, true);
+      document.addEventListener('mousemove', drag, true);
+      
+      // Touch events for mobile
+      controller.addEventListener('touchstart', dragStart, { passive: false });
+      document.addEventListener('touchend', dragEnd, { passive: false });
+      document.addEventListener('touchmove', drag, { passive: false });
+      
       // Set up highlight toggle functionality
       let highlightMode = false;
       let currentHighlightedElement: HTMLElement | null = null;
+      let coordinateMode = false;
       
       // Listen for element highlight updates
       document.addEventListener('playwright-recorder-element-highlighted', (e: any) => {
@@ -378,6 +506,69 @@ export class PlaywrightRecorder {
         
         // Debug log
         console.log('Element highlighted:', currentHighlightedElement ? currentHighlightedElement.tagName : 'none', 'Shift:', e.detail.isShiftPressed);
+      });
+      
+      // Set up coordinate mode toggle
+      coordBtn.addEventListener('click', () => {
+        coordinateMode = !coordinateMode;
+        coordBtn.classList.toggle('active', coordinateMode);
+        
+        if (coordinateMode) {
+          coordBtn.style.background = '#4CAF50';
+          coordBtn.style.borderColor = '#4CAF50';
+          document.body.style.cursor = 'crosshair';
+          
+          // Show coordinate mode notification
+          const coordNotification = document.createElement('div');
+          coordNotification.id = 'coord-notification';
+          coordNotification.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 250px;
+          `;
+          coordNotification.innerHTML = `
+            <strong>📍 Coordinate Mode Active</strong><br>
+            Clicks will be recorded as X,Y coordinates
+          `;
+          
+          try {
+            if (document.body) {
+              document.body.appendChild(coordNotification);
+            }
+          } catch (e) {
+            console.warn('Failed to show coordinate notification:', e);
+          }
+          
+          // Remove notification after 3 seconds
+          setTimeout(() => {
+            coordNotification.remove();
+          }, 3000);
+        } else {
+          coordBtn.style.background = '#333';
+          coordBtn.style.borderColor = '#444';
+          document.body.style.cursor = '';
+          
+          // Remove any existing notification
+          const existingNotification = document.getElementById('coord-notification');
+          if (existingNotification) {
+            existingNotification.remove();
+          }
+        }
+        
+        // Dispatch event to notify about coordinate mode change
+        const event = new CustomEvent('playwright-recorder-coordinate-toggle', { 
+          detail: { enabled: coordinateMode } 
+        });
+        document.dispatchEvent(event);
       });
       
       highlightBtn.addEventListener('click', () => {
@@ -858,6 +1049,18 @@ export class PlaywrightRecorder {
       // Store events
       (window as any).__recordedEvents = [];
       
+      // Override addEventListener to capture all event listeners
+      const originalAddEventListener = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function(type: string, listener: any, options?: any) {
+        // Call original first
+        originalAddEventListener.call(this, type, listener, options);
+        
+        // For click events, add our own capture phase listener
+        if (type === 'click' && this === document) {
+          console.log('🎯 Intercepted document click listener registration');
+        }
+      };
+      
       // Function to add styles when DOM is ready
       const addHighlightStyles = () => {
         if (!document.head) {
@@ -896,6 +1099,21 @@ export class PlaywrightRecorder {
             left: 0 !important;
             font-family: monospace !important;
           }
+          
+          .playwright-recorder-coord-indicator {
+            position: fixed !important;
+            background: rgba(0, 0, 0, 0.8) !important;
+            color: #4CAF50 !important;
+            padding: 6px 12px !important;
+            font-size: 13px !important;
+            font-family: monospace !important;
+            border-radius: 4px !important;
+            z-index: 999998 !important;
+            pointer-events: none !important;
+            white-space: nowrap !important;
+            border: 1px solid #4CAF50 !important;
+            user-select: none !important;
+          }
         `;
         
         try {
@@ -912,6 +1130,8 @@ export class PlaywrightRecorder {
       let tooltipElement: HTMLElement | null = null;
       let isHighlightKeyPressed = false;
       let isShiftKeyPressed = false;
+      let isCoordinateMode = false;
+      let coordIndicator: HTMLElement | null = null;
       
       // Function to show selector tooltip
       const showTooltip = (element: HTMLElement, selector: string) => {
@@ -984,8 +1204,29 @@ export class PlaywrightRecorder {
         document.dispatchEvent(event);
       };
       
-      // Mouse move handler for highlighting
+      // Mouse move handler for highlighting and coordinate tracking
       document.addEventListener('mousemove', (e) => {
+        // Handle coordinate mode
+        if (isCoordinateMode) {
+          // Create or update coordinate indicator
+          if (!coordIndicator) {
+            coordIndicator = document.createElement('div');
+            coordIndicator.className = 'playwright-recorder-coord-indicator';
+            coordIndicator.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
+            document.body.appendChild(coordIndicator);
+          }
+          
+          // Update position and text
+          coordIndicator.textContent = `X: ${e.pageX}, Y: ${e.pageY}`;
+          coordIndicator.style.left = (e.clientX + 15) + 'px';
+          coordIndicator.style.top = (e.clientY + 15) + 'px';
+        } else if (coordIndicator) {
+          // Remove coordinate indicator if not in coordinate mode
+          coordIndicator.remove();
+          coordIndicator = null;
+        }
+        
+        // Handle highlight mode
         if (!isHighlightKeyPressed) return;
         
         const target = e.target as HTMLElement;
@@ -994,6 +1235,18 @@ export class PlaywrightRecorder {
           highlightElement(target);
         }
       }, true);
+      
+      // Listen for coordinate mode toggle from controller
+      document.addEventListener('playwright-recorder-coordinate-toggle', (e: any) => {
+        isCoordinateMode = e.detail.enabled;
+        console.log('📍 Coordinate mode:', isCoordinateMode ? 'ON' : 'OFF');
+        
+        // Clean up coordinate indicator when turning off coordinate mode
+        if (!isCoordinateMode && coordIndicator) {
+          coordIndicator.remove();
+          coordIndicator = null;
+        }
+      });
       
       // Listen for highlight toggle from controller
       document.addEventListener('playwright-recorder-highlight-toggle', (e: any) => {
@@ -1196,12 +1449,44 @@ export class PlaywrightRecorder {
         }
       }, true);
       
-      // Track clicks
-      document.addEventListener('click', (e) => {
+      // Track processed clicks to avoid duplicates
+      const processedClicks = new WeakMap<Event, boolean>();
+      let lastClickTime = 0;
+      let lastClickTarget: EventTarget | null = null;
+      
+      // Function to handle clicks - separated so we can call it from multiple places
+      const handleClick = (e: MouseEvent) => {
+        // Check if we've already processed this event
+        if (processedClicks.has(e)) {
+          console.log('⏭️ Click already processed, skipping');
+          return;
+        }
+        
         const target = e.target as HTMLElement;
+        const now = Date.now();
+        
+        // Deduplicate clicks on same target within 50ms
+        if (lastClickTarget === target && (now - lastClickTime) < 50) {
+          console.log('⏭️ Duplicate click detected, skipping');
+          return;
+        }
+        
+        console.log('🖱️ Click detected, coordinate mode:', isCoordinateMode);
+        
+        // Mark this event as processed
+        processedClicks.set(e, true);
+        lastClickTime = now;
+        lastClickTarget = target;
         
         // Skip recording clicks on the recorder controller UI
         if (target.closest('#playwright-recorder-controller')) {
+          console.log('⏭️ Skipping recorder UI click');
+          return;
+        }
+        
+        // Skip coordinate indicator if somehow clicked
+        if (target.classList.contains('playwright-recorder-coord-indicator')) {
+          console.log('⏭️ Skipping coord indicator click');
           return;
         }
         
@@ -1223,6 +1508,12 @@ export class PlaywrightRecorder {
               target.closest('[id^="wait-"]') ||
               target.closest('.playwright-recorder-') ||
               target.style.zIndex === '999999') {
+            return;
+          }
+          
+          // Check if modal already exists
+          if (document.getElementById('playwright-wait-modal')) {
+            console.log('⏭️ Wait modal already exists, skipping');
             return;
           }
           
@@ -1372,12 +1663,76 @@ export class PlaywrightRecorder {
         // Priority 2: For buttons, use role selector
         else if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
           const text = target.textContent?.trim() || '';
-          selector = `button:has-text("${text}")`;
+          
+          // First try to use ID if available
+          if (target.id) {
+            selector = `#${target.id}`;
+          }
+          // Check how many elements match the text selector
+          else {
+            const potentialSelector = `button:has-text("${text}")`;
+            const matchingElements = document.querySelectorAll(potentialSelector);
+            
+            if (matchingElements.length <= 1) {
+              // Unique or no match, use the simple selector
+              selector = potentialSelector;
+            } else {
+              // Multiple matches, need to be more specific
+              // Try using nth-match or parent context
+              let index = -1;
+              for (let i = 0; i < matchingElements.length; i++) {
+                if (matchingElements[i] === target) {
+                  index = i;
+                  break;
+                }
+              }
+              
+              if (index >= 0) {
+                // Use nth= syntax for Playwright
+                selector = `button:has-text("${text}") >> nth=${index}`;
+              } else {
+                // Fallback to simple selector
+                selector = potentialSelector;
+              }
+            }
+          }
         }
         // Priority 3: For links, use role selector
         else if (target.tagName === 'A') {
           const text = target.textContent?.trim() || '';
-          selector = `a:has-text("${text}")`;
+          
+          // First try to use ID if available
+          if (target.id) {
+            selector = `#${target.id}`;
+          }
+          // Check how many elements match the text selector
+          else {
+            const potentialSelector = `a:has-text("${text}")`;
+            const matchingElements = document.querySelectorAll(potentialSelector);
+            
+            if (matchingElements.length <= 1) {
+              // Unique or no match, use the simple selector
+              selector = potentialSelector;
+            } else {
+              // Multiple matches, need to be more specific
+              // Try using nth-match or parent context
+              let index = -1;
+              for (let i = 0; i < matchingElements.length; i++) {
+                if (matchingElements[i] === target) {
+                  index = i;
+                  break;
+                }
+              }
+              
+              if (index >= 0) {
+                // Use nth= syntax for Playwright
+                selector = `a:has-text("${text}") >> nth=${index}`;
+              } else {
+                // Fallback to simple selector
+                selector = potentialSelector;
+              }
+            }
+          }
         }
         // Priority 4: For inputs, use name or type
         else if (target.tagName === 'INPUT') {
@@ -1411,17 +1766,122 @@ export class PlaywrightRecorder {
           }
         }
         
-        const event = {
+        const event: any = {
           selector: selector,
           text: target.textContent?.trim() || ''
         };
         
-        (window as any).__recordedEvents.push({type: 'click', data: event});
+        // Add coordinates if in coordinate mode
+        if (isCoordinateMode) {
+          // Use pageX/pageY for absolute document coordinates
+          const x = e.pageX || (e.clientX + window.pageXOffset);
+          const y = e.pageY || (e.clientY + window.pageYOffset);
+          
+          event.coordinates = { x, y };
+          console.log(`📍 Recording click at coordinates: (${x}, ${y})`);
+          console.log(`📍 Coordinate mode active, sending coordinates with click event`);
+        }
+        
+        (window as any).__recordedEvents.push({
+          type: 'click', 
+          data: event,
+          timestamp: Date.now()
+        });
         
         if ((window as any).__playwrightRecorderOnClick) {
+          console.log('📤 Sending click event to recorder:', event);
           (window as any).__playwrightRecorderOnClick(event);
+        } else {
+          console.error('❌ __playwrightRecorderOnClick not available!');
         }
-      }, true);
+      };
+      
+      // Track clicks - add multiple listeners to catch events even if stopPropagation is used
+      
+      // 1. Document-level capture phase (earliest possible)
+      document.addEventListener('click', handleClick, true);
+      
+      // 2. Window-level capture phase
+      window.addEventListener('click', handleClick, true);
+      
+      // 3. Document-level bubble phase (fallback)
+      document.addEventListener('click', handleClick, false);
+      
+      // 4. Override dispatchEvent to intercept all click events
+      const originalDispatchEvent = EventTarget.prototype.dispatchEvent;
+      EventTarget.prototype.dispatchEvent = function(event: Event) {
+        if (event.type === 'click' && event.isTrusted) {
+          console.log('🎯 Intercepted dispatchEvent for click');
+          handleClick(event as MouseEvent);
+        }
+        return originalDispatchEvent.call(this, event);
+      };
+      
+      // 5. Add pointer events as fallback for touch/stylus (disabled by default)
+      const enablePointerFallback = false; // Can be enabled for specific problematic sites
+      if (enablePointerFallback) {
+        document.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'mouse' && e.button === 0) {
+            console.log('🖱️ Pointer up detected as fallback');
+            // Create synthetic click event
+            const clickEvent = new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              pageX: e.pageX,
+              pageY: e.pageY
+            });
+            Object.defineProperty(clickEvent, 'target', { value: e.target, enumerable: true });
+            handleClick(clickEvent);
+          }
+        }, true);
+      }
+      
+      // 6. Monitor mousedown/mouseup as last resort (disabled by default)
+      const enableMouseFallback = false; // Can be enabled for specific problematic sites
+      if (enableMouseFallback) {
+        let mouseDownTarget: EventTarget | null = null;
+        let mouseDownTime = 0;
+        
+        document.addEventListener('mousedown', (e) => {
+          mouseDownTarget = e.target;
+          mouseDownTime = Date.now();
+        }, true);
+        
+        document.addEventListener('mouseup', (e) => {
+          if (mouseDownTarget === e.target && (Date.now() - mouseDownTime) < 500) {
+            console.log('🖱️ Synthesizing click from mousedown/up');
+            const clickEvent = new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              pageX: e.pageX,
+              pageY: e.pageY
+            });
+            Object.defineProperty(clickEvent, 'target', { value: e.target, enumerable: true });
+            
+            // Small delay to let any real click event fire first
+            setTimeout(() => {
+              // Check if we already recorded this click
+              const recentEvents = (window as any).__recordedEvents.slice(-5);
+              const hasRecentClick = recentEvents.some((evt: any) => 
+                evt.type === 'click' && 
+                evt.timestamp && 
+                (Date.now() - evt.timestamp) < 100
+              );
+              
+              if (!hasRecentClick) {
+                handleClick(clickEvent);
+              }
+            }, 50);
+          }
+          mouseDownTarget = null;
+        }, true);
+      }
     });
 
   }
@@ -1455,13 +1915,22 @@ export class PlaywrightRecorder {
     });
     
     await this.page.exposeFunction('__playwrightRecorderOnClick', async (data: any) => {
-      this.actions.push({
+      const action: RecordedAction = {
         type: 'click',
         selector: data.selector,
         value: data.text,
         timestamp: Date.now() - this.startTime
-      });
-      console.log('🖱️ Captured click on:', data.selector);
+      };
+      
+      // Add coordinates if provided
+      if (data.coordinates) {
+        action.coordinates = data.coordinates;
+        console.log('🖱️📍 Captured click at coordinates:', data.coordinates);
+      } else {
+        console.log('🖱️ Captured click on:', data.selector);
+      }
+      
+      this.actions.push(action);
       this.updateGeneratedCode();
     });
     
@@ -1633,15 +2102,27 @@ await expect(page.locator(selectors[0])).toBeVisible();
   }
 
   private generateTestCode(): string {
+    // Get screen dimensions (same as recording)
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+    const browserWidth = Math.floor(width * 0.6);
+    const browserHeight = height;
+    const browserX = width - browserWidth;
+    const browserY = 0;
+    
     const lines: string[] = [
-      "import { test, expect, chromium } from '@playwright/test';",
+      "const { chromium } = require('playwright-core');",
       "",
-      "test('recorded test', async () => {",
-      "  // Launch browser with same flags as recording",
+      "(async () => {",
+      "  console.log('🎬 Starting test replay...');",
+      "  ",
+      "  // Launch browser with same window size and position as recording",
       "  const browser = await chromium.launch({",
       "    headless: false,",
       "    channel: 'chrome', // Uses installed Chrome",
       "    args: [",
+      `      '--window-size=${browserWidth},${browserHeight}',`,
+      `      '--window-position=${browserX},${browserY}',`,
       "      '--no-default-browser-check',",
       "      '--disable-blink-features=AutomationControlled',",
       "      '--no-first-run',",
@@ -1678,8 +2159,13 @@ await expect(page.locator(selectors[0])).toBeVisible();
           lines.push(`    await page.goto('${action.url}');`);
           break;
         case 'click':
-          // Use the generated selector which should be more specific
-          lines.push(`    await page.locator('${action.selector}').click();`);
+          if (action.coordinates) {
+            // Use coordinate-based click
+            lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y}); // Click at coordinates`);
+          } else {
+            // Use the generated selector which should be more specific
+            lines.push(`    await page.locator('${action.selector}').click();`);
+          }
           break;
         case 'fill':
           // Escape single quotes in value
@@ -1719,7 +2205,7 @@ await expect(page.locator(selectors[0])).toBeVisible();
     lines.push("  } finally {");
     lines.push("    await browser.close();");
     lines.push("  }");
-    lines.push("});");
+    lines.push("})().catch(console.error);");
     
     return lines.join('\n');
   }
