@@ -6,15 +6,152 @@ export class CodeViewerWindow {
   private currentCode: string = '';
   private isReady: boolean = false;
   private pendingUpdates: string[] = [];
-  
+  private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
+  private onWaitSettingsChange?: (settings: { multiplier: number; maxDelay: number }) => void;
+  private currentTestPath: string | null = null;
+  private isViewMode: boolean = false;
+
   constructor() {
     this.setupIpcHandlers();
   }
-  
+
   private setupIpcHandlers() {
     ipcMain.handle('get-current-code', () => {
       return this.currentCode;
     });
+
+    ipcMain.on('update-wait-settings', (event, settings) => {
+      console.log('📊 Wait settings updated:', settings);
+      this.waitSettings = settings;
+
+      // In view mode, regenerate and update the code directly
+      if (this.isViewMode && this.currentCode) {
+        const updatedCode = this.regenerateCodeWithNewWaitTimes(this.currentCode, settings);
+        this.currentCode = updatedCode;
+        this.updateCode(updatedCode);
+      }
+      // In recording mode, notify the callback
+      else if (this.onWaitSettingsChange) {
+        this.onWaitSettingsChange(settings);
+      }
+    });
+
+    ipcMain.handle('save-test-code', async (event) => {
+      if (this.isViewMode && this.currentTestPath && this.currentCode) {
+        try {
+          const fs = require('fs');
+          fs.writeFileSync(this.currentTestPath, this.currentCode, 'utf8');
+          console.log('💾 Saved test code to:', this.currentTestPath);
+          return { success: true, message: 'Test saved successfully' };
+        } catch (error: any) {
+          console.error('❌ Failed to save test:', error);
+          return { success: false, error: error.message };
+        }
+      }
+      return { success: false, error: 'No test to save' };
+    });
+  }
+
+  setWaitSettingsCallback(callback: (settings: { multiplier: number; maxDelay: number }) => void) {
+    this.onWaitSettingsChange = callback;
+  }
+
+  getWaitSettings() {
+    return this.waitSettings;
+  }
+
+  setViewMode(testPath: string) {
+    this.isViewMode = true;
+    this.currentTestPath = testPath;
+    console.log('📖 Code viewer in view mode for:', testPath);
+
+    // Notify the renderer (with delay to ensure window is ready)
+    if (this.window && !this.window.isDestroyed()) {
+      setTimeout(() => {
+        if (this.window && !this.window.isDestroyed()) {
+          this.window.webContents.send('set-view-mode', true);
+        }
+      }, 200);
+    }
+  }
+
+  setRecordingMode() {
+    this.isViewMode = false;
+    this.currentTestPath = null;
+    console.log('🎥 Code viewer in recording mode');
+
+    // Notify the renderer
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send('set-view-mode', false);
+    }
+  }
+
+  private regenerateCodeWithNewWaitTimes(code: string, settings: { multiplier: number; maxDelay: number }): string {
+    // Parse existing wait functions and update all timeout values
+    const lines = code.split('\n');
+    const updatedLines = lines.map(line => {
+      let updatedLine = line;
+
+      // 1. Match waitForTimeout: await page.waitForTimeout(1500); // Human-like delay
+      const waitTimeoutMatch = line.match(/await page\.waitForTimeout\((\d+)\)/);
+      if (waitTimeoutMatch) {
+        const originalDelay = parseInt(waitTimeoutMatch[1]);
+        const newDelay = Math.floor(originalDelay * settings.multiplier);
+        const finalDelay = Math.min(newDelay, settings.maxDelay);
+
+        // Update the timeout value and add/update multiplier comment
+        updatedLine = line.replace(
+          /await page\.waitForTimeout\(\d+\);.*$/,
+          `await page.waitForTimeout(${finalDelay}); // Adjusted with ${settings.multiplier.toFixed(1)}x multiplier`
+        );
+      }
+
+      // 2. Match waitForSelector with timeout: await page.waitForSelector('selector', { state: 'visible', timeout: 5000 });
+      const waitSelectorMatch = line.match(/await page\.waitForSelector\([^)]+timeout:\s*(\d+)/);
+      if (waitSelectorMatch) {
+        const originalTimeout = parseInt(waitSelectorMatch[1]);
+        const newTimeout = Math.floor(originalTimeout * settings.multiplier);
+        const finalTimeout = Math.min(newTimeout, settings.maxDelay);
+
+        updatedLine = line.replace(
+          /timeout:\s*\d+/,
+          `timeout: ${finalTimeout}`
+        );
+      }
+
+      // 3. Match waitForFunction with timeout: await page.waitForFunction(..., {}, { timeout: 5000 });
+      const waitFunctionMatch = line.match(/await page\.waitForFunction\([^}]+timeout:\s*(\d+)/);
+      if (waitFunctionMatch) {
+        const originalTimeout = parseInt(waitFunctionMatch[1]);
+        const newTimeout = Math.floor(originalTimeout * settings.multiplier);
+        const finalTimeout = Math.min(newTimeout, settings.maxDelay);
+
+        updatedLine = line.replace(
+          /timeout:\s*\d+/,
+          `timeout: ${finalTimeout}`
+        );
+      }
+
+      // 4. Match waitForEvent (not currently in generated code, but for completeness)
+      const waitEventMatch = line.match(/page\.waitForEvent\([^)]+/);
+      if (waitEventMatch && line.includes('timeout:')) {
+        const timeoutMatch = line.match(/timeout:\s*(\d+)/);
+        if (timeoutMatch) {
+          const originalTimeout = parseInt(timeoutMatch[1]);
+          const newTimeout = Math.floor(originalTimeout * settings.multiplier);
+          const finalTimeout = Math.min(newTimeout, settings.maxDelay);
+
+          updatedLine = line.replace(
+            /timeout:\s*\d+/,
+            `timeout: ${finalTimeout}`
+          );
+        }
+      }
+
+      return updatedLine;
+    });
+
+    return updatedLines.join('\n');
   }
   
   async create(): Promise<void> {
@@ -94,10 +231,66 @@ export class CodeViewerWindow {
       50% { opacity: 0.5; }
       100% { opacity: 1; }
     }
+    .controls-panel {
+      background-color: #252526;
+      padding: 12px 20px;
+      border-bottom: 1px solid #474747;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      font-size: 13px;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .control-group label {
+      color: #cccccc;
+      font-weight: 500;
+    }
+    .control-group input[type="range"] {
+      width: 150px;
+      cursor: pointer;
+    }
+    .control-group input[type="number"] {
+      width: 60px;
+      padding: 4px 8px;
+      background-color: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #cccccc;
+      font-size: 12px;
+    }
+    .control-group .value-display {
+      color: #4CAF50;
+      font-weight: 600;
+      min-width: 40px;
+    }
+    .control-group button {
+      padding: 6px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .control-group button:hover {
+      background-color: #45a049;
+    }
+    .control-group button:disabled {
+      background-color: #666;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
     .code-container {
-      height: calc(100vh - 50px);
+      height: calc(100vh - 110px);
       overflow: auto;
       padding: 20px;
+      scroll-behavior: smooth;
     }
     pre {
       margin: 0;
@@ -124,6 +317,20 @@ export class CodeViewerWindow {
       <span>Recording...</span>
     </div>
   </div>
+  <div class="controls-panel">
+    <div class="control-group">
+      <label>⏱️ Wait Time Multiplier:</label>
+      <input type="range" id="wait-multiplier-slider" min="0" max="3" step="0.1" value="1">
+      <span class="value-display" id="wait-multiplier-value">1.0x</span>
+    </div>
+    <div class="control-group">
+      <label>Max Delay (ms):</label>
+      <input type="number" id="max-delay-input" min="0" max="10000" step="100" value="3000">
+    </div>
+    <div class="control-group" id="save-button-group" style="margin-left: auto; display: none;">
+      <button id="save-test-button">💾 Save Changes</button>
+    </div>
+  </div>
   <div class="code-container">
     <pre><code id="code-display">import { test, expect } from '@playwright/test';
 
@@ -133,8 +340,14 @@ test('recorded test', async ({ page }) => {
   </div>
   <script>
     const { ipcRenderer } = require('electron');
-    
+
     console.log('Script loaded, setting up IPC listeners');
+
+    // Global settings for wait times
+    window.waitSettings = {
+      multiplier: 1.0,
+      maxDelay: 3000
+    };
     
     // Listen for code updates immediately
     ipcRenderer.on('update-code', (event, code) => {
@@ -159,6 +372,21 @@ test('recorded test', async ({ page }) => {
         }
       }
     });
+
+    // Listen for view mode changes
+    ipcRenderer.on('set-view-mode', (event, isViewMode) => {
+      console.log('View mode changed:', isViewMode);
+      const saveButtonGroup = document.getElementById('save-button-group');
+      const statusText = document.querySelector('.status span');
+
+      if (saveButtonGroup) {
+        saveButtonGroup.style.display = isViewMode ? 'flex' : 'none';
+      }
+
+      if (statusText) {
+        statusText.textContent = isViewMode ? 'View Mode' : 'Recording...';
+      }
+    });
     
     // Wait for DOM to be ready
     if (document.readyState === 'loading') {
@@ -174,6 +402,89 @@ test('recorded test', async ({ page }) => {
         console.error('CRITICAL: code-display element not found in DOM!');
       } else {
         console.log('code-display element found successfully');
+      }
+
+      // Set up wait time controls
+      const multiplierSlider = document.getElementById('wait-multiplier-slider');
+      const multiplierValue = document.getElementById('wait-multiplier-value');
+      const maxDelayInput = document.getElementById('max-delay-input');
+      const saveButton = document.getElementById('save-test-button');
+      const saveButtonGroup = document.getElementById('save-button-group');
+
+      console.log('Control elements:', {
+        slider: !!multiplierSlider,
+        value: !!multiplierValue,
+        maxDelay: !!maxDelayInput,
+        saveButton: !!saveButton
+      });
+
+      // Set up save button
+      if (saveButton) {
+        saveButton.addEventListener('click', async () => {
+          console.log('Save button clicked');
+          saveButton.disabled = true;
+          saveButton.textContent = '💾 Saving...';
+
+          try {
+            const result = await ipcRenderer.invoke('save-test-code');
+            if (result.success) {
+              saveButton.textContent = '✅ Saved!';
+              setTimeout(() => {
+                saveButton.textContent = '💾 Save Changes';
+                saveButton.disabled = false;
+              }, 2000);
+            } else {
+              saveButton.textContent = '❌ Failed';
+              setTimeout(() => {
+                saveButton.textContent = '💾 Save Changes';
+                saveButton.disabled = false;
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Save error:', error);
+            saveButton.textContent = '❌ Error';
+            setTimeout(() => {
+              saveButton.textContent = '💾 Save Changes';
+              saveButton.disabled = false;
+            }, 2000);
+          }
+        });
+      }
+
+      if (multiplierSlider && multiplierValue) {
+        console.log('Setting up multiplier slider event listener');
+        multiplierSlider.addEventListener('input', (e) => {
+          console.log('Slider input event fired, target:', e.target);
+          const value = parseFloat(e.target.value);
+          console.log('Slider value changed to:', value);
+          window.waitSettings.multiplier = value;
+          multiplierValue.textContent = value.toFixed(1) + 'x';
+          console.log('Updated multiplier value display to:', multiplierValue.textContent);
+
+          // Notify main process to regenerate code with new settings
+          console.log('Sending update-wait-settings to main process:', window.waitSettings);
+          ipcRenderer.send('update-wait-settings', window.waitSettings);
+        });
+        console.log('Multiplier slider event listener added successfully');
+      } else {
+        console.error('Could not find multiplier slider or value display elements');
+      }
+
+      if (maxDelayInput) {
+        console.log('Setting up max delay input event listener');
+        maxDelayInput.addEventListener('change', (e) => {
+          console.log('Max delay input changed');
+          const value = parseInt(e.target.value);
+          console.log('Max delay value changed to:', value);
+          window.waitSettings.maxDelay = value;
+
+          // Notify main process to regenerate code with new settings
+          console.log('Sending update-wait-settings to main process:', window.waitSettings);
+          ipcRenderer.send('update-wait-settings', window.waitSettings);
+        });
+        console.log('Max delay input event listener added successfully');
+      } else {
+        console.error('Could not find max delay input element');
       }
     }
     
@@ -204,9 +515,10 @@ test('recorded test', async ({ page }) => {
     window.updateCode = function(code) {
       console.log('Updating code display, length:', code.length);
       const codeElement = document.getElementById('code-display');
+      const codeContainer = document.querySelector('.code-container');
       const headerTitle = document.querySelector('.header h2');
       const statusText = document.querySelector('.status span');
-      
+
       // Check if this is Gemini element analysis
       if (code.includes('// Gemini Element Analysis')) {
         if (headerTitle) headerTitle.textContent = '🔍 Gemini Element Analysis';
@@ -215,7 +527,7 @@ test('recorded test', async ({ page }) => {
         if (headerTitle) headerTitle.textContent = '📝 Playwright Test Code (Real-time)';
         if (statusText) statusText.textContent = 'Recording...';
       }
-      
+
       if (codeElement) {
         console.log('Found code element, updating innerHTML');
         try {
@@ -223,11 +535,26 @@ test('recorded test', async ({ page }) => {
           console.log('Highlighted code preview:', highlighted.substring(0, 100) + '...');
           codeElement.innerHTML = highlighted;
           console.log('innerHTML updated successfully');
+
+          // Auto-scroll to bottom to show new lines
+          if (codeContainer) {
+            // Use requestAnimationFrame to ensure DOM has updated
+            requestAnimationFrame(() => {
+              codeContainer.scrollTop = codeContainer.scrollHeight;
+            });
+          }
         } catch (e) {
           console.error('Error updating code display:', e);
           // Fallback: display raw text content
           console.log('Using fallback - setting textContent');
           codeElement.textContent = code;
+
+          // Auto-scroll even in fallback
+          if (codeContainer) {
+            requestAnimationFrame(() => {
+              codeContainer.scrollTop = codeContainer.scrollHeight;
+            });
+          }
         }
       } else {
         console.error('Could not find element with id "code-display"');
@@ -237,6 +564,11 @@ test('recorded test', async ({ page }) => {
           if (retryElement) {
             console.log('Found element on retry, updating');
             retryElement.textContent = code;
+
+            // Auto-scroll on retry
+            if (codeContainer) {
+              codeContainer.scrollTop = codeContainer.scrollHeight;
+            }
           }
         }, 100);
       }
