@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download';
   selector?: string;
   value?: string;
   key?: string;
@@ -25,6 +25,7 @@ export class PlaywrightRecorder {
   private outputFile: string = '';
   private updateCallback?: (code: string) => void;
   private controllerCheckInterval: NodeJS.Timeout | null = null;
+  private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
 
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
@@ -32,6 +33,12 @@ export class PlaywrightRecorder {
 
   setUpdateCallback(callback: (code: string) => void): void {
     this.updateCallback = callback;
+  }
+
+  setWaitSettings(settings: { multiplier: number; maxDelay: number }): void {
+    this.waitSettings = settings;
+    // Regenerate code with new settings
+    this.updateGeneratedCode();
   }
 
   async start(url: string, onBrowserClosed?: () => void): Promise<void> {
@@ -104,9 +111,17 @@ export class PlaywrightRecorder {
       }
     }
 
+    // Create downloads directory
+    const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+    if (!fs.existsSync(downloadsPath)) {
+      fs.mkdirSync(downloadsPath, { recursive: true });
+    }
+    
     this.context = await this.browser.newContext({
       viewport: null,
-      permissions: ['clipboard-read', 'clipboard-write']
+      permissions: ['clipboard-read', 'clipboard-write'],
+      acceptDownloads: true,
+      downloadsPath: downloadsPath
     });
     
     // Set up browser close detection
@@ -128,6 +143,38 @@ export class PlaywrightRecorder {
     
     // Set up page event listeners
     this.setupPageListeners();
+    
+    // Set up download handling
+    this.page.on('download', async (download) => {
+      console.log('📥 Download started:', download.url());
+      const suggestedFilename = download.suggestedFilename();
+      const filePath = path.join(downloadsPath, suggestedFilename);
+      
+      try {
+        // Record download start action
+        this.actions.push({
+          type: 'download',
+          selector: 'download-wait',
+          value: `Download started: ${suggestedFilename}`,
+          timestamp: Date.now() - this.startTime
+        });
+        
+        await download.saveAs(filePath);
+        console.log('✅ Download saved to:', filePath);
+        
+        // Record download complete action
+        this.actions.push({
+          type: 'download',
+          selector: 'download-complete',
+          value: `Download completed: ${suggestedFilename}`,
+          timestamp: Date.now() - this.startTime
+        });
+        
+        this.updateGeneratedCode();
+      } catch (err) {
+        console.error('❌ Download failed:', err);
+      }
+    });
     
     // Navigate to URL
     await this.page.goto(url);
@@ -2134,31 +2181,74 @@ await expect(page.locator(selectors[0])).toBeVisible();
       "      '--disable-features=PrivateNetworkAccessRespectPreflightResults'",
       "    ]",
       "  });",
+      "",
+      "  // Create downloads directory",
+      "  const path = require('path');",
+      "  const downloadsPath = path.join(process.cwd(), 'playwright-downloads');",
+      "  if (!require('fs').existsSync(downloadsPath)) {",
+      "    require('fs').mkdirSync(downloadsPath, { recursive: true });",
+      "  }",
       "",  
       "  const context = await browser.newContext({",
       "    viewport: null,",
-      "    permissions: ['clipboard-read', 'clipboard-write']",
+      "    permissions: ['clipboard-read', 'clipboard-write'],",
+      "    acceptDownloads: true,",
+      "    downloadsPath: downloadsPath",
       "  });",
       "  const page = await context.newPage();",
+      "",
+      "  // Handle downloads",
+      "  page.on('download', async (download) => {",
+      "    console.log('📥 Download started:', download.url());",
+      "    const filename = download.suggestedFilename();",
+      "    const filePath = path.join(downloadsPath, filename);",
+      "    await download.saveAs(filePath);",
+      "    console.log('✅ Download saved to:', filePath);",
+      "  });",
       "",
       "  try {"
     ];
 
     let lastTimestamp = 0;
-    
-    for (const action of this.actions) {
+
+    // Pre-scan for downloads to identify which actions trigger them
+    const downloadTriggerIndices = new Set<number>();
+    for (let i = 0; i < this.actions.length; i++) {
+      if (this.actions[i].type === 'download' && this.actions[i].selector === 'download-wait') {
+        // Find the most recent click/action before this download
+        for (let j = i - 1; j >= 0; j--) {
+          if (this.actions[j].type === 'click') {
+            downloadTriggerIndices.add(j);
+            break;
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < this.actions.length; i++) {
+      const action = this.actions[i];
+
       // Add delay if needed (but not after navigation)
       const delay = action.timestamp - lastTimestamp;
       if (delay > 1000 && lastTimestamp > 0 && action.type !== 'navigate') {
-        lines.push(`    await page.waitForTimeout(${Math.min(delay, 3000)}); // Human-like delay`);
+        // Apply wait time multiplier and max delay settings
+        const adjustedDelay = Math.floor(delay * this.waitSettings.multiplier);
+        const finalDelay = Math.min(adjustedDelay, this.waitSettings.maxDelay);
+        lines.push(`    await page.waitForTimeout(${finalDelay}); // Human-like delay (${this.waitSettings.multiplier}x multiplier)`);
       }
       lastTimestamp = action.timestamp;
-      
+
       switch (action.type) {
         case 'navigate':
           lines.push(`    await page.goto('${action.url}');`);
           break;
         case 'click':
+          // If this click triggers a download, set up the promise first
+          if (downloadTriggerIndices.has(i)) {
+            lines.push(`    // Setting up download handler before clicking`);
+            lines.push(`    const downloadPromise = page.waitForEvent('download');`);
+          }
+
           if (action.coordinates) {
             // Use coordinate-based click
             lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y}); // Click at coordinates`);
@@ -2166,6 +2256,18 @@ await expect(page.locator(selectors[0])).toBeVisible();
             // Use the generated selector which should be more specific
             lines.push(`    await page.locator('${action.selector}').click();`);
           }
+          break;
+        case 'download':
+          // Handle download events
+          if (action.selector === 'download-complete') {
+            const filename = action.value?.replace('Download completed: ', '') || 'file';
+            lines.push(`    // Wait for download to complete`);
+            lines.push(`    const download = await downloadPromise;`);
+            lines.push(`    const downloadPath = path.join(downloadsPath, download.suggestedFilename());`);
+            lines.push(`    await download.saveAs(downloadPath);`);
+            lines.push(`    console.log('✅ Download completed:', downloadPath);`);
+          }
+          // Skip download-wait as it's just informational now
           break;
         case 'fill':
           // Escape single quotes in value

@@ -976,8 +976,9 @@ test('recorded test', async ({ page }) => {
       
       // Open our code viewer window
       await codeViewerWindow.create();
+      codeViewerWindow.setRecordingMode();
       codeViewerWindow.updateCode(initialCode);
-      
+
       // Create new recorder
       activeRecorder = new PlaywrightRecorder();
       activeRecorder.setOutputFile(outputFile);
@@ -985,16 +986,24 @@ test('recorded test', async ({ page }) => {
       // Set up real-time updates
       activeRecorder.setUpdateCallback((code) => {
         console.log('🔔 Update callback triggered, code length:', code.length);
-        
+
         // Update code viewer window
         codeViewerWindow.updateCode(code);
-        
+
         // Send update to renderer
         event.sender.send('playwright-test-update', {
           filePath: outputFile,
           code: code,
           timestamp
         });
+      });
+
+      // Set up wait settings callback from code viewer
+      codeViewerWindow.setWaitSettingsCallback((settings) => {
+        console.log('⏱️ Wait settings changed, updating recorder:', settings);
+        if (activeRecorder) {
+          activeRecorder.setWaitSettings(settings);
+        }
       });
       
       try {
@@ -1838,29 +1847,30 @@ const { chromium } = require('playwright-core');
   ipcMain.handle('view-playwright-test', async (event, { testPath }) => {
     try {
       console.log('👁️ Viewing test:', testPath);
-      
+
       // Read the test file
       if (!fs.existsSync(testPath)) {
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: 'Test file not found'
         };
       }
-      
+
       const testCode = fs.readFileSync(testPath, 'utf8');
-      
-      // Open the code viewer window
+
+      // Open the code viewer window in view mode
       await codeViewerWindow.create();
+      codeViewerWindow.setViewMode(testPath);
       codeViewerWindow.updateCode(testCode);
-      
-      return { 
+
+      return {
         success: true,
         message: 'Test opened in code viewer'
       };
     } catch (error: any) {
       console.error('Error viewing test:', error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error?.message || 'Failed to view test'
       };
     }
