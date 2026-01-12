@@ -587,6 +587,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [showSavedTests, setShowSavedTests] = useState(false);
   const [isRecordingEnhanced, setIsRecordingEnhanced] = useState(false);
   const [currentTestCode, setCurrentTestCode] = useState<string>('');
+  const [playwrightDownloads, setPlaywrightDownloads] = useState<any[]>([]);
 
   // Load saved tests when modal opens
   useEffect(() => {
@@ -604,6 +605,42 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const addDebugLog = (message: string) => {
     setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
+
+  // Helper functions for Playwright downloads
+  const loadPlaywrightDownloads = async () => {
+    try {
+      const result = await (window as any).electron.debug.getPlaywrightDownloads();
+      if (result.success) {
+        setPlaywrightDownloads(result.files || []);
+      }
+    } catch (error) {
+      console.error('[DebugModal] Failed to load playwright downloads:', error);
+    }
+  };
+
+  const handleOpenDownload = async (filePath: string) => {
+    try {
+      await (window as any).electron.debug.openPlaywrightDownload(filePath);
+    } catch (error) {
+      console.error('[DebugModal] Failed to open download:', error);
+      alert('Failed to open file');
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // Load playwright downloads when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      loadPlaywrightDownloads();
+    }
+  }, [isOpen]);
 
   // Listen for Playwright test saved events
   useEffect(() => {
@@ -2179,6 +2216,94 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             >
               Test Facebook Post
             </button>
+          </div>
+
+          {/* Playwright Downloads Section */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ color: '#9C27B0', margin: 0 }}>📥 Playwright Downloads</h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={async () => {
+                    try {
+                      await (window as any).electron.debug.openPlaywrightDownloadsFolder();
+                    } catch (error) {
+                      console.error('Failed to open folder:', error);
+                      alert('Failed to open folder');
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Open Folder
+                </button>
+                <button
+                  onClick={loadPlaywrightDownloads}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#9C27B0',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+            {playwrightDownloads.length === 0 ? (
+              <p style={{ color: '#888', fontSize: '14px', margin: '8px 0' }}>No downloaded files yet.</p>
+            ) : (
+              <div style={{
+                backgroundColor: '#1a1a1a',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                padding: '10px',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                {playwrightDownloads.map((file, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: '12px',
+                      background: '#2a2a2a',
+                      borderRadius: '6px',
+                      marginBottom: '8px',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s',
+                      border: '1px solid #444'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+                    onClick={() => handleOpenDownload(file.path)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: '500', fontSize: '14px', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#fff' }}>
+                          📄 {file.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#888' }}>
+                          {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={{ marginLeft: '12px', fontSize: '12px', color: '#9C27B0', whiteSpace: 'nowrap' }}>
+                        Open →
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Debug Console Section */}
