@@ -1876,6 +1876,88 @@ const { chromium } = require('playwright-core');
     }
   });
 
+  // Get list of downloaded files from playwright-downloads directory
+  ipcMain.handle('get-playwright-downloads', async () => {
+    try {
+      const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+
+      // Check if directory exists
+      if (!fs.existsSync(downloadsPath)) {
+        return {
+          success: true,
+          files: []
+        };
+      }
+
+      // Read directory and get file stats
+      const files = fs.readdirSync(downloadsPath);
+      const fileList = files.map(filename => {
+        const filePath = path.join(downloadsPath, filename);
+        const stats = fs.statSync(filePath);
+
+        return {
+          name: filename,
+          path: filePath,
+          size: stats.size,
+          created: stats.birthtime,
+          modified: stats.mtime
+        };
+      });
+
+      // Sort by modified date (newest first)
+      fileList.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+
+      return {
+        success: true,
+        files: fileList
+      };
+    } catch (error: any) {
+      console.error('Error getting playwright downloads:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to get downloads',
+        files: []
+      };
+    }
+  });
+
+  // Open downloaded file in default application
+  ipcMain.handle('open-playwright-download', async (event, filePath: string) => {
+    try {
+      const { shell } = require('electron');
+      await shell.openPath(filePath);
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error opening file:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to open file'
+      };
+    }
+  });
+
+  // Open playwright-downloads folder in file viewer (Finder/Explorer)
+  ipcMain.handle('open-playwright-downloads-folder', async () => {
+    try {
+      const { shell } = require('electron');
+      const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(downloadsPath)) {
+        fs.mkdirSync(downloadsPath, { recursive: true });
+      }
+
+      await shell.openPath(downloadsPath);
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error opening folder:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to open folder'
+      };
+    }
+  });
+
   console.log('✅ Chrome browser automation IPC handlers registered');
 }
 

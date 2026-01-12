@@ -2058,6 +2058,9 @@ const electronHandler = {
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
     viewPlaywrightTest: (testPath: string) => ipcRenderer.invoke('view-playwright-test', { testPath }),
+    getPlaywrightDownloads: () => ipcRenderer.invoke('get-playwright-downloads'),
+    openPlaywrightDownload: (filePath: string) => ipcRenderer.invoke('open-playwright-download', filePath),
+    openPlaywrightDownloadsFolder: () => ipcRenderer.invoke('open-playwright-downloads-folder'),
     openInstagramWithProfile: (options: {
       planId?: string;
       profilePath?: string;
