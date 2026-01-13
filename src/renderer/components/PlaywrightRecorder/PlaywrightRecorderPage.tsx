@@ -237,7 +237,9 @@ const PlaywrightRecorderPage: React.FC = () => {
   // Listen for Playwright test saved events
   useEffect(() => {
     const handleTestSaved = (event: any, data: any) => {
-      addDebugLog(`📁 Test saved: ${data.filePath}`);
+      if (data && data.filePath) {
+        addDebugLog(`📁 Test saved: ${data.filePath}`);
+      }
       // Refresh test list and schedules
       (async () => {
         const result = await (window as any).electron.debug.getPlaywrightTests();
@@ -258,7 +260,9 @@ const PlaywrightRecorderPage: React.FC = () => {
   // Listen for real-time test updates
   useEffect(() => {
     const handleTestUpdate = (event: any, data: any) => {
-      setCurrentTestCode(data.code);
+      if (data && data.code) {
+        setCurrentTestCode(data.code);
+      }
     };
 
     (window as any).electron.ipcRenderer.on('playwright-test-update', handleTestUpdate);
@@ -460,9 +464,7 @@ const PlaywrightRecorderPage: React.FC = () => {
 
               {showSavedTests && savedTests.length > 0 && (
                 <div className="playwright-recorder-saved-tests-container">
-                  {savedTests
-                    .filter(test => !test.name.includes('.timed.spec.js')) // Hide timed versions from UI
-                    .map((test, index) => (
+                  {savedTests.map((test, index) => (
                       <div key={index} className="playwright-recorder-test-item">
                         <div className="playwright-recorder-test-header">
                           <div className="playwright-recorder-test-info">
