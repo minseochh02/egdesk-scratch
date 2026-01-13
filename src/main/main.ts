@@ -76,6 +76,8 @@ import { ScheduledPostsExecutor } from './scheduler/scheduled-posts-executor';
 import { setScheduledPostsExecutor } from './scheduler/executor-instance';
 import { DockerSchedulerService } from './docker/DockerSchedulerService';
 import { setDockerSchedulerService } from './docker/docker-scheduler-instance';
+import { PlaywrightSchedulerService } from './scheduler/playwright-scheduler-service';
+import { setPlaywrightSchedulerService } from './scheduler/playwright-scheduler-instance';
 import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
@@ -310,6 +312,7 @@ let browserController: BrowserController;
 let appUpdater: AppUpdater | null = null;
 let scheduledPostsExecutor: ScheduledPostsExecutor;
 let dockerSchedulerService: DockerSchedulerService;
+let playwrightSchedulerService: PlaywrightSchedulerService;
 let handlersRegistered = false;
 
 const getDefaultChromeProfileRoot = (): string | undefined => {
@@ -2630,6 +2633,13 @@ const createWindow = async () => {
       dockerSchedulerService = DockerSchedulerService.getInstance();
       setDockerSchedulerService(dockerSchedulerService);
       await dockerSchedulerService.start();
+    }
+
+    // Initialize Playwright Scheduler Service - only once
+    if (!playwrightSchedulerService) {
+      playwrightSchedulerService = PlaywrightSchedulerService.getInstance();
+      setPlaywrightSchedulerService(playwrightSchedulerService);
+      await playwrightSchedulerService.start();
     }
 
     console.log('✅ All components initialized successfully');
