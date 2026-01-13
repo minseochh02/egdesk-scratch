@@ -1261,14 +1261,14 @@ test('recorded test', async ({ page }) => {
         
         // Read the generated code
         let generatedCode = fs.readFileSync(fileToRun, 'utf8');
-        
+
         // Extract the test body
         let testBody = '';
-        
+
         if (generatedCode.includes('@playwright/test')) {
           // Extract the test body - find everything between test({ and the final })
           const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
-          
+
           if (testMatch && testMatch[1]) {
             testBody = testMatch[1].trim();
           } else {
@@ -1276,39 +1276,103 @@ test('recorded test', async ({ page }) => {
             const lines = generatedCode.split('\n');
             const startIndex = lines.findIndex(line => line.includes('test(') && line.includes('{'));
             const endIndex = lines.lastIndexOf('});');
-            
+
             if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
               testBody = lines.slice(startIndex + 1, endIndex).join('\n').trim();
             }
           }
+        } else if (generatedCode.includes('launchPersistentContext')) {
+          // Our new format: standalone IIFE with launchPersistentContext
+          // Extract code between "try {" and "} finally {"
+          console.log('🔍 Detected standalone launchPersistentContext format');
+          const tryMatch = generatedCode.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
+
+          if (tryMatch && tryMatch[1]) {
+            testBody = tryMatch[1].trim();
+            console.log('✅ Extracted test body from try block');
+          } else {
+            // Fallback: try to find actions after page setup
+            const lines = generatedCode.split('\n');
+            const tryIndex = lines.findIndex(line => line.trim() === 'try {');
+            const finallyIndex = lines.findIndex(line => line.includes('} finally {'));
+
+            if (tryIndex !== -1 && finallyIndex !== -1 && tryIndex < finallyIndex) {
+              testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
+              console.log('✅ Extracted test body using line-by-line fallback');
+            }
+          }
         }
-        
+
         if (!testBody) {
-          throw new Error('Could not extract test body from file');
+          console.error('❌ Failed to extract test body. File content preview:', generatedCode.substring(0, 500));
+          throw new Error('Could not extract test body from file. Check console for file preview.');
         }
+
+        console.log('📋 Test body extracted, length:', testBody.length);
         
         // Send info to renderer
         event.sender.send('playwright-test-info', {
           message: 'Starting test replay in production mode...',
           testFile
         });
-        
-        // Run the test
-        const browser = await chromium.launch({ 
-          headless: false, 
-          channel: 'chrome' 
+
+        // Create downloads directory
+        const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+        if (!fs.existsSync(downloadsPath)) {
+          fs.mkdirSync(downloadsPath, { recursive: true });
+        }
+
+        // Create temporary profile directory in userData (avoids macOS permission issues)
+        // Fallback to os.tmpdir() if userData is not available
+        let profilesDir: string;
+        try {
+          const userData = app.getPath('userData');
+          if (!userData || userData === '/' || userData.length < 3) {
+            throw new Error('Invalid userData path');
+          }
+          profilesDir = path.join(userData, 'chrome-profiles');
+        } catch (err) {
+          console.warn('⚠️ userData not available, using os.tmpdir():', err);
+          profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
+        }
+
+        if (!fs.existsSync(profilesDir)) {
+          fs.mkdirSync(profilesDir, { recursive: true });
+        }
+        const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-replay-'));
+        console.log('📁 Using profile directory:', profileDir);
+
+        // Run the test with persistent context (more reliable in production)
+        const context = await chromium.launchPersistentContext(profileDir, {
+          headless: false,
+          channel: 'chrome',
+          viewport: null,
+          permissions: ['clipboard-read', 'clipboard-write'],
+          acceptDownloads: true,
+          downloadsPath: downloadsPath,
+          args: [
+            '--no-default-browser-check',
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--allow-running-insecure-content',
+            '--disable-features=PrivateNetworkAccessSendPreflights',
+            '--disable-features=PrivateNetworkAccessRespectPreflightResults'
+          ]
         });
-        
-        const context = await browser.newContext();
-        const page = await context.newPage();
-        
+
+        // Get or create page
+        const pages = context.pages();
+        const page = pages.length > 0 ? pages[0] : await context.newPage();
+
         try {
           console.log('🎬 Starting test replay...');
-          
+
           // Create a function from the test body and execute it
           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
           const testFunction = new AsyncFunction('page', 'expect', testBody);
-          
+
           // Simple expect implementation for basic assertions
           const expect = (value: any) => ({
             toBe: (expected: any) => {
@@ -1322,21 +1386,21 @@ test('recorded test', async ({ page }) => {
               }
             }
           });
-          
+
           await testFunction(page, expect);
-          
+
           console.log('✅ Test completed successfully');
-          
+
           // Send success event
           event.sender.send('playwright-test-completed', {
             success: true,
             testFile,
             exitCode: 0
           });
-          
+
         } catch (error: any) {
           console.error('❌ Test failed:', error);
-          
+
           // Send failure event
           event.sender.send('playwright-test-completed', {
             success: false,
@@ -1344,9 +1408,17 @@ test('recorded test', async ({ page }) => {
             exitCode: 1,
             error: error?.message || 'Test execution failed'
           });
-          
+
         } finally {
-          await browser.close();
+          await context.close();
+
+          // Clean up profile directory
+          try {
+            fs.rmSync(profileDir, { recursive: true, force: true });
+            console.log('🧹 Cleaned up profile directory:', profileDir);
+          } catch (err) {
+            console.warn('Failed to clean up profile directory:', err);
+          }
         }
         
         return { 

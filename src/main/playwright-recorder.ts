@@ -1,7 +1,8 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
-import { screen } from 'electron';
+import { screen, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 interface RecordedAction {
   type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download';
@@ -26,6 +27,7 @@ export class PlaywrightRecorder {
   private updateCallback?: (code: string) => void;
   private controllerCheckInterval: NodeJS.Timeout | null = null;
   private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
+  private profileDir: string | null = null;
 
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
@@ -54,19 +56,49 @@ export class PlaywrightRecorder {
     const browserX = width - browserWidth;
     const browserY = 0;
 
-    // Launch browser using Playwright's channel detection
-    console.log('🎭 Launching browser with Playwright channel detection');
+    // Create downloads directory
+    const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+    if (!fs.existsSync(downloadsPath)) {
+      fs.mkdirSync(downloadsPath, { recursive: true });
+    }
+
+    // Create temporary profile directory in userData (avoids macOS permission issues)
+    // Fallback to os.tmpdir() if userData is not available
+    let profilesDir: string;
+    try {
+      const userData = app.getPath('userData');
+      if (!userData || userData === '/' || userData.length < 3) {
+        throw new Error('Invalid userData path');
+      }
+      profilesDir = path.join(userData, 'chrome-profiles');
+    } catch (err) {
+      console.warn('⚠️ userData not available, using os.tmpdir():', err);
+      profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
+    }
+
+    if (!fs.existsSync(profilesDir)) {
+      fs.mkdirSync(profilesDir, { recursive: true });
+    }
+    this.profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-recording-'));
+    console.log('📁 Using profile directory:', this.profileDir);
+
+    // Launch browser using Playwright's persistent context
+    console.log('🎭 Launching browser with persistent context');
     console.log('📐 Window dimensions:', {
       browserWidth,
       browserHeight,
       position: { x: browserX, y: browserY }
     });
-    
+
     try {
-      // Use Playwright's channel option which automatically finds Chrome
-      this.browser = await chromium.launch({
+      // Use launchPersistentContext for more reliable browser management
+      this.context = await chromium.launchPersistentContext(this.profileDir, {
         headless: false,
         channel: 'chrome',
+        viewport: null,
+        permissions: ['clipboard-read', 'clipboard-write'],
+        acceptDownloads: true,
+        downloadsPath: downloadsPath,
         args: [
           `--window-size=${browserWidth},${browserHeight}`,
           `--window-position=${browserX},${browserY}`,
@@ -84,12 +116,16 @@ export class PlaywrightRecorder {
       console.log('✅ Browser launched successfully with channel: chrome');
     } catch (err) {
       console.error('❌ Failed to launch with channel chrome:', err);
-      
+
       // Fallback: try without channel (uses Playwright's bundled Chromium)
       try {
         console.log('🔄 Trying fallback: Playwright bundled Chromium');
-        this.browser = await chromium.launch({
+        this.context = await chromium.launchPersistentContext(this.profileDir, {
           headless: false,
+          viewport: null,
+          permissions: ['clipboard-read', 'clipboard-write'],
+          acceptDownloads: true,
+          downloadsPath: downloadsPath,
           args: [
             `--window-size=${browserWidth},${browserHeight}`,
             `--window-position=${browserX},${browserY}`,
@@ -111,22 +147,9 @@ export class PlaywrightRecorder {
       }
     }
 
-    // Create downloads directory
-    const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
-    if (!fs.existsSync(downloadsPath)) {
-      fs.mkdirSync(downloadsPath, { recursive: true });
-    }
-    
-    this.context = await this.browser.newContext({
-      viewport: null,
-      permissions: ['clipboard-read', 'clipboard-write'],
-      acceptDownloads: true,
-      downloadsPath: downloadsPath
-    });
-    
-    // Set up browser close detection
-    this.browser.on('disconnected', () => {
-      console.log('🔌 Browser disconnected - user closed the window');
+    // Set up browser close detection (context close event)
+    this.context.on('close', () => {
+      console.log('🔌 Browser context closed - user closed the window');
       if (this.isRecording && onBrowserClosed) {
         this.isRecording = false;
         onBrowserClosed();
@@ -135,8 +158,10 @@ export class PlaywrightRecorder {
 
     // Add init scripts before creating the page
     await this.setupInitScripts();
-    
-    this.page = await this.context.newPage();
+
+    // Get or create page (persistent context might already have pages)
+    const existingPages = this.context.pages();
+    this.page = existingPages.length > 0 ? existingPages[0] : await this.context.newPage();
     
     // Inject keyboard event listener
     await this.injectKeyboardListener();
@@ -1458,12 +1483,15 @@ export class PlaywrightRecorder {
         }
       }, true);
       
-      // Track input changes
+      // Track input changes with debouncing to avoid recording every keystroke
+      const inputTimers = new WeakMap<HTMLElement, any>();
+      const lastInputValues = new WeakMap<HTMLElement, string>();
+
       document.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
-        
+
         // Skip recording input events on recorder UI elements
-        if (target.closest('#playwright-recorder-controller') || 
+        if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
             target.closest('.playwright-recorder-modal') ||
             target.closest('.playwright-recorder-modal-content') ||
@@ -1477,21 +1505,84 @@ export class PlaywrightRecorder {
             target.style.zIndex === '999999') {
           return;
         }
-        
+
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-          const event = {
-            selector: target.id ? `#${target.id}` : 
-                     target.name ? `[name="${target.name}"]` :
-                     target.className ? `.${target.className.split(' ')[0]}` :
-                     target.tagName.toLowerCase(),
-            value: target.value
-          };
-          
-          (window as any).__recordedEvents.push({type: 'fill', data: event});
-          
-          // Send fill event
-          if ((window as any).__playwrightRecorderOnFill) {
-            (window as any).__playwrightRecorderOnFill(event);
+          // Clear existing timer for this input
+          const existingTimer = inputTimers.get(target);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+          }
+
+          // Debounce: wait 1 second after last keystroke before recording
+          const timer = setTimeout(() => {
+            const currentValue = target.value;
+            const lastValue = lastInputValues.get(target);
+
+            // Only record if value actually changed
+            if (currentValue !== lastValue) {
+              const event = {
+                selector: target.id ? `#${target.id}` :
+                         target.name ? `[name="${target.name}"]` :
+                         target.className ? `.${target.className.split(' ')[0]}` :
+                         target.tagName.toLowerCase(),
+                value: currentValue
+              };
+
+              (window as any).__recordedEvents.push({type: 'fill', data: event});
+
+              // Send fill event
+              if ((window as any).__playwrightRecorderOnFill) {
+                (window as any).__playwrightRecorderOnFill(event);
+              }
+
+              lastInputValues.set(target, currentValue);
+            }
+          }, 1000); // Wait 1 second after last keystroke
+
+          inputTimers.set(target, timer);
+        }
+      }, true);
+
+      // Also capture on blur (when user leaves the field) for immediate capture
+      document.addEventListener('blur', (e) => {
+        const target = e.target as HTMLInputElement;
+
+        // Skip recorder UI elements
+        if (target.closest('#playwright-recorder-controller') ||
+            target.closest('#playwright-wait-modal') ||
+            target.closest('.playwright-recorder-modal') ||
+            target.style.zIndex === '999999') {
+          return;
+        }
+
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          // Clear any pending timer
+          const existingTimer = inputTimers.get(target);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+            inputTimers.delete(target);
+          }
+
+          const currentValue = target.value;
+          const lastValue = lastInputValues.get(target);
+
+          // Record final value on blur if it changed
+          if (currentValue !== lastValue && currentValue !== '') {
+            const event = {
+              selector: target.id ? `#${target.id}` :
+                       target.name ? `[name="${target.name}"]` :
+                       target.className ? `.${target.className.split(' ')[0]}` :
+                       target.tagName.toLowerCase(),
+              value: currentValue
+            };
+
+            (window as any).__recordedEvents.push({type: 'fill', data: event});
+
+            if ((window as any).__playwrightRecorderOnFill) {
+              (window as any).__playwrightRecorderOnFill(event);
+            }
+
+            lastInputValues.set(target, currentValue);
           }
         }
       }, true);
@@ -2065,14 +2156,24 @@ await expect(page.locator(selectors[0])).toBeVisible();
         }
       }
       
-      // Close browser after a short delay to allow UI feedback
+      // Close context after a short delay to allow UI feedback
       setTimeout(async () => {
-        if (this.browser) {
+        if (this.context) {
           try {
-            await this.browser.close();
-            console.log('🚪 Browser closed after stop request');
+            await this.context.close();
+            console.log('🚪 Browser context closed after stop request');
           } catch (err) {
-            console.log('Browser already closed or error closing:', err);
+            console.log('Browser context already closed or error closing:', err);
+          }
+        }
+
+        // Clean up profile directory
+        if (this.profileDir) {
+          try {
+            fs.rmSync(this.profileDir, { recursive: true, force: true });
+            console.log('🧹 Cleaned up profile directory');
+          } catch (err) {
+            console.warn('Failed to clean up profile directory:', err);
           }
         }
       }, 1000);
@@ -2126,25 +2227,36 @@ await expect(page.locator(selectors[0])).toBeVisible();
 
   async stop(): Promise<string> {
     this.isRecording = false;
-    
+
     // Stop controller check
     if (this.controllerCheckInterval) {
       clearInterval(this.controllerCheckInterval);
       this.controllerCheckInterval = null;
     }
-    
+
     // Generate test code
     const testCode = this.generateTestCode();
-    
-    // Close browser if it's still open
-    if (this.browser) {
+
+    // Close context (which closes the browser for persistent context)
+    if (this.context) {
       try {
-        await this.browser.close();
+        await this.context.close();
       } catch (err) {
-        console.log('Browser already closed');
+        console.log('Browser context already closed');
       }
     }
-    
+
+    // Clean up profile directory
+    if (this.profileDir) {
+      try {
+        fs.rmSync(this.profileDir, { recursive: true, force: true });
+        console.log('🧹 Cleaned up profile directory:', this.profileDir);
+      } catch (err) {
+        console.warn('Failed to clean up profile directory:', err);
+      }
+      this.profileDir = null;
+    }
+
     return testCode;
   }
 
@@ -2156,17 +2268,34 @@ await expect(page.locator(selectors[0])).toBeVisible();
     const browserHeight = height;
     const browserX = width - browserWidth;
     const browserY = 0;
-    
+
     const lines: string[] = [
       "const { chromium } = require('playwright-core');",
+      "const path = require('path');",
+      "const os = require('os');",
+      "const fs = require('fs');",
       "",
       "(async () => {",
       "  console.log('🎬 Starting test replay...');",
       "  ",
-      "  // Launch browser with same window size and position as recording",
-      "  const browser = await chromium.launch({",
+      "  // Create downloads directory",
+      "  const downloadsPath = path.join(process.cwd(), 'playwright-downloads');",
+      "  if (!fs.existsSync(downloadsPath)) {",
+      "    fs.mkdirSync(downloadsPath, { recursive: true });",
+      "  }",
+      "",
+      "  // Create temporary profile directory",
+      "  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));",
+      "  console.log('📁 Using profile directory:', profileDir);",
+      "",
+      "  // Launch browser with persistent context (more reliable in production)",
+      "  const context = await chromium.launchPersistentContext(profileDir, {",
       "    headless: false,",
       "    channel: 'chrome', // Uses installed Chrome",
+      "    viewport: null,",
+      "    permissions: ['clipboard-read', 'clipboard-write'],",
+      "    acceptDownloads: true,",
+      "    downloadsPath: downloadsPath,",
       "    args: [",
       `      '--window-size=${browserWidth},${browserHeight}',`,
       `      '--window-position=${browserX},${browserY}',`,
@@ -2182,20 +2311,9 @@ await expect(page.locator(selectors[0])).toBeVisible();
       "    ]",
       "  });",
       "",
-      "  // Create downloads directory",
-      "  const path = require('path');",
-      "  const downloadsPath = path.join(process.cwd(), 'playwright-downloads');",
-      "  if (!require('fs').existsSync(downloadsPath)) {",
-      "    require('fs').mkdirSync(downloadsPath, { recursive: true });",
-      "  }",
-      "",  
-      "  const context = await browser.newContext({",
-      "    viewport: null,",
-      "    permissions: ['clipboard-read', 'clipboard-write'],",
-      "    acceptDownloads: true,",
-      "    downloadsPath: downloadsPath",
-      "  });",
-      "  const page = await context.newPage();",
+      "  // Get or create page",
+      "  const pages = context.pages();",
+      "  const page = pages.length > 0 ? pages[0] : await context.newPage();",
       "",
       "  // Handle downloads",
       "  page.on('download', async (download) => {",
@@ -2305,7 +2423,13 @@ await expect(page.locator(selectors[0])).toBeVisible();
     }
     
     lines.push("  } finally {");
-    lines.push("    await browser.close();");
+    lines.push("    await context.close();");
+    lines.push("    // Clean up profile directory");
+    lines.push("    try {");
+    lines.push("      fs.rmSync(profileDir, { recursive: true, force: true });");
+    lines.push("    } catch (e) {");
+    lines.push("      console.warn('Failed to clean up profile directory:', e);");
+    lines.push("    }");
     lines.push("  }");
     lines.push("})().catch(console.error);");
     
