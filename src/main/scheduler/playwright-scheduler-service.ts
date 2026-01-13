@@ -348,15 +348,13 @@ export class PlaywrightSchedulerService {
   }
 
   /**
-   * Run a Playwright test
-   * This uses the same logic as the existing run-playwright-test IPC handler
+   * Run a Playwright test by executing the standalone script file directly
+   * This preserves all the original settings (window size, position, etc.)
    */
   private async runPlaywrightTest(testPath: string): Promise<void> {
-    const { chromium } = require('playwright-core');
     const fs = require('fs');
+    const { spawn } = require('child_process');
     const path = require('path');
-    const os = require('os');
-    const { app } = require('electron');
 
     console.log('🎬 Running Playwright test:', testPath);
 
@@ -365,200 +363,32 @@ export class PlaywrightSchedulerService {
       throw new Error(`Test file not found: ${testPath}`);
     }
 
-    // File already has timing delays built-in, use it directly
-    const fileToRun = testPath;
-    console.log(`Using file: ${fileToRun}`);
+    // Execute the standalone script directly with Node.js
+    // This preserves all window dimensions and settings from the recording
+    return new Promise<void>((resolve, reject) => {
+      console.log('🚀 Executing test file directly with Node.js...');
 
-    // Read the generated code
-    let generatedCode = fs.readFileSync(fileToRun, 'utf8');
-
-    // Extract the test body
-    let testBody = '';
-
-    if (generatedCode.includes('@playwright/test')) {
-      // Handle @playwright/test format
-      const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
-
-      if (testMatch && testMatch[1]) {
-        testBody = testMatch[1].trim();
-      } else {
-        const lines = generatedCode.split('\n');
-        const startIndex = lines.findIndex(line => line.includes('test(') && line.includes('{'));
-        const endIndex = lines.lastIndexOf('});');
-
-        if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
-          testBody = lines.slice(startIndex + 1, endIndex).join('\n').trim();
-        }
-      }
-    } else if (generatedCode.includes('launchPersistentContext')) {
-      // Handle standalone script format with launchPersistentContext
-      console.log('🔍 Detected standalone launchPersistentContext format');
-      const tryMatch = generatedCode.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
-
-      if (tryMatch && tryMatch[1]) {
-        testBody = tryMatch[1].trim();
-        console.log('✅ Extracted test body from try block');
-      } else {
-        // Fallback: find the try/finally block line by line
-        const lines = generatedCode.split('\n');
-        const tryIndex = lines.findIndex(line => line.trim() === 'try {');
-        const finallyIndex = lines.findIndex(line => line.includes('} finally {'));
-
-        if (tryIndex !== -1 && finallyIndex !== -1 && tryIndex < finallyIndex) {
-          testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
-          console.log('✅ Extracted test body using line-by-line fallback');
-        }
-      }
-    }
-
-    if (!testBody) {
-      console.error('❌ Failed to extract test body. File content preview:', generatedCode.substring(0, 500));
-      throw new Error('Could not extract test body from file. File format may not be supported.');
-    }
-
-    console.log('📋 Test body extracted, length:', testBody.length);
-
-    // Create downloads directory
-    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
-    if (!fs.existsSync(downloadsPath)) {
-      fs.mkdirSync(downloadsPath, { recursive: true });
-    }
-
-    // Create temporary profile directory
-    let profilesDir: string;
-    try {
-      const userData = app.getPath('userData');
-      profilesDir = path.join(userData, 'chrome-profiles');
-    } catch (err) {
-      profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
-    }
-
-    if (!fs.existsSync(profilesDir)) {
-      fs.mkdirSync(profilesDir, { recursive: true });
-    }
-    const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-scheduled-'));
-
-    // Run the test with persistent context
-    // Note: Using headless: false so you can see scheduled tests run
-    const context = await chromium.launchPersistentContext(profileDir, {
-      headless: false, // Show window for scheduled tests so you can monitor them
-      channel: 'chrome',
-      viewport: null,
-      permissions: ['clipboard-read', 'clipboard-write'],
-      acceptDownloads: true,
-      downloadsPath: downloadsPath,
-      args: [
-        '--no-default-browser-check',
-        '--disable-blink-features=AutomationControlled',
-        '--no-first-run',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process'
-      ]
-    });
-
-    try {
-      console.log('🎬 Starting test execution...');
-
-      // Get or create page
-      const pages = context.pages();
-      const page = pages.length > 0 ? pages[0] : await context.newPage();
-
-      console.log('📄 Creating test function from extracted body...');
-
-      // Create a function from the test body and execute it
-      // Provide all variables that might be referenced in the test body
-      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-      const testFunction = new AsyncFunction(
-        'page',
-        'expect',
-        'downloadsPath',
-        'fs',
-        'path',
-        testBody
-      );
-
-      // Simple expect implementation
-      const expect = (value: any) => ({
-        toBe: (expected: any) => {
-          if (value !== expected) {
-            throw new Error(`Expected ${value} to be ${expected}`);
-          }
-        },
-        toContain: (expected: any) => {
-          if (!value.includes(expected)) {
-            throw new Error(`Expected ${value} to contain ${expected}`);
-          }
-        }
+      const nodeProcess = spawn('node', [testPath], {
+        stdio: 'inherit',
+        shell: true
       });
 
-      console.log('▶️ Executing test function...');
-      await testFunction(page, expect, downloadsPath, fs, path);
+      nodeProcess.on('error', (error) => {
+        console.error('❌ Failed to start test process:', error);
+        reject(error);
+      });
 
-      console.log('✅ Test execution completed successfully');
-
-    } catch (testError) {
-      console.error('❌ Test execution error:', testError);
-      throw testError;
-    } finally {
-      console.log('🧹 Cleaning up browser context...');
-      await context.close();
-
-      // Clean up profile directory
-      try {
-        fs.rmSync(profileDir, { recursive: true, force: true });
-        console.log('✅ Profile directory cleaned up');
-      } catch (err) {
-        console.warn('⚠️ Failed to clean up profile directory:', err);
-      }
-    }
-  }
-
-  /**
-   * Create timed test from code (same logic as chrome-handlers.ts)
-   */
-  private createTimedTestFromCode(originalCode: string): string {
-    const lines = originalCode.split('\n');
-    let enhancedLines: string[] = [];
-    let isInTest = false;
-    let actionCount = 0;
-
-    const delays = [500, 1000, 1500, 2000, 800, 1200];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.includes('test(') && line.includes('async')) {
-        isInTest = true;
-      }
-
-      if (i === 0 && line.includes("import { test, expect }")) {
-        enhancedLines.push(line);
-        enhancedLines.push('// This test includes realistic timing delays for human-like interaction');
-        continue;
-      }
-
-      enhancedLines.push(line);
-
-      if (isInTest && line.trim().startsWith('await page.')) {
-        actionCount++;
-
-        if (actionCount > 1 && i < lines.length - 2) {
-          const nextLine = lines[i + 1];
-
-          if (nextLine && nextLine.trim().startsWith('await page.')) {
-            const delay = delays[(actionCount - 2) % delays.length] + Math.floor(Math.random() * 500);
-            const indent = line.match(/^(\s*)/)?.[1] || '  ';
-            enhancedLines.push(`${indent}await page.waitForTimeout(${delay}); // Human-like delay`);
-          }
+      nodeProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ Test completed successfully');
+          resolve();
+        } else {
+          const error = new Error(`Test failed with exit code ${code}`);
+          console.error('❌ Test failed with exit code:', code);
+          reject(error);
         }
-      }
-
-      if (line.includes('});') && isInTest) {
-        isInTest = false;
-      }
-    }
-
-    return enhancedLines.join('\n');
+      });
+    });
   }
 
   // ============================================
