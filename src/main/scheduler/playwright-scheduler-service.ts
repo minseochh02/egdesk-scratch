@@ -298,6 +298,7 @@ export class PlaywrightSchedulerService {
 
     try {
       // Execute the test using the existing run-playwright-test logic
+      console.log('🚀 Calling runPlaywrightTest...');
       await this.runPlaywrightTest(test.testPath);
 
       console.log(`✅ Test completed successfully`);
@@ -305,7 +306,11 @@ export class PlaywrightSchedulerService {
 
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ Test failed: ${errorMessage}`);
+      console.error(`❌ Test failed with error: ${errorMessage}`);
+      console.error('❌ Full error object:', error);
+      if (error instanceof Error && error.stack) {
+        console.error('❌ Stack trace:', error.stack);
+      }
       success = false;
     }
 
@@ -360,23 +365,8 @@ export class PlaywrightSchedulerService {
       throw new Error(`Test file not found: ${testPath}`);
     }
 
-    // Check if there's a timed version
-    const dir = path.dirname(testPath);
-    const basename = path.basename(testPath, '.spec.js');
-    const timedFile = path.join(dir, `${basename}.timed.spec.js`);
-    let fileToRun = testPath;
-
-    // Create timed version on-the-fly if it doesn't exist
-    if (!fs.existsSync(timedFile)) {
-      console.log('🔧 Creating timed version on-the-fly...');
-      const originalCode = fs.readFileSync(testPath, 'utf8');
-      const timedCode = this.createTimedTestFromCode(originalCode);
-      fs.writeFileSync(timedFile, timedCode);
-      console.log(`✅ Timed test created: ${timedFile}`);
-    }
-
-    // Always use the timed version
-    fileToRun = timedFile;
+    // File already has timing delays built-in, use it directly
+    const fileToRun = testPath;
     console.log(`Using file: ${fileToRun}`);
 
     // Read the generated code
@@ -386,6 +376,7 @@ export class PlaywrightSchedulerService {
     let testBody = '';
 
     if (generatedCode.includes('@playwright/test')) {
+      // Handle @playwright/test format
       const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
 
       if (testMatch && testMatch[1]) {
@@ -399,10 +390,30 @@ export class PlaywrightSchedulerService {
           testBody = lines.slice(startIndex + 1, endIndex).join('\n').trim();
         }
       }
+    } else if (generatedCode.includes('launchPersistentContext')) {
+      // Handle standalone script format with launchPersistentContext
+      console.log('🔍 Detected standalone launchPersistentContext format');
+      const tryMatch = generatedCode.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
+
+      if (tryMatch && tryMatch[1]) {
+        testBody = tryMatch[1].trim();
+        console.log('✅ Extracted test body from try block');
+      } else {
+        // Fallback: find the try/finally block line by line
+        const lines = generatedCode.split('\n');
+        const tryIndex = lines.findIndex(line => line.trim() === 'try {');
+        const finallyIndex = lines.findIndex(line => line.includes('} finally {'));
+
+        if (tryIndex !== -1 && finallyIndex !== -1 && tryIndex < finallyIndex) {
+          testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
+          console.log('✅ Extracted test body using line-by-line fallback');
+        }
+      }
     }
 
     if (!testBody) {
-      throw new Error('Could not extract test body from file');
+      console.error('❌ Failed to extract test body. File content preview:', generatedCode.substring(0, 500));
+      throw new Error('Could not extract test body from file. File format may not be supported.');
     }
 
     console.log('📋 Test body extracted, length:', testBody.length);
@@ -428,8 +439,9 @@ export class PlaywrightSchedulerService {
     const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-scheduled-'));
 
     // Run the test with persistent context
+    // Note: Using headless: false so you can see scheduled tests run
     const context = await chromium.launchPersistentContext(profileDir, {
-      headless: true, // Run headless for scheduled tests
+      headless: false, // Show window for scheduled tests so you can monitor them
       channel: 'chrome',
       viewport: null,
       permissions: ['clipboard-read', 'clipboard-write'],
@@ -445,13 +457,25 @@ export class PlaywrightSchedulerService {
     });
 
     try {
+      console.log('🎬 Starting test execution...');
+
       // Get or create page
       const pages = context.pages();
       const page = pages.length > 0 ? pages[0] : await context.newPage();
 
+      console.log('📄 Creating test function from extracted body...');
+
       // Create a function from the test body and execute it
+      // Provide all variables that might be referenced in the test body
       const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-      const testFunction = new AsyncFunction('page', 'expect', testBody);
+      const testFunction = new AsyncFunction(
+        'page',
+        'expect',
+        'downloadsPath',
+        'fs',
+        'path',
+        testBody
+      );
 
       // Simple expect implementation
       const expect = (value: any) => ({
@@ -467,18 +491,24 @@ export class PlaywrightSchedulerService {
         }
       });
 
-      await testFunction(page, expect);
+      console.log('▶️ Executing test function...');
+      await testFunction(page, expect, downloadsPath, fs, path);
 
       console.log('✅ Test execution completed successfully');
 
+    } catch (testError) {
+      console.error('❌ Test execution error:', testError);
+      throw testError;
     } finally {
+      console.log('🧹 Cleaning up browser context...');
       await context.close();
 
       // Clean up profile directory
       try {
         fs.rmSync(profileDir, { recursive: true, force: true });
+        console.log('✅ Profile directory cleaned up');
       } catch (err) {
-        console.warn('Failed to clean up profile directory:', err);
+        console.warn('⚠️ Failed to clean up profile directory:', err);
       }
     }
   }

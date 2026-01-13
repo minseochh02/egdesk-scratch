@@ -1010,28 +1010,28 @@ test('recorded test', async ({ page }) => {
         await activeRecorder.start(url, async () => {
         // Browser was closed by user - auto-stop recording
         console.log('🔌 Browser closed - stopping recording automatically');
-        
+
         // Stop the recorder
         if (activeRecorder) {
           const testCode = await activeRecorder.stop();
           const recordedActions = activeRecorder.getActions();
           activeRecorder = null;
-          
-          // Create timed version
+
+          // Create timed version with realistic delays
           const timedCode = createTimedTestFromCode(testCode);
-          const timedFile = outputFile.replace('.spec.js', '.timed.spec.js');
-          fs.writeFileSync(timedFile, timedCode);
-          
+          // Save directly as the main file (no separate .timed version)
+          fs.writeFileSync(outputFile, timedCode);
+
           // Close the code viewer window
           codeViewerWindow.close();
-          
+
           // Notify renderer
           event.sender.send('playwright-test-saved', {
             filePath: outputFile,
-            code: testCode,
+            code: timedCode,
             timestamp: new Date().toISOString()
           });
-          
+
           event.sender.send('recorder-auto-stopped', {
             reason: 'Browser window closed by user'
           });
@@ -1068,36 +1068,36 @@ test('recorded test', async ({ page }) => {
       const testCode = await activeRecorder.stop();
       const recordedActions = activeRecorder.getActions();
       activeRecorder = null;
-      
+
       // The test file has already been created and updated in real-time
-      // Just create the timed version
+      // Update it with the timed version (with realistic delays)
       const outputFiles = fs.readdirSync(getOutputDir())
         .filter(f => f.startsWith('playwright-test-') && f.endsWith('.spec.js'))
         .map(f => path.join(getOutputDir(), f))
         .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime());
-      
+
       if (outputFiles.length > 0) {
         const outputFile = outputFiles[0]; // Most recent file
         const timedCode = createTimedTestFromCode(testCode);
-        const timedFile = outputFile.replace('.spec.js', '.timed.spec.js');
-        fs.writeFileSync(timedFile, timedCode);
-        
+        // Overwrite the file with the timed version
+        fs.writeFileSync(outputFile, timedCode);
+
         console.log(`✅ Enhanced test saved to: ${outputFile}`);
-        
+
         // Close the code viewer window
         codeViewerWindow.close();
-        
+
         // Notify renderer
         event.sender.send('playwright-test-saved', {
           filePath: outputFile,
-          code: testCode,
+          code: timedCode,
           timestamp: new Date().toISOString()
         });
-        
+
         return {
           success: true,
           filePath: outputFile,
-          code: testCode
+          code: timedCode
         };
       } else {
         return {
@@ -1239,24 +1239,9 @@ test('recorded test', async ({ page }) => {
         console.log('🚀 Running test directly in main process (production mode)');
         
         const { chromium } = require('playwright-core');
-        
-        // Check if there's a timed version
-        const dir = path.dirname(testFile);
-        const basename = path.basename(testFile, '.spec.js');
-        const timedFile = path.join(dir, `${basename}.timed.spec.js`);
-        let fileToRun = testFile;
-        
-        // Create timed version on-the-fly if it doesn't exist
-        if (!fs.existsSync(timedFile)) {
-          console.log('🔧 Creating timed version on-the-fly...');
-          const originalCode = fs.readFileSync(testFile, 'utf8');
-          const timedCode = createTimedTestFromCode(originalCode);
-          fs.writeFileSync(timedFile, timedCode);
-          console.log(`✅ Timed test created: ${timedFile}`);
-        }
-        
-        // Always use the timed version
-        fileToRun = timedFile;
+
+        // File already has timing delays built-in, use it directly
+        const fileToRun = testFile;
         console.log(`Using file: ${fileToRun}`);
         
         // Read the generated code
@@ -1516,24 +1501,9 @@ test('recorded test', async ({ page }) => {
           nodeVersion = process.versions.node || 'unknown';
         }
       }
-      
-      // Check if there's a timed version
-      const dir = path.dirname(testFile);
-      const basename = path.basename(testFile, '.spec.js');
-      const timedFile = path.join(dir, `${basename}.timed.spec.js`);
-      let fileToRun = testFile;
-      
-      // Create timed version on-the-fly if it doesn't exist
-      if (!fs.existsSync(timedFile)) {
-        console.log('🔧 Creating timed version on-the-fly...');
-        const originalCode = fs.readFileSync(testFile, 'utf8');
-        const timedCode = createTimedTestFromCode(originalCode);
-        fs.writeFileSync(timedFile, timedCode);
-        console.log(`✅ Timed test created: ${timedFile}`);
-      }
-      
-      // Always use the timed version
-      fileToRun = timedFile;
+
+      // File already has timing delays built-in, use it directly
+      const fileToRun = testFile;
       console.log(`Using file: ${fileToRun}`);
       
       // Read the generated code
@@ -1874,33 +1844,19 @@ const { chromium } = require('playwright-core');
     try {
       console.log('🗑️ Deleting test:', testPath);
       
-      // Delete the main test file
+      // Delete the test file
       if (fs.existsSync(testPath)) {
         fs.unlinkSync(testPath);
-        console.log('✅ Deleted main test file');
+        console.log('✅ Deleted test file');
       }
-      
-      // Delete the timed version if it exists
+
+      // Delete the temporary run file if it exists
       const deleteDir = path.dirname(testPath);
       const deleteBasename = path.basename(testPath, '.spec.js');
-      const timedPath = path.join(deleteDir, `${deleteBasename}.timed.spec.js`);
-      if (fs.existsSync(timedPath)) {
-        fs.unlinkSync(timedPath);
-        console.log('✅ Deleted timed test file');
-      }
-      
-      // Delete the run file if it exists
       const runPath = path.join(deleteDir, `${deleteBasename}.run.js`);
       if (fs.existsSync(runPath)) {
         fs.unlinkSync(runPath);
         console.log('✅ Deleted run file');
-      }
-      
-      // Delete the mjs file if it exists (from earlier attempts)
-      const mjsPath = path.join(deleteDir, `${deleteBasename}.run.mjs`);
-      if (fs.existsSync(mjsPath)) {
-        fs.unlinkSync(mjsPath);
-        console.log('✅ Deleted mjs file');
       }
       
       return { 
