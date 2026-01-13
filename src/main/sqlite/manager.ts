@@ -16,10 +16,16 @@ import {
   SQLiteDockerSchedulerManager,
   CreateDockerTaskData,
 } from './docker-scheduler';
+import {
+  SQLitePlaywrightSchedulerManager,
+  CreatePlaywrightTestData,
+} from './playwright-scheduler';
 import { SQLiteCompanyResearchManager } from './company-research';
 import { FinanceHubDbManager } from './financehub';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
+import { restartPlaywrightScheduler } from '../scheduler/playwright-scheduler-instance';
+import { getPlaywrightSchedulerService } from '../scheduler/playwright-scheduler-service';
 import { initializeSQLiteDatabase, getDatabaseSize } from './init';
 import { ScheduledPostsExecutor } from '../scheduler/scheduled-posts-executor';
 import { restartScheduledPostsExecutor } from '../scheduler/executor-instance';
@@ -53,6 +59,7 @@ export class SQLiteManager {
   private activityManager: SQLiteActivityManager | null = null;
   private templateCopiesManager: SQLiteTemplateCopiesManager | null = null;
   private dockerSchedulerManager: SQLiteDockerSchedulerManager | null = null;
+  private playwrightSchedulerManager: SQLitePlaywrightSchedulerManager | null = null;
   private companyResearchManager: SQLiteCompanyResearchManager | null = null;
   private financeHubManager: FinanceHubDbManager | null = null;
 
@@ -93,6 +100,7 @@ export class SQLiteManager {
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
       this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
       this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb);
+      this.playwrightSchedulerManager = new SQLitePlaywrightSchedulerManager(this.wordpressDb);
       this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
@@ -204,6 +212,7 @@ export class SQLiteManager {
       this.businessIdentityManager = null;
       this.activityManager = null;
       this.dockerSchedulerManager = null;
+      this.playwrightSchedulerManager = null;
       this.financeHubManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
@@ -283,6 +292,14 @@ export class SQLiteManager {
       this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb!);
     }
     return this.dockerSchedulerManager;
+  }
+
+  public getPlaywrightSchedulerManager(): SQLitePlaywrightSchedulerManager {
+    this.ensureInitialized();
+    if (!this.playwrightSchedulerManager) {
+      this.playwrightSchedulerManager = new SQLitePlaywrightSchedulerManager(this.wordpressDb!);
+    }
+    return this.playwrightSchedulerManager;
   }
 
   public getCompanyResearchManager(): SQLiteCompanyResearchManager {
@@ -564,6 +581,7 @@ export class SQLiteManager {
     this.registerActivityHandlers();
     this.registerTemplateCopiesHandlers();
     this.registerDockerSchedulerHandlers();
+    this.registerPlaywrightSchedulerHandlers();
     this.registerCompanyResearchHandlers();
     this.registerFinanceHubHandlers();
     
@@ -1845,6 +1863,224 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-docker-scheduler-restart', async () => {
       try {
         await restartDockerScheduler();
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register Playwright Scheduler IPC handlers
+   */
+  private registerPlaywrightSchedulerHandlers(): void {
+    // Get all Playwright scheduled tests
+    ipcMain.handle('sqlite-playwright-scheduler-get-all', async () => {
+      try {
+        const tests = this.getPlaywrightSchedulerManager().getAllTests();
+        return { success: true, data: tests };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get Playwright scheduled test by ID
+    ipcMain.handle('sqlite-playwright-scheduler-get', async (event, id: string) => {
+      try {
+        const test = this.getPlaywrightSchedulerManager().getTest(id);
+        return { success: true, data: test };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get Playwright scheduled test by path
+    ipcMain.handle('sqlite-playwright-scheduler-get-by-path', async (event, testPath: string) => {
+      try {
+        const test = this.getPlaywrightSchedulerManager().getTestByPath(testPath);
+        return { success: true, data: test };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Create Playwright scheduled test
+    ipcMain.handle('sqlite-playwright-scheduler-create', async (event, data: CreatePlaywrightTestData) => {
+      try {
+        const test = this.getPlaywrightSchedulerManager().createTest(data);
+        // Restart scheduler to pick up new test
+        await restartPlaywrightScheduler();
+        return { success: true, data: test };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Update Playwright scheduled test
+    ipcMain.handle('sqlite-playwright-scheduler-update', async (event, id: string, updates: Partial<CreatePlaywrightTestData>) => {
+      try {
+        const test = this.getPlaywrightSchedulerManager().updateTest(id, updates);
+        // Restart scheduler to apply changes
+        await restartPlaywrightScheduler();
+        return { success: true, data: test };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete Playwright scheduled test
+    ipcMain.handle('sqlite-playwright-scheduler-delete', async (event, id: string) => {
+      try {
+        const success = this.getPlaywrightSchedulerManager().deleteTest(id);
+        // Restart scheduler to remove deleted test
+        await restartPlaywrightScheduler();
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Toggle Playwright scheduled test enabled/disabled
+    ipcMain.handle('sqlite-playwright-scheduler-toggle', async (event, id: string, enabled: boolean) => {
+      try {
+        const success = this.getPlaywrightSchedulerManager().toggleTest(id, enabled);
+        // Restart scheduler to apply enable/disable
+        await restartPlaywrightScheduler();
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get enabled Playwright scheduled tests
+    ipcMain.handle('sqlite-playwright-scheduler-get-enabled', async () => {
+      try {
+        const tests = this.getPlaywrightSchedulerManager().getEnabledTests();
+        return { success: true, data: tests };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get execution history for a Playwright test
+    ipcMain.handle('sqlite-playwright-scheduler-get-executions', async (event, testId: string, limit?: number) => {
+      try {
+        const executions = this.getPlaywrightSchedulerManager().getTestExecutions(testId, limit);
+        return { success: true, data: executions };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get recent executions across all Playwright tests
+    ipcMain.handle('sqlite-playwright-scheduler-get-recent-executions', async (event, limit?: number) => {
+      try {
+        const executions = this.getPlaywrightSchedulerManager().getRecentExecutions(limit);
+        return { success: true, data: executions };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Run a Playwright test immediately
+    ipcMain.handle('sqlite-playwright-scheduler-run-now', async (event, testId: string) => {
+      try {
+        console.log(`\n🚀 ===== MANUAL PLAYWRIGHT TEST EXECUTION =====`);
+        console.log(`🆔 Test ID: ${testId}`);
+        console.log(`🕐 Started at: ${new Date().toISOString()}`);
+
+        const test = this.getPlaywrightSchedulerManager().getTest(testId);
+        if (!test) {
+          return { success: false, error: 'Test not found' };
+        }
+
+        console.log(`📝 Test: ${test.testName}`);
+        console.log(`📁 Path: ${test.testPath}`);
+
+        // Get the scheduler service and execute the test
+        const schedulerService = getPlaywrightSchedulerService();
+        if (!schedulerService) {
+          return { success: false, error: 'Playwright scheduler service not initialized' };
+        }
+
+        const result = await schedulerService.executeTest(testId);
+
+        if (result.success) {
+          console.log(`✅ Manual execution completed successfully`);
+        } else {
+          console.error(`❌ Manual execution failed: ${result.error}`);
+        }
+
+        return result;
+      } catch (error) {
+        console.error(`\n💥 ===== MANUAL PLAYWRIGHT TEST EXECUTION FAILED =====`);
+        console.error(`❌ Test ID: ${testId}`);
+        console.error(`🕐 Failed at: ${new Date().toISOString()}`);
+        console.error(`📄 Error details:`, error);
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get scheduler status
+    ipcMain.handle('sqlite-playwright-scheduler-status', async () => {
+      try {
+        const schedulerService = getPlaywrightSchedulerService();
+        return {
+          success: true,
+          data: {
+            isRunning: schedulerService?.isServiceRunning() || false,
+            scheduledJobCount: schedulerService?.getScheduledJobCount() || 0,
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Restart the scheduler
+    ipcMain.handle('sqlite-playwright-scheduler-restart', async () => {
+      try {
+        await restartPlaywrightScheduler();
         return { success: true };
       } catch (error) {
         return {

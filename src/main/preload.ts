@@ -2061,6 +2061,16 @@ const electronHandler = {
     getPlaywrightDownloads: () => ipcRenderer.invoke('get-playwright-downloads'),
     openPlaywrightDownload: (filePath: string) => ipcRenderer.invoke('open-playwright-download', filePath),
     openPlaywrightDownloadsFolder: () => ipcRenderer.invoke('open-playwright-downloads-folder'),
+    // Playwright Scheduler API
+    getPlaywrightSchedules: () => ipcRenderer.invoke('sqlite-playwright-scheduler-get-all'),
+    getPlaywrightScheduleById: (id: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-get', id),
+    getPlaywrightScheduleByPath: (testPath: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-get-by-path', testPath),
+    createPlaywrightSchedule: (data: any) => ipcRenderer.invoke('sqlite-playwright-scheduler-create', data),
+    updatePlaywrightSchedule: (id: string, updates: any) => ipcRenderer.invoke('sqlite-playwright-scheduler-update', id, updates),
+    deletePlaywrightSchedule: (id: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-delete', id),
+    togglePlaywrightSchedule: (id: string, enabled: boolean) => ipcRenderer.invoke('sqlite-playwright-scheduler-toggle', id, enabled),
+    runPlaywrightScheduleNow: (testId: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-run-now', testId),
+    getPlaywrightScheduleStatus: () => ipcRenderer.invoke('sqlite-playwright-scheduler-status'),
     openInstagramWithProfile: (options: {
       planId?: string;
       profilePath?: string;

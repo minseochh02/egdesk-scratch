@@ -51,6 +51,7 @@ import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentit
 import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
+import PlaywrightRecorderPage from './components/PlaywrightRecorder/PlaywrightRecorderPage';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -583,169 +584,18 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [facebookPassword, setFacebookPassword] = useState('');
   const [facebookImagePath, setFacebookImagePath] = useState('');
   const [facebookText, setFacebookText] = useState('');
-  const [savedTests, setSavedTests] = useState<any[]>([]);
-  const [showSavedTests, setShowSavedTests] = useState(false);
-  const [isRecordingEnhanced, setIsRecordingEnhanced] = useState(false);
-  const [currentTestCode, setCurrentTestCode] = useState<string>('');
-  const [playwrightDownloads, setPlaywrightDownloads] = useState<any[]>([]);
 
-  // Load saved tests when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      (async () => {
-        const result = await (window as any).electron.debug.getPlaywrightTests();
-        if (result.success) {
-          setSavedTests(result.tests);
-        }
-      })();
-    }
-  }, [isOpen]);
 
   // Define addDebugLog function at the component level
   const addDebugLog = (message: string) => {
     setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
 
-  // Helper functions for Playwright downloads
-  const loadPlaywrightDownloads = async () => {
-    try {
-      const result = await (window as any).electron.debug.getPlaywrightDownloads();
-      if (result.success) {
-        setPlaywrightDownloads(result.files || []);
-      }
-    } catch (error) {
-      console.error('[DebugModal] Failed to load playwright downloads:', error);
-    }
-  };
 
-  const handleOpenDownload = async (filePath: string) => {
-    try {
-      await (window as any).electron.debug.openPlaywrightDownload(filePath);
-    } catch (error) {
-      console.error('[DebugModal] Failed to open download:', error);
-      alert('Failed to open file');
-    }
-  };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  };
 
-  // Load playwright downloads when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      loadPlaywrightDownloads();
-    }
-  }, [isOpen]);
 
-  // Listen for Playwright test saved events
-  useEffect(() => {
-    const handleTestSaved = (event: any, data: any) => {
-      addDebugLog(`📁 Test saved: ${data.filePath}`);
-      // Refresh test list
-      (async () => {
-        const result = await (window as any).electron.debug.getPlaywrightTests();
-        if (result.success) {
-          setSavedTests(result.tests);
-        }
-      })();
-    };
 
-    (window as any).electron.ipcRenderer.on('playwright-test-saved', handleTestSaved);
-
-    return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-saved', handleTestSaved);
-    };
-  }, []);
-
-  // Listen for real-time test updates
-  useEffect(() => {
-    const handleTestUpdate = (event: any, data: any) => {
-      setCurrentTestCode(data.code);
-    };
-
-    (window as any).electron.ipcRenderer.on('playwright-test-update', handleTestUpdate);
-
-    return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-update', handleTestUpdate);
-    };
-  }, []);
-
-  // Listen for auto-stop events
-  useEffect(() => {
-    const handleAutoStop = (event: any, data: any) => {
-      addDebugLog(`🔌 Recording auto-stopped: ${data.reason}`);
-      setIsRecordingEnhanced(false);
-      setCurrentTestCode('');
-      
-      // Refresh test list
-      (async () => {
-        const result = await (window as any).electron.debug.getPlaywrightTests();
-        if (result.success) {
-          setSavedTests(result.tests);
-        }
-      })();
-    };
-
-    (window as any).electron.ipcRenderer.on('recorder-auto-stopped', handleAutoStop);
-
-    return () => {
-      (window as any).electron.ipcRenderer.removeListener('recorder-auto-stopped', handleAutoStop);
-    };
-  }, []);
-
-  // Listen for Playwright test errors
-  useEffect(() => {
-    const handleTestError = (event: any, data: any) => {
-      console.error('Playwright test error:', data);
-      addDebugLog(`❌ Test error: ${data.error}`);
-      
-      // Show user-friendly alert if it's a user-friendly error
-      if (data.userFriendly) {
-        alert(data.error);
-        
-        // Log technical details to console for debugging
-        if (data.details || data.technicalDetails) {
-          console.log('Technical details:', data.details || data.technicalDetails);
-        }
-      }
-    };
-
-    const handleTestInfo = (event: any, data: any) => {
-      console.log('Playwright test info:', data);
-      addDebugLog(`ℹ️ ${data.message}`);
-    };
-
-    const handleTestCompleted = (event: any, data: any) => {
-      if (data.success) {
-        addDebugLog(`✅ Test completed successfully`);
-      } else {
-        addDebugLog(`❌ Test failed: ${data.error || 'Unknown error'}`);
-        
-        // Show alert for test failures
-        alert(`Test replay failed: ${data.error || 'Unknown error'}`);
-        
-        // Log details for debugging
-        if (data.details) {
-          console.log('Test failure details:', data.details);
-        }
-      }
-    };
-
-    (window as any).electron.ipcRenderer.on('playwright-test-error', handleTestError);
-    (window as any).electron.ipcRenderer.on('playwright-test-info', handleTestInfo);
-    (window as any).electron.ipcRenderer.on('playwright-test-completed', handleTestCompleted);
-
-    return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-error', handleTestError);
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-info', handleTestInfo);
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-completed', handleTestCompleted);
-    };
-  }, []);
 
   if (!isOpen) return null;
 
@@ -966,264 +816,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             >
               Open URL in Chrome
             </button>
-            <button
-              onClick={async () => {
-                try {
-                  if (!chromeUrl) {
-                    addDebugLog('⚠️ Please enter a URL first');
-                    return;
-                  }
-                  
-                  addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
-                  
-                  const result = await (window as any).electron.debug.launchPlaywrightRecorderEnhanced(
-                    chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
-                  );
-                  
-                  if (result?.success) {
-                  addDebugLog('✅ Enhanced recorder launched successfully');
-                  addDebugLog('📝 All keyboard events including Enter will be captured');
-                  addDebugLog(`📁 Test file: ${result.filePath}`);
-                  addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
-                  addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
-                  setIsRecordingEnhanced(true);
-                  } else {
-                    addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
-                  }
-                } catch (error) {
-                  console.error('Error launching recorder:', error);
-                  addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-              }}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#9C27B0',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              🎹 Record with Keyboard Tracking
-            </button>
-            {isRecordingEnhanced && (
-              <button
-                onClick={async () => {
-                  addDebugLog('⏹️ Stopping enhanced recorder...');
-                  
-                  const result = await (window as any).electron.debug.stopPlaywrightRecorderEnhanced();
-                  
-                  if (result?.success) {
-                    addDebugLog('✅ Recording saved successfully');
-                    addDebugLog(`📁 Test saved to: ${result.filePath}`);
-                    setIsRecordingEnhanced(false);
-                    setCurrentTestCode(''); // Clear the code viewer
-                    
-                    // Refresh test list
-                    const testsResult = await (window as any).electron.debug.getPlaywrightTests();
-                    if (testsResult.success) {
-                      setSavedTests(testsResult.tests);
-                    }
-                  } else {
-                    addDebugLog(`❌ Failed to stop recorder: ${result?.error}`);
-                  }
-                }}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f44336',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}
-              >
-                ⏹️ Stop Recording
-              </button>
-            )}
-            <button
-              onClick={async () => {
-                const result = await (window as any).electron.debug.getPlaywrightTests();
-                if (result.success) {
-                  setSavedTests(result.tests);
-                  setShowSavedTests(!showSavedTests);
-                }
-              }}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#607D8B',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              View Saved Tests ({savedTests.length})
-            </button>
             </div>
-            
-            {/* Real-time Test Code Display */}
-            {isRecordingEnhanced && currentTestCode && (
-              <div style={{ 
-                marginTop: '20px', 
-                padding: '15px', 
-                backgroundColor: '#1a1a1a', 
-                borderRadius: '4px',
-                border: '1px solid #444'
-              }}>
-                <h4 style={{ color: '#fff', margin: '0 0 10px 0' }}>
-                  📝 Generated Test Code (Real-time)
-                </h4>
-                <pre style={{
-                  backgroundColor: '#0d0d0d',
-                  padding: '15px',
-                  borderRadius: '4px',
-                  overflow: 'auto',
-                  maxHeight: '400px',
-                  color: '#e0e0e0',
-                  fontSize: '12px',
-                  fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-                  lineHeight: '1.5',
-                  margin: 0
-                }}>
-                  <code>{currentTestCode}</code>
-                </pre>
-              </div>
-            )}
-            
-            {/* Saved Tests Display */}
-            {showSavedTests && savedTests.length > 0 && (
-              <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-                <h4 style={{ color: '#fff', margin: '0 0 15px 0' }}>Saved Playwright Tests</h4>
-                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                  {savedTests
-                    .filter(test => !test.name.includes('.timed.spec.js')) // Hide timed versions from UI
-                    .map((test, index) => {
-                    
-                    return (
-                      <div key={index} style={{ 
-                        padding: '10px', 
-                        marginBottom: '10px', 
-                        backgroundColor: '#1e1e1e', 
-                        borderRadius: '4px',
-                        border: '1px solid #333'
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <strong style={{ color: '#fff', fontSize: '14px' }}>{test.name}</strong>
-                              <span style={{ 
-                                fontSize: '11px', 
-                                color: '#4CAF50',
-                                backgroundColor: 'rgba(76, 175, 80, 0.2)',
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #4CAF50'
-                              }}>
-                                ⏱️ Auto-Timed
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                              Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              onClick={async () => {
-                                const result = await (window as any).electron.debug.viewPlaywrightTest(test.path);
-                                if (result.success) {
-                                  console.log(`👁️ Viewing test: ${test.name}`);
-                                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 👁️ Opened test in code viewer: ${test.name}`]);
-                                } else {
-                                  alert(`Failed to view test: ${result.error}`);
-                                }
-                              }}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#2196F3',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px'
-                              }}
-                              title="View code"
-                            >
-                              👁️ View
-                            </button>
-                            <button
-                              onClick={async () => {
-                                const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
-                                if (result.success) {
-                                  console.log(`🎬 Running test with timing: ${test.name}`);
-                                  setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🎬⏱️ Running test with timing: ${test.name}`]);
-                                } else {
-                                  alert(`Failed to run test: ${result.error}`);
-                                }
-                              }}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#4CAF50',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px'
-                              }}
-                            >
-                              ▶️ Replay
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Are you sure you want to delete "${test.name}"?`)) {
-                                  const result = await (window as any).electron.debug.deletePlaywrightTest(test.path);
-                                  if (result.success) {
-                                    // Refresh the test list
-                                    const refreshResult = await (window as any).electron.debug.getPlaywrightTests();
-                                    if (refreshResult.success) {
-                                      setSavedTests(refreshResult.tests);
-                                    }
-                                    setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: 🗑️ Deleted test: ${test.name}`]);
-                                  } else {
-                                    alert(`Failed to delete test: ${result.error}`);
-                                  }
-                                }
-                              }}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#f44336',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px'
-                              }}
-                              title="Delete test"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ 
-                          fontSize: '11px', 
-                          color: '#aaa', 
-                          fontFamily: 'monospace',
-                          backgroundColor: '#0a0a0a',
-                          padding: '8px',
-                          borderRadius: '4px',
-                          overflow: 'hidden',
-                          whiteSpace: 'pre-wrap'
-                        }}>
-                          {test.preview}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Web Crawler Section */}
@@ -1271,22 +864,22 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   alert('Please enter a URL');
                   return;
                 }
-                
+
                 // Clear previous debug logs
                 setDebugLogs([]);
-                
+
                 // Add initial debug log
                 addDebugLog('Starting web crawler...');
-                
+
                 try {
                   addDebugLog('🕷️ Launching Playwright crawler...');
-                  
+
                   const result = await (window as any).electron.debug.crawlWebsite(
                     chromeUrl.trim(),
                     chromeProxy.trim() || undefined,
                     openDevTools
                   );
-                  
+
                   if (!result?.success) {
                     addDebugLog(`❌ Crawler failed: ${result?.error || 'Unknown error'}`);
                     console.error('Crawler failed:', result?.error);
@@ -1295,17 +888,17 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   } else {
                     addDebugLog('✅ Crawler completed successfully');
                     console.log('Crawler result:', result);
-                    
+
                     const stats = result.data?.stats || {};
                     const message = `Crawler found ${stats.totalLinks || 0} links (${stats.internalLinks || 0} internal, ${stats.externalLinks || 0} external)`;
-                    
+
                     addDebugLog(`📊 ${message}`);
                     addDebugLog(`🔗 Internal links: ${stats.internalLinks || 0}`);
                     addDebugLog(`🌐 External links: ${stats.externalLinks || 0}`);
                     addDebugLog(`📄 Forms found: ${stats.forms || 0}`);
                     addDebugLog(`🖼️ Images found: ${stats.images || 0}`);
                     addDebugLog(`💾 Results saved to: ${result.filepath || 'N/A'}`);
-                    
+
                     setCrawlerResults(result.data);
                     alert(message);
                   }
@@ -2218,94 +1811,6 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </button>
           </div>
 
-          {/* Playwright Downloads Section */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ color: '#9C27B0', margin: 0 }}>📥 Playwright Downloads</h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={async () => {
-                    try {
-                      await (window as any).electron.debug.openPlaywrightDownloadsFolder();
-                    } catch (error) {
-                      console.error('Failed to open folder:', error);
-                      alert('Failed to open folder');
-                    }
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#666',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                >
-                  Open Folder
-                </button>
-                <button
-                  onClick={loadPlaywrightDownloads}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#9C27B0',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-            {playwrightDownloads.length === 0 ? (
-              <p style={{ color: '#888', fontSize: '14px', margin: '8px 0' }}>No downloaded files yet.</p>
-            ) : (
-              <div style={{
-                backgroundColor: '#1a1a1a',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                padding: '10px',
-                maxHeight: '300px',
-                overflowY: 'auto'
-              }}>
-                {playwrightDownloads.map((file, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: '12px',
-                      background: '#2a2a2a',
-                      borderRadius: '6px',
-                      marginBottom: '8px',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s',
-                      border: '1px solid #444'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
-                    onClick={() => handleOpenDownload(file.path)}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: '500', fontSize: '14px', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#fff' }}>
-                          📄 {file.name}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#888' }}>
-                          {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
-                        </div>
-                      </div>
-                      <div style={{ marginLeft: '12px', fontSize: '12px', color: '#9C27B0', whiteSpace: 'nowrap' }}>
-                        Open →
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (
             <div>
@@ -2431,7 +1936,8 @@ function NavigationBar({
 
   const isDevelopmentActive = [
     '/homepage-editor',
-    '/egchatting'
+    '/egchatting',
+    '/playwright-recorder'
   ].some(path => location.pathname.startsWith(path));
 
   const isMarketingActive = [
@@ -2472,9 +1978,9 @@ function NavigationBar({
           </Link>
 
           {/* Development Group */}
-          <NavDropdown 
-            title="Development" 
-            icon={faLaptopCode} 
+          <NavDropdown
+            title="Development"
+            icon={faLaptopCode}
             isActive={isDevelopmentActive}
             isNarrow={isNarrow}
           >
@@ -2491,6 +1997,13 @@ function NavigationBar({
             >
               <FontAwesomeIcon icon={faComments} fixedWidth />
               <span>Chatting</span>
+            </Link>
+            <Link
+              to="/playwright-recorder"
+              className={`nav-dropdown-item ${location.pathname === '/playwright-recorder' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faRobot} fixedWidth />
+              <span>Playwright Recorder</span>
             </Link>
           </NavDropdown>
 
@@ -2926,6 +2439,7 @@ function AppContent() {
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
             <Route path="/docker" element={<DockerManager />} />
+            <Route path="/playwright-recorder" element={<PlaywrightRecorderPage />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />
