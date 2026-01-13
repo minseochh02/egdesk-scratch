@@ -251,7 +251,7 @@
   transition: var(--fh-transition);
   box-sizing: border-box;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .finance-hub__section:hover {
@@ -405,7 +405,7 @@
 .finance-hub__sync-dropdown {
   position: relative;
   display: inline-block;
-  z-index: 10;
+  z-index: 100;
 }
 
 .finance-hub__sync-options {
@@ -417,7 +417,7 @@
   border: 1px solid var(--fh-border);
   border-radius: var(--fh-radius-md);
   box-shadow: var(--fh-shadow-lg);
-  z-index: 1000;
+  z-index: 9999;
   overflow: hidden;
 }
 
@@ -520,7 +520,7 @@
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .finance-hub__bank-card {
@@ -535,7 +535,7 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   word-wrap: break-word;
 }
 
@@ -623,7 +623,7 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .finance-hub__account-item:hover {

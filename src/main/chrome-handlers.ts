@@ -1316,11 +1316,12 @@ test('recorded test', async ({ page }) => {
           testFile
         });
 
-        // Create downloads directory
-        const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+        // Create downloads directory in system Downloads folder
+        const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
         if (!fs.existsSync(downloadsPath)) {
           fs.mkdirSync(downloadsPath, { recursive: true });
         }
+        console.log('📥 Downloads will be saved to:', downloadsPath);
 
         // Create temporary profile directory in userData (avoids macOS permission issues)
         // Fallback to os.tmpdir() if userData is not available
@@ -1948,10 +1949,10 @@ const { chromium } = require('playwright-core');
     }
   });
 
-  // Get list of downloaded files from playwright-downloads directory
+  // Get list of downloaded files from EGDesk-Playwright directory
   ipcMain.handle('get-playwright-downloads', async () => {
     try {
-      const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+      const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
 
       // Check if directory exists
       if (!fs.existsSync(downloadsPath)) {
@@ -2008,11 +2009,11 @@ const { chromium } = require('playwright-core');
     }
   });
 
-  // Open playwright-downloads folder in file viewer (Finder/Explorer)
+  // Open EGDesk-Playwright folder in file viewer (Finder/Explorer)
   ipcMain.handle('open-playwright-downloads-folder', async () => {
     try {
       const { shell } = require('electron');
-      const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+      const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
 
       // Create directory if it doesn't exist
       if (!fs.existsSync(downloadsPath)) {

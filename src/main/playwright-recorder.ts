@@ -56,11 +56,12 @@ export class PlaywrightRecorder {
     const browserX = width - browserWidth;
     const browserY = 0;
 
-    // Create downloads directory
-    const downloadsPath = path.join(process.cwd(), 'playwright-downloads');
+    // Create downloads directory in system Downloads folder
+    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
     if (!fs.existsSync(downloadsPath)) {
       fs.mkdirSync(downloadsPath, { recursive: true });
     }
+    console.log('📥 Downloads will be saved to:', downloadsPath);
 
     // Create temporary profile directory in userData (avoids macOS permission issues)
     // Fallback to os.tmpdir() if userData is not available
@@ -2278,11 +2279,12 @@ await expect(page.locator(selectors[0])).toBeVisible();
       "(async () => {",
       "  console.log('🎬 Starting test replay...');",
       "  ",
-      "  // Create downloads directory",
-      "  const downloadsPath = path.join(process.cwd(), 'playwright-downloads');",
+      "  // Create downloads directory in system Downloads folder",
+      "  const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Playwright');",
       "  if (!fs.existsSync(downloadsPath)) {",
       "    fs.mkdirSync(downloadsPath, { recursive: true });",
       "  }",
+      "  console.log('📥 Downloads will be saved to:', downloadsPath);",
       "",
       "  // Create temporary profile directory",
       "  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));",
