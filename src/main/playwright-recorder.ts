@@ -2120,11 +2120,42 @@ export class PlaywrightRecorder {
           const dataName = dateElement.getAttribute('data-name')!;
           const tag = dateElement.tagName.toLowerCase();
           selector = `${tag}[data-name="${dataName}"]`;
-        } else if (dateElement.getAttribute('type')) {
-          // For inputs with type attribute
+        }
+
+        // For input elements specifically, check type attribute
+        if (!selector && elementType === 'input' && dateElement.getAttribute('type')) {
           const type = dateElement.getAttribute('type')!;
-          selector = `input[type="${type}"]`;
-        } else if (elementType === 'button' && dateElement.textContent?.trim()) {
+          const candidateSelector = `input[type="${type}"]`;
+
+          // Check if unique
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = dateElement.parentElement;
+            if (parent) {
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > input[type="${type}"]`;
+            } else {
+              const allWithType = Array.from(matches);
+              const index = allWithType.indexOf(dateElement);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
+        }
+
+        if (!selector && elementType === 'button' && dateElement.textContent?.trim()) {
           // For buttons/clickable elements with text, combine with data attributes if available for specificity
           const text = dateElement.textContent.trim();
           const tag = dateElement.tagName.toLowerCase();
@@ -2146,11 +2177,16 @@ export class PlaywrightRecorder {
             // Fall back to just has-text
             selector = `${tag}:has-text("${text}")`;
           }
-        } else if (dateElement.className && dateElement.className.trim()) {
+        }
+
+        // Final fallbacks - only use if selector still not set
+        if (!selector && dateElement.className && dateElement.className.trim()) {
           const firstClass = dateElement.className.trim().split(/\s+/)[0];
           selector = `${dateElement.tagName.toLowerCase()}.${firstClass}`;
-        } else {
-          // Use nth-of-type as fallback
+        }
+
+        if (!selector) {
+          // Use nth-of-type as last resort fallback
           const elements = Array.from(document.querySelectorAll(dateElement.tagName.toLowerCase()));
           const index = elements.indexOf(dateElement);
           selector = `${dateElement.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
