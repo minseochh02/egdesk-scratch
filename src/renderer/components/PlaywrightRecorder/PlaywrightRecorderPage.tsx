@@ -236,7 +236,7 @@ const PlaywrightRecorderPage: React.FC = () => {
 
   // Listen for Playwright test saved events
   useEffect(() => {
-    const handleTestSaved = (event: any, data: any) => {
+    const handleTestSaved = (data: any) => {
       if (data && data.filePath) {
         addDebugLog(`📁 Test saved: ${data.filePath}`);
       }
@@ -250,31 +250,31 @@ const PlaywrightRecorderPage: React.FC = () => {
       })();
     };
 
-    (window as any).electron.ipcRenderer.on('playwright-test-saved', handleTestSaved);
+    const unsubscribe = (window as any).electron.ipcRenderer.on('playwright-test-saved', handleTestSaved);
 
     return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-saved', handleTestSaved);
+      unsubscribe();
     };
   }, []);
 
   // Listen for real-time test updates
   useEffect(() => {
-    const handleTestUpdate = (event: any, data: any) => {
+    const handleTestUpdate = (data: any) => {
       if (data && data.code) {
         setCurrentTestCode(data.code);
       }
     };
 
-    (window as any).electron.ipcRenderer.on('playwright-test-update', handleTestUpdate);
+    const unsubscribe = (window as any).electron.ipcRenderer.on('playwright-test-update', handleTestUpdate);
 
     return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-update', handleTestUpdate);
+      unsubscribe();
     };
   }, []);
 
   // Listen for auto-stop events
   useEffect(() => {
-    const handleAutoStop = (event: any, data: any) => {
+    const handleAutoStop = (data: any) => {
       addDebugLog(`🔌 Recording auto-stopped: ${data.reason}`);
       setIsRecordingEnhanced(false);
       setCurrentTestCode('');
@@ -288,16 +288,16 @@ const PlaywrightRecorderPage: React.FC = () => {
       })();
     };
 
-    (window as any).electron.ipcRenderer.on('recorder-auto-stopped', handleAutoStop);
+    const unsubscribe = (window as any).electron.ipcRenderer.on('recorder-auto-stopped', handleAutoStop);
 
     return () => {
-      (window as any).electron.ipcRenderer.removeListener('recorder-auto-stopped', handleAutoStop);
+      unsubscribe();
     };
   }, []);
 
   // Listen for Playwright test errors
   useEffect(() => {
-    const handleTestError = (event: any, data: any) => {
+    const handleTestError = (data: any) => {
       console.error('Playwright test error:', data);
       addDebugLog(`❌ Test error: ${data.error}`);
 
@@ -312,12 +312,12 @@ const PlaywrightRecorderPage: React.FC = () => {
       }
     };
 
-    const handleTestInfo = (event: any, data: any) => {
+    const handleTestInfo = (data: any) => {
       console.log('Playwright test info:', data);
       addDebugLog(`ℹ️ ${data.message}`);
     };
 
-    const handleTestCompleted = (event: any, data: any) => {
+    const handleTestCompleted = (data: any) => {
       if (data.success) {
         addDebugLog(`✅ Test completed successfully`);
       } else {
@@ -333,14 +333,14 @@ const PlaywrightRecorderPage: React.FC = () => {
       }
     };
 
-    (window as any).electron.ipcRenderer.on('playwright-test-error', handleTestError);
-    (window as any).electron.ipcRenderer.on('playwright-test-info', handleTestInfo);
-    (window as any).electron.ipcRenderer.on('playwright-test-completed', handleTestCompleted);
+    const unsubscribe1 = (window as any).electron.ipcRenderer.on('playwright-test-error', handleTestError);
+    const unsubscribe2 = (window as any).electron.ipcRenderer.on('playwright-test-info', handleTestInfo);
+    const unsubscribe3 = (window as any).electron.ipcRenderer.on('playwright-test-completed', handleTestCompleted);
 
     return () => {
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-error', handleTestError);
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-info', handleTestInfo);
-      (window as any).electron.ipcRenderer.removeListener('playwright-test-completed', handleTestCompleted);
+      unsubscribe1();
+      unsubscribe2();
+      unsubscribe3();
     };
   }, []);
 
