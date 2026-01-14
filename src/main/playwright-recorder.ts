@@ -16,9 +16,9 @@ interface RecordedAction {
   coordinates?: { x: number; y: number }; // For coordinate-based clicks
   // Date picker fields
   dateComponents?: {
-    year: { selector: string; elementType: 'select' | 'button' | 'input' };
-    month: { selector: string; elementType: 'select' | 'button' | 'input' };
-    day: { selector: string; elementType: 'select' | 'button' | 'input' };
+    year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   };
   dateOffset?: number; // Days from today (0 = today, 1 = tomorrow, -1 = yesterday)
 }
@@ -40,9 +40,9 @@ export class PlaywrightRecorder {
   private isDateMarkingMode: boolean = false;
   private dateMarkingStep: 'year' | 'month' | 'day' | null = null;
   private dateMarkingSelectors: {
-    year?: { selector: string; elementType: 'select' | 'button' | 'input' };
-    month?: { selector: string; elementType: 'select' | 'button' | 'input' };
-    day?: { selector: string; elementType: 'select' | 'button' | 'input' };
+    year?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   } = {};
   private dateMarkingOffset: number = 0; // Days from today
 
@@ -2239,9 +2239,40 @@ export class PlaywrightRecorder {
           }, 500);
         }
 
-        // Call exposed function to record this element with its type
-        if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
-          (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step);
+        // For button elements, detect the dropdown menu that appears
+        let dropdownSelector = '';
+        if (elementType === 'button') {
+          // Wait for dropdown to appear after click
+          setTimeout(() => {
+            // Look for dropdown menu patterns
+            const dropdownPatterns = [
+              '[data-layer-box="true"]:not([style*="display: none"]):not([style*="visibility: hidden"])',
+              '.dropdown-menu.show',
+              '.dropdown-menu:not(.hide)',
+              'ul.dropdown-menu[style*="visibility: visible"]',
+              'div[class*="dropdown"][style*="visibility: visible"]'
+            ];
+
+            for (const pattern of dropdownPatterns) {
+              const dropdowns = document.querySelectorAll(pattern);
+              if (dropdowns.length > 0) {
+                // Found dropdown - use the pattern as selector
+                dropdownSelector = pattern;
+                console.log('📋 Detected dropdown menu:', dropdownSelector);
+                break;
+              }
+            }
+
+            // Send to recorder with dropdown selector
+            if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
+              (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step, dropdownSelector);
+            }
+          }, 300); // Wait 300ms for dropdown to appear
+        } else {
+          // For non-button elements (select, input), no dropdown detection needed
+          if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
+            (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step, '');
+          }
         }
 
         // IMPORTANT: If this was the day element (step 3/3), show date offset modal
@@ -3412,9 +3443,9 @@ await expect(page.locator(selectors[0])).toBeVisible();
       this.updateGeneratedCode();
     });
 
-    await this.page.exposeFunction('__playwrightRecorderOnDateDropdownMarked', async (selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day') => {
-      console.log('📅 Date element marked:', { selector, elementType, step });
-      this.handleDateDropdownMarked(selector, elementType, step);
+    await this.page.exposeFunction('__playwrightRecorderOnDateDropdownMarked', async (selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string) => {
+      console.log('📅 Date element marked:', { selector, elementType, step, dropdownSelector });
+      this.handleDateDropdownMarked(selector, elementType, step, dropdownSelector);
     });
 
     await this.page.exposeFunction('__playwrightRecorderOnDateOffsetSelected', async (offset: number) => {
@@ -3535,11 +3566,11 @@ await expect(page.locator(selectors[0])).toBeVisible();
     return testCode;
   }
 
-  private handleDateDropdownMarked(selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day'): void {
-    console.log(`📅 Handling date element marked: ${step} = ${selector} (${elementType})`);
+  private handleDateDropdownMarked(selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string): void {
+    console.log(`📅 Handling date element marked: ${step} = ${selector} (${elementType}), dropdown: ${dropdownSelector}`);
 
-    // Store the selector and element type for this date component
-    this.dateMarkingSelectors[step] = { selector, elementType };
+    // Store the selector, element type, and dropdown selector for this date component
+    this.dateMarkingSelectors[step] = { selector, elementType, dropdownSelector: dropdownSelector || undefined };
     this.dateMarkingStep = step;
 
     // Advance to next step
@@ -3588,15 +3619,18 @@ await expect(page.locator(selectors[0])).toBeVisible();
       dateComponents: {
         year: {
           selector: this.dateMarkingSelectors.year.selector,
-          elementType: this.dateMarkingSelectors.year.elementType
+          elementType: this.dateMarkingSelectors.year.elementType,
+          dropdownSelector: this.dateMarkingSelectors.year.dropdownSelector
         },
         month: {
           selector: this.dateMarkingSelectors.month.selector,
-          elementType: this.dateMarkingSelectors.month.elementType
+          elementType: this.dateMarkingSelectors.month.elementType,
+          dropdownSelector: this.dateMarkingSelectors.month.dropdownSelector
         },
         day: {
           selector: this.dateMarkingSelectors.day.selector,
-          elementType: this.dateMarkingSelectors.day.elementType
+          elementType: this.dateMarkingSelectors.day.elementType,
+          dropdownSelector: this.dateMarkingSelectors.day.dropdownSelector
         }
       },
       dateOffset: this.dateMarkingOffset // Default to today (0)
@@ -3820,6 +3854,7 @@ await expect(page.locator(selectors[0])).toBeVisible();
           // Select year - use appropriate method based on element type
           const yearType = action.dateComponents!.year.elementType;
           const yearSelector = action.dateComponents!.year.selector;
+          const yearDropdownSelector = action.dateComponents!.year.dropdownSelector;
 
           if (yearType === 'select') {
             lines.push(`    await page.selectOption('${yearSelector}', year);`);
@@ -3833,25 +3868,17 @@ await expect(page.locator(selectors[0])).toBeVisible();
               // Has text-based selector - extract base selector and use filter with dynamic year
               const baseYearSelector = yearSelector.split(':has-text')[0];
               lines.push(`    await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
-            } else if (yearSelector.startsWith('#')) {
-              // Direct ID selector - click to open dropdown, then select option
-              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
-            } else if (yearSelector.includes(' > ') || yearSelector.includes(':nth-child(')) {
-              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="year"])
-              // This is a dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
-            } else if (yearSelector.includes('[data-index=') || yearSelector.includes('[name=')) {
-              // Unique attribute selector for dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
-            } else if (yearSelector.includes('[')) {
-              // Other attribute selectors that may not be unique - use filter with year text
-              lines.push(`    await page.locator('${yearSelector}').filter({ hasText: year }).click();`);
             } else {
-              // Generic selector - use filter to find element with year text
-              lines.push(`    await page.locator('${yearSelector}').filter({ hasText: year }).click();`);
+              // Click to open dropdown
+              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+
+              // Select option from dropdown - use detected dropdown selector if available
+              if (yearDropdownSelector) {
+                lines.push(`    await page.locator('${yearDropdownSelector} a, ${yearDropdownSelector} button, ${yearDropdownSelector} div, ${yearDropdownSelector} li').filter({ hasText: year }).first().click();`);
+              } else {
+                // Fallback to unscoped search
+                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: year }).first().click();`);
+              }
             }
           }
           if (i < this.actions.length - 1) {
@@ -3862,6 +3889,7 @@ await expect(page.locator(selectors[0])).toBeVisible();
           // Select month
           const monthType = action.dateComponents!.month.elementType;
           const monthSelector = action.dateComponents!.month.selector;
+          const monthDropdownSelector = action.dateComponents!.month.dropdownSelector;
 
           if (monthType === 'select') {
             lines.push(`    await page.selectOption('${monthSelector}', month);`);
@@ -3875,25 +3903,17 @@ await expect(page.locator(selectors[0])).toBeVisible();
               // Has text-based selector - extract base selector and use filter with dynamic month
               const baseMonthSelector = monthSelector.split(':has-text')[0];
               lines.push(`    await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
-            } else if (monthSelector.startsWith('#')) {
-              // Direct ID selector - click to open dropdown, then select option
-              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
-            } else if (monthSelector.includes(' > ') || monthSelector.includes(':nth-child(')) {
-              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="month"])
-              // This is a dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
-            } else if (monthSelector.includes('[data-index=') || monthSelector.includes('[name=')) {
-              // Unique attribute selector for dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
-            } else if (monthSelector.includes('[')) {
-              // Other attribute selectors that may not be unique - use filter with month text
-              lines.push(`    await page.locator('${monthSelector}').filter({ hasText: month }).click();`);
             } else {
-              // Generic selector - use filter to find element with month text
-              lines.push(`    await page.locator('${monthSelector}').filter({ hasText: month }).click();`);
+              // Click to open dropdown
+              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+
+              // Select option from dropdown - use detected dropdown selector if available
+              if (monthDropdownSelector) {
+                lines.push(`    await page.locator('${monthDropdownSelector} a, ${monthDropdownSelector} button, ${monthDropdownSelector} div, ${monthDropdownSelector} li').filter({ hasText: month }).first().click();`);
+              } else {
+                // Fallback to unscoped search
+                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: month }).first().click();`);
+              }
             }
           }
           if (i < this.actions.length - 1) {
@@ -3904,6 +3924,7 @@ await expect(page.locator(selectors[0])).toBeVisible();
           // Select day
           const dayType = action.dateComponents!.day.elementType;
           const daySelector = action.dateComponents!.day.selector;
+          const dayDropdownSelector = action.dateComponents!.day.dropdownSelector;
 
           if (dayType === 'select') {
             lines.push(`    await page.selectOption('${daySelector}', day);`);
@@ -3917,25 +3938,17 @@ await expect(page.locator(selectors[0])).toBeVisible();
               // Has text-based selector - extract base selector and use filter with dynamic day
               const baseDaySelector = daySelector.split(':has-text')[0];
               lines.push(`    await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
-            } else if (daySelector.startsWith('#')) {
-              // Direct ID selector - click to open dropdown, then select option
-              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
-            } else if (daySelector.includes(' > ') || daySelector.includes(':nth-child(')) {
-              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="day"])
-              // This is a dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
-            } else if (daySelector.includes('[data-index=') || daySelector.includes('[name=')) {
-              // Unique attribute selector for dropdown button - click to open, then select option
-              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
-              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
-            } else if (daySelector.includes('[')) {
-              // Other attribute selectors that may not be unique - use filter with day text
-              lines.push(`    await page.locator('${daySelector}').filter({ hasText: day }).click();`);
             } else {
-              // Generic selector - use filter to find element with day text
-              lines.push(`    await page.locator('${daySelector}').filter({ hasText: day }).click();`);
+              // Click to open dropdown
+              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+
+              // Select option from dropdown - use detected dropdown selector if available
+              if (dayDropdownSelector) {
+                lines.push(`    await page.locator('${dayDropdownSelector} a, ${dayDropdownSelector} button, ${dayDropdownSelector} div, ${dayDropdownSelector} li').filter({ hasText: day }).first().click();`);
+              } else {
+                // Fallback to unscoped search
+                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: day }).first().click();`);
+              }
             }
           }
           break;
