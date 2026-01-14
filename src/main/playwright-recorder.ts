@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup';
   selector?: string;
   value?: string;
   key?: string;
@@ -14,6 +14,13 @@ interface RecordedAction {
   timeout?: number;
   timestamp: number;
   coordinates?: { x: number; y: number }; // For coordinate-based clicks
+  // Date picker fields
+  dateComponents?: {
+    year: { selector: string; elementType: 'select' | 'button' | 'input' };
+    month: { selector: string; elementType: 'select' | 'button' | 'input' };
+    day: { selector: string; elementType: 'select' | 'button' | 'input' };
+  };
+  dateOffset?: number; // Days from today (0 = today, 1 = tomorrow, -1 = yesterday)
 }
 
 export class PlaywrightRecorder {
@@ -28,6 +35,16 @@ export class PlaywrightRecorder {
   private controllerCheckInterval: NodeJS.Timeout | null = null;
   private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
   private profileDir: string | null = null;
+
+  // Date marking mode state
+  private isDateMarkingMode: boolean = false;
+  private dateMarkingStep: 'year' | 'month' | 'day' | null = null;
+  private dateMarkingSelectors: {
+    year?: { selector: string; elementType: 'select' | 'button' | 'input' };
+    month?: { selector: string; elementType: 'select' | 'button' | 'input' };
+    day?: { selector: string; elementType: 'select' | 'button' | 'input' };
+  } = {};
+  private dateMarkingOffset: number = 0; // Days from today
 
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
@@ -351,6 +368,32 @@ export class PlaywrightRecorder {
         font-size: 14px;
       `;
 
+      // Create mark date button
+      const markDateBtn = document.createElement('button');
+      markDateBtn.setAttribute('data-date-marking-mode', 'false');
+      markDateBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <span>Mark Date</span>
+      `;
+      markDateBtn.style.cssText = `
+        background: #9C27B0;
+        color: #fff;
+        border: 1px solid #7B1FA2;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      `;
+
       // Create stop recording button
       const stopBtn = document.createElement('button');
       stopBtn.innerHTML = `
@@ -461,6 +504,7 @@ export class PlaywrightRecorder {
       controller.appendChild(highlightBtn);
       controller.appendChild(coordBtn);
       controller.appendChild(waitBtn);
+      controller.appendChild(markDateBtn);
       controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
       
@@ -607,12 +651,17 @@ export class PlaywrightRecorder {
             z-index: 999999;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             max-width: 250px;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
           `;
           coordNotification.innerHTML = `
             <strong>📍 Coordinate Mode Active</strong><br>
             Clicks will be recorded as X,Y coordinates
+            <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+              Moves away when cursor approaches
+            </div>
           `;
-          
+
           try {
             if (document.body) {
               document.body.appendChild(coordNotification);
@@ -620,19 +669,56 @@ export class PlaywrightRecorder {
           } catch (e) {
             console.warn('Failed to show coordinate notification:', e);
           }
-          
+
+          // Add proximity detection
+          const proximityThreshold = 150;
+          let mouseX = 0;
+          let mouseY = 0;
+
+          const checkCoordProximity = () => {
+            const rect = coordNotification.getBoundingClientRect();
+            const bannerCenterX = rect.left + rect.width / 2;
+            const bannerCenterY = rect.top + rect.height / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(mouseX - bannerCenterX, 2) +
+              Math.pow(mouseY - bannerCenterY, 2)
+            );
+
+            if (distance < proximityThreshold) {
+              coordNotification.style.opacity = '0.1';
+              coordNotification.style.transform = 'scale(0.8)';
+            } else {
+              coordNotification.style.opacity = '1';
+              coordNotification.style.transform = 'scale(1)';
+            }
+          };
+
+          const coordMouseMoveHandler = (e: MouseEvent) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            checkCoordProximity();
+          };
+
+          document.addEventListener('mousemove', coordMouseMoveHandler);
+
           // Remove notification after 3 seconds
           setTimeout(() => {
+            document.removeEventListener('mousemove', coordMouseMoveHandler);
             coordNotification.remove();
           }, 3000);
         } else {
           coordBtn.style.background = '#333';
           coordBtn.style.borderColor = '#444';
           document.body.style.cursor = '';
-          
-          // Remove any existing notification
+
+          // Remove any existing notification and cleanup
           const existingNotification = document.getElementById('coord-notification');
           if (existingNotification) {
+            const handler = (existingNotification as any).__mouseMoveHandler;
+            if (handler) {
+              document.removeEventListener('mousemove', handler);
+            }
             existingNotification.remove();
           }
         }
@@ -696,12 +782,17 @@ export class PlaywrightRecorder {
           font-size: 14px;
           z-index: 999999;
           box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          transition: opacity 0.3s ease, transform 0.3s ease;
+          pointer-events: none;
         `;
         stopNotification.innerHTML = `
           <strong>⏹️ Recording Stopped</strong><br>
           Generating test code...
+          <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+            Moves away when cursor approaches
+          </div>
         `;
-        
+
         try {
           if (document.body) {
             document.body.appendChild(stopNotification);
@@ -709,9 +800,42 @@ export class PlaywrightRecorder {
         } catch (e) {
           console.warn('Failed to show stop notification:', e);
         }
-        
+
+        // Add proximity detection
+        const proximityThreshold = 150;
+        let mouseX = 0;
+        let mouseY = 0;
+
+        const checkStopProximity = () => {
+          const rect = stopNotification.getBoundingClientRect();
+          const bannerCenterX = rect.left + rect.width / 2;
+          const bannerCenterY = rect.top + rect.height / 2;
+
+          const distance = Math.sqrt(
+            Math.pow(mouseX - bannerCenterX, 2) +
+            Math.pow(mouseY - bannerCenterY, 2)
+          );
+
+          if (distance < proximityThreshold) {
+            stopNotification.style.opacity = '0.1';
+            stopNotification.style.transform = 'scale(0.8)';
+          } else {
+            stopNotification.style.opacity = '1';
+            stopNotification.style.transform = 'scale(1)';
+          }
+        };
+
+        const stopMouseMoveHandler = (e: MouseEvent) => {
+          mouseX = e.clientX;
+          mouseY = e.clientY;
+          checkStopProximity();
+        };
+
+        document.addEventListener('mousemove', stopMouseMoveHandler);
+
         // Remove notification after 3 seconds
         setTimeout(() => {
+          document.removeEventListener('mousemove', stopMouseMoveHandler);
           stopNotification.remove();
         }, 3000);
       });
@@ -749,12 +873,17 @@ export class PlaywrightRecorder {
             z-index: 999999;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             max-width: 250px;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
           `;
           waitInstructions.innerHTML = `
             <strong>🎯 Wait Mode Active</strong><br>
             Click on an element to wait for it to load
+            <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+              Moves away when cursor approaches
+            </div>
           `;
-          
+
           try {
             if (document.body) {
               document.body.appendChild(waitInstructions);
@@ -762,7 +891,42 @@ export class PlaywrightRecorder {
           } catch (e) {
             console.warn('Failed to show wait instructions:', e);
           }
-          
+
+          // Add proximity detection
+          const proximityThreshold = 150;
+          let mouseX = 0;
+          let mouseY = 0;
+
+          const checkWaitProximity = () => {
+            const rect = waitInstructions.getBoundingClientRect();
+            const bannerCenterX = rect.left + rect.width / 2;
+            const bannerCenterY = rect.top + rect.height / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(mouseX - bannerCenterX, 2) +
+              Math.pow(mouseY - bannerCenterY, 2)
+            );
+
+            if (distance < proximityThreshold) {
+              waitInstructions.style.opacity = '0.1';
+              waitInstructions.style.transform = 'scale(0.8)';
+            } else {
+              waitInstructions.style.opacity = '1';
+              waitInstructions.style.transform = 'scale(1)';
+            }
+          };
+
+          const waitMouseMoveHandler = (e: MouseEvent) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            checkWaitProximity();
+          };
+
+          document.addEventListener('mousemove', waitMouseMoveHandler);
+
+          // Store handler for cleanup
+          (waitInstructions as any).__mouseMoveHandler = waitMouseMoveHandler;
+
           // Change cursor to indicate wait mode
           document.body.style.cursor = 'crosshair';
         } else {
@@ -775,19 +939,205 @@ export class PlaywrightRecorder {
           `;
           waitBtn.style.background = '#2196F3';
           waitBtn.style.borderColor = '#1976D2';
-          
-          // Remove instructions
+
+          // Remove instructions and cleanup mousemove listener
           const instructions = document.getElementById('wait-instructions');
           if (instructions) {
+            const handler = (instructions as any).__mouseMoveHandler;
+            if (handler) {
+              document.removeEventListener('mousemove', handler);
+            }
             instructions.remove();
           }
-          
+
           // Reset cursor
           document.body.style.cursor = '';
         }
       });
-      
-      // Set up Gemini button functionality  
+
+      // Set up mark date button functionality
+      let dateMarkingMode = false;
+      let dateMarkingStep: 'year' | 'month' | 'day' | null = null;
+      let dateMarkingInstructions: HTMLDivElement | null = null;
+
+      markDateBtn.addEventListener('click', () => {
+        dateMarkingMode = !dateMarkingMode;
+        markDateBtn.classList.toggle('active', dateMarkingMode);
+
+        if (dateMarkingMode) {
+          // Enter date marking mode
+          dateMarkingStep = 'year';
+          markDateBtn.style.background = '#4CAF50';
+          markDateBtn.style.borderColor = '#4CAF50';
+
+          // Update window state for change listener
+          (window as any).__playwrightRecorderDateMarkingMode = true;
+          (window as any).__playwrightRecorderDateMarkingStep = 'year';
+
+          // Show instructions
+          dateMarkingInstructions = document.createElement('div');
+          dateMarkingInstructions.id = 'date-marking-instructions';
+          dateMarkingInstructions.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #9C27B0;
+            color: white;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            z-index: 999999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 300px;
+            line-height: 1.5;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+          `;
+          dateMarkingInstructions.innerHTML = `
+            <strong>📅 Date Marking Mode Active</strong><br>
+            <div style="margin-top: 8px; font-size: 13px;">
+              <span style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
+                Step 1/3: Select YEAR dropdown
+              </span>
+            </div>
+            <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
+              Click on the dropdown that contains years
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+              Moves away when cursor approaches
+            </div>
+          `;
+
+          try {
+            if (document.body) {
+              document.body.appendChild(dateMarkingInstructions);
+            }
+          } catch (e) {
+            console.warn('Failed to show date marking instructions:', e);
+          }
+
+          // Add proximity detection to hide banner when mouse gets near
+          const proximityThreshold = 150; // pixels
+          let mouseX = 0;
+          let mouseY = 0;
+
+          const checkProximity = () => {
+            const rect = dateMarkingInstructions!.getBoundingClientRect();
+            const bannerCenterX = rect.left + rect.width / 2;
+            const bannerCenterY = rect.top + rect.height / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(mouseX - bannerCenterX, 2) +
+              Math.pow(mouseY - bannerCenterY, 2)
+            );
+
+            if (distance < proximityThreshold) {
+              // Mouse is near, hide the banner
+              dateMarkingInstructions!.style.opacity = '0.1';
+              dateMarkingInstructions!.style.transform = 'scale(0.8)';
+            } else {
+              // Mouse is far, show the banner
+              dateMarkingInstructions!.style.opacity = '1';
+              dateMarkingInstructions!.style.transform = 'scale(1)';
+            }
+          };
+
+          const mouseMoveHandler = (e: MouseEvent) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            checkProximity();
+          };
+
+          document.addEventListener('mousemove', mouseMoveHandler);
+
+          // Store handler for cleanup
+          (dateMarkingInstructions as any).__mouseMoveHandler = mouseMoveHandler;
+
+          document.body.style.cursor = 'help';
+        } else {
+          // Exit date marking mode
+          markDateBtn.style.background = '#9C27B0';
+          markDateBtn.style.borderColor = '#7B1FA2';
+
+          // Clear window state
+          (window as any).__playwrightRecorderDateMarkingMode = false;
+          (window as any).__playwrightRecorderDateMarkingStep = null;
+          dateMarkingStep = null;
+
+          // Remove instructions
+          if (dateMarkingInstructions) {
+            dateMarkingInstructions.remove();
+            dateMarkingInstructions = null;
+          }
+
+          document.body.style.cursor = '';
+        }
+      });
+
+      // Function to update date marking instructions
+      (window as any).__updateDateMarkingInstructions = (step: 'year' | 'month' | 'day') => {
+        if (!dateMarkingInstructions) return;
+
+        const stepNum = step === 'year' ? 1 : step === 'month' ? 2 : 3;
+        const stepLabel = step === 'year' ? 'YEAR' : step === 'month' ? 'MONTH' : 'DAY';
+        const instruction = step === 'year' ? 'years' : step === 'month' ? 'months (1-12 or names)' : 'days (1-31)';
+
+        dateMarkingInstructions.innerHTML = `
+          <strong>📅 Date Marking Mode Active</strong><br>
+          <div style="margin-top: 8px; font-size: 13px;">
+            <span style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
+              Step ${stepNum}/3: Select ${stepLabel} dropdown
+            </span>
+          </div>
+          <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
+            Click on the dropdown that contains ${instruction}
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+            Moves away when cursor approaches
+          </div>
+        `;
+      };
+
+      // Function to exit date marking mode
+      (window as any).__exitDateMarkingMode = () => {
+        if (dateMarkingMode) {
+          dateMarkingMode = false;
+          markDateBtn.classList.remove('active');
+          markDateBtn.style.background = '#9C27B0';
+          markDateBtn.style.borderColor = '#7B1FA2';
+
+          (window as any).__playwrightRecorderDateMarkingMode = false;
+          (window as any).__playwrightRecorderDateMarkingStep = null;
+          dateMarkingStep = null;
+
+          if (dateMarkingInstructions) {
+            // Clean up mousemove listener
+            const handler = (dateMarkingInstructions as any).__mouseMoveHandler;
+            if (handler) {
+              document.removeEventListener('mousemove', handler);
+            }
+
+            dateMarkingInstructions.remove();
+            dateMarkingInstructions = null;
+          }
+
+          // Remove all checkmarks
+          const checkmarks = document.querySelectorAll('.date-marker-checkmark');
+          checkmarks.forEach(mark => mark.remove());
+
+          // Remove outlines from marked elements
+          const outlinedElements = document.querySelectorAll('[style*="outline: 3px solid rgb(76, 175, 80)"]');
+          outlinedElements.forEach((el: Element) => {
+            (el as HTMLElement).style.outline = '';
+            (el as HTMLElement).style.outlineOffset = '';
+          });
+
+          document.body.style.cursor = '';
+        }
+      };
+
+      // Set up Gemini button functionality
       geminiBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1426,11 +1776,12 @@ export class PlaywrightRecorder {
       document.addEventListener('keydown', (e) => {
         const target = e.target as HTMLElement;
         
-        // Skip recording keyboard events on recorder UI elements
-        if (target.closest('#playwright-recorder-controller') || 
+        // Skip recording keyboard events on recorder UI elements and date offset modal
+        if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
             target.closest('.playwright-recorder-modal') ||
             target.closest('.playwright-recorder-modal-content') ||
+            target.closest('#playwright-date-offset-modal') ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
             target.id === 'wait-timeout' ||
@@ -1491,11 +1842,12 @@ export class PlaywrightRecorder {
       document.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
 
-        // Skip recording input events on recorder UI elements
+        // Skip recording input events on recorder UI elements and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
             target.closest('.playwright-recorder-modal') ||
             target.closest('.playwright-recorder-modal-content') ||
+            target.closest('#playwright-date-offset-modal') ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
             target.id === 'wait-timeout' ||
@@ -1548,10 +1900,11 @@ export class PlaywrightRecorder {
       document.addEventListener('blur', (e) => {
         const target = e.target as HTMLInputElement;
 
-        // Skip recorder UI elements
+        // Skip recorder UI elements and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
             target.closest('.playwright-recorder-modal') ||
+            target.closest('#playwright-date-offset-modal') ||
             target.style.zIndex === '999999') {
           return;
         }
@@ -1587,11 +1940,472 @@ export class PlaywrightRecorder {
           }
         }
       }, true);
-      
+
+      // Track any element clicks for date marking mode
+      // Using mousedown in capture phase to intercept BEFORE regular click handlers
+      const dateMarkingProcessedElements = new WeakSet<HTMLElement>();
+
+      document.addEventListener('mousedown', (e) => {
+        const target = e.target as HTMLElement;
+
+        // Skip recorder UI elements and date offset modal
+        if (target.closest('#playwright-recorder-controller') ||
+            target.closest('#playwright-wait-modal') ||
+            target.closest('.playwright-recorder-modal') ||
+            target.closest('#playwright-date-offset-modal')) {
+          return;
+        }
+
+        // Only process if in date marking mode
+        if (!(window as any).__playwrightRecorderDateMarkingMode) {
+          return;
+        }
+
+        // Skip if date offset modal is being shown
+        if ((window as any).__dateOffsetModalShowing) {
+          console.log('📅 Date offset modal is showing, skipping click');
+          return;
+        }
+
+        // In date marking mode, accept ANY clickable element
+        // This includes: SELECT, BUTTON, INPUT, DIV, SPAN, A, etc.
+        let dateElement: HTMLElement = target;
+        let elementType: 'select' | 'button' | 'input' = 'button'; // Default to button for non-select elements
+
+        // Determine element type
+        if (target.tagName === 'SELECT') {
+          elementType = 'select';
+        } else if (target.tagName === 'OPTION' && target.parentElement?.tagName === 'SELECT') {
+          dateElement = target.parentElement as HTMLSelectElement;
+          elementType = 'select';
+        } else if (target.tagName === 'INPUT') {
+          // Detect input elements (text, number, date, etc.)
+          elementType = 'input';
+        } else {
+          // Everything else is treated as 'button' (clickable element)
+          elementType = 'button';
+        }
+
+        // Skip if already processed
+        if (dateMarkingProcessedElements.has(dateElement)) {
+          return;
+        }
+
+        console.log('📅 Element clicked in date marking mode:', dateElement.tagName, elementType);
+
+        // Prevent the default action (dropdown opening or button click)
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        // Mark as processed
+        dateMarkingProcessedElements.add(dateElement);
+
+        // Generate selector for this element
+        let selector = '';
+
+        // Priority: Unique ID > Name > Placeholder > Unique data attributes > Type > has-text with data attributes > Class > has-text only > Tag + index
+        if (dateElement.id) {
+          // Check if ID is actually unique before using it
+          const elementsWithSameId = document.querySelectorAll(`#${dateElement.id}`);
+          if (elementsWithSameId.length === 1) {
+            // ID is unique, use it
+            selector = `#${dateElement.id}`;
+          } else {
+            // ID is not unique! Check for unique combination with other attributes
+            if (dateElement.getAttribute('data-focusable-seq')) {
+              const seq = dateElement.getAttribute('data-focusable-seq')!;
+              const tag = dateElement.tagName.toLowerCase();
+              selector = `${tag}[id="${dateElement.id}"][data-focusable-seq="${seq}"]`;
+            } else if (dateElement.getAttribute('data-own-layer-box-id')) {
+              const layerId = dateElement.getAttribute('data-own-layer-box-id')!;
+              const tag = dateElement.tagName.toLowerCase();
+              selector = `${tag}[id="${dateElement.id}"][data-own-layer-box-id="${layerId}"]`;
+            } else {
+              // Use nth-of-type as fallback for non-unique IDs
+              const elementsWithId = Array.from(document.querySelectorAll(`#${dateElement.id}`));
+              const index = elementsWithId.indexOf(dateElement);
+              selector = `${dateElement.tagName.toLowerCase()}#${dateElement.id}:nth-of-type(${index + 1})`;
+            }
+          }
+        } else if (dateElement.getAttribute('name')) {
+          const name = dateElement.getAttribute('name')!;
+          const tag = dateElement.tagName.toLowerCase();
+          selector = `${tag}[name="${name}"]`;
+        } else if (dateElement.getAttribute('placeholder')) {
+          // For inputs with placeholder
+          const placeholder = dateElement.getAttribute('placeholder')!;
+          selector = `input[placeholder="${placeholder}"]`;
+        } else if (dateElement.getAttribute('data-own-layer-box-id')) {
+          // Check for data-own-layer-box-id attribute - but this is NOT stable across page loads!
+          // Skip this and use other attributes instead
+          const layerId = dateElement.getAttribute('data-own-layer-box-id')!;
+          const tag = dateElement.tagName.toLowerCase();
+          // Don't use this - fall through to next options
+          selector = ''; // Will be set below
+        }
+
+        // Check for data-id, data-cid with uniqueness validation
+        if (!selector && dateElement.getAttribute('data-id')) {
+          const dataId = dateElement.getAttribute('data-id')!;
+          const tag = dateElement.tagName.toLowerCase();
+          const candidateSelector = `${tag}[data-id="${dataId}"]`;
+
+          // Check if this selector is unique
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = dateElement.parentElement;
+            if (parent) {
+              // Find parent's position among its siblings
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              // Build parent selector
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > ${tag}[data-id="${dataId}"]`;
+            } else {
+              // Fallback to nth-of-type
+              const allWithDataId = Array.from(matches);
+              const index = allWithDataId.indexOf(dateElement);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
+        } else if (!selector && dateElement.getAttribute('data-cid')) {
+          const dataCid = dateElement.getAttribute('data-cid')!;
+          const tag = dateElement.tagName.toLowerCase();
+          const candidateSelector = `${tag}[data-cid="${dataCid}"]`;
+
+          // Check if this selector is unique
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = dateElement.parentElement;
+            if (parent) {
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > ${tag}[data-cid="${dataCid}"]`;
+            } else {
+              const allWithDataCid = Array.from(matches);
+              const index = allWithDataCid.indexOf(dateElement);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
+        } else if (!selector && dateElement.getAttribute('data-testid')) {
+          // Check for data-testid attribute
+          const dataTestid = dateElement.getAttribute('data-testid')!;
+          selector = `[data-testid="${dataTestid}"]`;
+        } else if (!selector && dateElement.getAttribute('data-name')) {
+          // Check for data-name attribute
+          const dataName = dateElement.getAttribute('data-name')!;
+          const tag = dateElement.tagName.toLowerCase();
+          selector = `${tag}[data-name="${dataName}"]`;
+        } else if (dateElement.getAttribute('type')) {
+          // For inputs with type attribute
+          const type = dateElement.getAttribute('type')!;
+          selector = `input[type="${type}"]`;
+        } else if (elementType === 'button' && dateElement.textContent?.trim()) {
+          // For buttons/clickable elements with text, combine with data attributes if available for specificity
+          const text = dateElement.textContent.trim();
+          const tag = dateElement.tagName.toLowerCase();
+
+          // Try to find a unique data attribute to combine with text
+          const dataAttrs = ['data-id', 'data-cid', 'data-name', 'data-role', 'data-type'];
+          let dataAttr = null;
+          for (const attr of dataAttrs) {
+            if (dateElement.getAttribute(attr)) {
+              dataAttr = { name: attr, value: dateElement.getAttribute(attr)! };
+              break;
+            }
+          }
+
+          if (dataAttr) {
+            // Combine data attribute with has-text for more specificity
+            selector = `${tag}[${dataAttr.name}="${dataAttr.value}"]:has-text("${text}")`;
+          } else {
+            // Fall back to just has-text
+            selector = `${tag}:has-text("${text}")`;
+          }
+        } else if (dateElement.className && dateElement.className.trim()) {
+          const firstClass = dateElement.className.trim().split(/\s+/)[0];
+          selector = `${dateElement.tagName.toLowerCase()}.${firstClass}`;
+        } else {
+          // Use nth-of-type as fallback
+          const elements = Array.from(document.querySelectorAll(dateElement.tagName.toLowerCase()));
+          const index = elements.indexOf(dateElement);
+          selector = `${dateElement.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
+        }
+
+        const step = (window as any).__playwrightRecorderDateMarkingStep;
+
+        console.log('📅 Date element marked:', { selector, elementType, step });
+
+        // Visual feedback - highlight the selected element with green outline
+        dateElement.style.outline = '3px solid #4CAF50';
+        dateElement.style.outlineOffset = '2px';
+        dateElement.style.transition = 'outline 0.2s ease';
+
+        // Add checkmark indicator
+        const checkmark = document.createElement('span');
+        checkmark.style.cssText = `
+          position: fixed;
+          background: #4CAF50;
+          color: white;
+          border-radius: 50%;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          z-index: 999998;
+          pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        `;
+        checkmark.textContent = '✓';
+        checkmark.className = 'date-marker-checkmark';
+
+        // Position relative to element
+        const rect = dateElement.getBoundingClientRect();
+        checkmark.style.left = (rect.right - 10) + 'px';
+        checkmark.style.top = (rect.top - 10) + 'px';
+
+        document.body.appendChild(checkmark);
+
+        // Mark this element as processed to prevent its click from being recorded
+        if ((window as any).__dateMarkedElements) {
+          (window as any).__dateMarkedElements.add(dateElement);
+          // Clear after 500ms to allow subsequent intentional clicks
+          setTimeout(() => {
+            if ((window as any).__dateMarkedElements) {
+              (window as any).__dateMarkedElements.delete(dateElement);
+            }
+          }, 500);
+        }
+
+        // Call exposed function to record this element with its type
+        if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
+          (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step);
+        }
+
+        // IMPORTANT: If this was the day element (step 3/3), show date offset modal
+        if (step === 'day') {
+          // Check if modal already exists to prevent duplicates
+          if (document.getElementById('playwright-date-offset-modal') || (window as any).__dateOffsetModalShowing) {
+            console.log('📅 Date offset modal already showing, skipping...');
+            return;
+          }
+
+          // Set flag immediately to prevent duplicate processing
+          (window as any).__dateOffsetModalShowing = true;
+
+          // Show modal to choose date offset
+          const modal = document.createElement('div');
+          modal.id = 'playwright-date-offset-modal'; // Add ID for skipping in mousedown listener
+          modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          `;
+
+          const modalContent = document.createElement('div');
+          modalContent.style.cssText = `
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            min-width: 400px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          `;
+
+          modalContent.innerHTML = `
+            <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #333;">📅 Select Date Timeframe</h3>
+            <p style="margin: 0 0 20px 0; font-size: 14px; color: #666;">Choose which date to use when replaying this test:</p>
+
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="0" checked style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 500; color: #333;">Today</div>
+                  <div style="font-size: 12px; color: #666;">Use today's date when running</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 500; color: #333;">Tomorrow</div>
+                  <div style="font-size: 12px; color: #666;">Today + 1 day</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="-1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 500; color: #333;">Yesterday</div>
+                  <div style="font-size: 12px; color: #666;">Today - 1 day</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="-7" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 500; color: #333;">Last Week</div>
+                  <div style="font-size: 12px; color: #666;">Today - 7 days</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="-30" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 500; color: #333;">Last Month</div>
+                  <div style="font-size: 12px; color: #666;">Today - 30 days</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                <input type="radio" name="date-offset" value="custom" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                <div style="flex: 1;">
+                  <div style="font-weight: 500; color: #333; margin-bottom: 8px;">Custom Offset</div>
+                  <input type="number" id="custom-offset" placeholder="Days from today (e.g., -14 for 14 days ago)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" disabled>
+                </div>
+              </label>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+              <button id="date-cancel" style="padding: 10px 20px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Cancel</button>
+              <button id="date-confirm" style="padding: 10px 20px; background: #9C27B0; color: white; border: 1px solid #9C27B0; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Confirm</button>
+            </div>
+          `;
+
+          modal.appendChild(modalContent);
+          document.body.appendChild(modal);
+
+          // Add hover effects to radio labels
+          const labels = modalContent.querySelectorAll('label');
+          labels.forEach(label => {
+            label.addEventListener('mouseenter', () => {
+              (label as HTMLElement).style.borderColor = '#9C27B0';
+              (label as HTMLElement).style.background = '#f3e5f5';
+            });
+            label.addEventListener('mouseleave', () => {
+              const radio = label.querySelector('input[type="radio"]') as HTMLInputElement;
+              if (!radio.checked) {
+                (label as HTMLElement).style.borderColor = '#e0e0e0';
+                (label as HTMLElement).style.background = 'white';
+              }
+            });
+          });
+
+          // Handle radio selection highlighting
+          const radios = modalContent.querySelectorAll('input[type="radio"]');
+          const customInput = modalContent.querySelector('#custom-offset') as HTMLInputElement;
+
+          radios.forEach(radio => {
+            radio.addEventListener('change', () => {
+              // Reset all labels
+              labels.forEach(l => {
+                (l as HTMLElement).style.borderColor = '#e0e0e0';
+                (l as HTMLElement).style.background = 'white';
+              });
+
+              // Highlight selected
+              const selectedLabel = radio.closest('label') as HTMLElement;
+              selectedLabel.style.borderColor = '#9C27B0';
+              selectedLabel.style.background = '#f3e5f5';
+
+              // Enable/disable custom input
+              if ((radio as HTMLInputElement).value === 'custom') {
+                customInput.disabled = false;
+                customInput.focus();
+              } else {
+                customInput.disabled = true;
+              }
+            });
+          });
+
+          // Handle modal actions
+          const cancelBtn = modalContent.querySelector('#date-cancel') as HTMLElement;
+          const confirmBtn = modalContent.querySelector('#date-confirm') as HTMLElement;
+
+          cancelBtn.addEventListener('click', () => {
+            modal.remove();
+            // Clear modal showing flag
+            (window as any).__dateOffsetModalShowing = false;
+            // Exit date marking mode and reset
+            if ((window as any).__exitDateMarkingMode) {
+              (window as any).__exitDateMarkingMode();
+            }
+          });
+
+          confirmBtn.addEventListener('click', () => {
+            const selectedRadio = modalContent.querySelector('input[name="date-offset"]:checked') as HTMLInputElement;
+            let offset = 0;
+
+            if (selectedRadio.value === 'custom') {
+              const customValue = customInput.value;
+              if (customValue && !isNaN(parseInt(customValue))) {
+                offset = parseInt(customValue);
+              } else {
+                alert('Please enter a valid number for custom offset');
+                return;
+              }
+            } else {
+              offset = parseInt(selectedRadio.value);
+            }
+
+            // Send the offset to the recorder
+            if ((window as any).__playwrightRecorderOnDateOffsetSelected) {
+              (window as any).__playwrightRecorderOnDateOffsetSelected(offset);
+            }
+
+            modal.remove();
+            // Clear modal showing flag
+            (window as any).__dateOffsetModalShowing = false;
+
+            // Exit date marking mode
+            if ((window as any).__exitDateMarkingMode) {
+              (window as any).__exitDateMarkingMode();
+            }
+          });
+        }
+      }, true); // Capture phase - runs before regular handlers
+
       // Track processed clicks to avoid duplicates
       const processedClicks = new WeakMap<Event, boolean>();
       let lastClickTime = 0;
       let lastClickTarget: EventTarget | null = null;
+
+      // Track date marked elements to skip their subsequent clicks
+      const dateMarkedElements = new WeakSet<HTMLElement>();
+      (window as any).__dateMarkedElements = dateMarkedElements;
       
       // Function to handle clicks - separated so we can call it from multiple places
       const handleClick = (e: MouseEvent) => {
@@ -1600,29 +2414,43 @@ export class PlaywrightRecorder {
           console.log('⏭️ Click already processed, skipping');
           return;
         }
-        
+
         const target = e.target as HTMLElement;
         const now = Date.now();
-        
+
+        // Skip ALL clicks when in date marking mode (handled by mousedown listener)
+        // This prevents regular click recording from interfering with date marking
+        if ((window as any).__playwrightRecorderDateMarkingMode) {
+          console.log('📅 Skipping click in date marking mode (handled by mousedown)');
+          return;
+        }
+
+        // Skip clicks on elements that were just marked in date marking mode
+        if ((window as any).__dateMarkedElements && (window as any).__dateMarkedElements.has(target)) {
+          console.log('📅 Skipping click on date marked element');
+          return;
+        }
+
         // Deduplicate clicks on same target within 50ms
         if (lastClickTarget === target && (now - lastClickTime) < 50) {
           console.log('⏭️ Duplicate click detected, skipping');
           return;
         }
-        
+
         console.log('🖱️ Click detected, coordinate mode:', isCoordinateMode);
-        
+
         // Mark this event as processed
         processedClicks.set(e, true);
         lastClickTime = now;
         lastClickTarget = target;
-        
-        // Skip recording clicks on the recorder controller UI
-        if (target.closest('#playwright-recorder-controller')) {
+
+        // Skip recording clicks on the recorder controller UI and date offset modal
+        if (target.closest('#playwright-recorder-controller') ||
+            target.closest('#playwright-date-offset-modal')) {
           console.log('⏭️ Skipping recorder UI click');
           return;
         }
-        
+
         // Skip coordinate indicator if somehow clicked
         if (target.classList.contains('playwright-recorder-coord-indicator')) {
           console.log('⏭️ Skipping coord indicator click');
@@ -1634,11 +2462,12 @@ export class PlaywrightRecorder {
         const isWaitMode = waitBtn && waitBtn.classList.contains('active');
         
         if (isWaitMode) {
-          // Skip wait recording on ANY recorder UI elements
-          if (target.closest('#playwright-recorder-controller') || 
+          // Skip wait recording on ANY recorder UI elements and date offset modal
+          if (target.closest('#playwright-recorder-controller') ||
               target.closest('#playwright-wait-modal') ||
               target.closest('.playwright-recorder-modal') ||
               target.closest('.playwright-recorder-modal-content') ||
+              target.closest('#playwright-date-offset-modal') ||
               target.id === 'wait-instructions' ||
               target.id === 'wait-condition' ||
               target.id === 'wait-timeout' ||
@@ -1794,30 +2623,159 @@ export class PlaywrightRecorder {
         
         // Generate a more specific selector
         let selector = '';
-        
-        // Priority 1: Use ID if available
+
+        // Priority 1: Check if ID is unique before using it
         if (target.id) {
-          selector = `#${target.id}`;
-        } 
-        // Priority 2: For buttons, use role selector
+          const elementsWithSameId = document.querySelectorAll(`#${target.id}`);
+          if (elementsWithSameId.length === 1) {
+            // ID is unique, use it
+            selector = `#${target.id}`;
+          } else {
+            // ID is not unique! Combine with other attributes
+            if (target.getAttribute('data-focusable-seq')) {
+              const seq = target.getAttribute('data-focusable-seq')!;
+              const tag = target.tagName.toLowerCase();
+              selector = `${tag}[id="${target.id}"][data-focusable-seq="${seq}"]`;
+            } else if (target.getAttribute('data-own-layer-box-id')) {
+              const layerId = target.getAttribute('data-own-layer-box-id')!;
+              const tag = target.tagName.toLowerCase();
+              selector = `${tag}[id="${target.id}"][data-own-layer-box-id="${layerId}"]`;
+            } else if (target.getAttribute('data-testid')) {
+              const testid = target.getAttribute('data-testid')!;
+              const tag = target.tagName.toLowerCase();
+              selector = `${tag}[id="${target.id}"][data-testid="${testid}"]`;
+            } else {
+              // Use nth-of-type as fallback for non-unique IDs
+              const elementsWithId = Array.from(document.querySelectorAll(`#${target.id}`));
+              const index = elementsWithId.indexOf(target);
+              selector = `${target.tagName.toLowerCase()}#${target.id}:nth-of-type(${index + 1})`;
+            }
+          }
+        }
+        // Priority 2: Check for data-testid (usually unique)
+        else if (target.getAttribute('data-testid')) {
+          const testid = target.getAttribute('data-testid')!;
+          const candidateSelector = `[data-testid="${testid}"]`;
+
+          // Validate uniqueness
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = target.parentElement;
+            if (parent) {
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > [data-testid="${testid}"]`;
+            } else {
+              const allWithTestid = Array.from(matches);
+              const index = allWithTestid.indexOf(target);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
+        }
+        // Priority 3: For buttons, use text-based selector with data attributes for specificity
         else if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
           const text = target.textContent?.trim() || '';
-          
-          // First try to use ID if available
-          if (target.id) {
-            selector = `#${target.id}`;
-          }
-          // Check how many elements match the text selector
-          else {
+          const tag = target.tagName.toLowerCase();
+
+          // Check for data-index + data-cid/data-id combination with text for maximum specificity
+          if (target.getAttribute('data-index') && target.getAttribute('data-cid')) {
+            const dataIndex = target.getAttribute('data-index')!;
+            const dataCid = target.getAttribute('data-cid')!;
+            // Add text for additional specificity since data-index may not be unique across sections
+            selector = `${tag}[data-cid="${dataCid}"][data-index="${dataIndex}"]:has-text("${text}")`;
+          } else if (target.getAttribute('data-id') && target.getAttribute('data-index')) {
+            const dataId = target.getAttribute('data-id')!;
+            const dataIndex = target.getAttribute('data-index')!;
+            selector = `${tag}[data-id="${dataId}"][data-index="${dataIndex}"]:has-text("${text}")`;
+          } else if (target.getAttribute('data-id')) {
+            const dataId = target.getAttribute('data-id')!;
+            const candidateSelector = `${tag}[data-id="${dataId}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = `${candidateSelector}:has-text("${text}")`;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > ${tag}[data-id="${dataId}"]:has-text("${text}")`;
+              } else {
+                selector = `${candidateSelector}:has-text("${text}")`;
+              }
+            }
+          } else if (target.getAttribute('data-cid')) {
+            const dataCid = target.getAttribute('data-cid')!;
+            const candidateSelector = `${tag}[data-cid="${dataCid}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = `${candidateSelector}:has-text("${text}")`;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > ${tag}[data-cid="${dataCid}"]:has-text("${text}")`;
+              } else {
+                selector = `${candidateSelector}:has-text("${text}")`;
+              }
+            }
+          } else if (target.getAttribute('data-name')) {
+            const dataName = target.getAttribute('data-name')!;
+            selector = `${tag}[data-name="${dataName}"]:has-text("${text}")`;
+          } else {
+            // Use Playwright's has-text selector
             const potentialSelector = `button:has-text("${text}")`;
-            const matchingElements = document.querySelectorAll(potentialSelector);
-            
+
+            // Try to find matching buttons manually
+            let matchingElements: HTMLElement[] = [];
+            try {
+              const allButtons = Array.from(document.querySelectorAll('button'));
+              matchingElements = allButtons.filter(btn => btn.textContent?.trim().includes(text));
+            } catch (e) {
+              // Fallback to simple selector
+            }
+
             if (matchingElements.length <= 1) {
               // Unique or no match, use the simple selector
               selector = potentialSelector;
             } else {
-              // Multiple matches, need to be more specific
-              // Try using nth-match or parent context
+              // Multiple matches, use nth= syntax for Playwright
               let index = -1;
               for (let i = 0; i < matchingElements.length; i++) {
                 if (matchingElements[i] === target) {
@@ -1825,36 +2783,110 @@ export class PlaywrightRecorder {
                   break;
                 }
               }
-              
+
               if (index >= 0) {
-                // Use nth= syntax for Playwright
                 selector = `button:has-text("${text}") >> nth=${index}`;
               } else {
-                // Fallback to simple selector
                 selector = potentialSelector;
               }
             }
           }
         }
-        // Priority 3: For links, use role selector
+        // Priority 4: For links, use text-based selector with data attributes for specificity
         else if (target.tagName === 'A') {
           const text = target.textContent?.trim() || '';
-          
-          // First try to use ID if available
-          if (target.id) {
-            selector = `#${target.id}`;
-          }
-          // Check how many elements match the text selector
-          else {
+          const tag = target.tagName.toLowerCase();
+
+          console.log('🔗 Link clicked - Text:', text, 'Length:', text.length);
+
+          // Check for data-index + data-cid/data-id combination with text for maximum specificity
+          if (target.getAttribute('data-index') && target.getAttribute('data-cid')) {
+            const dataIndex = target.getAttribute('data-index')!;
+            const dataCid = target.getAttribute('data-cid')!;
+            // Add text for additional specificity since data-index may not be unique across sections
+            selector = `${tag}[data-cid="${dataCid}"][data-index="${dataIndex}"]:has-text("${text}")`;
+            console.log('🔗 Generated link selector:', selector);
+          } else if (target.getAttribute('data-id') && target.getAttribute('data-index')) {
+            const dataId = target.getAttribute('data-id')!;
+            const dataIndex = target.getAttribute('data-index')!;
+            selector = `${tag}[data-id="${dataId}"][data-index="${dataIndex}"]:has-text("${text}")`;
+          } else if (target.getAttribute('data-id')) {
+            const dataId = target.getAttribute('data-id')!;
+            const candidateSelector = `${tag}[data-id="${dataId}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = `${candidateSelector}:has-text("${text}")`;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > ${tag}[data-id="${dataId}"]:has-text("${text}")`;
+              } else {
+                selector = `${candidateSelector}:has-text("${text}")`;
+              }
+            }
+          } else if (target.getAttribute('data-cid')) {
+            const dataCid = target.getAttribute('data-cid')!;
+            const candidateSelector = `${tag}[data-cid="${dataCid}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = `${candidateSelector}:has-text("${text}")`;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > ${tag}[data-cid="${dataCid}"]:has-text("${text}")`;
+              } else {
+                selector = `${candidateSelector}:has-text("${text}")`;
+              }
+            }
+          } else if (target.getAttribute('data-name')) {
+            const dataName = target.getAttribute('data-name')!;
+            selector = `${tag}[data-name="${dataName}"]:has-text("${text}")`;
+          } else {
+            // Use Playwright's has-text selector
             const potentialSelector = `a:has-text("${text}")`;
-            const matchingElements = document.querySelectorAll(potentialSelector);
-            
+
+            // Try to find matching links manually
+            let matchingElements: HTMLElement[] = [];
+            try {
+              const allLinks = Array.from(document.querySelectorAll('a'));
+              matchingElements = allLinks.filter(link => link.textContent?.trim().includes(text));
+            } catch (e) {
+              // Fallback to simple selector
+            }
+
             if (matchingElements.length <= 1) {
               // Unique or no match, use the simple selector
               selector = potentialSelector;
             } else {
-              // Multiple matches, need to be more specific
-              // Try using nth-match or parent context
+              // Multiple matches, use nth= syntax for Playwright
               let index = -1;
               for (let i = 0; i < matchingElements.length; i++) {
                 if (matchingElements[i] === target) {
@@ -1862,36 +2894,183 @@ export class PlaywrightRecorder {
                   break;
                 }
               }
-              
+
               if (index >= 0) {
-                // Use nth= syntax for Playwright
                 selector = `a:has-text("${text}") >> nth=${index}`;
               } else {
-                // Fallback to simple selector
                 selector = potentialSelector;
               }
             }
           }
         }
-        // Priority 4: For inputs, use name or type
+        // Priority 5: For inputs, use name, placeholder, or type with data attributes
         else if (target.tagName === 'INPUT') {
           const type = target.getAttribute('type') || 'text';
           const name = target.getAttribute('name');
           const placeholder = target.getAttribute('placeholder');
-          
+
           if (name) {
-            selector = `input[name="${name}"]`;
+            const candidateSelector = `input[name="${name}"]`;
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = candidateSelector;
+            } else {
+              // Use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > input[name="${name}"]`;
+              } else {
+                selector = candidateSelector;
+              }
+            }
           } else if (placeholder) {
             selector = `input[placeholder="${placeholder}"]`;
+          } else if (target.getAttribute('data-id')) {
+            const dataId = target.getAttribute('data-id')!;
+            const candidateSelector = `input[data-id="${dataId}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = candidateSelector;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > input[data-id="${dataId}"]`;
+              } else {
+                const allWithDataId = Array.from(matches);
+                const index = allWithDataId.indexOf(target);
+                selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              }
+            }
+          } else if (target.getAttribute('data-cid')) {
+            const dataCid = target.getAttribute('data-cid')!;
+            const candidateSelector = `input[data-cid="${dataCid}"]`;
+
+            // Check if unique
+            const matches = document.querySelectorAll(candidateSelector);
+            if (matches.length === 1) {
+              selector = candidateSelector;
+            } else {
+              // Not unique - use parent-child pattern
+              const parent = target.parentElement;
+              if (parent) {
+                const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+                const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+                let parentSelector = '';
+                if (parent.className) {
+                  const parentClass = parent.className.trim().split(/\s+/)[0];
+                  parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+                } else {
+                  parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+                }
+
+                selector = `${parentSelector} > input[data-cid="${dataCid}"]`;
+              } else {
+                const allWithDataCid = Array.from(matches);
+                const index = allWithDataCid.indexOf(target);
+                selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              }
+            }
           } else {
             selector = `input[type="${type}"]`;
           }
         }
-        // Priority 5: Use data attributes if available
-        else if (target.hasAttribute('data-testid')) {
-          selector = `[data-testid="${target.getAttribute('data-testid')}"]`;
+        // Priority 6: Other data attributes (with uniqueness check)
+        else if (target.getAttribute('data-id')) {
+          const dataId = target.getAttribute('data-id')!;
+          const tag = target.tagName.toLowerCase();
+          const candidateSelector = `${tag}[data-id="${dataId}"]`;
+
+          // Check if unique
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = target.parentElement;
+            if (parent) {
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > ${tag}[data-id="${dataId}"]`;
+            } else {
+              const allWithDataId = Array.from(matches);
+              const index = allWithDataId.indexOf(target);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
         }
-        // Priority 6: Use nth-child for specific element
+        else if (target.getAttribute('data-cid')) {
+          const dataCid = target.getAttribute('data-cid')!;
+          const tag = target.tagName.toLowerCase();
+          const candidateSelector = `${tag}[data-cid="${dataCid}"]`;
+
+          // Check if unique
+          const matches = document.querySelectorAll(candidateSelector);
+          if (matches.length === 1) {
+            selector = candidateSelector;
+          } else {
+            // Not unique - use parent-child pattern
+            const parent = target.parentElement;
+            if (parent) {
+              const parentSiblings = parent.parentElement ? Array.from(parent.parentElement.children) : [];
+              const parentIndex = parentSiblings.indexOf(parent) + 1;
+
+              let parentSelector = '';
+              if (parent.className) {
+                const parentClass = parent.className.trim().split(/\s+/)[0];
+                parentSelector = `.${parentClass}:nth-child(${parentIndex})`;
+              } else {
+                parentSelector = `${parent.tagName.toLowerCase()}:nth-child(${parentIndex})`;
+              }
+
+              selector = `${parentSelector} > ${tag}[data-cid="${dataCid}"]`;
+            } else {
+              const allWithDataCid = Array.from(matches);
+              const index = allWithDataCid.indexOf(target);
+              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+            }
+          }
+        }
+        else if (target.getAttribute('data-name')) {
+          const dataName = target.getAttribute('data-name')!;
+          const tag = target.tagName.toLowerCase();
+          selector = `${tag}[data-name="${dataName}"]`;
+        }
+        // Priority 7: Use nth-child for specific element
         else {
           const parent = target.parentElement;
           if (parent) {
@@ -1909,7 +3088,9 @@ export class PlaywrightRecorder {
           selector: selector,
           text: target.textContent?.trim() || ''
         };
-        
+
+        console.log('📤 Click event prepared - Selector:', selector, 'Text:', event.text);
+
         // Add coordinates if in coordinate mode
         if (isCoordinateMode) {
           // Use pageX/pageY for absolute document coordinates
@@ -2194,6 +3375,63 @@ await expect(page.locator(selectors[0])).toBeVisible();
       console.log('⏳ Wait for element added:', data.selector, 'condition:', data.condition, 'timeout:', data.timeout + 'ms');
       this.updateGeneratedCode();
     });
+
+    await this.page.exposeFunction('__playwrightRecorderOnDateDropdownMarked', async (selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day') => {
+      console.log('📅 Date element marked:', { selector, elementType, step });
+      this.handleDateDropdownMarked(selector, elementType, step);
+    });
+
+    await this.page.exposeFunction('__playwrightRecorderOnDateOffsetSelected', async (offset: number) => {
+      console.log('📅 Date offset selected:', offset);
+      this.dateMarkingOffset = offset;
+      // Now create the date picker action with the selected offset
+      this.createDatePickerAction();
+
+      // Show success notification in browser
+      this.page?.evaluate((offset: number) => {
+        const successNotification = document.createElement('div');
+        successNotification.style.cssText = `
+          position: fixed;
+          top: 70px;
+          right: 20px;
+          background: #4CAF50;
+          color: white;
+          padding: 16px 20px;
+          border-radius: 8px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 14px;
+          z-index: 999999;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          font-weight: 500;
+        `;
+
+        const offsetText = offset === 0 ? 'today' :
+                          offset > 0 ? `today + ${offset} days` :
+                          `today - ${Math.abs(offset)} days`;
+
+        successNotification.innerHTML = `
+          <strong>✅ Date Picker Recorded!</strong><br>
+          <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
+            Timeframe: ${offsetText}
+          </div>
+        `;
+
+        try {
+          if (document.body) {
+            document.body.appendChild(successNotification);
+          }
+        } catch (e) {
+          console.warn('Failed to show success notification:', e);
+        }
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+          successNotification.style.opacity = '0';
+          successNotification.style.transition = 'opacity 0.3s ease';
+          setTimeout(() => successNotification.remove(), 300);
+        }, 3000);
+      }, offset);
+    });
   }
 
   private setupPageListeners(): void {
@@ -2259,6 +3497,111 @@ await expect(page.locator(selectors[0])).toBeVisible();
     }
 
     return testCode;
+  }
+
+  private handleDateDropdownMarked(selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day'): void {
+    console.log(`📅 Handling date element marked: ${step} = ${selector} (${elementType})`);
+
+    // Store the selector and element type for this date component
+    this.dateMarkingSelectors[step] = { selector, elementType };
+    this.dateMarkingStep = step;
+
+    // Advance to next step
+    if (step === 'year') {
+      this.dateMarkingStep = 'month';
+
+      // Update browser UI to show next step
+      this.page?.evaluate(() => {
+        (window as any).__playwrightRecorderDateMarkingStep = 'month';
+        if ((window as any).__updateDateMarkingInstructions) {
+          (window as any).__updateDateMarkingInstructions('month');
+        }
+      });
+
+      console.log('✅ Year dropdown marked, waiting for month...');
+    } else if (step === 'month') {
+      this.dateMarkingStep = 'day';
+
+      // Update browser UI to show next step
+      this.page?.evaluate(() => {
+        (window as any).__playwrightRecorderDateMarkingStep = 'day';
+        if ((window as any).__updateDateMarkingInstructions) {
+          (window as any).__updateDateMarkingInstructions('day');
+        }
+      });
+
+      console.log('✅ Month dropdown marked, waiting for day...');
+    } else if (step === 'day') {
+      console.log('✅ All 3 date elements marked! Modal should now be showing...');
+      // Don't create action yet - wait for user to select offset in modal
+      // The action will be created in __playwrightRecorderOnDateOffsetSelected
+      // Don't exit date marking mode - it will be exited when modal is dismissed
+    }
+  }
+
+  private createDatePickerAction(): void {
+    // Validate all 3 components were collected
+    if (!this.dateMarkingSelectors.year || !this.dateMarkingSelectors.month || !this.dateMarkingSelectors.day) {
+      console.error('❌ Missing date components:', this.dateMarkingSelectors);
+      return;
+    }
+
+    const action: RecordedAction = {
+      type: 'datePickerGroup',
+      timestamp: Date.now() - this.startTime,
+      dateComponents: {
+        year: {
+          selector: this.dateMarkingSelectors.year.selector,
+          elementType: this.dateMarkingSelectors.year.elementType
+        },
+        month: {
+          selector: this.dateMarkingSelectors.month.selector,
+          elementType: this.dateMarkingSelectors.month.elementType
+        },
+        day: {
+          selector: this.dateMarkingSelectors.day.selector,
+          elementType: this.dateMarkingSelectors.day.elementType
+        }
+      },
+      dateOffset: this.dateMarkingOffset // Default to today (0)
+    };
+
+    this.actions.push(action);
+    console.log('📅 Date picker action created:', action);
+    this.updateGeneratedCode();
+
+    // Reset state
+    this.dateMarkingSelectors = {};
+    this.dateMarkingOffset = 0;
+  }
+
+  private async enterDateMarkingMode(): Promise<void> {
+    this.isDateMarkingMode = true;
+    this.dateMarkingStep = 'year';
+    this.dateMarkingSelectors = {};
+
+    // Update browser context
+    await this.page?.evaluate(() => {
+      (window as any).__playwrightRecorderDateMarkingMode = true;
+      (window as any).__playwrightRecorderDateMarkingStep = 'year';
+    });
+
+    console.log('📅 Entered date marking mode');
+  }
+
+  private async exitDateMarkingMode(): Promise<void> {
+    this.isDateMarkingMode = false;
+    this.dateMarkingStep = null;
+    this.dateMarkingSelectors = {};
+
+    // Update browser context
+    await this.page?.evaluate(() => {
+      if ((window as any).__exitDateMarkingMode) {
+        (window as any).__exitDateMarkingMode();
+      }
+    });
+
+    console.log('📅 Exited date marking mode');
   }
 
   private generateTestCode(): string {
@@ -2421,6 +3764,145 @@ await expect(page.locator(selectors[0])).toBeVisible();
               break;
           }
           break;
+        case 'datePickerGroup':
+          // Add comment explaining dynamic date
+          const offsetText = action.dateOffset === 0 ? 'today' :
+                           action.dateOffset! > 0 ? `today + ${action.dateOffset} days` :
+                           `today - ${Math.abs(action.dateOffset!)} days`;
+          lines.push(`    // Select date: ${offsetText}`);
+          lines.push(`    const targetDate = new Date();`);
+
+          if (action.dateOffset && action.dateOffset !== 0) {
+            lines.push(`    targetDate.setDate(targetDate.getDate() + ${action.dateOffset});`);
+          }
+
+          lines.push(`    const year = targetDate.getFullYear().toString();`);
+          lines.push(`    const month = (targetDate.getMonth() + 1).toString(); // 1-12`);
+          lines.push(`    const day = targetDate.getDate().toString();`);
+          lines.push(``);
+
+          // Select year - use appropriate method based on element type
+          const yearType = action.dateComponents!.year.elementType;
+          const yearSelector = action.dateComponents!.year.selector;
+
+          if (yearType === 'select') {
+            lines.push(`    await page.selectOption('${yearSelector}', year);`);
+          } else if (yearType === 'input') {
+            // For input elements, use fill() instead of click()
+            lines.push(`    await page.locator('${yearSelector}').fill(year);`);
+          } else {
+            // For button/clickable elements (dropdowns)
+            // Check if selector has :has-text, which means we need to filter by dynamic value
+            if (yearSelector.includes(':has-text')) {
+              // Has text-based selector - extract base selector and use filter with dynamic year
+              const baseYearSelector = yearSelector.split(':has-text')[0];
+              lines.push(`    await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
+            } else if (yearSelector.startsWith('#')) {
+              // Direct ID selector - click to open dropdown, then select option
+              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
+            } else if (yearSelector.includes(' > ') || yearSelector.includes(':nth-child(')) {
+              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="year"])
+              // This is a dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
+            } else if (yearSelector.includes('[data-index=') || yearSelector.includes('[name=')) {
+              // Unique attribute selector for dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: year }).first().click();`);
+            } else if (yearSelector.includes('[')) {
+              // Other attribute selectors that may not be unique - use filter with year text
+              lines.push(`    await page.locator('${yearSelector}').filter({ hasText: year }).click();`);
+            } else {
+              // Generic selector - use filter to find element with year text
+              lines.push(`    await page.locator('${yearSelector}').filter({ hasText: year }).click();`);
+            }
+          }
+          if (i < this.actions.length - 1) {
+            const waitTime = Math.min(1200, this.waitSettings.maxDelay);
+            lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+          }
+
+          // Select month
+          const monthType = action.dateComponents!.month.elementType;
+          const monthSelector = action.dateComponents!.month.selector;
+
+          if (monthType === 'select') {
+            lines.push(`    await page.selectOption('${monthSelector}', month);`);
+          } else if (monthType === 'input') {
+            // For input elements, use fill() instead of click()
+            lines.push(`    await page.locator('${monthSelector}').fill(month);`);
+          } else {
+            // For button/clickable elements (dropdowns)
+            // Check if selector has :has-text, which means we need to filter by dynamic value
+            if (monthSelector.includes(':has-text')) {
+              // Has text-based selector - extract base selector and use filter with dynamic month
+              const baseMonthSelector = monthSelector.split(':has-text')[0];
+              lines.push(`    await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
+            } else if (monthSelector.startsWith('#')) {
+              // Direct ID selector - click to open dropdown, then select option
+              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
+            } else if (monthSelector.includes(' > ') || monthSelector.includes(':nth-child(')) {
+              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="month"])
+              // This is a dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
+            } else if (monthSelector.includes('[data-index=') || monthSelector.includes('[name=')) {
+              // Unique attribute selector for dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: month }).first().click();`);
+            } else if (monthSelector.includes('[')) {
+              // Other attribute selectors that may not be unique - use filter with month text
+              lines.push(`    await page.locator('${monthSelector}').filter({ hasText: month }).click();`);
+            } else {
+              // Generic selector - use filter to find element with month text
+              lines.push(`    await page.locator('${monthSelector}').filter({ hasText: month }).click();`);
+            }
+          }
+          if (i < this.actions.length - 1) {
+            const waitTime = Math.min(800, this.waitSettings.maxDelay);
+            lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+          }
+
+          // Select day
+          const dayType = action.dateComponents!.day.elementType;
+          const daySelector = action.dateComponents!.day.selector;
+
+          if (dayType === 'select') {
+            lines.push(`    await page.selectOption('${daySelector}', day);`);
+          } else if (dayType === 'input') {
+            // For input elements, use fill() instead of click()
+            lines.push(`    await page.locator('${daySelector}').fill(day);`);
+          } else {
+            // For button/clickable elements (dropdowns)
+            // Check if selector has :has-text, which means we need to filter by dynamic value
+            if (daySelector.includes(':has-text')) {
+              // Has text-based selector - extract base selector and use filter with dynamic day
+              const baseDaySelector = daySelector.split(':has-text')[0];
+              lines.push(`    await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
+            } else if (daySelector.startsWith('#')) {
+              // Direct ID selector - click to open dropdown, then select option
+              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
+            } else if (daySelector.includes(' > ') || daySelector.includes(':nth-child(')) {
+              // Parent-child pattern selector (e.g., .wrapper:nth-child(1) > button[data-id="day"])
+              // This is a dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
+            } else if (daySelector.includes('[data-index=') || daySelector.includes('[name=')) {
+              // Unique attribute selector for dropdown button - click to open, then select option
+              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+              lines.push(`    await page.locator('button, div').filter({ hasText: day }).first().click();`);
+            } else if (daySelector.includes('[')) {
+              // Other attribute selectors that may not be unique - use filter with day text
+              lines.push(`    await page.locator('${daySelector}').filter({ hasText: day }).click();`);
+            } else {
+              // Generic selector - use filter to find element with day text
+              lines.push(`    await page.locator('${daySelector}').filter({ hasText: day }).click();`);
+            }
+          }
+          break;
       }
     }
     
@@ -2444,25 +3926,30 @@ await expect(page.locator(selectors[0])).toBeVisible();
 
   private updateGeneratedCode(): void {
     console.log('🔄 updateGeneratedCode called, actions count:', this.actions.length);
-    const code = this.generateTestCode();
-    console.log('📄 Generated code length:', code.length);
-    
-    // Write to file if outputFile is set
-    if (this.outputFile) {
-      try {
-        fs.writeFileSync(this.outputFile, code);
-        console.log('💾 Updated test file:', this.outputFile);
-      } catch (err) {
-        console.error('Failed to write test file:', err);
+
+    try {
+      const code = this.generateTestCode();
+      console.log('📄 Generated code length:', code.length);
+
+      // Write to file if outputFile is set
+      if (this.outputFile) {
+        try {
+          fs.writeFileSync(this.outputFile, code);
+          console.log('💾 Updated test file:', this.outputFile);
+        } catch (err) {
+          console.error('Failed to write test file:', err);
+        }
       }
-    }
-    
-    // Call update callback if set
-    if (this.updateCallback) {
-      console.log('🎯 Calling updateCallback');
-      this.updateCallback(code);
-    } else {
-      console.log('⚠️ No updateCallback set');
+
+      // Call update callback if set
+      if (this.updateCallback) {
+        console.log('🎯 Calling updateCallback');
+        this.updateCallback(code);
+      } else {
+        console.log('⚠️ No updateCallback set');
+      }
+    } catch (err) {
+      console.error('❌ Error generating test code:', err);
     }
   }
 }
