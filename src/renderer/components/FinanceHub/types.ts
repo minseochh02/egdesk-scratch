@@ -17,6 +17,40 @@ export interface BankConfig {
   supportsAutomation: boolean;
 }
 
+// ============================================
+// Card Company Types
+// ============================================
+
+export interface CardConfig {
+  id: string;
+  name: string;
+  nameKo: string;
+  loginUrl: string;
+  category: 'major' | 'telecom' | 'internet';
+  color: string;
+  icon: string;
+  supportsAutomation: boolean;
+}
+
+export interface CardInfo {
+  cardNumber: string; // masked, e.g., "1234-****-****-5678"
+  cardName: string;
+  cardCompanyId: string;
+  cardType?: 'credit' | 'debit' | 'check';
+  balance?: number; // outstanding balance
+  availableCredit?: number;
+  lastUpdated?: string;
+}
+
+export interface ConnectedCard {
+  cardCompanyId: string;
+  status: 'connected' | 'pending' | 'error' | 'disconnected';
+  alias?: string;
+  lastSync?: Date;
+  cards?: CardInfo[];
+  accountType?: 'personal' | 'corporate';
+}
+
 export interface BankInfo {
   id: string;
   name: string;
@@ -64,6 +98,7 @@ export interface ConnectedBank {
   lastSync?: Date;
   status: 'connected' | 'pending' | 'error' | 'disconnected';
   accounts?: AccountInfo[];
+  accountType?: 'personal' | 'corporate'; // 개인 or 법인
 }
 
 // ============================================
@@ -162,6 +197,14 @@ export interface BankCredentials {
   bankId: string;
   userId: string;
   password: string;
+  accountType?: 'personal' | 'corporate'; // 개인 or 법인
+}
+
+export interface CardCredentials {
+  cardCompanyId: string;
+  userId: string;
+  password: string;
+  accountType?: 'personal' | 'corporate'; // 개인 or 법인
 }
 
 // ============================================
@@ -294,4 +337,127 @@ export const CATEGORY_LABELS: Record<string, string> = {
   special: '특수은행',
   regional: '지방은행',
   internet: '인터넷전문은행',
+};
+
+export const KOREAN_CARD_COMPANIES: CardConfig[] = [
+  {
+    id: 'shinhan-card',
+    name: 'Shinhan Card',
+    nameKo: '신한카드',
+    loginUrl: 'https://www.shinhancard.com/',
+    category: 'major',
+    color: '#0046FF',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'kb-card',
+    name: 'KB Card',
+    nameKo: 'KB국민카드',
+    loginUrl: 'https://www.kbcard.com/',
+    category: 'major',
+    color: '#FFBC00',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'samsung-card',
+    name: 'Samsung Card',
+    nameKo: '삼성카드',
+    loginUrl: 'https://www.samsungcard.com/',
+    category: 'major',
+    color: '#1428A0',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'hyundai-card',
+    name: 'Hyundai Card',
+    nameKo: '현대카드',
+    loginUrl: 'https://www.hyundaicard.com/',
+    category: 'major',
+    color: '#000000',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'lotte-card',
+    name: 'Lotte Card',
+    nameKo: '롯데카드',
+    loginUrl: 'https://www.lottecard.co.kr/',
+    category: 'major',
+    color: '#ED1C24',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'hana-card',
+    name: 'Hana Card',
+    nameKo: '하나카드',
+    loginUrl: 'https://www.hanacard.co.kr/',
+    category: 'major',
+    color: '#009775',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'bc-card',
+    name: 'BC Card',
+    nameKo: 'BC카드',
+    loginUrl: 'https://www.bccard.com/',
+    category: 'major',
+    color: '#E20613',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'woori-card',
+    name: 'Woori Card',
+    nameKo: '우리카드',
+    loginUrl: 'https://www.wooricard.com/',
+    category: 'major',
+    color: '#0072BC',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'nh-card',
+    name: 'NH Card',
+    nameKo: 'NH농협카드',
+    loginUrl: 'https://card.nonghyup.com/',
+    category: 'major',
+    color: '#00B140',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+  {
+    id: 'citi-card',
+    name: 'Citi Card',
+    nameKo: '씨티카드',
+    loginUrl: 'https://www.citibank.co.kr/cards/',
+    category: 'major',
+    color: '#003A70',
+    icon: '💳',
+    supportsAutomation: false,
+  },
+];
+
+export const CARD_CATEGORY_LABELS: Record<string, string> = {
+  all: '전체',
+  major: '주요 카드사',
+  telecom: '통신사 카드',
+  internet: '인터넷 카드',
+};
+
+export const DEFAULT_CARD_INFO: Record<string, CardInfo> = {
+  'shinhan-card': { cardNumber: '', cardName: '신한카드', cardCompanyId: 'shinhan-card' },
+  'kb-card': { cardNumber: '', cardName: 'KB국민카드', cardCompanyId: 'kb-card' },
+  'samsung-card': { cardNumber: '', cardName: '삼성카드', cardCompanyId: 'samsung-card' },
+  'hyundai-card': { cardNumber: '', cardName: '현대카드', cardCompanyId: 'hyundai-card' },
+  'lotte-card': { cardNumber: '', cardName: '롯데카드', cardCompanyId: 'lotte-card' },
+  'hana-card': { cardNumber: '', cardName: '하나카드', cardCompanyId: 'hana-card' },
+  'bc-card': { cardNumber: '', cardName: 'BC카드', cardCompanyId: 'bc-card' },
+  'woori-card': { cardNumber: '', cardName: '우리카드', cardCompanyId: 'woori-card' },
+  'nh-card': { cardNumber: '', cardName: 'NH농협카드', cardCompanyId: 'nh-card' },
+  'citi-card': { cardNumber: '', cardName: '씨티카드', cardCompanyId: 'citi-card' },
 };

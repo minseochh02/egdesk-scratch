@@ -163,6 +163,8 @@ export {
   faHistory,
   faTag,
   faHashtag,
+  faCoffee,
+  faMoon,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Brand icons

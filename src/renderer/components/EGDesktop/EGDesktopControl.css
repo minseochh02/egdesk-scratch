@@ -1,7 +1,43 @@
 /* EGDesktop Control Styles */
 .egdesktop-control {
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.egdesktop-control-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar */
+.egdesktop-control-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.egdesktop-control-wrapper::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.egdesktop-control-wrapper::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.egdesktop-control-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Firefox Scrollbar */
+.egdesktop-control-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #c1c1c1 #f1f1f1;
 }
 
 /* Header */
@@ -221,6 +257,25 @@ input:disabled + .egdesktop-toggle-slider {
   margin: 0;
 }
 
+.egdesktop-setting-title-with-icon {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.egdesktop-setting-title-with-icon .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Status Information */
 .egdesktop-status-info {
   margin-top: 20px;
@@ -264,7 +319,7 @@ input:disabled + .egdesktop-toggle-slider {
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .egdesktop-control {
+  .egdesktop-control-wrapper {
     padding: 15px;
   }
 
@@ -328,3 +383,21 @@ input:disabled + .egdesktop-toggle-slider {
   }
 }
 
+/* Dark Mode Scrollbar */
+@media (prefers-color-scheme: dark) {
+  .egdesktop-control-wrapper::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+
+  .egdesktop-control-wrapper::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+
+  .egdesktop-control-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #5a6778;
+  }
+
+  .egdesktop-control-wrapper {
+    scrollbar-color: #4a5568 #2d3748;
+  }
+}

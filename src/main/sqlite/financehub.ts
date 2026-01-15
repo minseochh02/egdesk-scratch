@@ -499,6 +499,11 @@ export class FinanceHubDbManager {
 
     const insertMany = this.db.transaction((txns: typeof transactions) => {
       for (const tx of txns) {
+        // Ensure numeric values are actual numbers to prevent data corruption
+        const withdrawal = Number(tx.withdrawal) || 0;
+        const deposit = Number(tx.deposit) || 0;
+        const balance = Number(tx.balance) || 0;
+
         const result = insertStmt.run(
           randomUUID(),
           accountId,
@@ -507,18 +512,18 @@ export class FinanceHubDbManager {
           tx.time || null,
           tx.type || null,
           tx.category || null,
-          tx.withdrawal || 0,
-          tx.deposit || 0,
+          withdrawal,
+          deposit,
           tx.description || null,
           tx.memo || null,
-          tx.balance || 0,
+          balance,
           tx.branch || null,
           tx.counterparty || null,
           tx.transactionId || null,
           now,
           tx.metadata ? JSON.stringify(tx.metadata) : null
         );
-        
+
         if (result.changes > 0) {
           inserted++;
         } else {
@@ -834,6 +839,17 @@ export class FinanceHubDbManager {
 
     const duration = new Date(now).getTime() - new Date(op.startedAt).getTime();
 
+    // Ensure all numeric values are actual numbers to prevent data corruption
+    const safeResults = {
+      totalCount: Number(results.totalCount) || 0,
+      newCount: Number(results.newCount) || 0,
+      skippedCount: Number(results.skippedCount) || 0,
+      totalDeposits: Number(results.totalDeposits) || 0,
+      depositCount: Number(results.depositCount) || 0,
+      totalWithdrawals: Number(results.totalWithdrawals) || 0,
+      withdrawalCount: Number(results.withdrawalCount) || 0,
+    };
+
     const stmt = this.db.prepare(`
       UPDATE sync_operations SET
         status = 'completed',
@@ -852,9 +868,9 @@ export class FinanceHubDbManager {
 
     stmt.run(
       now, duration,
-      results.totalCount, results.newCount, results.skippedCount,
-      results.totalDeposits, results.depositCount,
-      results.totalWithdrawals, results.withdrawalCount,
+      safeResults.totalCount, safeResults.newCount, safeResults.skippedCount,
+      safeResults.totalDeposits, safeResults.depositCount,
+      safeResults.totalWithdrawals, safeResults.withdrawalCount,
       results.filePath || null,
       id
     );
@@ -961,17 +977,20 @@ export class FinanceHubDbManager {
         transactions
       );
 
-      // 4. Calculate totals
+      // 4. Calculate totals (ensure numbers to prevent string concatenation)
       let totalDeposits = 0, depositCount = 0;
       let totalWithdrawals = 0, withdrawalCount = 0;
 
       for (const tx of transactions) {
-        if (tx.deposit && tx.deposit > 0) {
-          totalDeposits += tx.deposit;
+        const depositAmount = Number(tx.deposit) || 0;
+        const withdrawalAmount = Number(tx.withdrawal) || 0;
+
+        if (depositAmount > 0) {
+          totalDeposits += depositAmount;
           depositCount++;
         }
-        if (tx.withdrawal && tx.withdrawal > 0) {
-          totalWithdrawals += tx.withdrawal;
+        if (withdrawalAmount > 0) {
+          totalWithdrawals += withdrawalAmount;
           withdrawalCount++;
         }
       }

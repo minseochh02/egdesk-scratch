@@ -7,12 +7,15 @@
 // with support for virtual keyboards, security popups, and AI-powered key detection.
 
 // Core
-const { BaseBankAutomator } = require('./core');
+const { BaseBankAutomator, BaseCardAutomator } = require('./core');
 
 // Banks
 const shinhan = require('./banks/shinhan');
 const kookmin = require('./banks/kookmin');
 const nh = require('./banks/nh');
+
+// Cards
+const cards = require('./cards');
 
 // Utils
 const utils = require('./utils');
@@ -100,21 +103,25 @@ function getSupportedBanks() {
 module.exports = {
   // Core
   BaseBankAutomator,
-  
+  BaseCardAutomator,
+
   // Banks (direct access)
   shinhan,
   kookmin,
   nh,
-  
+
+  // Cards (full module)
+  cards,
+
   // Bank registry
   BANKS,
-  
+
   // Helper functions
   getAutomator,
   createAutomator,
   getBankConfig,
   getSupportedBanks,
-  
+
   // Utils
   utils,
 };

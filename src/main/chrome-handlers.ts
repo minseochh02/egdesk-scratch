@@ -1357,7 +1357,7 @@ test('recorded test', async ({ page }) => {
 
           // Create a function from the test body and execute it
           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-          const testFunction = new AsyncFunction('page', 'expect', testBody);
+          const testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', testBody);
 
           // Simple expect implementation for basic assertions
           const expect = (value: any) => ({
@@ -1373,7 +1373,7 @@ test('recorded test', async ({ page }) => {
             }
           });
 
-          await testFunction(page, expect);
+          await testFunction(page, expect, path, downloadsPath);
 
           console.log('✅ Test completed successfully');
 
@@ -1843,7 +1843,7 @@ const { chromium } = require('playwright-core');
   ipcMain.handle('delete-playwright-test', async (event, { testPath }) => {
     try {
       console.log('🗑️ Deleting test:', testPath);
-      
+
       // Delete the test file
       if (fs.existsSync(testPath)) {
         fs.unlinkSync(testPath);
@@ -1858,16 +1858,81 @@ const { chromium } = require('playwright-core');
         fs.unlinkSync(runPath);
         console.log('✅ Deleted run file');
       }
-      
-      return { 
+
+      return {
         success: true,
         message: 'Test deleted successfully'
       };
     } catch (error: any) {
       console.error('Error deleting test:', error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error?.message || 'Failed to delete test'
+      };
+    }
+  });
+
+  // Rename a Playwright test
+  ipcMain.handle('rename-playwright-test', async (event, { testPath, newName }) => {
+    try {
+      console.log('✏️ Renaming test:', testPath, 'to:', newName);
+
+      if (!fs.existsSync(testPath)) {
+        return {
+          success: false,
+          error: 'Test file not found'
+        };
+      }
+
+      // Ensure the new name has .spec.ts extension
+      let sanitizedName = newName.trim();
+      if (!sanitizedName.endsWith('.spec.ts')) {
+        if (sanitizedName.endsWith('.spec')) {
+          sanitizedName += '.ts';
+        } else if (!sanitizedName.includes('.spec.')) {
+          sanitizedName = sanitizedName.replace(/\.ts$/, '') + '.spec.ts';
+        } else {
+          sanitizedName += '.ts';
+        }
+      }
+
+      // Construct new file path
+      const dir = path.dirname(testPath);
+      const newPath = path.join(dir, sanitizedName);
+
+      // Check if new file already exists
+      if (fs.existsSync(newPath) && testPath !== newPath) {
+        return {
+          success: false,
+          error: 'A file with this name already exists'
+        };
+      }
+
+      // Rename the main test file
+      fs.renameSync(testPath, newPath);
+      console.log('✅ Renamed test file to:', newPath);
+
+      // Rename the temporary run file if it exists
+      const oldBasename = path.basename(testPath, '.spec.js');
+      const newBasename = path.basename(newPath, '.spec.ts');
+      const oldRunPath = path.join(dir, `${oldBasename}.run.js`);
+      const newRunPath = path.join(dir, `${newBasename}.run.js`);
+
+      if (fs.existsSync(oldRunPath)) {
+        fs.renameSync(oldRunPath, newRunPath);
+        console.log('✅ Renamed run file');
+      }
+
+      return {
+        success: true,
+        message: 'Test renamed successfully',
+        newPath
+      };
+    } catch (error: any) {
+      console.error('Error renaming test:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to rename test'
       };
     }
   });
