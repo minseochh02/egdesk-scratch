@@ -568,6 +568,37 @@
   font-weight: 600;
 }
 
+.finance-hub__bank-info-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.finance-hub__account-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.finance-hub__account-type-badge--personal {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60A5FA;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.finance-hub__account-type-badge--corporate {
+  background: rgba(168, 85, 247, 0.15);
+  color: #C084FC;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
 .finance-hub__bank-name-en {
   font-size: 12px;
   color: var(--fh-text-muted);
@@ -1327,6 +1358,59 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--fh-text-secondary);
+}
+
+/* Account Type Selector (개인/법인) */
+.finance-hub__account-type-selector {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.finance-hub__account-type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 20px;
+  background: var(--fh-bg-dark);
+  border: 2px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  color: var(--fh-text-secondary);
+  font-family: var(--fh-font-body);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--fh-transition);
+  white-space: nowrap;
+}
+
+.finance-hub__account-type-btn:hover:not(:disabled) {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateY(-1px);
+}
+
+.finance-hub__account-type-btn--active {
+  background: var(--fh-primary);
+  border-color: var(--fh-primary);
+  color: white;
+  box-shadow: 0 0 20px rgba(0, 70, 255, 0.4);
+}
+
+.finance-hub__account-type-btn--active .finance-hub__account-type-icon {
+  filter: brightness(1.2);
+}
+
+.finance-hub__account-type-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.finance-hub__account-type-icon {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .finance-hub__input {

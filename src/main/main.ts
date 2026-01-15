@@ -11,7 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, powerSaveBlocker } from 'electron';
 
 // NOTE: We do NOT set a global undici dispatcher here because it breaks website fetching.
 // Instead, we configure custom dispatchers only for specific Gemini API calls that need longer timeouts.
@@ -313,6 +313,7 @@ let appUpdater: AppUpdater | null = null;
 let scheduledPostsExecutor: ScheduledPostsExecutor;
 let dockerSchedulerService: DockerSchedulerService;
 let playwrightSchedulerService: PlaywrightSchedulerService;
+let keepAwakeBlockerId: number | null = null;
 let handlersRegistered = false;
 
 const getDefaultChromeProfileRoot = (): string | undefined => {
@@ -370,6 +371,7 @@ const installExtensions = async () => {
 import { registerEgChattingHandlers, initializeEgChattingService } from './sqlite/egchatting-service';
 import { registerGmailHandlers } from './gmail-ipc-register';
 import { registerSheetsHandlers } from './sheets-ipc-handler';
+import { registerSyncSetupHandlers } from './ipc/sync-setup-handlers';
 import { handleFullDiskAccess, checkFullDiskAccess, requestFullDiskAccess } from './utils/full-disk-access';
 
 const createWindow = async () => {
@@ -602,6 +604,163 @@ const createWindow = async () => {
           return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
       });
+
+      // ========================================================================
+      // KEEPAWAKE FUNCTIONALITY
+      // ========================================================================
+
+      ipcMain.handle('keepawake:start', async () => {
+        try {
+          if (keepAwakeBlockerId !== null) {
+            return { success: true, message: 'Keep awake is already active', isActive: true };
+          }
+
+          keepAwakeBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+          console.log('Keep awake started with blocker ID:', keepAwakeBlockerId);
+
+          return { success: true, message: 'Keep awake activated', isActive: true };
+        } catch (error) {
+          console.error('Failed to start keep awake:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            isActive: false
+          };
+        }
+      });
+
+      ipcMain.handle('keepawake:stop', async () => {
+        try {
+          if (keepAwakeBlockerId === null) {
+            return { success: true, message: 'Keep awake is not active', isActive: false };
+          }
+
+          powerSaveBlocker.stop(keepAwakeBlockerId);
+          console.log('Keep awake stopped for blocker ID:', keepAwakeBlockerId);
+          keepAwakeBlockerId = null;
+
+          return { success: true, message: 'Keep awake deactivated', isActive: false };
+        } catch (error) {
+          console.error('Failed to stop keep awake:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            isActive: keepAwakeBlockerId !== null
+          };
+        }
+      });
+
+      ipcMain.handle('keepawake:status', async () => {
+        try {
+          const isActive = keepAwakeBlockerId !== null && powerSaveBlocker.isStarted(keepAwakeBlockerId);
+          return {
+            success: true,
+            isActive,
+            blockerId: keepAwakeBlockerId
+          };
+        } catch (error) {
+          console.error('Failed to get keep awake status:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            isActive: false
+          };
+        }
+      });
+
+      ipcMain.handle('keepawake:toggle', async () => {
+        try {
+          if (keepAwakeBlockerId !== null) {
+            // Stop keep awake
+            powerSaveBlocker.stop(keepAwakeBlockerId);
+            console.log('Keep awake toggled off for blocker ID:', keepAwakeBlockerId);
+            keepAwakeBlockerId = null;
+            return { success: true, message: 'Keep awake deactivated', isActive: false };
+          } else {
+            // Start keep awake
+            keepAwakeBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+            console.log('Keep awake toggled on with blocker ID:', keepAwakeBlockerId);
+            return { success: true, message: 'Keep awake activated', isActive: true };
+          }
+        } catch (error) {
+          console.error('Failed to toggle keep awake:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            isActive: keepAwakeBlockerId !== null
+          };
+        }
+      });
+
+      // ========================================================================
+      // AUTO-START FUNCTIONALITY
+      // ========================================================================
+
+      ipcMain.handle('autostart:get-status', async () => {
+        try {
+          const loginItemSettings = app.getLoginItemSettings();
+          return {
+            success: true,
+            enabled: loginItemSettings.openAtLogin,
+            openAsHidden: loginItemSettings.openAsHidden
+          };
+        } catch (error) {
+          console.error('Failed to get auto-start status:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            enabled: false
+          };
+        }
+      });
+
+      ipcMain.handle('autostart:set', async (_event, enabled: boolean, openAsHidden: boolean = false) => {
+        try {
+          app.setLoginItemSettings({
+            openAtLogin: enabled,
+            openAsHidden: openAsHidden,
+          });
+          console.log(`Auto-start ${enabled ? 'enabled' : 'disabled'}${openAsHidden ? ' (hidden)' : ''}`);
+          return {
+            success: true,
+            enabled: enabled,
+            openAsHidden: openAsHidden
+          };
+        } catch (error) {
+          console.error('Failed to set auto-start:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            enabled: false
+          };
+        }
+      });
+
+      ipcMain.handle('autostart:toggle', async () => {
+        try {
+          const loginItemSettings = app.getLoginItemSettings();
+          const newState = !loginItemSettings.openAtLogin;
+
+          app.setLoginItemSettings({
+            openAtLogin: newState,
+            openAsHidden: false,
+          });
+
+          console.log(`Auto-start toggled ${newState ? 'on' : 'off'}`);
+          return {
+            success: true,
+            enabled: newState
+          };
+        } catch (error) {
+          console.error('Failed to toggle auto-start:', error);
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            enabled: false
+          };
+        }
+      });
+
       ipcMain.handle('launch-chrome', async () => {
         try {
           const { chromium } = require('playwright-core');
@@ -2666,7 +2825,10 @@ const createWindow = async () => {
     
     // Register Sheets handlers
     registerSheetsHandlers();
-    
+
+    // Register Sync Setup handlers (auto-inject sync endpoints)
+    registerSyncSetupHandlers();
+
     // Register MCP Server Manager handlers
     const mcpServerManager = getMCPServerManager();
     mcpServerManager.registerIPCHandlers();
@@ -2739,6 +2901,16 @@ const createWindow = async () => {
     } else {
       mainWindow.show();
       console.log('[createWindow] Window shown');
+    }
+
+    // Start keep awake by default
+    try {
+      if (keepAwakeBlockerId === null) {
+        keepAwakeBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+        console.log('[Keep Awake] Started by default with blocker ID:', keepAwakeBlockerId);
+      }
+    } catch (error) {
+      console.error('[Keep Awake] Failed to start by default:', error);
     }
   });
 
@@ -2911,6 +3083,17 @@ app.on('before-quit', async () => {
   if (isUpdating) {
     log.info('Skipping cleanup - app is updating...');
     return;
+  }
+
+  // Cleanup keep awake blocker
+  try {
+    if (keepAwakeBlockerId !== null) {
+      powerSaveBlocker.stop(keepAwakeBlockerId);
+      console.log('[Keep Awake] Stopped on app quit, blocker ID:', keepAwakeBlockerId);
+      keepAwakeBlockerId = null;
+    }
+  } catch (error) {
+    console.error('[Keep Awake] Failed to cleanup on quit:', error);
   }
 
   const store = getStore();

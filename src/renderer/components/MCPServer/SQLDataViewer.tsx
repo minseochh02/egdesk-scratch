@@ -38,12 +38,18 @@ const SQLDataViewer: React.FC<SQLDataViewerProps> = ({ spreadsheetId, onClose })
       setLoading(true);
       setError(null);
       const result = await window.electron.sheets.getImportedTables(spreadsheetId);
-      
+
+      console.log('[SQLDataViewer] getImportedTables result:', result);
+      console.log('[SQLDataViewer] Number of tables:', result.tables?.length);
+      console.log('[SQLDataViewer] Tables:', JSON.stringify(result.tables, null, 2));
+
       if (result.success && result.tables) {
         setTables(result.tables);
+        console.log('[SQLDataViewer] State updated with', result.tables.length, 'tables');
         // Auto-select first table if available
         if (result.tables.length > 0 && !selectedTable) {
           setSelectedTable(result.tables[0].tableName);
+          console.log('[SQLDataViewer] Auto-selected first table:', result.tables[0].tableName);
         }
       } else {
         setError(result.error || 'Failed to load tables');
@@ -139,24 +145,31 @@ const SQLDataViewer: React.FC<SQLDataViewerProps> = ({ spreadsheetId, onClose })
             <div className="no-tables">No imported tables</div>
           ) : (
             <ul className="tables-list">
-              {tables.map(table => (
-                <li 
-                  key={table.tableName} 
-                  className={selectedTable === table.tableName ? 'selected' : ''}
-                  onClick={() => {
-                    setSelectedTable(table.tableName);
-                    setCurrentPage(1);
-                  }}
-                >
-                  <FontAwesomeIcon icon={faTable} />
-                  <div className="table-info">
-                    <div className="table-name">{table.originalSheetName || table.tableName}</div>
-                    <div className="table-stats">
-                      {table.rowCount} rows • {table.columnCount} cols
-                    </div>
-                  </div>
-                </li>
-              ))}
+              {(() => {
+                console.log('[SQLDataViewer:render] Rendering', tables.length, 'tables:', tables.map(t => t.tableName));
+                return tables.map(table => {
+                  console.log('[SQLDataViewer:render] Rendering table:', table.tableName, table);
+                  return (
+                    <li
+                      key={table.tableName}
+                      className={selectedTable === table.tableName ? 'selected' : ''}
+                      onClick={() => {
+                        console.log('[SQLDataViewer] Table clicked:', table.tableName);
+                        setSelectedTable(table.tableName);
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faTable} />
+                      <div className="table-info">
+                        <div className="table-name">{table.originalSheetName || table.tableName}</div>
+                        <div className="table-stats">
+                          {table.rowCount} rows • {table.columnCount} cols
+                        </div>
+                      </div>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           )}
         </div>

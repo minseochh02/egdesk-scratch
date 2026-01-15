@@ -16,6 +16,7 @@ import {
   faDesktop,
   faSearch,
   faUniversity,
+  faVideo,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -216,6 +217,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Remote Access</span>
                 <span className="egdesk-landing-feature-tag">System Control</span>
                 <span className="egdesk-landing-feature-tag">Auto Start</span>
+              </div>
+            </Link>
+
+            <Link to="/playwright-recorder" className="egdesk-landing-action-card egdesk-landing-playwright-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faVideo} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Browser Recorder</h3>
+              <p className="egdesk-landing-card-description">
+                Record browser interactions and generate automated test scripts. Replay actions and test workflows with built-in download handling.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Browser Recording</span>
+                <span className="egdesk-landing-feature-tag">Test Automation</span>
+                <span className="egdesk-landing-feature-tag">Script Generation</span>
               </div>
             </Link>
 

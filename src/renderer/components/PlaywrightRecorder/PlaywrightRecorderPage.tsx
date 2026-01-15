@@ -39,6 +39,8 @@ const PlaywrightRecorderPage: React.FC = () => {
     dayOfWeek: 0,
     dayOfMonth: 1,
   });
+  const [showRenameModal, setShowRenameModal] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>('');
 
   // Helper functions
   const addDebugLog = (message: string) => {
@@ -184,6 +186,39 @@ const PlaywrightRecorderPage: React.FC = () => {
 
     const dayLabel = schedule.dayLabel || getDefaultDayLabel(schedule.frequencyType, schedule);
     return `${dayLabel} at ${schedule.scheduledTime}`;
+  };
+
+  const openRenameModal = (test: any) => {
+    setRenameValue(test.name);
+    setShowRenameModal(test.path);
+  };
+
+  const closeRenameModal = () => {
+    setShowRenameModal(null);
+    setRenameValue('');
+  };
+
+  const handleRename = async () => {
+    if (!showRenameModal || !renameValue.trim()) return;
+
+    try {
+      const result = await (window as any).electron.debug.renamePlaywrightTest(showRenameModal, renameValue.trim());
+
+      if (result.success) {
+        addDebugLog(`✏️ Test renamed to: ${renameValue.trim()}`);
+        // Refresh test list
+        const testsResult = await (window as any).electron.debug.getPlaywrightTests();
+        if (testsResult.success) {
+          setSavedTests(testsResult.tests);
+        }
+        closeRenameModal();
+      } else {
+        alert(`Failed to rename test: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error renaming test:', error);
+      alert('Failed to rename test');
+    }
   };
 
   const loadPlaywrightDownloads = async () => {
@@ -351,7 +386,7 @@ const PlaywrightRecorderPage: React.FC = () => {
           <div className="playwright-recorder-content">
             {/* Header */}
             <div className="playwright-recorder-header">
-              <h1 className="playwright-recorder-title">Playwright Recorder</h1>
+              <h1 className="playwright-recorder-title">Browser Recorder</h1>
               <p className="playwright-recorder-subtitle">Record and replay browser interactions with keyboard tracking</p>
             </div>
 
@@ -505,6 +540,13 @@ const PlaywrightRecorderPage: React.FC = () => {
                               title="View code"
                             >
                               👁️ View
+                            </button>
+                            <button
+                              onClick={() => openRenameModal(test)}
+                              className="playwright-recorder-btn playwright-recorder-btn-sm playwright-recorder-btn-edit"
+                              title="Rename test"
+                            >
+                              ✏️ Edit
                             </button>
                             <button
                               onClick={async () => {
@@ -722,6 +764,51 @@ const PlaywrightRecorderPage: React.FC = () => {
                     </button>
                     <button onClick={saveSchedule} className="playwright-recorder-btn playwright-recorder-btn-sm btn-primary">
                       Save Schedule
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Rename Modal */}
+            {showRenameModal && (
+              <div className="playwright-recorder-modal-overlay" onClick={closeRenameModal}>
+                <div className="playwright-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="playwright-recorder-modal-header">
+                    <h3 className="playwright-recorder-modal-title">✏️ Rename Test</h3>
+                    <button className="playwright-recorder-modal-close" onClick={closeRenameModal}>✕</button>
+                  </div>
+
+                  <div className="playwright-recorder-modal-body">
+                    <div className="playwright-recorder-form-group">
+                      <label className="playwright-recorder-form-label">Test Name</label>
+                      <input
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        className="playwright-recorder-form-input"
+                        placeholder="Enter new test name"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleRename();
+                          } else if (e.key === 'Escape') {
+                            closeRenameModal();
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <small style={{ color: '#666', marginTop: '4px', display: 'block' }}>
+                        The file will be renamed to: {renameValue.trim() || 'test'}.spec.ts
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="playwright-recorder-modal-footer">
+                    <button onClick={closeRenameModal} className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary">
+                      Cancel
+                    </button>
+                    <button onClick={handleRename} className="playwright-recorder-btn playwright-recorder-btn-sm btn-primary">
+                      Rename
                     </button>
                   </div>
                 </div>

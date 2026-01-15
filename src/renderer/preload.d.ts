@@ -686,6 +686,25 @@ interface FinanceHubDbAPI {
   importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
+/**
+ * Interface for Keep Awake API.
+ */
+interface KeepAwakeAPI {
+  start: () => Promise<{ success: boolean; message?: string; isActive: boolean; error?: string }>;
+  stop: () => Promise<{ success: boolean; message?: string; isActive: boolean; error?: string }>;
+  status: () => Promise<{ success: boolean; isActive: boolean; blockerId?: number | null; message?: string; error?: string }>;
+  toggle: () => Promise<{ success: boolean; message?: string; isActive: boolean; error?: string }>;
+}
+
+/**
+ * Interface for Auto-Start API.
+ */
+interface AutoStartAPI {
+  getStatus: () => Promise<{ success: boolean; enabled: boolean; openAsHidden?: boolean; message?: string; error?: string }>;
+  set: (enabled: boolean, openAsHidden?: boolean) => Promise<{ success: boolean; enabled: boolean; openAsHidden?: boolean; message?: string; error?: string }>;
+  toggle: () => Promise<{ success: boolean; enabled: boolean; message?: string; error?: string }>;
+}
+
 
 /**
  * Main Electron API handler that exposes functionality to the renderer process
@@ -742,6 +761,8 @@ export interface IElectronAPI {
   updater: UpdaterAPI;
   financeHub: FinanceHubAPI;
   financeHubDb: FinanceHubDbAPI;
+  keepAwake: KeepAwakeAPI;
+  autoStart: AutoStartAPI;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

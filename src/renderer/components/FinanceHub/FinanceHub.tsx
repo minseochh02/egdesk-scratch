@@ -37,10 +37,15 @@ import {
   BankConfig,
   ConnectedBank,
   BankCredentials,
+  CardConfig,
+  ConnectedCard,
+  CardCredentials,
   DbStats,
   SyncOperation,
   KOREAN_BANKS,
+  KOREAN_CARD_COMPANIES,
   CATEGORY_LABELS,
+  CARD_CATEGORY_LABELS,
 } from './types';
 import { formatAccountNumber, formatCurrency, getBankInfo } from './utils';
 
@@ -90,7 +95,7 @@ const FinanceHub: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
-  const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '' });
+  const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '', accountType: 'personal' });
   const [isConnecting, setIsConnecting] = useState(false);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState<string | null>(null);
   const [connectionProgress, setConnectionProgress] = useState<string>('');
@@ -102,15 +107,33 @@ const FinanceHub: React.FC = () => {
   const [showSyncOptions, setShowSyncOptions] = useState<string | null>(null); // accountNumber that's showing options
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
 
+  // Card-related state
+  const [connectedCards, setConnectedCards] = useState<ConnectedCard[]>([]);
+  const [showCardSelector, setShowCardSelector] = useState(false);
+  const [selectedCardCategory, setSelectedCardCategory] = useState<string>('all');
+  const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [selectedCard, setSelectedCard] = useState<CardConfig | null>(null);
+  const [cardCredentials, setCardCredentials] = useState<CardCredentials>({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
+  const [isConnectingCard, setIsConnectingCard] = useState(false);
+  const [cardConnectionProgress, setCardConnectionProgress] = useState<string>('');
+  const [saveCardCredentials, setSaveCardCredentials] = useState(true);
+
   // ============================================
   // Computed Values
   // ============================================
 
   const totalAccounts = connectedBanks.reduce((sum, bank) => sum + (bank.accounts?.length || 0), 0);
+  const totalCards = connectedCards.reduce((sum, cardCompany) => sum + (cardCompany.cards?.length || 0), 0);
 
   const filteredBanks = KOREAN_BANKS.filter((bank) => {
     const matchesCategory = selectedCategory === 'all' || bank.category === selectedCategory;
     const matchesSearch = bank.name.toLowerCase().includes(searchQuery.toLowerCase()) || bank.nameKo.includes(searchQuery);
+    return matchesCategory && matchesSearch;
+  });
+
+  const filteredCards = KOREAN_CARD_COMPANIES.filter((card) => {
+    const matchesCategory = selectedCardCategory === 'all' || card.category === selectedCardCategory;
+    const matchesSearch = card.name.toLowerCase().includes(cardSearchQuery.toLowerCase()) || card.nameKo.includes(cardSearchQuery);
     return matchesCategory && matchesSearch;
   });
 
@@ -172,18 +195,31 @@ const FinanceHub: React.FC = () => {
         // Create ConnectedBank entries for each bank
         for (const [bankId, accounts] of Object.entries(accountsByBank)) {
           const firstAccount = savedResult.data.find((acc: any) => acc.bankId === bankId);
+
+          // Data Migration: Set accountType to 'personal' for legacy accounts
+          let accountType: 'personal' | 'corporate' = 'personal';
+          try {
+            const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
+            if (credResult.success && credResult.credentials?.accountType) {
+              accountType = credResult.credentials.accountType;
+            }
+          } catch (error) {
+            console.log(`[Migration] Using default accountType 'personal' for ${bankId}`);
+          }
+
           savedBanks.push({
             bankId: bankId,
             status: 'disconnected',
             alias: firstAccount?.customerName || '',
             lastSync: firstAccount?.lastSyncedAt ? new Date(firstAccount.lastSyncedAt) : new Date(),
-            accounts: accounts as any[]
+            accounts: accounts as any[],
+            accountType: accountType // Migration: defaults to 'personal'
           });
         }
       }
 
       const connectedBanksList = await window.electron.financeHub.getConnectedBanks();
-      
+
       const mergedBanks = savedBanks.map(bank => {
         const isActive = connectedBanksList?.find((s: any) => s.bankId === bank.bankId);
         return isActive ? { ...bank, status: 'connected' as const, alias: isActive.userName || bank.alias } : bank;
@@ -192,7 +228,15 @@ const FinanceHub: React.FC = () => {
       if (connectedBanksList && connectedBanksList.length > 0) {
         connectedBanksList.forEach((active: any) => {
           if (!mergedBanks.find(b => b.bankId === active.bankId)) {
-            mergedBanks.push({ bankId: active.bankId, status: 'connected', alias: active.userName, lastSync: new Date(), accounts: [] });
+            // Migration: New active connection defaults to 'personal'
+            mergedBanks.push({
+              bankId: active.bankId,
+              status: 'connected',
+              alias: active.userName,
+              lastSync: new Date(),
+              accounts: [],
+              accountType: 'personal'
+            });
           }
         });
       }
@@ -208,6 +252,7 @@ const FinanceHub: React.FC = () => {
   // ============================================
 
   const getBankConfigById = (id: string): BankConfig | undefined => KOREAN_BANKS.find(bank => bank.id === id);
+  const getCardConfigById = (id: string): CardConfig | undefined => KOREAN_CARD_COMPANIES.find(card => card.id === id);
 
   // Function to reload connected banks
   const loadConnectedBanks = async () => {
@@ -230,7 +275,14 @@ const FinanceHub: React.FC = () => {
       const loginResult = await window.electron.financeHub.loginAndGetAccounts(bankId, { userId: credResult.credentials.userId, password: credResult.credentials.password });
 
       if (loginResult.success && loginResult.isLoggedIn) {
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, alias: loginResult.userName || b.alias, accounts: loginResult.accounts || b.accounts, lastSync: new Date() } : b));
+        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
+          ...b,
+          status: 'connected' as const,
+          alias: loginResult.userName || b.alias,
+          accounts: loginResult.accounts || b.accounts,
+          lastSync: new Date(),
+          accountType: credResult.credentials.accountType || b.accountType || 'personal'
+        } : b));
         alert(`✅ ${bank?.nameKo || bankId} 재연결 성공!`);
       } else {
         setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'error' as const } : b));
@@ -297,7 +349,13 @@ const FinanceHub: React.FC = () => {
           alert(`자동 재연결 실패: ${loginResult.error}`);
           return;
         }
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, alias: loginResult.userName || b.alias, lastSync: new Date() } : b));
+        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
+          ...b,
+          status: 'connected' as const,
+          alias: loginResult.userName || b.alias,
+          lastSync: new Date(),
+          accountType: credResult.credentials.accountType || b.accountType || 'personal'
+        } : b));
       }
 
       const { startDate, endDate } = getDateRange(period);
@@ -347,6 +405,71 @@ const FinanceHub: React.FC = () => {
   };
 
   // ============================================
+  // Card Connection Handlers
+  // ============================================
+
+  const handleSelectCard = (card: CardConfig) => {
+    if (!card.supportsAutomation) {
+      alert(`${card.nameKo}은(는) 현재 자동화를 지원하지 않습니다.`);
+      return;
+    }
+    setSelectedCard(card);
+    setCardCredentials({ cardCompanyId: card.id, userId: '', password: '', accountType: 'personal' });
+  };
+
+  const handleConnectCard = async () => {
+    if (!selectedCard || !cardCredentials.userId || !cardCredentials.password) {
+      alert('아이디와 비밀번호를 입력해주세요.');
+      return;
+    }
+    setIsConnectingCard(true);
+    setCardConnectionProgress('로그인 중...');
+    try {
+      // TODO: Implement actual card company connection logic
+      // This is a placeholder - you'll need to implement the backend handlers
+      alert(`${selectedCard.nameKo} 카드사 연결 기능은 준비 중입니다.`);
+
+      // Example structure for when implemented:
+      // const result = await window.electron.financeHub.loginAndGetCards(selectedCard.id, {
+      //   userId: cardCredentials.userId,
+      //   password: cardCredentials.password
+      // });
+
+      handleCloseCardModal();
+    } catch (error) {
+      setCardConnectionProgress('');
+      alert('카드사 연결 중 오류가 발생했습니다.');
+    } finally {
+      setIsConnectingCard(false);
+      setCardConnectionProgress('');
+    }
+  };
+
+  const handleDisconnectCard = async (cardCompanyId: string) => {
+    const card = getCardConfigById(cardCompanyId);
+    if (!window.confirm(`${card?.nameKo || cardCompanyId} 연결을 해제하시겠습니까?`)) return;
+    try {
+      // TODO: Implement card disconnect logic
+      setConnectedCards(prev => prev.filter(c => c.cardCompanyId !== cardCompanyId));
+    } catch (error) {
+      console.error('[FinanceHub] Disconnect card error:', error);
+    }
+  };
+
+  const handleCloseCardModal = () => {
+    setShowCardSelector(false);
+    setSelectedCard(null);
+    setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
+    setCardConnectionProgress('');
+  };
+
+  const handleBackToCardList = () => {
+    setSelectedCard(null);
+    setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
+    setCardConnectionProgress('');
+  };
+
+  // ============================================
   // Other Handlers
   // ============================================
 
@@ -355,7 +478,11 @@ const FinanceHub: React.FC = () => {
     try {
       const result = await window.electron.financeHub.getAccounts(bankId);
       if (result.success && result.accounts) {
-        setConnectedBanks(prev => prev.map(bank => bank.bankId === bankId ? { ...bank, accounts: result.accounts, lastSync: new Date(), status: 'connected' as const } : bank));
+        setConnectedBanks(prev => prev.map(bank =>
+          bank.bankId === bankId
+            ? { ...bank, accounts: result.accounts, lastSync: new Date(), status: 'connected' as const }
+            : bank
+        ));
       } else {
         alert(`계좌 정보 불러오기 실패: ${result.error}`);
       }
@@ -375,12 +502,17 @@ const FinanceHub: React.FC = () => {
     try {
       const result = await window.electron.financeHub.getSavedCredentials(bank.id);
       if (result.success && result.credentials) {
-        setCredentials({ bankId: bank.id, userId: result.credentials.userId || '', password: result.credentials.password || '' });
+        setCredentials({
+          bankId: bank.id,
+          userId: result.credentials.userId || '',
+          password: result.credentials.password || '',
+          accountType: result.credentials.accountType || 'personal'
+        });
       } else {
-        setCredentials({ bankId: bank.id, userId: '', password: '' });
+        setCredentials({ bankId: bank.id, userId: '', password: '', accountType: 'personal' });
       }
     } catch (error) {
-      setCredentials({ bankId: bank.id, userId: '', password: '' });
+      setCredentials({ bankId: bank.id, userId: '', password: '', accountType: 'personal' });
     }
   };
 
@@ -397,7 +529,14 @@ const FinanceHub: React.FC = () => {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
         if (saveCredentials) await window.electron.financeHub.saveCredentials(selectedBank.id, credentials);
 
-        const newConnection: ConnectedBank = { bankId: selectedBank.id, status: 'connected', alias: result.userName || undefined, lastSync: new Date(), accounts: result.accounts || [] };
+        const newConnection: ConnectedBank = {
+          bankId: selectedBank.id,
+          status: 'connected',
+          alias: result.userName || undefined,
+          lastSync: new Date(),
+          accounts: result.accounts || [],
+          accountType: credentials.accountType || 'personal'
+        };
 
         if (result.accounts && result.accounts.length > 0) {
           for (const acc of result.accounts) {
@@ -498,8 +637,8 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '' }); setConnectionProgress(''); };
-  const handleBackToList = () => { setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '' }); setConnectionProgress(''); };
+  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', accountType: 'personal' }); setConnectionProgress(''); };
+  const handleBackToList = () => { setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', accountType: 'personal' }); setConnectionProgress(''); };
 
   // ============================================
   // Debug Handlers
@@ -521,7 +660,12 @@ const FinanceHub: React.FC = () => {
       if (!credResult.success || !credResult.credentials) { alert('저장된 인증 정보가 없습니다.'); return; }
       const loginResult = await window.electron.financeHub.login(bankId, credResult.credentials);
       if (loginResult.success) {
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, lastSync: new Date() } : b));
+        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
+          ...b,
+          status: 'connected' as const,
+          lastSync: new Date(),
+          accountType: credResult.credentials.accountType || b.accountType || 'personal'
+        } : b));
         alert('✅ 로그인 성공!');
       } else { alert(`❌ 로그인 실패: ${loginResult.error}`); }
     } catch (error) { alert(`오류: ${error}`); }
@@ -535,8 +679,19 @@ const FinanceHub: React.FC = () => {
       if (result.success && result.accounts) {
         setConnectedBanks(prev => {
           const idx = prev.findIndex(b => b.bankId === bankId);
-          if (idx >= 0) return prev.map((b, i) => i === idx ? { ...b, accounts: result.accounts, lastSync: new Date(), status: 'connected' as const } : b);
-          return [...prev, { bankId, status: 'connected' as const, lastSync: new Date(), accounts: result.accounts }];
+          if (idx >= 0) return prev.map((b, i) => i === idx ? {
+            ...b,
+            accounts: result.accounts,
+            lastSync: new Date(),
+            status: 'connected' as const
+          } : b);
+          return [...prev, {
+            bankId,
+            status: 'connected' as const,
+            lastSync: new Date(),
+            accounts: result.accounts,
+            accountType: 'personal'
+          }];
         });
         alert(`✅ ${result.accounts.length}개의 계좌를 찾았습니다`);
       } else { alert(`❌ 계좌 조회 실패: ${result.error}`); }
@@ -551,7 +706,14 @@ const FinanceHub: React.FC = () => {
       if (!credResult.success || !credResult.credentials) { alert('저장된 인증 정보가 없습니다.'); return; }
       const result = await window.electron.financeHub.loginAndGetAccounts(bankId, credResult.credentials);
       if (result.success && result.isLoggedIn) {
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, accounts: result.accounts || [], alias: result.userName, lastSync: new Date(), status: 'connected' as const } : b));
+        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
+          ...b,
+          accounts: result.accounts || [],
+          alias: result.userName,
+          lastSync: new Date(),
+          status: 'connected' as const,
+          accountType: credResult.credentials.accountType || b.accountType || 'personal'
+        } : b));
         alert(`✅ 전체 플로우 성공!\n- 사용자: ${result.userName}\n- 계좌 수: ${result.accounts?.length || 0}`);
       } else { alert(`❌ 실패: ${result.error}`); }
     } catch (error) { alert(`오류: ${error}`); }
@@ -601,6 +763,10 @@ const FinanceHub: React.FC = () => {
             <span className="finance-hub__stat-label">연결된 은행</span>
           </div>
           <div className="finance-hub__stat">
+            <span className="finance-hub__stat-value">{connectedCards.filter(c => c.status === 'connected').length}</span>
+            <span className="finance-hub__stat-label">연결된 카드</span>
+          </div>
+          <div className="finance-hub__stat">
             <span className="finance-hub__stat-value">{totalAccounts}</span>
             <span className="finance-hub__stat-label">계좌 수</span>
           </div>
@@ -610,28 +776,30 @@ const FinanceHub: React.FC = () => {
           </div>
         </div>
 
-        {/* Debug Panel */}
-        <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
-          <button className="finance-hub__debug-toggle" onClick={() => setShowDebugPanel(!showDebugPanel)}>🔧 Debug Tools {showDebugPanel ? '▼' : '▶'}</button>
-          {showDebugPanel && (
-            <div className="finance-hub__debug-actions">
-              <p className="finance-hub__debug-description">테스트용 디버그 버튼들입니다.</p>
-              <div className="finance-hub__debug-bank-selector">
-                <label>테스트할 은행:</label>
-                <select className="finance-hub__debug-select" defaultValue="shinhan" onChange={(e) => { (window as any).__debugSelectedBank = e.target.value; }}>
-                  {KOREAN_BANKS.filter(b => b.supportsAutomation).map((bank) => (<option key={bank.id} value={bank.id}>{bank.icon} {bank.nameKo}</option>))}
-                </select>
+        {/* Debug Panel - Hidden in production */}
+        {false && (
+          <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
+            <button className="finance-hub__debug-toggle" onClick={() => setShowDebugPanel(!showDebugPanel)}>🔧 Debug Tools {showDebugPanel ? '▼' : '▶'}</button>
+            {showDebugPanel && (
+              <div className="finance-hub__debug-actions">
+                <p className="finance-hub__debug-description">테스트용 디버그 버튼들입니다.</p>
+                <div className="finance-hub__debug-bank-selector">
+                  <label>테스트할 은행:</label>
+                  <select className="finance-hub__debug-select" defaultValue="shinhan" onChange={(e) => { (window as any).__debugSelectedBank = e.target.value; }}>
+                    {KOREAN_BANKS.filter(b => b.supportsAutomation).map((bank) => (<option key={bank.id} value={bank.id}>{bank.icon} {bank.nameKo}</option>))}
+                  </select>
+                </div>
+                <div className="finance-hub__debug-buttons">
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleDebugOpenBrowser((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'browser' ? '열기 중...' : '🌐 브라우저 열기'}</button>
+                  <button className="finance-hub__btn finance-hub__btn--small" onClick={() => handleDebugLoginOnly((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'login' ? '로그인 중...' : '🔐 로그인만'}</button>
+                  <button className="finance-hub__btn finance-hub__btn--small" onClick={() => handleDebugGetAccountsOnly((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'accounts' ? '조회 중...' : '📋 계좌만 조회'}</button>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleDebugFullFlow((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'full' ? '실행 중...' : '🚀 전체 플로우'}</button>
+                </div>
+                {dbStats && (<div className="finance-hub__debug-stats"><h4><FontAwesomeIcon icon={faChartLine} /> 데이터베이스 현황</h4><div className="finance-hub__debug-stats-grid"><span>계좌: {dbStats.totalAccounts}개</span><span>거래내역: {dbStats.totalTransactions}건</span><span>동기화: {dbStats.totalSyncOperations}회</span></div></div>)}
               </div>
-              <div className="finance-hub__debug-buttons">
-                <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleDebugOpenBrowser((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'browser' ? '열기 중...' : '🌐 브라우저 열기'}</button>
-                <button className="finance-hub__btn finance-hub__btn--small" onClick={() => handleDebugLoginOnly((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'login' ? '로그인 중...' : '🔐 로그인만'}</button>
-                <button className="finance-hub__btn finance-hub__btn--small" onClick={() => handleDebugGetAccountsOnly((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'accounts' ? '조회 중...' : '📋 계좌만 조회'}</button>
-                <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleDebugFullFlow((window as any).__debugSelectedBank || 'shinhan')} disabled={debugLoading !== null}>{debugLoading === 'full' ? '실행 중...' : '🚀 전체 플로우'}</button>
-              </div>
-              {dbStats && (<div className="finance-hub__debug-stats"><h4><FontAwesomeIcon icon={faChartLine} /> 데이터베이스 현황</h4><div className="finance-hub__debug-stats-grid"><span>계좌: {dbStats.totalAccounts}개</span><span>거래내역: {dbStats.totalTransactions}건</span><span>동기화: {dbStats.totalSyncOperations}회</span></div></div>)}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -660,7 +828,17 @@ const FinanceHub: React.FC = () => {
                       <div key={connection.bankId} className="finance-hub__bank-card" style={{ '--bank-color': bank.color } as React.CSSProperties}>
                         <div className="finance-hub__bank-card-header">
                           <span className="finance-hub__bank-icon">{bank.icon}</span>
-                          <div className="finance-hub__bank-info"><h4>{bank.nameKo}</h4><span className="finance-hub__bank-name-en">{connection.alias ? `${connection.alias}님` : bank.name}</span></div>
+                          <div className="finance-hub__bank-info">
+                            <div className="finance-hub__bank-info-title">
+                              <h4>{bank.nameKo}</h4>
+                              {connection.accountType === 'personal' && (
+                                <span className={`finance-hub__account-type-badge finance-hub__account-type-badge--${connection.accountType}`}>
+                                  👤 개인
+                                </span>
+                              )}
+                            </div>
+                            <span className="finance-hub__bank-name-en">{connection.alias ? `${connection.alias}님` : bank.name}</span>
+                          </div>
                           <span className={`finance-hub__status finance-hub__status--${connection.status}`}>
                             {connection.status === 'connected' && '연결됨'}{connection.status === 'pending' && '연결중...'}{connection.status === 'error' && '오류'}{connection.status === 'disconnected' && '연결 끊김'}
                           </span>
@@ -738,6 +916,82 @@ const FinanceHub: React.FC = () => {
                             {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}><FontAwesomeIcon icon={faSync} /> 재연결</button>}
                             {connection.status === 'connected' && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleFetchAccounts(connection.bankId)} disabled={isFetchingAccounts === connection.bankId}>{isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}</button>}
                             <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger" onClick={() => handleDisconnect(connection.bankId)}>연결 해제</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Connected Cards */}
+            <section className="finance-hub__section">
+              <div className="finance-hub__section-header">
+                <h2><span className="finance-hub__section-icon">💳</span> 연결된 카드</h2>
+                <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowCardSelector(true)}>
+                  <span>+</span> 카드사 연결하기
+                </button>
+              </div>
+              {connectedCards.length === 0 ? (
+                <div className="finance-hub__empty-state">
+                  <div className="finance-hub__empty-icon">💳</div>
+                  <h3>연결된 카드가 없습니다</h3>
+                  <p>카드사를 연결하면 모든 사용 내역을 자동으로 불러옵니다</p>
+                  <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowCardSelector(true)}>
+                    첫 번째 카드 연결하기
+                  </button>
+                </div>
+              ) : (
+                <div className="finance-hub__connected-banks">
+                  {connectedCards.map((connection) => {
+                    const card = getCardConfigById(connection.cardCompanyId);
+                    if (!card) return null;
+                    return (
+                      <div key={connection.cardCompanyId} className="finance-hub__bank-card" style={{ '--bank-color': card.color } as React.CSSProperties}>
+                        <div className="finance-hub__bank-card-header">
+                          <span className="finance-hub__bank-icon">{card.icon}</span>
+                          <div className="finance-hub__bank-info">
+                            <div className="finance-hub__bank-info-title">
+                              <h4>{card.nameKo}</h4>
+                              {connection.accountType === 'personal' && (
+                                <span className={`finance-hub__account-type-badge finance-hub__account-type-badge--${connection.accountType}`}>
+                                  👤 개인
+                                </span>
+                              )}
+                            </div>
+                            <span className="finance-hub__bank-name-en">{connection.alias ? `${connection.alias}님` : card.name}</span>
+                          </div>
+                          <span className={`finance-hub__status finance-hub__status--${connection.status}`}>
+                            {connection.status === 'connected' && '연결됨'}
+                            {connection.status === 'pending' && '연결중...'}
+                            {connection.status === 'error' && '오류'}
+                            {connection.status === 'disconnected' && '연결 끊김'}
+                          </span>
+                        </div>
+                        {connection.cards && connection.cards.length > 0 && (
+                          <div className="finance-hub__accounts-list">
+                            {connection.cards.map((cardItem, idx) => (
+                              <div key={idx} className="finance-hub__account-item">
+                                <div className="finance-hub__account-info">
+                                  <span className="finance-hub__account-number">{cardItem.cardNumber}</span>
+                                  <span className="finance-hub__account-name">{cardItem.cardName || '카드'}</span>
+                                </div>
+                                <div className="finance-hub__account-actions">
+                                  {cardItem.balance && cardItem.balance > 0 && (
+                                    <span className="finance-hub__account-balance">{formatCurrency(cardItem.balance)}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="finance-hub__bank-card-footer">
+                          <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
+                          <div className="finance-hub__bank-actions">
+                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger" onClick={() => handleDisconnectCard(connection.cardCompanyId)}>
+                              연결 해제
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -834,6 +1088,30 @@ const FinanceHub: React.FC = () => {
                   <div><h3>{selectedBank.nameKo}</h3><span>{selectedBank.name}</span></div>
                 </div>
                 <div className="finance-hub__login-fields">
+                  <div className="finance-hub__input-group">
+                    <label>계정 유형</label>
+                    <div className="finance-hub__account-type-selector">
+                      <button
+                        type="button"
+                        className={`finance-hub__account-type-btn ${credentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
+                        onClick={() => setCredentials({ ...credentials, accountType: 'personal' })}
+                        disabled={isConnecting}
+                      >
+                        <span className="finance-hub__account-type-icon">👤</span>
+                        <span>개인</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`finance-hub__account-type-btn ${credentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
+                        onClick={() => setCredentials({ ...credentials, accountType: 'corporate' })}
+                        disabled={true}
+                        title="법인 계정은 준비 중입니다"
+                      >
+                        <span className="finance-hub__account-type-icon">🏢</span>
+                        <span>법인</span>
+                      </button>
+                    </div>
+                  </div>
                   <div className="finance-hub__input-group"><label>아이디</label><input type="text" placeholder="인터넷뱅킹 아이디" value={credentials.userId} onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })} className="finance-hub__input" disabled={isConnecting} /></div>
                   <div className="finance-hub__input-group"><label>비밀번호</label><input type="password" placeholder="인터넷뱅킹 비밀번호" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} className="finance-hub__input" disabled={isConnecting} onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }} /></div>
                   <div className="finance-hub__checkbox-group"><label className="finance-hub__checkbox-label"><input type="checkbox" checked={saveCredentials} onChange={(e) => setSaveCredentials(e.target.checked)} disabled={isConnecting} /> 아이디 및 비밀번호 저장</label></div>
@@ -880,6 +1158,172 @@ const FinanceHub: React.FC = () => {
             <div className="finance-hub__modal-body">
               <SchedulerSettings />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Selector Modal */}
+      {showCardSelector && (
+        <div className="finance-hub__modal-overlay" onClick={handleCloseCardModal}>
+          <div className="finance-hub__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              {selectedCard ? (
+                <>
+                  <button className="finance-hub__back-btn" onClick={handleBackToCardList}>← 뒤로</button>
+                  <h2>{selectedCard.nameKo} 로그인</h2>
+                </>
+              ) : (
+                <h2>카드사 선택</h2>
+              )}
+              <button className="finance-hub__modal-close" onClick={handleCloseCardModal}>✕</button>
+            </div>
+            {selectedCard ? (
+              <div className="finance-hub__login-form">
+                <div className="finance-hub__login-bank-info">
+                  <span className="finance-hub__login-bank-icon" style={{ background: selectedCard.color }}>{selectedCard.icon}</span>
+                  <div>
+                    <h3>{selectedCard.nameKo}</h3>
+                    <span>{selectedCard.name}</span>
+                  </div>
+                </div>
+                <div className="finance-hub__login-fields">
+                  <div className="finance-hub__input-group">
+                    <label>계정 유형</label>
+                    <div className="finance-hub__account-type-selector">
+                      <button
+                        type="button"
+                        className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
+                        onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'personal' })}
+                        disabled={isConnectingCard}
+                      >
+                        <span className="finance-hub__account-type-icon">👤</span>
+                        <span>개인</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
+                        onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'corporate' })}
+                        disabled={true}
+                        title="법인 계정은 준비 중입니다"
+                      >
+                        <span className="finance-hub__account-type-icon">🏢</span>
+                        <span>법인</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="finance-hub__input-group">
+                    <label>아이디</label>
+                    <input
+                      type="text"
+                      placeholder="카드사 아이디"
+                      value={cardCredentials.userId}
+                      onChange={(e) => setCardCredentials({ ...cardCredentials, userId: e.target.value })}
+                      className="finance-hub__input"
+                      disabled={isConnectingCard}
+                    />
+                  </div>
+                  <div className="finance-hub__input-group">
+                    <label>비밀번호</label>
+                    <input
+                      type="password"
+                      placeholder="카드사 비밀번호"
+                      value={cardCredentials.password}
+                      onChange={(e) => setCardCredentials({ ...cardCredentials, password: e.target.value })}
+                      className="finance-hub__input"
+                      disabled={isConnectingCard}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isConnectingCard) handleConnectCard();
+                      }}
+                    />
+                  </div>
+                  <div className="finance-hub__checkbox-group">
+                    <label className="finance-hub__checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={saveCardCredentials}
+                        onChange={(e) => setSaveCardCredentials(e.target.checked)}
+                        disabled={isConnectingCard}
+                      />
+                      아이디 및 비밀번호 저장
+                    </label>
+                  </div>
+                </div>
+                {cardConnectionProgress && (
+                  <div className="finance-hub__connection-progress">
+                    <span className="finance-hub__spinner"></span>
+                    <span>{cardConnectionProgress}</span>
+                  </div>
+                )}
+                <div className="finance-hub__login-notice">
+                  <div className="finance-hub__notice-icon">🔒</div>
+                  <div>
+                    <strong>안전한 연결</strong>
+                    <p>입력하신 정보는 암호화되어 전송됩니다.</p>
+                  </div>
+                </div>
+                <button
+                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                  onClick={handleConnectCard}
+                  disabled={isConnectingCard || !cardCredentials.userId || !cardCredentials.password}
+                >
+                  {isConnectingCard ? (
+                    <>
+                      <span className="finance-hub__spinner"></span> 연결 중...
+                    </>
+                  ) : (
+                    '카드사 연결하기'
+                  )}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="finance-hub__modal-filters">
+                  <input
+                    type="text"
+                    placeholder="카드사 검색..."
+                    value={cardSearchQuery}
+                    onChange={(e) => setCardSearchQuery(e.target.value)}
+                    className="finance-hub__search-input"
+                  />
+                  <div className="finance-hub__category-tabs">
+                    {Object.entries(CARD_CATEGORY_LABELS).map(([key, label]) => (
+                      <button
+                        key={key}
+                        className={`finance-hub__category-tab ${selectedCardCategory === key ? 'finance-hub__category-tab--active' : ''}`}
+                        onClick={() => setSelectedCardCategory(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="finance-hub__bank-list">
+                  {filteredCards.map((card) => {
+                    const isConnected = connectedCards.some(c => c.cardCompanyId === card.id && c.status === 'connected');
+                    return (
+                      <div
+                        key={card.id}
+                        className={`finance-hub__bank-item ${!card.supportsAutomation ? 'finance-hub__bank-item--disabled' : ''} ${isConnected ? 'finance-hub__bank-item--connected' : ''}`}
+                        style={{ '--bank-color': card.color } as React.CSSProperties}
+                        onClick={() => handleSelectCard(card)}
+                      >
+                        <span className="finance-hub__bank-item-icon">{card.icon}</span>
+                        <div className="finance-hub__bank-item-info">
+                          <h4>{card.nameKo}</h4>
+                          <span>{card.name}</span>
+                        </div>
+                        {isConnected && <span className="finance-hub__bank-badge finance-hub__bank-badge--connected">연결됨</span>}
+                        {!card.supportsAutomation && <span className="finance-hub__bank-badge">준비 중</span>}
+                        <span className="finance-hub__bank-arrow">→</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="finance-hub__modal-footer">
+                  <p className="finance-hub__modal-note">💡 카드사 자동화 기능은 현재 개발 중입니다.</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -134,10 +134,13 @@ export function registerSheetsHandlers(): void {
     try {
       const sqliteManager = getSQLiteManager();
       const db = sqliteManager.getConversationsDatabase();
-      
+
       const importer = createSheetToSQLImporter(db);
       const tables = await importer.getImportedTables(spreadsheetId);
-      
+
+      console.log('[sheets:get-imported-tables] Raw tables from importer:', tables.length);
+      console.log('[sheets:get-imported-tables] Tables:', JSON.stringify(tables, null, 2));
+
       // Add original sheet names by parsing table names
       const tablesWithNames = tables.map(table => {
         // Extract the sheet name part from table name (after spreadsheetId prefix)
@@ -152,7 +155,10 @@ export function registerSheetsHandlers(): void {
         }
         return table;
       });
-      
+
+      console.log('[sheets:get-imported-tables] Tables with names:', tablesWithNames.length);
+      console.log('[sheets:get-imported-tables] Final result:', JSON.stringify(tablesWithNames, null, 2));
+
       return {
         success: true,
         tables: tablesWithNames,

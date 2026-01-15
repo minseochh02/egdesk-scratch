@@ -2003,7 +2003,7 @@ function NavigationBar({
               className={`nav-dropdown-item ${location.pathname === '/playwright-recorder' ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faRobot} fixedWidth />
-              <span>Playwright Recorder</span>
+              <span>Browser Recorder</span>
             </Link>
           </NavDropdown>
 

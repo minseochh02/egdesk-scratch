@@ -2057,6 +2057,7 @@ const electronHandler = {
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
+    renamePlaywrightTest: (testPath: string, newName: string) => ipcRenderer.invoke('rename-playwright-test', { testPath, newName }),
     viewPlaywrightTest: (testPath: string) => ipcRenderer.invoke('view-playwright-test', { testPath }),
     getPlaywrightDownloads: () => ipcRenderer.invoke('get-playwright-downloads'),
     openPlaywrightDownload: (filePath: string) => ipcRenderer.invoke('open-playwright-download', filePath),
@@ -2140,6 +2141,25 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo),
     clearPersistentSpreadsheet: () =>
       ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet'),
+  },
+
+  /**
+   * Keep Awake API - Prevents system sleep and display dimming
+   */
+  keepAwake: {
+    start: () => ipcRenderer.invoke('keepawake:start'),
+    stop: () => ipcRenderer.invoke('keepawake:stop'),
+    status: () => ipcRenderer.invoke('keepawake:status'),
+    toggle: () => ipcRenderer.invoke('keepawake:toggle'),
+  },
+
+  /**
+   * Auto-Start API - Launch app automatically on system startup
+   */
+  autoStart: {
+    getStatus: () => ipcRenderer.invoke('autostart:get-status'),
+    set: (enabled: boolean, openAsHidden?: boolean) => ipcRenderer.invoke('autostart:set', enabled, openAsHidden),
+    toggle: () => ipcRenderer.invoke('autostart:toggle'),
   },
 
   /**

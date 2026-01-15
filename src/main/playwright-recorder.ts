@@ -3730,15 +3730,6 @@ await expect(page.locator(selectors[0])).toBeVisible();
       "  const pages = context.pages();",
       "  const page = pages.length > 0 ? pages[0] : await context.newPage();",
       "",
-      "  // Handle downloads",
-      "  page.on('download', async (download) => {",
-      "    console.log('📥 Download started:', download.url());",
-      "    const filename = download.suggestedFilename();",
-      "    const filePath = path.join(downloadsPath, filename);",
-      "    await download.saveAs(filePath);",
-      "    console.log('✅ Download saved to:', filePath);",
-      "  });",
-      "",
       "  try {"
     ];
 
@@ -3779,7 +3770,7 @@ await expect(page.locator(selectors[0])).toBeVisible();
           // If this click triggers a download, set up the promise first
           if (downloadTriggerIndices.has(i)) {
             lines.push(`    // Setting up download handler before clicking`);
-            lines.push(`    const downloadPromise = page.waitForEvent('download');`);
+            lines.push(`    const downloadPromise = page.waitForEvent('download', { timeout: 60000 });`);
           }
 
           if (action.coordinates) {
@@ -3795,10 +3786,15 @@ await expect(page.locator(selectors[0])).toBeVisible();
           if (action.selector === 'download-complete') {
             const filename = action.value?.replace('Download completed: ', '') || 'file';
             lines.push(`    // Wait for download to complete`);
-            lines.push(`    const download = await downloadPromise;`);
-            lines.push(`    const downloadPath = path.join(downloadsPath, download.suggestedFilename());`);
-            lines.push(`    await download.saveAs(downloadPath);`);
-            lines.push(`    console.log('✅ Download completed:', downloadPath);`);
+            lines.push(`    try {`);
+            lines.push(`      const download = await downloadPromise;`);
+            lines.push(`      const downloadPath = path.join(downloadsPath, download.suggestedFilename());`);
+            lines.push(`      await download.saveAs(downloadPath);`);
+            lines.push(`      console.log('✅ Download completed:', downloadPath);`);
+            lines.push(`    } catch (error) {`);
+            lines.push(`      console.error('⚠️ Download wait timed out or failed:', error.message);`);
+            lines.push(`      throw error; // Re-throw to fail the test if download fails`);
+            lines.push(`    }`);
           }
           // Skip download-wait as it's just informational now
           break;

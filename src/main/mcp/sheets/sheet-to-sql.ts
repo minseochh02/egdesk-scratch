@@ -40,14 +40,16 @@ export class SheetToSQLImporter {
 
       const createdTables: string[] = [];
 
+      console.log(`[SheetToSQL] Found ${sheetsToImport.length} sheets to import:`, sheetsToImport.map(s => s.title));
+
       // Import each sheet
       for (const sheet of sheetsToImport) {
         console.log(`[SheetToSQL] Importing sheet: ${sheet.title}`);
-        
+
         // Get all data from the sheet
         const range = `${sheet.title}!A:ZZ`; // Get all columns up to ZZ
         const rangeData = await this.sheetsService.getRange(spreadsheetId, range);
-        
+
         if (!rangeData.values || rangeData.values.length === 0) {
           console.log(`[SheetToSQL] Sheet "${sheet.title}" is empty, skipping`);
           continue;
@@ -55,14 +57,16 @@ export class SheetToSQLImporter {
 
         // Create table and import data
         const tableName = this.createTableForSheet(
-          spreadsheetId, 
-          sheet.title, 
+          spreadsheetId,
+          sheet.title,
           rangeData.values
         );
-        
+
+        console.log(`[SheetToSQL] Successfully created table: ${tableName}`);
         createdTables.push(tableName);
       }
 
+      console.log(`[SheetToSQL] Import complete. Created ${createdTables.length} tables:`, createdTables);
       return createdTables;
     } catch (error) {
       console.error('[SheetToSQL] Import failed:', error);
@@ -117,15 +121,32 @@ export class SheetToSQLImporter {
    */
   private generateTableName(spreadsheetId: string, sheetName: string): string {
     // Clean the sheet name for SQL
-    const cleanSheetName = sheetName
-      .replace(/[^a-zA-Z0-9_]/g, '_')
+    let cleanSheetName = sheetName
+      .replace(/[^a-zA-Z0-9_가-힣]/g, '_')  // Keep Korean characters
       .replace(/_+/g, '_')
       .replace(/^_|_$/g, '');
-    
+
+    // If sheet name becomes empty after cleaning, use a hash of the original name
+    if (!cleanSheetName) {
+      // Create a deterministic hash from the sheet name
+      // This ensures same sheet name always creates same table name
+      let hash = 0;
+      for (let i = 0; i < sheetName.length; i++) {
+        const char = sheetName.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      cleanSheetName = `sheet${Math.abs(hash).toString(36)}`;
+      console.log(`[SheetToSQL] Sheet name "${sheetName}" cleaned to empty, using hash: ${cleanSheetName}`);
+    }
+
     // Use first 8 chars of spreadsheet ID for uniqueness
     const shortId = spreadsheetId.substring(0, 8);
-    
-    return `sheet_${shortId}_${cleanSheetName}`;
+
+    const finalName = `sheet_${shortId}_${cleanSheetName}`;
+    console.log(`[SheetToSQL] Generated table name: "${sheetName}" → "${finalName}"`);
+
+    return finalName;
   }
 
   /**
@@ -282,14 +303,19 @@ export class SheetToSQLImporter {
     columnCount: number;
     lastImported: string;
   }>> {
-    const pattern = `sheet_${spreadsheetId.substring(0, 8)}_%`;
-    
+    const prefix = `sheet_${spreadsheetId.substring(0, 8)}_`;
+
+    console.log('[SheetToSQL:getImportedTables] Searching for tables with prefix:', prefix);
+
+    // Use prefix matching instead of pattern matching to catch tables ending with underscore
     const tables = this.db.prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type = 'table' 
-      AND name LIKE ?
+      SELECT name FROM sqlite_master
+      WHERE type = 'table'
+      AND name LIKE ? || '%'
       AND name NOT LIKE '%_headers'
-    `).all(pattern) as Array<{name: string}>;
+    `).all(prefix) as Array<{name: string}>;
+
+    console.log('[SheetToSQL:getImportedTables] Found', tables.length, 'tables:', tables.map(t => t.name));
 
     const result = [];
     for (const table of tables) {
@@ -305,14 +331,18 @@ export class SheetToSQLImporter {
         `SELECT MAX(_imported_at) as last FROM "${table.name}"`
       ).get() as {last: string};
 
-      result.push({
+      const tableInfo = {
         tableName: table.name,
         rowCount: count.count,
         columnCount: columnInfo.length - 2, // Exclude _row_id and _imported_at
         lastImported: lastImport.last || 'Never'
-      });
+      };
+
+      console.log('[SheetToSQL:getImportedTables] Table info:', tableInfo);
+      result.push(tableInfo);
     }
 
+    console.log('[SheetToSQL:getImportedTables] Returning', result.length, 'tables');
     return result;
   }
 }
