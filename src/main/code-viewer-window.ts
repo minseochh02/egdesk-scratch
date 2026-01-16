@@ -10,6 +10,8 @@ export class CodeViewerWindow {
   private onWaitSettingsChange?: (settings: { multiplier: number; maxDelay: number }) => void;
   private currentTestPath: string | null = null;
   private isViewMode: boolean = false;
+  private onDeleteAction?: (index: number) => void;
+  private actions: any[] = [];
 
   constructor() {
     this.setupIpcHandlers();
@@ -50,6 +52,17 @@ export class CodeViewerWindow {
       }
       return { success: false, error: 'No test to save' };
     });
+
+    ipcMain.on('delete-action', (event, index) => {
+      console.log('🗑️ Delete action requested for index:', index);
+      if (this.onDeleteAction) {
+        this.onDeleteAction(index);
+      }
+    });
+
+    ipcMain.handle('get-actions', () => {
+      return this.actions;
+    });
   }
 
   setWaitSettingsCallback(callback: (settings: { multiplier: number; maxDelay: number }) => void) {
@@ -58,6 +71,18 @@ export class CodeViewerWindow {
 
   getWaitSettings() {
     return this.waitSettings;
+  }
+
+  setDeleteActionCallback(callback: (index: number) => void) {
+    this.onDeleteAction = callback;
+  }
+
+  updateActions(actions: any[]) {
+    this.actions = actions;
+    // Notify renderer of updated actions
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send('actions-updated', actions);
+    }
   }
 
   setViewMode(testPath: string) {
@@ -307,6 +332,83 @@ export class CodeViewerWindow {
     .comment { color: #6a9955; }
     .function { color: #dcdcaa; }
     .bracket { color: #ffd700; }
+    /* Action blocks */
+    .actions-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .action-block {
+      background-color: #2d2d30;
+      border: 1px solid #474747;
+      border-radius: 4px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background-color 0.2s;
+    }
+    .action-block:hover {
+      background-color: #333337;
+    }
+    .action-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .action-type {
+      color: #4ec9b0;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .action-details {
+      color: #9cdcfe;
+      font-size: 12px;
+    }
+    .action-delete-btn {
+      background-color: #c13030;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+      margin-left: 10px;
+    }
+    .action-delete-btn:hover {
+      background-color: #d83030;
+    }
+    .view-mode-notice {
+      display: none;
+      background-color: #3c3c3c;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      text-align: center;
+      color: #cccccc;
+    }
+    .gemini-analysis-container {
+      margin-bottom: 20px;
+      padding: 15px;
+      background-color: #2d2d30;
+      border: 1px solid #474747;
+      border-radius: 8px;
+    }
+    .gemini-analysis-container h3 {
+      margin: 0 0 10px 0;
+      color: #4CAF50;
+      font-size: 16px;
+    }
+    .gemini-analysis-container img {
+      max-width: 100%;
+      height: auto;
+      border: 2px solid #474747;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
   </style>
 </head>
 <body>
@@ -332,6 +434,15 @@ export class CodeViewerWindow {
     </div>
   </div>
   <div class="code-container">
+    <div class="view-mode-notice" id="view-mode-notice">
+      ℹ️ In view mode, actions cannot be deleted. Stop recording to edit.
+    </div>
+    <div id="gemini-analysis-container" class="gemini-analysis-container" style="display: none;">
+      <!-- Gemini AI analysis will be rendered here -->
+    </div>
+    <div id="actions-container" class="actions-container" style="display: none;">
+      <!-- Actions will be rendered here -->
+    </div>
     <pre><code id="code-display">import { test, expect } from '@playwright/test';
 
 test('recorded test', async ({ page }) => {
@@ -378,6 +489,7 @@ test('recorded test', async ({ page }) => {
       console.log('View mode changed:', isViewMode);
       const saveButtonGroup = document.getElementById('save-button-group');
       const statusText = document.querySelector('.status span');
+      const viewModeNotice = document.getElementById('view-mode-notice');
 
       if (saveButtonGroup) {
         saveButtonGroup.style.display = isViewMode ? 'flex' : 'none';
@@ -386,6 +498,16 @@ test('recorded test', async ({ page }) => {
       if (statusText) {
         statusText.textContent = isViewMode ? 'View Mode' : 'Recording...';
       }
+
+      if (viewModeNotice) {
+        viewModeNotice.style.display = isViewMode ? 'block' : 'none';
+      }
+    });
+
+    // Listen for actions updates
+    ipcRenderer.on('actions-updated', (event, actions) => {
+      console.log('Actions updated:', actions.length);
+      renderActions(actions);
     });
     
     // Wait for DOM to be ready
@@ -488,26 +610,127 @@ test('recorded test', async ({ page }) => {
       }
     }
     
+    // Render actions as interactive blocks
+    function renderActions(actions) {
+      const actionsContainer = document.getElementById('actions-container');
+      const codeDisplay = document.getElementById('code-display');
+
+      if (!actionsContainer || !codeDisplay) {
+        console.error('Actions container or code display not found');
+        return;
+      }
+
+      if (actions && actions.length > 0) {
+        // Show actions container, hide code display
+        actionsContainer.style.display = 'flex';
+        codeDisplay.parentElement.style.display = 'none';
+
+        // Clear existing actions
+        actionsContainer.innerHTML = '';
+
+        // Render each action
+        actions.forEach((action, index) => {
+          const actionBlock = document.createElement('div');
+          actionBlock.className = 'action-block';
+
+          const actionInfo = document.createElement('div');
+          actionInfo.className = 'action-info';
+
+          const actionType = document.createElement('div');
+          actionType.className = 'action-type';
+          actionType.textContent = getActionTypeLabel(action.type);
+
+          const actionDetails = document.createElement('div');
+          actionDetails.className = 'action-details';
+          actionDetails.textContent = getActionDetails(action);
+
+          actionInfo.appendChild(actionType);
+          actionInfo.appendChild(actionDetails);
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'action-delete-btn';
+          deleteBtn.textContent = '✕ Delete';
+          deleteBtn.onclick = () => {
+            console.log('Delete button clicked for index:', index);
+            ipcRenderer.send('delete-action', index);
+          };
+
+          actionBlock.appendChild(actionInfo);
+          actionBlock.appendChild(deleteBtn);
+
+          actionsContainer.appendChild(actionBlock);
+        });
+      } else {
+        // No actions, hide actions container, show code display
+        actionsContainer.style.display = 'none';
+        codeDisplay.parentElement.style.display = 'block';
+      }
+    }
+
+    function getActionTypeLabel(type) {
+      const labels = {
+        'navigate': '🌐 Navigate',
+        'click': '🖱️ Click',
+        'fill': '📝 Fill',
+        'keypress': '⌨️ Keypress',
+        'screenshot': '📸 Screenshot',
+        'waitForElement': '⏳ Wait',
+        'download': '📥 Download',
+        'datePickerGroup': '📅 Date Picker'
+      };
+      return labels[type] || type;
+    }
+
+    function getActionDetails(action) {
+      switch (action.type) {
+        case 'navigate':
+          return action.url || '';
+        case 'click':
+          return action.selector || (action.coordinates ? \`\${action.coordinates.x}, \${action.coordinates.y}\` : '');
+        case 'fill':
+          return \`\${action.selector}: "\${action.value}"\`;
+        case 'keypress':
+          return \`Key: \${action.key}\`;
+        case 'waitForElement':
+          return \`\${action.selector} (\${action.waitCondition || 'visible'})\`;
+        case 'datePickerGroup':
+          const offsetText = action.dateOffset === 0 ? 'today' :
+                           action.dateOffset > 0 ? \`today + \${action.dateOffset} days\` :
+                           \`today - \${Math.abs(action.dateOffset)} days\`;
+          return offsetText;
+        case 'download':
+          return action.value || 'Download event';
+        default:
+          return action.selector || '';
+      }
+    }
+
     // Simple syntax highlighting
     function highlightCode(code) {
       try {
         // First escape HTML to prevent injection
         const escaped = code
-          .replace(/&/g, '&' + 'amp;')
-          .replace(/</g, '&' + 'lt;')
-          .replace(/>/g, '&' + 'gt;');
-        
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
         // Then apply syntax highlighting
+        const keywordPattern = /\\b(import|from|async|await|const|let|var|function|return|if|else|for|while)\\b/g;
+        const stringPattern = /('([^']*)'|"([^"]*)"|` + '`([^`]*)`' + `)/g;
+        const commentPattern = /\\/\\/.*/g;
+        const functionPattern = /\\b(test|expect|page|locator|element|selectors|bounds|attributes|styles)\\b/g;
+        const bracketPattern = /[\\{\\}\\(\\)\\[\\]]/g;
+
         return escaped
-          .replace(/\\b(import|from|async|await|const|let|var|function|return|if|else|for|while)\\b/g, '<span class="keyword">$1</span>')
-          .replace(/('([^']*)'|"([^"]*)"|${'`'}([^${'`'}]*)${'`'})/g, '<span class="string">$1</span>')
-          .replace(/\\/\\/.*/g, '<span class="comment">$&</span>')
-          .replace(/\\b(test|expect|page|locator|element|selectors|bounds|attributes|styles)\\b/g, '<span class="function">$1</span>')
-          .replace(/[\\{\\}\\(\\)\\[\\]]/g, '<span class="bracket">$&</span>');
+          .replace(keywordPattern, '<span class="keyword">$1</span>')
+          .replace(stringPattern, '<span class="string">$1</span>')
+          .replace(commentPattern, '<span class="comment">$&</span>')
+          .replace(functionPattern, '<span class="function">$1</span>')
+          .replace(bracketPattern, '<span class="bracket">$&</span>');
       } catch (e) {
         console.error('Error in highlightCode:', e);
         // Return escaped code without highlighting if error occurs
-        return code.replace(/&/g, '&' + 'amp;').replace(/</g, '&' + 'lt;').replace(/>/g, '&' + 'gt;');
+        return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
     }
     
@@ -518,67 +741,106 @@ test('recorded test', async ({ page }) => {
       const codeContainer = document.querySelector('.code-container');
       const headerTitle = document.querySelector('.header h2');
       const statusText = document.querySelector('.status span');
+      const geminiContainer = document.getElementById('gemini-analysis-container');
 
-      // Check if this is Gemini element analysis
-      if (code.includes('// Gemini Element Analysis')) {
+      // Check if this is Gemini element analysis with HTML content
+      const isGeminiAnalysis = code.includes('<!-- Gemini Element Analysis -->');
+
+      console.log('Is Gemini Analysis:', isGeminiAnalysis, 'Has img tag:', code.includes('<img'));
+
+      if (isGeminiAnalysis) {
         if (headerTitle) headerTitle.textContent = '🔍 Gemini Element Analysis';
         if (statusText) statusText.textContent = 'Element Info';
-      } else {
-        if (headerTitle) headerTitle.textContent = '📝 Playwright Test Code (Real-time)';
-        if (statusText) statusText.textContent = 'Recording...';
-      }
 
-      if (codeElement) {
-        console.log('Found code element, updating innerHTML');
-        try {
-          const highlighted = highlightCode(code);
-          console.log('Highlighted code preview:', highlighted.substring(0, 100) + '...');
-          codeElement.innerHTML = highlighted;
-          console.log('innerHTML updated successfully');
+        // Show Gemini analysis in dedicated container (check if image data exists, not just <img tag)
+        if (geminiContainer) {
+          console.log('Rendering Gemini content in dedicated container');
 
-          // Auto-scroll to bottom to show new lines
-          if (codeContainer) {
-            // Use requestAnimationFrame to ensure DOM has updated
-            requestAnimationFrame(() => {
-              codeContainer.scrollTop = codeContainer.scrollHeight;
-            });
-          }
-        } catch (e) {
-          console.error('Error updating code display:', e);
-          // Fallback: display raw text content
-          console.log('Using fallback - setting textContent');
-          codeElement.textContent = code;
+          // Extract the HTML content (everything before the JavaScript code)
+          const htmlMatch = code.match(/(<!-- Gemini Element Analysis -->[\s\S]*?<\\/div>)/);
 
-          // Auto-scroll even in fallback
-          if (codeContainer) {
-            requestAnimationFrame(() => {
-              codeContainer.scrollTop = codeContainer.scrollHeight;
-            });
+          console.log('HTML Match found:', !!htmlMatch);
+          if (htmlMatch) {
+            console.log('HTML content length:', htmlMatch[1].length);
+            console.log('HTML preview:', htmlMatch[1].substring(0, 200));
+            geminiContainer.innerHTML = htmlMatch[1];
+            geminiContainer.style.display = 'block';
+            console.log('✅ Gemini HTML content rendered successfully');
+          } else {
+            console.warn('⚠️ No HTML match found in Gemini content');
           }
         }
       } else {
-        console.error('Could not find element with id "code-display"');
-        // Try again after a short delay
-        setTimeout(() => {
-          const retryElement = document.getElementById('code-display');
-          if (retryElement) {
-            console.log('Found element on retry, updating');
-            retryElement.textContent = code;
+        if (headerTitle) headerTitle.textContent = '📝 Playwright Test Code (Real-time)';
+        if (statusText) statusText.textContent = 'Recording...';
 
-            // Auto-scroll on retry
+        // Hide Gemini container for regular code
+        if (geminiContainer) {
+          geminiContainer.style.display = 'none';
+        }
+      }
+
+      // Always update code display for non-Gemini content
+      if (!isGeminiAnalysis) {
+        if (codeElement) {
+          console.log('Found code element, updating innerHTML');
+          try {
+            const highlighted = highlightCode(code);
+            console.log('Highlighted code preview:', highlighted.substring(0, 100) + '...');
+            codeElement.innerHTML = highlighted;
+            console.log('innerHTML updated successfully');
+
+            // Auto-scroll to bottom to show new lines
             if (codeContainer) {
-              codeContainer.scrollTop = codeContainer.scrollHeight;
+              // Use requestAnimationFrame to ensure DOM has updated
+              requestAnimationFrame(() => {
+                codeContainer.scrollTop = codeContainer.scrollHeight;
+              });
+            }
+          } catch (e) {
+            console.error('Error updating code display:', e);
+            // Fallback: display raw text content
+            console.log('Using fallback - setting textContent');
+            codeElement.textContent = code;
+
+            // Auto-scroll even in fallback
+            if (codeContainer) {
+              requestAnimationFrame(() => {
+                codeContainer.scrollTop = codeContainer.scrollHeight;
+              });
             }
           }
-        }, 100);
+        } else {
+          console.error('Could not find element with id "code-display"');
+          // Try again after a short delay
+          setTimeout(() => {
+            const retryElement = document.getElementById('code-display');
+            if (retryElement) {
+              console.log('Found element on retry, updating');
+              retryElement.textContent = code;
+
+              // Auto-scroll on retry
+              if (codeContainer) {
+                codeContainer.scrollTop = codeContainer.scrollHeight;
+              }
+            }
+          }, 100);
+        }
       }
     }
     
-    
-    // Get initial code
+
+    // Get initial code and actions
     ipcRenderer.invoke('get-current-code').then(code => {
       console.log('Got initial code:', code);
       if (code) window.updateCode(code);
+    });
+
+    ipcRenderer.invoke('get-actions').then(actions => {
+      console.log('Got initial actions:', actions);
+      if (actions && actions.length > 0) {
+        renderActions(actions);
+      }
     });
   </script>
 </body>
