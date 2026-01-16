@@ -60,6 +60,14 @@ export class PlaywrightRecorder {
     this.updateGeneratedCode();
   }
 
+  /**
+   * Generate a safe ID selector that handles special characters like dots
+   * Uses attribute selector to avoid CSS escaping issues
+   */
+  private generateIdSelector(id: string): string {
+    return `[id="${id}"]`;
+  }
+
   async start(url: string, onBrowserClosed?: () => void): Promise<void> {
     // Get screen dimensions
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -1607,7 +1615,7 @@ export class PlaywrightRecorder {
         // Generate and show selector
         let selector = '';
         if (element.id) {
-          selector = `#${element.id}`;
+          selector = this.generateIdSelector(element.id);
         } else if (element.tagName === 'BUTTON' || element.getAttribute('role') === 'button') {
           selector = `button:has-text("${element.textContent?.trim() || ''}")`;
         } else if (element.tagName === 'A') {
@@ -1815,7 +1823,7 @@ export class PlaywrightRecorder {
         try {
           const target = e.target as HTMLElement;
           if (target.id) {
-            event.target.selector = `#${target.id}`;
+            event.target.selector = `[id="${target.id}"]`;
           } else if (target.getAttribute('name')) {
             event.target.selector = `[name="${target.getAttribute('name')}"]`;
           } else if (target.className) {
@@ -1874,7 +1882,7 @@ export class PlaywrightRecorder {
             // Only record if value actually changed
             if (currentValue !== lastValue) {
               const event = {
-                selector: target.id ? `#${target.id}` :
+                selector: target.id ? `[id="${target.id}"]` :
                          target.name ? `[name="${target.name}"]` :
                          target.className ? `.${target.className.split(' ')[0]}` :
                          target.tagName.toLowerCase(),
@@ -1923,7 +1931,7 @@ export class PlaywrightRecorder {
           // Record final value on blur if it changed
           if (currentValue !== lastValue && currentValue !== '') {
             const event = {
-              selector: target.id ? `#${target.id}` :
+              selector: target.id ? `[id="${target.id}"]` :
                        target.name ? `[name="${target.name}"]` :
                        target.className ? `.${target.className.split(' ')[0]}` :
                        target.tagName.toLowerCase(),
@@ -2007,10 +2015,10 @@ export class PlaywrightRecorder {
         // Priority: Unique ID > Name > Placeholder > Unique data attributes > Type > has-text with data attributes > Class > has-text only > Tag + index
         if (dateElement.id) {
           // Check if ID is actually unique before using it
-          const elementsWithSameId = document.querySelectorAll(`#${dateElement.id}`);
+          const elementsWithSameId = document.querySelectorAll(`[id="${dateElement.id}"]`);
           if (elementsWithSameId.length === 1) {
             // ID is unique, use it
-            selector = `#${dateElement.id}`;
+            selector = `[id="${dateElement.id}"]`;
           } else {
             // ID is not unique! Check for unique combination with other attributes
             if (dateElement.getAttribute('data-focusable-seq')) {
@@ -2023,9 +2031,9 @@ export class PlaywrightRecorder {
               selector = `${tag}[id="${dateElement.id}"][data-own-layer-box-id="${layerId}"]`;
             } else {
               // Use nth-of-type as fallback for non-unique IDs
-              const elementsWithId = Array.from(document.querySelectorAll(`#${dateElement.id}`));
+              const elementsWithId = Array.from(document.querySelectorAll(`[id="${dateElement.id}"]`));
               const index = elementsWithId.indexOf(dateElement);
-              selector = `${dateElement.tagName.toLowerCase()}#${dateElement.id}:nth-of-type(${index + 1})`;
+              selector = `${dateElement.tagName.toLowerCase()}[id="${dateElement.id}"]:nth-of-type(${index + 1})`;
             }
           }
         } else if (dateElement.getAttribute('name')) {
@@ -2628,7 +2636,7 @@ export class PlaywrightRecorder {
             // Generate selector for the target element (same logic as regular clicks)
             let selector = '';
             if (target.id) {
-              selector = '#' + target.id;
+              selector = '[id="' + target.id + '"]';
             } else if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
               const text = target.textContent?.trim() || '';
               selector = 'button:has-text("' + text + '")';
@@ -2654,7 +2662,7 @@ export class PlaywrightRecorder {
               if (parent) {
                 const siblings = Array.from(parent.children);
                 const index = siblings.indexOf(target) + 1;
-                const parentSelector = parent.id ? '#' + parent.id : parent.className ? '.' + parent.className.split(' ')[0] : parent.tagName.toLowerCase();
+                const parentSelector = parent.id ? '[id="' + parent.id + '"]' : parent.className ? '.' + parent.className.split(' ')[0] : parent.tagName.toLowerCase();
                 selector = parentSelector + ' > ' + target.tagName.toLowerCase() + ':nth-child(' + index + ')';
               } else {
                 selector = target.className ? '.' + target.className.split(' ')[0] : target.tagName.toLowerCase();
@@ -2693,10 +2701,10 @@ export class PlaywrightRecorder {
 
         // Priority 1: Check if ID is unique before using it
         if (target.id) {
-          const elementsWithSameId = document.querySelectorAll(`#${target.id}`);
+          const elementsWithSameId = document.querySelectorAll(`[id="${target.id}"]`);
           if (elementsWithSameId.length === 1) {
             // ID is unique, use it
-            selector = `#${target.id}`;
+            selector = `[id="${target.id}"]`;
           } else {
             // ID is not unique! Combine with other attributes
             if (target.getAttribute('data-focusable-seq')) {
@@ -2713,9 +2721,9 @@ export class PlaywrightRecorder {
               selector = `${tag}[id="${target.id}"][data-testid="${testid}"]`;
             } else {
               // Use nth-of-type as fallback for non-unique IDs
-              const elementsWithId = Array.from(document.querySelectorAll(`#${target.id}`));
+              const elementsWithId = Array.from(document.querySelectorAll(`[id="${target.id}"]`));
               const index = elementsWithId.indexOf(target);
-              selector = `${target.tagName.toLowerCase()}#${target.id}:nth-of-type(${index + 1})`;
+              selector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-of-type(${index + 1})`;
             }
           }
         }
@@ -3143,7 +3151,7 @@ export class PlaywrightRecorder {
           if (parent) {
             const siblings = Array.from(parent.children);
             const index = siblings.indexOf(target) + 1;
-            const parentSelector = parent.id ? `#${parent.id}` : parent.className ? `.${parent.className.split(' ')[0]}` : parent.tagName.toLowerCase();
+            const parentSelector = parent.id ? `[id="${parent.id}"]` : parent.className ? `.${parent.className.split(' ')[0]}` : parent.tagName.toLowerCase();
             selector = `${parentSelector} > ${target.tagName.toLowerCase()}:nth-child(${index})`;
           } else {
             // Fallback to basic selector
@@ -3357,7 +3365,7 @@ const element = {
 
 // Playwright Selector Suggestions:
 const selectors = [
-  ${elementInfo.id ? `'#${elementInfo.id}',` : ''}
+  ${elementInfo.id ? `'[id="${elementInfo.id}"]',` : ''}
   ${elementInfo.className ? `'.${elementInfo.className.split(' ')[0]}',` : ''}
   ${elementInfo.attributes['data-testid'] ? `'[data-testid="${elementInfo.attributes['data-testid']}"]',` : ''}
   ${elementInfo.tagName === 'BUTTON' && elementInfo.text ? `'button:has-text("${elementInfo.text}")',` : ''}

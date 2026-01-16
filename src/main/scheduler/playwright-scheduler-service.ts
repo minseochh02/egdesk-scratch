@@ -7,7 +7,8 @@
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { PlaywrightScheduledTest } from '../sqlite/playwright-scheduler';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
+import * as path from 'path';
 
 export class PlaywrightSchedulerService {
   private static instance: PlaywrightSchedulerService | null = null;
@@ -348,13 +349,12 @@ export class PlaywrightSchedulerService {
   }
 
   /**
-   * Run a Playwright test by executing the standalone script file directly
-   * This preserves all the original settings (window size, position, etc.)
+   * Run a Playwright test by executing it directly in the main process
+   * This matches the approach used by the replay handler and works reliably in production
    */
   private async runPlaywrightTest(testPath: string): Promise<void> {
     const fs = require('fs');
-    const { spawn } = require('child_process');
-    const path = require('path');
+    const os = require('os');
 
     console.log('🎬 Running Playwright test:', testPath);
 
@@ -363,32 +363,123 @@ export class PlaywrightSchedulerService {
       throw new Error(`Test file not found: ${testPath}`);
     }
 
-    // Execute the standalone script directly with Node.js
-    // This preserves all window dimensions and settings from the recording
-    return new Promise<void>((resolve, reject) => {
-      console.log('🚀 Executing test file directly with Node.js...');
+    // Read the test file
+    let generatedCode = fs.readFileSync(testPath, 'utf8');
+    console.log('📄 Test file read, size:', generatedCode.length);
 
-      const nodeProcess = spawn('node', [testPath], {
-        stdio: 'inherit',
-        shell: true
-      });
+    // Extract the test body from the standalone script
+    let testBody = '';
 
-      nodeProcess.on('error', (error) => {
-        console.error('❌ Failed to start test process:', error);
-        reject(error);
-      });
+    if (generatedCode.includes('launchPersistentContext')) {
+      // Standalone format with launchPersistentContext
+      // Extract code between "try {" and "} finally {"
+      console.log('🔍 Detected standalone launchPersistentContext format');
+      const tryMatch = generatedCode.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
 
-      nodeProcess.on('close', (code) => {
-        if (code === 0) {
-          console.log('✅ Test completed successfully');
-          resolve();
-        } else {
-          const error = new Error(`Test failed with exit code ${code}`);
-          console.error('❌ Test failed with exit code:', code);
-          reject(error);
+      if (tryMatch && tryMatch[1]) {
+        testBody = tryMatch[1].trim();
+        console.log('✅ Extracted test body from try block');
+      } else {
+        // Fallback: try to find actions after page setup
+        const lines = generatedCode.split('\n');
+        const tryIndex = lines.findIndex(line => line.trim() === 'try {');
+        const finallyIndex = lines.findIndex(line => line.includes('} finally {'));
+
+        if (tryIndex !== -1 && finallyIndex !== -1 && tryIndex < finallyIndex) {
+          testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
+          console.log('✅ Extracted test body using line-by-line fallback');
         }
-      });
+      }
+    }
+
+    if (!testBody) {
+      console.error('❌ Failed to extract test body. File content preview:', generatedCode.substring(0, 500));
+      throw new Error('Could not extract test body from file. The file format may be invalid.');
+    }
+
+    console.log('📋 Test body extracted, length:', testBody.length);
+
+    // Import playwright-core (available in the main process)
+    const { chromium } = require('playwright-core');
+
+    // Create downloads directory in system Downloads folder
+    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+    if (!fs.existsSync(downloadsPath)) {
+      fs.mkdirSync(downloadsPath, { recursive: true });
+    }
+    console.log('📥 Downloads will be saved to:', downloadsPath);
+
+    // Create temporary profile directory
+    let profilesDir: string;
+    try {
+      const userData = app.getPath('userData');
+      if (!userData || userData === '/' || userData.length < 3) {
+        throw new Error('Invalid userData path');
+      }
+      profilesDir = path.join(userData, 'chrome-profiles');
+    } catch (err) {
+      console.warn('⚠️ userData not available, using os.tmpdir():', err);
+      profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
+    }
+
+    if (!fs.existsSync(profilesDir)) {
+      fs.mkdirSync(profilesDir, { recursive: true });
+    }
+    const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-scheduled-'));
+    console.log('📁 Using profile directory:', profileDir);
+
+    // Launch browser with persistent context
+    const context = await chromium.launchPersistentContext(profileDir, {
+      headless: false,
+      channel: 'chrome',
+      viewport: null,
+      permissions: ['clipboard-read', 'clipboard-write'],
+      acceptDownloads: true,
+      downloadsPath: downloadsPath,
+      args: [
+        '--no-default-browser-check',
+        '--disable-blink-features=AutomationControlled',
+        '--no-first-run',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--allow-running-insecure-content',
+        '--disable-features=PrivateNetworkAccessSendPreflights',
+        '--disable-features=PrivateNetworkAccessRespectPreflightResults'
+      ]
     });
+
+    // Get or create page
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+    try {
+      console.log('🎬 Starting test execution...');
+
+      // Create a function from the test body and execute it
+      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+      const testFunction = new AsyncFunction('page', 'path', 'downloadsPath', testBody);
+
+      // Execute the test
+      await testFunction(page, path, downloadsPath);
+
+      console.log('✅ Test execution completed successfully');
+
+    } catch (error) {
+      console.error('❌ Test execution failed:', error);
+      throw error;
+    } finally {
+      // Clean up
+      await context.close();
+      console.log('🧹 Browser context closed');
+
+      // Clean up profile directory
+      try {
+        fs.rmSync(profileDir, { recursive: true, force: true });
+        console.log('🧹 Profile directory cleaned up');
+      } catch (e) {
+        console.warn('⚠️ Failed to clean up profile directory:', e);
+      }
+    }
   }
 
   // ============================================
