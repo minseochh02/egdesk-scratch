@@ -95,7 +95,7 @@ const FinanceHub: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
-  const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '', accountType: 'personal' });
+  const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
   const [isConnecting, setIsConnecting] = useState(false);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState<string | null>(null);
   const [connectionProgress, setConnectionProgress] = useState<string>('');
@@ -251,7 +251,11 @@ const FinanceHub: React.FC = () => {
   // Bank Connection Handlers
   // ============================================
 
-  const getBankConfigById = (id: string): BankConfig | undefined => KOREAN_BANKS.find(bank => bank.id === id);
+  const getBankConfigById = (id: string): BankConfig | undefined => {
+    // Map nh-business to nh for display purposes (same bank, different auth method)
+    const lookupId = id === 'nh-business' ? 'nh' : id;
+    return KOREAN_BANKS.find(bank => bank.id === lookupId);
+  };
   const getCardConfigById = (id: string): CardConfig | undefined => KOREAN_CARD_COMPANIES.find(card => card.id === id);
 
   // Function to reload connected banks
@@ -506,31 +510,56 @@ const FinanceHub: React.FC = () => {
           bankId: bank.id,
           userId: result.credentials.userId || '',
           password: result.credentials.password || '',
+          certificatePassword: result.credentials.certificatePassword || '',
           accountType: result.credentials.accountType || 'personal'
         });
       } else {
-        setCredentials({ bankId: bank.id, userId: '', password: '', accountType: 'personal' });
+        setCredentials({ bankId: bank.id, userId: '', password: '', certificatePassword: '', accountType: 'personal' });
       }
     } catch (error) {
-      setCredentials({ bankId: bank.id, userId: '', password: '', accountType: 'personal' });
+      setCredentials({ bankId: bank.id, userId: '', password: '', certificatePassword: '', accountType: 'personal' });
     }
   };
 
   const handleConnect = async () => {
-    if (!selectedBank || !credentials.userId || !credentials.password) {
-      alert('아이디와 비밀번호를 입력해주세요.');
-      return;
+    // Validate based on account type
+    if (credentials.accountType === 'corporate') {
+      // Corporate accounts use certificate authentication
+      if (!selectedBank || !credentials.certificatePassword) {
+        alert('공동인증서 비밀번호를 입력해주세요.');
+        return;
+      }
+    } else {
+      // Personal accounts use userId + password
+      if (!selectedBank || !credentials.userId || !credentials.password) {
+        alert('아이디와 비밀번호를 입력해주세요.');
+        return;
+      }
     }
+
     setIsConnecting(true);
     setConnectionProgress('로그인 중...');
     try {
-      const result = await window.electron.financeHub.loginAndGetAccounts(selectedBank.id, { userId: credentials.userId, password: credentials.password });
+      // Determine the correct bank ID based on account type
+      // For NH Bank, use 'nh-business' for corporate, 'nh' for personal
+      let bankId = selectedBank.id;
+      if (selectedBank.id === 'nh' && credentials.accountType === 'corporate') {
+        bankId = 'nh-business';
+      }
+
+      // Pass credentials based on account type
+      const loginCredentials = credentials.accountType === 'corporate'
+        ? { certificatePassword: credentials.certificatePassword }
+        : { userId: credentials.userId, password: credentials.password };
+
+      const result = await window.electron.financeHub.loginAndGetAccounts(bankId, loginCredentials);
       if (result.success && result.isLoggedIn) {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
-        if (saveCredentials) await window.electron.financeHub.saveCredentials(selectedBank.id, credentials);
+        // Save credentials using the effective bankId (nh-business for corporate, nh for personal)
+        if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, credentials);
 
         const newConnection: ConnectedBank = {
-          bankId: selectedBank.id,
+          bankId: bankId, // Use effective bankId (nh-business or nh)
           status: 'connected',
           alias: result.userName || undefined,
           lastSync: new Date(),
@@ -540,15 +569,16 @@ const FinanceHub: React.FC = () => {
 
         if (result.accounts && result.accounts.length > 0) {
           for (const acc of result.accounts) {
-            // Use the bankId from the account if available, otherwise fall back to selectedBank.id
-            const accountBankId = acc.bankId || selectedBank.id;
+            // Use the effective bankId for all accounts
+            const accountBankId = acc.bankId || bankId;
             await window.electron.financeHubDb.upsertAccount({ bankId: accountBankId, accountNumber: acc.accountNumber, accountName: acc.accountName, customerName: result.userName || '사용자', balance: acc.balance, availableBalance: acc.balance, openDate: '' });
           }
           loadDatabaseStats();
           loadBanksAndAccounts();
         }
 
-        const existingIndex = connectedBanks.findIndex(b => b.bankId === selectedBank.id);
+        // Track connection using the effective bankId
+        const existingIndex = connectedBanks.findIndex(b => b.bankId === bankId);
         if (existingIndex >= 0) {
           setConnectedBanks(prev => prev.map((b, i) => i === existingIndex ? newConnection : b));
         } else {
@@ -637,8 +667,8 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', accountType: 'personal' }); setConnectionProgress(''); };
-  const handleBackToList = () => { setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', accountType: 'personal' }); setConnectionProgress(''); };
+  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
+  const handleBackToList = () => { setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
 
   // ============================================
   // Debug Handlers
@@ -1104,21 +1134,99 @@ const FinanceHub: React.FC = () => {
                         type="button"
                         className={`finance-hub__account-type-btn ${credentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
                         onClick={() => setCredentials({ ...credentials, accountType: 'corporate' })}
-                        disabled={true}
-                        title="법인 계정은 준비 중입니다"
+                        disabled={isConnecting}
                       >
                         <span className="finance-hub__account-type-icon">🏢</span>
                         <span>법인</span>
                       </button>
                     </div>
                   </div>
-                  <div className="finance-hub__input-group"><label>아이디</label><input type="text" placeholder="인터넷뱅킹 아이디" value={credentials.userId} onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })} className="finance-hub__input" disabled={isConnecting} /></div>
-                  <div className="finance-hub__input-group"><label>비밀번호</label><input type="password" placeholder="인터넷뱅킹 비밀번호" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} className="finance-hub__input" disabled={isConnecting} onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }} /></div>
-                  <div className="finance-hub__checkbox-group"><label className="finance-hub__checkbox-label"><input type="checkbox" checked={saveCredentials} onChange={(e) => setSaveCredentials(e.target.checked)} disabled={isConnecting} /> 아이디 및 비밀번호 저장</label></div>
+
+                  {/* Conditional rendering based on account type */}
+                  {credentials.accountType === 'corporate' ? (
+                    // Corporate account - Certificate password only
+                    <>
+                      <div className="finance-hub__login-notice" style={{ marginBottom: '16px' }}>
+                        <div className="finance-hub__notice-icon">🏢</div>
+                        <div>
+                          <strong>법인 인터넷뱅킹</strong>
+                          <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
+                        </div>
+                      </div>
+                      <div className="finance-hub__input-group">
+                        <label>공동인증서 비밀번호</label>
+                        <input
+                          type="password"
+                          placeholder="공동인증서 비밀번호"
+                          value={credentials.certificatePassword || ''}
+                          onChange={(e) => setCredentials({ ...credentials, certificatePassword: e.target.value })}
+                          className="finance-hub__input"
+                          disabled={isConnecting}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    // Personal account - UserId + Password
+                    <>
+                      <div className="finance-hub__input-group">
+                        <label>아이디</label>
+                        <input
+                          type="text"
+                          placeholder="인터넷뱅킹 아이디"
+                          value={credentials.userId}
+                          onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })}
+                          className="finance-hub__input"
+                          disabled={isConnecting}
+                        />
+                      </div>
+                      <div className="finance-hub__input-group">
+                        <label>비밀번호</label>
+                        <input
+                          type="password"
+                          placeholder="인터넷뱅킹 비밀번호"
+                          value={credentials.password}
+                          onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                          className="finance-hub__input"
+                          disabled={isConnecting}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="finance-hub__checkbox-group">
+                    <label className="finance-hub__checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={saveCredentials}
+                        onChange={(e) => setSaveCredentials(e.target.checked)}
+                        disabled={isConnecting}
+                      />
+                      {credentials.accountType === 'corporate' ? '인증서 비밀번호 저장' : '아이디 및 비밀번호 저장'}
+                    </label>
+                  </div>
                 </div>
                 {connectionProgress && <div className="finance-hub__connection-progress"><span className="finance-hub__spinner"></span><span>{connectionProgress}</span></div>}
-                <div className="finance-hub__login-notice"><div className="finance-hub__notice-icon">🔒</div><div><strong>안전한 연결</strong><p>입력하신 정보는 암호화되어 전송됩니다.</p></div></div>
-                <button className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full" onClick={handleConnect} disabled={isConnecting || !credentials.userId || !credentials.password}>{isConnecting ? <><span className="finance-hub__spinner"></span> 연결 중...</> : '은행 연결하기'}</button>
+                <div className="finance-hub__login-notice">
+                  <div className="finance-hub__notice-icon">🔒</div>
+                  <div>
+                    <strong>안전한 연결</strong>
+                    <p>입력하신 정보는 암호화되어 전송됩니다.</p>
+                  </div>
+                </div>
+                <button
+                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                  onClick={handleConnect}
+                  disabled={
+                    isConnecting ||
+                    (credentials.accountType === 'corporate'
+                      ? !credentials.certificatePassword
+                      : (!credentials.userId || !credentials.password))
+                  }
+                >
+                  {isConnecting ? <><span className="finance-hub__spinner"></span> 연결 중...</> : '은행 연결하기'}
+                </button>
               </div>
             ) : (
               <>

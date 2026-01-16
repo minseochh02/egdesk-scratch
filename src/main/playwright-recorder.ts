@@ -61,6 +61,26 @@ export class PlaywrightRecorder {
   }
 
   /**
+   * Delete an action by index
+   */
+  deleteAction(index: number): void {
+    if (index >= 0 && index < this.actions.length) {
+      console.log('🗑️ Deleting action at index:', index, this.actions[index]);
+      this.actions.splice(index, 1);
+      this.updateGeneratedCode();
+    } else {
+      console.error('❌ Invalid action index:', index);
+    }
+  }
+
+  /**
+   * Get all actions (for UI display)
+   */
+  getActions(): RecordedAction[] {
+    return this.actions;
+  }
+
+  /**
    * Generate a safe ID selector that handles special characters like dots
    * Uses attribute selector to avoid CSS escaping issues
    */
@@ -628,7 +648,7 @@ export class PlaywrightRecorder {
         geminiBtn.disabled = !shouldEnableGemini;
         geminiBtn.style.opacity = shouldEnableGemini ? '1' : '0.5';
         geminiBtn.style.cursor = shouldEnableGemini ? 'pointer' : 'not-allowed';
-        
+
         // Debug log
         console.log('Element highlighted:', currentHighlightedElement ? currentHighlightedElement.tagName : 'none', 'Shift:', e.detail.isShiftPressed);
       });
@@ -1149,59 +1169,57 @@ export class PlaywrightRecorder {
       geminiBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         e.preventDefault();
-        
+
         if (!currentHighlightedElement) {
           console.log('No element highlighted');
           return;
         }
-        
+
         console.log('Call Gemini clicked for element:', currentHighlightedElement);
-        
-        // Send element info to parent window for code viewer
-        if ((window as any).__playwrightRecorderOnGemini) {
-          const rect = currentHighlightedElement.getBoundingClientRect();
-          const elementInfo = {
-            tagName: currentHighlightedElement.tagName,
-            id: currentHighlightedElement.id,
-            className: currentHighlightedElement.className,
-            text: currentHighlightedElement.textContent?.trim() || '',
-            innerHTML: currentHighlightedElement.innerHTML,
-            outerHTML: currentHighlightedElement.outerHTML,
-            attributes: {} as any,
-            styles: {} as any,
-            bounds: {
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height
-            }
-          };
-          
-          // Collect attributes
-          for (let i = 0; i < currentHighlightedElement.attributes.length; i++) {
-            const attr = currentHighlightedElement.attributes[i];
-            elementInfo.attributes[attr.name] = attr.value;
-          }
-          
-          // Collect computed styles
-          const computedStyles = window.getComputedStyle(currentHighlightedElement);
-          elementInfo.styles = {
-            display: computedStyles.display,
-            position: computedStyles.position,
-            backgroundColor: computedStyles.backgroundColor,
-            color: computedStyles.color,
-            fontSize: computedStyles.fontSize,
-            fontFamily: computedStyles.fontFamily,
-            padding: computedStyles.padding,
-            margin: computedStyles.margin,
-            border: computedStyles.border,
-            width: computedStyles.width,
-            height: computedStyles.height
-          };
-          
-          (window as any).__playwrightRecorderOnGemini(elementInfo);
+
+        // Collect element info first
+        const rect = currentHighlightedElement.getBoundingClientRect();
+        const elementInfo: any = {
+          tagName: currentHighlightedElement.tagName,
+          id: currentHighlightedElement.id,
+          className: currentHighlightedElement.className,
+          text: currentHighlightedElement.textContent?.trim() || '',
+          innerHTML: currentHighlightedElement.innerHTML,
+          outerHTML: currentHighlightedElement.outerHTML,
+          attributes: {} as any,
+          styles: {} as any,
+          bounds: {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height
+          },
+          imageDataUrl: null // Will be populated after capture
+        };
+
+        // Collect attributes
+        for (let i = 0; i < currentHighlightedElement.attributes.length; i++) {
+          const attr = currentHighlightedElement.attributes[i];
+          elementInfo.attributes[attr.name] = attr.value;
         }
-        
+
+        // Collect computed styles
+        const computedStyles = window.getComputedStyle(currentHighlightedElement);
+        elementInfo.styles = {
+          display: computedStyles.display,
+          position: computedStyles.position,
+          backgroundColor: computedStyles.backgroundColor,
+          color: computedStyles.color,
+          fontSize: computedStyles.fontSize,
+          fontFamily: computedStyles.fontFamily,
+          padding: computedStyles.padding,
+          margin: computedStyles.margin,
+          border: computedStyles.border,
+          width: computedStyles.width,
+          height: computedStyles.height
+        };
+
+        // Now capture the image FIRST before sending to code viewer
         try {
           // Get element bounds
           const rect = currentHighlightedElement.getBoundingClientRect();
@@ -1265,81 +1283,114 @@ export class PlaywrightRecorder {
             ctx.drawImage(img, padding, padding);
             URL.revokeObjectURL(url);
             document.body.removeChild(container);
-            
+
             // Convert to data URL
             const dataUrl = canvas.toDataURL('image/png');
-            
-            // Create preview modal
-            const modal = document.createElement('div');
-            modal.style.cssText = `
+            console.log('✅ Element captured as image');
+
+            // Add image to element info
+            elementInfo.imageDataUrl = dataUrl;
+
+            // Now send to code viewer with image included
+            if ((window as any).__playwrightRecorderOnGemini) {
+              (window as any).__playwrightRecorderOnGemini(elementInfo);
+            }
+
+            // Show brief success notification instead of modal
+            const notification = document.createElement('div');
+            notification.style.cssText = `
               position: fixed;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: rgba(0, 0, 0, 0.8);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              z-index: 999999;
-              cursor: pointer;
-            `;
-            
-            const modalContent = document.createElement('div');
-            modalContent.style.cssText = `
-              background: white;
-              padding: 20px;
+              top: 20px;
+              right: 20px;
+              background: #4CAF50;
+              color: white;
+              padding: 12px 20px;
               border-radius: 8px;
-              max-width: 80%;
-              max-height: 80%;
-              overflow: auto;
-              position: relative;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              z-index: 999999;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+              animation: slideIn 0.3s ease-out;
             `;
-            
-            modalContent.innerHTML = `
-              <h3 style="margin: 0 0 10px 0; font-family: Arial, sans-serif;">Element Preview (PNG)</h3>
-              <p style="margin: 0 0 10px 0; font-family: Arial, sans-serif; font-size: 14px; color: #666;">
-                This is what would be sent to Gemini AI for analysis
-              </p>
-              <img src="${dataUrl}" style="max-width: 100%; height: auto; border: 1px solid #ddd;" />
-              <div style="margin-top: 10px; font-family: monospace; font-size: 12px; background: #f0f0f0; padding: 10px; border-radius: 4px;">
-                <strong>Element:</strong> ${currentHighlightedElement.tagName.toLowerCase()}${currentHighlightedElement.id ? '#' + currentHighlightedElement.id : ''}${currentHighlightedElement.className ? '.' + currentHighlightedElement.className.split(' ').join('.') : ''}<br>
-                <strong>Dimensions:</strong> ${Math.round(rect.width)}x${Math.round(rect.height)}px<br>
-                <strong>Position:</strong> (${Math.round(rect.x)}, ${Math.round(rect.y)})
-              </div>
-              <button style="margin-top: 15px; padding: 8px 16px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: Arial, sans-serif;">
-                Close
-              </button>
-            `;
-            
-            modal.appendChild(modalContent);
-            document.body.appendChild(modal);
-            
-            // Close modal on click
-            modal.addEventListener('click', (e) => {
-              if (e.target === modal || (e.target as HTMLElement).tagName === 'BUTTON') {
-                modal.remove();
-              }
-            });
-            
-            modalContent.addEventListener('click', (e) => {
-              e.stopPropagation();
-            });
+            notification.textContent = '✓ Element captured and sent to code viewer';
+            document.body.appendChild(notification);
+
+            // Remove notification after 2 seconds
+            setTimeout(() => {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => notification.remove(), 300);
+            }, 2000);
           };
           
           img.onerror = () => {
             URL.revokeObjectURL(url);
             document.body.removeChild(container);
-            
-            // Fallback: Just show element info
-            alert(`Element captured:\n\nTag: ${currentHighlightedElement.tagName}\nText: ${currentHighlightedElement.textContent?.trim() || '(no text)'}\nSize: ${Math.round(rect.width)}x${Math.round(rect.height)}px`);
+
+            console.warn('⚠️ Failed to capture element as image, sending without image');
+
+            // Send element info without image
+            if ((window as any).__playwrightRecorderOnGemini) {
+              (window as any).__playwrightRecorderOnGemini(elementInfo);
+            }
+
+            // Show warning notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: #FF9800;
+              color: white;
+              padding: 12px 20px;
+              border-radius: 8px;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              z-index: 999999;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+              animation: slideIn 0.3s ease-out;
+            `;
+            notification.textContent = '⚠ Element info sent (image capture failed)';
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+              notification.style.animation = 'slideIn 0.3s ease-out reverse';
+              setTimeout(() => notification.remove(), 300);
+            }, 2000);
           };
           
           img.src = url;
           
         } catch (error) {
-          console.error('Error capturing element:', error);
-          alert('Failed to capture element as image. See console for details.');
+          console.error('❌ Error capturing element:', error);
+
+          // Send element info without image even on error
+          if ((window as any).__playwrightRecorderOnGemini) {
+            (window as any).__playwrightRecorderOnGemini(elementInfo);
+          }
+
+          // Show error notification
+          const notification = document.createElement('div');
+          notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #f44336;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease-out;
+          `;
+          notification.textContent = '✗ Element info sent (capture error)';
+          document.body.appendChild(notification);
+
+          setTimeout(() => {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => notification.remove(), 300);
+          }, 2000);
         }
       });
       
@@ -1615,7 +1666,7 @@ export class PlaywrightRecorder {
         // Generate and show selector
         let selector = '';
         if (element.id) {
-          selector = this.generateIdSelector(element.id);
+          selector = `[id="${element.id}"]`;
         } else if (element.tagName === 'BUTTON' || element.getAttribute('role') === 'button') {
           selector = `button:has-text("${element.textContent?.trim() || ''}")`;
         } else if (element.tagName === 'A') {
@@ -2526,12 +2577,31 @@ export class PlaywrightRecorder {
           return;
         }
 
+        // Check if Option + Shift are pressed - trigger Gemini analysis instead of recording
+        if (e.altKey && e.shiftKey) {
+          console.log('🌟 Option + Shift + Click detected, triggering Gemini analysis');
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Trigger the Gemini button click programmatically
+          const geminiButton = document.querySelector('#playwright-recorder-controller button:last-child') as HTMLElement;
+          if (geminiButton) {
+            // Set the current highlighted element to the clicked target
+            currentHighlightedElement = target;
+
+            // Trigger Gemini analysis by clicking the button
+            geminiButton.click();
+          }
+
+          return; // Don't record this click
+        }
+
         // Skip coordinate indicator if somehow clicked
         if (target.classList.contains('playwright-recorder-coord-indicator')) {
           console.log('⏭️ Skipping coord indicator click');
           return;
         }
-        
+
         // Check if we're in wait mode
         const waitBtn = document.querySelector('#playwright-recorder-controller [data-wait-mode="true"]') as HTMLElement;
         const isWaitMode = waitBtn && waitBtn.classList.contains('active');
@@ -3331,12 +3401,66 @@ export class PlaywrightRecorder {
     
     await this.page.exposeFunction('__playwrightRecorderOnGemini', async (elementInfo: any) => {
       console.log('🌟 Gemini button clicked for element:', elementInfo);
-      
-      // Update code viewer with element info instead of test code
-      const elementDisplay = `// Gemini Element Analysis
-// ========================
 
-// Selected Element: ${elementInfo.tagName}${elementInfo.id ? '#' + elementInfo.id : ''}${elementInfo.className ? '.' + elementInfo.className.split(' ').join('.') : ''}
+      // Try to capture element screenshot using Playwright (more reliable than canvas)
+      let screenshotDataUrl: string | null = null;
+      try {
+        if (this.page) {
+          console.log('📸 Attempting to screenshot element with Playwright...');
+
+          // Generate a selector for the element
+          let selector = '';
+          if (elementInfo.id) {
+            selector = `[id="${elementInfo.id}"]`;
+          } else if (elementInfo.className) {
+            const firstClass = elementInfo.className.split(' ')[0];
+            if (firstClass) {
+              selector = `.${firstClass}`;
+            }
+          }
+
+          if (selector) {
+            // Use Playwright's screenshot API
+            const screenshotBuffer = await this.page.locator(selector).screenshot({ type: 'png' });
+            screenshotDataUrl = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
+            console.log('✅ Element screenshot captured successfully');
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Playwright screenshot failed, using browser-provided image if available:', error);
+        screenshotDataUrl = elementInfo.imageDataUrl; // Fallback to browser-captured image
+      }
+
+      // Use Playwright screenshot if available, otherwise use browser-provided image
+      const finalImageDataUrl = screenshotDataUrl || elementInfo.imageDataUrl;
+
+      // Build the element display with image if available
+      let elementDisplay = `<!-- Gemini Element Analysis -->
+<!-- ======================== -->
+
+`;
+
+      // Add image preview if captured
+      if (finalImageDataUrl) {
+        elementDisplay += `<!-- Element Screenshot (ready for AI analysis) -->
+<div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+  <h3 style="margin: 0 0 10px 0; font-family: Arial, sans-serif; color: #333;">📸 Captured Element Image</h3>
+  <p style="margin: 0 0 15px 0; font-family: Arial, sans-serif; font-size: 14px; color: #666;">
+    This image will be sent to Gemini AI for analysis
+  </p>
+  <img src="${finalImageDataUrl}" style="max-width: 100%; height: auto; border: 2px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+  <div style="margin-top: 10px; font-family: monospace; font-size: 12px; background: white; padding: 10px; border-radius: 4px;">
+    <strong>Element:</strong> ${elementInfo.tagName.toLowerCase()}${elementInfo.id ? '#' + elementInfo.id : ''}${elementInfo.className ? '.' + elementInfo.className.split(' ').join('.') : ''}<br>
+    <strong>Dimensions:</strong> ${Math.round(elementInfo.bounds.width)}x${Math.round(elementInfo.bounds.height)}px<br>
+    <strong>Position:</strong> (${Math.round(elementInfo.bounds.x)}, ${Math.round(elementInfo.bounds.y)})
+  </div>
+</div>
+
+`;
+      }
+
+      // Add code analysis
+      elementDisplay += `// Selected Element: ${elementInfo.tagName}${elementInfo.id ? '#' + elementInfo.id : ''}${elementInfo.className ? '.' + elementInfo.className.split(' ').join('.') : ''}
 
 // Element Properties:
 const element = {
@@ -3344,7 +3468,7 @@ const element = {
   id: "${elementInfo.id}",
   className: "${elementInfo.className}",
   text: ${JSON.stringify(elementInfo.text)},
-  
+
   // Bounding Box:
   bounds: {
     x: ${elementInfo.bounds.x},
@@ -3352,13 +3476,13 @@ const element = {
     width: ${elementInfo.bounds.width},
     height: ${elementInfo.bounds.height}
   },
-  
+
   // Attributes:
   attributes: ${JSON.stringify(elementInfo.attributes, null, 2)},
-  
+
   // Computed Styles:
   styles: ${JSON.stringify(elementInfo.styles, null, 2)},
-  
+
   // HTML Structure:
   outerHTML: ${JSON.stringify(elementInfo.outerHTML)}
 };
@@ -3377,8 +3501,11 @@ const selectors = [
 await page.locator(selectors[0]).click();
 await page.locator(selectors[0]).fill('value');
 await expect(page.locator(selectors[0])).toBeVisible();
+
+// Image Data Available: ${finalImageDataUrl ? 'Yes ✓' : 'No ✗'}
+${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 1024)} KB` : ''}
 `;
-      
+
       // Send to code viewer
       if (this.updateCallback) {
         this.updateCallback(elementDisplay);

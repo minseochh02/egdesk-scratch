@@ -130,10 +130,13 @@ export const getDateRangeForPeriod = (period: '1week' | '1month' | '3months' | '
  * Get bank info by ID with fallback
  */
 export const getBankInfo = (
-  bankId: string, 
+  bankId: string,
   banksMap: Record<string, BankInfo> = {}
 ): BankInfo => {
-  return banksMap[bankId] || DEFAULT_BANK_INFO[bankId] || {
+  // Map nh-business to nh for display purposes
+  const lookupId = bankId === 'nh-business' ? 'nh' : bankId;
+
+  return banksMap[lookupId] || DEFAULT_BANK_INFO[lookupId] || {
     id: bankId,
     name: bankId,
     nameKo: bankId,

@@ -989,6 +989,7 @@ test('recorded test', async ({ page }) => {
 
         // Update code viewer window
         codeViewerWindow.updateCode(code);
+        codeViewerWindow.updateActions(activeRecorder.getActions());
 
         // Send update to renderer
         event.sender.send('playwright-test-update', {
@@ -1003,6 +1004,14 @@ test('recorded test', async ({ page }) => {
         console.log('⏱️ Wait settings changed, updating recorder:', settings);
         if (activeRecorder) {
           activeRecorder.setWaitSettings(settings);
+        }
+      });
+
+      // Set up delete action callback from code viewer
+      codeViewerWindow.setDeleteActionCallback((index) => {
+        console.log('🗑️ Delete action callback triggered for index:', index);
+        if (activeRecorder) {
+          activeRecorder.deleteAction(index);
         }
       });
       

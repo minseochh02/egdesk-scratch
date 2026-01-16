@@ -1309,6 +1309,9 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: calc(85vh - 90px); /* Account for modal header height */
 }
 
 .finance-hub__login-bank-info {
@@ -1523,21 +1526,25 @@
 }
 
 /* Scrollbar Styling */
-.finance-hub__bank-list::-webkit-scrollbar {
+.finance-hub__bank-list::-webkit-scrollbar,
+.finance-hub__login-form::-webkit-scrollbar {
   width: 8px;
 }
 
-.finance-hub__bank-list::-webkit-scrollbar-track {
+.finance-hub__bank-list::-webkit-scrollbar-track,
+.finance-hub__login-form::-webkit-scrollbar-track {
   background: var(--fh-bg-dark);
   border-radius: 4px;
 }
 
-.finance-hub__bank-list::-webkit-scrollbar-thumb {
+.finance-hub__bank-list::-webkit-scrollbar-thumb,
+.finance-hub__login-form::-webkit-scrollbar-thumb {
   background: var(--fh-border-light);
   border-radius: 4px;
 }
 
-.finance-hub__bank-list::-webkit-scrollbar-thumb:hover {
+.finance-hub__bank-list::-webkit-scrollbar-thumb:hover,
+.finance-hub__login-form::-webkit-scrollbar-thumb:hover {
   background: var(--fh-text-muted);
 }
 
@@ -1665,6 +1672,10 @@
     width: 95%;
     max-height: 90vh;
     border-radius: var(--fh-radius-lg);
+  }
+
+  .finance-hub__login-form {
+    max-height: calc(90vh - 80px); /* Adjust for mobile modal height */
   }
 
   .finance-hub__category-tabs {
