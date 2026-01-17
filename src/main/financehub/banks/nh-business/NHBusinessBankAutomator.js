@@ -5,6 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { NH_BUSINESS_CONFIG } = require('./config');
 // Import AI keyboard analysis utilities
@@ -308,6 +309,114 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
   }
 
   // ============================================================================
+  // WINDOWS KEYBOARD INPUT
+  // ============================================================================
+
+  /**
+   * Checks if current platform is Windows
+   * @returns {boolean}
+   */
+  isWindows() {
+    return os.platform() === 'win32';
+  }
+
+  /**
+   * Attempts to enter password using Windows keyboard input methods
+   * Tries 3 methods with fallbacks: keyboard.type, clipboard paste, fill
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to enter
+   * @param {string} selector - Selector for password field
+   * @returns {Promise<Object>} Result with success status
+   */
+  async handleWindowsPasswordInput(page, password, selector) {
+    this.log('Attempting Windows keyboard input methods...');
+    const pwLocator = page.locator(selector);
+
+    // Method 1: Try keyboard.type (character by character)
+    try {
+      this.log('Method 1: Attempting keyboard.type...');
+      await pwLocator.focus({ timeout: 10000 });
+      await page.waitForTimeout(500);
+
+      for (const char of password) {
+        await page.keyboard.type(char, { delay: 200 });
+        await page.waitForTimeout(100);
+      }
+
+      await page.waitForTimeout(500);
+      const value = await pwLocator.inputValue({ timeout: 10000 });
+
+      if (value.length === password.length) {
+        this.log('✅ keyboard.type method succeeded');
+        return { success: true, method: 'keyboard.type' };
+      } else {
+        this.warn(`keyboard.type incomplete: ${value.length}/${password.length} chars`);
+      }
+    } catch (e) {
+      this.warn('keyboard.type failed:', e.message);
+    }
+
+    // Method 2: Try clipboard paste
+    try {
+      this.log('Method 2: Attempting clipboard paste...');
+      await pwLocator.focus({ timeout: 10000 });
+      await page.waitForTimeout(500);
+
+      // Set clipboard
+      await page.evaluate(async (pwd) => {
+        await navigator.clipboard.writeText(pwd);
+      }, password);
+
+      // Paste with Ctrl+V
+      await page.keyboard.press('Control+V');
+      await page.waitForTimeout(500);
+
+      const value = await pwLocator.inputValue({ timeout: 10000 });
+
+      // Clear clipboard for security
+      try {
+        await page.evaluate(() => navigator.clipboard.writeText(''));
+      } catch (e) {
+        this.warn('Could not clear clipboard:', e.message);
+      }
+
+      if (value.length === password.length) {
+        this.log('✅ Clipboard method succeeded');
+        return { success: true, method: 'clipboard' };
+      } else {
+        this.warn(`Clipboard incomplete: ${value.length}/${password.length} chars`);
+      }
+    } catch (e) {
+      this.warn('Clipboard method failed:', e.message);
+    }
+
+    // Method 3: Try fill method
+    try {
+      this.log('Method 3: Attempting fill method...');
+      await pwLocator.fill(password, { timeout: 10000 });
+      await page.waitForTimeout(500);
+
+      const value = await pwLocator.inputValue({ timeout: 10000 });
+
+      if (value.length === password.length) {
+        this.log('✅ Fill method succeeded');
+        return { success: true, method: 'fill' };
+      } else {
+        this.warn(`Fill incomplete: ${value.length}/${password.length} chars`);
+      }
+    } catch (e) {
+      this.warn('Fill method failed:', e.message);
+    }
+
+    // All methods failed
+    this.error('All Windows keyboard input methods failed');
+    return {
+      success: false,
+      error: 'All Windows keyboard input methods failed (keyboard.type, clipboard, fill)'
+    };
+  }
+
+  // ============================================================================
   // CERTIFICATE AUTHENTICATION
   // ============================================================================
 
@@ -354,52 +463,79 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
       await page.locator(this.config.xpaths.certPasswordInput).click();
       await page.waitForTimeout(1818);
 
-      // Step 5: Open virtual keyboard
-      this.log('Opening virtual keyboard...');
-      await page.locator(this.config.xpaths.certPasswordKeyboardButton).click();
-      await page.waitForTimeout(1169);
+      let passwordEntered = false;
+      let inputMethod = null;
 
-      // Step 6: Analyze virtual keyboard with Gemini
-      this.log('Analyzing INItech virtual keyboard...');
-      const keyboardAnalysis = await this.analyzeINItechKeyboard(page);
+      // Step 5: Try Windows keyboard input methods if on Windows
+      if (this.isWindows() && this.config.useWindowsKeyboard) {
+        this.log('🖥️  Windows detected - attempting direct keyboard input...');
+        const windowsResult = await this.handleWindowsPasswordInput(
+          page,
+          certificatePassword,
+          this.config.xpaths.certPasswordInput
+        );
 
-      if (!keyboardAnalysis.success) {
-        throw new Error(`Keyboard analysis failed: ${keyboardAnalysis.error}`);
+        if (windowsResult.success) {
+          this.log(`✅ Windows input succeeded using: ${windowsResult.method}`);
+          passwordEntered = true;
+          inputMethod = windowsResult.method;
+          await page.waitForTimeout(1000);
+        } else {
+          this.warn('⚠️  Windows input methods failed, falling back to virtual keyboard...');
+        }
       }
 
-      // Step 7: Type password using analyzed keyboard coordinates (with shift support)
-      this.log(`Typing certificate password (${certificatePassword.length} characters)...`);
-      const typingResult = await this.typePasswordWithKeyboard(
-        page,
-        keyboardAnalysis.keyboardJSON, // Use bilingual keyboard JSON with characterMap
-        certificatePassword
-      );
+      // Step 6: Fallback to virtual keyboard if Windows methods failed or not on Windows
+      if (!passwordEntered) {
+        // Open virtual keyboard
+        this.log('Opening virtual keyboard...');
+        await page.locator(this.config.xpaths.certPasswordKeyboardButton).click();
+        await page.waitForTimeout(1169);
 
-      if (!typingResult.success) {
-        this.warn(`Password typing had errors: ${JSON.stringify(typingResult.failedChars)}`);
-        throw new Error(`Failed to type password. Failed characters: ${typingResult.failedChars.length}`);
+        // Analyze virtual keyboard with Gemini
+        this.log('Analyzing INItech virtual keyboard...');
+        const keyboardAnalysis = await this.analyzeINItechKeyboard(page);
+
+        if (!keyboardAnalysis.success) {
+          throw new Error(`Keyboard analysis failed: ${keyboardAnalysis.error}`);
+        }
+
+        // Type password using analyzed keyboard coordinates (with shift support)
+        this.log(`Typing certificate password (${certificatePassword.length} characters)...`);
+        const typingResult = await this.typePasswordWithKeyboard(
+          page,
+          keyboardAnalysis.keyboardJSON, // Use bilingual keyboard JSON with characterMap
+          certificatePassword
+        );
+
+        if (!typingResult.success) {
+          this.warn(`Password typing had errors: ${JSON.stringify(typingResult.failedChars)}`);
+          throw new Error(`Failed to type password. Failed characters: ${typingResult.failedChars.length}`);
+        }
+
+        this.log(`Successfully typed all ${typingResult.typedChars} characters`);
+        await page.waitForTimeout(1895);
+
+        // Close virtual keyboard by clicking the h2 header
+        this.log('Closing virtual keyboard (clicking h2 header)...');
+        const closeKeyboardSelector = this.config.xpaths.certPasswordCloseKeyboard.startsWith('/')
+          ? page.locator(`xpath=${this.config.xpaths.certPasswordCloseKeyboard}`)
+          : page.locator(this.config.xpaths.certPasswordCloseKeyboard);
+        await closeKeyboardSelector.click();
+        await page.waitForTimeout(1357);
+
+        inputMethod = 'virtual_keyboard';
       }
 
-      this.log(`Successfully typed all ${typingResult.typedChars} characters`);
-      await page.waitForTimeout(1895);
-
-      // Step 8: Close virtual keyboard by clicking the h2 header
-      this.log('Closing virtual keyboard (clicking h2 header)...');
-      const closeKeyboardSelector = this.config.xpaths.certPasswordCloseKeyboard.startsWith('/')
-        ? page.locator(`xpath=${this.config.xpaths.certPasswordCloseKeyboard}`)
-        : page.locator(this.config.xpaths.certPasswordCloseKeyboard);
-      await closeKeyboardSelector.click();
-      await page.waitForTimeout(1357);
-
-      // Step 9: Submit certificate
+      // Step 7: Submit certificate
       this.log('Submitting certificate...');
       await page.locator(this.config.xpaths.certSubmitButton).click();
       await page.waitForTimeout(this.config.delays.humanLike);
 
       return {
         success: true,
-        keyboardAnalysis,
-        typingResult
+        inputMethod: inputMethod,
+        platform: os.platform()
       };
     } catch (error) {
       this.error('Certificate login failed:', error.message);
