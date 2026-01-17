@@ -99,6 +99,10 @@ const NH_BUSINESS_CONFIG = {
     shiftDeactivate: 200,
     humanLike: 3000, // 3 second delays for human-like behavior
   },
+
+  // Windows keyboard input settings
+  useWindowsKeyboard: true,  // Set to false to force virtual keyboard on Windows
+  windowsInputMethod: 'auto', // 'auto' tries all methods with fallbacks
 };
 
 module.exports = {
