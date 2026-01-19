@@ -455,8 +455,10 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
 
       // Step 3: Select certificate
       this.log('Selecting certificate...');
-      await page.locator(this.config.xpaths.certificateItem).click();
-      await page.waitForTimeout(1775);
+      // TODO: Certificate selection is machine-specific (serial number is unique)
+      // Commented out to allow manual selection or automatic first certificate
+      // await page.locator(this.config.xpaths.certificateItem).click();
+      await page.waitForTimeout(5000); // Wait for certificate list to load
 
       // Step 4: Click certificate password input field
       this.log('Clicking certificate password field...');
