@@ -697,13 +697,14 @@ export class SQLiteManager {
     });
 
     // Import transactions
-    ipcMain.handle('sqlite-financehub-import-transactions', async (event, bankId, accountData, transactionsData, syncMetadata) => {
+    ipcMain.handle('sqlite-financehub-import-transactions', async (event, bankId, accountData, transactionsData, syncMetadata, isCard = false) => {
       try {
         const result = this.getFinanceHubManager().importTransactions(
           bankId,
           accountData,
           transactionsData,
-          syncMetadata
+          syncMetadata,
+          isCard  // Pass isCard flag to transformation logic
         );
         return { success: true, data: result };
       } catch (error) {

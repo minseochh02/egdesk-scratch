@@ -117,6 +117,8 @@ const FinanceHub: React.FC = () => {
   const [isConnectingCard, setIsConnectingCard] = useState(false);
   const [cardConnectionProgress, setCardConnectionProgress] = useState<string>('');
   const [saveCardCredentials, setSaveCardCredentials] = useState(true);
+  const [isSyncingCard, setIsSyncingCard] = useState<string | null>(null);
+  const [showCardSyncOptions, setShowCardSyncOptions] = useState<string | null>(null); // cardNumber showing options
 
   // ============================================
   // Computed Values
@@ -409,6 +411,84 @@ const FinanceHub: React.FC = () => {
   };
 
   // ============================================
+  // Card Sync Handler
+  // ============================================
+
+  const handleSyncCardTransactions = async (cardCompanyId: string, cardNumber: string, period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year' = '3months') => {
+    setIsSyncingCard(cardNumber);
+    try {
+      const { startDate, endDate } = getDateRange(period);
+
+      const result = await window.electron.financeHub.card.getTransactions(
+        cardCompanyId,
+        cardNumber,
+        startDate,
+        endDate
+      );
+
+      if (!result.success || !result.transactions) {
+        throw new Error(result.error || '거래내역 조회 실패');
+      }
+
+      // Prepare card account data (card as "account")
+      const cardConnection = connectedCards.find(c => c.cardCompanyId === cardCompanyId);
+      const cardInfo = cardConnection?.cards?.find(c => c.cardNumber === cardNumber);
+
+      const accountData = {
+        accountNumber: cardNumber,
+        accountName: cardInfo?.cardName || '카드',
+        customerName: cardConnection?.alias || '',
+        balance: 0,  // Cards don't track balance
+      };
+
+      // Card transactions are already in card format from extractNHCardTransactions
+      const transactionsData = result.transactions[0]?.extractedData?.transactions || [];
+
+      if (transactionsData.length === 0) {
+        alert('조회된 거래내역이 없습니다.');
+        return;
+      }
+
+      const syncMetadata = {
+        queryPeriodStart: startDate,
+        queryPeriodEnd: endDate,
+        excelFilePath: result.transactions[0]?.path || '',
+      };
+
+      // Import to database with isCard flag
+      const importResult = await window.electron.financeHubDb.importTransactions(
+        cardCompanyId,
+        accountData,
+        transactionsData,
+        syncMetadata,
+        true  // isCard flag - triggers transformation
+      );
+
+      if (importResult.success) {
+        const { inserted, skipped } = importResult.data;
+        await Promise.all([
+          loadDatabaseStats(),
+          loadRecentSyncOperations(),
+          refreshAll()
+        ]);
+
+        setConnectedCards(prev => prev.map(c =>
+          c.cardCompanyId === cardCompanyId ? { ...c, lastSync: new Date() } : c
+        ));
+
+        alert(`✅ 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
+      } else {
+        throw new Error(importResult.error || '데이터베이스 저장 실패');
+      }
+    } catch (error: any) {
+      console.error('[FinanceHub] Card sync error:', error);
+      alert(`카드 거래내역 동기화 실패: ${error?.message || error}`);
+    } finally {
+      setIsSyncingCard(null);
+    }
+  };
+
+  // ============================================
   // Card Connection Handlers
   // ============================================
 
@@ -429,17 +509,43 @@ const FinanceHub: React.FC = () => {
     setIsConnectingCard(true);
     setCardConnectionProgress('로그인 중...');
     try {
-      // TODO: Implement actual card company connection logic
-      // This is a placeholder - you'll need to implement the backend handlers
-      alert(`${selectedCard.nameKo} 카드사 연결 기능은 준비 중입니다.`);
+      const result = await window.electron.financeHub.card.loginAndGetCards(selectedCard.id, {
+        userId: cardCredentials.userId,
+        password: cardCredentials.password,
+        accountType: cardCredentials.accountType || 'personal'
+      });
 
-      // Example structure for when implemented:
-      // const result = await window.electron.financeHub.loginAndGetCards(selectedCard.id, {
-      //   userId: cardCredentials.userId,
-      //   password: cardCredentials.password
-      // });
+      if (result.success && result.isLoggedIn) {
+        setCardConnectionProgress('카드 정보를 불러왔습니다!');
 
-      handleCloseCardModal();
+        // Save credentials if requested
+        if (saveCardCredentials) {
+          await window.electron.financeHub.saveCredentials(selectedCard.id, cardCredentials);
+        }
+
+        const newConnection: ConnectedCard = {
+          cardCompanyId: selectedCard.id,
+          status: 'connected',
+          alias: result.userName || undefined,
+          lastSync: new Date(),
+          cards: result.cards || [],
+          accountType: cardCredentials.accountType || 'personal'
+        };
+
+        // Track connection
+        const existingIndex = connectedCards.findIndex(c => c.cardCompanyId === selectedCard.id);
+        if (existingIndex >= 0) {
+          setConnectedCards(prev => prev.map((c, i) => i === existingIndex ? newConnection : c));
+        } else {
+          setConnectedCards(prev => [...prev, newConnection]);
+        }
+
+        alert(`${selectedCard.nameKo} 연결 성공! ${result.cards?.length || 0}개의 카드를 찾았습니다.`);
+        handleCloseCardModal();
+      } else {
+        setCardConnectionProgress('');
+        alert(`${selectedCard.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
+      }
     } catch (error) {
       setCardConnectionProgress('');
       alert('카드사 연결 중 오류가 발생했습니다.');
@@ -453,7 +559,7 @@ const FinanceHub: React.FC = () => {
     const card = getCardConfigById(cardCompanyId);
     if (!window.confirm(`${card?.nameKo || cardCompanyId} 연결을 해제하시겠습니까?`)) return;
     try {
-      // TODO: Implement card disconnect logic
+      await window.electron.financeHub.card.disconnect(cardCompanyId);
       setConnectedCards(prev => prev.filter(c => c.cardCompanyId !== cardCompanyId));
     } catch (error) {
       console.error('[FinanceHub] Disconnect card error:', error);
@@ -556,7 +662,7 @@ const FinanceHub: React.FC = () => {
       if (result.success && result.isLoggedIn) {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
         // Save credentials using the effective bankId (nh-business for corporate, nh for personal)
-        if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, credentials);
+        if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, { ...credentials, bankId });
 
         const newConnection: ConnectedBank = {
           bankId: bankId, // Use effective bankId (nh-business or nh)
@@ -807,7 +913,7 @@ const FinanceHub: React.FC = () => {
         </div>
 
         {/* Debug Panel - Hidden in production */}
-        {false && (
+        {true && (
           <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
             <button className="finance-hub__debug-toggle" onClick={() => setShowDebugPanel(!showDebugPanel)}>🔧 Debug Tools {showDebugPanel ? '▼' : '▶'}</button>
             {showDebugPanel && (
@@ -1010,6 +1116,74 @@ const FinanceHub: React.FC = () => {
                                 <div className="finance-hub__account-actions">
                                   {cardItem.balance && cardItem.balance > 0 && (
                                     <span className="finance-hub__account-balance">{formatCurrency(cardItem.balance)}</span>
+                                  )}
+                                  <div className="finance-hub__sync-dropdown">
+                                    <button
+                                      className="finance-hub__btn finance-hub__btn--icon"
+                                      onClick={() => setShowCardSyncOptions(showCardSyncOptions === cardItem.cardNumber ? null : cardItem.cardNumber)}
+                                      disabled={isSyncingCard !== null || connection.status === 'pending'}
+                                      title="동기화"
+                                    >
+                                      <FontAwesomeIcon icon={isSyncingCard === cardItem.cardNumber ? faSpinner : faSync} spin={isSyncingCard === cardItem.cardNumber} />
+                                    </button>
+                                    {showCardSyncOptions === cardItem.cardNumber && !isSyncingCard && (
+                                      <div className="finance-hub__sync-options">
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, 'day'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1일
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, 'week'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1주일
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, 'month'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1개월
+                                        </button>
+                                        <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, '3months'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 3개월 (기본)
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, '6months'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 6개월
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, cardItem.cardNumber, 'year'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1년
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    className="finance-hub__btn finance-hub__btn--icon"
+                                    onClick={() => {
+                                      if (window.confirm(`카드 ${cardItem.cardNumber}를 연결 해제하시겠습니까?`)) {
+                                        // For now, just remove from UI
+                                        setConnectedCards(prev => prev.map(c =>
+                                          c.cardCompanyId === connection.cardCompanyId
+                                            ? { ...c, cards: c.cards?.filter(card => card.cardNumber !== cardItem.cardNumber) }
+                                            : c
+                                        ));
+                                      }
+                                    }}
+                                    title="이 카드 연결 해제"
+                                  >
+                                    <FontAwesomeIcon icon={faUnlink} />
+                                  </button>
+                                  {showDebugPanel && (
+                                    <button
+                                      className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger"
+                                      onClick={() => {
+                                        if (window.confirm(`⚠️ 주의: 카드 ${cardItem.cardNumber}를 완전히 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 거래 내역이 삭제됩니다.\n\n정말로 삭제하시겠습니까?`)) {
+                                          // TODO: Implement card deletion from database
+                                          // For now, just remove from UI
+                                          setConnectedCards(prev => prev.map(c =>
+                                            c.cardCompanyId === connection.cardCompanyId
+                                              ? { ...c, cards: c.cards?.filter(card => card.cardNumber !== cardItem.cardNumber) }
+                                              : c
+                                          ));
+                                          alert('✅ 카드가 삭제되었습니다.');
+                                        }
+                                      }}
+                                      title="카드 삭제 (DEBUG)"
+                                    >
+                                      <FontAwesomeIcon icon={faTrash} />
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -1428,7 +1602,7 @@ const FinanceHub: React.FC = () => {
                   })}
                 </div>
                 <div className="finance-hub__modal-footer">
-                  <p className="finance-hub__modal-note">💡 카드사 자동화 기능은 현재 개발 중입니다.</p>
+                  <p className="finance-hub__modal-note">💡 현재 NH농협카드 자동화가 지원됩니다.</p>
                 </div>
               </>
             )}

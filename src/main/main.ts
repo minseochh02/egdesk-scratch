@@ -606,6 +606,69 @@ const createWindow = async () => {
       });
 
       // ========================================================================
+      // CARD COMPANY AUTOMATION HANDLERS
+      // ========================================================================
+
+      ipcMain.handle('finance-hub:card:login-and-get-cards', async (_event, { cardCompanyId, credentials, proxyUrl }) => {
+        try {
+          // Check if we have an existing automator instance
+          let automator = activeAutomators.get(cardCompanyId);
+
+          if (!automator) {
+            const { cards } = require('./financehub');
+            automator = cards.createCardAutomator(cardCompanyId, { headless: false });
+            activeAutomators.set(cardCompanyId, automator);
+          }
+
+          const loginResult = await automator.login(credentials, proxyUrl);
+          if (!loginResult.success) return loginResult;
+
+          // For cards, we might have a getCards method instead of getAccounts
+          let cards = [];
+          if (typeof automator.getCards === 'function') {
+            cards = await automator.getCards();
+          } else if (typeof automator.getAccounts === 'function') {
+            // Fallback if card automator uses accounts terminology
+            cards = await automator.getAccounts();
+          }
+
+          return { ...loginResult, cards };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Login and get cards failed for ${cardCompanyId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle('finance-hub:card:get-transactions', async (_event, { cardCompanyId, cardNumber, startDate, endDate }) => {
+        try {
+          const automator = activeAutomators.get(cardCompanyId);
+          if (!automator) {
+            throw new Error('No active browser session found. Please login first.');
+          }
+
+          const transactions = await automator.getTransactions(cardNumber, startDate, endDate);
+          return { success: true, transactions };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Failed to get card transactions for ${cardCompanyId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle('finance-hub:card:disconnect', async (_event, cardCompanyId) => {
+        try {
+          const automator = activeAutomators.get(cardCompanyId);
+          if (automator) {
+            await automator.cleanup();
+            activeAutomators.delete(cardCompanyId);
+          }
+          return { success: true };
+        } catch (error) {
+          console.error(`[FINANCE-HUB] Card disconnect failed for ${cardCompanyId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      // ========================================================================
       // KEEPAWAKE FUNCTIONALITY
       // ========================================================================
 

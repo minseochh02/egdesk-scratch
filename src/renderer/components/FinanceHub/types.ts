@@ -430,7 +430,7 @@ export const KOREAN_CARD_COMPANIES: CardConfig[] = [
     category: 'major',
     color: '#00B140',
     icon: '💳',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'citi-card',

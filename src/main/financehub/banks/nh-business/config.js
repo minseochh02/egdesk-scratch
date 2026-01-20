@@ -61,12 +61,12 @@ const NH_BUSINESS_CONFIG = {
     startYearSelect: '[id="start_year"]',
     startMonthSelect: '[id="start_month"]',
     startDateSelect: '[id="start_date"]',
-    endYearSelect: '[id="end_year"]',
-    endMonthSelect: '[id="end_month"]',
-    endDateSelect: '[id="end_date"]',
+    endYearSelect: 'xpath=/html/body/div[9]/div[3]/div[2]/section/form/div/div[1]/table/tbody/tr[5]/td/div[2]/div[2]/div[3]/div/div[1]/select',
+    endMonthSelect: 'xpath=/html/body/div[9]/div[3]/div[2]/section/form/div/div[1]/table/tbody/tr[5]/td/div[2]/div[2]/div[3]/div/div[2]/select',
+    endDateSelect: 'xpath=/html/body/div[9]/div[3]/div[2]/section/form/div/div[1]/table/tbody/tr[5]/td/div[2]/div[2]/div[3]/div/div[3]/select',
 
     // Query button
-    searchButton: 'button:has-text("조회")',
+    searchButton: 'a:has-text("조회")',
 
     // Pagination
     nextRecordsButton: 'button:has-text("다음내역")',

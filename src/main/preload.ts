@@ -2141,6 +2141,15 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo),
     clearPersistentSpreadsheet: () =>
       ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet'),
+    // Card company methods
+    card: {
+      loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string) =>
+        ipcRenderer.invoke('finance-hub:card:login-and-get-cards', { cardCompanyId, credentials, proxyUrl }),
+      getTransactions: (cardCompanyId: string, cardNumber: string, startDate: string, endDate: string) =>
+        ipcRenderer.invoke('finance-hub:card:get-transactions', { cardCompanyId, cardNumber, startDate, endDate }),
+      disconnect: (cardCompanyId: string) =>
+        ipcRenderer.invoke('finance-hub:card:disconnect', cardCompanyId),
+    },
   },
 
   /**
@@ -2175,9 +2184,9 @@ const electronHandler = {
     getOverallStats: () => ipcRenderer.invoke('sqlite-financehub-get-overall-stats'),
     getRecentSyncOperations: (limit?: number) => ipcRenderer.invoke('sqlite-financehub-get-recent-sync-operations', limit),
     upsertAccount: (accountData: any) => ipcRenderer.invoke('sqlite-financehub-upsert-account', accountData),
-    importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => 
-      ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata),
-    updateAccountStatus: (accountNumber: string, isActive: boolean) => 
+    importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any, isCard?: boolean) =>
+      ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata, isCard),
+    updateAccountStatus: (accountNumber: string, isActive: boolean) =>
       ipcRenderer.invoke('sqlite-financehub-update-account-status', accountNumber, isActive),
     deleteAccount: (accountNumber: string) => 
       ipcRenderer.invoke('sqlite-financehub-delete-account', accountNumber),

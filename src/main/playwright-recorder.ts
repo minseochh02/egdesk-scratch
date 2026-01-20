@@ -3,9 +3,10 @@ import { screen, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { OSAutomation } from './utils/osAutomation';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone';
   selector?: string;
   value?: string;
   key?: string;
@@ -31,6 +32,10 @@ interface RecordedAction {
   }>;
   // New tab fields
   newTabUrl?: string; // URL of the newly opened tab
+  // Click Until Gone fields
+  maxIterations?: number; // Maximum number of times to click (safety limit)
+  checkCondition?: 'gone' | 'hidden' | 'disabled'; // What condition to check
+  waitBetweenClicks?: number; // Milliseconds to wait between clicks
 }
 
 export class PlaywrightRecorder {
@@ -55,6 +60,12 @@ export class PlaywrightRecorder {
     day?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   } = {};
   private dateMarkingOffset: number = 0; // Days from today
+
+  // Click Until Gone mode state
+  private isClickUntilGoneMode: boolean = false;
+
+  // OS-level automation for native dialogs
+  private osAutomation: OSAutomation | null = null;
 
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
@@ -201,6 +212,15 @@ export class PlaywrightRecorder {
         console.error('❌ Failed to launch bundled Chromium:', fallbackErr);
         throw new Error('Could not launch any browser. Please ensure Chrome is installed or allow Playwright to download Chromium.');
       }
+    }
+
+    // Initialize OS-level automation for native dialogs
+    this.osAutomation = new OSAutomation();
+    const osStats = this.osAutomation.getStats();
+    if (osStats.available) {
+      console.log('✅ OS-level automation initialized (for print/save dialogs)');
+    } else {
+      console.log('⚠️ OS-level automation not available (native dialogs must be handled manually)');
     }
 
     // Set up browser close detection (context close event)
@@ -373,194 +393,137 @@ export class PlaywrightRecorder {
         right: 20px;
         background: #1e1e1e;
         border: 1px solid #333;
-        border-radius: 12px;
-        padding: 8px;
+        border-radius: 10px;
+        padding: 6px;
         z-index: 999999;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 14px;
+        font-size: 12px;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
+        max-width: 700px;
         transition: all 0.3s ease;
         pointer-events: all;
         cursor: move;
         user-select: none;
       `;
       
+      // Common button style
+      const btnStyle = `
+        background: #333;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 5px 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: all 0.2s ease;
+        font-size: 11px;
+        white-space: nowrap;
+      `;
+
       // Create highlight toggle button
       const highlightBtn = document.createElement('button');
       highlightBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
         <span>Highlight</span>
       `;
-      highlightBtn.style.cssText = `
-        background: #333;
-        color: #fff;
-        border: 1px solid #444;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-      `;
+      highlightBtn.style.cssText = btnStyle;
       
       // Create coordinate mode button
       const coordBtn = document.createElement('button');
       coordBtn.setAttribute('data-coord-mode', 'true');
       coordBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23"></line>
           <line x1="1" y1="12" x2="23" y2="12"></line>
           <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
         </svg>
         <span>Coords</span>
       `;
-      coordBtn.style.cssText = `
-        background: #333;
-        color: #fff;
-        border: 1px solid #444;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-      `;
-      
+      coordBtn.style.cssText = btnStyle;
+
       // Create wait for element button
       const waitBtn = document.createElement('button');
       waitBtn.setAttribute('data-wait-mode', 'true');
       waitBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
         </svg>
         <span>Wait</span>
       `;
-      waitBtn.style.cssText = `
-        background: #2196F3;
-        color: #fff;
-        border: 1px solid #1976D2;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-      `;
+      waitBtn.style.cssText = btnStyle.replace('#333', '#2196F3').replace('#444', '#1976D2');
 
       // Create mark date button
       const markDateBtn = document.createElement('button');
       markDateBtn.setAttribute('data-date-marking-mode', 'false');
       markDateBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="16" y1="2" x2="16" y2="6"></line>
           <line x1="8" y1="2" x2="8" y2="6"></line>
           <line x1="3" y1="10" x2="21" y2="10"></line>
         </svg>
-        <span>Mark Date</span>
+        <span>Date</span>
       `;
-      markDateBtn.style.cssText = `
-        background: #9C27B0;
-        color: #fff;
-        border: 1px solid #7B1FA2;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-      `;
+      markDateBtn.style.cssText = btnStyle.replace('#333', '#9C27B0').replace('#444', '#7B1FA2');
 
       // Create capture table button
       const captureTableBtn = document.createElement('button');
       captureTableBtn.setAttribute('data-capture-table', 'true');
       captureTableBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="3" y1="9" x2="21" y2="9"></line>
           <line x1="3" y1="15" x2="21" y2="15"></line>
           <line x1="9" y1="3" x2="9" y2="21"></line>
           <line x1="15" y1="3" x2="15" y2="21"></line>
         </svg>
-        <span>Capture Table</span>
+        <span>Table</span>
       `;
-      captureTableBtn.style.cssText = `
-        background: #FF9800;
-        color: #fff;
-        border: 1px solid #F57C00;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
+      captureTableBtn.style.cssText = btnStyle.replace('#333', '#FF9800').replace('#444', '#F57C00');
+
+      // Create click until gone button
+      const clickUntilGoneBtn = document.createElement('button');
+      clickUntilGoneBtn.setAttribute('data-click-until-gone', 'false');
+      clickUntilGoneBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 10h1m4 0h1m-5 4h4"></path>
+          <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
+          <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+        <span>Loop</span>
       `;
+      clickUntilGoneBtn.style.cssText = btnStyle.replace('#333', '#00BCD4').replace('#444', '#0097A7');
 
       // Create stop recording button
       const stopBtn = document.createElement('button');
       stopBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="6" width="12" height="12" fill="currentColor"></rect>
         </svg>
         <span>Stop</span>
       `;
-      stopBtn.style.cssText = `
-        background: #ff4444;
-        color: #fff;
-        border: 1px solid #cc0000;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-        font-weight: 600;
-      `;
+      stopBtn.style.cssText = btnStyle.replace('#333', '#ff4444').replace('#444', '#cc0000') + 'font-weight: 600;';
 
       // Create Gemini button
       const geminiBtn = document.createElement('button');
       geminiBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
         </svg>
-        <span>Call Gemini</span>
+        <span>AI</span>
       `;
-      geminiBtn.style.cssText = `
-        background: #333;
-        color: #fff;
-        border: 1px solid #444;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        font-size: 14px;
-        position: relative;
-        z-index: 10;
-        pointer-events: all;
-      `;
+      geminiBtn.style.cssText = btnStyle + 'position: relative; z-index: 10; pointer-events: all;';
       geminiBtn.disabled = true;
       geminiBtn.style.opacity = '0.5';
       
@@ -569,22 +532,24 @@ export class PlaywrightRecorder {
       recordingIndicator.innerHTML = `
         <span style="
           display: inline-block;
-          width: 8px;
-          height: 8px;
+          width: 6px;
+          height: 6px;
           background: #ff4444;
           border-radius: 50%;
-          margin-right: 8px;
+          margin-right: 5px;
           animation: pulse 1.5s infinite;
         "></span>
-        Recording
+        REC
       `;
       recordingIndicator.style.cssText = `
         color: #fff;
         display: flex;
         align-items: center;
-        padding: 0 12px;
+        padding: 0 6px;
         cursor: inherit;
         pointer-events: none;
+        font-size: 11px;
+        font-weight: 600;
       `;
       
       // Add styles
@@ -626,6 +591,7 @@ export class PlaywrightRecorder {
       controller.appendChild(waitBtn);
       controller.appendChild(markDateBtn);
       controller.appendChild(captureTableBtn);
+      controller.appendChild(clickUntilGoneBtn);
       controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
       
@@ -969,11 +935,11 @@ export class PlaywrightRecorder {
         
         if (waitMode) {
           waitBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
             </svg>
-            <span>Select Element</span>
+            <span>Select</span>
           `;
           waitBtn.style.background = '#4CAF50';
           waitBtn.style.borderColor = '#45a049';
@@ -1052,7 +1018,7 @@ export class PlaywrightRecorder {
           document.body.style.cursor = 'crosshair';
         } else {
           waitBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
             </svg>
@@ -1429,6 +1395,129 @@ export class PlaywrightRecorder {
         notification.textContent = `✅ Captured ${tables.length} table${tables.length > 1 ? 's' : ''}`;
         document.body.appendChild(notification);
         setTimeout(() => notification.remove(), 2000);
+      });
+
+      // Set up Click Until Gone button functionality
+      let clickUntilGoneMode = false;
+      clickUntilGoneBtn.addEventListener('click', () => {
+        clickUntilGoneMode = !clickUntilGoneMode;
+        clickUntilGoneBtn.classList.toggle('active', clickUntilGoneMode);
+
+        if (clickUntilGoneMode) {
+          clickUntilGoneBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 10h1m4 0h1m-5 4h4"></path>
+              <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
+              <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span>Select</span>
+          `;
+          clickUntilGoneBtn.style.background = '#4CAF50';
+          clickUntilGoneBtn.style.borderColor = '#45a049';
+
+          // Show instructions
+          const clickUntilGoneInstructions = document.createElement('div');
+          clickUntilGoneInstructions.id = 'click-until-gone-instructions';
+          clickUntilGoneInstructions.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #00BCD4;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 280px;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+          `;
+          clickUntilGoneInstructions.innerHTML = `
+            <strong>🔄 Click Until Gone Mode</strong><br>
+            Click on a button/element to repeatedly click it until it disappears, is hidden, or becomes disabled
+            <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
+              Perfect for "Load More", pagination, and "Next" buttons
+            </div>
+          `;
+
+          try {
+            if (document.body) {
+              document.body.appendChild(clickUntilGoneInstructions);
+            }
+          } catch (e) {
+            console.warn('Failed to show click until gone instructions:', e);
+          }
+
+          // Add proximity detection
+          const proximityThreshold = 150;
+          let mouseX = 0;
+          let mouseY = 0;
+
+          const checkProximity = () => {
+            const rect = clickUntilGoneInstructions.getBoundingClientRect();
+            const bannerCenterX = rect.left + rect.width / 2;
+            const bannerCenterY = rect.top + rect.height / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(mouseX - bannerCenterX, 2) +
+              Math.pow(mouseY - bannerCenterY, 2)
+            );
+
+            if (distance < proximityThreshold) {
+              clickUntilGoneInstructions.style.opacity = '0.1';
+              clickUntilGoneInstructions.style.transform = 'scale(0.8)';
+            } else {
+              clickUntilGoneInstructions.style.opacity = '1';
+              clickUntilGoneInstructions.style.transform = 'scale(1)';
+            }
+          };
+
+          const mouseMoveHandler = (e: MouseEvent) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            checkProximity();
+          };
+
+          document.addEventListener('mousemove', mouseMoveHandler);
+
+          // Store handler for cleanup
+          (clickUntilGoneInstructions as any).__mouseMoveHandler = mouseMoveHandler;
+
+          // Change cursor to indicate mode
+          document.body.style.cursor = 'crosshair';
+        } else {
+          clickUntilGoneBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 10h1m4 0h1m-5 4h4"></path>
+              <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
+              <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span>Loop</span>
+          `;
+          clickUntilGoneBtn.style.background = '#00BCD4';
+          clickUntilGoneBtn.style.borderColor = '#0097A7';
+
+          // Remove instructions and cleanup
+          const instructions = document.getElementById('click-until-gone-instructions');
+          if (instructions) {
+            const handler = (instructions as any).__mouseMoveHandler;
+            if (handler) {
+              document.removeEventListener('mousemove', handler);
+            }
+            instructions.remove();
+          }
+
+          // Reset cursor
+          document.body.style.cursor = '';
+        }
+
+        // Dispatch event to notify about click until gone mode
+        const event = new CustomEvent('playwright-recorder-click-until-gone-toggle', {
+          detail: { enabled: clickUntilGoneMode }
+        });
+        document.dispatchEvent(event);
       });
 
       // Set up Gemini button functionality
@@ -1880,6 +1969,7 @@ export class PlaywrightRecorder {
       let isShiftKeyPressed = false;
       let isCoordinateMode = false;
       let coordIndicator: HTMLElement | null = null;
+      let isClickUntilGoneMode = false;
       
       // Function to show selector tooltip
       const showTooltip = (element: HTMLElement, selector: string) => {
@@ -1988,12 +2078,18 @@ export class PlaywrightRecorder {
       document.addEventListener('playwright-recorder-coordinate-toggle', (e: any) => {
         isCoordinateMode = e.detail.enabled;
         console.log('📍 Coordinate mode:', isCoordinateMode ? 'ON' : 'OFF');
-        
+
         // Clean up coordinate indicator when turning off coordinate mode
         if (!isCoordinateMode && coordIndicator) {
           coordIndicator.remove();
           coordIndicator = null;
         }
+      });
+
+      // Listen for click until gone mode toggle from controller
+      document.addEventListener('playwright-recorder-click-until-gone-toggle', (e: any) => {
+        isClickUntilGoneMode = e.detail.enabled;
+        console.log('🔄 Click Until Gone mode:', isClickUntilGoneMode ? 'ON' : 'OFF');
       });
       
       // Listen for highlight toggle from controller
@@ -3537,12 +3633,21 @@ export class PlaywrightRecorder {
         }
         
         (window as any).__recordedEvents.push({
-          type: 'click', 
+          type: isClickUntilGoneMode ? 'clickUntilGone' : 'click',
           data: event,
           timestamp: Date.now()
         });
-        
-        if ((window as any).__playwrightRecorderOnClick) {
+
+        // Check if in click until gone mode
+        if (isClickUntilGoneMode && (window as any).__playwrightRecorderOnClickUntilGone) {
+          console.log('🔄 Sending click until gone event to recorder:', event);
+          (window as any).__playwrightRecorderOnClickUntilGone(event);
+          // Turn off mode after recording one action
+          isClickUntilGoneMode = false;
+          document.dispatchEvent(new CustomEvent('playwright-recorder-click-until-gone-toggle', {
+            detail: { enabled: false }
+          }));
+        } else if ((window as any).__playwrightRecorderOnClick) {
           console.log('📤 Sending click event to recorder:', event);
           (window as any).__playwrightRecorderOnClick(event);
         } else {
@@ -3675,7 +3780,7 @@ export class PlaywrightRecorder {
         value: data.text,
         timestamp: Date.now() - this.startTime
       };
-      
+
       // Add coordinates if provided
       if (data.coordinates) {
         action.coordinates = data.coordinates;
@@ -3683,7 +3788,24 @@ export class PlaywrightRecorder {
       } else {
         console.log('🖱️ Captured click on:', data.selector);
       }
-      
+
+      this.actions.push(action);
+      this.updateGeneratedCode();
+    });
+
+    await this.page.exposeFunction('__playwrightRecorderOnClickUntilGone', async (data: any) => {
+      const action: RecordedAction = {
+        type: 'clickUntilGone',
+        selector: data.selector,
+        value: data.text,
+        timestamp: Date.now() - this.startTime,
+        maxIterations: 100, // Safety limit
+        checkCondition: 'gone', // Default: check if element is gone
+        waitBetweenClicks: 3000 // Wait 3 seconds between clicks (for slower computers/loading)
+      };
+
+      console.log('🔄 Captured click until gone on:', data.selector);
+
       this.actions.push(action);
       this.updateGeneratedCode();
     });
@@ -3946,6 +4068,22 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         type: 'print',
         timestamp: Date.now() - this.startTime
       });
+
+      // Automatically handle print dialog if OS automation is available
+      if (this.osAutomation && this.osAutomation.getAvailability()) {
+        console.log('🤖 OS automation will handle print dialog automatically...');
+        // Wait a bit for dialog to appear, then press Enter
+        setTimeout(async () => {
+          const success = await this.osAutomation!.handlePrintDialog('confirm', 1500);
+          if (success) {
+            console.log('✅ Print dialog handled automatically');
+          } else {
+            console.log('⚠️ Failed to handle print dialog automatically - please handle manually');
+          }
+        }, 500); // Initial delay before starting automation
+      } else {
+        console.log('⚠️ OS automation not available - please handle print dialog manually');
+      }
 
       console.log('🖨️ Print action added');
       this.updateGeneratedCode();
@@ -4232,6 +4370,45 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`    await page.locator('${action.selector}').click();`);
           }
           break;
+        case 'clickUntilGone':
+          lines.push(`    // Click Until Gone: Click repeatedly until element disappears/hidden/disabled`);
+          lines.push(`    {`);
+          lines.push(`      const selector = '${action.selector}';`);
+          lines.push(`      const maxIterations = ${action.maxIterations || 100};`);
+          lines.push(`      const waitBetweenClicks = ${action.waitBetweenClicks || 3000}; // 3 seconds for slower computers/loading`);
+          lines.push(`      let iteration = 0;`);
+          lines.push(``);
+          lines.push(`      while (iteration < maxIterations) {`);
+          lines.push(`        try {`);
+          lines.push(`          // Check if element still exists and is visible/enabled`);
+          lines.push(`          const element = await page.locator(selector).first();`);
+          lines.push(`          const isVisible = await element.isVisible({ timeout: 500 }).catch(() => false);`);
+          lines.push(`          const isEnabled = await element.isEnabled().catch(() => false);`);
+          lines.push(``);
+          lines.push(`          // If element is gone, hidden, or disabled, stop clicking`);
+          lines.push(`          if (!isVisible || !isEnabled) {`);
+          lines.push(`            console.log(\`✓ Element is no longer clickable after \${iteration} clicks\`);`);
+          lines.push(`            break;`);
+          lines.push(`          }`);
+          lines.push(``);
+          lines.push(`          // Click the element`);
+          lines.push(`          await element.click();`);
+          lines.push(`          console.log(\`Clicked element (iteration \${iteration + 1})\`);`);
+          lines.push(`          iteration++;`);
+          lines.push(``);
+          lines.push(`          // Wait before next click (allows time for loading/processing)`);
+          lines.push(`          await page.waitForTimeout(waitBetweenClicks);`);
+          lines.push(`        } catch (error) {`);
+          lines.push(`          console.log(\`Element no longer found or clickable after \${iteration} clicks\`);`);
+          lines.push(`          break;`);
+          lines.push(`        }`);
+          lines.push(`      }`);
+          lines.push(``);
+          lines.push(`      if (iteration >= maxIterations) {`);
+          lines.push(`        console.warn('⚠ Reached maximum iterations without element disappearing');`);
+          lines.push(`      }`);
+          lines.push(`    }`);
+          break;
         case 'download':
           // Handle download events
           if (action.selector === 'download-complete') {
@@ -4447,10 +4624,15 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           break;
         case 'print':
           lines.push(`    // Print dialog triggered`);
-          lines.push(`    // Note: Playwright cannot interact with native print dialogs`);
-          lines.push(`    // The print action was detected via window.print() or Ctrl+P/Cmd+P`);
-          lines.push(`    // You may want to generate a PDF instead:`);
-          lines.push(`    // await page.pdf({ path: 'output.pdf', format: 'A4' });`);
+          lines.push(`    await page.waitForTimeout(1000); // Wait for print dialog to appear`);
+          lines.push(``);
+          lines.push(`    // Handle native print dialog with OS-level automation`);
+          lines.push(`    // Note: Requires @nut-tree-fork/nut-js package installed`);
+          lines.push(`    const { keyboard, Key } = require('@nut-tree-fork/nut-js');`);
+          lines.push(`    await keyboard.type(Key.Enter); // Press Enter to confirm print`);
+          lines.push(``);
+          lines.push(`    // Alternative: Generate PDF without print dialog`);
+          lines.push(`    // await page.pdf({ path: 'output.pdf', format: 'A4', printBackground: true });`);
           break;
       }
     }
