@@ -44,6 +44,18 @@ const NH_CONFIG = {
     lowerKeyboard: '/html/body/div[8]/div[2]/form/div[2]/div[1]/div[2]/div[3]/div/div[1]/div[2]/div/div/div[1]/img',
     upperKeyboard: '/html/body/div[8]/div[2]/form/div[2]/div[1]/div[2]/div[3]/div/div[1]/div[2]/div/div/div[2]/img',
     virtualKeyboardContainer: '/html/body/div[8]/div[2]/form/div[2]/div[1]/div[2]/div[3]/div/div[1]/div[2]/div/div',
+
+    // Virtual keyboard selectors (for base class)
+    keyboardLowerSelectors: [
+      '//div[@id="Tk_loginUserPwd_layoutLower"]',
+      '//div[contains(@id, "_layoutLower") and contains(@style, "visibility: visible")]',
+      '//img[@id="imgTwinLower"]'
+    ],
+    keyboardUpperSelectors: [
+      '//div[@id="Tk_loginUserPwd_layoutUpper"]',
+      '//div[contains(@id, "_layoutUpper") and contains(@style, "visibility: visible")]',
+      '//img[@id="imgTwinUpper"]'
+    ],
     
     // Post-login navigation
     eNonghyupMemberText: '//p[@class="tit" and contains(., "e농협회원(ID/PW방식)")]',

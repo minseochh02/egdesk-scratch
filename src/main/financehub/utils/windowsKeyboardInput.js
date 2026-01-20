@@ -5,8 +5,9 @@
 const os = require('os');
 
 /**
- * Windows-specific keyboard input module for NH Bank automation
+ * Windows-specific keyboard input module for bank automation
  * Uses direct keyboard presses instead of virtual keyboard clicking
+ * Shared utility for all banks that support Windows password input
  */
 
 /**
