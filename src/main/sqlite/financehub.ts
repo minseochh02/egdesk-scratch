@@ -115,13 +115,27 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     ['woori', 'Woori Bank', '우리은행', '#0072BC', '🏛️', 0, 'https://www.wooribank.com/'],
     ['hana', 'Hana Bank', '하나은행', '#009775', '🌿', 0, 'https://www.kebhana.com/'],
     ['nh', 'NH Bank', 'NH농협은행', '#00B140', '🌾', 0, 'https://banking.nonghyup.com/'],
+    ['nh-business', 'NH Business Bank', 'NH농협은행(법인)', '#00B140', '🌾', 1, 'https://banking.nonghyup.com/'],
     ['ibk', 'IBK Bank', 'IBK기업은행', '#004A98', '🏢', 0, 'https://www.ibk.co.kr/'],
     ['kakao', 'Kakao Bank', '카카오뱅크', '#FFEB00', '💬', 0, null],
     ['toss', 'Toss Bank', '토스뱅크', '#0064FF', '💸', 0, null],
   ];
 
+  // Seed card companies (stored in same table as banks)
+  const cardCompanies = [
+    ['nh-card', 'NH Card', 'NH농협카드', '#00B140', '💳', 1, 'https://card.nonghyup.com/'],
+    ['shinhan-card', 'Shinhan Card', '신한카드', '#0046FF', '💳', 0, 'https://www.shinhancard.com/'],
+    ['kb-card', 'KB Card', 'KB국민카드', '#FFBC00', '💳', 0, 'https://www.kbcard.com/'],
+    ['samsung-card', 'Samsung Card', '삼성카드', '#1428A0', '💳', 0, 'https://www.samsungcard.com/'],
+    ['hyundai-card', 'Hyundai Card', '현대카드', '#000000', '💳', 0, 'https://www.hyundaicard.com/'],
+  ];
+
   for (const bank of koreanBanks) {
     seedBanks.run(...bank);
+  }
+
+  for (const card of cardCompanies) {
+    seedBanks.run(...card);
   }
 
   // ========================================
@@ -933,7 +947,7 @@ export class FinanceHubDbManager {
       openDate?: string;
     },
     transactions: Array<{
-      date: string;
+      date?: string;
       time?: string;
       type?: string;
       withdrawal?: number;
@@ -943,25 +957,45 @@ export class FinanceHubDbManager {
       balance?: number;
       branch?: string;
       counterparty?: string;
+      // Card-specific fields (will be transformed)
+      dateTime?: string;
+      amount?: string;
+      merchantName?: string;
+      approvalNumber?: string;
+      transactionMethod?: string;
+      installmentPeriod?: string;
+      cancellationStatus?: string;
+      cardNumber?: string;
+      xmlData?: string;
     }>,
     syncMetadata: {
       queryPeriodStart: string;
       queryPeriodEnd: string;
       filePath?: string;
-    }
+    },
+    isCard: boolean = false
   ): {
     account: BankAccount;
     syncOperation: SyncOperation;
     inserted: number;
     skipped: number;
   } {
-    // 1. Upsert account
+    // 1. Transform card transactions if needed
+    let transformedTransactions = transactions;
+    if (isCard) {
+      const { transformCardTransaction } = require('../financehub/utils/cardTransactionMapper');
+      transformedTransactions = transactions.map(tx =>
+        transformCardTransaction(tx, null, bankId) // accountId handled by bulkInsertTransactions
+      );
+    }
+
+    // 2. Upsert account
     const account = this.upsertAccount({
       bankId,
       ...accountData,
     });
 
-    // 2. Create sync operation
+    // 3. Create sync operation
     const syncOp = this.createSyncOperation({
       accountId: account.id,
       bankId,
@@ -970,11 +1004,11 @@ export class FinanceHubDbManager {
     });
 
     try {
-      // 3. Bulk insert transactions (with dedup via UNIQUE index)
+      // 4. Bulk insert transactions (with dedup via UNIQUE index)
       const { inserted, skipped } = this.bulkInsertTransactions(
         account.id,
         bankId,
-        transactions
+        transformedTransactions
       );
 
       // 4. Calculate totals (ensure numbers to prevent string concatenation)

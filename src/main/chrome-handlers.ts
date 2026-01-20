@@ -1893,15 +1893,15 @@ const { chromium } = require('playwright-core');
         };
       }
 
-      // Ensure the new name has .spec.ts extension
+      // Ensure the new name has .spec.js extension
       let sanitizedName = newName.trim();
-      if (!sanitizedName.endsWith('.spec.ts')) {
+      if (!sanitizedName.endsWith('.spec.js')) {
         if (sanitizedName.endsWith('.spec')) {
-          sanitizedName += '.ts';
+          sanitizedName += '.js';
         } else if (!sanitizedName.includes('.spec.')) {
-          sanitizedName = sanitizedName.replace(/\.ts$/, '') + '.spec.ts';
+          sanitizedName = sanitizedName.replace(/\.js$/, '') + '.spec.js';
         } else {
-          sanitizedName += '.ts';
+          sanitizedName += '.js';
         }
       }
 
@@ -1923,7 +1923,7 @@ const { chromium } = require('playwright-core');
 
       // Rename the temporary run file if it exists
       const oldBasename = path.basename(testPath, '.spec.js');
-      const newBasename = path.basename(newPath, '.spec.ts');
+      const newBasename = path.basename(newPath, '.spec.js');
       const oldRunPath = path.join(dir, `${oldBasename}.run.js`);
       const newRunPath = path.join(dir, `${newBasename}.run.js`);
 
