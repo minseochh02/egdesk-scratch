@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print';
   selector?: string;
   value?: string;
   key?: string;
@@ -21,6 +21,16 @@ interface RecordedAction {
     day: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   };
   dateOffset?: number; // Days from today (0 = today, 1 = tomorrow, -1 = yesterday)
+  // Table capture fields
+  tables?: Array<{
+    xpath: string;
+    cssSelector: string;
+    headers: string[];
+    sampleRow: string[];
+    rowCount: number;
+  }>;
+  // New tab fields
+  newTabUrl?: string; // URL of the newly opened tab
 }
 
 export class PlaywrightRecorder {
@@ -200,6 +210,61 @@ export class PlaywrightRecorder {
         this.isRecording = false;
         onBrowserClosed();
       }
+    });
+
+    // Listen for new tabs/popups
+    this.context.on('page', async (newPage) => {
+      console.log('🆕 New tab/popup opened:', newPage.url());
+
+      // Wait for the page to load
+      await newPage.waitForLoadState('domcontentloaded').catch(() => {});
+
+      const newUrl = newPage.url();
+      this.actions.push({
+        type: 'newTab',
+        newTabUrl: newUrl,
+        timestamp: Date.now() - this.startTime
+      });
+
+      // Switch to the new page for recording
+      this.page = newPage;
+
+      // Set up listeners on the new page
+      this.setupPageListeners();
+      await this.injectKeyboardListener();
+      await this.injectControllerUI();
+
+      // Set up download handling for the new page
+      this.page.on('download', async (download) => {
+        console.log('📥 Download started:', download.url());
+        const suggestedFilename = download.suggestedFilename();
+        const filePath = path.join(downloadsPath, suggestedFilename);
+
+        try {
+          this.actions.push({
+            type: 'download',
+            selector: 'download-wait',
+            value: `Download started: ${suggestedFilename}`,
+            timestamp: Date.now() - this.startTime
+          });
+
+          await download.saveAs(filePath);
+          console.log('✅ Download saved to:', filePath);
+
+          this.actions.push({
+            type: 'download',
+            selector: 'download-complete',
+            value: filePath,
+            timestamp: Date.now() - this.startTime
+          });
+
+          this.updateGeneratedCode();
+        } catch (err) {
+          console.error('❌ Download failed:', err);
+        }
+      });
+
+      this.updateGeneratedCode();
     });
 
     // Add init scripts before creating the page
@@ -422,6 +487,33 @@ export class PlaywrightRecorder {
         font-size: 14px;
       `;
 
+      // Create capture table button
+      const captureTableBtn = document.createElement('button');
+      captureTableBtn.setAttribute('data-capture-table', 'true');
+      captureTableBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="3" y1="9" x2="21" y2="9"></line>
+          <line x1="3" y1="15" x2="21" y2="15"></line>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+          <line x1="15" y1="3" x2="15" y2="21"></line>
+        </svg>
+        <span>Capture Table</span>
+      `;
+      captureTableBtn.style.cssText = `
+        background: #FF9800;
+        color: #fff;
+        border: 1px solid #F57C00;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      `;
+
       // Create stop recording button
       const stopBtn = document.createElement('button');
       stopBtn.innerHTML = `
@@ -533,6 +625,7 @@ export class PlaywrightRecorder {
       controller.appendChild(coordBtn);
       controller.appendChild(waitBtn);
       controller.appendChild(markDateBtn);
+      controller.appendChild(captureTableBtn);
       controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
       
@@ -1164,6 +1257,179 @@ export class PlaywrightRecorder {
           document.body.style.cursor = '';
         }
       };
+
+      // Set up Capture Table button functionality
+      captureTableBtn.addEventListener('click', async () => {
+        console.log('📊 Capture Table clicked');
+
+        // Visual feedback - brief pulse animation
+        captureTableBtn.style.transform = 'scale(0.95)';
+        setTimeout(() => captureTableBtn.style.transform = 'scale(1)', 100);
+
+        // Find all tables on the page
+        const tables = document.querySelectorAll('table');
+
+        if (tables.length === 0) {
+          // Show notification: no tables found
+          const notification = document.createElement('div');
+          notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #FF9800;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+          `;
+          notification.textContent = '⚠️ No tables found on this page';
+          document.body.appendChild(notification);
+          setTimeout(() => notification.remove(), 3000);
+          return;
+        }
+
+        // Helper function to generate XPath for an element
+        const getXPathForElement = (element: Element): string => {
+          if (element.id) {
+            return `//*[@id="${element.id}"]`;
+          }
+
+          const parts: string[] = [];
+          let currentElement: Element | null = element;
+
+          while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
+            let index = 1;
+            let sibling: Element | null = currentElement.previousElementSibling;
+
+            while (sibling) {
+              if (sibling.tagName === currentElement.tagName) {
+                index++;
+              }
+              sibling = sibling.previousElementSibling;
+            }
+
+            const tagName = currentElement.tagName.toLowerCase();
+            const pathIndex = index > 1 ? `[${index}]` : '';
+            parts.unshift(`${tagName}${pathIndex}`);
+
+            currentElement = currentElement.parentElement;
+          }
+
+          return parts.length ? '/' + parts.join('/') : '';
+        };
+
+        // Helper function to generate CSS selector
+        const generateCSSSelector = (element: Element): string => {
+          if (element.id) {
+            return `[id="${element.id}"]`;
+          }
+
+          const path: string[] = [];
+          let currentElement: Element | null = element;
+
+          while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
+            let selector = currentElement.tagName.toLowerCase();
+
+            if (currentElement.className && typeof currentElement.className === 'string') {
+              const classes = currentElement.className.trim().split(/\s+/);
+              if (classes.length > 0 && classes[0]) {
+                selector += '.' + classes[0];
+              }
+            }
+
+            path.unshift(selector);
+            currentElement = currentElement.parentElement;
+
+            if (path.length >= 3) break; // Limit depth for readability
+          }
+
+          return path.join(' > ');
+        };
+
+        // Extract data from each table
+        const tableData: Array<{
+          xpath: string;
+          cssSelector: string;
+          headers: string[];
+          sampleRow: string[];
+          rowCount: number;
+        }> = [];
+
+        tables.forEach((table) => {
+          // Generate XPath
+          const xpath = getXPathForElement(table);
+
+          // Generate CSS selector
+          const cssSelector = generateCSSSelector(table);
+
+          // Extract headers
+          const headers: string[] = [];
+          const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+          if (headerRow) {
+            const ths = headerRow.querySelectorAll('th');
+            if (ths.length > 0) {
+              ths.forEach(th => headers.push(th.textContent?.trim() || ''));
+            } else {
+              // Use first row cells as headers if no <th> elements
+              const tds = headerRow.querySelectorAll('td');
+              tds.forEach(td => headers.push(td.textContent?.trim() || ''));
+            }
+          }
+
+          // Extract sample row (first data row)
+          const sampleRow: string[] = [];
+          const tbody = table.querySelector('tbody');
+          const firstDataRow = tbody ?
+            tbody.querySelector('tr') :
+            table.querySelectorAll('tr')[1]; // Skip header row if no tbody
+
+          if (firstDataRow) {
+            const cells = firstDataRow.querySelectorAll('td, th');
+            cells.forEach(cell => sampleRow.push(cell.textContent?.trim() || ''));
+          }
+
+          // Count rows
+          const allRows = tbody ?
+            tbody.querySelectorAll('tr') :
+            Array.from(table.querySelectorAll('tr')).slice(1); // Exclude header
+          const rowCount = allRows.length;
+
+          tableData.push({
+            xpath,
+            cssSelector,
+            headers,
+            sampleRow,
+            rowCount
+          });
+        });
+
+        // Send to recorder
+        if ((window as any).__playwrightRecorderOnCaptureTable) {
+          (window as any).__playwrightRecorderOnCaptureTable(tableData);
+        }
+
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #4CAF50;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          z-index: 999999;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        `;
+        notification.textContent = `✅ Captured ${tables.length} table${tables.length > 1 ? 's' : ''}`;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 2000);
+      });
 
       // Set up Gemini button functionality
       geminiBtn.addEventListener('click', async (e) => {
@@ -1834,7 +2100,17 @@ export class PlaywrightRecorder {
       // Listen for all keyboard events
       document.addEventListener('keydown', (e) => {
         const target = e.target as HTMLElement;
-        
+
+        // Detect Ctrl+P / Cmd+P (Print shortcut)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+          console.log('🖨️ Print shortcut detected (Ctrl+P / Cmd+P)');
+          // Don't prevent default - let the print dialog open naturally
+          // Just record the action
+          if ((window as any).__playwrightRecorderOnPrint) {
+            (window as any).__playwrightRecorderOnPrint();
+          }
+        }
+
         // Skip recording keyboard events on recorder UI elements and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
@@ -1851,7 +2127,7 @@ export class PlaywrightRecorder {
             target.style.zIndex === '999999') {
           return;
         }
-        
+
         const event = {
           type: 'keydown',
           key: e.key,
@@ -1869,7 +2145,7 @@ export class PlaywrightRecorder {
           },
           timestamp: Date.now()
         };
-        
+
         // Try to generate a selector for the target
         try {
           const target = e.target as HTMLElement;
@@ -1885,14 +2161,27 @@ export class PlaywrightRecorder {
         } catch (err) {
           // Ignore selector generation errors
         }
-        
+
         (window as any).__recordedEvents.push({type: 'keypress', data: event});
-        
+
         // Send to Playwright context
         if ((window as any).__playwrightRecorderOnKeyboard) {
           (window as any).__playwrightRecorderOnKeyboard(event);
         }
       }, true);
+
+      // Intercept window.print() calls
+      if (typeof window.print === 'function') {
+        const originalPrint = window.print.bind(window);
+        window.print = function() {
+          console.log('🖨️ window.print() called');
+          if ((window as any).__playwrightRecorderOnPrint) {
+            (window as any).__playwrightRecorderOnPrint();
+          }
+          // Call the original print function
+          return originalPrint();
+        };
+      }
       
       // Track input changes with debouncing to avoid recording every keystroke
       const inputTimers = new WeakMap<HTMLElement, any>();
@@ -3634,6 +3923,33 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         }, 3000);
       }, offset);
     });
+
+    // Expose function for table capture
+    await this.page.exposeFunction('__playwrightRecorderOnCaptureTable', async (tables: any[]) => {
+      console.log('📊 Capture table action recorded:', tables.length, 'tables');
+
+      this.actions.push({
+        type: 'captureTable',
+        tables: tables,
+        timestamp: Date.now() - this.startTime
+      });
+
+      console.log('📊 Table capture added');
+      this.updateGeneratedCode();
+    });
+
+    // Expose function for print action
+    await this.page.exposeFunction('__playwrightRecorderOnPrint', async () => {
+      console.log('🖨️ Print action recorded');
+
+      this.actions.push({
+        type: 'print',
+        timestamp: Date.now() - this.startTime
+      });
+
+      console.log('🖨️ Print action added');
+      this.updateGeneratedCode();
+    });
   }
 
   private setupPageListeners(): void {
@@ -4082,6 +4398,59 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               }
             }
           }
+          break;
+        case 'captureTable':
+          if (action.tables && action.tables.length > 0) {
+            lines.push(`    // ========================================`);
+            lines.push(`    // TABLE CAPTURE - ${action.tables.length} table(s) found`);
+            lines.push(`    // ========================================`);
+            lines.push(``);
+
+            action.tables.forEach((table, index) => {
+              lines.push(`    // Table ${index + 1}:`);
+              lines.push(`    //   XPath: ${table.xpath}`);
+              lines.push(`    //   CSS Selector: ${table.cssSelector}`);
+              lines.push(`    //   Row Count: ${table.rowCount}`);
+
+              if (table.headers && table.headers.length > 0) {
+                lines.push(`    //   Headers: [${table.headers.map((h: string) => `"${h}"`).join(', ')}]`);
+              }
+
+              if (table.sampleRow && table.sampleRow.length > 0) {
+                lines.push(`    //   Sample Row: [${table.sampleRow.map((cell: string) => `"${cell}"`).join(', ')}]`);
+              }
+
+              lines.push(`    // Schema:`);
+              if (table.headers && table.headers.length > 0) {
+                table.headers.forEach((header: string, colIndex: number) => {
+                  const sampleValue = table.sampleRow && table.sampleRow[colIndex] ?
+                    table.sampleRow[colIndex] :
+                    '(no data)';
+                  lines.push(`    //   Column ${colIndex + 1}: "${header}" - Example: "${sampleValue}"`);
+                });
+              }
+
+              lines.push(``);
+            });
+          }
+          break;
+        case 'newTab':
+          lines.push(`    // New tab/popup opened`);
+          if (action.newTabUrl) {
+            lines.push(`    // URL: ${action.newTabUrl}`);
+          }
+          lines.push(`    const pages = context.pages();`);
+          lines.push(`    const newPage = pages[pages.length - 1]; // Get the latest page`);
+          lines.push(`    await newPage.waitForLoadState('domcontentloaded');`);
+          lines.push(`    // Switch to new page for subsequent actions`);
+          lines.push(`    // page = newPage; // Uncomment if you want to continue recording on new tab`);
+          break;
+        case 'print':
+          lines.push(`    // Print dialog triggered`);
+          lines.push(`    // Note: Playwright cannot interact with native print dialogs`);
+          lines.push(`    // The print action was detected via window.print() or Ctrl+P/Cmd+P`);
+          lines.push(`    // You may want to generate a PDF instead:`);
+          lines.push(`    // await page.pdf({ path: 'output.pdf', format: 'A4' });`);
           break;
       }
     }

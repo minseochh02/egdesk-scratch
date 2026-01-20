@@ -8,6 +8,12 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Import keyboard analysis utilities
+const { analyzeKeyboardAndType } = require('../utils/ai-keyboard-analyzer');
+const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../utils/bilingual-keyboard-parser');
+const { getGeminiApiKey } = require('../utils/api-keys');
+const { handleWindowsPasswordInput: utilHandleWindowsPasswordInput } = require('../utils/windowsKeyboardInput');
+
 /**
  * @typedef {import('../types').BankAutomationConfig} BankAutomationConfig
  * @typedef {import('../types').BankCredentials} BankCredentials
@@ -25,6 +31,8 @@ class BaseBankAutomator {
     this.browser = null;
     this.context = null;
     this.page = null;
+    this.outputDir = path.join(process.cwd(), 'output', config.bank.id);
+    this.sessionKeepAliveInterval = null;
   }
 
   // ============================================================================
@@ -373,13 +381,444 @@ class BaseBankAutomator {
   }
 
   // ============================================================================
+  // VIRTUAL KEYBOARD ANALYSIS (Shared Implementation)
+  // ============================================================================
+
+  /**
+   * Gets keyboard configuration - override in subclasses if needed
+   * @returns {Object} Keyboard configuration
+   */
+  getKeyboardConfig() {
+    return {
+      lowerSelectors: this.config.xpaths.keyboardLowerSelectors || [],
+      upperSelectors: this.config.xpaths.keyboardUpperSelectors || [],
+      shiftKeyPatterns: ['shift', '⇧', '↑'],
+      screenshotPrefix: this.config.bank.id + '-keyboard'
+    };
+  }
+
+  /**
+   * Gets Gemini API key with error handling
+   * @returns {string} API key
+   * @throws {Error} If API key not found
+   */
+  getGeminiApiKeyOrFail() {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      this.warn('Skipping AI analysis - GEMINI_API_KEY not set');
+      throw new Error('Gemini API key not found');
+    }
+    return apiKey;
+  }
+
+  /**
+   * Analyzes virtual keyboard using Gemini Vision AI
+   * Banks can override getKeyboardConfig() to customize selectors
+   * @param {Object} page - Playwright page object
+   * @returns {Promise<Object>} Keyboard analysis result
+   */
+  async analyzeVirtualKeyboard(page) {
+    const timestamp = this.generateTimestamp();
+    this.ensureOutputDirectory(this.outputDir);
+
+    try {
+      // Get bank-specific configuration
+      const keyboardConfig = this.getKeyboardConfig();
+
+      // Step 1: Find LOWER keyboard
+      const lowerKeyboard = await this.findVisibleKeyboard(
+        page,
+        keyboardConfig.lowerSelectors,
+        'LOWER'
+      );
+
+      if (!lowerKeyboard) {
+        throw new Error('LOWER keyboard not found or not visible');
+      }
+
+      // Step 2: Screenshot and analyze LOWER keyboard
+      const lowerResult = await this.analyzeKeyboardLayout(
+        page,
+        lowerKeyboard,
+        'LOWER',
+        timestamp
+      );
+
+      // Step 3: Find SHIFT key
+      const shiftKey = this.findShiftKey(lowerResult.keyboardKeys);
+
+      if (!shiftKey) {
+        this.warn('SHIFT key not found in LOWER keyboard');
+        return this.buildKeyboardResult(lowerResult, null, timestamp);
+      }
+
+      // Step 4: Activate SHIFT and analyze UPPER keyboard
+      const upperResult = await this.analyzeShiftedKeyboard(
+        page,
+        shiftKey,
+        keyboardConfig.upperSelectors,
+        timestamp
+      );
+
+      // Step 5: Build combined result
+      return this.buildKeyboardResult(lowerResult, upperResult, timestamp);
+
+    } catch (error) {
+      this.error('Virtual keyboard analysis failed:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Finds a visible virtual keyboard from a list of selectors
+   * @param {Object} page - Playwright page object
+   * @param {Array} selectors - List of XPaths to try
+   * @param {string} label - Label for logging
+   * @returns {Promise<Object|null>} Found keyboard or null
+   */
+  async findVisibleKeyboard(page, selectors, label) {
+    this.log(`Looking for ${label} keyboard...`);
+
+    for (const selector of selectors) {
+      try {
+        const locator = page.locator(`xpath=${selector}`);
+        const count = await locator.count();
+
+        if (count > 0) {
+          const isVisible = await locator.first().isVisible({ timeout: 1000 });
+          if (isVisible) {
+            this.log(`Found visible ${label} keyboard with selector: ${selector}`);
+            return {
+              locator: locator.first(),
+              selector: selector
+            };
+          }
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Analyzes a single keyboard layout (LOWER or UPPER)
+   * @param {Object} page - Playwright page
+   * @param {Object} keyboard - Keyboard element info
+   * @param {string} type - 'LOWER' or 'UPPER'
+   * @param {string} timestamp - Timestamp for filenames
+   * @returns {Promise<Object>} Analysis result
+   */
+  async analyzeKeyboardLayout(page, keyboard, type, timestamp) {
+    const config = this.getKeyboardConfig();
+
+    // Get keyboard bounds
+    const keyboardBox = await this.getElementBox(page, `xpath=${keyboard.selector}`);
+    this.log(`${type} keyboard bounds:`, keyboardBox);
+
+    // Take screenshot
+    const screenshotFilename = `${config.screenshotPrefix}-${type}-${timestamp}.png`;
+    const screenshotPath = path.join(this.outputDir, screenshotFilename);
+    await keyboard.locator.screenshot({ path: screenshotPath });
+    this.log(`${type} keyboard screenshot saved to:`, screenshotPath);
+
+    // Get Gemini API key
+    const geminiApiKey = this.getGeminiApiKeyOrFail();
+
+    // Analyze with Gemini Vision
+    this.log(`Analyzing ${type} keyboard with Gemini Vision...`);
+    const analysisResult = await analyzeKeyboardAndType(
+      screenshotPath,
+      geminiApiKey,
+      keyboardBox,
+      null, // Don't type yet
+      null, // Don't pass page yet
+      {}
+    );
+
+    if (!analysisResult.success) {
+      throw new Error(`${type} keyboard analysis failed: ${analysisResult.error}`);
+    }
+
+    this.log(`${type} keyboard analysis completed, found ${analysisResult.processed} keys`);
+
+    return {
+      analysisResult,
+      screenshotPath,
+      keyboardBox,
+      keyboardKeys: analysisResult.keyboardKeys
+    };
+  }
+
+  /**
+   * Finds SHIFT key in keyboard mapping
+   * @param {Object} keyboardKeys - Keyboard keys from analysis
+   * @returns {Array|null} [label, keyData] or null
+   */
+  findShiftKey(keyboardKeys) {
+    const config = this.getKeyboardConfig();
+
+    return Object.entries(keyboardKeys).find(([label]) => {
+      const lowerLabel = label.toLowerCase();
+      return config.shiftKeyPatterns.some(pattern =>
+        lowerLabel.includes(pattern.toLowerCase()) || label === pattern
+      );
+    });
+  }
+
+  /**
+   * Analyzes shifted (UPPER) keyboard layout
+   * @param {Object} page - Playwright page
+   * @param {Array} shiftKey - [label, keyData] from findShiftKey
+   * @param {Array} upperSelectors - Selectors for UPPER keyboard
+   * @param {string} timestamp - Timestamp for filenames
+   * @returns {Promise<Object|null>} Upper analysis result or null
+   */
+  async analyzeShiftedKeyboard(page, shiftKey, upperSelectors, timestamp) {
+    const [shiftLabel, shiftData] = shiftKey;
+    this.log(`Found SHIFT key: "${shiftLabel}" at position (${shiftData.position.x}, ${shiftData.position.y})`);
+
+    // Click SHIFT to activate UPPER keyboard
+    this.log('Clicking SHIFT to switch to UPPER keyboard...');
+    await page.mouse.move(shiftData.position.x, shiftData.position.y);
+    await page.waitForTimeout(this.config.delays.mouseMove);
+    await page.mouse.click(shiftData.position.x, shiftData.position.y);
+    await page.waitForTimeout(this.config.delays.keyboardUpdate);
+
+    // Find UPPER keyboard
+    const upperKeyboard = await this.findVisibleKeyboard(
+      page,
+      upperSelectors,
+      'UPPER'
+    );
+
+    let upperResult = null;
+
+    if (upperKeyboard) {
+      upperResult = await this.analyzeKeyboardLayout(
+        page,
+        upperKeyboard,
+        'UPPER',
+        timestamp
+      );
+
+      // Click SHIFT again to return to LOWER
+      this.log('Clicking SHIFT to return to LOWER keyboard...');
+      await page.mouse.click(shiftData.position.x, shiftData.position.y);
+      await page.waitForTimeout(this.config.delays.keyboardUpdate);
+    } else {
+      this.warn('UPPER keyboard not found, continuing with LOWER only');
+    }
+
+    return upperResult;
+  }
+
+  /**
+   * Builds final keyboard analysis result
+   * @param {Object} lowerResult - LOWER keyboard analysis
+   * @param {Object|null} upperResult - UPPER keyboard analysis
+   * @param {string} timestamp - Timestamp
+   * @returns {Object} Combined keyboard result
+   */
+  buildKeyboardResult(lowerResult, upperResult, timestamp) {
+    const keyboardJSON = buildBilingualKeyboardJSON(
+      lowerResult.keyboardKeys,
+      upperResult?.keyboardKeys || null
+    );
+
+    // Export for debugging
+    const jsonFilename = `keyboard-layout-${timestamp}.json`;
+    const jsonPath = path.join(this.outputDir, jsonFilename);
+    exportKeyboardJSON(
+      lowerResult.keyboardKeys,
+      jsonPath,
+      upperResult?.keyboardKeys || null
+    );
+    this.log('Keyboard JSON exported to:', jsonPath);
+
+    return {
+      keyboardJSON,
+      lowerAnalysis: lowerResult.analysisResult,
+      upperAnalysis: upperResult?.analysisResult || null,
+      lowerScreenshotPath: lowerResult.screenshotPath,
+      upperScreenshotPath: upperResult?.screenshotPath || null
+    };
+  }
+
+  // ============================================================================
+  // WINDOWS PASSWORD INPUT (Shared Implementation)
+  // ============================================================================
+
+  /**
+   * Checks if current platform is Windows
+   * @returns {boolean} True if running on Windows
+   */
+  isWindows() {
+    return os.platform() === 'win32';
+  }
+
+  /**
+   * Creates standardized error result for password operations
+   * @param {number} passwordLength - Length of password
+   * @param {string} errorMessage - Error message
+   * @param {string} [method] - Method that failed
+   * @returns {Object} Standardized error result
+   */
+  createPasswordErrorResult(passwordLength, errorMessage, method = 'unknown') {
+    return {
+      success: false,
+      error: errorMessage,
+      totalChars: passwordLength,
+      typedChars: 0,
+      failedChars: [],
+      shiftClicks: 0,
+      details: [],
+      method: method
+    };
+  }
+
+  /**
+   * Handles password input based on platform
+   * Windows: Uses keyboard input (if enabled)
+   * Other platforms: Uses virtual keyboard
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>} Typing result
+   */
+  async handlePasswordInput(page, password) {
+    try {
+      // Check if Windows platform and if Windows keyboard mode is enabled
+      if (this.isWindows() && this.config.useWindowsKeyboard !== false) {
+        this.log('Windows platform detected, using keyboard input method...');
+        return await this.handleWindowsPasswordInput(page, password);
+      } else {
+        this.log('Using virtual keyboard method...');
+        return await this.handleVirtualKeyboard(page, password);
+      }
+    } catch (error) {
+      this.error('Password input failed:', error.message);
+      return this.createPasswordErrorResult(password.length, error.message);
+    }
+  }
+
+  /**
+   * Windows keyboard input handler
+   * Uses the shared Windows keyboard utility with smart fallback
+   * @param {Object} page - Playwright page object
+   * @param {string} password - Password to type
+   * @returns {Promise<Object>} Typing result
+   */
+  async handleWindowsPasswordInput(page, password) {
+    try {
+      this.log('Using Windows keyboard input for password entry...');
+
+      const typingResult = await utilHandleWindowsPasswordInput(
+        page,
+        password,
+        this.config.delays,
+        this.log.bind(this),
+        this.config.windowsInputMethod || 'auto',
+        this.config.xpaths.passwordInput
+      );
+
+      return {
+        ...typingResult,
+        keyboardAnalysis: null, // No AI analysis needed for Windows keyboard
+      };
+
+    } catch (error) {
+      this.error('Windows keyboard password typing failed:', error.message);
+      return this.createPasswordErrorResult(
+        password.length,
+        error.message,
+        'windows_keyboard_failed'
+      );
+    }
+  }
+
+  // ============================================================================
+  // SESSION MANAGEMENT (Shared Implementation)
+  // ============================================================================
+
+  /**
+   * Starts a background task to click the session extension button every 5 minutes
+   * @param {number} intervalMs - Interval in milliseconds (default 5 minutes)
+   */
+  startSessionKeepAlive(intervalMs = 5 * 60 * 1000) {
+    if (this.sessionKeepAliveInterval) {
+      clearInterval(this.sessionKeepAliveInterval);
+    }
+
+    this.log(`Starting session keep-alive (every ${intervalMs / 1000 / 60} minutes)`);
+
+    this.sessionKeepAliveInterval = setInterval(async () => {
+      try {
+        await this.extendSession();
+      } catch (error) {
+        this.warn('Background session extension failed:', error.message);
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * Stops the session keep-alive task
+   */
+  stopSessionKeepAlive() {
+    if (this.sessionKeepAliveInterval) {
+      clearInterval(this.sessionKeepAliveInterval);
+      this.sessionKeepAliveInterval = null;
+      this.log('Session keep-alive stopped');
+    }
+  }
+
+  /**
+   * Clicks the "Extend" (연장) button to keep the session alive
+   * @returns {Promise<boolean>} Success status
+   */
+  async extendSession() {
+    if (!this.page) return false;
+
+    this.log('Attempting to extend session...');
+    try {
+      const extendButtonXPath = `xpath=${this.config.xpaths.extendSessionButton}`;
+
+      // Check if button is visible before clicking
+      const isVisible = await this.page.locator(extendButtonXPath).isVisible({ timeout: 5000 }).catch(() => false);
+
+      if (isVisible) {
+        await this.clickButton(this.page, this.config.xpaths.extendSessionButton, 'Session extension (연장)');
+        this.log('Session extension button clicked successfully');
+        return true;
+      }
+
+      this.warn('Session extension button not visible - session might have already expired or not started');
+      return false;
+    } catch (error) {
+      this.error('Error during session extension:', error.message);
+      return false;
+    }
+  }
+
+  // ============================================================================
   // CLEANUP
   // ============================================================================
 
   /**
    * Closes browser and cleans up resources
+   * @param {boolean} [keepOpen=true] - Whether to keep browser open for debugging
    */
-  async cleanup() {
+  async cleanup(keepOpen = true) {
+    this.stopSessionKeepAlive();
+
+    if (keepOpen) {
+      this.log('Keeping browser open for debugging...');
+      return;
+    }
+
     if (this.browser) {
       try {
         await this.browser.close();

@@ -7,29 +7,16 @@ const fs = require('fs');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { SHINHAN_CONFIG } = require('./config');
 const { handleSecurityPopup } = require('./securityPopup');
-const {
-  typePasswordWithKeyboard,
-  findVisibleKeyboard,
-  getLowerKeyboardSelectors,
-  getUpperKeyboardSelectors,
-} = require('./virtualKeyboard');
-const {
-  isWindows,
-  handleWindowsPasswordInput
-} = require('./windowsKeyboardInput');
+const { typePasswordWithKeyboard } = require('./virtualKeyboard');
 const {
   fillIdInputEnhanced,
   diagnoseIdInput
 } = require('./shinhan-id-fix');
-const { 
+const {
   parseTransactionExcel,
   extractTransactionsFromPage,
   createExcelFromData
 } = require('../../utils/transactionParser');
-// Import AI keyboard analysis utilities
-const { analyzeKeyboardAndType } = require('../../utils/ai-keyboard-analyzer');
-const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../../utils/bilingual-keyboard-parser');
-const { getGeminiApiKey } = require('../../utils/api-keys');
 
 /**
  * Shinhan Bank Automator
@@ -46,7 +33,6 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'shinhan');
-    this.sessionKeepAliveInterval = null;
   }
 
   // ============================================================================
@@ -96,219 +82,10 @@ class ShinhanBankAutomator extends BaseBankAutomator {
   // VIRTUAL KEYBOARD HANDLING
   // ============================================================================
 
-  /**
-   * Captures and analyzes the virtual keyboard
-   * @param {Object} page - Playwright page object
-   * @returns {Promise<Object>} Keyboard analysis result
-   */
-  async analyzeVirtualKeyboard(page) {
-    const timestamp = this.generateTimestamp();
-    this.ensureOutputDirectory(this.outputDir);
-
-    // Step 1: Find LOWER keyboard
-    const lowerKeyboard = await findVisibleKeyboard(
-      page,
-      getLowerKeyboardSelectors(),
-      'LOWER',
-      this.log.bind(this)
-    );
-
-    if (!lowerKeyboard) {
-      this.warn('LOWER keyboard not found or not visible');
-      throw new Error('LOWER keyboard not found');
-    }
-
-    const lowerKeyboardBox = await this.getElementBox(page, `xpath=${lowerKeyboard.selector}`);
-    this.log('LOWER keyboard bounds:', lowerKeyboardBox);
-
-    // Step 2: Screenshot LOWER keyboard
-    const lowerFilename = `shinhan-keyboard-LOWER-${timestamp}.png`;
-    const lowerScreenshotPath = path.join(this.outputDir, lowerFilename);
-    await lowerKeyboard.locator.screenshot({ path: lowerScreenshotPath });
-    this.log('LOWER keyboard screenshot saved to:', lowerScreenshotPath);
-
-    // Step 3: Get Gemini API key
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) {
-      this.warn('Skipping AI analysis - GEMINI_API_KEY not set');
-      throw new Error('Gemini API key not found');
-    }
-
-    // Step 4: Analyze LOWER keyboard
-    this.log('Analyzing LOWER keyboard with Gemini Vision...');
-    const lowerAnalysisResult = await analyzeKeyboardAndType(
-      lowerScreenshotPath,
-      geminiApiKey,
-      lowerKeyboardBox,
-      null, // Don't type yet
-      null, // Don't pass page yet
-      {}
-    );
-
-    if (!lowerAnalysisResult.success) {
-      this.warn('LOWER keyboard analysis failed:', lowerAnalysisResult.error);
-      throw new Error('LOWER keyboard analysis failed');
-    }
-
-    this.log('LOWER keyboard analysis completed, found', lowerAnalysisResult.processed, 'keys');
-
-    // Step 5: Find SHIFT key
-    const shiftKey = Object.entries(lowerAnalysisResult.keyboardKeys).find(([label]) => {
-      return label.toLowerCase().includes('shift');
-    });
-
-    if (!shiftKey) {
-      this.warn('SHIFT key not found in LOWER keyboard');
-      throw new Error('SHIFT key not found');
-    }
-
-    const [shiftLabel, shiftData] = shiftKey;
-    this.log(`Found SHIFT key: "${shiftLabel}" at position (${shiftData.position.x}, ${shiftData.position.y})`);
-
-    // Step 6: Click SHIFT to get UPPER keyboard
-    this.log('Clicking SHIFT to switch to UPPER keyboard...');
-    await page.mouse.move(shiftData.position.x, shiftData.position.y);
-    await page.waitForTimeout(this.config.delays.mouseMove);
-    await page.mouse.click(shiftData.position.x, shiftData.position.y);
-    await page.waitForTimeout(this.config.delays.keyboardUpdate);
-
-    // Step 7: Find and analyze UPPER keyboard
-    let upperAnalysisResult = null;
-    let upperScreenshotPath = null;
-
-    const upperKeyboard = await findVisibleKeyboard(
-      page,
-      getUpperKeyboardSelectors(),
-      'UPPER',
-      this.log.bind(this)
-    );
-
-    if (upperKeyboard) {
-      const upperKeyboardBox = await this.getElementBox(page, `xpath=${upperKeyboard.selector}`);
-      this.log('UPPER keyboard bounds:', upperKeyboardBox);
-
-      const upperFilename = `shinhan-keyboard-UPPER-${timestamp}.png`;
-      upperScreenshotPath = path.join(this.outputDir, upperFilename);
-      await upperKeyboard.locator.screenshot({ path: upperScreenshotPath });
-      this.log('UPPER keyboard screenshot saved to:', upperScreenshotPath);
-
-      this.log('Analyzing UPPER keyboard with Gemini Vision...');
-      upperAnalysisResult = await analyzeKeyboardAndType(
-        upperScreenshotPath,
-        geminiApiKey,
-        upperKeyboardBox,
-        null,
-        null,
-        {}
-      );
-
-      if (upperAnalysisResult.success) {
-        this.log('UPPER keyboard analysis completed, found', upperAnalysisResult.processed, 'keys');
-      } else {
-        this.warn('UPPER keyboard analysis failed:', upperAnalysisResult.error);
-      }
-
-      // Click SHIFT again to return to LOWER
-      this.log('Clicking SHIFT to return to LOWER keyboard...');
-      await page.mouse.click(shiftData.position.x, shiftData.position.y);
-      await page.waitForTimeout(this.config.delays.keyboardUpdate);
-    } else {
-      this.warn('UPPER keyboard not found, continuing with LOWER only');
-    }
-
-    // Step 8: Build combined keyboard JSON
-    const keyboardJSON = buildBilingualKeyboardJSON(
-      lowerAnalysisResult.keyboardKeys,
-      upperAnalysisResult?.keyboardKeys || null
-    );
-
-    // Export for debugging
-    const jsonFilename = `keyboard-layout-${timestamp}.json`;
-    const jsonPath = path.join(this.outputDir, jsonFilename);
-    exportKeyboardJSON(
-      lowerAnalysisResult.keyboardKeys,
-      jsonPath,
-      upperAnalysisResult?.keyboardKeys || null
-    );
-    this.log('Keyboard JSON exported to:', jsonPath);
-
-    return {
-      keyboardJSON,
-      lowerAnalysis: lowerAnalysisResult,
-      upperAnalysis: upperAnalysisResult,
-      lowerScreenshotPath,
-      upperScreenshotPath,
-    };
-  }
-
-  /**
-   * Handles password entry based on platform - Windows uses keyboard, others use virtual keyboard
-   * @param {Object} page - Playwright page object
-   * @param {string} password - Password to type
-   * @returns {Promise<Object>}
-   */
-  async handlePasswordInput(page, password) {
-    try {
-      // Check if Windows platform and if Windows keyboard mode is enabled
-      if (isWindows() && this.config.useWindowsKeyboard !== false) {
-        this.log('Windows platform detected, using keyboard input method...');
-        return await this.handleWindowsPasswordInput(page, password);
-      } else {
-        this.log('Using virtual keyboard method...');
-        return await this.handleVirtualKeyboard(page, password);
-      }
-    } catch (error) {
-      this.error('Password input failed:', error.message);
-      return {
-        success: false,
-        error: error.message,
-        totalChars: password.length,
-        typedChars: 0,
-        failedChars: [],
-        shiftClicks: 0,
-        details: []
-      };
-    }
-  }
-
-  /**
-   * Windows keyboard input handler
-   * @param {Object} page - Playwright page object
-   * @param {string} password - Password to type
-   * @returns {Promise<Object>}
-   */
-  async handleWindowsPasswordInput(page, password) {
-    try {
-      this.log('Using Windows keyboard input for password entry...');
-      
-      const typingResult = await handleWindowsPasswordInput(
-        page,
-        password,
-        this.config.delays,
-        this.log.bind(this),
-        this.config.windowsInputMethod || 'auto',
-        this.config.xpaths.passwordInput
-      );
-
-      return {
-        ...typingResult,
-        keyboardAnalysis: null, // No AI analysis needed for Windows keyboard
-      };
-
-    } catch (error) {
-      this.error('Windows keyboard password typing failed:', error.message);
-      return {
-        success: false,
-        error: error.message,
-        totalChars: password.length,
-        typedChars: 0,
-        failedChars: [],
-        shiftClicks: 0,
-        details: [],
-        method: 'windows_keyboard_failed'
-      };
-    }
-  }
+  // Note: analyzeVirtualKeyboard() is now inherited from BaseBankAutomator
+  // Note: handlePasswordInput() is now inherited from BaseBankAutomator
+  // Note: handleWindowsPasswordInput() is now inherited from BaseBankAutomator
+  // Bank-specific keyboard selectors are defined in config.js
 
   /**
    * Handles virtual keyboard password entry
@@ -384,68 +161,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     }
   }
 
-  // ============================================================================
-  // SESSION MANAGEMENT
-  // ============================================================================
-
-  /**
-   * Starts a background task to click the session extension button every 5 minutes
-   * @param {number} intervalMs - Interval in milliseconds (default 5 minutes)
-   */
-  startSessionKeepAlive(intervalMs = 5 * 60 * 1000) {
-    if (this.sessionKeepAliveInterval) {
-      clearInterval(this.sessionKeepAliveInterval);
-    }
-
-    this.log(`Starting session keep-alive (every ${intervalMs / 1000 / 60} minutes)`);
-    
-    this.sessionKeepAliveInterval = setInterval(async () => {
-      try {
-        await this.extendSession();
-      } catch (error) {
-        this.warn('Background session extension failed:', error.message);
-      }
-    }, intervalMs);
-  }
-
-  /**
-   * Stops the session keep-alive task
-   */
-  stopSessionKeepAlive() {
-    if (this.sessionKeepAliveInterval) {
-      clearInterval(this.sessionKeepAliveInterval);
-      this.sessionKeepAliveInterval = null;
-      this.log('Session keep-alive stopped');
-    }
-  }
-
-  /**
-   * Clicks the "Extend" (연장) button to keep the session alive
-   * @returns {Promise<boolean>} Success status
-   */
-  async extendSession() {
-    if (!this.page) return false;
-
-    this.log('Attempting to extend session...');
-    try {
-      const extendButtonXPath = `xpath=${this.config.xpaths.extendSessionButton}`;
-      
-      // Check if button is visible before clicking
-      const isVisible = await this.page.locator(extendButtonXPath).isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (isVisible) {
-        await this.clickButton(this.page, this.config.xpaths.extendSessionButton, 'Session extension (연장)');
-        this.log('Session extension button clicked successfully');
-        return true;
-      }
-      
-      this.warn('Session extension button not visible - session might have already expired or not started');
-      return false;
-    } catch (error) {
-      this.error('Error during session extension:', error.message);
-      return false;
-    }
-  }
+  // Note: Session management methods (startSessionKeepAlive, stopSessionKeepAlive, extendSession)
+  // are now inherited from BaseBankAutomator
 
   // ============================================================================
   // ACCOUNT & TRANSACTION INQUIRY
@@ -971,19 +688,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     }
   }
 
-  /**
-   * Closes browser - override to keep open for debugging
-   * @param {boolean} [keepOpen=true] - Whether to keep browser open
-   */
-  async cleanup(keepOpen = true) {
-    this.stopSessionKeepAlive();
-    
-    if (keepOpen) {
-      this.log('Keeping browser open for debugging... Press Ctrl+C to close');
-      return;
-    }
-    await super.cleanup();
-  }
+  // Note: cleanup() is inherited from BaseBankAutomator
+  // It handles stopSessionKeepAlive() and browser closing automatically
 
   /**
    * Downloads transactions and parses them into structured data

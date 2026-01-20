@@ -28,10 +28,24 @@ const KOOKMIN_XPATHS = {
   // Virtual keyboard - LOWER (default state, lowercase)
   keyboardLower: '//div[@id="vk_layout_lower"] | //div[contains(@class, "keyboard_lower")]',
   keyboardLowerAlt: '//div[contains(@id, "_layoutLower")] | //div[contains(@class, "vk_lower")]',
-  
+
   // Virtual keyboard - UPPER (shifted state, uppercase)
   keyboardUpper: '//div[@id="vk_layout_upper"] | //div[contains(@class, "keyboard_upper")]',
   keyboardUpperAlt: '//div[contains(@id, "_layoutUpper")] | //div[contains(@class, "vk_upper")]',
+
+  // Virtual keyboard selectors (for base class)
+  keyboardLowerSelectors: [
+    '//div[@id="vk_layout_lower"]',
+    '//div[contains(@class, "keyboard_lower")]',
+    '//div[contains(@id, "_layoutLower")]',
+    '//div[contains(@class, "vk_lower")]'
+  ],
+  keyboardUpperSelectors: [
+    '//div[@id="vk_layout_upper"]',
+    '//div[contains(@class, "keyboard_upper")]',
+    '//div[contains(@id, "_layoutUpper")]',
+    '//div[contains(@class, "vk_upper")]'
+  ],
   
   // Security popup
   securityPopup: '//div[contains(@class, "layer") and contains(., "보안프로그램")]',

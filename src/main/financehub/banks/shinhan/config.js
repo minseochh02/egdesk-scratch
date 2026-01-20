@@ -29,11 +29,23 @@ const SHINHAN_XPATHS = {
   keyboardLower: '//div[@id="비밀번호_layoutLower"]',
   keyboardLowerAlt: '//div[contains(@id, "_layoutLower") and contains(@class, "transkey_lower")]',
   keyboardLowerClass: '//div[contains(@class, "transkey_lower")]',
-  
+
   // Virtual keyboard - UPPER (shifted state, uppercase)
   keyboardUpper: '//div[@id="비밀번호_layoutUpper"]',
   keyboardUpperAlt: '//div[contains(@id, "_layoutUpper") and contains(@class, "transkey_upper")]',
   keyboardUpperClass: '//div[contains(@class, "transkey_upper")]',
+
+  // Virtual keyboard selectors (for base class)
+  keyboardLowerSelectors: [
+    '//div[@id="비밀번호_layoutLower"]',
+    '//div[contains(@id, "_layoutLower") and contains(@class, "transkey_lower")]',
+    '//div[contains(@class, "transkey_lower")]'
+  ],
+  keyboardUpperSelectors: [
+    '//div[@id="비밀번호_layoutUpper"]',
+    '//div[contains(@id, "_layoutUpper") and contains(@class, "transkey_upper")]',
+    '//div[contains(@class, "transkey_upper")]'
+  ],
   
   // Security popup
   securityPopup: '//div[@id="wq_uuid_28" and contains(@class, "layerContent")]',
