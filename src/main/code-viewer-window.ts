@@ -78,6 +78,13 @@ export class CodeViewerWindow {
   }
 
   updateActions(actions: any[]) {
+    console.log('📊 updateActions called with', actions.length, 'actions');
+    // Log each action to see if coordinates and frameSelector are present
+    actions.forEach((action, i) => {
+      if (action.type === 'click') {
+        console.log(`  Action ${i}: click - coordinates:`, action.coordinates, 'selector:', action.selector, 'frame:', action.frameSelector || 'main');
+      }
+    });
     this.actions = actions;
     // Notify renderer of updated actions
     if (this.window && !this.window.isDestroyed()) {
@@ -506,7 +513,13 @@ test('recorded test', async ({ page }) => {
 
     // Listen for actions updates
     ipcRenderer.on('actions-updated', (event, actions) => {
-      console.log('Actions updated:', actions.length);
+      console.log('🎬 Actions updated, count:', actions.length);
+      // Log click actions to see if coordinates are present
+      actions.forEach((action, i) => {
+        if (action.type === 'click') {
+          console.log(\`  📍 Action \${i} (click) - Has coords: \${!!action.coordinates}, coords:\`, action.coordinates, 'selector:', action.selector);
+        }
+      });
       renderActions(actions);
     });
     
@@ -638,7 +651,7 @@ test('recorded test', async ({ page }) => {
 
           const actionType = document.createElement('div');
           actionType.className = 'action-type';
-          actionType.textContent = getActionTypeLabel(action.type);
+          actionType.textContent = getActionTypeLabel(action.type, action);
 
           const actionDetails = document.createElement('div');
           actionDetails.className = 'action-details';
@@ -667,16 +680,26 @@ test('recorded test', async ({ page }) => {
       }
     }
 
-    function getActionTypeLabel(type) {
+    function getActionTypeLabel(type, action) {
+      // Check for coordinate-based click
+      if (type === 'click' && action.coordinates) {
+        return '📍 Click (Coords)';
+      }
+
       const labels = {
         'navigate': '🌐 Navigate',
         'click': '🖱️ Click',
+        'clickUntilGone': '🔄 Click Until Gone',
         'fill': '📝 Fill',
         'keypress': '⌨️ Keypress',
         'screenshot': '📸 Screenshot',
         'waitForElement': '⏳ Wait',
         'download': '📥 Download',
-        'datePickerGroup': '📅 Date Picker'
+        'datePickerGroup': '📅 Date Picker',
+        'captureTable': '📊 Capture Table',
+        'newTab': '🆕 New Tab',
+        'closeTab': '🚪 Close Tab',
+        'print': '🖨️ Print'
       };
       return labels[type] || type;
     }
@@ -686,9 +709,24 @@ test('recorded test', async ({ page }) => {
         case 'navigate':
           return action.url || '';
         case 'click':
-          return action.selector || (action.coordinates ? \`\${action.coordinates.x}, \${action.coordinates.y}\` : '');
+          let details = '';
+          if (action.coordinates) {
+            details = \`X: \${action.coordinates.x}, Y: \${action.coordinates.y}\`;
+          } else {
+            details = action.selector || '';
+          }
+          if (action.frameSelector) {
+            details += \` (in iframe: \${action.frameSelector})\`;
+          }
+          return details;
+        case 'clickUntilGone':
+          return \`\${action.selector} (max: \${action.maxIterations || 100} clicks)\`;
         case 'fill':
-          return \`\${action.selector}: "\${action.value}"\`;
+          let fillDetails = \`\${action.selector}: "\${action.value}"\`;
+          if (action.frameSelector) {
+            fillDetails += \` (in iframe: \${action.frameSelector})\`;
+          }
+          return fillDetails;
         case 'keypress':
           return \`Key: \${action.key}\`;
         case 'waitForElement':
@@ -700,6 +738,14 @@ test('recorded test', async ({ page }) => {
           return offsetText;
         case 'download':
           return action.value || 'Download event';
+        case 'captureTable':
+          return \`\${action.tables?.length || 0} table(s)\`;
+        case 'newTab':
+          return action.newTabUrl || 'New tab opened';
+        case 'closeTab':
+          return action.closedTabUrl || 'Tab closed, switched back to previous page';
+        case 'print':
+          return 'Print dialog triggered';
         default:
           return action.selector || '';
       }

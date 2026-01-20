@@ -532,6 +532,23 @@ const FinanceHub: React.FC = () => {
           accountType: cardCredentials.accountType || 'personal'
         };
 
+        // Save cards to database as "accounts"
+        if (result.cards && result.cards.length > 0) {
+          for (const card of result.cards) {
+            await window.electron.financeHubDb.upsertAccount({
+              bankId: selectedCard.id,
+              accountNumber: card.cardNumber,
+              accountName: card.cardName || '카드',
+              customerName: result.userName || '사용자',
+              balance: 0, // Cards don't track balance
+              availableBalance: 0,
+              openDate: ''
+            });
+          }
+          loadDatabaseStats();
+          loadBanksAndAccounts();
+        }
+
         // Track connection
         const existingIndex = connectedCards.findIndex(c => c.cardCompanyId === selectedCard.id);
         if (existingIndex >= 0) {
@@ -552,6 +569,46 @@ const FinanceHub: React.FC = () => {
     } finally {
       setIsConnectingCard(false);
       setCardConnectionProgress('');
+    }
+  };
+
+  const handleReconnectCard = async (cardCompanyId: string) => {
+    const card = getCardConfigById(cardCompanyId);
+    try {
+      setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? { ...c, status: 'pending' as const } : c));
+      const credResult = await window.electron.financeHub.getSavedCredentials(cardCompanyId);
+
+      if (!credResult.success || !credResult.credentials) {
+        setSelectedCard(card || null);
+        setShowCardSelector(true);
+        setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? { ...c, status: 'disconnected' as const } : c));
+        return;
+      }
+
+      const loginResult = await window.electron.financeHub.card.loginAndGetCards(cardCompanyId, {
+        userId: credResult.credentials.userId,
+        password: credResult.credentials.password,
+        accountType: credResult.credentials.accountType || 'personal'
+      });
+
+      if (loginResult.success && loginResult.isLoggedIn) {
+        setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? {
+          ...c,
+          status: 'connected' as const,
+          alias: loginResult.userName || c.alias,
+          cards: loginResult.cards || c.cards,
+          lastSync: new Date(),
+          accountType: credResult.credentials.accountType || c.accountType || 'personal'
+        } : c));
+        alert(`✅ ${card?.nameKo || cardCompanyId} 재연결 성공!`);
+      } else {
+        setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? { ...c, status: 'error' as const } : c));
+        alert(`${card?.nameKo || cardCompanyId} 재연결 실패: ${loginResult.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Reconnect card error:', error);
+      setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? { ...c, status: 'error' as const } : c));
+      alert(`재연결 중 오류가 발생했습니다: ${error}`);
     }
   };
 
@@ -1193,6 +1250,11 @@ const FinanceHub: React.FC = () => {
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
+                            {(connection.status === 'disconnected' || connection.status === 'error') && (
+                              <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnectCard(connection.cardCompanyId)}>
+                                <FontAwesomeIcon icon={faSync} /> 재연결
+                              </button>
+                            )}
                             <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger" onClick={() => handleDisconnectCard(connection.cardCompanyId)}>
                               연결 해제
                             </button>
