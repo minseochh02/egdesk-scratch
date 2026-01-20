@@ -6,7 +6,7 @@ import * as os from 'os';
 import { OSAutomation } from './utils/osAutomation';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
   selector?: string;
   value?: string;
   key?: string;
@@ -15,6 +15,7 @@ interface RecordedAction {
   timeout?: number;
   timestamp: number;
   coordinates?: { x: number; y: number }; // For coordinate-based clicks
+  frameSelector?: string; // CSS selector or name/id to locate the iframe
   // Date picker fields
   dateComponents?: {
     year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
@@ -32,6 +33,7 @@ interface RecordedAction {
   }>;
   // New tab fields
   newTabUrl?: string; // URL of the newly opened tab
+  closedTabUrl?: string; // URL of the tab that was closed
   // Click Until Gone fields
   maxIterations?: number; // Maximum number of times to click (safety limit)
   checkCondition?: 'gone' | 'hidden' | 'disabled'; // What condition to check
@@ -50,6 +52,7 @@ export class PlaywrightRecorder {
   private controllerCheckInterval: NodeJS.Timeout | null = null;
   private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
   private profileDir: string | null = null;
+  private pageStack: Page[] = []; // Track page history for switching back
 
   // Date marking mode state
   private isDateMarkingMode: boolean = false;
@@ -63,6 +66,9 @@ export class PlaywrightRecorder {
 
   // Click Until Gone mode state
   private isClickUntilGoneMode: boolean = false;
+
+  // Coordinate mode state
+  private isCoordinateModeEnabled: boolean = false;
 
   // OS-level automation for native dialogs
   private osAutomation: OSAutomation | null = null;
@@ -246,6 +252,36 @@ export class PlaywrightRecorder {
         timestamp: Date.now() - this.startTime
       });
 
+      // Push current page to stack before switching
+      if (this.page) {
+        this.pageStack.push(this.page);
+        console.log('📚 Pushed page to stack. Stack size:', this.pageStack.length);
+      }
+
+      // Listen for when this new page closes
+      newPage.on('close', () => {
+        console.log('🚪 Page closed:', newPage.url());
+
+        // Record the close action
+        this.actions.push({
+          type: 'closeTab',
+          closedTabUrl: newPage.url(),
+          timestamp: Date.now() - this.startTime
+        });
+
+        // Switch back to previous page
+        const previousPage = this.pageStack.pop();
+        if (previousPage) {
+          this.page = previousPage;
+          console.log('⬅️ Switched back to previous page:', previousPage.url());
+          console.log('📚 Stack size after pop:', this.pageStack.length);
+        } else {
+          console.log('⚠️ No previous page in stack');
+        }
+
+        this.updateGeneratedCode();
+      });
+
       // Switch to the new page for recording
       this.page = newPage;
 
@@ -253,6 +289,38 @@ export class PlaywrightRecorder {
       this.setupPageListeners();
       await this.injectKeyboardListener();
       await this.injectControllerUI();
+
+      // Re-apply mode states (coordinate mode, etc.)
+      await this.reapplyModeStates();
+
+      // Wait a bit for iframes in the new page to load
+      await newPage.waitForTimeout(1000);
+
+      // Inject into iframes on the new page
+      await this.injectIntoIframes();
+
+      // Show iframe ready notification on new page
+      await newPage.evaluate(() => {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 80px;
+          right: 20px;
+          background: #4CAF50;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          z-index: 999998;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        `;
+        notification.textContent = '✅ New page ready (iframes loaded)';
+        if (document.body) {
+          document.body.appendChild(notification);
+        }
+        setTimeout(() => notification.remove(), 2000);
+      }).catch(() => {});
 
       // Set up download handling for the new page
       this.page.on('download', async (download) => {
@@ -339,13 +407,43 @@ export class PlaywrightRecorder {
       url: url,
       timestamp: Date.now() - this.startTime
     });
-    
+
+    // Wait for iframes to load
+    await this.page.waitForTimeout(2000);
+
     // Add controller UI
     await this.injectControllerUI();
-    
+
+    // Inject into any iframes immediately
+    await this.injectIntoIframes();
+
+    // Give iframes time to set up listeners
+    await this.page.waitForTimeout(500);
+
+    // Show notification that recording is ready
+    await this.page.evaluate(() => {
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        z-index: 999998;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      `;
+      notification.textContent = '✅ Iframes ready for recording';
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 3000);
+    });
+
     this.isRecording = true;
     this.updateGeneratedCode();
-    
+
     // Start periodic controller check
     this.startControllerCheck();
   }
@@ -355,20 +453,23 @@ export class PlaywrightRecorder {
     if (this.controllerCheckInterval) {
       clearInterval(this.controllerCheckInterval);
     }
-    
-    // Check every 2 seconds if controller exists
+
+    // Check every 2 seconds if controller exists and re-inject iframes
     this.controllerCheckInterval = setInterval(async () => {
       if (!this.page || !this.isRecording) return;
-      
+
       try {
         const hasController = await this.page.evaluate(() => {
           return !!document.getElementById('playwright-recorder-controller');
         });
-        
+
         if (!hasController) {
           console.log('🔍 Controller missing, re-injecting...');
           await this.injectControllerUI();
         }
+
+        // Also periodically re-inject into new iframes
+        await this.injectIntoIframes();
       } catch (err) {
         // Page might be navigating, ignore
       }
@@ -377,7 +478,8 @@ export class PlaywrightRecorder {
 
   private async injectControllerUI(): Promise<void> {
     if (!this.page) return;
-    
+
+    // Inject into main frame
     await this.page.evaluate(() => {
       // Check if controller already exists
       if (document.getElementById('playwright-recorder-controller')) {
@@ -698,7 +800,19 @@ export class PlaywrightRecorder {
       let highlightMode = false;
       let currentHighlightedElement: HTMLElement | null = null;
       let coordinateMode = false;
-      
+
+      // IMPORTANT: Initialize coordinate mode from global state if it exists
+      if ((window as any).__playwrightRecorderCoordinateMode !== undefined) {
+        coordinateMode = (window as any).__playwrightRecorderCoordinateMode;
+        console.log('📍 Restored coordinate mode from global state:', coordinateMode);
+        if (coordinateMode) {
+          coordBtn.classList.add('active');
+          coordBtn.style.background = '#4CAF50';
+          coordBtn.style.borderColor = '#4CAF50';
+          document.body.style.cursor = 'crosshair';
+        }
+      }
+
       // Listen for element highlight updates
       document.addEventListener('playwright-recorder-element-highlighted', (e: any) => {
         currentHighlightedElement = e.detail.element;
@@ -716,11 +830,17 @@ export class PlaywrightRecorder {
       coordBtn.addEventListener('click', () => {
         coordinateMode = !coordinateMode;
         coordBtn.classList.toggle('active', coordinateMode);
-        
+        console.log('🔘 Coordinate button clicked, mode is now:', coordinateMode);
+
+        // Save to global state so it persists across page reloads/navigations
+        (window as any).__playwrightRecorderCoordinateMode = coordinateMode;
+        console.log('💾 Saved coordinate mode to global state:', coordinateMode);
+
         if (coordinateMode) {
           coordBtn.style.background = '#4CAF50';
           coordBtn.style.borderColor = '#4CAF50';
           document.body.style.cursor = 'crosshair';
+          console.log('✅ Coordinate mode ENABLED');
           
           // Show coordinate mode notification
           const coordNotification = document.createElement('div');
@@ -809,12 +929,27 @@ export class PlaywrightRecorder {
             existingNotification.remove();
           }
         }
-        
+
         // Dispatch event to notify about coordinate mode change
-        const event = new CustomEvent('playwright-recorder-coordinate-toggle', { 
-          detail: { enabled: coordinateMode } 
+        const event = new CustomEvent('playwright-recorder-coordinate-toggle', {
+          detail: { enabled: coordinateMode }
         });
-        document.dispatchEvent(event);
+        console.log('📡 Dispatching coordinate toggle event, enabled:', coordinateMode);
+        console.log('📡 Event detail:', event.detail);
+        console.log('📡 Document:', document);
+
+        // CRITICAL: Dispatch the event synchronously
+        const dispatched = document.dispatchEvent(event);
+        console.log('📡 Event dispatched, returned:', dispatched);
+
+        // ALSO set the global state directly so the handleClick function can read it
+        (window as any).__playwrightRecorderCoordinateModeActive = coordinateMode;
+        console.log('💾 Set global __playwrightRecorderCoordinateModeActive to:', coordinateMode);
+
+        // Notify main process about coordinate mode change
+        if ((window as any).__playwrightRecorderOnCoordinateModeChange) {
+          (window as any).__playwrightRecorderOnCoordinateModeChange(coordinateMode);
+        }
       });
       
       highlightBtn.addEventListener('click', () => {
@@ -1823,6 +1958,17 @@ export class PlaywrightRecorder {
 
     // Add init script to capture all events
     await this.context.addInitScript(() => {
+      console.log('🚀 INIT SCRIPT RUNNING - Page:', window.location.href);
+      console.log('🚀 Setting up event listeners for coordinate mode, click tracking, etc.');
+
+      // Initialize global state if not exists
+      if ((window as any).__playwrightRecorderCoordinateModeActive === undefined) {
+        (window as any).__playwrightRecorderCoordinateModeActive = false;
+        console.log('📍 Initialized __playwrightRecorderCoordinateModeActive = false');
+      } else {
+        console.log('📍 Found existing __playwrightRecorderCoordinateModeActive =', (window as any).__playwrightRecorderCoordinateModeActive);
+      }
+
       // Monitor for controller removal and notify parent
       const checkControllerExists = () => {
         const controller = document.getElementById('playwright-recorder-controller');
@@ -1967,9 +2113,11 @@ export class PlaywrightRecorder {
       let tooltipElement: HTMLElement | null = null;
       let isHighlightKeyPressed = false;
       let isShiftKeyPressed = false;
-      let isCoordinateMode = false;
+      let isCoordinateMode = (window as any).__playwrightRecorderCoordinateModeActive || false;
       let coordIndicator: HTMLElement | null = null;
       let isClickUntilGoneMode = false;
+
+      console.log('🎬 Init script variables initialized, isCoordinateMode:', isCoordinateMode);
       
       // Function to show selector tooltip
       const showTooltip = (element: HTMLElement, selector: string) => {
@@ -2075,9 +2223,15 @@ export class PlaywrightRecorder {
       }, true);
       
       // Listen for coordinate mode toggle from controller
+      console.log('🎧 Setting up coordinate toggle event listener');
       document.addEventListener('playwright-recorder-coordinate-toggle', (e: any) => {
+        console.log('📡 Received coordinate toggle event, detail:', e.detail);
         isCoordinateMode = e.detail.enabled;
-        console.log('📍 Coordinate mode:', isCoordinateMode ? 'ON' : 'OFF');
+        console.log('📍 Coordinate mode is now:', isCoordinateMode ? 'ON ✅' : 'OFF ❌');
+        console.log('📍 Will add coordinates to next click:', isCoordinateMode);
+
+        // Save to global state
+        (window as any).__playwrightRecorderCoordinateModeActive = isCoordinateMode;
 
         // Clean up coordinate indicator when turning off coordinate mode
         if (!isCoordinateMode && coordIndicator) {
@@ -2085,6 +2239,81 @@ export class PlaywrightRecorder {
           coordIndicator = null;
         }
       });
+      console.log('✅ Coordinate toggle event listener registered');
+
+      // Test that events work
+      setTimeout(() => {
+        console.log('🧪 Testing event system...');
+        const testEvent = new CustomEvent('test-event', { detail: { test: 'value' } });
+        document.dispatchEvent(testEvent);
+      }, 100);
+
+      document.addEventListener('test-event', (e: any) => {
+        console.log('✅ Test event received! Event system is working. Detail:', e.detail);
+      });
+
+      // Track recently processed iframe clicks to prevent duplicates
+      const recentIframeClicks = new Set();
+
+      // Listen for postMessage from iframes
+      window.addEventListener('message', (event) => {
+        // Handle iframe clicks
+        if (event.data && event.data.type === 'playwright-recorder-iframe-click') {
+          console.log('🖼️ Received iframe click message:', event.data);
+
+          const iframeData = event.data;
+
+          // Use the selector generated in the iframe
+          const selector = iframeData.targetSelector || iframeData.targetInfo.tagName.toLowerCase();
+
+          const clickEvent = {
+            selector: selector,
+            text: iframeData.targetInfo.text,
+            frameSelector: iframeData.iframeSelector,
+            coordinates: (window as any).__playwrightRecorderCoordinateModeActive ? iframeData.coordinates : undefined
+          };
+
+          console.log('🖼️ Sending iframe click to recorder:', clickEvent);
+          console.log('🖼️ Frame selector:', clickEvent.frameSelector);
+          console.log('🖼️ Element selector:', clickEvent.selector);
+          console.log('🖼️ Coordinates:', clickEvent.coordinates);
+
+          // Mark this as an iframe click so the main click handler can ignore it
+          const clickId = `${clickEvent.frameSelector}:${clickEvent.selector}:${Date.now()}`;
+          recentIframeClicks.add(clickId);
+          setTimeout(() => recentIframeClicks.delete(clickId), 1000);
+
+          if ((window as any).__playwrightRecorderOnClick) {
+            (window as any).__playwrightRecorderOnClick(clickEvent);
+          }
+        }
+
+        // Handle iframe fill events
+        if (event.data && event.data.type === 'playwright-recorder-iframe-fill') {
+          console.log('🖼️ ✅ Received iframe fill message:', event.data);
+
+          const iframeData = event.data;
+
+          const fillEvent = {
+            selector: iframeData.targetSelector,
+            value: iframeData.value,
+            frameSelector: iframeData.iframeSelector
+          };
+
+          console.log('🖼️ Sending iframe fill to recorder:');
+          console.log('  - Selector:', fillEvent.selector);
+          console.log('  - Value:', fillEvent.value);
+          console.log('  - Frame:', fillEvent.frameSelector);
+
+          if ((window as any).__playwrightRecorderOnFill) {
+            (window as any).__playwrightRecorderOnFill(fillEvent);
+            console.log('✅ Iframe fill sent to recorder');
+          } else {
+            console.error('❌ __playwrightRecorderOnFill not available!');
+          }
+        }
+      });
+      console.log('✅ PostMessage listener for iframes registered');
 
       // Listen for click until gone mode toggle from controller
       document.addEventListener('playwright-recorder-click-until-gone-toggle', (e: any) => {
@@ -2286,6 +2515,16 @@ export class PlaywrightRecorder {
       document.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
 
+        // Skip if target is inside an iframe (iframe will handle it)
+        try {
+          if (target.ownerDocument !== document) {
+            console.log('⏭️ Input is in iframe, skipping main handler');
+            return;
+          }
+        } catch (e) {
+          // Can't check, continue
+        }
+
         // Skip recording input events on recorder UI elements and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
@@ -2343,6 +2582,16 @@ export class PlaywrightRecorder {
       // Also capture on blur (when user leaves the field) for immediate capture
       document.addEventListener('blur', (e) => {
         const target = e.target as HTMLInputElement;
+
+        // Skip if target is inside an iframe (iframe will handle it)
+        try {
+          if (target.ownerDocument !== document) {
+            console.log('⏭️ Blur is in iframe, skipping main handler');
+            return;
+          }
+        } catch (e) {
+          // Can't check, continue
+        }
 
         // Skip recorder UI elements and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
@@ -2948,12 +3197,31 @@ export class PlaywrightRecorder {
           return;
         }
 
-        console.log('🖱️ Click detected, coordinate mode:', isCoordinateMode);
+        console.log('🖱️ Click detected on:', target.tagName, target.id || target.className);
+        console.log('🖱️ Document:', target.ownerDocument === document ? 'main page' : 'different document');
+        console.log('🖱️ Coordinate mode:', isCoordinateMode);
 
         // Mark this event as processed
         processedClicks.set(e, true);
         lastClickTime = now;
         lastClickTarget = target;
+
+        // CRITICAL: Check if this click is in an iframe
+        // Clicks in iframes have different ownerDocument
+        if (target.ownerDocument && target.ownerDocument !== document) {
+          console.log('🖼️ Click target is in a different document (iframe), skipping main handler');
+          return;
+        }
+
+        // Also check if target or any parent is an iframe element
+        let currentElement = target;
+        while (currentElement) {
+          if (currentElement.tagName === 'IFRAME') {
+            console.log('🖼️ Click is on iframe element itself, skipping');
+            return;
+          }
+          currentElement = currentElement.parentElement as HTMLElement;
+        }
 
         // Skip recording clicks on the recorder controller UI and date offset modal
         if (target.closest('#playwright-recorder-controller') ||
@@ -3620,16 +3888,23 @@ export class PlaywrightRecorder {
         };
 
         console.log('📤 Click event prepared - Selector:', selector, 'Text:', event.text);
+        console.log('📍 Checking coordinate mode... isCoordinateMode =', isCoordinateMode);
+        console.log('📍 Checking global state... __playwrightRecorderCoordinateModeActive =', (window as any).__playwrightRecorderCoordinateModeActive);
 
-        // Add coordinates if in coordinate mode
-        if (isCoordinateMode) {
+        // Add coordinates if in coordinate mode (check both variable and global state)
+        const shouldUseCoordinates = isCoordinateMode || (window as any).__playwrightRecorderCoordinateModeActive;
+        console.log('📍 Final decision - shouldUseCoordinates:', shouldUseCoordinates);
+
+        if (shouldUseCoordinates) {
           // Use pageX/pageY for absolute document coordinates
           const x = e.pageX || (e.clientX + window.pageXOffset);
           const y = e.pageY || (e.clientY + window.pageYOffset);
-          
+
           event.coordinates = { x, y };
-          console.log(`📍 Recording click at coordinates: (${x}, ${y})`);
-          console.log(`📍 Coordinate mode active, sending coordinates with click event`);
+          console.log(`📍✅ COORDINATES ADDED: X=${x}, Y=${y}`);
+          console.log(`📍 Event now includes coordinates:`, event.coordinates);
+        } else {
+          console.log('📍❌ Coordinate mode is OFF, not adding coordinates');
         }
         
         (window as any).__recordedEvents.push({
@@ -3745,8 +4020,307 @@ export class PlaywrightRecorder {
 
   }
 
+  private async injectIntoIframes(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      const frames = this.page.frames();
+      console.log(`🖼️ Found ${frames.length} frames (including main frame)`);
+
+      for (const frame of frames) {
+        // Skip main frame (already injected)
+        if (frame === this.page.mainFrame()) {
+          continue;
+        }
+
+        try {
+          const frameUrl = frame.url();
+
+          // Skip about:blank and empty frames (they're placeholders)
+          if (frameUrl === 'about:blank' || frameUrl === '' || frameUrl === 'about:srcdoc') {
+            continue;
+          }
+
+          console.log(`🖼️ Attempting to inject into iframe: ${frameUrl}`);
+
+          // Inject event handlers into iframe
+          await frame.evaluate(() => {
+            // Skip if already injected
+            if ((window as any).__playwrightRecorderIframeInjected) {
+              console.log('🖼️ Already injected into this iframe, skipping');
+              return;
+            }
+
+            // Mark as injected
+            (window as any).__playwrightRecorderIframeInjected = true;
+            (window as any).__isIframeContext = true;
+            console.log('🖼️ Injecting recorder into iframe');
+
+            // Get iframe selector by finding this iframe in parent
+            let iframeSelector = '';
+            try {
+              if (window.frameElement) {
+                const iframe = window.frameElement as HTMLIFrameElement;
+                console.log('🖼️ Found frameElement:', iframe.tagName, 'ID:', iframe.id, 'Name:', iframe.name);
+
+                if (iframe.id) {
+                  iframeSelector = `[id="${iframe.id}"]`;
+                  console.log('🖼️ Using ID selector:', iframeSelector);
+                } else if (iframe.name) {
+                  iframeSelector = `[name="${iframe.name}"]`;
+                  console.log('🖼️ Using name selector:', iframeSelector);
+                } else if (iframe.title) {
+                  iframeSelector = `[title="${iframe.title}"]`;
+                  console.log('🖼️ Using title selector:', iframeSelector);
+                } else {
+                  // Use src as fallback
+                  const src = iframe.getAttribute('src');
+                  if (src) {
+                    const srcPart = src.split('?')[0].split('/').pop();
+                    iframeSelector = `iframe[src*="${srcPart}"]`;
+                    console.log('🖼️ Using src selector:', iframeSelector);
+                  } else {
+                    // Last resort: use index
+                    try {
+                      const parent = iframe.parentElement;
+                      if (parent) {
+                        const iframes = Array.from(parent.querySelectorAll('iframe'));
+                        const index = iframes.indexOf(iframe);
+                        if (index >= 0) {
+                          iframeSelector = `iframe:nth-of-type(${index + 1})`;
+                          console.log('🖼️ Using nth-of-type selector:', iframeSelector);
+                        }
+                      }
+                    } catch (e2) {
+                      console.warn('Could not determine iframe index:', e2);
+                    }
+                  }
+                }
+
+                if (!iframeSelector) {
+                  iframeSelector = 'iframe'; // Absolute fallback
+                  console.warn('⚠️ Could not determine unique iframe selector, using generic "iframe"');
+                }
+
+                console.log('🖼️ Final iframe selector:', iframeSelector);
+                (window as any).__iframeSelector = iframeSelector;
+              } else {
+                console.warn('⚠️ window.frameElement is null - might not be in an iframe?');
+                // Still set a fallback
+                (window as any).__iframeSelector = 'iframe';
+              }
+            } catch (e) {
+              console.error('❌ Error determining iframe selector:', e);
+              // Set fallback even on error
+              (window as any).__iframeSelector = 'iframe';
+            }
+
+            // Double-check that iframeSelector is set
+            if (!(window as any).__iframeSelector) {
+              console.error('❌ CRITICAL: __iframeSelector is not set! Using fallback.');
+              (window as any).__iframeSelector = 'iframe';
+            }
+            console.log('✅ Iframe selector initialized:', (window as any).__iframeSelector);
+
+            // Add visual indicator that this iframe is being recorded
+            const indicator = document.createElement('div');
+            indicator.style.cssText = `
+              position: fixed;
+              top: 5px;
+              right: 5px;
+              background: rgba(76, 175, 80, 0.9);
+              color: white;
+              padding: 4px 8px;
+              border-radius: 4px;
+              font-size: 10px;
+              font-family: monospace;
+              z-index: 999999;
+              pointer-events: none;
+            `;
+            indicator.textContent = '🖼️ Recording';
+            if (document.body) {
+              document.body.appendChild(indicator);
+            }
+
+            // Set up click tracking in iframe
+            document.addEventListener('click', (e) => {
+              const target = e.target as HTMLElement;
+              console.log('🖼️ Click in iframe detected:', target);
+              console.log('🖼️ Iframe selector for this frame:', (window as any).__iframeSelector);
+
+              // Skip recorder UI elements
+              if (target.closest('#playwright-recorder-controller')) {
+                return;
+              }
+
+              // Generate selector for the clicked element
+              let selector = '';
+              if (target.id) {
+                selector = `[id="${target.id}"]`;
+              } else if (target.tagName === 'BUTTON' && target.textContent?.trim()) {
+                selector = `button:has-text("${target.textContent.trim()}")`;
+              } else if (target.tagName === 'A' && target.textContent?.trim()) {
+                selector = `a:has-text("${target.textContent.trim()}")`;
+              } else if (target.className) {
+                selector = `.${target.className.split(' ')[0]}`;
+              } else {
+                selector = target.tagName.toLowerCase();
+              }
+
+              // Try to pass event to parent window
+              try {
+                if (window.parent && window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'playwright-recorder-iframe-click',
+                    iframeSelector: (window as any).__iframeSelector,
+                    targetSelector: selector,
+                    targetInfo: {
+                      tagName: target.tagName,
+                      id: target.id,
+                      className: target.className,
+                      text: target.textContent?.trim() || ''
+                    },
+                    coordinates: {
+                      x: e.pageX,
+                      y: e.pageY
+                    }
+                  }, '*');
+                  console.log('✅ Posted iframe click to parent with selector:', selector);
+                }
+              } catch (err) {
+                console.error('Failed to post message to parent:', err);
+              }
+            }, true);
+
+            // Set up input tracking in iframe
+            const iframeInputTimers = new WeakMap();
+            const iframeLastValues = new WeakMap();
+
+            document.addEventListener('input', (e) => {
+              const target = e.target as HTMLInputElement;
+
+              if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+                // Clear existing timer
+                const existingTimer = iframeInputTimers.get(target);
+                if (existingTimer) {
+                  clearTimeout(existingTimer);
+                }
+
+                // Debounce: wait 1 second after last keystroke
+                const timer = setTimeout(() => {
+                  const currentValue = target.value;
+                  const lastValue = iframeLastValues.get(target);
+
+                  if (currentValue !== lastValue) {
+                    // Generate selector
+                    let selector = '';
+                    if (target.id) {
+                      selector = `[id="${target.id}"]`;
+                    } else if (target.getAttribute('name')) {
+                      selector = `[name="${target.getAttribute('name')}"]`;
+                    } else if (target.className) {
+                      selector = `.${target.className.split(' ')[0]}`;
+                    } else {
+                      selector = target.tagName.toLowerCase();
+                    }
+
+                    console.log('🖼️ Input in iframe changed:', selector, '=', currentValue);
+                    console.log('🖼️ Using iframe selector:', (window as any).__iframeSelector);
+
+                    try {
+                      if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({
+                          type: 'playwright-recorder-iframe-fill',
+                          iframeSelector: (window as any).__iframeSelector,
+                          targetSelector: selector,
+                          value: currentValue
+                        }, '*');
+                        console.log('✅ Posted iframe fill to parent:', selector, '=', currentValue, 'iframe:', (window as any).__iframeSelector);
+                      }
+                    } catch (err) {
+                      console.error('Failed to post fill message:', err);
+                    }
+
+                    iframeLastValues.set(target, currentValue);
+                  }
+                }, 1000);
+
+                iframeInputTimers.set(target, timer);
+              }
+            }, true);
+
+            document.addEventListener('blur', (e) => {
+              const target = e.target as HTMLElement;
+
+              if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+                // Clear timer
+                const existingTimer = iframeInputTimers.get(target);
+                if (existingTimer) {
+                  clearTimeout(existingTimer);
+                  iframeInputTimers.delete(target);
+                }
+
+                const value = (target as HTMLInputElement).value;
+                const lastValue = iframeLastValues.get(target);
+
+                // Only send if value changed
+                if (value !== lastValue && value !== '') {
+                  // Generate selector
+                  let selector = '';
+                  if (target.id) {
+                    selector = `[id="${target.id}"]`;
+                  } else if (target.getAttribute('name')) {
+                    selector = `[name="${target.getAttribute('name')}"]`;
+                  } else if (target.className) {
+                    selector = `.${target.className.split(' ')[0]}`;
+                  } else {
+                    selector = target.tagName.toLowerCase();
+                  }
+
+                  console.log('🖼️ Input in iframe blur:', selector, '=', value);
+                  console.log('🖼️ Using iframe selector:', (window as any).__iframeSelector);
+
+                  try {
+                    if (window.parent && window.parent !== window) {
+                      window.parent.postMessage({
+                        type: 'playwright-recorder-iframe-fill',
+                        iframeSelector: (window as any).__iframeSelector,
+                        targetSelector: selector,
+                        value: value
+                      }, '*');
+                      console.log('✅ Posted iframe fill on blur to parent:', selector, '=', value, 'iframe:', (window as any).__iframeSelector);
+                    }
+                  } catch (err) {
+                    console.error('Failed to post fill message:', err);
+                  }
+
+                  iframeLastValues.set(target, value);
+                }
+              }
+            }, true);
+          });
+
+          console.log(`✅ Injected into iframe: ${frameUrl}`);
+        } catch (err: any) {
+          // Check if it's a cross-origin error
+          if (err.message && err.message.includes('cross-origin')) {
+            console.warn(`⚠️ Cross-origin iframe detected (cannot inject): ${frame.url()}`);
+            console.warn(`   Use coordinate mode for clicks in cross-origin iframes`);
+          } else {
+            console.warn(`⚠️ Could not inject into frame: ${frame.url()}`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error injecting into iframes:', err);
+    }
+  }
+
   private async injectKeyboardListener(): Promise<void> {
     if (!this.page) return;
+
+    // Also inject into iframes
+    await this.injectIntoIframes();
 
     // Expose functions to receive events
     await this.page.exposeFunction('__playwrightRecorderOnKeyboard', async (event: any) => {
@@ -3763,17 +4337,68 @@ export class PlaywrightRecorder {
     });
     
     await this.page.exposeFunction('__playwrightRecorderOnFill', async (data: any) => {
-      this.actions.push({
+      // Check for duplicate within last 500ms
+      // IMPORTANT: Only skip if BOTH selector, value, AND frameSelector match
+      const now = Date.now();
+      const recentActions = this.actions.slice(-3);
+      const isDuplicate = recentActions.some(action =>
+        action.type === 'fill' &&
+        action.selector === data.selector &&
+        action.value === data.value &&
+        action.frameSelector === data.frameSelector && // Must have same frame context
+        (now - this.startTime - action.timestamp) < 500
+      );
+
+      if (isDuplicate) {
+        console.log('⏭️ Duplicate fill detected, skipping:', data.selector, 'value:', data.value, 'frame:', data.frameSelector);
+        return;
+      }
+
+      console.log('📝 __playwrightRecorderOnFill called');
+      console.log('  - Selector:', data.selector);
+      console.log('  - Value:', data.value);
+      console.log('  - Frame:', data.frameSelector || 'main page');
+
+      const action: RecordedAction = {
         type: 'fill',
         selector: data.selector,
         value: data.value,
         timestamp: Date.now() - this.startTime
-      });
-      console.log('📝 Captured fill:', data.selector, '=', data.value);
+      };
+
+      // Add frame selector if provided (for iframe fills)
+      if (data.frameSelector) {
+        action.frameSelector = data.frameSelector;
+        console.log('📝 Fill in iframe, frame selector:', data.frameSelector);
+      }
+
+      this.actions.push(action);
+      console.log('📝 Captured fill:', data.selector, '=', data.value, 'frameSelector:', data.frameSelector);
       this.updateGeneratedCode();
     });
     
     await this.page.exposeFunction('__playwrightRecorderOnClick', async (data: any) => {
+      // Check for duplicate within last 500ms
+      // IMPORTANT: Only skip if BOTH selector AND frameSelector match (or both are undefined)
+      const now = Date.now();
+      const recentActions = this.actions.slice(-3); // Check last 3 actions
+      const isDuplicate = recentActions.some(action =>
+        action.type === 'click' &&
+        action.selector === data.selector &&
+        action.frameSelector === data.frameSelector && // Must have same frame context
+        (now - this.startTime - action.timestamp) < 500
+      );
+
+      if (isDuplicate) {
+        console.log('⏭️ Duplicate click detected, skipping:', data.selector, 'frame:', data.frameSelector);
+        return;
+      }
+
+      console.log('🎯 __playwrightRecorderOnClick called');
+      console.log('  - Selector:', data.selector);
+      console.log('  - Frame:', data.frameSelector || 'main page');
+      console.log('  - Coordinates:', data.coordinates);
+
       const action: RecordedAction = {
         type: 'click',
         selector: data.selector,
@@ -3781,15 +4406,27 @@ export class PlaywrightRecorder {
         timestamp: Date.now() - this.startTime
       };
 
+      // Add frame selector if provided (for iframe clicks)
+      if (data.frameSelector) {
+        action.frameSelector = data.frameSelector;
+        console.log('🖼️ ✅ Click in iframe, frame selector:', data.frameSelector);
+      } else {
+        console.log('🖱️ Click on main page (no frameSelector)');
+      }
+
       // Add coordinates if provided
       if (data.coordinates) {
         action.coordinates = data.coordinates;
-        console.log('🖱️📍 Captured click at coordinates:', data.coordinates);
+        console.log('🖱️📍 Captured click WITH COORDINATES:', data.coordinates);
+        console.log('🖱️📍 Action saved with coordinates:', action.coordinates);
       } else {
         console.log('🖱️ Captured click on:', data.selector);
+        console.log('🖱️ No coordinates in this action');
       }
 
       this.actions.push(action);
+      console.log('📊 Total actions now:', this.actions.length);
+      console.log('📊 Last action:', this.actions[this.actions.length - 1]);
       this.updateGeneratedCode();
     });
 
@@ -3808,6 +4445,12 @@ export class PlaywrightRecorder {
 
       this.actions.push(action);
       this.updateGeneratedCode();
+    });
+
+    // Track coordinate mode state changes
+    await this.page.exposeFunction('__playwrightRecorderOnCoordinateModeChange', async (enabled: boolean) => {
+      console.log('📍 Coordinate mode changed to:', enabled);
+      this.isCoordinateModeEnabled = enabled;
     });
     
     await this.page.exposeFunction('__playwrightRecorderOnGemini', async (elementInfo: any) => {
@@ -4098,6 +4741,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       console.log('🔄 Page load event detected');
       await this.injectKeyboardListener();
       await this.injectControllerUI();
+      await this.reapplyModeStates();
+      // Inject into iframes immediately after page load
+      await this.injectIntoIframes();
     });
 
     // Also listen for DOM content changes
@@ -4106,6 +4752,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       // Wait a bit for any dynamic content to settle
       await this.page.waitForTimeout(500);
       await this.injectControllerUI();
+      await this.reapplyModeStates();
+      // Inject into iframes
+      await this.injectIntoIframes();
     });
 
     // Monitor for navigation within the same page
@@ -4115,8 +4764,35 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         await this.page.waitForTimeout(500);
         await this.injectKeyboardListener();
         await this.injectControllerUI();
+        await this.reapplyModeStates();
       }
+      // Also inject into the specific frame that navigated
+      console.log('🔄 Frame navigated:', frame.url());
+      await this.injectIntoIframes();
     });
+  }
+
+  private async reapplyModeStates(): Promise<void> {
+    if (!this.page) return;
+
+    // Re-apply coordinate mode if it was enabled
+    if (this.isCoordinateModeEnabled) {
+      console.log('📍 Re-applying coordinate mode state');
+      await this.page.evaluate(() => {
+        const event = new CustomEvent('playwright-recorder-coordinate-toggle', {
+          detail: { enabled: true }
+        });
+        document.dispatchEvent(event);
+
+        // Update button state
+        const coordBtn = document.querySelector('#playwright-recorder-controller [data-coord-mode="true"]') as HTMLElement;
+        if (coordBtn) {
+          coordBtn.classList.add('active');
+          coordBtn.style.background = '#4CAF50';
+          coordBtn.style.borderColor = '#4CAF50';
+        }
+      });
+    }
   }
 
 
@@ -4317,7 +4993,8 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       "",
       "  // Get or create page",
       "  const pages = context.pages();",
-      "  const page = pages.length > 0 ? pages[0] : await context.newPage();",
+      "  let page = pages.length > 0 ? pages[0] : await context.newPage(); // Use 'let' to allow tab switching",
+      "  const pageStack = []; // Track page history for popup close handling",
       "",
       "  try {"
     ];
@@ -4332,6 +5009,20 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         for (let j = i - 1; j >= 0; j--) {
           if (this.actions[j].type === 'click') {
             downloadTriggerIndices.add(j);
+            break;
+          }
+        }
+      }
+    }
+
+    // Pre-scan for new tabs to identify which actions trigger them
+    const newTabTriggerIndices = new Set<number>();
+    for (let i = 0; i < this.actions.length; i++) {
+      if (this.actions[i].type === 'newTab') {
+        // Find the most recent click before this new tab
+        for (let j = i - 1; j >= 0; j--) {
+          if (this.actions[j].type === 'click') {
+            newTabTriggerIndices.add(j);
             break;
           }
         }
@@ -4362,12 +5053,35 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`    const downloadPromise = page.waitForEvent('download', { timeout: 60000 });`);
           }
 
+          // If this click triggers a new tab, set up the page promise first
+          if (newTabTriggerIndices.has(i)) {
+            lines.push(`    // Setting up new page/tab handler before clicking`);
+            lines.push(`    const newPagePromise = context.waitForEvent('page');`);
+          }
+
           if (action.coordinates) {
             // Use coordinate-based click
-            lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y}); // Click at coordinates`);
+            console.log(`📍 Generating coordinate click: X=${action.coordinates.x}, Y=${action.coordinates.y}`);
+            if (action.frameSelector) {
+              lines.push(`    // Click at coordinates inside iframe`);
+              lines.push(`    {`);
+              lines.push(`      const frame = page.frameLocator('${action.frameSelector}');`);
+              lines.push(`      await frame.locator('body').evaluate((body, coords) => {`);
+              lines.push(`        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, clientX: coords.x, clientY: coords.y });`);
+              lines.push(`        document.elementFromPoint(coords.x, coords.y)?.dispatchEvent(clickEvent);`);
+              lines.push(`      }, { x: ${action.coordinates.x}, y: ${action.coordinates.y} });`);
+              lines.push(`    }`);
+            } else {
+              lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y}); // Click at coordinates`);
+            }
           } else {
             // Use the generated selector which should be more specific
-            lines.push(`    await page.locator('${action.selector}').click();`);
+            console.log(`🎯 Generating selector click: ${action.selector}`);
+            if (action.frameSelector) {
+              lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').click(); // Click in iframe`);
+            } else {
+              lines.push(`    await page.locator('${action.selector}').click();`);
+            }
           }
           break;
         case 'clickUntilGone':
@@ -4429,7 +5143,11 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         case 'fill':
           // Escape single quotes in value
           const escapedValue = action.value?.replace(/'/g, "\\'") || '';
-          lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
+          if (action.frameSelector) {
+            lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').fill('${escapedValue}'); // Fill in iframe`);
+          } else {
+            lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
+          }
           break;
         case 'keypress':
           if (action.key === 'Enter') {
@@ -4612,15 +5330,50 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           }
           break;
         case 'newTab':
-          lines.push(`    // New tab/popup opened`);
+          lines.push(`    // New tab/popup detected during recording`);
           if (action.newTabUrl) {
-            lines.push(`    // URL: ${action.newTabUrl}`);
+            lines.push(`    // Expected URL: ${action.newTabUrl}`);
           }
-          lines.push(`    const pages = context.pages();`);
-          lines.push(`    const newPage = pages[pages.length - 1]; // Get the latest page`);
-          lines.push(`    await newPage.waitForLoadState('domcontentloaded');`);
-          lines.push(`    // Switch to new page for subsequent actions`);
-          lines.push(`    // page = newPage; // Uncomment if you want to continue recording on new tab`);
+          lines.push(`    {`);
+          lines.push(`      // Wait for the new page that was opened by previous click`);
+          lines.push(`      const newPage = await newPagePromise;`);
+          lines.push(`      await newPage.waitForLoadState('domcontentloaded');`);
+          lines.push(`      console.log('✓ New page opened:', newPage.url());`);
+          lines.push(`      `);
+          lines.push(`      // Wait for page to fully load`);
+          lines.push(`      await newPage.waitForLoadState('networkidle').catch(() => {});`);
+          lines.push(`      await newPage.waitForTimeout(2000); // Additional wait for dynamic content`);
+          lines.push(`      `);
+          lines.push(`      // Push current page to stack before switching`);
+          lines.push(`      pageStack.push(page);`);
+          lines.push(`      console.log('📚 Pushed page to stack, stack size:', pageStack.length);`);
+          lines.push(`      `);
+          lines.push(`      // Switch to new page for subsequent actions`);
+          lines.push(`      page = newPage; // All following actions will use this new tab`);
+          lines.push(`      console.log('✓ Switched to new tab:', newPage.url());`);
+          lines.push(`    }`);
+          break;
+        case 'closeTab':
+          lines.push(`    // Popup/tab was closed during recording`);
+          if (action.closedTabUrl) {
+            lines.push(`    // Closed tab URL: ${action.closedTabUrl}`);
+          }
+          lines.push(`    {`);
+          lines.push(`      // Wait for current page to close`);
+          lines.push(`      await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});`);
+          lines.push(`      `);
+          lines.push(`      // Switch back to previous page`);
+          lines.push(`      const previousPage = pageStack.pop();`);
+          lines.push(`      if (previousPage) {`);
+          lines.push(`        page = previousPage;`);
+          lines.push(`        console.log('⬅️ Switched back to previous page:', page.url());`);
+          lines.push(`        console.log('📚 Stack size:', pageStack.length);`);
+          lines.push(`      } else {`);
+          lines.push(`        console.warn('⚠️ No previous page in stack, using first available page');`);
+          lines.push(`        const allPages = context.pages();`);
+          lines.push(`        page = allPages[0];`);
+          lines.push(`      }`);
+          lines.push(`    }`);
           break;
         case 'print':
           lines.push(`    // Print dialog triggered`);
