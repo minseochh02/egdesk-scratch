@@ -322,6 +322,13 @@ export class PlaywrightRecorder {
         setTimeout(() => notification.remove(), 2000);
       }).catch(() => {});
 
+      // Set up dialog handling for new page (auto-accept alerts/confirms for downloads)
+      newPage.on('dialog', async (dialog) => {
+        console.log(`🔔 Dialog detected on new page: ${dialog.type()} - "${dialog.message()}"`);
+        await dialog.accept();
+        console.log('✅ Dialog accepted on new page');
+      });
+
       // Set up download handling for the new page
       this.page.on('download', async (download) => {
         console.log('📥 Download started:', download.url());
@@ -367,7 +374,14 @@ export class PlaywrightRecorder {
     
     // Set up page event listeners
     this.setupPageListeners();
-    
+
+    // Set up dialog handling (auto-accept alerts/confirms for downloads)
+    this.page.on('dialog', async (dialog) => {
+      console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+      await dialog.accept();
+      console.log('✅ Dialog accepted');
+    });
+
     // Set up download handling
     this.page.on('download', async (download) => {
       console.log('📥 Download started:', download.url());
@@ -4359,6 +4373,23 @@ export class PlaywrightRecorder {
       console.log('  - Value:', data.value);
       console.log('  - Frame:', data.frameSelector || 'main page');
 
+      // If this is an iframe fill, check if there's a recent main page fill with same selector
+      // If so, REMOVE the main page version and add iframe version instead
+      if (data.frameSelector) {
+        const mainPageFillIndex = this.actions.findIndex((action, idx) =>
+          idx >= this.actions.length - 3 &&
+          action.type === 'fill' &&
+          action.selector === data.selector &&
+          !action.frameSelector &&
+          (now - this.startTime - action.timestamp) < 1500 // Wider window for fills (typing takes time)
+        );
+
+        if (mainPageFillIndex >= 0) {
+          console.log('🔄 Replacing main page fill with iframe version');
+          this.actions.splice(mainPageFillIndex, 1);
+        }
+      }
+
       const action: RecordedAction = {
         type: 'fill',
         selector: data.selector,
@@ -4369,29 +4400,77 @@ export class PlaywrightRecorder {
       // Add frame selector if provided (for iframe fills)
       if (data.frameSelector) {
         action.frameSelector = data.frameSelector;
-        console.log('📝 Fill in iframe, frame selector:', data.frameSelector);
+        console.log('📝 ✅ Fill in iframe, frame selector:', data.frameSelector);
+      } else {
+        console.log('📝 Fill on main page');
       }
 
       this.actions.push(action);
-      console.log('📝 Captured fill:', data.selector, '=', data.value, 'frameSelector:', data.frameSelector);
+      console.log('📝 Captured fill:', data.selector, '=', data.value, 'frame:', data.frameSelector || 'main');
       this.updateGeneratedCode();
     });
     
     await this.page.exposeFunction('__playwrightRecorderOnClick', async (data: any) => {
-      // Check for duplicate within last 500ms
-      // IMPORTANT: Only skip if BOTH selector AND frameSelector match (or both are undefined)
       const now = Date.now();
-      const recentActions = this.actions.slice(-3); // Check last 3 actions
+      const recentActions = this.actions.slice(-3);
+
+      // Check for exact duplicate (same selector AND same frame)
       const isDuplicate = recentActions.some(action =>
         action.type === 'click' &&
         action.selector === data.selector &&
-        action.frameSelector === data.frameSelector && // Must have same frame context
+        action.frameSelector === data.frameSelector &&
         (now - this.startTime - action.timestamp) < 500
       );
 
       if (isDuplicate) {
-        console.log('⏭️ Duplicate click detected, skipping:', data.selector, 'frame:', data.frameSelector);
+        console.log('⏭️ Exact duplicate click, skipping:', data.selector, 'frame:', data.frameSelector);
         return;
+      }
+
+      // If this is a main page click, check if there's a recent iframe click with same selector
+      // If so, REPLACE the main page click with the iframe one
+      if (!data.frameSelector) {
+        const mainPageClickIndex = this.actions.findIndex((action, idx) =>
+          idx >= this.actions.length - 3 && // Only check recent actions
+          action.type === 'click' &&
+          action.selector === data.selector &&
+          !action.frameSelector && // Main page click
+          (now - this.startTime - action.timestamp) < 200
+        );
+
+        if (mainPageClickIndex >= 0) {
+          console.log('⏸️ Found recent main page click, waiting to see if iframe version arrives...');
+          // Wait 100ms to see if iframe version comes
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // If an iframe version was added, skip this main page version
+          const hasIframeVersion = this.actions.some((action, idx) =>
+            idx > mainPageClickIndex &&
+            action.type === 'click' &&
+            action.selector === data.selector &&
+            action.frameSelector
+          );
+          if (hasIframeVersion) {
+            console.log('✅ Iframe version already recorded, skipping main page click');
+            return;
+          }
+        }
+      }
+
+      // If this is an iframe click, check if there's a recent main page click with same selector
+      // If so, REMOVE the main page version and add iframe version instead
+      if (data.frameSelector) {
+        const mainPageClickIndex = this.actions.findIndex((action, idx) =>
+          idx >= this.actions.length - 3 &&
+          action.type === 'click' &&
+          action.selector === data.selector &&
+          !action.frameSelector &&
+          (now - this.startTime - action.timestamp) < 200
+        );
+
+        if (mainPageClickIndex >= 0) {
+          console.log('🔄 Replacing main page click with iframe version');
+          this.actions.splice(mainPageClickIndex, 1);
+        }
       }
 
       console.log('🎯 __playwrightRecorderOnClick called');
@@ -4996,6 +5075,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       "  let page = pages.length > 0 ? pages[0] : await context.newPage(); // Use 'let' to allow tab switching",
       "  const pageStack = []; // Track page history for popup close handling",
       "",
+      "  // Set up dialog handling (auto-accept alerts/confirms for downloads)",
+      "  page.on('dialog', async (dialog) => {",
+      "    console.log(`🔔 Dialog detected: ${dialog.type()} - \"${dialog.message()}\"`);",
+      "    await dialog.accept();",
+      "    console.log('✅ Dialog accepted');",
+      "  });",
+      "",
       "  try {"
     ];
 
@@ -5351,6 +5437,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`      // Switch to new page for subsequent actions`);
           lines.push(`      page = newPage; // All following actions will use this new tab`);
           lines.push(`      console.log('✓ Switched to new tab:', newPage.url());`);
+          lines.push(`      `);
+          lines.push(`      // Set up dialog handling for new page`);
+          lines.push(`      page.on('dialog', async (dialog) => {`);
+          lines.push(`        console.log(\`🔔 Dialog detected: \${dialog.type()} - "\${dialog.message()}"\`);`);
+          lines.push(`        await dialog.accept();`);
+          lines.push(`        console.log('✅ Dialog accepted');`);
+          lines.push(`      });`);
           lines.push(`    }`);
           break;
         case 'closeTab':
