@@ -1198,11 +1198,26 @@ ipcMain.handle('finance-hub:remove-credentials', async (event, bankId) => {
 
 /**
  * Get persistent spreadsheet info
+ * @param key - Optional key for spreadsheet type (e.g., 'bank-spreadsheet', 'card-spreadsheet')
  */
-ipcMain.handle('finance-hub:get-persistent-spreadsheet', async () => {
+ipcMain.handle('finance-hub:get-persistent-spreadsheet', async (event, key?: string) => {
   try {
-    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: { spreadsheetId: null, lastUpdated: null, title: null, spreadsheetUrl: null } };
-    return { success: true, persistentSpreadsheet: fhConfig.persistentSpreadsheet || { spreadsheetId: null, lastUpdated: null, title: null, spreadsheetUrl: null } };
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheets: {} };
+    const spreadsheetKey = key || 'default';
+
+    // Initialize persistentSpreadsheets if it doesn't exist
+    if (!fhConfig.persistentSpreadsheets) {
+      fhConfig.persistentSpreadsheets = {};
+    }
+
+    const spreadsheet = fhConfig.persistentSpreadsheets[spreadsheetKey] || {
+      spreadsheetId: null,
+      lastUpdated: null,
+      title: null,
+      spreadsheetUrl: null
+    };
+
+    return { success: true, persistentSpreadsheet: spreadsheet };
   } catch (error) {
     console.error('Error getting persistent spreadsheet:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1211,17 +1226,27 @@ ipcMain.handle('finance-hub:get-persistent-spreadsheet', async () => {
 
 /**
  * Save persistent spreadsheet info
+ * @param spreadsheetInfo - Spreadsheet information to save
+ * @param key - Optional key for spreadsheet type (e.g., 'bank-spreadsheet', 'card-spreadsheet')
  */
-ipcMain.handle('finance-hub:save-persistent-spreadsheet', async (event, spreadsheetInfo) => {
+ipcMain.handle('finance-hub:save-persistent-spreadsheet', async (event, spreadsheetInfo, key?: string) => {
   try {
-    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: {} };
-    fhConfig.persistentSpreadsheet = {
-      ...fhConfig.persistentSpreadsheet,
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheets: {} };
+    const spreadsheetKey = key || 'default';
+
+    // Initialize persistentSpreadsheets if it doesn't exist
+    if (!fhConfig.persistentSpreadsheets) {
+      fhConfig.persistentSpreadsheets = {};
+    }
+
+    fhConfig.persistentSpreadsheets[spreadsheetKey] = {
+      ...fhConfig.persistentSpreadsheets[spreadsheetKey],
       ...spreadsheetInfo,
       lastUpdated: new Date().toISOString(),
     };
+
     store.set('financeHub', fhConfig);
-    return { success: true, persistentSpreadsheet: fhConfig.persistentSpreadsheet };
+    return { success: true, persistentSpreadsheet: fhConfig.persistentSpreadsheets[spreadsheetKey] };
   } catch (error) {
     console.error('Error saving persistent spreadsheet:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1230,20 +1255,252 @@ ipcMain.handle('finance-hub:save-persistent-spreadsheet', async (event, spreadsh
 
 /**
  * Clear persistent spreadsheet info
+ * @param key - Optional key for spreadsheet type (e.g., 'bank-spreadsheet', 'card-spreadsheet')
  */
-ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async () => {
+ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: string) => {
   try {
-    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheet: {} };
-    fhConfig.persistentSpreadsheet = {
+    const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [], persistentSpreadsheets: {} };
+    const spreadsheetKey = key || 'default';
+
+    // Initialize persistentSpreadsheets if it doesn't exist
+    if (!fhConfig.persistentSpreadsheets) {
+      fhConfig.persistentSpreadsheets = {};
+    }
+
+    fhConfig.persistentSpreadsheets[spreadsheetKey] = {
       spreadsheetId: null,
       lastUpdated: null,
       title: null,
       spreadsheetUrl: null,
     };
+
     store.set('financeHub', fhConfig);
     return { success: true };
   } catch (error) {
     console.error('Error clearing persistent spreadsheet:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// ============================================
+// Hometax Integration IPC Handlers
+// ============================================
+
+import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
+
+/**
+ * Fetch available certificates from Hometax
+ */
+ipcMain.handle('hometax:fetch-certificates', async () => {
+  try {
+    console.log('[IPC] hometax:fetch-certificates called');
+    const result = await fetchCertificates();
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:fetch-certificates error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Connect to Hometax with selected certificate and password
+ */
+ipcMain.handle('hometax:connect', async (event, selectedCertificate: any, certificatePassword: string) => {
+  try {
+    console.log(`[IPC] hometax:connect called for certificate: ${selectedCertificate?.소유자명}`);
+    const result = await connectToHometax(selectedCertificate, certificatePassword);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:connect error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Disconnect from Hometax
+ */
+ipcMain.handle('hometax:disconnect', async (event, businessNumber: string) => {
+  try {
+    console.log(`[IPC] hometax:disconnect called for business: ${businessNumber}`);
+    await disconnectFromHometax();
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] hometax:disconnect error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Get Hometax connection status
+ */
+ipcMain.handle('hometax:get-connection-status', async () => {
+  try {
+    const status = getHometaxConnectionStatus();
+    return { success: true, data: status };
+  } catch (error) {
+    console.error('[IPC] hometax:get-connection-status error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Save Hometax credentials (encrypted)
+ */
+ipcMain.handle('hometax:save-credentials', async (event, businessNumber: string, credentials: any) => {
+  try {
+    const hometaxConfig = store.get('hometax') || { credentials: {} };
+    if (!hometaxConfig.credentials) {
+      hometaxConfig.credentials = {};
+    }
+    hometaxConfig.credentials[businessNumber] = {
+      ...credentials,
+      businessNumber,
+      savedAt: new Date().toISOString()
+    };
+    store.set('hometax', hometaxConfig);
+    console.log(`[Hometax] Credentials saved for business: ${businessNumber}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] Error saving credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get saved Hometax credentials
+ */
+ipcMain.handle('hometax:get-credentials', async (event, businessNumber: string) => {
+  try {
+    const hometaxConfig = store.get('hometax') || { credentials: {} };
+    const credentials = hometaxConfig.credentials?.[businessNumber] || null;
+    return { success: true, credentials };
+  } catch (error) {
+    console.error('[Hometax] Error getting credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Remove Hometax credentials and certificate data
+ */
+ipcMain.handle('hometax:remove-credentials', async (event, businessNumber: string) => {
+  try {
+    const hometaxConfig = store.get('hometax') || { credentials: {}, selectedCertificates: {} };
+
+    // Remove credentials
+    if (hometaxConfig.credentials) {
+      delete hometaxConfig.credentials[businessNumber];
+    }
+
+    // Remove selected certificate data
+    if (hometaxConfig.selectedCertificates) {
+      delete hometaxConfig.selectedCertificates[businessNumber];
+    }
+
+    store.set('hometax', hometaxConfig);
+    console.log(`[Hometax] Credentials and certificate data removed for business: ${businessNumber}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] Error removing credentials:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get connected businesses
+ */
+ipcMain.handle('hometax:get-connected-businesses', async () => {
+  try {
+    const hometaxConfig = store.get('hometax') || { connectedBusinesses: [] };
+    return { success: true, data: hometaxConfig.connectedBusinesses || [] };
+  } catch (error) {
+    console.error('[Hometax] Error getting connected businesses:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Save selected certificate information for a business
+ */
+ipcMain.handle('hometax:save-selected-certificate', async (event, businessNumber: string, certificateData: any) => {
+  try {
+    const hometaxConfig = store.get('hometax') || { credentials: {}, selectedCertificates: {} };
+    if (!hometaxConfig.selectedCertificates) {
+      hometaxConfig.selectedCertificates = {};
+    }
+    hometaxConfig.selectedCertificates[businessNumber] = {
+      xpath: certificateData.xpath,
+      소유자명: certificateData.소유자명,
+      용도: certificateData.용도,
+      발급기관: certificateData.발급기관,
+      만료일: certificateData.만료일,
+      businessName: certificateData.businessName,
+      representativeName: certificateData.representativeName,
+      businessType: certificateData.businessType,
+      certificatePassword: certificateData.certificatePassword || hometaxConfig.selectedCertificates[businessNumber]?.certificatePassword,
+      savedAt: new Date().toISOString()
+    };
+    store.set('hometax', hometaxConfig);
+    console.log(`[Hometax] Selected certificate information saved for business: ${businessNumber}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] Error saving selected certificate:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get saved certificate xpath for a business
+ */
+ipcMain.handle('hometax:get-selected-certificate', async (event, businessNumber: string) => {
+  try {
+    const hometaxConfig = store.get('hometax') || { selectedCertificates: {} };
+    const selectedCert = hometaxConfig.selectedCertificates?.[businessNumber] || null;
+    return { success: true, data: selectedCert };
+  } catch (error) {
+    console.error('[Hometax] Error getting selected certificate:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get all saved certificates (for UI display)
+ */
+ipcMain.handle('hometax:get-all-saved-certificates', async () => {
+  try {
+    const hometaxConfig = store.get('hometax') || { selectedCertificates: {} };
+    return { success: true, data: hometaxConfig.selectedCertificates || {} };
+  } catch (error) {
+    console.error('[Hometax] Error getting all saved certificates:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Collect tax invoices for a business
+ */
+ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, certificatePassword: string) => {
+  try {
+    console.log(`[IPC] hometax:collect-invoices called for: ${certificateData?.businessName}`);
+    const result = await collectTaxInvoices(certificateData, certificatePassword);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:collect-invoices error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 });

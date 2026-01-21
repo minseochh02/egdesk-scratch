@@ -8,6 +8,7 @@ import { OSAutomation } from './utils/osAutomation';
 interface RecordedAction {
   type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
   selector?: string;
+  xpath?: string; // XPath as fallback selector
   value?: string;
   key?: string;
   url?: string;
@@ -40,7 +41,7 @@ interface RecordedAction {
   waitBetweenClicks?: number; // Milliseconds to wait between clicks
 }
 
-export class PlaywrightRecorder {
+export class BrowserRecorder {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -474,7 +475,7 @@ export class PlaywrightRecorder {
 
       try {
         const hasController = await this.page.evaluate(() => {
-          return !!document.getElementById('playwright-recorder-controller');
+          return !!document.getElementById('browser-recorder-controller');
         });
 
         if (!hasController) {
@@ -496,13 +497,13 @@ export class PlaywrightRecorder {
     // Inject into main frame
     await this.page.evaluate(() => {
       // Check if controller already exists
-      if (document.getElementById('playwright-recorder-controller')) {
+      if (document.getElementById('browser-recorder-controller')) {
         return;
       }
       
       // Create controller container
       const controller = document.createElement('div');
-      controller.id = 'playwright-recorder-controller';
+      controller.id = 'browser-recorder-controller';
       controller.style.cssText = `
         position: fixed;
         bottom: 20px;
@@ -677,26 +678,26 @@ export class PlaywrightRecorder {
           100% { opacity: 1; }
         }
         
-        #playwright-recorder-controller button {
+        #browser-recorder-controller button {
           cursor: pointer !important;
         }
         
-        #playwright-recorder-controller button:hover {
+        #browser-recorder-controller button:hover {
           background: #444 !important;
           border-color: #555 !important;
         }
         
-        #playwright-recorder-controller button.active {
+        #browser-recorder-controller button.active {
           background: #4CAF50 !important;
           border-color: #4CAF50 !important;
         }
         
-        #playwright-recorder-controller button.active:hover {
+        #browser-recorder-controller button.active:hover {
           background: #45a049 !important;
           border-color: #45a049 !important;
         }
         
-        #playwright-recorder-controller:active {
+        #browser-recorder-controller:active {
           cursor: grabbing !important;
         }
       `;
@@ -828,7 +829,7 @@ export class PlaywrightRecorder {
       }
 
       // Listen for element highlight updates
-      document.addEventListener('playwright-recorder-element-highlighted', (e: any) => {
+      document.addEventListener('browser-recorder-element-highlighted', (e: any) => {
         currentHighlightedElement = e.detail.element;
         // Enable/disable Gemini button based on whether an element is highlighted AND shift is pressed
         const shouldEnableGemini = currentHighlightedElement && e.detail.isShiftPressed;
@@ -945,7 +946,7 @@ export class PlaywrightRecorder {
         }
 
         // Dispatch event to notify about coordinate mode change
-        const event = new CustomEvent('playwright-recorder-coordinate-toggle', {
+        const event = new CustomEvent('browser-recorder-coordinate-toggle', {
           detail: { enabled: coordinateMode }
         });
         console.log('📡 Dispatching coordinate toggle event, enabled:', coordinateMode);
@@ -971,7 +972,7 @@ export class PlaywrightRecorder {
         highlightBtn.classList.toggle('active', highlightMode);
         
         // Trigger highlight mode
-        const event = new CustomEvent('playwright-recorder-highlight-toggle', { 
+        const event = new CustomEvent('browser-recorder-highlight-toggle', { 
           detail: { enabled: highlightMode } 
         });
         document.dispatchEvent(event);
@@ -1663,7 +1664,7 @@ export class PlaywrightRecorder {
         }
 
         // Dispatch event to notify about click until gone mode
-        const event = new CustomEvent('playwright-recorder-click-until-gone-toggle', {
+        const event = new CustomEvent('browser-recorder-click-until-gone-toggle', {
           detail: { enabled: clickUntilGoneMode }
         });
         document.dispatchEvent(event);
@@ -1985,7 +1986,7 @@ export class PlaywrightRecorder {
 
       // Monitor for controller removal and notify parent
       const checkControllerExists = () => {
-        const controller = document.getElementById('playwright-recorder-controller');
+        const controller = document.getElementById('browser-recorder-controller');
         if (!controller && (window as any).__playwrightRecorderControllerExists) {
           console.log('🚨 Controller disappeared, notifying parent...');
           (window as any).__playwrightRecorderControllerExists = false;
@@ -2067,14 +2068,14 @@ export class PlaywrightRecorder {
         }
         
         // Check if styles already exist
-        if (document.getElementById('playwright-recorder-styles')) {
+        if (document.getElementById('browser-recorder-styles')) {
           return;
         }
         
         const highlightStyle = document.createElement('style');
-        highlightStyle.id = 'playwright-recorder-styles';
+        highlightStyle.id = 'browser-recorder-styles';
         highlightStyle.textContent = `
-          .playwright-recorder-highlight {
+          .browser-recorder-highlight {
             outline: 2px solid #ff0000 !important;
             outline-offset: 2px !important;
             background-color: rgba(255, 0, 0, 0.1) !important;
@@ -2082,7 +2083,7 @@ export class PlaywrightRecorder {
             position: relative !important;
           }
           
-          .playwright-recorder-tooltip {
+          .browser-recorder-tooltip {
             position: absolute !important;
             background: #333 !important;
             color: white !important;
@@ -2097,7 +2098,7 @@ export class PlaywrightRecorder {
             font-family: monospace !important;
           }
           
-          .playwright-recorder-coord-indicator {
+          .browser-recorder-coord-indicator {
             position: fixed !important;
             background: rgba(0, 0, 0, 0.8) !important;
             color: #4CAF50 !important;
@@ -2147,7 +2148,7 @@ export class PlaywrightRecorder {
           }
           
           tooltipElement = document.createElement('div');
-          tooltipElement.className = 'playwright-recorder-tooltip';
+          tooltipElement.className = 'browser-recorder-tooltip';
           tooltipElement.textContent = selector;
           
           // Try to append to element, but if it fails, append to body
@@ -2170,7 +2171,7 @@ export class PlaywrightRecorder {
       const highlightElement = (element: HTMLElement) => {
         // Remove previous highlight
         if (highlightedElement && highlightedElement !== element) {
-          highlightedElement.classList.remove('playwright-recorder-highlight');
+          highlightedElement.classList.remove('browser-recorder-highlight');
           if (tooltipElement) {
             tooltipElement.remove();
             tooltipElement = null;
@@ -2178,7 +2179,7 @@ export class PlaywrightRecorder {
         }
         
         // Add highlight to new element
-        element.classList.add('playwright-recorder-highlight');
+        element.classList.add('browser-recorder-highlight');
         highlightedElement = element;
         
         // Generate and show selector
@@ -2198,7 +2199,7 @@ export class PlaywrightRecorder {
         showTooltip(element, selector);
         
         // Dispatch event to notify controller about highlighted element
-        const event = new CustomEvent('playwright-recorder-element-highlighted', {
+        const event = new CustomEvent('browser-recorder-element-highlighted', {
           detail: { element: element, isShiftPressed: isShiftKeyPressed }
         });
         document.dispatchEvent(event);
@@ -2211,7 +2212,7 @@ export class PlaywrightRecorder {
           // Create or update coordinate indicator
           if (!coordIndicator) {
             coordIndicator = document.createElement('div');
-            coordIndicator.className = 'playwright-recorder-coord-indicator';
+            coordIndicator.className = 'browser-recorder-coord-indicator';
             coordIndicator.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
             document.body.appendChild(coordIndicator);
           }
@@ -2231,14 +2232,14 @@ export class PlaywrightRecorder {
         
         const target = e.target as HTMLElement;
         // Don't highlight recorder UI elements
-        if (target && target !== document.body && target !== document.documentElement && !target.closest('#playwright-recorder-controller')) {
+        if (target && target !== document.body && target !== document.documentElement && !target.closest('#browser-recorder-controller')) {
           highlightElement(target);
         }
       }, true);
       
       // Listen for coordinate mode toggle from controller
       console.log('🎧 Setting up coordinate toggle event listener');
-      document.addEventListener('playwright-recorder-coordinate-toggle', (e: any) => {
+      document.addEventListener('browser-recorder-coordinate-toggle', (e: any) => {
         console.log('📡 Received coordinate toggle event, detail:', e.detail);
         isCoordinateMode = e.detail.enabled;
         console.log('📍 Coordinate mode is now:', isCoordinateMode ? 'ON ✅' : 'OFF ❌');
@@ -2272,7 +2273,7 @@ export class PlaywrightRecorder {
       // Listen for postMessage from iframes
       window.addEventListener('message', (event) => {
         // Handle iframe clicks
-        if (event.data && event.data.type === 'playwright-recorder-iframe-click') {
+        if (event.data && event.data.type === 'browser-recorder-iframe-click') {
           console.log('🖼️ Received iframe click message:', event.data);
 
           const iframeData = event.data;
@@ -2303,7 +2304,7 @@ export class PlaywrightRecorder {
         }
 
         // Handle iframe fill events
-        if (event.data && event.data.type === 'playwright-recorder-iframe-fill') {
+        if (event.data && event.data.type === 'browser-recorder-iframe-fill') {
           console.log('🖼️ ✅ Received iframe fill message:', event.data);
 
           const iframeData = event.data;
@@ -2330,20 +2331,20 @@ export class PlaywrightRecorder {
       console.log('✅ PostMessage listener for iframes registered');
 
       // Listen for click until gone mode toggle from controller
-      document.addEventListener('playwright-recorder-click-until-gone-toggle', (e: any) => {
+      document.addEventListener('browser-recorder-click-until-gone-toggle', (e: any) => {
         isClickUntilGoneMode = e.detail.enabled;
         console.log('🔄 Click Until Gone mode:', isClickUntilGoneMode ? 'ON' : 'OFF');
       });
       
       // Listen for highlight toggle from controller
-      document.addEventListener('playwright-recorder-highlight-toggle', (e: any) => {
+      document.addEventListener('browser-recorder-highlight-toggle', (e: any) => {
         isHighlightKeyPressed = e.detail.enabled;
         document.body.style.cursor = isHighlightKeyPressed ? 'crosshair' : '';
         
         // If disabling, remove any existing highlights
         if (!isHighlightKeyPressed) {
           if (highlightedElement) {
-            highlightedElement.classList.remove('playwright-recorder-highlight');
+            highlightedElement.classList.remove('browser-recorder-highlight');
             highlightedElement = null;
           }
           
@@ -2353,7 +2354,7 @@ export class PlaywrightRecorder {
           }
           
           // Notify controller that no element is highlighted
-          const event = new CustomEvent('playwright-recorder-element-highlighted', {
+          const event = new CustomEvent('browser-recorder-element-highlighted', {
             detail: { element: null, isShiftPressed: isShiftKeyPressed }
           });
           document.dispatchEvent(event);
@@ -2367,14 +2368,14 @@ export class PlaywrightRecorder {
           document.body.style.cursor = 'crosshair';
           
           // Update the controller button state
-          const highlightBtn = document.querySelector('#playwright-recorder-controller button');
+          const highlightBtn = document.querySelector('#browser-recorder-controller button');
           if (highlightBtn) {
             highlightBtn.classList.add('active');
           }
           
           // Re-dispatch event if element is highlighted
           if (highlightedElement) {
-            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+            const event = new CustomEvent('browser-recorder-element-highlighted', {
               detail: { element: highlightedElement, isShiftPressed: isShiftKeyPressed }
             });
             document.dispatchEvent(event);
@@ -2386,7 +2387,7 @@ export class PlaywrightRecorder {
           
           // Re-dispatch event if element is highlighted to update Gemini button
           if (highlightedElement && isHighlightKeyPressed) {
-            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+            const event = new CustomEvent('browser-recorder-element-highlighted', {
               detail: { element: highlightedElement, isShiftPressed: true }
             });
             document.dispatchEvent(event);
@@ -2400,14 +2401,14 @@ export class PlaywrightRecorder {
           document.body.style.cursor = '';
           
           // Update the controller button state
-          const highlightBtn = document.querySelector('#playwright-recorder-controller button');
+          const highlightBtn = document.querySelector('#browser-recorder-controller button');
           if (highlightBtn) {
             highlightBtn.classList.remove('active');
           }
           
           // Remove highlight
           if (highlightedElement) {
-            highlightedElement.classList.remove('playwright-recorder-highlight');
+            highlightedElement.classList.remove('browser-recorder-highlight');
             highlightedElement = null;
           }
           
@@ -2417,7 +2418,7 @@ export class PlaywrightRecorder {
           }
           
           // Notify controller that no element is highlighted
-          const event = new CustomEvent('playwright-recorder-element-highlighted', {
+          const event = new CustomEvent('browser-recorder-element-highlighted', {
             detail: { element: null, isShiftPressed: isShiftKeyPressed }
           });
           document.dispatchEvent(event);
@@ -2428,7 +2429,7 @@ export class PlaywrightRecorder {
           
           // Re-dispatch event if element is highlighted to update Gemini button
           if (highlightedElement && isHighlightKeyPressed) {
-            const event = new CustomEvent('playwright-recorder-element-highlighted', {
+            const event = new CustomEvent('browser-recorder-element-highlighted', {
               detail: { element: highlightedElement, isShiftPressed: false }
             });
             document.dispatchEvent(event);
@@ -2451,10 +2452,10 @@ export class PlaywrightRecorder {
         }
 
         // Skip recording keyboard events on recorder UI elements and date offset modal
-        if (target.closest('#playwright-recorder-controller') ||
+        if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
-            target.closest('.playwright-recorder-modal') ||
-            target.closest('.playwright-recorder-modal-content') ||
+            target.closest('.browser-recorder-modal') ||
+            target.closest('.browser-recorder-modal-content') ||
             target.closest('#playwright-date-offset-modal') ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
@@ -2462,7 +2463,7 @@ export class PlaywrightRecorder {
             target.id === 'wait-cancel' ||
             target.id === 'wait-confirm' ||
             target.closest('[id^="wait-"]') ||
-            target.closest('.playwright-recorder-') ||
+            target.closest('.browser-recorder-') ||
             target.style.zIndex === '999999') {
           return;
         }
@@ -2540,10 +2541,10 @@ export class PlaywrightRecorder {
         }
 
         // Skip recording input events on recorder UI elements and date offset modal
-        if (target.closest('#playwright-recorder-controller') ||
+        if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
-            target.closest('.playwright-recorder-modal') ||
-            target.closest('.playwright-recorder-modal-content') ||
+            target.closest('.browser-recorder-modal') ||
+            target.closest('.browser-recorder-modal-content') ||
             target.closest('#playwright-date-offset-modal') ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
@@ -2551,7 +2552,7 @@ export class PlaywrightRecorder {
             target.id === 'wait-cancel' ||
             target.id === 'wait-confirm' ||
             target.closest('[id^="wait-"]') ||
-            target.closest('.playwright-recorder-') ||
+            target.closest('.browser-recorder-') ||
             target.style.zIndex === '999999') {
           return;
         }
@@ -2608,9 +2609,9 @@ export class PlaywrightRecorder {
         }
 
         // Skip recorder UI elements and date offset modal
-        if (target.closest('#playwright-recorder-controller') ||
+        if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
-            target.closest('.playwright-recorder-modal') ||
+            target.closest('.browser-recorder-modal') ||
             target.closest('#playwright-date-offset-modal') ||
             target.style.zIndex === '999999') {
           return;
@@ -2656,9 +2657,9 @@ export class PlaywrightRecorder {
         const target = e.target as HTMLElement;
 
         // Skip recorder UI elements and date offset modal
-        if (target.closest('#playwright-recorder-controller') ||
+        if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
-            target.closest('.playwright-recorder-modal') ||
+            target.closest('.browser-recorder-modal') ||
             target.closest('#playwright-date-offset-modal')) {
           return;
         }
@@ -3238,7 +3239,7 @@ export class PlaywrightRecorder {
         }
 
         // Skip recording clicks on the recorder controller UI and date offset modal
-        if (target.closest('#playwright-recorder-controller') ||
+        if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-date-offset-modal')) {
           console.log('⏭️ Skipping recorder UI click');
           return;
@@ -3251,7 +3252,7 @@ export class PlaywrightRecorder {
           e.stopPropagation();
 
           // Trigger the Gemini button click programmatically
-          const geminiButton = document.querySelector('#playwright-recorder-controller button:last-child') as HTMLElement;
+          const geminiButton = document.querySelector('#browser-recorder-controller button:last-child') as HTMLElement;
           if (geminiButton) {
             // Set the current highlighted element to the clicked target
             currentHighlightedElement = target;
@@ -3264,21 +3265,21 @@ export class PlaywrightRecorder {
         }
 
         // Skip coordinate indicator if somehow clicked
-        if (target.classList.contains('playwright-recorder-coord-indicator')) {
+        if (target.classList.contains('browser-recorder-coord-indicator')) {
           console.log('⏭️ Skipping coord indicator click');
           return;
         }
 
         // Check if we're in wait mode
-        const waitBtn = document.querySelector('#playwright-recorder-controller [data-wait-mode="true"]') as HTMLElement;
+        const waitBtn = document.querySelector('#browser-recorder-controller [data-wait-mode="true"]') as HTMLElement;
         const isWaitMode = waitBtn && waitBtn.classList.contains('active');
         
         if (isWaitMode) {
           // Skip wait recording on ANY recorder UI elements and date offset modal
-          if (target.closest('#playwright-recorder-controller') ||
+          if (target.closest('#browser-recorder-controller') ||
               target.closest('#playwright-wait-modal') ||
-              target.closest('.playwright-recorder-modal') ||
-              target.closest('.playwright-recorder-modal-content') ||
+              target.closest('.browser-recorder-modal') ||
+              target.closest('.browser-recorder-modal-content') ||
               target.closest('#playwright-date-offset-modal') ||
               target.id === 'wait-instructions' ||
               target.id === 'wait-condition' ||
@@ -3286,7 +3287,7 @@ export class PlaywrightRecorder {
               target.id === 'wait-cancel' ||
               target.id === 'wait-confirm' ||
               target.closest('[id^="wait-"]') ||
-              target.closest('.playwright-recorder-') ||
+              target.closest('.browser-recorder-') ||
               target.style.zIndex === '999999') {
             return;
           }
@@ -3304,7 +3305,7 @@ export class PlaywrightRecorder {
           // Show wait condition selection modal
           const modal = document.createElement('div');
           modal.id = 'playwright-wait-modal';
-          modal.className = 'playwright-recorder-modal';
+          modal.className = 'browser-recorder-modal';
           modal.style.cssText = `
             position: fixed;
             top: 0;
@@ -3320,7 +3321,7 @@ export class PlaywrightRecorder {
           `;
           
           const modalContent = document.createElement('div');
-          modalContent.className = 'playwright-recorder-modal-content';
+          modalContent.className = 'browser-recorder-modal-content';
           modalContent.style.cssText = `
             background: white;
             padding: 24px;
@@ -3895,13 +3896,39 @@ export class PlaywrightRecorder {
             selector = target.className ? `.${target.className.split(' ')[0]}` : target.tagName.toLowerCase();
           }
         }
-        
+
+        // Generate XPath for robust fallback
+        const getXPath = (element: Element): string => {
+          if (element.id) {
+            return `//*[@id="${element.id}"]`;
+          }
+          if (element === document.body) {
+            return '/html/body';
+          }
+          let ix = 0;
+          const siblings = element.parentNode ? Array.from(element.parentNode.childNodes).filter(n => n.nodeType === 1) : [];
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i] as Element;
+            if (sibling === element) {
+              const tagName = element.tagName.toLowerCase();
+              return (element.parentNode ? getXPath(element.parentNode as Element) : '') + '/' + tagName + '[' + (ix + 1) + ']';
+            }
+            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+              ix++;
+            }
+          }
+          return '';
+        };
+
+        const xpath = getXPath(target);
+
         const event: any = {
           selector: selector,
+          xpath: xpath,
           text: target.textContent?.trim() || ''
         };
 
-        console.log('📤 Click event prepared - Selector:', selector, 'Text:', event.text);
+        console.log('📤 Click event prepared - Selector:', selector, 'XPath:', xpath, 'Text:', event.text);
         console.log('📍 Checking coordinate mode... isCoordinateMode =', isCoordinateMode);
         console.log('📍 Checking global state... __playwrightRecorderCoordinateModeActive =', (window as any).__playwrightRecorderCoordinateModeActive);
 
@@ -3933,7 +3960,7 @@ export class PlaywrightRecorder {
           (window as any).__playwrightRecorderOnClickUntilGone(event);
           // Turn off mode after recording one action
           isClickUntilGoneMode = false;
-          document.dispatchEvent(new CustomEvent('playwright-recorder-click-until-gone-toggle', {
+          document.dispatchEvent(new CustomEvent('browser-recorder-click-until-gone-toggle', {
             detail: { enabled: false }
           }));
         } else if ((window as any).__playwrightRecorderOnClick) {
@@ -4163,7 +4190,7 @@ export class PlaywrightRecorder {
               console.log('🖼️ Iframe selector for this frame:', (window as any).__iframeSelector);
 
               // Skip recorder UI elements
-              if (target.closest('#playwright-recorder-controller')) {
+              if (target.closest('#browser-recorder-controller')) {
                 return;
               }
 
@@ -4185,7 +4212,7 @@ export class PlaywrightRecorder {
               try {
                 if (window.parent && window.parent !== window) {
                   window.parent.postMessage({
-                    type: 'playwright-recorder-iframe-click',
+                    type: 'browser-recorder-iframe-click',
                     iframeSelector: (window as any).__iframeSelector,
                     targetSelector: selector,
                     targetInfo: {
@@ -4244,7 +4271,7 @@ export class PlaywrightRecorder {
                     try {
                       if (window.parent && window.parent !== window) {
                         window.parent.postMessage({
-                          type: 'playwright-recorder-iframe-fill',
+                          type: 'browser-recorder-iframe-fill',
                           iframeSelector: (window as any).__iframeSelector,
                           targetSelector: selector,
                           value: currentValue
@@ -4297,7 +4324,7 @@ export class PlaywrightRecorder {
                   try {
                     if (window.parent && window.parent !== window) {
                       window.parent.postMessage({
-                        type: 'playwright-recorder-iframe-fill',
+                        type: 'browser-recorder-iframe-fill',
                         iframeSelector: (window as any).__iframeSelector,
                         targetSelector: selector,
                         value: value
@@ -4475,12 +4502,14 @@ export class PlaywrightRecorder {
 
       console.log('🎯 __playwrightRecorderOnClick called');
       console.log('  - Selector:', data.selector);
+      console.log('  - XPath:', data.xpath);
       console.log('  - Frame:', data.frameSelector || 'main page');
       console.log('  - Coordinates:', data.coordinates);
 
       const action: RecordedAction = {
         type: 'click',
         selector: data.selector,
+        xpath: data.xpath,
         value: data.text,
         timestamp: Date.now() - this.startTime
       };
@@ -4858,13 +4887,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     if (this.isCoordinateModeEnabled) {
       console.log('📍 Re-applying coordinate mode state');
       await this.page.evaluate(() => {
-        const event = new CustomEvent('playwright-recorder-coordinate-toggle', {
+        const event = new CustomEvent('browser-recorder-coordinate-toggle', {
           detail: { enabled: true }
         });
         document.dispatchEvent(event);
 
         // Update button state
-        const coordBtn = document.querySelector('#playwright-recorder-controller [data-coord-mode="true"]') as HTMLElement;
+        const coordBtn = document.querySelector('#browser-recorder-controller [data-coord-mode="true"]') as HTMLElement;
         if (coordBtn) {
           coordBtn.classList.add('active');
           coordBtn.style.background = '#4CAF50';
@@ -5163,10 +5192,31 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           } else {
             // Use the generated selector which should be more specific
             console.log(`🎯 Generating selector click: ${action.selector}`);
-            if (action.frameSelector) {
-              lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').click(); // Click in iframe`);
+
+            // Generate robust click with XPath fallback
+            if (action.xpath) {
+              lines.push(`    // Try CSS selector first, fallback to XPath if it fails`);
+              lines.push(`    try {`);
+              if (action.frameSelector) {
+                lines.push(`      await page.frameLocator('${action.frameSelector}').locator('${action.selector}').click({ timeout: 10000 }); // Click in iframe`);
+              } else {
+                lines.push(`      await page.locator('${action.selector}').click({ timeout: 10000 });`);
+              }
+              lines.push(`    } catch (error) {`);
+              lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
+              if (action.frameSelector) {
+                lines.push(`      await page.frameLocator('${action.frameSelector}').locator('xpath=${action.xpath}').click(); // XPath fallback in iframe`);
+              } else {
+                lines.push(`      await page.locator('xpath=${action.xpath}').click(); // XPath fallback`);
+              }
+              lines.push(`    }`);
             } else {
-              lines.push(`    await page.locator('${action.selector}').click();`);
+              // No XPath available, use regular click
+              if (action.frameSelector) {
+                lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').click(); // Click in iframe`);
+              } else {
+                lines.push(`    await page.locator('${action.selector}').click();`);
+              }
             }
           }
           break;

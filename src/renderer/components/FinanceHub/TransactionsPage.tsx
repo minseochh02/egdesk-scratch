@@ -44,6 +44,7 @@ interface TransactionsPageProps {
   onPageChange: (page: number) => void;
   onSort: (field: SortState['field']) => void;
   loadAllTransactions: () => Promise<Transaction[]>;
+  transactionType: 'bank' | 'card';
 }
 
 // ============================================
@@ -65,6 +66,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   onPageChange,
   onSort,
   loadAllTransactions,
+  transactionType,
 }) => {
   // Local UI State
   const [showFilters, setShowFilters] = useState(false);
@@ -74,19 +76,30 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [signingIn, setSigningIn] = useState(false);
   const [hasPersistentSpreadsheet, setHasPersistentSpreadsheet] = useState(false);
 
-  // Check persistent spreadsheet status on mount
+  // Check persistent spreadsheet status on mount and when transaction type changes
   useEffect(() => {
     const checkPersistentSpreadsheet = async () => {
       try {
-        const result = await window.electron.financeHub.getPersistentSpreadsheet();
+        const key = transactionType === 'bank' ? 'bank-spreadsheet' : 'card-spreadsheet';
+        const result = await window.electron.financeHub.getPersistentSpreadsheet(key);
         setHasPersistentSpreadsheet(result.success && !!result.persistentSpreadsheet?.spreadsheetId);
       } catch (error) {
         console.error('Error checking persistent spreadsheet:', error);
       }
     };
-    
+
     checkPersistentSpreadsheet();
-  }, []);
+  }, [transactionType]);
+
+  // Filter transactions based on type (bank or card)
+  const isCardTransaction = (tx: Transaction) => {
+    // Card companies have IDs ending with '-card' (e.g., 'nh-card', 'shinhan-card')
+    return tx.bankId.endsWith('-card');
+  };
+
+  const filteredTransactions = transactions.filter(tx =>
+    transactionType === 'card' ? isCardTransaction(tx) : !isCardTransaction(tx)
+  );
 
   // Handlers
   const handleFilterChange = (key: keyof Filters, value: string) => {
@@ -95,21 +108,28 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   const handleOpenInSpreadsheet = async () => {
     try {
-      // Load all transactions (not just filtered ones)
+      // Load all transactions
       const allTransactions = await loadAllTransactions();
-      
-      if (allTransactions.length === 0) {
-        alert('내보낼 거래내역이 없습니다.');
+
+      // Filter transactions based on type (bank or card)
+      const filteredAllTransactions = allTransactions.filter(tx =>
+        transactionType === 'card' ? isCardTransaction(tx) : !isCardTransaction(tx)
+      );
+
+      if (filteredAllTransactions.length === 0) {
+        const typeLabel = transactionType === 'bank' ? '은행' : '카드';
+        alert(`내보낼 ${typeLabel} 거래내역이 없습니다.`);
         return;
       }
-      
-      // Get persistent spreadsheet info
-      const persistentResult = await window.electron.financeHub.getPersistentSpreadsheet();
+
+      // Get persistent spreadsheet info with type-specific key
+      const spreadsheetKey = transactionType === 'bank' ? 'bank-spreadsheet' : 'card-spreadsheet';
+      const persistentResult = await window.electron.financeHub.getPersistentSpreadsheet(spreadsheetKey);
       const persistentSpreadsheetId = persistentResult.success ? persistentResult.persistentSpreadsheet?.spreadsheetId : null;
-      
-      // Use the new get-or-create method
+
+      // Use the new get-or-create method with filtered transactions
       const result = await window.electron.sheets.getOrCreateTransactionsSpreadsheet({
-        transactions: allTransactions,
+        transactions: filteredAllTransactions,
         banks,
         accounts,
         persistentSpreadsheetId,
@@ -118,14 +138,15 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
       if (result.success) {
         // Save persistent spreadsheet info if it was created or updated
         if (result.wasCreated) {
+          const typeLabel = transactionType === 'bank' ? '은행' : '카드';
           await window.electron.financeHub.savePersistentSpreadsheet({
             spreadsheetId: result.spreadsheetId,
             spreadsheetUrl: result.spreadsheetUrl,
-            title: `EGDesk 거래내역 ${new Date().toISOString().slice(0, 10)}`,
-          });
+            title: `EGDesk ${typeLabel} 거래내역 ${new Date().toISOString().slice(0, 10)}`,
+          }, spreadsheetKey);
           setHasPersistentSpreadsheet(true);
         }
-        
+
         // Open the spreadsheet in a new browser tab
         window.open(result.spreadsheetUrl, '_blank');
       } else {
@@ -277,9 +298,13 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
         <div className="txp-header__content">
           <h1 className="txp-header__title">
             <span className="txp-header__icon">📊</span>
-            전체 거래내역
+            {transactionType === 'bank' ? '은행 전체 거래내역' : '카드 전체 거래 내역'}
           </h1>
-          <p className="txp-header__subtitle">모든 은행 계좌의 거래내역을 한 곳에서 확인하세요</p>
+          <p className="txp-header__subtitle">
+            {transactionType === 'bank'
+              ? '모든 은행 계좌의 거래내역을 한 곳에서 확인하세요'
+              : '모든 카드의 사용내역을 한 곳에서 확인하세요'}
+          </p>
         </div>
         <div className="txp-header__actions">
           {showGoogleAuth && (
@@ -318,8 +343,10 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           </button>
           {hasPersistentSpreadsheet && (
             <button className="txp-btn txp-btn--outline txp-btn--small" onClick={async () => {
-              if (confirm('기존 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?')) {
-                await window.electron.financeHub.clearPersistentSpreadsheet();
+              const typeLabel = transactionType === 'bank' ? '은행' : '카드';
+              if (confirm(`기존 ${typeLabel} 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?`)) {
+                const spreadsheetKey = transactionType === 'bank' ? 'bank-spreadsheet' : 'card-spreadsheet';
+                await window.electron.financeHub.clearPersistentSpreadsheet(spreadsheetKey);
                 setHasPersistentSpreadsheet(false);
                 alert('스프레드시트 연결이 해제되었습니다. 다음번에 새로운 스프레드시트가 생성됩니다.');
               }
@@ -358,11 +385,16 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
             <span className="txp-error__icon">⚠️</span>
             <span className="txp-error__text">{error}</span>
           </div>
-        ) : transactions.length === 0 ? (
+        ) : filteredTransactions.length === 0 ? (
           <div className="txp-empty">
             <span className="txp-empty__icon">📋</span>
             <h3 className="txp-empty__title">거래내역이 없습니다</h3>
-            <p className="txp-empty__text">선택한 조건에 맞는 거래내역이 없습니다.<br />필터를 조정하거나 계좌를 동기화해 주세요.</p>
+            <p className="txp-empty__text">
+              {transactionType === 'bank'
+                ? '은행 거래내역이 없습니다.'
+                : '카드 사용내역이 없습니다.'}
+              <br />필터를 조정하거나 계좌를 동기화해 주세요.
+            </p>
           </div>
         ) : viewMode === 'table' ? (
           <div className="txp-table-container">
@@ -370,23 +402,23 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
               <thead className="txp-table__head">
                 <tr>
                   <th className="txp-table__header txp-table__header--sortable" onClick={() => onSort('date')}>날짜 {renderSortIcon('date')}</th>
-                  <th className="txp-table__header">은행</th>
-                  <th className="txp-table__header">계좌</th>
+                  <th className="txp-table__header">{transactionType === 'bank' ? '은행' : '카드사'}</th>
+                  <th className="txp-table__header">{transactionType === 'bank' ? '계좌' : '카드'}</th>
                   <th className="txp-table__header">적요</th>
                   <th className="txp-table__header txp-table__header--sortable" onClick={() => onSort('description')}>내용 {renderSortIcon('description')}</th>
                   <th className="txp-table__header txp-table__header--sortable txp-table__header--right" onClick={() => onSort('amount')}>금액 {renderSortIcon('amount')}</th>
                   <th className="txp-table__header txp-table__header--sortable txp-table__header--right" onClick={() => onSort('balance')}>잔액 {renderSortIcon('balance')}</th>
                 </tr>
               </thead>
-              <tbody className="txp-table__body">{transactions.map(renderTransactionRow)}</tbody>
+              <tbody className="txp-table__body">{filteredTransactions.map(renderTransactionRow)}</tbody>
             </table>
           </div>
         ) : (
-          <div className="txp-cards">{transactions.map(renderTransactionCard)}</div>
+          <div className="txp-cards">{filteredTransactions.map(renderTransactionCard)}</div>
         )}
 
         {/* Pagination */}
-        {transactions.length > 0 && pagination.totalPages > 1 && (
+        {filteredTransactions.length > 0 && pagination.totalPages > 1 && (
           <div className="txp-pagination">
             <button className="txp-pagination__btn" onClick={() => onPageChange(1)} disabled={pagination.currentPage === 1}>«</button>
             <button className="txp-pagination__btn" onClick={() => onPageChange(pagination.currentPage - 1)} disabled={pagination.currentPage === 1}>‹</button>
@@ -430,11 +462,11 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         <span className="txp-detail__value">{formatDate(tx.date)} {tx.time}</span>
                       </div>
                       <div className="txp-detail__row">
-                        <span className="txp-detail__label">은행</span>
+                        <span className="txp-detail__label">{isCardTransaction(tx) ? '카드사' : '은행'}</span>
                         <span className="txp-detail__value">{bank.icon} {bank.nameKo}</span>
                       </div>
                       <div className="txp-detail__row">
-                        <span className="txp-detail__label">계좌</span>
+                        <span className="txp-detail__label">{isCardTransaction(tx) ? '카드' : '계좌'}</span>
                         <span className="txp-detail__value">{formatAccountNumber(account?.accountNumber)}{account?.accountName && ` (${account.accountName})`}</span>
                       </div>
                       <div className="txp-detail__row">

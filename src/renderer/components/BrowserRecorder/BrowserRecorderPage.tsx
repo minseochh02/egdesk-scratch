@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import './PlaywrightRecorderPage.css';
+import './BrowserRecorderPage.css';
 
 interface Schedule {
   id: string;
@@ -19,7 +19,7 @@ interface Schedule {
   failureCount: number;
 }
 
-const PlaywrightRecorderPage: React.FC = () => {
+const BrowserRecorderPage: React.FC = () => {
   // State
   const [chromeUrl, setChromeUrl] = useState('');
   const [savedTests, setSavedTests] = useState<any[]>([]);
@@ -228,7 +228,7 @@ const PlaywrightRecorderPage: React.FC = () => {
         setPlaywrightDownloads(result.files || []);
       }
     } catch (error) {
-      console.error('[PlaywrightRecorder] Failed to load playwright downloads:', error);
+      console.error('[BrowserRecorder] Failed to load playwright downloads:', error);
     }
   };
 
@@ -236,7 +236,7 @@ const PlaywrightRecorderPage: React.FC = () => {
     try {
       await (window as any).electron.debug.openPlaywrightDownload(filePath);
     } catch (error) {
-      console.error('[PlaywrightRecorder] Failed to open download:', error);
+      console.error('[BrowserRecorder] Failed to open download:', error);
       alert('Failed to open file');
     }
   };
@@ -380,31 +380,31 @@ const PlaywrightRecorderPage: React.FC = () => {
   }, []);
 
   return (
-    <div className="playwright-recorder-page">
-      <div className="playwright-recorder-scroll">
-        <div className="playwright-recorder-container">
-          <div className="playwright-recorder-content">
+    <div className="browser-recorder-page">
+      <div className="browser-recorder-scroll">
+        <div className="browser-recorder-container">
+          <div className="browser-recorder-content">
             {/* Header */}
-            <div className="playwright-recorder-header">
-              <h1 className="playwright-recorder-title">Browser Recorder</h1>
-              <p className="playwright-recorder-subtitle">Record and replay browser interactions with keyboard tracking</p>
+            <div className="browser-recorder-header">
+              <h1 className="browser-recorder-title">Browser Recorder</h1>
+              <p className="browser-recorder-subtitle">Record and replay browser interactions with keyboard tracking</p>
             </div>
 
             {/* URL Input & Recording Controls Section */}
-            <div className="playwright-recorder-section">
-              <h2 className="playwright-recorder-section-title">Record New Test</h2>
-              <div className="playwright-recorder-url-input-container">
+            <div className="browser-recorder-section">
+              <h2 className="browser-recorder-section-title">Record New Test</h2>
+              <div className="browser-recorder-url-input-container">
                 <input
                   type="url"
                   placeholder="Enter URL to record (e.g., https://example.com)"
                   value={chromeUrl}
                   onChange={(e) => setChromeUrl(e.target.value)}
-                  className="playwright-recorder-url-input"
+                  className="browser-recorder-url-input"
                   disabled={isRecordingEnhanced}
                 />
               </div>
 
-              <div className="playwright-recorder-recording-controls">
+              <div className="browser-recorder-recording-controls">
                 {!isRecordingEnhanced ? (
                   <button
                     onClick={async () => {
@@ -416,7 +416,7 @@ const PlaywrightRecorderPage: React.FC = () => {
 
                         addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
 
-                        const result = await (window as any).electron.debug.launchPlaywrightRecorderEnhanced(
+                        const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced(
                           chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
                         );
 
@@ -435,7 +435,7 @@ const PlaywrightRecorderPage: React.FC = () => {
                         addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                       }
                     }}
-                    className="playwright-recorder-btn playwright-recorder-btn-primary playwright-recorder-btn-record"
+                    className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
                   >
                     🎹 Start Recording
                   </button>
@@ -444,7 +444,7 @@ const PlaywrightRecorderPage: React.FC = () => {
                     onClick={async () => {
                       addDebugLog('⏹️ Stopping enhanced recorder...');
 
-                      const result = await (window as any).electron.debug.stopPlaywrightRecorderEnhanced();
+                      const result = await (window as any).electron.debug.stopBrowserRecorderEnhanced();
 
                       if (result?.success) {
                         addDebugLog('✅ Recording saved successfully');
@@ -461,7 +461,7 @@ const PlaywrightRecorderPage: React.FC = () => {
                         addDebugLog(`❌ Failed to stop recorder: ${result?.error}`);
                       }
                     }}
-                    className="playwright-recorder-btn playwright-recorder-btn-danger playwright-recorder-btn-stop"
+                    className="browser-recorder-btn browser-recorder-btn-danger browser-recorder-btn-stop"
                   >
                     ⏹️ Stop Recording
                   </button>
@@ -470,9 +470,9 @@ const PlaywrightRecorderPage: React.FC = () => {
 
               {/* Real-time Test Code Display */}
               {isRecordingEnhanced && currentTestCode && (
-                <div className="playwright-recorder-code-viewer-container">
-                  <h3 className="playwright-recorder-code-viewer-title">📝 Generated Test Code (Real-time)</h3>
-                  <pre className="playwright-recorder-code-viewer">
+                <div className="browser-recorder-code-viewer-container">
+                  <h3 className="browser-recorder-code-viewer-title">📝 Generated Test Code (Real-time)</h3>
+                  <pre className="browser-recorder-code-viewer">
                     <code>{currentTestCode}</code>
                   </pre>
                 </div>
@@ -480,9 +480,9 @@ const PlaywrightRecorderPage: React.FC = () => {
             </div>
 
             {/* Saved Tests Section */}
-            <div className="playwright-recorder-section">
-              <div className="playwright-recorder-section-header">
-                <h2 className="playwright-recorder-section-title">Saved Tests</h2>
+            <div className="browser-recorder-section">
+              <div className="browser-recorder-section-header">
+                <h2 className="browser-recorder-section-title">Saved Tests</h2>
                 <button
                   onClick={async () => {
                     const result = await (window as any).electron.debug.getPlaywrightTests();
@@ -491,41 +491,41 @@ const PlaywrightRecorderPage: React.FC = () => {
                       setShowSavedTests(!showSavedTests);
                     }
                   }}
-                  className="playwright-recorder-btn playwright-recorder-btn-secondary playwright-recorder-btn-toggle"
+                  className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-toggle"
                 >
                   {showSavedTests ? 'Hide Tests' : `View Saved Tests (${savedTests.length})`}
                 </button>
               </div>
 
               {showSavedTests && savedTests.length > 0 && (
-                <div className="playwright-recorder-saved-tests-container">
+                <div className="browser-recorder-saved-tests-container">
                   {savedTests.map((test, index) => (
-                      <div key={index} className="playwright-recorder-test-item">
-                        <div className="playwright-recorder-test-header">
-                          <div className="playwright-recorder-test-info">
-                            <div className="playwright-recorder-test-name-row">
-                              <strong className="playwright-recorder-test-name">{test.name}</strong>
-                              <span className="playwright-recorder-test-badge">⏱️ Auto-Timed</span>
+                      <div key={index} className="browser-recorder-test-item">
+                        <div className="browser-recorder-test-header">
+                          <div className="browser-recorder-test-info">
+                            <div className="browser-recorder-test-name-row">
+                              <strong className="browser-recorder-test-name">{test.name}</strong>
+                              <span className="browser-recorder-test-badge">⏱️ Auto-Timed</span>
                               {(() => {
                                 const schedule = schedules.find(s => s.testPath === test.path);
                                 return schedule?.enabled && (
-                                  <span className="test-badge playwright-recorder-schedule-badge">📅 Scheduled</span>
+                                  <span className="test-badge browser-recorder-schedule-badge">📅 Scheduled</span>
                                 );
                               })()}
                             </div>
-                            <div className="playwright-recorder-test-meta">
+                            <div className="browser-recorder-test-meta">
                               Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
                             </div>
                             {(() => {
                               const schedule = schedules.find(s => s.testPath === test.path);
                               return schedule?.enabled && (
-                                <div className="playwright-recorder-schedule-info">
+                                <div className="browser-recorder-schedule-info">
                                   📅 {getScheduleDescription(schedule)}
                                 </div>
                               );
                             })()}
                           </div>
-                          <div className="playwright-recorder-test-actions">
+                          <div className="browser-recorder-test-actions">
                             <button
                               onClick={async () => {
                                 const result = await (window as any).electron.debug.viewPlaywrightTest(test.path);
@@ -536,14 +536,14 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   alert(`Failed to view test: ${result.error}`);
                                 }
                               }}
-                              className="playwright-recorder-btn playwright-recorder-btn-sm playwright-recorder-btn-view"
+                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-view"
                               title="View code"
                             >
                               👁️ View
                             </button>
                             <button
                               onClick={() => openRenameModal(test)}
-                              className="playwright-recorder-btn playwright-recorder-btn-sm playwright-recorder-btn-edit"
+                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-edit"
                               title="Rename test"
                             >
                               ✏️ Edit
@@ -558,13 +558,13 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   alert(`Failed to run test: ${result.error}`);
                                 }
                               }}
-                              className="playwright-recorder-btn playwright-recorder-btn-sm playwright-recorder-btn-replay"
+                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-replay"
                             >
                               ▶️ Replay
                             </button>
                             <button
                               onClick={() => openScheduleModal(test.path)}
-                              className={`playwright-recorder-btn btn-sm playwright-recorder-btn-schedule ${schedules.find(s => s.testPath === test.path && s.enabled) ? 'scheduled' : ''}`}
+                              className={`browser-recorder-btn btn-sm browser-recorder-btn-schedule ${schedules.find(s => s.testPath === test.path && s.enabled) ? 'scheduled' : ''}`}
                               title="Schedule test"
                             >
                               📅
@@ -585,14 +585,14 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   }
                                 }
                               }}
-                              className="playwright-recorder-btn playwright-recorder-btn-sm playwright-recorder-btn-delete"
+                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-delete"
                               title="Delete test"
                             >
                               🗑️
                             </button>
                           </div>
                         </div>
-                        <div className="playwright-recorder-test-preview">
+                        <div className="browser-recorder-test-preview">
                           {test.preview}
                         </div>
                       </div>
@@ -601,27 +601,27 @@ const PlaywrightRecorderPage: React.FC = () => {
               )}
 
               {showSavedTests && savedTests.length === 0 && (
-                <p className="playwright-recorder-empty-message">No saved tests yet. Record your first test above!</p>
+                <p className="browser-recorder-empty-message">No saved tests yet. Record your first test above!</p>
               )}
             </div>
 
             {/* Schedule Modal */}
             {showScheduleModal && (
-              <div className="playwright-recorder-modal-overlay" onClick={closeScheduleModal}>
-                <div className="playwright-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="playwright-recorder-modal-header">
-                    <h3 className="playwright-recorder-modal-title">📅 Schedule Test Replay</h3>
-                    <button className="playwright-recorder-modal-close" onClick={closeScheduleModal}>✕</button>
+              <div className="browser-recorder-modal-overlay" onClick={closeScheduleModal}>
+                <div className="browser-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="browser-recorder-modal-header">
+                    <h3 className="browser-recorder-modal-title">📅 Schedule Test Replay</h3>
+                    <button className="browser-recorder-modal-close" onClick={closeScheduleModal}>✕</button>
                   </div>
 
-                  <div className="playwright-recorder-modal-body">
-                    <div className="playwright-recorder-form-group">
-                      <label className="playwright-recorder-form-label">
+                  <div className="browser-recorder-modal-body">
+                    <div className="browser-recorder-form-group">
+                      <label className="browser-recorder-form-label">
                         <input
                           type="checkbox"
                           checked={scheduleForm.enabled}
                           onChange={(e) => setScheduleForm({ ...scheduleForm, enabled: e.target.checked })}
-                          className="playwright-recorder-form-checkbox"
+                          className="browser-recorder-form-checkbox"
                         />
                         <span>Enable Schedule</span>
                       </label>
@@ -629,8 +629,8 @@ const PlaywrightRecorderPage: React.FC = () => {
 
                     {scheduleForm.enabled && (
                       <>
-                        <div className="playwright-recorder-form-group">
-                          <label className="playwright-recorder-form-label">Frequency</label>
+                        <div className="browser-recorder-form-group">
+                          <label className="browser-recorder-form-label">Frequency</label>
                           <select
                             value={scheduleForm.frequencyType}
                             onChange={(e) => {
@@ -650,7 +650,7 @@ const PlaywrightRecorderPage: React.FC = () => {
 
                               setScheduleForm({ ...scheduleForm, frequencyType: freq, dayLabel: newDayLabel });
                             }}
-                            className="playwright-recorder-form-select"
+                            className="browser-recorder-form-select"
                           >
                             <option value="daily">Daily</option>
                             <option value="weekly">Weekly</option>
@@ -660,8 +660,8 @@ const PlaywrightRecorderPage: React.FC = () => {
                         </div>
 
                         {scheduleForm.frequencyType === 'weekly' && (
-                          <div className="playwright-recorder-form-group">
-                            <label className="playwright-recorder-form-label">Day of Week</label>
+                          <div className="browser-recorder-form-group">
+                            <label className="browser-recorder-form-label">Day of Week</label>
                             <select
                               value={scheduleForm.dayOfWeek || 0}
                               onChange={(e) => {
@@ -673,7 +673,7 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   dayLabel: days[dayIndex]
                                 });
                               }}
-                              className="playwright-recorder-form-select"
+                              className="browser-recorder-form-select"
                             >
                               <option value="0">Sunday</option>
                               <option value="1">Monday</option>
@@ -687,8 +687,8 @@ const PlaywrightRecorderPage: React.FC = () => {
                         )}
 
                         {scheduleForm.frequencyType === 'monthly' && (
-                          <div className="playwright-recorder-form-group">
-                            <label className="playwright-recorder-form-label">Day of Month</label>
+                          <div className="browser-recorder-form-group">
+                            <label className="browser-recorder-form-label">Day of Month</label>
                             <input
                               type="number"
                               min="1"
@@ -702,14 +702,14 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   dayLabel: `Day ${day} of month`
                                 });
                               }}
-                              className="playwright-recorder-form-input"
+                              className="browser-recorder-form-input"
                             />
                           </div>
                         )}
 
                         {scheduleForm.frequencyType === 'custom' && (
-                          <div className="playwright-recorder-form-group">
-                            <label className="playwright-recorder-form-label">Interval (Days)</label>
+                          <div className="browser-recorder-form-group">
+                            <label className="browser-recorder-form-label">Interval (Days)</label>
                             <input
                               type="number"
                               min="1"
@@ -722,30 +722,30 @@ const PlaywrightRecorderPage: React.FC = () => {
                                   dayLabel: `Every ${days} days`
                                 });
                               }}
-                              className="playwright-recorder-form-input"
+                              className="browser-recorder-form-input"
                               placeholder="Number of days"
                             />
                           </div>
                         )}
 
-                        <div className="playwright-recorder-form-group">
-                          <label className="playwright-recorder-form-label">Time</label>
+                        <div className="browser-recorder-form-group">
+                          <label className="browser-recorder-form-label">Time</label>
                           <input
                             type="time"
                             value={scheduleForm.scheduledTime}
                             onChange={(e) => setScheduleForm({ ...scheduleForm, scheduledTime: e.target.value })}
-                            className="playwright-recorder-form-input"
+                            className="browser-recorder-form-input"
                           />
                         </div>
 
-                        <div className="playwright-recorder-schedule-preview">
+                        <div className="browser-recorder-schedule-preview">
                           <strong>Schedule:</strong> {scheduleForm.frequencyType && scheduleForm.scheduledTime ? getScheduleDescription(scheduleForm as Schedule) : 'Configure schedule above'}
                         </div>
                       </>
                     )}
                   </div>
 
-                  <div className="playwright-recorder-modal-footer">
+                  <div className="browser-recorder-modal-footer">
                     {scheduleForm.id && (
                       <button
                         onClick={() => {
@@ -754,15 +754,15 @@ const PlaywrightRecorderPage: React.FC = () => {
                             closeScheduleModal();
                           }
                         }}
-                        className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary"
+                        className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
                       >
                         Remove Schedule
                       </button>
                     )}
-                    <button onClick={closeScheduleModal} className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary">
+                    <button onClick={closeScheduleModal} className="browser-recorder-btn browser-recorder-btn-sm btn-secondary">
                       Cancel
                     </button>
-                    <button onClick={saveSchedule} className="playwright-recorder-btn playwright-recorder-btn-sm btn-primary">
+                    <button onClick={saveSchedule} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
                       Save Schedule
                     </button>
                   </div>
@@ -772,21 +772,21 @@ const PlaywrightRecorderPage: React.FC = () => {
 
             {/* Rename Modal */}
             {showRenameModal && (
-              <div className="playwright-recorder-modal-overlay" onClick={closeRenameModal}>
-                <div className="playwright-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="playwright-recorder-modal-header">
-                    <h3 className="playwright-recorder-modal-title">✏️ Rename Test</h3>
-                    <button className="playwright-recorder-modal-close" onClick={closeRenameModal}>✕</button>
+              <div className="browser-recorder-modal-overlay" onClick={closeRenameModal}>
+                <div className="browser-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="browser-recorder-modal-header">
+                    <h3 className="browser-recorder-modal-title">✏️ Rename Test</h3>
+                    <button className="browser-recorder-modal-close" onClick={closeRenameModal}>✕</button>
                   </div>
 
-                  <div className="playwright-recorder-modal-body">
-                    <div className="playwright-recorder-form-group">
-                      <label className="playwright-recorder-form-label">Test Name</label>
+                  <div className="browser-recorder-modal-body">
+                    <div className="browser-recorder-form-group">
+                      <label className="browser-recorder-form-label">Test Name</label>
                       <input
                         type="text"
                         value={renameValue}
                         onChange={(e) => setRenameValue(e.target.value)}
-                        className="playwright-recorder-form-input"
+                        className="browser-recorder-form-input"
                         placeholder="Enter new test name"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -803,11 +803,11 @@ const PlaywrightRecorderPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="playwright-recorder-modal-footer">
-                    <button onClick={closeRenameModal} className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary">
+                  <div className="browser-recorder-modal-footer">
+                    <button onClick={closeRenameModal} className="browser-recorder-btn browser-recorder-btn-sm btn-secondary">
                       Cancel
                     </button>
-                    <button onClick={handleRename} className="playwright-recorder-btn playwright-recorder-btn-sm btn-primary">
+                    <button onClick={handleRename} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
                       Rename
                     </button>
                   </div>
@@ -816,10 +816,10 @@ const PlaywrightRecorderPage: React.FC = () => {
             )}
 
             {/* Downloads Section */}
-            <div className="playwright-recorder-section">
-              <div className="playwright-recorder-section-header">
-                <h2 className="playwright-recorder-section-title">📥 Playwright Downloads</h2>
-                <div className="playwright-recorder-downloads-actions">
+            <div className="browser-recorder-section">
+              <div className="browser-recorder-section-header">
+                <h2 className="browser-recorder-section-title">📥 Playwright Downloads</h2>
+                <div className="browser-recorder-downloads-actions">
                   <button
                     onClick={async () => {
                       try {
@@ -829,13 +829,13 @@ const PlaywrightRecorderPage: React.FC = () => {
                         alert('Failed to open folder');
                       }
                     }}
-                    className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary"
+                    className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
                   >
                     Open Folder
                   </button>
                   <button
                     onClick={loadPlaywrightDownloads}
-                    className="playwright-recorder-btn playwright-recorder-btn-sm btn-primary"
+                    className="browser-recorder-btn browser-recorder-btn-sm btn-primary"
                   >
                     Refresh
                   </button>
@@ -843,22 +843,22 @@ const PlaywrightRecorderPage: React.FC = () => {
               </div>
 
               {playwrightDownloads.length === 0 ? (
-                <p className="playwright-recorder-empty-message">No downloaded files yet.</p>
+                <p className="browser-recorder-empty-message">No downloaded files yet.</p>
               ) : (
-                <div className="playwright-recorder-downloads-container">
+                <div className="browser-recorder-downloads-container">
                   {playwrightDownloads.map((file, idx) => (
                     <div
                       key={idx}
-                      className="playwright-recorder-download-item"
+                      className="browser-recorder-download-item"
                       onClick={() => handleOpenDownload(file.path)}
                     >
-                      <div className="playwright-recorder-download-info">
-                        <div className="playwright-recorder-download-name">📄 {file.name}</div>
-                        <div className="playwright-recorder-download-meta">
+                      <div className="browser-recorder-download-info">
+                        <div className="browser-recorder-download-name">📄 {file.name}</div>
+                        <div className="browser-recorder-download-meta">
                           {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
                         </div>
                       </div>
-                      <div className="playwright-recorder-download-action">Open →</div>
+                      <div className="browser-recorder-download-action">Open →</div>
                     </div>
                   ))}
                 </div>
@@ -867,19 +867,19 @@ const PlaywrightRecorderPage: React.FC = () => {
 
             {/* Debug Console Section */}
             {debugLogs.length > 0 && (
-              <div className="playwright-recorder-section">
-                <div className="playwright-recorder-section-header">
-                  <h2 className="playwright-recorder-section-title">Debug Console</h2>
+              <div className="browser-recorder-section">
+                <div className="browser-recorder-section-header">
+                  <h2 className="browser-recorder-section-title">Debug Console</h2>
                   <button
                     onClick={() => setDebugLogs([])}
-                    className="playwright-recorder-btn playwright-recorder-btn-sm btn-secondary"
+                    className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
                   >
                     Clear Logs
                   </button>
                 </div>
-                <div className="playwright-recorder-debug-console">
+                <div className="browser-recorder-debug-console">
                   {debugLogs.map((log, index) => (
-                    <div key={index} className="playwright-recorder-debug-log-entry">
+                    <div key={index} className="browser-recorder-debug-log-entry">
                       {log}
                     </div>
                   ))}
@@ -893,4 +893,4 @@ const PlaywrightRecorderPage: React.FC = () => {
   );
 };
 
-export default PlaywrightRecorderPage;
+export default BrowserRecorderPage;

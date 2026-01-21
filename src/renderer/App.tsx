@@ -51,7 +51,7 @@ import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentit
 import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
-import PlaywrightRecorderPage from './components/PlaywrightRecorder/PlaywrightRecorderPage';
+import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -1937,7 +1937,7 @@ function NavigationBar({
   const isDevelopmentActive = [
     '/homepage-editor',
     '/egchatting',
-    '/playwright-recorder'
+    '/browser-recorder'
   ].some(path => location.pathname.startsWith(path));
 
   const isMarketingActive = [
@@ -1999,8 +1999,8 @@ function NavigationBar({
               <span>Chatting</span>
             </Link>
             <Link
-              to="/playwright-recorder"
-              className={`nav-dropdown-item ${location.pathname === '/playwright-recorder' ? 'active' : ''}`}
+              to="/browser-recorder"
+              className={`nav-dropdown-item ${location.pathname === '/browser-recorder' ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faRobot} fixedWidth />
               <span>Browser Recorder</span>
@@ -2439,7 +2439,7 @@ function AppContent() {
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
             <Route path="/docker" element={<DockerManager />} />
-            <Route path="/playwright-recorder" element={<PlaywrightRecorderPage />} />
+            <Route path="/browser-recorder" element={<BrowserRecorderPage />} />
             
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

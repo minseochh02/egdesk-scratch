@@ -2052,8 +2052,8 @@ const electronHandler = {
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
-    launchPlaywrightRecorderEnhanced: (url: string) => ipcRenderer.invoke('launch-playwright-recorder-enhanced', { url }),
-    stopPlaywrightRecorderEnhanced: () => ipcRenderer.invoke('stop-playwright-recorder-enhanced'),
+    launchBrowserRecorderEnhanced: (url: string) => ipcRenderer.invoke('launch-browser-recorder-enhanced', { url }),
+    stopBrowserRecorderEnhanced: () => ipcRenderer.invoke('stop-browser-recorder-enhanced'),
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
@@ -2135,12 +2135,12 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:get-saved-credentials', bankId),
     removeCredentials: (bankId: string) =>
       ipcRenderer.invoke('finance-hub:remove-credentials', bankId),
-    getPersistentSpreadsheet: () =>
-      ipcRenderer.invoke('finance-hub:get-persistent-spreadsheet'),
-    savePersistentSpreadsheet: (spreadsheetInfo: any) =>
-      ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo),
-    clearPersistentSpreadsheet: () =>
-      ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet'),
+    getPersistentSpreadsheet: (key?: string) =>
+      ipcRenderer.invoke('finance-hub:get-persistent-spreadsheet', key),
+    savePersistentSpreadsheet: (spreadsheetInfo: any, key?: string) =>
+      ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo, key),
+    clearPersistentSpreadsheet: (key?: string) =>
+      ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet', key),
     // Card company methods
     card: {
       loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string) =>
@@ -2150,6 +2150,36 @@ const electronHandler = {
       disconnect: (cardCompanyId: string) =>
         ipcRenderer.invoke('finance-hub:card:disconnect', cardCompanyId),
     },
+  },
+
+  /**
+   * Hometax Integration API - Electronic Tax Invoice Collection
+   */
+  hometax: {
+    fetchCertificates: () =>
+      ipcRenderer.invoke('hometax:fetch-certificates'),
+    connect: (selectedCertificate: any, certificatePassword: string) =>
+      ipcRenderer.invoke('hometax:connect', selectedCertificate, certificatePassword),
+    disconnect: (businessNumber: string) =>
+      ipcRenderer.invoke('hometax:disconnect', businessNumber),
+    getConnectionStatus: () =>
+      ipcRenderer.invoke('hometax:get-connection-status'),
+    saveCredentials: (businessNumber: string, credentials: any) =>
+      ipcRenderer.invoke('hometax:save-credentials', businessNumber, credentials),
+    getCredentials: (businessNumber: string) =>
+      ipcRenderer.invoke('hometax:get-credentials', businessNumber),
+    removeCredentials: (businessNumber: string) =>
+      ipcRenderer.invoke('hometax:remove-credentials', businessNumber),
+    getConnectedBusinesses: () =>
+      ipcRenderer.invoke('hometax:get-connected-businesses'),
+    saveSelectedCertificate: (businessNumber: string, certificateData: any) =>
+      ipcRenderer.invoke('hometax:save-selected-certificate', businessNumber, certificateData),
+    getSelectedCertificate: (businessNumber: string) =>
+      ipcRenderer.invoke('hometax:get-selected-certificate', businessNumber),
+    getAllSavedCertificates: () =>
+      ipcRenderer.invoke('hometax:get-all-saved-certificates'),
+    collectInvoices: (certificateData: any, certificatePassword: string) =>
+      ipcRenderer.invoke('hometax:collect-invoices', certificateData, certificatePassword),
   },
 
   /**

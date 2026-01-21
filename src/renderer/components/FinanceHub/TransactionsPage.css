@@ -82,7 +82,47 @@
     font-size: 15px;
     color: var(--txp-text-secondary);
   }
-  
+
+  /* Transaction Type Tabs */
+  .txp-transaction-type-tabs {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .txp-transaction-type-tab {
+    padding: 10px 20px;
+    background: var(--txp-bg-card);
+    border: 1px solid var(--txp-border);
+    border-radius: var(--txp-radius-sm);
+    color: var(--txp-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    font-family: var(--txp-font-body);
+    cursor: pointer;
+    transition: var(--txp-transition);
+    white-space: nowrap;
+  }
+
+  .txp-transaction-type-tab:hover {
+    background: var(--txp-bg-card-hover);
+    border-color: var(--txp-border-light);
+    color: var(--txp-text-primary);
+  }
+
+  .txp-transaction-type-tab--active {
+    background: linear-gradient(135deg, var(--txp-primary) 0%, var(--txp-primary-dark) 100%);
+    border-color: var(--txp-primary);
+    color: white;
+    font-weight: 600;
+  }
+
+  .txp-transaction-type-tab--active:hover {
+    background: linear-gradient(135deg, var(--txp-primary-dark) 0%, var(--txp-primary) 100%);
+    border-color: var(--txp-primary);
+    color: white;
+  }
+
   .txp-header__actions {
     display: flex;
     align-items: center;

@@ -220,7 +220,7 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/playwright-recorder" className="egdesk-landing-action-card egdesk-landing-playwright-card">
+            <Link to="/browser-recorder" className="egdesk-landing-action-card egdesk-landing-browser-recorder-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faVideo} />
               </div>

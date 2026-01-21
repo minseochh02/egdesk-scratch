@@ -568,19 +568,19 @@
   color: #7209B7;
 }
 
-.egdesk-landing-playwright-card:hover {
+.egdesk-landing-browser-recorder-card:hover {
   border-color: #FF6B6B;
 }
 
-.egdesk-landing-playwright-card:hover::before {
+.egdesk-landing-browser-recorder-card:hover::before {
   background: linear-gradient(90deg, #FF6B6B, #FF8E53);
 }
 
-.egdesk-landing-playwright-card .egdesk-landing-card-icon {
+.egdesk-landing-browser-recorder-card .egdesk-landing-card-icon {
   background: linear-gradient(135deg, #FF6B6B, #FF8E53);
 }
 
-.egdesk-landing-playwright-card:hover .egdesk-landing-feature-tag {
+.egdesk-landing-browser-recorder-card:hover .egdesk-landing-feature-tag {
   background: #ffe6e6;
   color: #FF6B6B;
 }
