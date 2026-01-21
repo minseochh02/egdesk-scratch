@@ -137,6 +137,12 @@ const FinanceHub: React.FC = () => {
   const [hometaxConnectionProgress, setHometaxConnectionProgress] = useState<string>('');
   const [saveHometaxCredentials, setSaveHometaxCredentials] = useState(true);
 
+  // Tax invoice list state
+  const [taxInvoiceType, setTaxInvoiceType] = useState<'sales' | 'purchase'>('sales');
+  const [taxInvoices, setTaxInvoices] = useState<any[]>([]);
+  const [isLoadingTaxInvoices, setIsLoadingTaxInvoices] = useState(false);
+  const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
+
   // ============================================
   // Computed Values
   // ============================================
@@ -781,6 +787,24 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const loadTaxInvoices = async () => {
+    setIsLoadingTaxInvoices(true);
+    try {
+      const result = await window.electron.hometax.getInvoices({
+        businessNumber: selectedBusinessFilter === 'all' ? undefined : selectedBusinessFilter,
+        invoiceType: taxInvoiceType
+      });
+
+      if (result.success) {
+        setTaxInvoices(result.data || []);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Error loading tax invoices:', error);
+    } finally {
+      setIsLoadingTaxInvoices(false);
+    }
+  };
+
   const handleCollectTaxInvoices = async (businessNumber: string) => {
     try {
       // Get saved certificate data for this business
@@ -802,6 +826,7 @@ const FinanceHub: React.FC = () => {
         const purchaseMsg = `매입: ${result.purchaseInserted || 0}건 추가, ${result.purchaseDuplicate || 0}건 중복`;
         alert(`✅ 전자세금계산서 수집 완료!\n\n${salesMsg}\n${purchaseMsg}`);
         await loadConnectedBusinesses();
+        await loadTaxInvoices();
       } else {
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
       }
@@ -810,6 +835,17 @@ const FinanceHub: React.FC = () => {
       alert(`수집 중 오류 발생: ${error?.message || error}`);
     }
   };
+
+  const handleTaxInvoiceTabChange = async (type: 'sales' | 'purchase') => {
+    setTaxInvoiceType(type);
+  };
+
+  // Load tax invoices when filters change
+  useEffect(() => {
+    if (currentView === 'tax-management') {
+      loadTaxInvoices();
+    }
+  }, [taxInvoiceType, selectedBusinessFilter, currentView]);
 
   const handleConnectHometax = async () => {
     if (hometaxAuthMethod === 'certificate') {
@@ -1705,14 +1741,21 @@ const FinanceHub: React.FC = () => {
                 <div className="finance-hub__section-header">
                   <h2><span className="finance-hub__section-icon">📋</span> 전자세금계산서 목록</h2>
                   <div className="finance-hub__section-actions">
-                    {/* Business Filter Dropdown (shown when multiple businesses connected) */}
-                    {/*
-                    <select className="finance-hub__business-filter" disabled>
-                      <option value="all">전체 사업자</option>
-                      <option value="123-45-67890">테스트 주식회사 (123-45-67890)</option>
-                      <option value="987-65-43210">샘플 유한회사 (987-65-43210)</option>
-                    </select>
-                    */}
+                    {/* Business Filter Dropdown */}
+                    {connectedBusinesses.length > 1 && (
+                      <select
+                        className="finance-hub__business-filter"
+                        value={selectedBusinessFilter}
+                        onChange={(e) => setSelectedBusinessFilter(e.target.value)}
+                      >
+                        <option value="all">전체 사업자</option>
+                        {connectedBusinesses.map((business) => (
+                          <option key={business.businessNumber} value={business.businessNumber}>
+                            {business.businessName} ({business.businessNumber})
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <button className="finance-hub__btn finance-hub__btn--icon" title="자동 수집 설정" onClick={() => alert('스케줄러 설정 준비 중')}>
                       <FontAwesomeIcon icon={faClock} />
                     </button>
@@ -1727,30 +1770,87 @@ const FinanceHub: React.FC = () => {
 
                 {/* Invoice Type Tabs */}
                 <div className="finance-hub__tax-tabs">
-                  <button className="finance-hub__tax-tab finance-hub__tax-tab--active">
+                  <button
+                    className={`finance-hub__tax-tab ${taxInvoiceType === 'sales' ? 'finance-hub__tax-tab--active' : ''}`}
+                    onClick={() => handleTaxInvoiceTabChange('sales')}
+                  >
                     <span className="finance-hub__tax-tab-icon">📤</span>
                     <div className="finance-hub__tax-tab-info">
                       <span className="finance-hub__tax-tab-label">매출</span>
-                      <span className="finance-hub__tax-tab-count">0건</span>
+                      <span className="finance-hub__tax-tab-count">
+                        {connectedBusinesses.reduce((sum, b) => sum + (b.salesCount || 0), 0)}건
+                      </span>
                     </div>
                   </button>
-                  <button className="finance-hub__tax-tab">
+                  <button
+                    className={`finance-hub__tax-tab ${taxInvoiceType === 'purchase' ? 'finance-hub__tax-tab--active' : ''}`}
+                    onClick={() => handleTaxInvoiceTabChange('purchase')}
+                  >
                     <span className="finance-hub__tax-tab-icon">📥</span>
                     <div className="finance-hub__tax-tab-info">
                       <span className="finance-hub__tax-tab-label">매입</span>
-                      <span className="finance-hub__tax-tab-count">0건</span>
+                      <span className="finance-hub__tax-tab-count">
+                        {connectedBusinesses.reduce((sum, b) => sum + (b.purchaseCount || 0), 0)}건
+                      </span>
                     </div>
                   </button>
                 </div>
 
-                <div className="finance-hub__empty-state">
-                  <div className="finance-hub__empty-icon">🧾</div>
-                  <h3>수집된 매출 세금계산서가 없습니다</h3>
-                  <p>사업자를 연결하고 수집하면 전자세금계산서 목록이 표시됩니다</p>
-                  <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
-                    사업자 추가하기
-                  </button>
-                </div>
+                {/* Tax Invoice Table */}
+                {isLoadingTaxInvoices ? (
+                  <div className="finance-hub__empty-state">
+                    <span className="finance-hub__spinner"></span>
+                    <p>세금계산서 불러오는 중...</p>
+                  </div>
+                ) : taxInvoices.length === 0 ? (
+                  <div className="finance-hub__empty-state">
+                    <div className="finance-hub__empty-icon">🧾</div>
+                    <h3>수집된 {taxInvoiceType === 'sales' ? '매출' : '매입'} 세금계산서가 없습니다</h3>
+                    <p>사업자를 연결하고 수집하면 전자세금계산서 목록이 표시됩니다</p>
+                    <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
+                      사업자 추가하기
+                    </button>
+                  </div>
+                ) : (
+                  <div className="finance-hub__tax-invoice-table-container">
+                    <div className="finance-hub__tax-invoice-table-scroll">
+                      <table className="finance-hub__tax-invoice-table">
+                        <thead>
+                          <tr>
+                            <th>작성일자</th>
+                            <th>승인번호</th>
+                            <th>{taxInvoiceType === 'sales' ? '공급받는자' : '공급자'}</th>
+                            <th>공급가액</th>
+                            <th>세액</th>
+                            <th>합계금액</th>
+                            <th>품목명</th>
+                            <th>분류</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {taxInvoices.map((invoice) => (
+                            <tr key={invoice.id}>
+                              <td>{invoice.작성일자}</td>
+                              <td style={{ fontSize: '11px', fontFamily: 'monospace' }}>{invoice.승인번호}</td>
+                              <td>
+                                {taxInvoiceType === 'sales'
+                                  ? invoice.공급받는자상호
+                                  : invoice.공급자상호}
+                              </td>
+                              <td style={{ textAlign: 'right' }}>{formatCurrency(invoice.공급가액)}</td>
+                              <td style={{ textAlign: 'right' }}>{formatCurrency(invoice.세액)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                {formatCurrency(invoice.합계금액)}
+                              </td>
+                              <td>{invoice.품목명}</td>
+                              <td style={{ fontSize: '12px' }}>{invoice.전자세금계산서분류}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </section>
 
               {/* Cash Receipts Section */}

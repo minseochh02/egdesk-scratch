@@ -2845,3 +2845,75 @@
   font-weight: 600;
   border-radius: 4px;
 }
+
+/* ============================================
+   Tax Invoice Table
+   ============================================ */
+
+.finance-hub__tax-invoice-table-container {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  overflow: hidden;
+}
+
+.finance-hub__tax-invoice-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.finance-hub__tax-invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.finance-hub__tax-invoice-table thead {
+  background: rgba(0, 70, 255, 0.05);
+  border-bottom: 2px solid var(--fh-border);
+}
+
+.finance-hub__tax-invoice-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.finance-hub__tax-invoice-table tbody tr {
+  border-bottom: 1px solid var(--fh-border);
+  transition: var(--fh-transition);
+}
+
+.finance-hub__tax-invoice-table tbody tr:hover {
+  background: var(--fh-bg-card-hover);
+}
+
+.finance-hub__tax-invoice-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.finance-hub__tax-invoice-table td {
+  padding: 12px 16px;
+  color: var(--fh-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+/* Responsive Design for Tax Invoice Table */
+@media (max-width: 768px) {
+  .finance-hub__tax-invoice-table {
+    font-size: 12px;
+  }
+
+  .finance-hub__tax-invoice-table th,
+  .finance-hub__tax-invoice-table td {
+    padding: 10px 12px;
+  }
+}
