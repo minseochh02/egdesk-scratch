@@ -2180,6 +2180,8 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:get-all-saved-certificates'),
     collectInvoices: (certificateData: any, certificatePassword: string) =>
       ipcRenderer.invoke('hometax:collect-invoices', certificateData, certificatePassword),
+    getInvoices: (filters: any) =>
+      ipcRenderer.invoke('hometax:get-invoices', filters),
   },
 
   /**

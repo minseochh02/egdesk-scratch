@@ -24,6 +24,7 @@ interface HometaxConnectionResult {
 let globalContext: BrowserContext | null = null;
 let globalPage: Page | null = null;
 const pageStack: Page[] = [];
+let downloadedFiles: { sales?: string; purchase?: string } = {};
 
 /**
  * Fetch available certificates from Hometax
@@ -228,8 +229,9 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
  */
 export async function connectToHometax(
   selectedCertificate: any,
-  certificatePassword: string
-): Promise<HometaxConnectionResult> {
+  certificatePassword: string,
+  invoiceType: 'sales' | 'purchase' = 'sales'
+): Promise<HometaxConnectionResult & { downloadedFile?: string }> {
   try {
     console.log('[Hometax] Logging in with selected certificate...');
 
@@ -343,6 +345,37 @@ export async function connectToHometax(
         }
       }
     }
+
+    // Click on the selected certificate row in the iframe
+    console.log('[Hometax] Clicking on selected certificate...');
+    if (selectedCertificate.xpath) {
+      const frames = page.frames();
+      for (const frame of frames) {
+        if (frame === page.mainFrame()) continue;
+
+        try {
+          const certificateClicked = await frame.evaluate((xpath) => {
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const row = result.singleNodeValue as HTMLElement;
+            if (row) {
+              console.log('[Hometax] Certificate row found, clicking:', xpath);
+              row.click();
+              return true;
+            }
+            return false;
+          }, selectedCertificate.xpath);
+
+          if (certificateClicked) {
+            console.log('[Hometax] Certificate clicked successfully');
+            break;
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+    }
+
+    await page.waitForTimeout(1000);
 
     // Click on certificate password input in iframe
     console.log('[Hometax] Clicking certificate password input...');
@@ -476,7 +509,12 @@ export async function connectToHometax(
     await page.waitForTimeout(1000);
 
     await page.waitForTimeout(2853); // Human-like delay (1x multiplier)
-    await page.locator('#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_0 > label').click();
+
+    // Click radio button for 매출 or 매입
+    const radioIndex = invoiceType === 'sales' ? 0 : 1;
+    const radioSelector = `#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_${radioIndex} > label`;
+    console.log(`[Hometax] Selecting ${invoiceType === 'sales' ? '매출' : '매입'}...`);
+    await page.locator(radioSelector).click();
     await page.waitForTimeout(1092); // Human-like delay (1x multiplier)
 
     console.log('[Hometax] Reached tax invoice list page');
@@ -537,7 +575,42 @@ export async function connectToHometax(
     console.log('[Hometax] Second confirmation clicked:', secondConfirmClicked);
     await page.waitForTimeout(2000);
 
+    // Close confirmation dialog
+    console.log('[Hometax] Closing confirmation dialog...');
+    const closeDialogXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[2]/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      if (element) {
+        console.log('[Hometax] Close button found, clicking');
+        element.click();
+      } else {
+        console.error('[Hometax] Close button not found');
+      }
+    }, closeDialogXPath);
+    await page.waitForTimeout(1000);
+
     console.log('[Hometax] Excel download completed');
+
+    // Wait a bit for download to complete and get the file path
+    await page.waitForTimeout(2000);
+
+    // Get downloaded file from the downloads folder
+    const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
+    const files = fs.readdirSync(downloadsPath);
+
+    // Find the most recently downloaded file (매출 or 매입)
+    const recentFile = files
+      .filter((f: string) => f.endsWith('.xls') || f.endsWith('.xlsx'))
+      .map((f: string) => ({
+        name: f,
+        path: path.join(downloadsPath, f),
+        time: fs.statSync(path.join(downloadsPath, f)).mtime.getTime()
+      }))
+      .sort((a: any, b: any) => b.time - a.time)[0];
+
+    const downloadedFile = recentFile?.path;
+    console.log('[Hometax] Downloaded file:', downloadedFile);
 
     return {
       success: true,
@@ -545,7 +618,8 @@ export async function connectToHometax(
         businessName: companyName || '사업자명 (조회 실패)',
         representativeName: selectedCertificate.소유자명 || '대표자명 (조회 실패)',
         businessType: companyType || '일반 과세자'
-      }
+      },
+      downloadedFile
     };
 
   } catch (error) {
@@ -590,28 +664,114 @@ export function getHometaxConnectionStatus(): { isConnected: boolean } {
 export async function collectTaxInvoices(
   certificateData: any,
   certificatePassword: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; salesFile?: string; purchaseFile?: string; error?: string }> {
   try {
     console.log('[Hometax] Starting tax invoice collection...');
 
-    // Reuse connectToHometax flow to login and navigate to invoice list
-    const result = await connectToHometax(certificateData, certificatePassword);
+    // Collect 매출 (sales)
+    console.log('[Hometax] Collecting 매출 invoices...');
+    const salesResult = await connectToHometax(certificateData, certificatePassword, 'sales');
 
-    if (!result.success) {
+    if (!salesResult.success) {
       return {
         success: false,
-        error: result.error
+        error: salesResult.error
       };
     }
 
-    console.log('[Hometax] Successfully navigated to tax invoice list page');
+    const salesFile = salesResult.downloadedFile;
+    console.log('[Hometax] 매출 collection completed, file:', salesFile);
 
-    // TODO: Download excel files for 매출 and 매입
-    // TODO: Parse excel files
-    // TODO: Save to database
+    // Collect 매입 (purchases) - browser is still open, just need to select 매입 radio
+    console.log('[Hometax] Collecting 매입 invoices...');
+
+    if (!globalPage) {
+      return {
+        success: false,
+        error: 'Browser closed unexpectedly'
+      };
+    }
+
+    const page = globalPage;
+
+    // Click 매입 radio button
+    await page.waitForTimeout(2000);
+    await page.locator('#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_1 > label').click();
+    await page.waitForTimeout(1092);
+
+    // Click 조회 button again
+    console.log('[Hometax] Clicking search button for 매입...');
+    const searchButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[4]/div/span';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, searchButtonXPath);
+    await page.waitForTimeout(3000);
+
+    // Click excel download button
+    console.log('[Hometax] Clicking excel download button for 매입...');
+    const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, excelButtonXPath);
+    await page.waitForTimeout(2000);
+
+    // First confirmation
+    const firstConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[3]/span[2]/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, firstConfirmXPath);
+    await page.waitForTimeout(2000);
+
+    // Second confirmation
+    const secondConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[3]/span[2]/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, secondConfirmXPath);
+    await page.waitForTimeout(2000);
+
+    // Close confirmation dialog
+    const closeDialogXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[2]/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, closeDialogXPath);
+    await page.waitForTimeout(1000);
+
+    console.log('[Hometax] 매입 collection completed');
+
+    // Wait for download to complete and get the file path
+    await page.waitForTimeout(2000);
+
+    // Get downloaded file from the downloads folder
+    const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
+    const files = fs.readdirSync(downloadsPath);
+
+    // Find the most recently downloaded file (매입)
+    const recentFile = files
+      .filter((f: string) => f.endsWith('.xls') || f.endsWith('.xlsx'))
+      .map((f: string) => ({
+        name: f,
+        path: path.join(downloadsPath, f),
+        time: fs.statSync(path.join(downloadsPath, f)).mtime.getTime()
+      }))
+      .sort((a: any, b: any) => b.time - a.time)[0];
+
+    const purchaseFile = recentFile?.path;
+    console.log('[Hometax] Downloaded purchase file:', purchaseFile);
 
     return {
-      success: true
+      success: true,
+      salesFile,
+      purchaseFile
     };
 
   } catch (error) {

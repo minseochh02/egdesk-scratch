@@ -193,20 +193,34 @@ const FinanceHub: React.FC = () => {
     try {
       const allSavedCerts = await window.electron.hometax.getAllSavedCertificates();
       if (allSavedCerts.success && allSavedCerts.data) {
-        const businesses = Object.entries(allSavedCerts.data).map(([businessNumber, certData]: [string, any]) => ({
-          businessNumber,
-          businessName: certData.businessName || businessNumber,
-          representativeName: certData.representativeName,
-          businessType: certData.businessType,
-          status: 'connected',
-          lastSync: certData.savedAt ? new Date(certData.savedAt) : undefined,
-          salesCount: certData.salesCount || 0,
-          purchaseCount: certData.purchaseCount || 0,
-          소유자명: certData.소유자명,
-          용도: certData.용도,
-          발급기관: certData.발급기관,
-          만료일: certData.만료일
-        }));
+        const businesses = await Promise.all(
+          Object.entries(allSavedCerts.data).map(async ([businessNumber, certData]: [string, any]) => {
+            // Get actual counts from database
+            const salesResult = await window.electron.hometax.getInvoices({
+              businessNumber,
+              invoiceType: 'sales'
+            });
+            const purchaseResult = await window.electron.hometax.getInvoices({
+              businessNumber,
+              invoiceType: 'purchase'
+            });
+
+            return {
+              businessNumber,
+              businessName: certData.businessName || businessNumber,
+              representativeName: certData.representativeName,
+              businessType: certData.businessType,
+              status: 'connected',
+              lastSync: certData.savedAt ? new Date(certData.savedAt) : undefined,
+              salesCount: salesResult.success ? (salesResult.total || 0) : 0,
+              purchaseCount: purchaseResult.success ? (purchaseResult.total || 0) : 0,
+              소유자명: certData.소유자명,
+              용도: certData.용도,
+              발급기관: certData.발급기관,
+              만료일: certData.만료일
+            };
+          })
+        );
         setConnectedBusinesses(businesses);
       }
     } catch (error) {
@@ -784,7 +798,9 @@ const FinanceHub: React.FC = () => {
       );
 
       if (result.success) {
-        alert('✅ 전자세금계산서 수집 완료!');
+        const salesMsg = `매출: ${result.salesInserted || 0}건 추가, ${result.salesDuplicate || 0}건 중복`;
+        const purchaseMsg = `매입: ${result.purchaseInserted || 0}건 추가, ${result.purchaseDuplicate || 0}건 중복`;
+        alert(`✅ 전자세금계산서 수집 완료!\n\n${salesMsg}\n${purchaseMsg}`);
         await loadConnectedBusinesses();
       } else {
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
