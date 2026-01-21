@@ -1287,6 +1287,9 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 // ============================================
 
 import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
+import { parseHometaxExcel } from './hometax-excel-parser';
+import { importTaxInvoices, recordSyncOperation, getTaxInvoices } from './sqlite/hometax';
+import { getConversationsDatabase } from './sqlite/init';
 
 /**
  * Fetch available certificates from Hometax
@@ -1489,13 +1492,92 @@ ipcMain.handle('hometax:get-all-saved-certificates', async () => {
 });
 
 /**
+ * Get tax invoices from database
+ */
+ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
+  try {
+    const db = getConversationsDatabase();
+    const result = getTaxInvoices(db, filters);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-invoices error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
  * Collect tax invoices for a business
  */
 ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, certificatePassword: string) => {
   try {
     console.log(`[IPC] hometax:collect-invoices called for: ${certificateData?.businessName}`);
+
+    // Collect invoices (download Excel files)
     const result = await collectTaxInvoices(certificateData, certificatePassword);
-    return result;
+
+    if (!result.success) {
+      return result;
+    }
+
+    // Parse and save the downloaded Excel files
+    const db = getConversationsDatabase();
+    let salesInserted = 0;
+    let salesDuplicate = 0;
+    let purchaseInserted = 0;
+    let purchaseDuplicate = 0;
+
+    // Wait a bit for files to be fully written
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Parse sales Excel
+    if (result.salesFile) {
+      console.log('[IPC] Parsing sales Excel:', result.salesFile);
+      const salesParsed = parseHometaxExcel(result.salesFile);
+
+      if (salesParsed.success && salesParsed.invoices && salesParsed.businessNumber) {
+        const importResult = importTaxInvoices(
+          db,
+          salesParsed.businessNumber,
+          'sales',
+          salesParsed.invoices,
+          result.salesFile
+        );
+        salesInserted = importResult.inserted;
+        salesDuplicate = importResult.duplicate;
+      }
+    }
+
+    // Parse purchase Excel
+    if (result.purchaseFile) {
+      console.log('[IPC] Parsing purchase Excel:', result.purchaseFile);
+      const purchaseParsed = parseHometaxExcel(result.purchaseFile);
+
+      if (purchaseParsed.success && purchaseParsed.invoices && purchaseParsed.businessNumber) {
+        const importResult = importTaxInvoices(
+          db,
+          purchaseParsed.businessNumber,
+          'purchase',
+          purchaseParsed.invoices,
+          result.purchaseFile
+        );
+        purchaseInserted = importResult.inserted;
+        purchaseDuplicate = importResult.duplicate;
+      }
+    }
+
+    console.log(`[IPC] Import complete - Sales: ${salesInserted} new, Purchase: ${purchaseInserted} new`);
+
+    return {
+      success: true,
+      salesInserted,
+      salesDuplicate,
+      purchaseInserted,
+      purchaseDuplicate
+    };
+
   } catch (error) {
     console.error('[IPC] hometax:collect-invoices error:', error);
     return {
