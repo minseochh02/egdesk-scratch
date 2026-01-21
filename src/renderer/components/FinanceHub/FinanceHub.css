@@ -1893,16 +1893,955 @@
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .finance-hub__debug-select {
     width: 100%;
   }
-  
+
   .finance-hub__debug-buttons {
     grid-template-columns: 1fr;
   }
-  
+
   .finance-hub__debug-tips {
     font-size: 10px;
   }
+}
+
+/* ============================================
+   Tax Management Page
+   ============================================ */
+
+.finance-hub__tax-management {
+  padding: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.finance-hub__page-header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+
+.finance-hub__page-title {
+  font-family: var(--fh-font-display);
+  font-size: 42px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: linear-gradient(135deg, var(--fh-primary) 0%, var(--fh-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.finance-hub__page-icon {
+  font-size: 48px;
+  filter: drop-shadow(0 4px 8px rgba(0, 70, 255, 0.3));
+}
+
+.finance-hub__page-subtitle {
+  font-size: 18px;
+  color: var(--fh-text-secondary);
+  margin: 0;
+}
+
+/* Coming Soon Section */
+.finance-hub__coming-soon {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-lg);
+  padding: 80px 48px;
+  text-align: center;
+  box-shadow: var(--fh-shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.finance-hub__coming-soon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg,
+    var(--fh-primary) 0%,
+    var(--fh-secondary) 50%,
+    var(--fh-accent) 100%
+  );
+  animation: shimmer 3s linear infinite;
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.finance-hub__coming-soon-icon {
+  font-size: 96px;
+  margin-bottom: 24px;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.finance-hub__coming-soon h2 {
+  font-family: var(--fh-font-display);
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  color: var(--fh-text-primary);
+}
+
+.finance-hub__coming-soon > p {
+  font-size: 18px;
+  color: var(--fh-text-secondary);
+  margin: 0 0 48px;
+}
+
+.finance-hub__coming-soon-features {
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: left;
+  background: rgba(0, 70, 255, 0.05);
+  border: 1px solid rgba(0, 70, 255, 0.2);
+  border-radius: var(--fh-radius-md);
+  padding: 32px;
+}
+
+.finance-hub__coming-soon-features h3 {
+  font-family: var(--fh-font-display);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 20px;
+  color: var(--fh-text-primary);
+  text-align: center;
+}
+
+.finance-hub__coming-soon-features ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.finance-hub__coming-soon-features li {
+  font-size: 16px;
+  color: var(--fh-text-secondary);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-sm);
+  transition: var(--fh-transition);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.finance-hub__coming-soon-features li:last-child {
+  margin-bottom: 0;
+}
+
+.finance-hub__coming-soon-features li:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateX(4px);
+}
+
+/* Tax Section */
+.finance-hub__tax-section {
+  margin-bottom: 32px;
+}
+
+/* Tax Invoice Type Tabs */
+.finance-hub__tax-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.finance-hub__tax-tab {
+  background: var(--fh-bg-card);
+  border: 2px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: var(--fh-transition);
+  font-family: var(--fh-font-body);
+}
+
+.finance-hub__tax-tab:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateY(-2px);
+  box-shadow: var(--fh-shadow-md);
+}
+
+.finance-hub__tax-tab--active {
+  background: rgba(0, 70, 255, 0.1);
+  border-color: var(--fh-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.1);
+}
+
+.finance-hub__tax-tab--active:hover {
+  background: rgba(0, 70, 255, 0.15);
+  border-color: var(--fh-primary);
+}
+
+.finance-hub__tax-tab-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__tax-tab-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finance-hub__tax-tab-label {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-tab--active .finance-hub__tax-tab-label {
+  color: var(--fh-primary);
+}
+
+.finance-hub__tax-tab-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--fh-text-secondary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-tab--active .finance-hub__tax-tab-count {
+  color: var(--fh-primary);
+}
+
+/* Tax Connection Status */
+.finance-hub__tax-connection-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.finance-hub__tax-status-card {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  transition: var(--fh-transition);
+}
+
+.finance-hub__tax-status-card:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateY(-2px);
+  box-shadow: var(--fh-shadow-md);
+}
+
+.finance-hub__tax-status-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__tax-status-info {
+  flex: 1;
+}
+
+.finance-hub__tax-status-info h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.finance-hub__tax-status-info p {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-status-info small {
+  font-size: 13px;
+  color: var(--fh-text-muted);
+}
+
+.finance-hub__tax-status-disconnected {
+  color: var(--fh-text-muted);
+}
+
+.finance-hub__tax-status-connected {
+  color: var(--fh-success);
+}
+
+.finance-hub__tax-status-muted {
+  color: var(--fh-text-muted);
+}
+
+.finance-hub__tax-status-value {
+  color: var(--fh-primary);
+}
+
+/* Tax Settings Preview */
+.finance-hub__tax-settings-preview {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  overflow: hidden;
+}
+
+.finance-hub__tax-setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--fh-border);
+  transition: var(--fh-transition);
+}
+
+.finance-hub__tax-setting-item:last-child {
+  border-bottom: none;
+}
+
+.finance-hub__tax-setting-item:hover {
+  background: var(--fh-bg-card-hover);
+}
+
+.finance-hub__tax-setting-info {
+  flex: 1;
+}
+
+.finance-hub__tax-setting-info h4 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fh-text-primary);
+}
+
+.finance-hub__tax-setting-info p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+}
+
+.finance-hub__tax-setting-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fh-primary);
+  padding: 8px 16px;
+  background: rgba(0, 70, 255, 0.1);
+  border: 1px solid rgba(0, 70, 255, 0.2);
+  border-radius: var(--fh-radius-sm);
+  white-space: nowrap;
+}
+
+/* Responsive Design for Tax Management */
+@media (max-width: 768px) {
+  .finance-hub__tax-management {
+    padding: 16px;
+  }
+
+  .finance-hub__page-title {
+    font-size: 32px;
+    flex-direction: column;
+  }
+
+  .finance-hub__page-icon {
+    font-size: 40px;
+  }
+
+  .finance-hub__page-subtitle {
+    font-size: 16px;
+  }
+
+  .finance-hub__coming-soon {
+    padding: 48px 24px;
+  }
+
+  .finance-hub__coming-soon-icon {
+    font-size: 72px;
+  }
+
+  .finance-hub__coming-soon h2 {
+    font-size: 24px;
+  }
+
+  .finance-hub__coming-soon > p {
+    font-size: 16px;
+  }
+
+  .finance-hub__coming-soon-features {
+    padding: 20px;
+  }
+
+  .finance-hub__coming-soon-features h3 {
+    font-size: 18px;
+  }
+
+  .finance-hub__coming-soon-features li {
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .finance-hub__tax-connection-status {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-hub__tax-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-hub__tax-tab {
+    padding: 16px 20px;
+  }
+
+  .finance-hub__tax-tab-icon {
+    font-size: 28px;
+  }
+
+  .finance-hub__tax-tab-label {
+    font-size: 16px;
+  }
+
+  .finance-hub__tax-tab-count {
+    font-size: 20px;
+  }
+
+  .finance-hub__tax-setting-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .finance-hub__tax-setting-value {
+    width: 100%;
+    text-align: center;
+  }
+}
+/* ============================================
+   Tax Feature Cards & Grids
+   ============================================ */
+
+/* Tax Feature Grid */
+.finance-hub__tax-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.finance-hub__tax-feature-card {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 24px;
+  text-align: center;
+  transition: var(--fh-transition);
+}
+
+.finance-hub__tax-feature-card:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateY(-2px);
+  box-shadow: var(--fh-shadow-md);
+}
+
+.finance-hub__tax-feature-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__tax-feature-card h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-feature-count {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--fh-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-feature-card small {
+  font-size: 13px;
+  color: var(--fh-text-muted);
+  display: block;
+}
+
+/* Tax Notice Card */
+.finance-hub__tax-notice-card {
+  background: linear-gradient(135deg, rgba(0, 70, 255, 0.1) 0%, rgba(0, 212, 170, 0.1) 100%);
+  border: 1px solid rgba(0, 70, 255, 0.3);
+  border-radius: var(--fh-radius-md);
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.finance-hub__tax-notice-icon {
+  font-size: 48px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__tax-notice-content {
+  flex: 1;
+}
+
+.finance-hub__tax-notice-content h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.finance-hub__tax-notice-deadline {
+  margin: 0 0 4px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--fh-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__tax-notice-content small {
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+}
+
+/* Responsive Design for Feature Cards */
+@media (max-width: 768px) {
+  .finance-hub__tax-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-hub__tax-feature-icon {
+    font-size: 32px;
+  }
+
+  .finance-hub__tax-feature-count {
+    font-size: 20px;
+  }
+
+  .finance-hub__tax-notice-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .finance-hub__tax-notice-icon {
+    font-size: 40px;
+  }
+
+  .finance-hub__tax-notice-deadline {
+    font-size: 24px;
+  }
+}
+
+/* ============================================
+   Connected Businesses (Multi-Business Support)
+   ============================================ */
+
+.finance-hub__connected-businesses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 20px;
+}
+
+.finance-hub__business-card {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-left: 4px solid var(--bank-color, var(--fh-primary));
+  border-radius: var(--fh-radius-md);
+  overflow: hidden;
+  transition: var(--fh-transition);
+}
+
+.finance-hub__business-card:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  box-shadow: var(--fh-shadow-lg);
+  transform: translateY(-2px);
+}
+
+.finance-hub__business-header {
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--fh-border);
+}
+
+.finance-hub__business-icon {
+  font-size: 36px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__business-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.finance-hub__business-info h4 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-display);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.finance-hub__business-number {
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.5px;
+}
+
+.finance-hub__business-stats {
+  padding: 20px 24px;
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--fh-border);
+}
+
+.finance-hub__business-stat {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(0, 70, 255, 0.05);
+  border: 1px solid rgba(0, 70, 255, 0.1);
+  border-radius: var(--fh-radius-sm);
+}
+
+.finance-hub__business-stat-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.finance-hub__business-stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.finance-hub__business-stat-label {
+  font-size: 12px;
+  color: var(--fh-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.finance-hub__business-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--fh-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__business-footer {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.finance-hub__business-footer > span {
+  font-size: 13px;
+  color: var(--fh-text-muted);
+}
+
+.finance-hub__business-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Responsive Design for Business Cards */
+@media (max-width: 768px) {
+  .finance-hub__connected-businesses {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-hub__business-stats {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .finance-hub__business-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .finance-hub__business-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .finance-hub__business-actions .finance-hub__btn {
+    width: 100%;
+  }
+}
+
+/* Business Filter Dropdown */
+.finance-hub__business-filter {
+  padding: 8px 16px;
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-sm);
+  color: var(--fh-text-primary);
+  font-size: 14px;
+  font-family: var(--fh-font-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--fh-transition);
+  min-width: 200px;
+}
+
+.finance-hub__business-filter:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+}
+
+.finance-hub__business-filter:focus {
+  outline: none;
+  border-color: var(--fh-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.1);
+}
+
+.finance-hub__business-filter option {
+  background: var(--fh-bg-card);
+  color: var(--fh-text-primary);
+  padding: 8px;
+}
+
+/* ============================================
+   Hometax Authentication Method Selector
+   ============================================ */
+
+.finance-hub__auth-method-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.finance-hub__auth-method-btn {
+  background: var(--fh-bg-card);
+  border: 2px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: var(--fh-transition);
+  font-family: var(--fh-font-body);
+  width: 100%;
+  text-align: left;
+}
+
+.finance-hub__auth-method-btn:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-primary);
+  transform: translateX(4px);
+  box-shadow: var(--fh-shadow-md);
+}
+
+.finance-hub__auth-method-icon {
+  font-size: 40px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__auth-method-info {
+  flex: 1;
+}
+
+.finance-hub__auth-method-info h4 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__auth-method-info p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+}
+
+/* ============================================
+   Certificate Selection List
+   ============================================ */
+
+.finance-hub__certificate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.finance-hub__certificate-item {
+  background: var(--fh-bg-card);
+  border: 2px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: var(--fh-transition);
+  position: relative;
+}
+
+.finance-hub__certificate-item:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-border-light);
+  transform: translateX(4px);
+}
+
+.finance-hub__certificate-item--selected {
+  background: rgba(0, 70, 255, 0.1);
+  border-color: var(--fh-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.1);
+}
+
+.finance-hub__certificate-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.finance-hub__certificate-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.finance-hub__certificate-info h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fh-text-primary);
+  font-family: var(--fh-font-display);
+}
+
+.finance-hub__certificate-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--fh-text-secondary);
+}
+
+.finance-hub__certificate-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.finance-hub__certificate-check {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 24px;
+  color: var(--fh-success);
+  font-weight: bold;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .finance-hub__auth-method-btn {
+    padding: 16px 20px;
+  }
+
+  .finance-hub__auth-method-icon {
+    font-size: 32px;
+  }
+
+  .finance-hub__auth-method-info h4 {
+    font-size: 16px;
+  }
+
+  .finance-hub__certificate-item {
+    padding: 12px 16px;
+  }
+
+  .finance-hub__certificate-icon {
+    font-size: 28px;
+  }
+
+  .finance-hub__certificate-details {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+/* Certificate Saved Badge */
+.finance-hub__certificate-saved-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--fh-success);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Business Type Display */
+.finance-hub__business-type {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: rgba(0, 177, 64, 0.1);
+  border: 1px solid rgba(0, 177, 64, 0.3);
+  color: var(--fh-success);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
 }

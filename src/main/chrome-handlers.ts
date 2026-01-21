@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { pathToFileURL } from 'url';
-import { PlaywrightRecorder } from './playwright-recorder';
+import { BrowserRecorder } from './browser-recorder';
 import { codeViewerWindow } from './code-viewer-window';
 
 /**
@@ -947,9 +947,9 @@ Please provide:
 
 
   // Enhanced Playwright recorder with keyboard tracking
-  let activeRecorder: PlaywrightRecorder | null = null;
+  let activeRecorder: BrowserRecorder | null = null;
   
-  ipcMain.handle('launch-playwright-recorder-enhanced', async (event, { url }) => {
+  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url }) => {
     try {
       console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
       
@@ -980,7 +980,7 @@ test('recorded test', async ({ page }) => {
       codeViewerWindow.updateCode(initialCode);
 
       // Create new recorder
-      activeRecorder = new PlaywrightRecorder();
+      activeRecorder = new BrowserRecorder();
       activeRecorder.setOutputFile(outputFile);
       
       // Set up real-time updates
@@ -1065,7 +1065,7 @@ test('recorded test', async ({ page }) => {
     }
   });
   
-  ipcMain.handle('stop-playwright-recorder-enhanced', async (event) => {
+  ipcMain.handle('stop-browser-recorder-enhanced', async (event) => {
     try {
       if (!activeRecorder) {
         return {

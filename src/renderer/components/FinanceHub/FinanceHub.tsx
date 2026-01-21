@@ -89,7 +89,7 @@ const FinanceHub: React.FC = () => {
   // Local State
   // ============================================
   
-  const [currentView, setCurrentView] = useState<'dashboard' | 'transactions'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'bank-transactions' | 'card-transactions' | 'tax-management'>('dashboard');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -119,6 +119,23 @@ const FinanceHub: React.FC = () => {
   const [saveCardCredentials, setSaveCardCredentials] = useState(true);
   const [isSyncingCard, setIsSyncingCard] = useState<string | null>(null);
   const [showCardSyncOptions, setShowCardSyncOptions] = useState<string | null>(null); // cardNumber showing options
+
+  // Hometax-related state
+  const [connectedBusinesses, setConnectedBusinesses] = useState<any[]>([]);
+  const [showHometaxModal, setShowHometaxModal] = useState(false);
+  const [hometaxAuthMethod, setHometaxAuthMethod] = useState<'certificate' | 'id' | null>(null);
+  const [availableCertificates, setAvailableCertificates] = useState<any[]>([]);
+  const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
+  const [savedCertificates, setSavedCertificates] = useState<Record<string, any>>({});
+  const [hometaxCredentials, setHometaxCredentials] = useState({
+    businessNumber: '',
+    certificatePassword: '',
+    userId: '',
+    password: ''
+  });
+  const [isConnectingHometax, setIsConnectingHometax] = useState(false);
+  const [hometaxConnectionProgress, setHometaxConnectionProgress] = useState<string>('');
+  const [saveHometaxCredentials, setSaveHometaxCredentials] = useState(true);
 
   // ============================================
   // Computed Values
@@ -169,7 +186,33 @@ const FinanceHub: React.FC = () => {
     loadDatabaseStats();
     loadRecentSyncOperations();
     checkExistingConnections();
+    loadConnectedBusinesses();
   }, []);
+
+  const loadConnectedBusinesses = async () => {
+    try {
+      const allSavedCerts = await window.electron.hometax.getAllSavedCertificates();
+      if (allSavedCerts.success && allSavedCerts.data) {
+        const businesses = Object.entries(allSavedCerts.data).map(([businessNumber, certData]: [string, any]) => ({
+          businessNumber,
+          businessName: certData.businessName || businessNumber,
+          representativeName: certData.representativeName,
+          businessType: certData.businessType,
+          status: 'connected',
+          lastSync: certData.savedAt ? new Date(certData.savedAt) : undefined,
+          salesCount: certData.salesCount || 0,
+          purchaseCount: certData.purchaseCount || 0,
+          소유자명: certData.소유자명,
+          용도: certData.용도,
+          발급기관: certData.발급기관,
+          만료일: certData.만료일
+        }));
+        setConnectedBusinesses(businesses);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Error loading connected businesses:', error);
+    }
+  };
 
   const checkExistingConnections = async () => {
     try {
@@ -637,6 +680,209 @@ const FinanceHub: React.FC = () => {
   };
 
   // ============================================
+  // Hometax Connection Handlers
+  // ============================================
+
+  const handleSelectAuthMethod = async (method: 'certificate' | 'id') => {
+    setHometaxAuthMethod(method);
+
+    if (method === 'certificate') {
+      setIsConnectingHometax(true);
+      setHometaxConnectionProgress('브라우저를 시작하는 중...');
+
+      try {
+        const result = await window.electron.hometax.fetchCertificates();
+
+        if (result.success && result.certificates) {
+          setAvailableCertificates(result.certificates);
+
+          // Load all saved certificates to check which ones were previously used
+          const savedCertsMap: Record<string, any> = {};
+          for (const cert of result.certificates) {
+            // Try to find saved data by matching certificate details
+            // We'll need to get all saved certificates
+            // For now, we can check if xpath matches
+            try {
+              const allSaved = await window.electron.hometax.getAllSavedCertificates();
+              if (allSaved.success && allSaved.data) {
+                Object.entries(allSaved.data).forEach(([businessNum, savedCert]: [string, any]) => {
+                  if (savedCert.xpath === cert.xpath) {
+                    savedCertsMap[cert.xpath] = savedCert;
+                  }
+                });
+              }
+            } catch (err) {
+              console.log('Could not load saved certificates:', err);
+            }
+          }
+          setSavedCertificates(savedCertsMap);
+
+          setHometaxConnectionProgress('');
+        } else {
+          setHometaxConnectionProgress('');
+          alert(`인증서 조회 실패: ${result.error || '알 수 없는 오류'}`);
+          setHometaxAuthMethod(null);
+        }
+      } catch (error: any) {
+        console.error('[FinanceHub] Error fetching certificates:', error);
+        setHometaxConnectionProgress('');
+        alert(`인증서 조회 중 오류 발생: ${error?.message || error}`);
+        setHometaxAuthMethod(null);
+      } finally {
+        setIsConnectingHometax(false);
+      }
+    }
+  };
+
+  const handleSelectCertificate = (cert: any) => {
+    setSelectedCertificate(cert);
+
+    // Auto-fill password if this certificate was previously saved
+    const savedCert = savedCertificates[cert.xpath];
+    if (savedCert?.certificatePassword) {
+      setHometaxCredentials(prev => ({
+        ...prev,
+        certificatePassword: savedCert.certificatePassword
+      }));
+      console.log('[FinanceHub] Auto-filled saved password for certificate');
+    }
+  };
+
+  const handleDisconnectBusiness = async (businessNumber: string, businessName: string) => {
+    if (!window.confirm(`${businessName} (${businessNumber}) 연결을 해제하시겠습니까?\n\n저장된 인증서 정보와 인증서 비밀번호가 삭제됩니다.`)) {
+      return;
+    }
+
+    try {
+      // Remove saved certificate and credentials
+      await window.electron.hometax.removeCredentials(businessNumber);
+
+      // Reload the list
+      await loadConnectedBusinesses();
+
+      alert('✅ 사업자 연결이 해제되었습니다.');
+    } catch (error) {
+      console.error('[FinanceHub] Error disconnecting business:', error);
+      alert('연결 해제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleCollectTaxInvoices = async (businessNumber: string) => {
+    try {
+      // Get saved certificate data for this business
+      const savedCert = await window.electron.hometax.getSelectedCertificate(businessNumber);
+
+      if (!savedCert.success || !savedCert.data) {
+        alert('저장된 인증서 정보가 없습니다. 다시 연결해주세요.');
+        return;
+      }
+
+      // Call backend to collect tax invoices
+      const result = await window.electron.hometax.collectInvoices(
+        savedCert.data,
+        savedCert.data.certificatePassword
+      );
+
+      if (result.success) {
+        alert('✅ 전자세금계산서 수집 완료!');
+        await loadConnectedBusinesses();
+      } else {
+        alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error: any) {
+      console.error('[FinanceHub] Error collecting tax invoices:', error);
+      alert(`수집 중 오류 발생: ${error?.message || error}`);
+    }
+  };
+
+  const handleConnectHometax = async () => {
+    if (hometaxAuthMethod === 'certificate') {
+      if (!selectedCertificate || !hometaxCredentials.certificatePassword) {
+        alert('인증서를 선택하고 비밀번호를 입력해주세요.');
+        return;
+      }
+    } else if (hometaxAuthMethod === 'id') {
+      if (!hometaxCredentials.businessNumber || !hometaxCredentials.userId || !hometaxCredentials.password) {
+        alert('사업자등록번호, 아이디, 비밀번호를 입력해주세요.');
+        return;
+      }
+    }
+
+    setIsConnectingHometax(true);
+    setHometaxConnectionProgress('홈택스에 로그인 중...');
+
+    try {
+      // Call backend to complete login
+      const result = await window.electron.hometax.connect(
+        selectedCertificate,
+        hometaxCredentials.certificatePassword
+      );
+
+      if (result.success) {
+        setHometaxConnectionProgress('사업자 정보를 가져왔습니다!');
+
+        const businessNumber = result.businessInfo?.businessNumber || hometaxCredentials.businessNumber;
+
+        // Save credentials if requested
+        if (saveHometaxCredentials) {
+          await window.electron.hometax.saveCredentials(
+            businessNumber,
+            hometaxAuthMethod === 'certificate'
+              ? { certificatePassword: hometaxCredentials.certificatePassword }
+              : { userId: hometaxCredentials.userId, password: hometaxCredentials.password }
+          );
+        }
+
+        // Save selected certificate info and password for future use (certificate auth only)
+        if (hometaxAuthMethod === 'certificate' && selectedCertificate) {
+          const certDataToSave = {
+            xpath: selectedCertificate.xpath,
+            소유자명: selectedCertificate.소유자명,
+            용도: selectedCertificate.용도,
+            발급기관: selectedCertificate.발급기관,
+            만료일: selectedCertificate.만료일,
+            businessName: result.businessInfo?.businessName,
+            representativeName: result.businessInfo?.representativeName,
+            businessType: result.businessInfo?.businessType,
+            certificatePassword: saveHometaxCredentials ? hometaxCredentials.certificatePassword : undefined
+          };
+          await window.electron.hometax.saveSelectedCertificate(businessNumber, certDataToSave);
+          console.log('[FinanceHub] Saved certificate info and password for business:', businessNumber);
+        }
+
+        // Show success message with business info
+        const businessName = result.businessInfo?.businessName || businessNumber;
+        const repName = result.businessInfo?.representativeName || '-';
+        alert(`✅ 홈택스 연결 성공!\n\n사업자: ${businessName}\n대표자: ${repName}`);
+
+        handleCloseHometaxModal();
+
+        // Reload connected businesses list
+        await loadConnectedBusinesses();
+      } else {
+        setHometaxConnectionProgress('');
+        alert(`❌ 홈택스 연결 실패\n\n${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error: any) {
+      console.error('[FinanceHub] Hometax connection error:', error);
+      setHometaxConnectionProgress('');
+      alert(`❌ 홈택스 연결 중 오류 발생\n\n${error?.message || error}`);
+    } finally {
+      setIsConnectingHometax(false);
+      setHometaxConnectionProgress('');
+    }
+  };
+
+  const handleCloseHometaxModal = () => {
+    setShowHometaxModal(false);
+    setHometaxAuthMethod(null);
+    setAvailableCertificates([]);
+    setSelectedCertificate(null);
+    setHometaxCredentials({ businessNumber: '', certificatePassword: '', userId: '', password: '' });
+    setHometaxConnectionProgress('');
+  };
+
+  // ============================================
   // Other Handlers
   // ============================================
 
@@ -946,7 +1192,9 @@ const FinanceHub: React.FC = () => {
 
           <nav className="finance-hub__nav">
             <button className={`finance-hub__nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => setCurrentView('dashboard')}>대시보드</button>
-            <button className={`finance-hub__nav-item ${currentView === 'transactions' ? 'active' : ''}`} onClick={() => setCurrentView('transactions')}>전체 거래내역</button>
+            <button className={`finance-hub__nav-item ${currentView === 'bank-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('bank-transactions')}>은행 전체 거래내역</button>
+            <button className={`finance-hub__nav-item ${currentView === 'card-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('card-transactions')}>카드 전체 거래 내역</button>
+            <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
           </nav>
         </div>
 
@@ -1279,11 +1527,11 @@ const FinanceHub: React.FC = () => {
                   >
                     <FontAwesomeIcon icon={faClock} />
                   </button>
-                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => setCurrentView('transactions')}>전체 보기 →</button>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => setCurrentView('bank-transactions')}>전체 보기 →</button>
                 </div>
               </div>
               {stats && <TransactionStats stats={stats} compact />}
-              <TransactionTable transactions={recentTransactions} banks={banks} accounts={accounts} isLoading={isLoadingRecent} compact maxRows={10} onShowMore={() => setCurrentView('transactions')} emptyMessage="계좌를 선택하고 '동기화' 버튼을 눌러 거래내역을 저장하세요." />
+              <TransactionTable transactions={recentTransactions} banks={banks} accounts={accounts} isLoading={isLoadingRecent} compact maxRows={10} onShowMore={() => setCurrentView('bank-transactions')} emptyMessage="계좌를 선택하고 '동기화' 버튼을 눌러 거래내역을 저장하세요." />
             </section>
 
             {/* Monthly Summary */}
@@ -1332,9 +1580,315 @@ const FinanceHub: React.FC = () => {
               </div>
             </section>
           </>
-        ) : (
+        ) : currentView === 'bank-transactions' ? (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
-            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} />
+            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} transactionType="bank" />
+          </div>
+        ) : currentView === 'card-transactions' ? (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} transactionType="card" />
+          </div>
+        ) : (
+          <div className="finance-hub__section finance-hub__section--full">
+            <div className="finance-hub__tax-management">
+              <header className="finance-hub__page-header">
+                <h1 className="finance-hub__page-title">
+                  <span className="finance-hub__page-icon">📊</span>
+                  세금 관리
+                </h1>
+                <p className="finance-hub__page-subtitle">전자세금계산서를 자동으로 수집하고 관리하세요</p>
+              </header>
+
+              {/* Hometax Connection Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">🏛️</span> 연결된 사업자</h2>
+                  <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
+                    <span>+</span> 사업자 추가하기
+                  </button>
+                </div>
+
+                {connectedBusinesses.length === 0 ? (
+                  /* Empty State - No Connected Businesses */
+                  <div className="finance-hub__empty-state">
+                    <div className="finance-hub__empty-icon">🏛️</div>
+                    <h3>연결된 사업자가 없습니다</h3>
+                    <p>사업자를 연결하면 전자세금계산서를 자동으로 수집합니다</p>
+                    <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
+                      첫 번째 사업자 연결하기
+                    </button>
+                  </div>
+                ) : (
+                  /* Connected Businesses */
+                  <div className="finance-hub__connected-businesses">
+                    {connectedBusinesses.map((business) => (
+                      <div key={business.businessNumber} className="finance-hub__business-card" style={{ '--bank-color': '#00B140' } as React.CSSProperties}>
+                        <div className="finance-hub__business-header">
+                          <span className="finance-hub__business-icon">🏢</span>
+                          <div className="finance-hub__business-info">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <h4>{business.businessName}</h4>
+                              {business.businessType && (
+                                <span className="finance-hub__business-type">{business.businessType}</span>
+                              )}
+                            </div>
+                            <span className="finance-hub__business-number">{business.businessNumber}</span>
+                          </div>
+                          <span className="finance-hub__status finance-hub__status--connected">연결됨</span>
+                        </div>
+
+                        <div className="finance-hub__business-stats">
+                          <div className="finance-hub__business-stat">
+                            <span className="finance-hub__business-stat-icon">📤</span>
+                            <div className="finance-hub__business-stat-info">
+                              <span className="finance-hub__business-stat-label">매출</span>
+                              <span className="finance-hub__business-stat-value">{business.salesCount}건</span>
+                            </div>
+                          </div>
+                          <div className="finance-hub__business-stat">
+                            <span className="finance-hub__business-stat-icon">📥</span>
+                            <div className="finance-hub__business-stat-info">
+                              <span className="finance-hub__business-stat-label">매입</span>
+                              <span className="finance-hub__business-stat-value">{business.purchaseCount}건</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="finance-hub__business-footer">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--fh-text-muted)' }}>
+                              인증서: {business.발급기관} (만료: {business.만료일})
+                            </span>
+                            <span style={{ fontSize: '12px', color: 'var(--fh-text-muted)' }}>
+                              {business.lastSync ? `마지막 수집: ${business.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}
+                            </span>
+                          </div>
+                          <div className="finance-hub__business-actions">
+                            <button
+                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                              onClick={() => handleCollectTaxInvoices(business.businessNumber)}
+                            >
+                              <FontAwesomeIcon icon={faSync} /> 지금 수집
+                            </button>
+                            <button
+                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger"
+                              onClick={() => handleDisconnectBusiness(business.businessNumber, business.businessName)}
+                            >
+                              연결 해제
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Electronic Tax Invoice List Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">📋</span> 전자세금계산서 목록</h2>
+                  <div className="finance-hub__section-actions">
+                    {/* Business Filter Dropdown (shown when multiple businesses connected) */}
+                    {/*
+                    <select className="finance-hub__business-filter" disabled>
+                      <option value="all">전체 사업자</option>
+                      <option value="123-45-67890">테스트 주식회사 (123-45-67890)</option>
+                      <option value="987-65-43210">샘플 유한회사 (987-65-43210)</option>
+                    </select>
+                    */}
+                    <button className="finance-hub__btn finance-hub__btn--icon" title="자동 수집 설정" onClick={() => alert('스케줄러 설정 준비 중')}>
+                      <FontAwesomeIcon icon={faClock} />
+                    </button>
+                    <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                      <FontAwesomeIcon icon={faSync} /> 전체 수집
+                    </button>
+                    <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                      📊 엑셀로 내보내기
+                    </button>
+                  </div>
+                </div>
+
+                {/* Invoice Type Tabs */}
+                <div className="finance-hub__tax-tabs">
+                  <button className="finance-hub__tax-tab finance-hub__tax-tab--active">
+                    <span className="finance-hub__tax-tab-icon">📤</span>
+                    <div className="finance-hub__tax-tab-info">
+                      <span className="finance-hub__tax-tab-label">매출</span>
+                      <span className="finance-hub__tax-tab-count">0건</span>
+                    </div>
+                  </button>
+                  <button className="finance-hub__tax-tab">
+                    <span className="finance-hub__tax-tab-icon">📥</span>
+                    <div className="finance-hub__tax-tab-info">
+                      <span className="finance-hub__tax-tab-label">매입</span>
+                      <span className="finance-hub__tax-tab-count">0건</span>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="finance-hub__empty-state">
+                  <div className="finance-hub__empty-icon">🧾</div>
+                  <h3>수집된 매출 세금계산서가 없습니다</h3>
+                  <p>사업자를 연결하고 수집하면 전자세금계산서 목록이 표시됩니다</p>
+                  <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
+                    사업자 추가하기
+                  </button>
+                </div>
+              </section>
+
+              {/* Cash Receipts Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">🧾</span> 현금영수증 관리</h2>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                    수집하기
+                  </button>
+                </div>
+
+                <div className="finance-hub__tax-feature-grid">
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">💳</div>
+                    <h4>발급 내역</h4>
+                    <p className="finance-hub__tax-feature-count">0건</p>
+                    <small>사업자 현금영수증 발급 내역</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📱</div>
+                    <h4>소득공제용</h4>
+                    <p className="finance-hub__tax-feature-count">0건</p>
+                    <small>개인 소득공제 자료</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📊</div>
+                    <h4>월별 합계</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>이번 달 현금영수증 합계</small>
+                  </div>
+                </div>
+              </section>
+
+              {/* Tax Payment & Refund Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">💰</span> 납부/환급 내역</h2>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                    조회하기
+                  </button>
+                </div>
+
+                <div className="finance-hub__tax-feature-grid">
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📤</div>
+                    <h4>세금 납부</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>올해 총 납부액</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📥</div>
+                    <h4>세금 환급</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>올해 총 환급액</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">⚠️</div>
+                    <h4>미납 세금</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>체납 내역</small>
+                  </div>
+                </div>
+              </section>
+
+              {/* VAT Filing Assistant Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">📝</span> 부가가치세 신고 보조</h2>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                    신고서 작성
+                  </button>
+                </div>
+
+                <div className="finance-hub__tax-notice-card">
+                  <div className="finance-hub__tax-notice-icon">📅</div>
+                  <div className="finance-hub__tax-notice-content">
+                    <h4>다음 신고 기한</h4>
+                    <p className="finance-hub__tax-notice-deadline">2024년 4월 25일</p>
+                    <small>1기 예정 신고 (1월~3월 실적)</small>
+                  </div>
+                </div>
+
+                <div className="finance-hub__tax-feature-grid" style={{ marginTop: '20px' }}>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📤</div>
+                    <h4>매출세액</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>과세표준 × 10%</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📥</div>
+                    <h4>매입세액</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>공제 가능 세액</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">💵</div>
+                    <h4>납부세액</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>매출세액 - 매입세액</small>
+                  </div>
+                </div>
+              </section>
+
+              {/* Year-end Tax Settlement Section */}
+              <section className="finance-hub__tax-section">
+                <div className="finance-hub__section-header">
+                  <h2><span className="finance-hub__section-icon">🎁</span> 연말정산 간소화</h2>
+                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
+                    자료 수집
+                  </button>
+                </div>
+
+                <div className="finance-hub__tax-feature-grid">
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">🏥</div>
+                    <h4>의료비</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>소득공제 대상 의료비</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">📚</div>
+                    <h4>교육비</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>소득공제 대상 교육비</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">💳</div>
+                    <h4>신용카드</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>연간 사용액</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">❤️</div>
+                    <h4>기부금</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>세액공제 대상 기부금</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">🏠</div>
+                    <h4>주택자금</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>주택임차차입금 원리금상환액</small>
+                  </div>
+                  <div className="finance-hub__tax-feature-card">
+                    <div className="finance-hub__tax-feature-icon">🛡️</div>
+                    <h4>보험료</h4>
+                    <p className="finance-hub__tax-feature-count">₩0</p>
+                    <small>소득공제 대상 보험료</small>
+                  </div>
+                </div>
+              </section>
+
+            </div>
           </div>
         )}
       </main>
@@ -1668,6 +2222,221 @@ const FinanceHub: React.FC = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Hometax Business Connection Modal */}
+      {showHometaxModal && (
+        <div className="finance-hub__modal-overlay" onClick={handleCloseHometaxModal}>
+          <div className="finance-hub__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              <h2>홈택스 사업자 연결</h2>
+              <button className="finance-hub__modal-close" onClick={handleCloseHometaxModal}>✕</button>
+            </div>
+
+            <div className="finance-hub__login-form">
+              {/* Hometax Info Banner */}
+              <div className="finance-hub__login-bank-info" style={{ background: '#00B140' }}>
+                <span className="finance-hub__login-bank-icon" style={{ background: '#00B140' }}>🏛️</span>
+                <div>
+                  <h3>국세청 홈택스</h3>
+                  <span>National Tax Service Hometax</span>
+                </div>
+              </div>
+
+              {/* Connection Progress */}
+              {hometaxConnectionProgress && (
+                <div className="finance-hub__connection-progress">
+                  <span className="finance-hub__spinner"></span>
+                  <span>{hometaxConnectionProgress}</span>
+                </div>
+              )}
+
+              {/* Step 1: Select Authentication Method */}
+              {!hometaxAuthMethod && !hometaxConnectionProgress && (
+                <div className="finance-hub__auth-method-selector">
+                  <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)', textAlign: 'center' }}>로그인 방식을 선택하세요</h3>
+                  <button
+                    className="finance-hub__auth-method-btn"
+                    onClick={() => handleSelectAuthMethod('certificate')}
+                    disabled={isConnectingHometax}
+                  >
+                    <span className="finance-hub__auth-method-icon">🔐</span>
+                    <div className="finance-hub__auth-method-info">
+                      <h4>공동인증서</h4>
+                      <p>공동인증서(구 공인인증서)로 로그인</p>
+                    </div>
+                  </button>
+                  <button
+                    className="finance-hub__auth-method-btn"
+                    onClick={() => handleSelectAuthMethod('id')}
+                    disabled={isConnectingHometax}
+                  >
+                    <span className="finance-hub__auth-method-icon">👤</span>
+                    <div className="finance-hub__auth-method-info">
+                      <h4>아이디 로그인</h4>
+                      <p>홈택스 아이디와 비밀번호로 로그인</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              {/* Step 2a: Certificate Selection (after fetching) */}
+              {hometaxAuthMethod === 'certificate' && availableCertificates.length > 0 && (
+                <div className="finance-hub__login-fields">
+                  <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)' }}>인증서를 선택하세요</h3>
+
+                  {/* Certificate List */}
+                  <div className="finance-hub__certificate-list">
+                    {availableCertificates.map((cert, index) => {
+                      const isSaved = !!savedCertificates[cert.xpath];
+                      return (
+                        <div
+                          key={index}
+                          className={`finance-hub__certificate-item ${selectedCertificate === cert ? 'finance-hub__certificate-item--selected' : ''}`}
+                          onClick={() => handleSelectCertificate(cert)}
+                        >
+                          <div className="finance-hub__certificate-icon">🔐</div>
+                          <div className="finance-hub__certificate-info">
+                            <h4>
+                              {cert.소유자명}
+                              {isSaved && (
+                                <span className="finance-hub__certificate-saved-badge">저장됨</span>
+                              )}
+                            </h4>
+                            <div className="finance-hub__certificate-details">
+                              <span>용도: {cert.용도}</span>
+                              <span>발급: {cert.발급기관}</span>
+                              <span>만료: {cert.만료일}</span>
+                            </div>
+                          </div>
+                          {selectedCertificate === cert && (
+                            <span className="finance-hub__certificate-check">✓</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Certificate Password */}
+                  {selectedCertificate && (
+                    <>
+                      <div className="finance-hub__input-group" style={{ marginTop: '20px' }}>
+                        <label>공동인증서 비밀번호</label>
+                        <input
+                          type="password"
+                          placeholder="인증서 비밀번호를 입력하세요"
+                          value={hometaxCredentials.certificatePassword}
+                          onChange={(e) => setHometaxCredentials({ ...hometaxCredentials, certificatePassword: e.target.value })}
+                          className="finance-hub__input"
+                          disabled={isConnectingHometax}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !isConnectingHometax) handleConnectHometax();
+                          }}
+                        />
+                      </div>
+
+                      <div className="finance-hub__checkbox-group">
+                        <label className="finance-hub__checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={saveHometaxCredentials}
+                            onChange={(e) => setSaveHometaxCredentials(e.target.checked)}
+                            disabled={isConnectingHometax}
+                          />
+                          인증서 비밀번호 저장 (암호화하여 안전하게 보관)
+                        </label>
+                      </div>
+
+                      <button
+                        className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                        onClick={handleConnectHometax}
+                        disabled={isConnectingHometax || !hometaxCredentials.certificatePassword}
+                      >
+                        {isConnectingHometax ? (
+                          <>
+                            <span className="finance-hub__spinner"></span> 로그인 중...
+                          </>
+                        ) : (
+                          '홈택스 연결하기'
+                        )}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 2b: ID/Password Login */}
+              {hometaxAuthMethod === 'id' && (
+                <div className="finance-hub__login-fields">
+                  <div className="finance-hub__input-group">
+                    <label>사업자등록번호</label>
+                    <input
+                      type="text"
+                      placeholder="123-45-67890"
+                      value={hometaxCredentials.businessNumber}
+                      onChange={(e) => setHometaxCredentials({ ...hometaxCredentials, businessNumber: e.target.value })}
+                      className="finance-hub__input"
+                      disabled={isConnectingHometax}
+                    />
+                  </div>
+
+                  <div className="finance-hub__input-group">
+                    <label>홈택스 아이디</label>
+                    <input
+                      type="text"
+                      placeholder="홈택스 아이디"
+                      value={hometaxCredentials.userId}
+                      onChange={(e) => setHometaxCredentials({ ...hometaxCredentials, userId: e.target.value })}
+                      className="finance-hub__input"
+                      disabled={isConnectingHometax}
+                    />
+                  </div>
+
+                  <div className="finance-hub__input-group">
+                    <label>비밀번호</label>
+                    <input
+                      type="password"
+                      placeholder="홈택스 비밀번호"
+                      value={hometaxCredentials.password}
+                      onChange={(e) => setHometaxCredentials({ ...hometaxCredentials, password: e.target.value })}
+                      className="finance-hub__input"
+                      disabled={isConnectingHometax}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isConnectingHometax) handleConnectHometax();
+                      }}
+                    />
+                  </div>
+
+                  <div className="finance-hub__checkbox-group">
+                    <label className="finance-hub__checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={saveHometaxCredentials}
+                        onChange={(e) => setSaveHometaxCredentials(e.target.checked)}
+                        disabled={isConnectingHometax}
+                      />
+                      로그인 정보 저장 (암호화하여 안전하게 보관)
+                    </label>
+                  </div>
+
+                  <button
+                    className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                    onClick={handleConnectHometax}
+                    disabled={isConnectingHometax || !hometaxCredentials.businessNumber || !hometaxCredentials.userId || !hometaxCredentials.password}
+                  >
+                    {isConnectingHometax ? (
+                      <>
+                        <span className="finance-hub__spinner"></span> 로그인 중...
+                      </>
+                    ) : (
+                      '홈택스 연결하기'
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
