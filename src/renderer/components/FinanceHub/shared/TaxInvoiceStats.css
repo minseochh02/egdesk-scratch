@@ -1,0 +1,139 @@
+/* ============================================
+   TaxInvoiceStats - Component Styles
+   ============================================ */
+
+/* Grid Layout */
+.tax-stats {
+  display: grid;
+  gap: 16px;
+}
+
+.tax-stats--compact {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tax-stats--full {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Card */
+.tax-stats__card {
+  background: var(--fh-bg-card);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: var(--fh-transition);
+}
+
+.tax-stats__card:hover {
+  border-color: var(--fh-border-light);
+  box-shadow: var(--fh-shadow-md);
+  transform: translateY(-2px);
+}
+
+.tax-stats__card--total {
+  border-left: 3px solid var(--fh-primary);
+}
+
+/* Icon */
+.tax-stats__icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Info Container */
+.tax-stats__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+/* Labels */
+.tax-stats__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Values */
+.tax-stats__value {
+  font-family: var(--fh-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fh-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-stats__value--tax {
+  color: var(--fh-text-secondary);
+  font-size: 20px;
+}
+
+.tax-stats__value--total {
+  color: var(--fh-primary);
+  font-size: 24px;
+}
+
+/* Compact Mode */
+.tax-stats--compact .tax-stats__card {
+  padding: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tax-stats--compact .tax-stats__icon {
+  display: none;
+}
+
+.tax-stats--compact .tax-stats__value {
+  font-size: 20px;
+}
+
+.tax-stats--compact .tax-stats__value--total {
+  font-size: 22px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .tax-stats--full {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tax-stats--compact,
+  .tax-stats--full {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tax-stats__card {
+    padding: 16px;
+  }
+
+  .tax-stats__icon {
+    font-size: 28px;
+  }
+
+  .tax-stats__value {
+    font-size: 18px;
+  }
+
+  .tax-stats__value--total {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tax-stats--compact,
+  .tax-stats--full {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1821,7 +1821,37 @@ const electronHandler = {
     getPHPInfo: () => ipcRenderer.invoke('wp-server-php-info'),
     debugPHP: () => ipcRenderer.invoke('wp-server-debug-php'),
   } as WordPressServerAPI,
-  
+
+  // ========================================================================
+  // PHP INSTALLER MANAGEMENT
+  // ========================================================================
+
+  /**
+   * PHP installer management API
+   */
+  phpInstaller: {
+    checkDownloaded: () => ipcRenderer.invoke('php:check-downloaded'),
+    download: () => ipcRenderer.invoke('php:download'),
+    ensure: () => ipcRenderer.invoke('php:ensure'),
+    cancelDownload: () => ipcRenderer.invoke('php:cancel-download'),
+    isDownloading: () => ipcRenderer.invoke('php:is-downloading'),
+    onDownloadProgress: (callback: (progress: any) => void) => {
+      const subscription = (_event: IpcRendererEvent, progress: any) => callback(progress);
+      ipcRenderer.on('php:download-progress', subscription);
+      return () => ipcRenderer.removeListener('php:download-progress', subscription);
+    },
+    onDownloadComplete: (callback: (result: any) => void) => {
+      const subscription = (_event: IpcRendererEvent, result: any) => callback(result);
+      ipcRenderer.on('php:download-complete', subscription);
+      return () => ipcRenderer.removeListener('php:download-complete', subscription);
+    },
+    onDownloadError: (callback: (error: any) => void) => {
+      const subscription = (_event: IpcRendererEvent, error: any) => callback(error);
+      ipcRenderer.on('php:download-error', subscription);
+      return () => ipcRenderer.removeListener('php:download-error', subscription);
+    },
+  } as PHPInstallerAPI,
+
   // ========================================================================
   // BROWSER WINDOW MANAGEMENT
   // ========================================================================

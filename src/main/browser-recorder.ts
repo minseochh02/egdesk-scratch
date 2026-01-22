@@ -54,6 +54,7 @@ export class BrowserRecorder {
   private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
   private profileDir: string | null = null;
   private pageStack: Page[] = []; // Track page history for switching back
+  private scriptName: string = 'egdesk-browser-recorder'; // Name for unique download paths
 
   // Date marking mode state
   private isDateMarkingMode: boolean = false;
@@ -80,6 +81,10 @@ export class BrowserRecorder {
 
   setUpdateCallback(callback: (code: string) => void): void {
     this.updateCallback = callback;
+  }
+
+  setScriptName(name: string): void {
+    this.scriptName = name;
   }
 
   setWaitSettings(settings: { multiplier: number; maxDelay: number }): void {
@@ -129,8 +134,8 @@ export class BrowserRecorder {
     const browserX = width - browserWidth;
     const browserY = 0;
 
-    // Create downloads directory in system Downloads folder
-    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+    // Create downloads directory in system Downloads folder (unique per script)
+    const downloadsPath = path.join(app.getPath('downloads'), `EGDesk-${this.scriptName}`);
     if (!fs.existsSync(downloadsPath)) {
       fs.mkdirSync(downloadsPath, { recursive: true });
     }
@@ -1228,11 +1233,15 @@ export class BrowserRecorder {
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             max-width: 300px;
             line-height: 1.5;
-            transition: opacity 0.3s ease, transform 0.3s ease;
-            pointer-events: none;
+            pointer-events: auto;
+            cursor: move;
+            user-select: none;
           `;
           dateMarkingInstructions.innerHTML = `
-            <strong>📅 Date Marking Mode Active</strong><br>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+              <strong>📅 Date Marking Mode Active</strong>
+              <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
+            </div>
             <div style="margin-top: 8px; font-size: 13px;">
               <span style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
                 Step 1/3: Select YEAR dropdown
@@ -1241,55 +1250,98 @@ export class BrowserRecorder {
             <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
               Click on the dropdown that contains years
             </div>
-            <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
-              Moves away when cursor approaches
+            <div style="margin-top: 12px;">
+              <button id="skip-year-btn" style="background: rgba(255,255,255,0.3); color: white; border: 1px solid rgba(255,255,255,0.5); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.2s; margin-right: 8px;">
+                ⏭️ Skip Year
+              </button>
+              <button id="cancel-date-marking-btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.2s;">
+                ❌ Cancel
+              </button>
             </div>
           `;
 
           try {
             if (document.body) {
               document.body.appendChild(dateMarkingInstructions);
+
+              // Add event listeners for skip and cancel buttons
+              const skipYearBtn = document.getElementById('skip-year-btn');
+              const cancelBtn = document.getElementById('cancel-date-marking-btn');
+
+              if (skipYearBtn) {
+                skipYearBtn.addEventListener('mouseenter', () => {
+                  skipYearBtn.style.background = 'rgba(255,255,255,0.4)';
+                });
+                skipYearBtn.addEventListener('mouseleave', () => {
+                  skipYearBtn.style.background = 'rgba(255,255,255,0.3)';
+                });
+                skipYearBtn.addEventListener('click', () => {
+                  window.postMessage({ type: 'skip-date-component', step: 'year' }, '*');
+                });
+              }
+
+              if (cancelBtn) {
+                cancelBtn.addEventListener('mouseenter', () => {
+                  cancelBtn.style.background = 'rgba(255,255,255,0.3)';
+                });
+                cancelBtn.addEventListener('mouseleave', () => {
+                  cancelBtn.style.background = 'rgba(255,255,255,0.2)';
+                });
+                cancelBtn.addEventListener('click', () => {
+                  // Trigger exit date marking mode
+                  markDateBtn.click();
+                });
+              }
+
+              // Make banner draggable
+              let isDragging = false;
+              let currentX = 0;
+              let currentY = 0;
+              let initialX = 0;
+              let initialY = 0;
+
+              const dragStart = (e: MouseEvent) => {
+                // Only start drag if not clicking on buttons
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'BUTTON' || target.closest('button')) {
+                  return;
+                }
+
+                isDragging = true;
+                initialX = e.clientX - currentX;
+                initialY = e.clientY - currentY;
+                dateMarkingInstructions!.style.transition = 'none'; // Disable transition during drag
+              };
+
+              const drag = (e: MouseEvent) => {
+                if (!isDragging) return;
+
+                e.preventDefault();
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+
+                dateMarkingInstructions!.style.transform = `translate(${currentX}px, ${currentY}px)`;
+              };
+
+              const dragEnd = () => {
+                isDragging = false;
+                dateMarkingInstructions!.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+              };
+
+              dateMarkingInstructions.addEventListener('mousedown', dragStart);
+              document.addEventListener('mousemove', drag);
+              document.addEventListener('mouseup', dragEnd);
+
+              // Store handlers for cleanup
+              (dateMarkingInstructions as any).__dragHandlers = {
+                dragStart,
+                drag,
+                dragEnd
+              };
             }
           } catch (e) {
             console.warn('Failed to show date marking instructions:', e);
           }
-
-          // Add proximity detection to hide banner when mouse gets near
-          const proximityThreshold = 150; // pixels
-          let mouseX = 0;
-          let mouseY = 0;
-
-          const checkProximity = () => {
-            const rect = dateMarkingInstructions!.getBoundingClientRect();
-            const bannerCenterX = rect.left + rect.width / 2;
-            const bannerCenterY = rect.top + rect.height / 2;
-
-            const distance = Math.sqrt(
-              Math.pow(mouseX - bannerCenterX, 2) +
-              Math.pow(mouseY - bannerCenterY, 2)
-            );
-
-            if (distance < proximityThreshold) {
-              // Mouse is near, hide the banner
-              dateMarkingInstructions!.style.opacity = '0.1';
-              dateMarkingInstructions!.style.transform = 'scale(0.8)';
-            } else {
-              // Mouse is far, show the banner
-              dateMarkingInstructions!.style.opacity = '1';
-              dateMarkingInstructions!.style.transform = 'scale(1)';
-            }
-          };
-
-          const mouseMoveHandler = (e: MouseEvent) => {
-            mouseX = e.clientX;
-            mouseY = e.clientY;
-            checkProximity();
-          };
-
-          document.addEventListener('mousemove', mouseMoveHandler);
-
-          // Store handler for cleanup
-          (dateMarkingInstructions as any).__mouseMoveHandler = mouseMoveHandler;
 
           document.body.style.cursor = 'help';
         } else {
@@ -1302,8 +1354,16 @@ export class BrowserRecorder {
           (window as any).__playwrightRecorderDateMarkingStep = null;
           dateMarkingStep = null;
 
-          // Remove instructions
+          // Remove instructions and cleanup event listeners
           if (dateMarkingInstructions) {
+            // Clean up drag event listeners
+            const handlers = (dateMarkingInstructions as any).__dragHandlers;
+            if (handlers) {
+              dateMarkingInstructions.removeEventListener('mousedown', handlers.dragStart);
+              document.removeEventListener('mousemove', handlers.drag);
+              document.removeEventListener('mouseup', handlers.dragEnd);
+            }
+
             dateMarkingInstructions.remove();
             dateMarkingInstructions = null;
           }
@@ -1319,9 +1379,13 @@ export class BrowserRecorder {
         const stepNum = step === 'year' ? 1 : step === 'month' ? 2 : 3;
         const stepLabel = step === 'year' ? 'YEAR' : step === 'month' ? 'MONTH' : 'DAY';
         const instruction = step === 'year' ? 'years' : step === 'month' ? 'months (1-12 or names)' : 'days (1-31)';
+        const skipBtnId = `skip-${step}-btn`;
 
         dateMarkingInstructions.innerHTML = `
-          <strong>📅 Date Marking Mode Active</strong><br>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <strong>📅 Date Marking Mode Active</strong>
+            <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
+          </div>
           <div style="margin-top: 8px; font-size: 13px;">
             <span style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
               Step ${stepNum}/3: Select ${stepLabel} dropdown
@@ -1330,10 +1394,46 @@ export class BrowserRecorder {
           <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
             Click on the dropdown that contains ${instruction}
           </div>
-          <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
-            Moves away when cursor approaches
+          <div style="margin-top: 12px;">
+            <button id="${skipBtnId}" style="background: rgba(255,255,255,0.3); color: white; border: 1px solid rgba(255,255,255,0.5); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.2s; margin-right: 8px;">
+              ⏭️ Skip ${stepLabel.charAt(0) + stepLabel.slice(1).toLowerCase()}
+            </button>
+            <button id="cancel-date-marking-btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.2s;">
+              ❌ Cancel
+            </button>
           </div>
         `;
+
+        // Add event listeners for the new buttons
+        setTimeout(() => {
+          const skipBtn = document.getElementById(skipBtnId);
+          const cancelBtn = document.getElementById('cancel-date-marking-btn');
+
+          if (skipBtn) {
+            skipBtn.addEventListener('mouseenter', () => {
+              skipBtn.style.background = 'rgba(255,255,255,0.4)';
+            });
+            skipBtn.addEventListener('mouseleave', () => {
+              skipBtn.style.background = 'rgba(255,255,255,0.3)';
+            });
+            skipBtn.addEventListener('click', () => {
+              window.postMessage({ type: 'skip-date-component', step: step }, '*');
+            });
+          }
+
+          if (cancelBtn) {
+            cancelBtn.addEventListener('mouseenter', () => {
+              cancelBtn.style.background = 'rgba(255,255,255,0.3)';
+            });
+            cancelBtn.addEventListener('mouseleave', () => {
+              cancelBtn.style.background = 'rgba(255,255,255,0.2)';
+            });
+            cancelBtn.addEventListener('click', () => {
+              // Trigger exit date marking mode
+              markDateBtn.click();
+            });
+          }
+        }, 0);
       };
 
       // Function to exit date marking mode
@@ -1349,10 +1449,12 @@ export class BrowserRecorder {
           dateMarkingStep = null;
 
           if (dateMarkingInstructions) {
-            // Clean up mousemove listener
-            const handler = (dateMarkingInstructions as any).__mouseMoveHandler;
-            if (handler) {
-              document.removeEventListener('mousemove', handler);
+            // Clean up drag event listeners
+            const handlers = (dateMarkingInstructions as any).__dragHandlers;
+            if (handlers) {
+              dateMarkingInstructions.removeEventListener('mousedown', handlers.dragStart);
+              document.removeEventListener('mousemove', handlers.drag);
+              document.removeEventListener('mouseup', handlers.dragEnd);
             }
 
             dateMarkingInstructions.remove();
@@ -1901,6 +2003,7 @@ export class BrowserRecorder {
       
       // Show notification
       const notification = document.createElement('div');
+      notification.id = 'playwright-recorder-notification';
       notification.style.cssText = `
         position: fixed;
         top: 20px;
@@ -1914,6 +2017,8 @@ export class BrowserRecorder {
         z-index: 999999;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         animation: slideIn 0.3s ease-out;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        pointer-events: none;
       `;
       notification.innerHTML = `
         <strong>🎯 Playwright Recorder</strong><br>
@@ -1955,16 +2060,62 @@ export class BrowserRecorder {
         }
         if (document.body) {
           document.body.appendChild(notification);
+
+          // Add proximity detection to fade when mouse approaches
+          const proximityThreshold = 150; // pixels
+          let mouseX = 0;
+          let mouseY = 0;
+          let notificationRemoved = false;
+
+          const checkProximity = () => {
+            if (notificationRemoved || !notification.parentElement) return;
+
+            const rect = notification.getBoundingClientRect();
+            const bannerCenterX = rect.left + rect.width / 2;
+            const bannerCenterY = rect.top + rect.height / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(mouseX - bannerCenterX, 2) +
+              Math.pow(mouseY - bannerCenterY, 2)
+            );
+
+            if (distance < proximityThreshold) {
+              // Mouse is near, fade the notification
+              notification.style.opacity = '0.1';
+              notification.style.transform = 'scale(0.8) translateX(0)';
+            } else {
+              // Mouse is far, show the notification
+              notification.style.opacity = '1';
+              notification.style.transform = 'scale(1) translateX(0)';
+            }
+          };
+
+          const mouseMoveHandler = (e: MouseEvent) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            checkProximity();
+          };
+
+          document.addEventListener('mousemove', mouseMoveHandler);
+
+          // Cleanup function
+          const cleanup = () => {
+            notificationRemoved = true;
+            document.removeEventListener('mousemove', mouseMoveHandler);
+          };
+
+          // Remove notification after 5 seconds
+          setTimeout(() => {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => {
+              notification.remove();
+              cleanup();
+            }, 300);
+          }, 5000);
         }
       } catch (e) {
         console.warn('Failed to show recorder notification:', e);
       }
-      
-      // Remove notification after 5 seconds
-      setTimeout(() => {
-        notification.style.animation = 'slideIn 0.3s ease-out reverse';
-        setTimeout(() => notification.remove(), 300);
-      }, 5000);
     });
   }
 
@@ -2327,6 +2478,15 @@ export class BrowserRecorder {
             console.error('❌ __playwrightRecorderOnFill not available!');
           }
         }
+
+        // Handle skip date component
+        if (event.data && event.data.type === 'skip-date-component') {
+          console.log('⏭️ Skip date component:', event.data.step);
+
+          if ((window as any).__playwrightRecorderSkipDateComponent) {
+            (window as any).__playwrightRecorderSkipDateComponent(event.data.step);
+          }
+        }
       });
       console.log('✅ PostMessage listener for iframes registered');
 
@@ -2457,6 +2617,9 @@ export class BrowserRecorder {
             target.closest('.browser-recorder-modal') ||
             target.closest('.browser-recorder-modal-content') ||
             target.closest('#playwright-date-offset-modal') ||
+            target.closest('#date-marking-instructions') ||
+            target.id === 'date-marking-instructions' ||
+            (target.parentElement && target.parentElement.closest('#date-marking-instructions')) ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
             target.id === 'wait-timeout' ||
@@ -2546,6 +2709,9 @@ export class BrowserRecorder {
             target.closest('.browser-recorder-modal') ||
             target.closest('.browser-recorder-modal-content') ||
             target.closest('#playwright-date-offset-modal') ||
+            target.closest('#date-marking-instructions') ||
+            target.id === 'date-marking-instructions' ||
+            (target.parentElement && target.parentElement.closest('#date-marking-instructions')) ||
             target.id === 'wait-instructions' ||
             target.id === 'wait-condition' ||
             target.id === 'wait-timeout' ||
@@ -2613,6 +2779,9 @@ export class BrowserRecorder {
             target.closest('#playwright-wait-modal') ||
             target.closest('.browser-recorder-modal') ||
             target.closest('#playwright-date-offset-modal') ||
+            target.closest('#date-marking-instructions') ||
+            target.id === 'date-marking-instructions' ||
+            (target.parentElement && target.parentElement.closest('#date-marking-instructions')) ||
             target.style.zIndex === '999999') {
           return;
         }
@@ -2656,11 +2825,15 @@ export class BrowserRecorder {
       document.addEventListener('mousedown', (e) => {
         const target = e.target as HTMLElement;
 
-        // Skip recorder UI elements and date offset modal
+        // Skip recorder UI elements, date offset modal, and date marking banner
         if (target.closest('#browser-recorder-controller') ||
             target.closest('#playwright-wait-modal') ||
             target.closest('.browser-recorder-modal') ||
-            target.closest('#playwright-date-offset-modal')) {
+            target.closest('#playwright-date-offset-modal') ||
+            target.closest('#date-marking-instructions') ||
+            target.id === 'date-marking-instructions' ||
+            (target.parentElement && target.parentElement.closest('#date-marking-instructions'))) {
+          console.log('⏭️ Skipping mousedown on recorder UI or date marking banner');
           return;
         }
 
@@ -3181,7 +3354,24 @@ export class BrowserRecorder {
       // Track date marked elements to skip their subsequent clicks
       const dateMarkedElements = new WeakSet<HTMLElement>();
       (window as any).__dateMarkedElements = dateMarkedElements;
-      
+
+      // Helper function to check if element is within date marking banner (comprehensive check)
+      const isWithinDateMarkingBanner = (element: HTMLElement | null): boolean => {
+        if (!element) return false;
+
+        // Check if element itself is the banner
+        if (element.id === 'date-marking-instructions') return true;
+
+        // Check if element is inside the banner
+        if (element.closest('#date-marking-instructions')) return true;
+
+        // Check parent element as extra safety
+        if (element.parentElement && element.parentElement.id === 'date-marking-instructions') return true;
+        if (element.parentElement && element.parentElement.closest('#date-marking-instructions')) return true;
+
+        return false;
+      };
+
       // Function to handle clicks - separated so we can call it from multiple places
       const handleClick = (e: MouseEvent) => {
         // Check if we've already processed this event
@@ -3191,6 +3381,12 @@ export class BrowserRecorder {
         }
 
         const target = e.target as HTMLElement;
+
+        // Early check: Skip if clicking on or within date marking banner (catches all elements including text)
+        if (isWithinDateMarkingBanner(target)) {
+          console.log('⏭️ Skipping click on date marking banner or its children');
+          return;
+        }
         const now = Date.now();
 
         // Skip ALL clicks when in date marking mode (handled by mousedown listener)
@@ -3238,9 +3434,13 @@ export class BrowserRecorder {
           currentElement = currentElement.parentElement as HTMLElement;
         }
 
-        // Skip recording clicks on the recorder controller UI and date offset modal
+        // Skip recording clicks on the recorder controller UI, date offset modal, and date marking banner
+        // Check if target is within any recorder UI element (including all child elements like text, buttons, etc.)
         if (target.closest('#browser-recorder-controller') ||
-            target.closest('#playwright-date-offset-modal')) {
+            target.closest('#playwright-date-offset-modal') ||
+            target.closest('#date-marking-instructions') ||
+            target.id === 'date-marking-instructions' ||
+            (target.parentElement && target.parentElement.closest('#date-marking-instructions'))) {
           console.log('⏭️ Skipping recorder UI click');
           return;
         }
@@ -3281,6 +3481,9 @@ export class BrowserRecorder {
               target.closest('.browser-recorder-modal') ||
               target.closest('.browser-recorder-modal-content') ||
               target.closest('#playwright-date-offset-modal') ||
+              target.closest('#date-marking-instructions') ||
+              target.id === 'date-marking-instructions' ||
+              (target.parentElement && target.parentElement.closest('#date-marking-instructions')) ||
               target.id === 'wait-instructions' ||
               target.id === 'wait-condition' ||
               target.id === 'wait-timeout' ||
@@ -4797,6 +5000,11 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       }, offset);
     });
 
+    await this.page.exposeFunction('__playwrightRecorderSkipDateComponent', async (step: 'year' | 'month' | 'day') => {
+      console.log('⏭️ Skipping date component:', step);
+      this.handleSkipDateComponent(step);
+    });
+
     // Expose function for table capture
     await this.page.exposeFunction('__playwrightRecorderOnCaptureTable', async (tables: any[]) => {
       console.log('📊 Capture table action recorded:', tables.length, 'tables');
@@ -4979,33 +5187,140 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     }
   }
 
+  private handleSkipDateComponent(step: 'year' | 'month' | 'day'): void {
+    console.log(`⏭️ Skipping date component: ${step}`);
+
+    // Don't store anything for this component (it's skipped)
+    // Just advance to next step
+
+    if (step === 'year') {
+      this.dateMarkingStep = 'month';
+
+      // Update browser UI to show next step
+      this.page?.evaluate(() => {
+        (window as any).__playwrightRecorderDateMarkingStep = 'month';
+        if ((window as any).__updateDateMarkingInstructions) {
+          (window as any).__updateDateMarkingInstructions('month');
+        }
+      });
+
+      console.log('⏭️ Year skipped, waiting for month...');
+    } else if (step === 'month') {
+      this.dateMarkingStep = 'day';
+
+      // Update browser UI to show next step
+      this.page?.evaluate(() => {
+        (window as any).__playwrightRecorderDateMarkingStep = 'day';
+        if ((window as any).__updateDateMarkingInstructions) {
+          (window as any).__updateDateMarkingInstructions('day');
+        }
+      });
+
+      console.log('⏭️ Month skipped, waiting for day...');
+    } else if (step === 'day') {
+      console.log('⏭️ Day skipped! Checking if we have at least one component marked...');
+
+      // Check if at least one component was marked
+      const hasAnyComponent = this.dateMarkingSelectors.year || this.dateMarkingSelectors.month || this.dateMarkingSelectors.day;
+
+      if (!hasAnyComponent) {
+        // No components marked at all - show error
+        this.page?.evaluate(() => {
+          const errorNotification = document.createElement('div');
+          errorNotification.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #f44336;
+            color: white;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            z-index: 999999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-weight: 500;
+          `;
+
+          errorNotification.innerHTML = `
+            <strong>❌ Error</strong><br>
+            <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
+              You must mark at least one date component!
+            </div>
+          `;
+
+          if (document.body) {
+            document.body.appendChild(errorNotification);
+          }
+
+          setTimeout(() => {
+            errorNotification.style.opacity = '0';
+            errorNotification.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => errorNotification.remove(), 300);
+          }, 3000);
+        });
+
+        console.error('❌ No date components marked - all were skipped');
+        // Exit date marking mode
+        this.exitDateMarkingMode();
+        return;
+      }
+
+      // At least one component was marked - show date offset modal
+      // This will trigger the modal just like when all 3 are marked
+      this.page?.evaluate(() => {
+        if ((window as any).__showDateOffsetModal) {
+          (window as any).__showDateOffsetModal();
+        }
+      });
+    }
+  }
+
   private createDatePickerAction(): void {
-    // Validate all 3 components were collected
-    if (!this.dateMarkingSelectors.year || !this.dateMarkingSelectors.month || !this.dateMarkingSelectors.day) {
-      console.error('❌ Missing date components:', this.dateMarkingSelectors);
+    // Validate at least one component was collected
+    const hasYear = !!this.dateMarkingSelectors.year;
+    const hasMonth = !!this.dateMarkingSelectors.month;
+    const hasDay = !!this.dateMarkingSelectors.day;
+
+    if (!hasYear && !hasMonth && !hasDay) {
+      console.error('❌ No date components marked (all were skipped)');
       return;
     }
+
+    // Build dateComponents object with only marked components
+    const dateComponents: any = {};
+
+    if (hasYear) {
+      dateComponents.year = {
+        selector: this.dateMarkingSelectors.year!.selector,
+        elementType: this.dateMarkingSelectors.year!.elementType,
+        dropdownSelector: this.dateMarkingSelectors.year!.dropdownSelector
+      };
+    }
+
+    if (hasMonth) {
+      dateComponents.month = {
+        selector: this.dateMarkingSelectors.month!.selector,
+        elementType: this.dateMarkingSelectors.month!.elementType,
+        dropdownSelector: this.dateMarkingSelectors.month!.dropdownSelector
+      };
+    }
+
+    if (hasDay) {
+      dateComponents.day = {
+        selector: this.dateMarkingSelectors.day!.selector,
+        elementType: this.dateMarkingSelectors.day!.elementType,
+        dropdownSelector: this.dateMarkingSelectors.day!.dropdownSelector
+      };
+    }
+
+    const markedComponents = [hasYear && 'year', hasMonth && 'month', hasDay && 'day'].filter(Boolean).join(', ');
+    console.log(`📅 Creating date picker action with: ${markedComponents}`);
 
     const action: RecordedAction = {
       type: 'datePickerGroup',
       timestamp: Date.now() - this.startTime,
-      dateComponents: {
-        year: {
-          selector: this.dateMarkingSelectors.year.selector,
-          elementType: this.dateMarkingSelectors.year.elementType,
-          dropdownSelector: this.dateMarkingSelectors.year.dropdownSelector
-        },
-        month: {
-          selector: this.dateMarkingSelectors.month.selector,
-          elementType: this.dateMarkingSelectors.month.elementType,
-          dropdownSelector: this.dateMarkingSelectors.month.dropdownSelector
-        },
-        day: {
-          selector: this.dateMarkingSelectors.day.selector,
-          elementType: this.dateMarkingSelectors.day.elementType,
-          dropdownSelector: this.dateMarkingSelectors.day.dropdownSelector
-        }
-      },
+      dateComponents: dateComponents,
       dateOffset: this.dateMarkingOffset // Default to today (0)
     };
 
@@ -5057,6 +5372,11 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     const browserY = 0;
 
     const lines: string[] = [
+      "/**",
+      " * RECORDED_ACTIONS:",
+      ` * ${JSON.stringify(this.actions)}`,
+      " */",
+      "",
       "const { chromium } = require('playwright-core');",
       "const path = require('path');",
       "const os = require('os');",
@@ -5065,8 +5385,8 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       "(async () => {",
       "  console.log('🎬 Starting test replay...');",
       "  ",
-      "  // Create downloads directory in system Downloads folder",
-      "  const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Playwright');",
+      "  // Create downloads directory in system Downloads folder (unique per script)",
+      `  const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-${this.scriptName}');`,
       "  if (!fs.existsSync(downloadsPath)) {",
       "    fs.mkdirSync(downloadsPath, { recursive: true });",
       "  }",
@@ -5313,119 +5633,116 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           }
           break;
         case 'datePickerGroup':
+          // Determine which components are present
+          const hasYear = !!action.dateComponents?.year;
+          const hasMonth = !!action.dateComponents?.month;
+          const hasDay = !!action.dateComponents?.day;
+          const markedComponents = [hasYear && 'year', hasMonth && 'month', hasDay && 'day'].filter(Boolean).join(', ');
+
           // Add comment explaining dynamic date
           const offsetText = action.dateOffset === 0 ? 'today' :
                            action.dateOffset! > 0 ? `today + ${action.dateOffset} days` :
                            `today - ${Math.abs(action.dateOffset!)} days`;
-          lines.push(`    // Select date: ${offsetText}`);
+          lines.push(`    // Date picker (${markedComponents}): ${offsetText}`);
           lines.push(`    const targetDate = new Date();`);
 
           if (action.dateOffset && action.dateOffset !== 0) {
             lines.push(`    targetDate.setDate(targetDate.getDate() + ${action.dateOffset});`);
           }
 
-          lines.push(`    const year = targetDate.getFullYear().toString();`);
-          lines.push(`    const month = (targetDate.getMonth() + 1).toString(); // 1-12`);
-          lines.push(`    const day = targetDate.getDate().toString();`);
+          // Only declare variables for components that exist
+          if (hasYear) {
+            lines.push(`    const year = targetDate.getFullYear().toString();`);
+          }
+          if (hasMonth) {
+            lines.push(`    const month = (targetDate.getMonth() + 1).toString(); // 1-12`);
+          }
+          if (hasDay) {
+            lines.push(`    const day = targetDate.getDate().toString();`);
+          }
           lines.push(``);
 
-          // Select year - use appropriate method based on element type
-          const yearType = action.dateComponents!.year.elementType;
-          const yearSelector = action.dateComponents!.year.selector;
-          const yearDropdownSelector = action.dateComponents!.year.dropdownSelector;
+          // Select year (only if present)
+          if (hasYear) {
+            const yearType = action.dateComponents!.year.elementType;
+            const yearSelector = action.dateComponents!.year.selector;
+            const yearDropdownSelector = action.dateComponents!.year.dropdownSelector;
 
-          if (yearType === 'select') {
-            lines.push(`    await page.selectOption('${yearSelector}', year);`);
-          } else if (yearType === 'input') {
-            // For input elements, use fill() instead of click()
-            lines.push(`    await page.locator('${yearSelector}').fill(year);`);
-          } else {
-            // For button/clickable elements (dropdowns)
-            // Check if selector has :has-text, which means we need to filter by dynamic value
-            if (yearSelector.includes(':has-text')) {
-              // Has text-based selector - extract base selector and use filter with dynamic year
-              const baseYearSelector = yearSelector.split(':has-text')[0];
-              lines.push(`    await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
+            if (yearType === 'select') {
+              lines.push(`    await page.selectOption('${yearSelector}', year);`);
+            } else if (yearType === 'input') {
+              lines.push(`    await page.locator('${yearSelector}').fill(year);`);
             } else {
-              // Click to open dropdown
-              lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
-
-              // Select option from dropdown - use detected dropdown selector if available
-              if (yearDropdownSelector) {
-                lines.push(`    await page.locator('${yearDropdownSelector} a, ${yearDropdownSelector} button, ${yearDropdownSelector} div, ${yearDropdownSelector} li').filter({ hasText: year }).first().click();`);
+              if (yearSelector.includes(':has-text')) {
+                const baseYearSelector = yearSelector.split(':has-text')[0];
+                lines.push(`    await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
               } else {
-                // Fallback to unscoped search
-                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: year }).first().click();`);
+                lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+                if (yearDropdownSelector) {
+                  lines.push(`    await page.locator('${yearDropdownSelector} a, ${yearDropdownSelector} button, ${yearDropdownSelector} div, ${yearDropdownSelector} li').filter({ hasText: year }).first().click();`);
+                } else {
+                  lines.push(`    await page.locator('a, button, div, li').filter({ hasText: year }).first().click();`);
+                }
               }
             }
-          }
-          if (i < this.actions.length - 1) {
-            const waitTime = Math.min(1200, this.waitSettings.maxDelay);
-            lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+            if (i < this.actions.length - 1) {
+              const waitTime = Math.min(1200, this.waitSettings.maxDelay);
+              lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+            }
+            lines.push(``);
           }
 
-          // Select month
-          const monthType = action.dateComponents!.month.elementType;
-          const monthSelector = action.dateComponents!.month.selector;
-          const monthDropdownSelector = action.dateComponents!.month.dropdownSelector;
+          // Select month (only if present)
+          if (hasMonth) {
+            const monthType = action.dateComponents!.month.elementType;
+            const monthSelector = action.dateComponents!.month.selector;
+            const monthDropdownSelector = action.dateComponents!.month.dropdownSelector;
 
-          if (monthType === 'select') {
-            lines.push(`    await page.selectOption('${monthSelector}', month);`);
-          } else if (monthType === 'input') {
-            // For input elements, use fill() instead of click()
-            lines.push(`    await page.locator('${monthSelector}').fill(month);`);
-          } else {
-            // For button/clickable elements (dropdowns)
-            // Check if selector has :has-text, which means we need to filter by dynamic value
-            if (monthSelector.includes(':has-text')) {
-              // Has text-based selector - extract base selector and use filter with dynamic month
-              const baseMonthSelector = monthSelector.split(':has-text')[0];
-              lines.push(`    await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
+            if (monthType === 'select') {
+              lines.push(`    await page.selectOption('${monthSelector}', month);`);
+            } else if (monthType === 'input') {
+              lines.push(`    await page.locator('${monthSelector}').fill(month);`);
             } else {
-              // Click to open dropdown
-              lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
-
-              // Select option from dropdown - use detected dropdown selector if available
-              if (monthDropdownSelector) {
-                lines.push(`    await page.locator('${monthDropdownSelector} a, ${monthDropdownSelector} button, ${monthDropdownSelector} div, ${monthDropdownSelector} li').filter({ hasText: month }).first().click();`);
+              if (monthSelector.includes(':has-text')) {
+                const baseMonthSelector = monthSelector.split(':has-text')[0];
+                lines.push(`    await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
               } else {
-                // Fallback to unscoped search
-                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: month }).first().click();`);
+                lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+                if (monthDropdownSelector) {
+                  lines.push(`    await page.locator('${monthDropdownSelector} a, ${monthDropdownSelector} button, ${monthDropdownSelector} div, ${monthDropdownSelector} li').filter({ hasText: month }).first().click();`);
+                } else {
+                  lines.push(`    await page.locator('a, button, div, li').filter({ hasText: month }).first().click();`);
+                }
               }
             }
-          }
-          if (i < this.actions.length - 1) {
-            const waitTime = Math.min(800, this.waitSettings.maxDelay);
-            lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+            if (i < this.actions.length - 1) {
+              const waitTime = Math.min(800, this.waitSettings.maxDelay);
+              lines.push(`    await page.waitForTimeout(${waitTime}); // Human-like delay`);
+            }
+            lines.push(``);
           }
 
-          // Select day
-          const dayType = action.dateComponents!.day.elementType;
-          const daySelector = action.dateComponents!.day.selector;
-          const dayDropdownSelector = action.dateComponents!.day.dropdownSelector;
+          // Select day (only if present)
+          if (hasDay) {
+            const dayType = action.dateComponents!.day.elementType;
+            const daySelector = action.dateComponents!.day.selector;
+            const dayDropdownSelector = action.dateComponents!.day.dropdownSelector;
 
-          if (dayType === 'select') {
-            lines.push(`    await page.selectOption('${daySelector}', day);`);
-          } else if (dayType === 'input') {
-            // For input elements, use fill() instead of click()
-            lines.push(`    await page.locator('${daySelector}').fill(day);`);
-          } else {
-            // For button/clickable elements (dropdowns)
-            // Check if selector has :has-text, which means we need to filter by dynamic value
-            if (daySelector.includes(':has-text')) {
-              // Has text-based selector - extract base selector and use filter with dynamic day
-              const baseDaySelector = daySelector.split(':has-text')[0];
-              lines.push(`    await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
+            if (dayType === 'select') {
+              lines.push(`    await page.selectOption('${daySelector}', day);`);
+            } else if (dayType === 'input') {
+              lines.push(`    await page.locator('${daySelector}').fill(day);`);
             } else {
-              // Click to open dropdown
-              lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
-
-              // Select option from dropdown - use detected dropdown selector if available
-              if (dayDropdownSelector) {
-                lines.push(`    await page.locator('${dayDropdownSelector} a, ${dayDropdownSelector} button, ${dayDropdownSelector} div, ${dayDropdownSelector} li').filter({ hasText: day }).first().click();`);
+              if (daySelector.includes(':has-text')) {
+                const baseDaySelector = daySelector.split(':has-text')[0];
+                lines.push(`    await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
               } else {
-                // Fallback to unscoped search
-                lines.push(`    await page.locator('a, button, div, li').filter({ hasText: day }).first().click();`);
+                lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+                if (dayDropdownSelector) {
+                  lines.push(`    await page.locator('${dayDropdownSelector} a, ${dayDropdownSelector} button, ${dayDropdownSelector} div, ${dayDropdownSelector} li').filter({ hasText: day }).first().click();`);
+                } else {
+                  lines.push(`    await page.locator('a, button, div, li').filter({ hasText: day }).first().click();`);
+                }
               }
             }
           }
@@ -5549,6 +5866,400 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
 
   getActions(): RecordedAction[] {
     return this.actions;
+  }
+
+  /**
+   * Set actions array (used for view mode execution)
+   */
+  setActions(actions: RecordedAction[]): void {
+    this.actions = actions;
+    this.startTime = Date.now();
+  }
+
+  /**
+   * Get the output file path
+   */
+  getOutputFile(): string {
+    return this.outputFile;
+  }
+
+  /**
+   * Reconnect to an existing browser context (for resume recording)
+   */
+  reconnectToContext(context: BrowserContext, page: Page): void {
+    this.context = context;
+    this.page = page;
+    this.browser = context.browser();
+    this.isRecording = false; // Not recording yet, just connected
+  }
+
+  /**
+   * Start recording from a reconnected state
+   */
+  async startRecording(): Promise<void> {
+    this.isRecording = true;
+
+    if (!this.page) {
+      console.error('❌ No page available for recording');
+      return;
+    }
+
+    // Set up page listeners
+    await this.setupPageListeners(this.page);
+
+    // Inject keyboard listener
+    await this.injectKeyboardListener();
+
+    // Inject controller UI
+    await this.injectControllerUI();
+
+    // Start controller check
+    this.startControllerCheck();
+
+    console.log('▶️ Recording started from reconnected state');
+  }
+
+  /**
+   * Generate test code up to a specific action index
+   * Used for "Play to Here" feature - executes partial test and keeps browser open
+   */
+  generateTestCodeUpToAction(upToIndex: number): string {
+    // Validate index
+    if (upToIndex < 0 || upToIndex >= this.actions.length) {
+      throw new Error(`Invalid action index: ${upToIndex}. Valid range: 0-${this.actions.length - 1}`);
+    }
+
+    console.log(`📝 Generating partial test code for actions 0-${upToIndex} (${upToIndex + 1} actions)`);
+
+    // Get screen dimensions (same as recording)
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+    const browserWidth = Math.floor(width * 0.6);
+    const browserHeight = height;
+    const browserX = width - browserWidth;
+    const browserY = 0;
+
+    // Use partial actions only
+    const partialActions = this.actions.slice(0, upToIndex + 1);
+
+    const lines: string[] = [
+      "/**",
+      " * PARTIAL EXECUTION - Play to Action",
+      ` * Executing actions 0 to ${upToIndex} (total: ${upToIndex + 1} of ${this.actions.length} actions)`,
+      ` * Browser will remain open for inspection`,
+      " * RECORDED_ACTIONS:",
+      ` * ${JSON.stringify(partialActions)}`,
+      " */",
+      "",
+      "const { chromium } = require('playwright-core');",
+      "const path = require('path');",
+      "const os = require('os');",
+      "const fs = require('fs');",
+      "",
+      "(async () => {",
+      `  console.log('🎬 Starting PARTIAL test execution (actions 0-${upToIndex})...');`,
+      "  ",
+      "  // Create downloads directory in system Downloads folder (unique per script)",
+      `  const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-${this.scriptName}');`,
+      "  if (!fs.existsSync(downloadsPath)) {",
+      "    fs.mkdirSync(downloadsPath, { recursive: true });",
+      "  }",
+      "  console.log('📥 Downloads will be saved to:', downloadsPath);",
+      "",
+      "  // Create temporary profile directory",
+      "  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));",
+      "  console.log('📁 Using profile directory:', profileDir);",
+      "",
+      "  // Launch browser with persistent context",
+      "  const context = await chromium.launchPersistentContext(profileDir, {",
+      "    headless: false,",
+      "    channel: 'chrome',",
+      `    viewport: { width: ${browserWidth}, height: ${browserHeight} },`,
+      "    acceptDownloads: true,",
+      "    downloadsPath: downloadsPath,",
+      "    args: [",
+      "      '--no-default-browser-check',",
+      "      '--disable-blink-features=AutomationControlled',",
+      `      '--window-position=${browserX},${browserY}',`,
+      "    ]",
+      "  });",
+      "",
+      "  let page = context.pages()[0] || await context.newPage();",
+      "  ",
+      "  // Set up dialog handling",
+      "  page.on('dialog', async (dialog) => {",
+      "    console.log(`🔔 Dialog detected: ${dialog.type()} - \"${dialog.message()}\"`);",
+      "    await dialog.accept();",
+      "    console.log('✅ Dialog accepted');",
+      "  });",
+      "",
+      "  // Page stack for multi-tab handling",
+      "  const pageStack = [];",
+      "",
+      "  try {"
+    ];
+
+    // Generate code for each action (using the same logic as generateTestCode)
+    for (let i = 0; i < partialActions.length; i++) {
+      const action = partialActions[i];
+      const relativeTime = action.timestamp;
+
+      // Calculate wait time with multiplier
+      let waitTime = relativeTime;
+      if (i > 0) {
+        const prevAction = partialActions[i - 1];
+        waitTime = relativeTime - prevAction.timestamp;
+      }
+
+      const adjustedWait = Math.min(
+        Math.round(waitTime * this.waitSettings.multiplier),
+        this.waitSettings.maxDelay
+      );
+
+      if (i > 0 && adjustedWait > 0) {
+        lines.push(`    await page.waitForTimeout(${adjustedWait});`);
+      }
+
+      lines.push(`    console.log('▶️ Action ${i + 1}/${partialActions.length}: ${action.type}');`);
+
+      // Generate action-specific code (copy from generateTestCode logic)
+      switch (action.type) {
+        case 'navigate':
+          lines.push(`    await page.goto('${action.url}');`);
+          lines.push(`    console.log('✓ Navigated to:', '${action.url}');`);
+          break;
+
+        case 'click':
+          if (action.coordinates && this.isCoordinateModeEnabled) {
+            lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y});`);
+            lines.push(`    console.log('✓ Clicked at coordinates: (${action.coordinates.x}, ${action.coordinates.y})');`);
+          } else {
+            const clickSelector = action.xpath || action.selector;
+            if (action.frameSelector) {
+              lines.push(`    {`);
+              lines.push(`      const frame = page.frameLocator('${action.frameSelector}');`);
+              lines.push(`      await frame.locator('${clickSelector}').click();`);
+              lines.push(`      console.log('✓ Clicked in iframe: ${action.frameSelector}');`);
+              lines.push(`    }`);
+            } else {
+              lines.push(`    await page.locator('${clickSelector}').click();`);
+              lines.push(`    console.log('✓ Clicked: ${clickSelector}');`);
+            }
+          }
+          break;
+
+        case 'fill':
+          const fillSelector = action.xpath || action.selector;
+          const escapedValue = (action.value || '').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+          if (action.frameSelector) {
+            lines.push(`    {`);
+            lines.push(`      const frame = page.frameLocator('${action.frameSelector}');`);
+            lines.push(`      await frame.locator('${fillSelector}').fill('${escapedValue}');`);
+            lines.push(`      console.log('✓ Filled in iframe: ${action.frameSelector}');`);
+            lines.push(`    }`);
+          } else {
+            lines.push(`    await page.locator('${fillSelector}').fill('${escapedValue}');`);
+            lines.push(`    console.log('✓ Filled: ${fillSelector} = "${escapedValue}"');`);
+          }
+          break;
+
+        case 'keypress':
+          if (action.key === 'Enter') {
+            lines.push(`    await page.keyboard.press('Enter');`);
+            lines.push(`    console.log('✓ Pressed: Enter');`);
+          } else if (action.key) {
+            lines.push(`    await page.keyboard.type('${action.key}');`);
+            lines.push(`    console.log('✓ Typed: ${action.key}');`);
+          }
+          break;
+
+        case 'screenshot':
+          lines.push(`    await page.screenshot({ path: 'screenshot-${i}.png', fullPage: true });`);
+          lines.push(`    console.log('✓ Screenshot saved: screenshot-${i}.png');`);
+          break;
+
+        case 'waitForElement':
+          const waitSelector = action.xpath || action.selector;
+          const condition = action.waitCondition || 'visible';
+          const timeout = action.timeout || 30000;
+          lines.push(`    await page.locator('${waitSelector}').waitFor({ state: '${condition}', timeout: ${timeout} });`);
+          lines.push(`    console.log('✓ Waited for element: ${waitSelector} (${condition})');`);
+          break;
+
+        case 'download':
+          lines.push(`    {`);
+          lines.push(`      const downloadPromise = page.waitForEvent('download');`);
+          if (action.xpath || action.selector) {
+            const dlSelector = action.xpath || action.selector;
+            lines.push(`      await page.locator('${dlSelector}').click();`);
+          }
+          lines.push(`      const download = await downloadPromise;`);
+          lines.push(`      const suggestedFilename = download.suggestedFilename();`);
+          lines.push(`      const filePath = path.join(downloadsPath, suggestedFilename);`);
+          lines.push(`      await download.saveAs(filePath);`);
+          lines.push(`      console.log('✓ Downloaded:', suggestedFilename, 'to', filePath);`);
+          lines.push(`    }`);
+          break;
+
+        case 'datePickerGroup':
+          if (action.dateComponents) {
+            lines.push(`    {`);
+            lines.push(`      // Date Picker Group - Calculate date from offset`);
+            lines.push(`      const dateOffset = ${action.dateOffset || 0}; // Days from today`);
+            lines.push(`      const targetDate = new Date();`);
+            lines.push(`      targetDate.setDate(targetDate.getDate() + dateOffset);`);
+            lines.push(`      const year = targetDate.getFullYear().toString();`);
+            lines.push(`      const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');`);
+            lines.push(`      const day = targetDate.getDate().toString().padStart(2, '0');`);
+            lines.push(`      console.log(\`📅 Target date (offset \${dateOffset}): \${year}-\${month}-\${day}\`);`);
+            lines.push(``);
+
+            // Generate code for each date component
+            ['year', 'month', 'day'].forEach(component => {
+              const comp = action.dateComponents![component as 'year' | 'month' | 'day'];
+              if (comp) {
+                const value = component === 'year' ? 'year' : component === 'month' ? 'month' : 'day';
+                lines.push(`      // ${component.charAt(0).toUpperCase() + component.slice(1)}`);
+
+                if (comp.elementType === 'select') {
+                  lines.push(`      await page.locator('${comp.selector}').selectOption(\${${value}});`);
+                  lines.push(`      console.log('✓ Selected ${component}:', ${value});`);
+                } else if (comp.elementType === 'button' && comp.dropdownSelector) {
+                  lines.push(`      await page.locator('${comp.selector}').click();`);
+                  lines.push(`      await page.waitForTimeout(500);`);
+                  lines.push(`      await page.locator('${comp.dropdownSelector}').locator(\`text="\${${value}}"\`).first().click();`);
+                  lines.push(`      console.log('✓ Selected ${component}:', ${value});`);
+                } else if (comp.elementType === 'input') {
+                  lines.push(`      await page.locator('${comp.selector}').fill(\${${value}});`);
+                  lines.push(`      console.log('✓ Filled ${component}:', ${value});`);
+                }
+              }
+            });
+
+            lines.push(`    }`);
+          }
+          break;
+
+        case 'captureTable':
+          lines.push(`    // Table capture recorded (${action.tables?.length || 0} tables)`);
+          lines.push(`    console.log('✓ Table capture action (skipped in replay)');`);
+          break;
+
+        case 'newTab':
+          lines.push(`    {`);
+          lines.push(`      // Wait for new tab to open`);
+          lines.push(`      const newPagePromise = context.waitForEvent('page');`);
+          lines.push(`      // Trigger action that opens new tab would go here`);
+          lines.push(`      const newPage = await newPagePromise;`);
+          lines.push(`      await newPage.waitForLoadState();`);
+          lines.push(`      console.log('✓ New tab opened:', newPage.url());`);
+          lines.push(`      `);
+          lines.push(`      // Set up dialog handling for new page`);
+          lines.push(`      newPage.on('dialog', async (dialog) => {`);
+          lines.push(`        console.log(\`🔔 Dialog detected: \${dialog.type()} - "\${dialog.message()}"\`);`);
+          lines.push(`        await dialog.accept();`);
+          lines.push(`        console.log('✅ Dialog accepted');`);
+          lines.push(`      });`);
+          lines.push(`      `);
+          lines.push(`      // Push current page to stack before switching`);
+          lines.push(`      pageStack.push(page);`);
+          lines.push(`      console.log('📚 Pushed page to stack, stack size:', pageStack.length);`);
+          lines.push(`      `);
+          lines.push(`      // Switch to new page for subsequent actions`);
+          lines.push(`      page = newPage;`);
+          lines.push(`      console.log('✓ Switched to new tab:', newPage.url());`);
+          lines.push(`    }`);
+          break;
+
+        case 'closeTab':
+          lines.push(`    {`);
+          lines.push(`      // Popup/tab was closed during recording`);
+          if (action.closedTabUrl) {
+            lines.push(`      // Closed tab URL: ${action.closedTabUrl}`);
+          }
+          lines.push(`      await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});`);
+          lines.push(`      `);
+          lines.push(`      // Switch back to previous page`);
+          lines.push(`      const previousPage = pageStack.pop();`);
+          lines.push(`      if (previousPage) {`);
+          lines.push(`        page = previousPage;`);
+          lines.push(`        console.log('⬅️ Switched back to previous page:', page.url());`);
+          lines.push(`        console.log('📚 Stack size:', pageStack.length);`);
+          lines.push(`      } else {`);
+          lines.push(`        console.warn('⚠️ No previous page in stack, using first available page');`);
+          lines.push(`        const allPages = context.pages();`);
+          lines.push(`        page = allPages[0];`);
+          lines.push(`      }`);
+          lines.push(`    }`);
+          break;
+
+        case 'clickUntilGone':
+          const cugSelector = action.xpath || action.selector;
+          const maxIter = action.maxIterations || 10;
+          const waitBetween = action.waitBetweenClicks || 500;
+          lines.push(`    {`);
+          lines.push(`      // Click Until Gone - Click element repeatedly until it disappears`);
+          lines.push(`      console.log('🔄 Starting Click Until Gone: ${cugSelector}');`);
+          lines.push(`      let iterations = 0;`);
+          lines.push(`      while (iterations < ${maxIter}) {`);
+          lines.push(`        try {`);
+          lines.push(`          const element = page.locator('${cugSelector}');`);
+          lines.push(`          const isVisible = await element.isVisible();`);
+          lines.push(`          `);
+          lines.push(`          if (!isVisible) {`);
+          lines.push(`            console.log('✅ Element is gone after', iterations, 'iterations');`);
+          lines.push(`            break;`);
+          lines.push(`          }`);
+          lines.push(`          `);
+          lines.push(`          await element.click();`);
+          lines.push(`          console.log(\`  ↻ Click \${iterations + 1}/${maxIter}\`);`);
+          lines.push(`          iterations++;`);
+          lines.push(`          `);
+          lines.push(`          await page.waitForTimeout(${waitBetween});`);
+          lines.push(`        } catch (e) {`);
+          lines.push(`          console.log('✅ Element disappeared or became unclickable');`);
+          lines.push(`          break;`);
+          lines.push(`        }`);
+          lines.push(`      }`);
+          lines.push(`      `);
+          lines.push(`      if (iterations >= ${maxIter}) {`);
+          lines.push(`        console.warn('⚠️ Reached maximum iterations (${maxIter})');`);
+          lines.push(`      }`);
+          lines.push(`    }`);
+          break;
+
+        case 'print':
+          lines.push(`    // Print dialog triggered`);
+          lines.push(`    await page.waitForTimeout(1000);`);
+          lines.push(`    const { keyboard, Key } = require('@nut-tree-fork/nut-js');`);
+          lines.push(`    await keyboard.type(Key.Enter);`);
+          lines.push(`    console.log('✓ Print dialog handled');`);
+          break;
+      }
+    }
+
+    // Finally block - DON'T close context, keep browser open for inspection
+    lines.push(`    `);
+    lines.push(`    console.log('');`);
+    lines.push(`    console.log('⏸️  PAUSED: Executed ${upToIndex + 1} of ${this.actions.length} actions');`);
+    lines.push(`    console.log('🔍 Browser will remain open for inspection');`);
+    lines.push(`    console.log('');`);
+    lines.push(`    console.log('Browser context endpoint:', context.browser()?.wsEndpoint());`);
+    lines.push(`    `);
+    lines.push(`    // Return context for resume capability`);
+    lines.push(`    return {`);
+    lines.push(`      context,`);
+    lines.push(`      page,`);
+    lines.push(`      pausedAt: ${upToIndex}`);
+    lines.push(`    };`);
+    lines.push(`    `);
+    lines.push("  } catch (error) {");
+    lines.push("    console.error('❌ Test failed:', error);");
+    lines.push("    throw error;");
+    lines.push("  }");
+    lines.push("})().catch(console.error);");
+
+    return lines.join('\n');
   }
 
   private updateGeneratedCode(): void {

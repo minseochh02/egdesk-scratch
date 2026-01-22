@@ -274,6 +274,25 @@ interface WordPressServerAPI {
 }
 
 /**
+ * Interface for PHP Installer API.
+ */
+interface PHPInstallerAPI {
+  checkDownloaded: () => Promise<{ success: boolean; downloaded?: boolean; error?: string }>;
+  download: () => Promise<{ success: boolean; error?: string }>;
+  ensure: () => Promise<{ success: boolean; installed?: boolean; error?: string }>;
+  cancelDownload: () => Promise<{ success: boolean; error?: string }>;
+  isDownloading: () => Promise<{ success: boolean; isDownloading?: boolean; error?: string }>;
+  onDownloadProgress: (callback: (progress: {
+    percent: number;
+    transferred: number;
+    total: number;
+    bytesPerSecond: number;
+  }) => void) => () => void;
+  onDownloadComplete: (callback: (result: { success: boolean; path?: string }) => void) => () => void;
+  onDownloadError: (callback: (error: { error: string }) => void) => () => void;
+}
+
+/**
  * Interface for Browser Window API.
  */
 interface BrowserWindowAPI {
@@ -732,6 +751,7 @@ export interface IElectronAPI {
   store: StoreAPI;
   sslAnalysis: SSLAnalysisAPI;
   wordpressServer: WordPressServerAPI;
+  phpInstaller: PHPInstallerAPI;
   browserWindow: BrowserWindowAPI;
   mainWindow: MainWindowAPI;
   scriptExecution: ScriptExecutionAPI;

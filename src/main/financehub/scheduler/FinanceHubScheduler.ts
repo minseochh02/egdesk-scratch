@@ -2,12 +2,16 @@ import { app } from 'electron';
 import { EventEmitter } from 'events';
 import { getStore } from '../../storage';
 import { SQLiteManager } from '../../sqlite/manager';
+import { collectTaxInvoices } from '../../hometax-automation';
+import { parseHometaxExcel } from '../../hometax-excel-parser';
+import { importTaxInvoices } from '../../sqlite/hometax';
 
 interface ScheduleSettings {
   enabled: boolean;
   time: string; // HH:MM format (e.g., "06:00")
   retryCount: number;
   retryDelayMinutes: number;
+  includeTaxSync: boolean; // Include Hometax tax invoice sync
   lastSyncTime?: string;
   lastSyncStatus?: 'success' | 'failed' | 'running';
 }
@@ -19,6 +23,15 @@ interface SyncResult {
   error?: string;
   inserted?: number;
   skipped?: number;
+}
+
+interface TaxSyncResult {
+  businessNumber: string;
+  businessName: string;
+  success: boolean;
+  error?: string;
+  salesInserted?: number;
+  purchaseInserted?: number;
 }
 
 export class FinanceHubScheduler extends EventEmitter {
@@ -33,6 +46,7 @@ export class FinanceHubScheduler extends EventEmitter {
     time: '06:00',
     retryCount: 3,
     retryDelayMinutes: 5,
+    includeTaxSync: true,
   };
 
   private constructor() {
@@ -189,31 +203,41 @@ export class FinanceHubScheduler extends EventEmitter {
     this.emit('sync-started');
 
     try {
-      const results = await this.performSync();
-      
+      const { bankResults, taxResults } = await this.performSync();
+
       // Check if any syncs failed
-      const failedSyncs = results.filter(r => !r.success);
-      
-      if (failedSyncs.length > 0 && retryCount < this.settings.retryCount) {
-        console.log(`[FinanceHubScheduler] ${failedSyncs.length} syncs failed, retrying in ${this.settings.retryDelayMinutes} minutes...`);
-        
+      const failedBankSyncs = bankResults.filter(r => !r.success);
+      const failedTaxSyncs = taxResults.filter(r => !r.success);
+      const totalFailed = failedBankSyncs.length + failedTaxSyncs.length;
+
+      if (totalFailed > 0 && retryCount < this.settings.retryCount) {
+        console.log(`[FinanceHubScheduler] ${totalFailed} syncs failed (${failedBankSyncs.length} bank, ${failedTaxSyncs.length} tax), retrying in ${this.settings.retryDelayMinutes} minutes...`);
+
         // Schedule retry
         this.syncTimer = setTimeout(() => {
           this.executeSyncWithRetry(retryCount + 1);
         }, this.settings.retryDelayMinutes * 60 * 1000);
       } else {
         // Sync completed (with or without failures)
-        const successCount = results.filter(r => r.success).length;
-        const status = failedSyncs.length === 0 ? 'success' : 'failed';
-        
+        const bankSuccessCount = bankResults.filter(r => r.success).length;
+        const taxSuccessCount = taxResults.filter(r => r.success).length;
+        const status = totalFailed === 0 ? 'success' : 'failed';
+
         this.updateSyncStatus(status);
-        this.emit('sync-completed', { results, successCount, failedCount: failedSyncs.length });
-        
-        console.log(`[FinanceHubScheduler] Sync completed: ${successCount} succeeded, ${failedSyncs.length} failed`);
+        this.emit('sync-completed', {
+          bankResults,
+          taxResults,
+          bankSuccessCount,
+          taxSuccessCount,
+          bankFailedCount: failedBankSyncs.length,
+          taxFailedCount: failedTaxSyncs.length
+        });
+
+        console.log(`[FinanceHubScheduler] Sync completed: Banks (${bankSuccessCount}/${bankResults.length}), Tax (${taxSuccessCount}/${taxResults.length})`);
       }
     } catch (error) {
       console.error('[FinanceHubScheduler] Sync error:', error);
-      
+
       if (retryCount < this.settings.retryCount) {
         console.log(`[FinanceHubScheduler] Retrying in ${this.settings.retryDelayMinutes} minutes...`);
         this.syncTimer = setTimeout(() => {
@@ -228,40 +252,41 @@ export class FinanceHubScheduler extends EventEmitter {
     }
   }
 
-  private async performSync(): Promise<SyncResult[]> {
-    const results: SyncResult[] = [];
-    
+  private async performSync(): Promise<{ bankResults: SyncResult[]; taxResults: TaxSyncResult[] }> {
+    const bankResults: SyncResult[] = [];
+    const taxResults: TaxSyncResult[] = [];
+
     try {
       // Get finance hub manager
       const sqliteManager = SQLiteManager.getInstance();
       const financeHubManager = sqliteManager.getFinanceHubManager();
-      
+
       // Get all active accounts
       const accounts = financeHubManager.getAllAccounts().filter(acc => acc.isActive);
-      
+
       console.log(`[FinanceHubScheduler] Syncing ${accounts.length} active accounts`);
-      
+
       // Import FinanceHubService
       const { FinanceHubService } = require('../FinanceHubService');
       const financeHubService = FinanceHubService.getInstance();
-      
+
       // Sync each account
       for (const account of accounts) {
         try {
           console.log(`[FinanceHubScheduler] Syncing ${account.bankId} - ${account.accountNumber}`);
-          
+
           // Get transactions for last 3 months by default
           const endDate = new Date();
           const startDate = new Date();
           startDate.setMonth(startDate.getMonth() - 3);
-          
+
           const transactionResult = await financeHubService.getTransactions(
             account.bankId,
             account.accountNumber,
             startDate.toISOString().split('T')[0].replace(/-/g, ''),
             endDate.toISOString().split('T')[0].replace(/-/g, '')
           );
-          
+
           if (transactionResult.success && transactionResult.data) {
             // Import transactions to database
             const accountData = {
@@ -271,7 +296,7 @@ export class FinanceHubScheduler extends EventEmitter {
               balance: transactionResult.data.metadata?.balance || account.balance,
               availableBalance: transactionResult.data.metadata?.availableBalance || account.availableBalance,
             };
-            
+
             const transactionsData = (transactionResult.data.transactions || []).map((tx: any) => ({
               date: tx.date,
               time: tx.time,
@@ -282,7 +307,7 @@ export class FinanceHubScheduler extends EventEmitter {
               balance: tx.balance || 0,
               branch: tx.branch,
             }));
-            
+
             const importResult = financeHubManager.importTransactions(
               account.bankId,
               accountData,
@@ -292,8 +317,8 @@ export class FinanceHubScheduler extends EventEmitter {
                 queryPeriodEnd: endDate.toISOString().split('T')[0],
               }
             );
-            
-            results.push({
+
+            bankResults.push({
               bankId: account.bankId,
               accountNumber: account.accountNumber,
               success: true,
@@ -305,7 +330,7 @@ export class FinanceHubScheduler extends EventEmitter {
           }
         } catch (error) {
           console.error(`[FinanceHubScheduler] Failed to sync ${account.accountNumber}:`, error);
-          results.push({
+          bankResults.push({
             bankId: account.bankId,
             accountNumber: account.accountNumber,
             success: false,
@@ -313,12 +338,130 @@ export class FinanceHubScheduler extends EventEmitter {
           });
         }
       }
+
+      // Sync tax invoices if enabled
+      if (this.settings.includeTaxSync) {
+        console.log('[FinanceHubScheduler] Starting tax invoice sync...');
+        await this.performTaxSync(taxResults);
+      }
     } catch (error) {
       console.error('[FinanceHubScheduler] Sync error:', error);
       throw error;
     }
-    
-    return results;
+
+    return { bankResults, taxResults };
+  }
+
+  private async performTaxSync(taxResults: TaxSyncResult[]): Promise<void> {
+    try {
+      const store = getStore();
+      const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
+      const savedCertificates = hometaxConfig.selectedCertificates || {};
+
+      const businessNumbers = Object.keys(savedCertificates);
+
+      if (businessNumbers.length === 0) {
+        console.log('[FinanceHubScheduler] No saved tax certificates found');
+        return;
+      }
+
+      console.log(`[FinanceHubScheduler] Syncing tax invoices for ${businessNumbers.length} businesses`);
+
+      // Get database
+      const { getConversationsDatabase } = require('../../sqlite/init');
+      const db = getConversationsDatabase();
+
+      // Sync each business
+      for (const businessNumber of businessNumbers) {
+        try {
+          const certData = savedCertificates[businessNumber];
+
+          if (!certData.certificatePassword) {
+            console.log(`[FinanceHubScheduler] Skipping ${businessNumber} - no password saved`);
+            taxResults.push({
+              businessNumber,
+              businessName: certData.businessName || businessNumber,
+              success: false,
+              error: 'Certificate password not saved',
+            });
+            continue;
+          }
+
+          console.log(`[FinanceHubScheduler] Syncing tax invoices for ${certData.businessName || businessNumber}`);
+
+          // Collect invoices (download Excel files)
+          const result = await collectTaxInvoices(certData, certData.certificatePassword);
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to collect tax invoices');
+          }
+
+          let salesInserted = 0;
+          let purchaseInserted = 0;
+
+          // Parse and import sales invoices
+          if (result.salesFile) {
+            console.log(`[FinanceHubScheduler] Parsing sales invoices from ${result.salesFile}`);
+            const salesParsed = parseHometaxExcel(result.salesFile);
+
+            if (salesParsed.success && salesParsed.invoices && salesParsed.businessNumber) {
+              const importResult = importTaxInvoices(
+                db,
+                salesParsed.businessNumber,
+                'sales',
+                salesParsed.invoices,
+                result.salesFile
+              );
+
+              if (importResult.success) {
+                salesInserted = importResult.inserted;
+                console.log(`[FinanceHubScheduler] Imported ${salesInserted} sales invoices`);
+              }
+            }
+          }
+
+          // Parse and import purchase invoices
+          if (result.purchaseFile) {
+            console.log(`[FinanceHubScheduler] Parsing purchase invoices from ${result.purchaseFile}`);
+            const purchaseParsed = parseHometaxExcel(result.purchaseFile);
+
+            if (purchaseParsed.success && purchaseParsed.invoices && purchaseParsed.businessNumber) {
+              const importResult = importTaxInvoices(
+                db,
+                purchaseParsed.businessNumber,
+                'purchase',
+                purchaseParsed.invoices,
+                result.purchaseFile
+              );
+
+              if (importResult.success) {
+                purchaseInserted = importResult.inserted;
+                console.log(`[FinanceHubScheduler] Imported ${purchaseInserted} purchase invoices`);
+              }
+            }
+          }
+
+          taxResults.push({
+            businessNumber,
+            businessName: certData.businessName || businessNumber,
+            success: true,
+            salesInserted,
+            purchaseInserted,
+          });
+
+        } catch (error) {
+          console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessNumber}:`, error);
+          taxResults.push({
+            businessNumber,
+            businessName: savedCertificates[businessNumber]?.businessName || businessNumber,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[FinanceHubScheduler] Tax sync error:', error);
+    }
   }
 
   // ============================================

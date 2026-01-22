@@ -155,8 +155,16 @@ src/renderer/components/FinanceHub/
 1. Navigate to Scheduler Settings
 2. Enable automatic sync
 3. Set preferred sync time (default: 06:00)
-4. Configure retry settings
-5. System will sync all connected accounts daily
+4. Enable/disable tax invoice sync (default: enabled)
+5. Configure retry settings
+6. System will sync all connected accounts and tax invoices daily
+
+**Tax Invoice Sync Integration:**
+- When enabled, the scheduler automatically syncs tax invoices alongside bank transactions
+- Uses saved certificate data and passwords
+- Syncs current month's sales and purchase invoices
+- Requires at least one Hometax certificate to be saved
+- Can be enabled/disabled independently from bank sync
 
 #### Viewing Transactions
 
@@ -195,6 +203,7 @@ The application implements a multi-layered scheduler system for automated task e
 - Time-based scheduling (configurable HH:MM, default 06:00)
 - Keep-awake functionality during sync (prevents system sleep)
 - Retry logic with configurable count and delay
+- **Integrated tax invoice sync**: Automatically syncs Hometax tax invoices alongside bank transactions
 - Event emission to renderer process
 - Settings persistence
 
@@ -205,6 +214,7 @@ The application implements a multi-layered scheduler system for automated task e
   time: string,              // HH:MM format
   retryCount: number,        // Default: 3
   retryDelayMinutes: number, // Default: 5
+  includeTaxSync: boolean,   // Include tax invoice sync, Default: true
   lastSyncTime?: string,
   lastSyncStatus?: 'success' | 'failed' | 'running'
 }
@@ -213,10 +223,14 @@ The application implements a multi-layered scheduler system for automated task e
 **Execution Flow**:
 1. Calculate time until next sync
 2. Wait until scheduled time
-3. Get all active accounts
+3. Get all active bank accounts
 4. Sync transactions for each account (last 3 months)
-5. Retry on failure up to retryCount times
-6. Update sync status and emit events
+5. If `includeTaxSync` is enabled:
+   - Get all saved tax certificates
+   - Sync tax invoices (sales & purchase) for current month
+   - Parse and import invoices to database
+6. Retry on failure up to retryCount times
+7. Update sync status and emit events with bank and tax results
 
 **IPC Handlers**:
 - `finance-hub:scheduler:get-settings`: Get current settings

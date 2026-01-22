@@ -11,6 +11,7 @@ export class CodeViewerWindow {
   private currentTestPath: string | null = null;
   private isViewMode: boolean = false;
   private onDeleteAction?: (index: number) => void;
+  private onPlayToAction?: (index: number) => void;
   private actions: any[] = [];
 
   constructor() {
@@ -55,8 +56,26 @@ export class CodeViewerWindow {
 
     ipcMain.on('delete-action', (event, index) => {
       console.log('🗑️ Delete action requested for index:', index);
+
+      if (this.isViewMode) {
+        // In view mode, deleting is disabled (UI prevents this)
+        console.log('⚠️ Delete action ignored in view mode');
+        return;
+      }
+
       if (this.onDeleteAction) {
+        // In recording mode, use the callback
         this.onDeleteAction(index);
+      }
+    });
+
+    ipcMain.on('play-to-action', (event, index) => {
+      console.log('▶️ Play to action requested for index:', index);
+
+      if (this.onPlayToAction) {
+        this.onPlayToAction(index);
+      } else {
+        console.warn('⚠️ No play-to-action callback registered');
       }
     });
 
@@ -75,6 +94,10 @@ export class CodeViewerWindow {
 
   setDeleteActionCallback(callback: (index: number) => void) {
     this.onDeleteAction = callback;
+  }
+
+  setPlayToActionCallback(callback: (index: number) => void) {
+    this.onPlayToAction = callback;
   }
 
   updateActions(actions: any[]) {
@@ -388,6 +411,28 @@ export class CodeViewerWindow {
     .action-delete-btn:hover {
       background-color: #d83030;
     }
+    .action-play-btn {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+      margin-left: 10px;
+    }
+    .action-play-btn:hover {
+      background-color: #1976D2;
+    }
+    .action-play-btn:active {
+      transform: scale(0.95);
+    }
+    .action-block.executing {
+      background-color: #1e3a5f;
+      border-left: 3px solid #2196F3;
+    }
     .view-mode-notice {
       display: none;
       background-color: #3c3c3c;
@@ -442,7 +487,7 @@ export class CodeViewerWindow {
   </div>
   <div class="code-container">
     <div class="view-mode-notice" id="view-mode-notice">
-      ℹ️ In view mode, actions cannot be deleted. Stop recording to edit.
+      ℹ️ Viewing saved test - Actions are read-only. Record a new test to edit actions.
     </div>
     <div id="gemini-analysis-container" class="gemini-analysis-container" style="display: none;">
       <!-- Gemini AI analysis will be rendered here -->
@@ -466,6 +511,9 @@ test('recorded test', async ({ page }) => {
       multiplier: 1.0,
       maxDelay: 3000
     };
+
+    // Global view mode state
+    window.isViewMode = false;
     
     // Listen for code updates immediately
     ipcRenderer.on('update-code', (event, code) => {
@@ -494,6 +542,8 @@ test('recorded test', async ({ page }) => {
     // Listen for view mode changes
     ipcRenderer.on('set-view-mode', (event, isViewMode) => {
       console.log('View mode changed:', isViewMode);
+      window.isViewMode = isViewMode;
+
       const saveButtonGroup = document.getElementById('save-button-group');
       const statusText = document.querySelector('.status span');
       const viewModeNotice = document.getElementById('view-mode-notice');
@@ -509,6 +559,13 @@ test('recorded test', async ({ page }) => {
       if (viewModeNotice) {
         viewModeNotice.style.display = isViewMode ? 'block' : 'none';
       }
+
+      // Re-render actions to update delete button visibility
+      ipcRenderer.invoke('get-actions').then(actions => {
+        if (actions && actions.length > 0) {
+          renderActions(actions);
+        }
+      });
     });
 
     // Listen for actions updates
@@ -660,16 +717,36 @@ test('recorded test', async ({ page }) => {
           actionInfo.appendChild(actionType);
           actionInfo.appendChild(actionDetails);
 
-          const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'action-delete-btn';
-          deleteBtn.textContent = '✕ Delete';
-          deleteBtn.onclick = () => {
-            console.log('Delete button clicked for index:', index);
-            ipcRenderer.send('delete-action', index);
-          };
-
           actionBlock.appendChild(actionInfo);
-          actionBlock.appendChild(deleteBtn);
+
+          // Add Play to Here button (show in both recording and view modes)
+          const playBtn = document.createElement('button');
+          playBtn.className = 'action-play-btn';
+          playBtn.innerHTML = '▶️ Play';
+          playBtn.title = \`Execute actions 0-\${index} and pause (\${index + 1} actions total)\`;
+          playBtn.onclick = () => {
+            console.log('▶️ Play to action clicked for index:', index);
+
+            // Confirm with user
+            const confirmMsg = \`Execute actions 0-\${index} (\${index + 1} actions total) and leave browser open?\`;
+            if (confirm(confirmMsg)) {
+              ipcRenderer.send('play-to-action', index);
+            }
+          };
+          actionBlock.appendChild(playBtn);
+
+          // Only show delete button if NOT in view mode
+          if (!window.isViewMode) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'action-delete-btn';
+            deleteBtn.textContent = '✕ Delete';
+            deleteBtn.onclick = () => {
+              console.log('Delete button clicked for index:', index);
+              ipcRenderer.send('delete-action', index);
+            };
+
+            actionBlock.appendChild(deleteBtn);
+          }
 
           actionsContainer.appendChild(actionBlock);
         });

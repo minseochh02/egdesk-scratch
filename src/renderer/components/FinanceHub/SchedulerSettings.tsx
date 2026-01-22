@@ -8,6 +8,7 @@ interface ScheduleSettings {
   time: string; // HH:MM format
   retryCount: number;
   retryDelayMinutes: number;
+  includeTaxSync: boolean; // Include Hometax tax invoice sync
   lastSyncTime?: string;
   lastSyncStatus?: 'success' | 'failed' | 'running';
 }
@@ -32,10 +33,27 @@ export const SchedulerSettings: React.FC = () => {
       window.electron.financeHubScheduler.onSyncCompleted((data) => {
         setSyncing(false);
         loadLastSyncInfo();
-        if (data.failedCount === 0) {
-          alert(`✅ 동기화 완료!\n성공: ${data.successCount}건`);
+
+        const totalFailed = (data.bankFailedCount || 0) + (data.taxFailedCount || 0);
+
+        if (totalFailed === 0) {
+          const messages = [];
+          if (data.bankSuccessCount > 0) {
+            messages.push(`은행 계좌: ${data.bankSuccessCount}건`);
+          }
+          if (data.taxSuccessCount > 0) {
+            messages.push(`세금계산서: ${data.taxSuccessCount}건`);
+          }
+          alert(`✅ 동기화 완료!\n${messages.join('\n')}`);
         } else {
-          alert(`⚠️ 동기화 부분 완료\n성공: ${data.successCount}건\n실패: ${data.failedCount}건`);
+          const messages = [];
+          if (data.bankSuccessCount > 0 || data.bankFailedCount > 0) {
+            messages.push(`은행 계좌: 성공 ${data.bankSuccessCount}건, 실패 ${data.bankFailedCount}건`);
+          }
+          if (data.taxSuccessCount > 0 || data.taxFailedCount > 0) {
+            messages.push(`세금계산서: 성공 ${data.taxSuccessCount}건, 실패 ${data.taxFailedCount}건`);
+          }
+          alert(`⚠️ 동기화 부분 완료\n${messages.join('\n')}`);
         }
       }),
       window.electron.financeHubScheduler.onSyncFailed((data) => {
@@ -106,7 +124,7 @@ export const SchedulerSettings: React.FC = () => {
 
   const handleTimeChange = async (newTime: string) => {
     if (!settings) return;
-    
+
     setSaving(true);
     try {
       const result = await window.electron.financeHubScheduler.updateSettings({ time: newTime });
@@ -116,6 +134,25 @@ export const SchedulerSettings: React.FC = () => {
     } catch (error) {
       console.error('Failed to update scheduler time:', error);
       alert('동기화 시간 변경 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleTaxSync = async () => {
+    if (!settings) return;
+
+    const newIncludeTaxSync = !settings.includeTaxSync;
+    setSaving(true);
+
+    try {
+      const result = await window.electron.financeHubScheduler.updateSettings({ includeTaxSync: newIncludeTaxSync });
+      if (result.success) {
+        setSettings(result.settings);
+      }
+    } catch (error) {
+      console.error('Failed to update tax sync setting:', error);
+      alert('세금계산서 동기화 설정 변경 실패');
     } finally {
       setSaving(false);
     }
@@ -210,6 +247,26 @@ export const SchedulerSettings: React.FC = () => {
 
         <div className="scheduler-settings__row">
           <label className="scheduler-settings__label">
+            세금계산서 동기화
+          </label>
+          <div className="scheduler-settings__toggle">
+            <label className="scheduler-settings__switch">
+              <input
+                type="checkbox"
+                checked={settings.includeTaxSync}
+                onChange={handleToggleTaxSync}
+                disabled={!settings.enabled || saving}
+              />
+              <span className="scheduler-settings__slider"></span>
+            </label>
+            <span className="scheduler-settings__status">
+              {settings.includeTaxSync ? '포함' : '제외'}
+            </span>
+          </div>
+        </div>
+
+        <div className="scheduler-settings__row">
+          <label className="scheduler-settings__label">
             마지막 동기화
           </label>
           <div className="scheduler-settings__last-sync">
@@ -233,11 +290,12 @@ export const SchedulerSettings: React.FC = () => {
 
         <div className="scheduler-settings__info">
           <p>
-            <strong>재시도 설정:</strong> 실패 시 {settings.retryCount}회 재시도 
+            <strong>재시도 설정:</strong> 실패 시 {settings.retryCount}회 재시도
             (각 {settings.retryDelayMinutes}분 간격)
           </p>
           <p>
             <strong>참고:</strong> 자동 동기화는 모든 활성 계좌의 최근 3개월 거래내역을 가져옵니다.
+            {settings.includeTaxSync && ' 세금계산서 동기화가 활성화된 경우 저장된 모든 사업자의 당월 세금계산서도 함께 수집됩니다.'}
           </p>
         </div>
       </div>

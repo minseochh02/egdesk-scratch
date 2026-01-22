@@ -28,6 +28,7 @@ import { InstagramHandler } from './sns/instagram/instagram-handler';
 import { YouTubeHandler } from './sns/youtube/youtube-handler';
 import { FacebookHandler } from './sns/facebook/facebook-handler';
 import { LocalServerManager } from './php/local-server';
+import { PHPDownloadManager } from './php/php-installer';
 import { BrowserController } from './browser-controller';
 import { initializeStore, getStore } from './storage';
 import { exec } from 'child_process';
@@ -2834,6 +2835,73 @@ const createWindow = async () => {
     } else {
       // Update mainWindow reference if manager already exists
       (localServerManager as any).mainWindow = mainWindow;
+    }
+
+    // Register PHP installer IPC handlers (once)
+    if (!handlersRegistered) {
+      const phpDownloadManager = PHPDownloadManager.getInstance();
+
+      ipcMain.handle('php:check-downloaded', async () => {
+        try {
+          const downloaded = await phpDownloadManager.checkDownloaded();
+          return { success: true, downloaded };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      ipcMain.handle('php:download', async () => {
+        try {
+          const success = await phpDownloadManager.downloadPHP(mainWindow);
+          return { success };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      ipcMain.handle('php:ensure', async () => {
+        try {
+          const installed = await phpDownloadManager.ensurePHP(mainWindow);
+          return { success: true, installed };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      ipcMain.handle('php:cancel-download', async () => {
+        try {
+          phpDownloadManager.cancelDownload();
+          return { success: true };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      ipcMain.handle('php:is-downloading', async () => {
+        try {
+          const isDownloading = phpDownloadManager.isDownloading();
+          return { success: true, isDownloading };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      console.log('✅ PHP Installer IPC handlers registered');
     }
 
     // Initialize or update Browser controller with the main window
