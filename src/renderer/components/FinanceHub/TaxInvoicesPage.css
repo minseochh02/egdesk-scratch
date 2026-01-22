@@ -1,0 +1,305 @@
+/* ============================================
+   Tax Invoices Page - Full Tax Invoice View
+   Modern, Professional UI Design (Matching TransactionsPage)
+   ============================================ */
+
+/* CSS Variables - Inherit from FinanceHub */
+.tip {
+  --tip-primary: #0046FF;
+  --tip-primary-dark: #0035CC;
+  --tip-secondary: #00D4AA;
+  --tip-accent: #FF6B35;
+  --tip-bg-dark: #0A0E1A;
+  --tip-bg-card: #111827;
+  --tip-bg-card-hover: #1F2937;
+  --tip-bg-row-hover: rgba(255, 255, 255, 0.03);
+  --tip-text-primary: #F9FAFB;
+  --tip-text-secondary: #9CA3AF;
+  --tip-text-muted: #6B7280;
+  --tip-border: #1F2937;
+  --tip-border-light: #374151;
+  --tip-success: #10B981;
+  --tip-warning: #F59E0B;
+  --tip-error: #EF4444;
+  --tip-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --tip-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --tip-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --tip-radius-sm: 8px;
+  --tip-radius-md: 12px;
+  --tip-radius-lg: 16px;
+  --tip-font-display: 'Pretendard', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  --tip-font-body: 'Pretendard', 'SF Pro Text', -apple-system, BlinkMacSystemFont, sans-serif;
+  --tip-transition: all 0.2s ease;
+}
+
+/* Base Container */
+.tip {
+  min-height: 100vh;
+  background: var(--tip-bg-dark);
+  color: var(--tip-text-primary);
+  font-family: var(--tip-font-body);
+  padding: 24px 32px;
+}
+
+/* ============================================
+   Header
+   ============================================ */
+
+.tip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--tip-border);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.tip-header__content {
+  flex: 1;
+  min-width: 250px;
+}
+
+.tip-header__title {
+  margin: 0;
+  font-family: var(--tip-font-display);
+  font-size: 28px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tip-header__icon {
+  font-size: 32px;
+}
+
+.tip-header__subtitle {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--tip-text-secondary);
+}
+
+.tip-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+
+.tip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--tip-bg-card);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--tip-radius-sm);
+  color: var(--tip-text-primary);
+  font-family: var(--tip-font-body);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--tip-transition);
+  white-space: nowrap;
+}
+
+.tip-btn:hover:not(:disabled) {
+  background: var(--tip-bg-card-hover);
+  border-color: var(--tip-border-light);
+  box-shadow: var(--tip-shadow-sm);
+}
+
+.tip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tip-btn--outline {
+  background: transparent;
+}
+
+.tip-btn--outline:hover:not(:disabled) {
+  background: var(--tip-bg-card);
+}
+
+/* ============================================
+   Invoice Type Tabs
+   ============================================ */
+
+.tip-invoice-type-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.tip-invoice-type-tab {
+  flex: 1;
+  padding: 16px 20px;
+  background: var(--tip-bg-card);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--tip-radius-sm);
+  color: var(--tip-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--tip-font-body);
+  cursor: pointer;
+  transition: var(--tip-transition);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tip-invoice-type-tab:hover {
+  background: var(--tip-bg-card-hover);
+  border-color: var(--tip-border-light);
+  color: var(--tip-text-primary);
+}
+
+.tip-invoice-type-tab--active {
+  background: linear-gradient(135deg, var(--tip-primary) 0%, var(--tip-primary-dark) 100%);
+  border-color: var(--tip-primary);
+  color: white;
+  font-weight: 600;
+}
+
+.tip-invoice-type-tab--active:hover {
+  background: linear-gradient(135deg, var(--tip-primary-dark) 0%, var(--tip-primary) 100%);
+  border-color: var(--tip-primary);
+  color: white;
+}
+
+.tip-invoice-type-tab__icon {
+  font-size: 20px;
+}
+
+.tip-invoice-type-tab__label {
+  flex: 1;
+  font-size: 15px;
+}
+
+.tip-invoice-type-tab__count {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.tip-invoice-type-tab--active .tip-invoice-type-tab__count {
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* ============================================
+   Stats & Filters Spacing
+   ============================================ */
+
+.tip .tax-stats {
+  margin-bottom: 24px;
+}
+
+.tip .tax-filters {
+  margin-bottom: 24px;
+}
+
+/* ============================================
+   Empty State
+   ============================================ */
+
+.tip-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 40px;
+  background: var(--tip-bg-card);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--tip-radius-md);
+  gap: 16px;
+}
+
+.tip-empty__icon {
+  font-size: 80px;
+  opacity: 0.3;
+  filter: grayscale(100%);
+  margin-bottom: 8px;
+}
+
+.tip-empty h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--tip-text-primary);
+  margin: 0;
+}
+
+.tip-empty p {
+  font-size: 15px;
+  color: var(--tip-text-secondary);
+  margin: 0;
+  max-width: 500px;
+  text-align: center;
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+@media (max-width: 1024px) {
+  .tip {
+    padding: 20px 24px;
+  }
+
+  .tip-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tip-header__actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .tip {
+    padding: 16px;
+  }
+
+  .tip-header__title {
+    font-size: 24px;
+  }
+
+  .tip-header__icon {
+    font-size: 28px;
+  }
+
+  .tip-header__subtitle {
+    font-size: 14px;
+  }
+
+  .tip-header__actions {
+    width: 100%;
+  }
+
+  .tip-btn {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .tip-invoice-type-tabs {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .tip-invoice-type-tab {
+    padding: 14px 16px;
+  }
+
+  .tip-invoice-type-tab__icon {
+    font-size: 18px;
+  }
+}

@@ -29,7 +29,9 @@ import { useTransactions } from '../../hooks/useTransactions';
 import { FullDiskAccessWarning } from '../../hooks/useFullDiskAccess';
 
 // Shared Components
-import { TransactionTable, TransactionStats, TaxInvoiceTable } from './shared';
+import { TransactionTable, TransactionStats, TaxInvoiceTable, TaxInvoiceFilters, TaxInvoiceStats } from './shared';
+import type { TaxInvoiceFiltersType, TaxInvoiceStatsData } from './shared';
+import TaxInvoicesPage from './TaxInvoicesPage';
 import { SchedulerSettings } from './SchedulerSettings';
 
 // Types & Utils
@@ -89,7 +91,7 @@ const FinanceHub: React.FC = () => {
   // Local State
   // ============================================
   
-  const [currentView, setCurrentView] = useState<'dashboard' | 'bank-transactions' | 'card-transactions' | 'tax-management'>('dashboard');
+  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management'>('account-management');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -143,6 +145,17 @@ const FinanceHub: React.FC = () => {
   const [isLoadingTaxInvoices, setIsLoadingTaxInvoices] = useState(false);
   const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
   const [taxInvoiceSort, setTaxInvoiceSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '작성일자', direction: 'desc' });
+  const [showTaxFilters, setShowTaxFilters] = useState(false);
+  const [taxInvoiceFilters, setTaxInvoiceFilters] = useState<TaxInvoiceFiltersType>({
+    businessNumber: 'all',
+    searchText: '',
+    startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], // Start of year
+    endDate: new Date().toISOString().split('T')[0], // Today
+    minAmount: '',
+    maxAmount: '',
+    classification: 'all',
+    companyName: 'all',
+  });
 
   // ============================================
   // Computed Values
@@ -163,25 +176,83 @@ const FinanceHub: React.FC = () => {
     return matchesCategory && matchesSearch;
   });
 
-  const sortedTaxInvoices = [...taxInvoices].sort((a, b) => {
-    const key = taxInvoiceSort.key;
-    const direction = taxInvoiceSort.direction === 'asc' ? 1 : -1;
+  // Filter and sort tax invoices
+  const filteredAndSortedTaxInvoices = React.useMemo(() => {
+    let filtered = [...taxInvoices];
 
-    const aVal = a[key];
-    const bVal = b[key];
-
-    // Handle numbers
-    if (typeof aVal === 'number' && typeof bVal === 'number') {
-      return (aVal - bVal) * direction;
+    // Apply filters
+    if (taxInvoiceFilters.businessNumber !== 'all') {
+      filtered = filtered.filter(inv => inv.business_number === taxInvoiceFilters.businessNumber);
     }
 
-    // Handle strings
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      return aVal.localeCompare(bVal, 'ko-KR') * direction;
+    if (taxInvoiceFilters.searchText) {
+      const search = taxInvoiceFilters.searchText.toLowerCase();
+      filtered = filtered.filter(inv =>
+        inv.공급자상호?.toLowerCase().includes(search) ||
+        inv.공급받는자상호?.toLowerCase().includes(search) ||
+        inv.품목명?.toLowerCase().includes(search) ||
+        inv.승인번호?.toLowerCase().includes(search)
+      );
     }
 
-    return 0;
-  });
+    if (taxInvoiceFilters.startDate) {
+      filtered = filtered.filter(inv => inv.작성일자 >= taxInvoiceFilters.startDate);
+    }
+
+    if (taxInvoiceFilters.endDate) {
+      filtered = filtered.filter(inv => inv.작성일자 <= taxInvoiceFilters.endDate);
+    }
+
+    if (taxInvoiceFilters.minAmount) {
+      const min = parseInt(taxInvoiceFilters.minAmount);
+      filtered = filtered.filter(inv => inv.합계금액 >= min);
+    }
+
+    if (taxInvoiceFilters.maxAmount) {
+      const max = parseInt(taxInvoiceFilters.maxAmount);
+      filtered = filtered.filter(inv => inv.합계금액 <= max);
+    }
+
+    if (taxInvoiceFilters.classification !== 'all') {
+      filtered = filtered.filter(inv => inv.전자세금계산서분류 === taxInvoiceFilters.classification);
+    }
+
+    if (taxInvoiceFilters.companyName !== 'all') {
+      const field = taxInvoiceType === 'sales' ? '공급받는자상호' : '공급자상호';
+      filtered = filtered.filter(inv => inv[field] === taxInvoiceFilters.companyName);
+    }
+
+    // Apply sorting
+    const sorted = filtered.sort((a, b) => {
+      const key = taxInvoiceSort.key;
+      const direction = taxInvoiceSort.direction === 'asc' ? 1 : -1;
+
+      const aVal = a[key];
+      const bVal = b[key];
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return (aVal - bVal) * direction;
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return aVal.localeCompare(bVal, 'ko-KR') * direction;
+      }
+
+      return 0;
+    });
+
+    return sorted;
+  }, [taxInvoices, taxInvoiceFilters, taxInvoiceSort, taxInvoiceType]);
+
+  // Calculate tax invoice stats
+  const taxInvoiceStats: TaxInvoiceStatsData = React.useMemo(() => {
+    return {
+      totalInvoices: filteredAndSortedTaxInvoices.length,
+      totalSupplyAmount: filteredAndSortedTaxInvoices.reduce((sum, inv) => sum + (inv.공급가액 || 0), 0),
+      totalTaxAmount: filteredAndSortedTaxInvoices.reduce((sum, inv) => sum + (inv.세액 || 0), 0),
+      totalAmount: filteredAndSortedTaxInvoices.reduce((sum, inv) => sum + (inv.합계금액 || 0), 0),
+    };
+  }, [filteredAndSortedTaxInvoices]);
 
   // ============================================
   // Database Stats Loading
@@ -859,6 +930,11 @@ const FinanceHub: React.FC = () => {
 
   const handleTaxInvoiceTabChange = async (type: 'sales' | 'purchase') => {
     setTaxInvoiceType(type);
+    // Reset company name filter when switching between sales/purchase
+    setTaxInvoiceFilters(prev => ({
+      ...prev,
+      companyName: 'all'
+    }));
   };
 
   const handleTaxInvoiceSort = (key: string) => {
@@ -868,9 +944,29 @@ const FinanceHub: React.FC = () => {
     }));
   };
 
+  const handleTaxInvoiceFilterChange = (key: keyof TaxInvoiceFiltersType, value: string) => {
+    setTaxInvoiceFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const handleResetTaxInvoiceFilters = () => {
+    setTaxInvoiceFilters({
+      businessNumber: 'all',
+      searchText: '',
+      startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+      minAmount: '',
+      maxAmount: '',
+      classification: 'all',
+      companyName: 'all',
+    });
+  };
+
   // Load tax invoices when filters change
   useEffect(() => {
-    if (currentView === 'tax-management') {
+    if (currentView === 'tax-invoices') {
       loadTaxInvoices();
     }
   }, [taxInvoiceType, selectedBusinessFilter, currentView]);
@@ -1271,10 +1367,11 @@ const FinanceHub: React.FC = () => {
           }} />
 
           <nav className="finance-hub__nav">
-            <button className={`finance-hub__nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => setCurrentView('dashboard')}>대시보드</button>
+            <button className={`finance-hub__nav-item ${currentView === 'account-management' ? 'active' : ''}`} onClick={() => setCurrentView('account-management')}>계좌 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'bank-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('bank-transactions')}>은행 전체 거래내역</button>
             <button className={`finance-hub__nav-item ${currentView === 'card-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('card-transactions')}>카드 전체 거래 내역</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
+            <button className={`finance-hub__nav-item ${currentView === 'tax-invoices' ? 'active' : ''}`} onClick={() => setCurrentView('tax-invoices')}>전자세금계산서</button>
           </nav>
         </div>
 
@@ -1325,7 +1422,7 @@ const FinanceHub: React.FC = () => {
 
       {/* Main Content */}
       <main className="finance-hub__main">
-        {currentView === 'dashboard' ? (
+        {currentView === 'account-management' ? (
           <>
             {/* Connected Banks */}
             <section className="finance-hub__section">
@@ -1668,7 +1765,25 @@ const FinanceHub: React.FC = () => {
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
             <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} transactionType="card" />
           </div>
-        ) : (
+        ) : currentView === 'tax-invoices' ? (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <TaxInvoicesPage
+              invoices={filteredAndSortedTaxInvoices}
+              allInvoices={taxInvoices}
+              invoiceType={taxInvoiceType}
+              stats={taxInvoiceStats}
+              filters={taxInvoiceFilters}
+              isLoading={isLoadingTaxInvoices}
+              businesses={connectedBusinesses}
+              sortKey={taxInvoiceSort.key}
+              sortDirection={taxInvoiceSort.direction}
+              onInvoiceTypeChange={handleTaxInvoiceTabChange}
+              onFilterChange={handleTaxInvoiceFilterChange}
+              onResetFilters={handleResetTaxInvoiceFilters}
+              onSort={handleTaxInvoiceSort}
+            />
+          </div>
+        ) : currentView === 'tax-management' ? (
           <div className="finance-hub__section finance-hub__section--full">
             <div className="finance-hub__tax-management">
               <header className="finance-hub__page-header">
@@ -1761,88 +1876,6 @@ const FinanceHub: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                )}
-              </section>
-
-              {/* Electronic Tax Invoice List Section */}
-              <section className="finance-hub__tax-section">
-                <div className="finance-hub__section-header">
-                  <h2><span className="finance-hub__section-icon">📋</span> 전자세금계산서 목록</h2>
-                  <div className="finance-hub__section-actions">
-                    {/* Business Filter Dropdown */}
-                    {connectedBusinesses.length > 1 && (
-                      <select
-                        className="finance-hub__business-filter"
-                        value={selectedBusinessFilter}
-                        onChange={(e) => setSelectedBusinessFilter(e.target.value)}
-                      >
-                        <option value="all">전체 사업자</option>
-                        {connectedBusinesses.map((business) => (
-                          <option key={business.businessNumber} value={business.businessNumber}>
-                            {business.businessName} ({business.businessNumber})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <button className="finance-hub__btn finance-hub__btn--icon" title="자동 수집 설정" onClick={() => alert('스케줄러 설정 준비 중')}>
-                      <FontAwesomeIcon icon={faClock} />
-                    </button>
-                    <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                      <FontAwesomeIcon icon={faSync} /> 전체 수집
-                    </button>
-                    <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                      📊 엑셀로 내보내기
-                    </button>
-                  </div>
-                </div>
-
-                {/* Invoice Type Tabs */}
-                <div className="finance-hub__tax-tabs">
-                  <button
-                    className={`finance-hub__tax-tab ${taxInvoiceType === 'sales' ? 'finance-hub__tax-tab--active' : ''}`}
-                    onClick={() => handleTaxInvoiceTabChange('sales')}
-                  >
-                    <span className="finance-hub__tax-tab-icon">📤</span>
-                    <div className="finance-hub__tax-tab-info">
-                      <span className="finance-hub__tax-tab-label">매출</span>
-                      <span className="finance-hub__tax-tab-count">
-                        {connectedBusinesses.reduce((sum, b) => sum + (b.salesCount || 0), 0)}건
-                      </span>
-                    </div>
-                  </button>
-                  <button
-                    className={`finance-hub__tax-tab ${taxInvoiceType === 'purchase' ? 'finance-hub__tax-tab--active' : ''}`}
-                    onClick={() => handleTaxInvoiceTabChange('purchase')}
-                  >
-                    <span className="finance-hub__tax-tab-icon">📥</span>
-                    <div className="finance-hub__tax-tab-info">
-                      <span className="finance-hub__tax-tab-label">매입</span>
-                      <span className="finance-hub__tax-tab-count">
-                        {connectedBusinesses.reduce((sum, b) => sum + (b.purchaseCount || 0), 0)}건
-                      </span>
-                    </div>
-                  </button>
-                </div>
-
-                {/* Tax Invoice Table */}
-                {taxInvoices.length === 0 && !isLoadingTaxInvoices ? (
-                  <div className="finance-hub__empty-state">
-                    <div className="finance-hub__empty-icon">🧾</div>
-                    <h3>수집된 {taxInvoiceType === 'sales' ? '매출' : '매입'} 세금계산서가 없습니다</h3>
-                    <p>사업자를 연결하고 수집하면 전자세금계산서 목록이 표시됩니다</p>
-                    <button className="finance-hub__btn finance-hub__btn--primary" onClick={() => setShowHometaxModal(true)}>
-                      사업자 추가하기
-                    </button>
-                  </div>
-                ) : (
-                  <TaxInvoiceTable
-                    invoices={sortedTaxInvoices}
-                    invoiceType={taxInvoiceType}
-                    onSort={handleTaxInvoiceSort}
-                    sortKey={taxInvoiceSort.key}
-                    sortDirection={taxInvoiceSort.direction}
-                    isLoading={isLoadingTaxInvoices}
-                  />
                 )}
               </section>
 
@@ -1999,7 +2032,7 @@ const FinanceHub: React.FC = () => {
 
             </div>
           </div>
-        )}
+        ) : null}
       </main>
 
       {/* Bank Selector Modal */}

@@ -82,6 +82,14 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
     null,
   );
   const [phpInfo, setPhpInfo] = useState<PHPInfo | null>(null);
+  const [phpDownloadProgress, setPhpDownloadProgress] = useState<{
+    percent: number;
+    transferred: number;
+    total: number;
+    bytesPerSecond: number;
+  } | null>(null);
+  const [isDownloadingPHP, setIsDownloadingPHP] = useState(false);
+  const [phpDownloadError, setPhpDownloadError] = useState<string | null>(null);
 
   // Subscribe to project context changes
   useEffect(() => {
@@ -110,6 +118,43 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
     // Check every 5 seconds
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Listen for PHP download events
+  useEffect(() => {
+    const unsubscribeProgress = window.electron.phpInstaller.onDownloadProgress(
+      (progress) => {
+        setPhpDownloadProgress(progress);
+      }
+    );
+
+    const unsubscribeComplete = window.electron.phpInstaller.onDownloadComplete(
+      (result) => {
+        setIsDownloadingPHP(false);
+        setPhpDownloadProgress(null);
+        if (result.success) {
+          addLog('✅ PHP downloaded successfully');
+          loadPHPInfo(); // Reload PHP info to detect downloaded PHP
+        } else {
+          addLog('❌ PHP download failed');
+        }
+      }
+    );
+
+    const unsubscribeError = window.electron.phpInstaller.onDownloadError(
+      (error) => {
+        setIsDownloadingPHP(false);
+        setPhpDownloadProgress(null);
+        setPhpDownloadError(error.error);
+        addLog(`❌ PHP download error: ${error.error}`);
+      }
+    );
+
+    return () => {
+      unsubscribeProgress();
+      unsubscribeComplete();
+      unsubscribeError();
+    };
   }, []);
 
   // Emit status to parent when it changes
@@ -142,6 +187,41 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
     } catch (error) {
       console.error('Error loading PHP info:', error);
       addLog(`❌ Error loading PHP info: ${error}`);
+    }
+  };
+
+  const handleDownloadPHP = async () => {
+    if (isDownloadingPHP) {
+      return;
+    }
+
+    setIsDownloadingPHP(true);
+    setPhpDownloadError(null);
+    setPhpDownloadProgress(null);
+    addLog('⬇️ Starting PHP download...');
+
+    try {
+      const result = await window.electron.phpInstaller.download();
+      if (!result.success) {
+        setIsDownloadingPHP(false);
+        setPhpDownloadError(result.error || 'Download failed');
+        addLog(`❌ PHP download failed: ${result.error}`);
+      }
+    } catch (error) {
+      setIsDownloadingPHP(false);
+      setPhpDownloadError(error instanceof Error ? error.message : 'Unknown error');
+      addLog(`❌ PHP download error: ${error}`);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      await window.electron.phpInstaller.cancelDownload();
+      setIsDownloadingPHP(false);
+      setPhpDownloadProgress(null);
+      addLog('🚫 PHP download cancelled');
+    } catch (error) {
+      console.error('Error cancelling download:', error);
     }
   };
 
@@ -588,6 +668,62 @@ const LocalServer: React.FC<LocalServerProps> = ({ onStatusChange }) => {
           <div className="info-item">
             <strong>PHP 경로:</strong> {phpInfo?.path || '찾을 수 없음'}
           </div>
+          {!phpInfo?.isAvailable && (
+            <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+              <div className="php-download-section">
+                {!isDownloadingPHP ? (
+                  <>
+                    <div className="php-missing-notice">
+                      <FontAwesomeIcon icon={faExclamationTriangle} />
+                      <p>로컬 서버를 실행하려면 PHP가 필요합니다</p>
+                    </div>
+                    <button
+                      onClick={handleDownloadPHP}
+                      className="btn btn-primary"
+                      style={{ marginTop: '10px' }}
+                    >
+                      <FontAwesomeIcon icon={faDownload} /> PHP 다운로드
+                    </button>
+                    {phpDownloadError && (
+                      <div className="error-message" style={{ marginTop: '10px' }}>
+                        <strong>오류:</strong> {phpDownloadError}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="php-download-progress">
+                    <p>PHP 다운로드 중...</p>
+                    <div className="progress-bar">
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${phpDownloadProgress?.percent || 0}%` }}
+                      />
+                    </div>
+                    <p className="progress-text">
+                      {phpDownloadProgress?.percent.toFixed(1)}%
+                      {phpDownloadProgress && (
+                        <>
+                          {' '}
+                          ({Math.round(phpDownloadProgress.transferred / 1024 / 1024)}MB
+                          / {Math.round(phpDownloadProgress.total / 1024 / 1024)}MB)
+                          {phpDownloadProgress.bytesPerSecond > 0 && (
+                            <> - {Math.round(phpDownloadProgress.bytesPerSecond / 1024)}KB/s</>
+                          )}
+                        </>
+                      )}
+                    </p>
+                    <button
+                      onClick={handleCancelDownload}
+                      className="btn btn-secondary"
+                      style={{ marginTop: '10px' }}
+                    >
+                      취소
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="info-item">
             <strong>기본 포트:</strong> 8000
           </div>

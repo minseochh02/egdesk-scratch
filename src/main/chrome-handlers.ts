@@ -1,11 +1,467 @@
 // IPC handlers for Chrome browser automation and Lighthouse reports
-import { ipcMain, app, screen } from 'electron';
+import { ipcMain, app, screen, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { pathToFileURL } from 'url';
 import { BrowserRecorder } from './browser-recorder';
 import { codeViewerWindow } from './code-viewer-window';
+import { Browser, BrowserContext, Page } from 'playwright-core';
+
+// ===== Paused Browser Session Management =====
+
+interface RecordedAction {
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
+  selector?: string;
+  xpath?: string;
+  value?: string;
+  key?: string;
+  url?: string;
+  waitCondition?: 'visible' | 'hidden' | 'enabled' | 'disabled';
+  timeout?: number;
+  timestamp: number;
+  coordinates?: { x: number; y: number };
+  frameSelector?: string;
+  dateComponents?: {
+    year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+  };
+  dateOffset?: number;
+  tables?: Array<{
+    xpath: string;
+    cssSelector: string;
+    headers: string[];
+    sampleRow: string[];
+    rowCount: number;
+  }>;
+  newTabUrl?: string;
+  closedTabUrl?: string;
+  maxIterations?: number;
+  checkCondition?: 'gone' | 'hidden' | 'disabled';
+  waitBetweenClicks?: number;
+}
+
+interface PausedSession {
+  id: string;
+  browser: Browser;
+  context: BrowserContext;
+  page: Page;
+  pausedAtActionIndex: number;
+  actions: RecordedAction[];
+  testPath: string;
+  createdAt: Date;
+}
+
+const pausedSessions: Map<string, PausedSession> = new Map();
+let activeRecorder: BrowserRecorder | null = null;
+
+/**
+ * Helper to inject Resume Recording UI into paused browser
+ */
+async function injectResumeUI(page: Page, sessionId: string, pausedAt: number, total: number, browserWindow: BrowserWindow) {
+  try {
+    // Expose function to be called from browser page
+    // This function will be called when user clicks Resume Recording button
+    await page.exposeFunction('__playwrightRecorderResumeRecording', async (sid: string) => {
+      console.log('▶️ Resume recording requested for session:', sid);
+
+      // Handle resume directly here since we have access to all needed variables
+      try {
+        const session = pausedSessions.get(sid);
+        if (!session) {
+          console.error('❌ Session not found:', sid);
+          return;
+        }
+
+        // Get activeRecorder from the module scope
+        if (!activeRecorder) {
+          console.error('❌ No active recorder available');
+          return;
+        }
+
+        // Create new recorder instance
+        const resumedRecorder = new BrowserRecorder();
+
+        // Restore state
+        resumedRecorder.setActions(session.actions);
+        resumedRecorder.setOutputFile(session.testPath);
+        const scriptName = path.basename(session.testPath, '.spec.js');
+        resumedRecorder.setScriptName(scriptName);
+
+        // Connect to existing browser context
+        resumedRecorder.reconnectToContext(session.context, session.page);
+
+        // Start recording
+        await resumedRecorder.startRecording();
+
+        // Set up callbacks
+        resumedRecorder.setUpdateCallback((code) => {
+          codeViewerWindow.updateCode(code);
+          codeViewerWindow.updateActions(resumedRecorder.getActions());
+        });
+
+        codeViewerWindow.setWaitSettingsCallback((settings) => {
+          resumedRecorder.setWaitSettings(settings);
+        });
+
+        codeViewerWindow.setDeleteActionCallback((index) => {
+          resumedRecorder.deleteAction(index);
+        });
+
+        // Update activeRecorder
+        activeRecorder = resumedRecorder;
+
+        // Remove session from paused list
+        pausedSessions.delete(sid);
+
+        console.log('✅ Recording resumed successfully');
+      } catch (error) {
+        console.error('❌ Error resuming recording:', error);
+      }
+    });
+
+    // Inject UI overlay
+    await page.evaluate((sessionId, pausedAt, total) => {
+      // Remove any existing overlay first
+      const existingOverlay = document.getElementById('resume-recording-overlay');
+      if (existingOverlay) {
+        existingOverlay.remove();
+      }
+
+      const resumeOverlay = document.createElement('div');
+      resumeOverlay.id = 'resume-recording-overlay';
+      resumeOverlay.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 32px 40px;
+        border-radius: 16px;
+        z-index: 9999999;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+        min-width: 400px;
+      `;
+
+      resumeOverlay.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 16px;">⏸️</div>
+        <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">
+          Test Paused
+        </div>
+        <div style="font-size: 16px; opacity: 0.95; margin-bottom: 24px;">
+          Executed ${pausedAt + 1} of ${total} actions
+        </div>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+          <button id="resume-recording-btn" style="
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          ">
+            ▶️ Resume Recording
+          </button>
+          <button id="close-browser-btn" style="
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.5);
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+          ">
+            ❌ Close Browser
+          </button>
+        </div>
+        <div style="margin-top: 20px; font-size: 13px; opacity: 0.8;">
+          You can inspect the page or click Resume to continue recording
+        </div>
+      `;
+
+      document.body.appendChild(resumeOverlay);
+
+      // Set up button handlers
+      const resumeBtn = document.getElementById('resume-recording-btn');
+      const closeBtn = document.getElementById('close-browser-btn');
+
+      if (resumeBtn) {
+        resumeBtn.addEventListener('mouseenter', () => {
+          resumeBtn.style.transform = 'translateY(-2px)';
+          resumeBtn.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
+        });
+        resumeBtn.addEventListener('mouseleave', () => {
+          resumeBtn.style.transform = 'translateY(0)';
+          resumeBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        });
+        resumeBtn.addEventListener('click', () => {
+          // Call the exposed function
+          if ((window as any).__playwrightRecorderResumeRecording) {
+            (window as any).__playwrightRecorderResumeRecording(sessionId);
+          }
+          // Remove overlay
+          resumeOverlay.remove();
+        });
+      }
+
+      if (closeBtn) {
+        closeBtn.addEventListener('mouseenter', () => {
+          closeBtn.style.background = 'rgba(255,255,255,0.25)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+          closeBtn.style.background = 'rgba(255,255,255,0.15)';
+        });
+        closeBtn.addEventListener('click', () => {
+          window.close();
+        });
+      }
+    }, sessionId, pausedAt, total);
+
+    console.log('✅ Resume UI injected successfully');
+  } catch (error) {
+    console.error('❌ Error injecting resume UI:', error);
+  }
+}
+
+/**
+ * Helper to execute a single action
+ */
+async function executeAction(page: Page, context: BrowserContext, action: RecordedAction, index: number, allActions: RecordedAction[], pageStack: Page[]): Promise<Page> {
+  console.log(`  ▶️ Executing action ${index + 1}: ${action.type}`);
+
+  switch (action.type) {
+    case 'navigate':
+      await page.goto(action.url!);
+      console.log(`    ✓ Navigated to: ${action.url}`);
+      break;
+
+    case 'click':
+      if (action.coordinates) {
+        await page.mouse.click(action.coordinates.x, action.coordinates.y);
+        console.log(`    ✓ Clicked at coordinates: (${action.coordinates.x}, ${action.coordinates.y})`);
+      } else {
+        const selector = action.xpath || action.selector!;
+        if (action.frameSelector) {
+          const frame = page.frameLocator(action.frameSelector);
+          await frame.locator(selector).click();
+          console.log(`    ✓ Clicked in iframe: ${action.frameSelector}`);
+        } else {
+          await page.locator(selector).click();
+          console.log(`    ✓ Clicked: ${selector}`);
+        }
+      }
+      break;
+
+    case 'fill':
+      const fillSelector = action.xpath || action.selector!;
+      if (action.frameSelector) {
+        const frame = page.frameLocator(action.frameSelector);
+        await frame.locator(fillSelector).fill(action.value || '');
+        console.log(`    ✓ Filled in iframe: ${action.frameSelector}`);
+      } else {
+        await page.locator(fillSelector).fill(action.value || '');
+        console.log(`    ✓ Filled: ${fillSelector} = "${action.value}"`);
+      }
+      break;
+
+    case 'keypress':
+      if (action.key === 'Enter') {
+        await page.keyboard.press('Enter');
+        console.log(`    ✓ Pressed: Enter`);
+      } else if (action.key) {
+        await page.keyboard.type(action.key);
+        console.log(`    ✓ Typed: ${action.key}`);
+      }
+      break;
+
+    case 'screenshot':
+      await page.screenshot({ path: `screenshot-${index}.png`, fullPage: true });
+      console.log(`    ✓ Screenshot saved: screenshot-${index}.png`);
+      break;
+
+    case 'waitForElement':
+      const waitSelector = action.xpath || action.selector!;
+      const condition = action.waitCondition || 'visible';
+      const timeout = action.timeout || 30000;
+      await page.locator(waitSelector).waitFor({ state: condition as any, timeout });
+      console.log(`    ✓ Waited for element: ${waitSelector} (${condition})`);
+      break;
+
+    case 'download':
+      {
+        const downloadPromise = page.waitForEvent('download');
+        if (action.xpath || action.selector) {
+          const dlSelector = action.xpath || action.selector;
+          await page.locator(dlSelector).click();
+        }
+        const download = await downloadPromise;
+        const suggestedFilename = download.suggestedFilename();
+        const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+        if (!fs.existsSync(downloadsPath)) {
+          fs.mkdirSync(downloadsPath, { recursive: true });
+        }
+        const filePath = path.join(downloadsPath, suggestedFilename);
+        await download.saveAs(filePath);
+        console.log(`    ✓ Downloaded: ${suggestedFilename} to ${filePath}`);
+      }
+      break;
+
+    case 'datePickerGroup':
+      if (action.dateComponents) {
+        const dateOffset = action.dateOffset || 0;
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + dateOffset);
+        const year = targetDate.getFullYear().toString();
+        const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+        const day = targetDate.getDate().toString().padStart(2, '0');
+        console.log(`    📅 Target date (offset ${dateOffset}): ${year}-${month}-${day}`);
+
+        // Execute year
+        if (action.dateComponents.year) {
+          const comp = action.dateComponents.year;
+          if (comp.elementType === 'select') {
+            await page.locator(comp.selector).selectOption(year);
+          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
+            await page.locator(comp.selector).click();
+            await page.waitForTimeout(500);
+            await page.locator(comp.dropdownSelector).locator(`text="${year}"`).first().click();
+          } else if (comp.elementType === 'input') {
+            await page.locator(comp.selector).fill(year);
+          }
+          console.log(`    ✓ Selected year: ${year}`);
+        }
+
+        // Execute month
+        if (action.dateComponents.month) {
+          const comp = action.dateComponents.month;
+          if (comp.elementType === 'select') {
+            await page.locator(comp.selector).selectOption(month);
+          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
+            await page.locator(comp.selector).click();
+            await page.waitForTimeout(500);
+            await page.locator(comp.dropdownSelector).locator(`text="${month}"`).first().click();
+          } else if (comp.elementType === 'input') {
+            await page.locator(comp.selector).fill(month);
+          }
+          console.log(`    ✓ Selected month: ${month}`);
+        }
+
+        // Execute day
+        if (action.dateComponents.day) {
+          const comp = action.dateComponents.day;
+          if (comp.elementType === 'select') {
+            await page.locator(comp.selector).selectOption(day);
+          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
+            await page.locator(comp.selector).click();
+            await page.waitForTimeout(500);
+            await page.locator(comp.dropdownSelector).locator(`text="${day}"`).first().click();
+          } else if (comp.elementType === 'input') {
+            await page.locator(comp.selector).fill(day);
+          }
+          console.log(`    ✓ Selected day: ${day}`);
+        }
+      }
+      break;
+
+    case 'newTab':
+      {
+        const newPagePromise = context.waitForEvent('page');
+        // The action that triggers the new tab should have already happened
+        const newPage = await newPagePromise;
+        await newPage.waitForLoadState();
+        console.log(`    ✓ New tab opened: ${newPage.url()}`);
+
+        // Set up dialog handling for new page
+        newPage.on('dialog', async (dialog) => {
+          console.log(`    🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+          await dialog.accept();
+          console.log(`    ✅ Dialog accepted`);
+        });
+
+        // Push current page to stack
+        pageStack.push(page);
+        console.log(`    📚 Pushed page to stack, stack size: ${pageStack.length}`);
+
+        // Switch to new page
+        page = newPage;
+        console.log(`    ✓ Switched to new tab: ${newPage.url()}`);
+      }
+      break;
+
+    case 'closeTab':
+      {
+        await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});
+
+        // Switch back to previous page
+        const previousPage = pageStack.pop();
+        if (previousPage) {
+          page = previousPage;
+          console.log(`    ⬅️ Switched back to previous page: ${page.url()}`);
+          console.log(`    📚 Stack size: ${pageStack.length}`);
+        } else {
+          console.warn(`    ⚠️ No previous page in stack, using first available page`);
+          const allPages = context.pages();
+          page = allPages[0];
+        }
+      }
+      break;
+
+    case 'clickUntilGone':
+      {
+        const cugSelector = action.xpath || action.selector!;
+        const maxIter = action.maxIterations || 10;
+        const waitBetween = action.waitBetweenClicks || 500;
+        console.log(`    🔄 Starting Click Until Gone: ${cugSelector}`);
+
+        let iterations = 0;
+        while (iterations < maxIter) {
+          try {
+            const element = page.locator(cugSelector);
+            const isVisible = await element.isVisible();
+
+            if (!isVisible) {
+              console.log(`    ✅ Element is gone after ${iterations} iterations`);
+              break;
+            }
+
+            await element.click();
+            console.log(`      ↻ Click ${iterations + 1}/${maxIter}`);
+            iterations++;
+
+            await page.waitForTimeout(waitBetween);
+          } catch (e) {
+            console.log(`    ✅ Element disappeared or became unclickable`);
+            break;
+          }
+        }
+
+        if (iterations >= maxIter) {
+          console.warn(`    ⚠️ Reached maximum iterations (${maxIter})`);
+        }
+      }
+      break;
+
+    case 'captureTable':
+      console.log(`    ✓ Table capture action (skipped in replay)`);
+      break;
+
+    case 'print':
+      console.log(`    ✓ Print action (requires OS automation)`);
+      break;
+  }
+
+  return page;
+}
 
 /**
  * Get output directory path - uses userData in production, cwd in development
@@ -947,8 +1403,8 @@ Please provide:
 
 
   // Enhanced Playwright recorder with keyboard tracking
-  let activeRecorder: BrowserRecorder | null = null;
-  
+  // (activeRecorder is now defined at module scope)
+
   ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url }) => {
     try {
       console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
@@ -964,8 +1420,9 @@ Please provide:
       
       // Generate output file path
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const outputFile = path.join(getOutputDir(), `playwright-test-${timestamp}.spec.js`);
-      
+      const scriptName = `egdesk-browser-recorder-${timestamp}`;
+      const outputFile = path.join(getOutputDir(), `${scriptName}.spec.js`);
+
       // Create initial file with empty test
       const initialCode = `import { test, expect } from '@playwright/test';
 
@@ -973,7 +1430,7 @@ test('recorded test', async ({ page }) => {
   // Recording in progress...
 });`;
       fs.writeFileSync(outputFile, initialCode);
-      
+
       // Open our code viewer window
       await codeViewerWindow.create();
       codeViewerWindow.setRecordingMode();
@@ -982,6 +1439,7 @@ test('recorded test', async ({ page }) => {
       // Create new recorder
       activeRecorder = new BrowserRecorder();
       activeRecorder.setOutputFile(outputFile);
+      activeRecorder.setScriptName(scriptName);
       
       // Set up real-time updates
       activeRecorder.setUpdateCallback((code) => {
@@ -1014,7 +1472,123 @@ test('recorded test', async ({ page }) => {
           activeRecorder.deleteAction(index);
         }
       });
-      
+
+      // Set up play to action callback from code viewer
+      codeViewerWindow.setPlayToActionCallback(async (index) => {
+        console.log('▶️ Play to action callback triggered for index:', index);
+
+        if (!activeRecorder) {
+          console.error('❌ No active recorder');
+          return;
+        }
+
+        try {
+          const { chromium } = require('playwright-core');
+
+          // Get all actions
+          const allActions = activeRecorder.getActions();
+
+          if (index >= allActions.length) {
+            console.error('❌ Invalid action index');
+            return;
+          }
+
+          // Get partial actions
+          const partialActions = allActions.slice(0, index + 1);
+
+          console.log(`🎬 Executing ${partialActions.length} actions (up to index ${index})`);
+
+          // Launch browser and execute actions
+          const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-partial-'));
+          const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+          if (!fs.existsSync(downloadsPath)) {
+            fs.mkdirSync(downloadsPath, { recursive: true });
+          }
+
+          // Get screen dimensions for positioning
+          const primaryDisplay = screen.getPrimaryDisplay();
+          const { width, height } = primaryDisplay.workAreaSize;
+          const browserWidth = Math.floor(width * 0.6);
+          const browserHeight = height;
+          const browserX = width - browserWidth;
+          const browserY = 0;
+
+          const context = await chromium.launchPersistentContext(profileDir, {
+            headless: false,
+            channel: 'chrome',
+            viewport: { width: browserWidth, height: browserHeight },
+            acceptDownloads: true,
+            downloadsPath: downloadsPath,
+            args: [
+              '--no-default-browser-check',
+              '--disable-blink-features=AutomationControlled',
+              `--window-position=${browserX},${browserY}`,
+            ]
+          });
+
+          let page = context.pages()[0] || await context.newPage();
+
+          // Set up dialog handling
+          page.on('dialog', async (dialog) => {
+            console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+            await dialog.accept();
+            console.log('✅ Dialog accepted');
+          });
+
+          // Page stack for multi-tab handling
+          const pageStack: Page[] = [];
+
+          // Execute each action in sequence with wait times
+          for (let i = 0; i < partialActions.length; i++) {
+            const action = partialActions[i];
+
+            // Calculate wait time
+            if (i > 0) {
+              const prevAction = partialActions[i - 1];
+              const waitTime = action.timestamp - prevAction.timestamp;
+              const adjustedWait = Math.min(
+                Math.round(waitTime * codeViewerWindow.getWaitSettings().multiplier),
+                codeViewerWindow.getWaitSettings().maxDelay
+              );
+
+              if (adjustedWait > 0) {
+                await page.waitForTimeout(adjustedWait);
+              }
+            }
+
+            // Execute action
+            page = await executeAction(page, context, action, i, partialActions, pageStack);
+          }
+
+          // Browser is now paused at action index
+          console.log(`⏸️ Browser paused at action ${index}`);
+
+          // Create paused session
+          const sessionId = `session-${Date.now()}`;
+          pausedSessions.set(sessionId, {
+            id: sessionId,
+            browser: context.browser()!,
+            context: context,
+            page: page,
+            pausedAtActionIndex: index,
+            actions: allActions,
+            testPath: activeRecorder.getOutputFile(),
+            createdAt: new Date()
+          });
+
+          // Inject Resume Recording UI (need to get the browser recorder window)
+          const browserRecorderWindow = BrowserWindow.getAllWindows().find(w => w.webContents === event.sender);
+          if (browserRecorderWindow) {
+            await injectResumeUI(page, sessionId, index, allActions.length, browserRecorderWindow);
+          }
+
+          console.log(`✅ Session ${sessionId} ready for resume`);
+
+        } catch (error) {
+          console.error('❌ Error executing partial test:', error);
+        }
+      });
+
       try {
         await activeRecorder.start(url, async () => {
         // Browser was closed by user - auto-stop recording
@@ -1961,10 +2535,78 @@ const { chromium } = require('playwright-core');
 
       const testCode = fs.readFileSync(testPath, 'utf8');
 
+      // Extract actions from the embedded JSON comment
+      let actions: any[] = [];
+      try {
+        const actionsMatch = testCode.match(/\/\*\*[\s\S]*?RECORDED_ACTIONS:[\s\S]*?\* (.*?)[\s\S]*?\*\//);
+        if (actionsMatch && actionsMatch[1]) {
+          const actionsJson = actionsMatch[1].trim();
+          actions = JSON.parse(actionsJson);
+          console.log('✅ Extracted', actions.length, 'actions from test file');
+        } else {
+          console.log('⚠️ No embedded actions found in test file (might be old format)');
+        }
+      } catch (parseError) {
+        console.error('❌ Failed to parse embedded actions:', parseError);
+        // Continue without actions - will show raw code instead
+      }
+
       // Open the code viewer window in view mode
       await codeViewerWindow.create();
       codeViewerWindow.setViewMode(testPath);
       codeViewerWindow.updateCode(testCode);
+
+      // Send actions if we found them
+      if (actions.length > 0) {
+        codeViewerWindow.updateActions(actions);
+
+        // Set up play-to-action for view mode
+        codeViewerWindow.setPlayToActionCallback(async (index) => {
+          console.log('▶️ Play to action in view mode, index:', index);
+
+          try {
+            // Create temporary recorder to generate and execute partial code
+            const tempRecorder = new BrowserRecorder();
+            tempRecorder.setActions(actions);
+
+            // Generate partial test code
+            const partialCode = tempRecorder.generateTestCodeUpToAction(index);
+
+            // Save to temporary file
+            const tempFile = path.join(os.tmpdir(), `playwright-partial-view-${Date.now()}.spec.js`);
+            fs.writeFileSync(tempFile, partialCode);
+
+            console.log(`🎬 Executing saved test up to action ${index}`);
+            console.log(`📝 Temp file: ${tempFile}`);
+
+            // Execute the partial test
+            const { spawn } = require('child_process');
+            const nodeProcess = spawn('node', [tempFile], {
+              stdio: 'inherit',
+              cwd: process.cwd()
+            });
+
+            nodeProcess.on('exit', (code) => {
+              console.log(`✅ Partial execution completed with code: ${code === 0 ? 'Success' : 'Failed'}`);
+
+              // Clean up temp file after a delay
+              setTimeout(() => {
+                try {
+                  if (fs.existsSync(tempFile)) {
+                    fs.unlinkSync(tempFile);
+                    console.log('🧹 Cleaned up temp file');
+                  }
+                } catch (err) {
+                  console.warn('Failed to clean up temp file:', err);
+                }
+              }, 5000);
+            });
+
+          } catch (error) {
+            console.error('❌ Error executing partial test in view mode:', error);
+          }
+        });
+      }
 
       return {
         success: true,
@@ -2058,6 +2700,89 @@ const { chromium } = require('playwright-core');
         success: false,
         error: error?.message || 'Failed to open folder'
       };
+    }
+  });
+
+  // Resume recording from a paused session
+  ipcMain.handle('resume-recording-from-pause', async (event, { sessionId }) => {
+    try {
+      console.log('▶️ Resuming recording from session:', sessionId);
+
+      const session = pausedSessions.get(sessionId);
+      if (!session) {
+        console.error('❌ Session not found:', sessionId);
+        return { success: false, error: 'Session not found' };
+      }
+
+      if (!activeRecorder) {
+        console.error('❌ No active recorder available');
+        return { success: false, error: 'No active recorder' };
+      }
+
+      // Close any existing browser in the recorder
+      try {
+        await activeRecorder.stop();
+      } catch (err) {
+        console.log('Previous recorder stopped');
+      }
+
+      // Create new recorder instance
+      const resumedRecorder = new BrowserRecorder();
+
+      // Restore state
+      resumedRecorder.setActions(session.actions); // Load existing actions
+      resumedRecorder.setOutputFile(session.testPath);
+
+      // Extract script name from test path
+      const scriptName = path.basename(session.testPath, '.spec.js');
+      resumedRecorder.setScriptName(scriptName);
+
+      // Connect to existing browser context
+      resumedRecorder.reconnectToContext(session.context, session.page);
+
+      // Start recording from this point
+      await resumedRecorder.startRecording();
+
+      // Set up update callback
+      resumedRecorder.setUpdateCallback((code) => {
+        console.log('🔔 Update callback triggered (resumed), code length:', code.length);
+
+        // Update code viewer window
+        codeViewerWindow.updateCode(code);
+        codeViewerWindow.updateActions(resumedRecorder.getActions());
+
+        // Send update to renderer
+        event.sender.send('playwright-test-update', {
+          filePath: session.testPath,
+          code: code,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      // Set up wait settings callback
+      codeViewerWindow.setWaitSettingsCallback((settings) => {
+        console.log('⏱️ Wait settings changed (resumed), updating recorder:', settings);
+        resumedRecorder.setWaitSettings(settings);
+      });
+
+      // Set up delete action callback
+      codeViewerWindow.setDeleteActionCallback((index) => {
+        console.log('🗑️ Delete action callback triggered (resumed) for index:', index);
+        resumedRecorder.deleteAction(index);
+      });
+
+      // Update activeRecorder
+      activeRecorder = resumedRecorder;
+
+      // Remove session from paused list
+      pausedSessions.delete(sessionId);
+
+      console.log('✅ Recording resumed successfully');
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('❌ Error resuming recording:', error);
+      return { success: false, error: error.message };
     }
   });
 

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, execSync } from 'child_process';
+import { PHPDownloadManager } from './php-installer';
 
 export interface PHPInfo {
   version: string;
@@ -17,6 +18,8 @@ export class PHPManager {
   private bundledPHPPath: string | null = null;
 
   private systemPHPPath: string | null = null;
+
+  private downloadedPHPPath: string | null = null;
 
   private phpInfo: PHPInfo | null = null;
 
@@ -46,11 +49,25 @@ export class PHPManager {
         if (this.phpInfo.isAvailable) {
           return this.phpInfo;
         }
-        console.log('⚠️ System PHP found but not working, trying bundled...');
+        console.log('⚠️ System PHP found but not working, trying downloaded...');
       }
       console.log('❌ No working system PHP found');
 
-      // Fallback to bundled PHP
+      // Try downloaded PHP from userData
+      console.log('Looking for downloaded PHP...');
+      const downloadedPHP = await this.findDownloadedPHP();
+      if (downloadedPHP) {
+        console.log(`✅ Found downloaded PHP: ${downloadedPHP}`);
+        this.downloadedPHPPath = downloadedPHP;
+        this.phpInfo = await this.getPHPVersionInfo(downloadedPHP, true);
+        if (this.phpInfo.isAvailable) {
+          return this.phpInfo;
+        }
+        console.log('⚠️ Downloaded PHP found but not working');
+      }
+      console.log('❌ No working downloaded PHP found');
+
+      // Fallback to bundled PHP (for development)
       console.log('Looking for bundled PHP...');
       const bundledPHP = await this.findBundledPHP();
       if (bundledPHP) {
@@ -72,7 +89,7 @@ export class PHPManager {
         isBundled: false,
         isAvailable: false,
         error:
-          'No working PHP installation found. Please install PHP or run "npm run php:download" to download bundled PHP.',
+          'No working PHP installation found. Please download PHP using the Homepage Editor.',
       };
       return this.phpInfo;
     } catch (error) {
@@ -92,7 +109,7 @@ export class PHPManager {
    * Get the best available PHP path
    */
   public getPHPPath(): string | null {
-    return this.bundledPHPPath || this.systemPHPPath;
+    return this.systemPHPPath || this.downloadedPHPPath || this.bundledPHPPath;
   }
 
   /**
@@ -114,6 +131,20 @@ export class PHPManager {
    */
   public isUsingBundledPHP(): boolean {
     return this.bundledPHPPath !== null;
+  }
+
+  /**
+   * Check if using downloaded PHP
+   */
+  public isUsingDownloadedPHP(): boolean {
+    return this.downloadedPHPPath !== null;
+  }
+
+  /**
+   * Check if PHP needs to be downloaded
+   */
+  public needsDownload(): boolean {
+    return !this.isPHPAvailable() && !this.systemPHPPath;
   }
 
   /**
@@ -251,6 +282,27 @@ export class PHPManager {
 
     console.log(`❌ No bundled PHP found for ${platformKey}/${archDir}`);
     return null;
+  }
+
+  /**
+   * Find downloaded PHP from userData
+   */
+  private async findDownloadedPHP(): Promise<string | null> {
+    try {
+      const phpDownloadManager = PHPDownloadManager.getInstance();
+      const downloadedPath = phpDownloadManager.getDownloadedPHPPath();
+
+      if (downloadedPath && fs.existsSync(downloadedPath)) {
+        console.log(`✅ Found downloaded PHP: ${downloadedPath}`);
+        return downloadedPath;
+      }
+
+      console.log('❌ No downloaded PHP found');
+      return null;
+    } catch (error) {
+      console.warn('Error checking downloaded PHP:', error);
+      return null;
+    }
   }
 
   /**
