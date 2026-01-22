@@ -1,0 +1,109 @@
+/* ============================================
+   TaxInvoiceTable - Specific Styles
+   ============================================ */
+
+.tax-invoice-table {
+  /* Inherits all styles from DataTable */
+}
+
+/* ============================================
+   Cell Content Styles
+   ============================================ */
+
+.tax-invoice-table__date {
+  font-family: var(--fh-font-body);
+  font-size: 13px;
+  color: var(--fh-text-primary);
+  font-weight: 500;
+}
+
+.tax-invoice-table__approval-number {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--fh-text-secondary);
+  letter-spacing: 0.5px;
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(0, 70, 255, 0.05);
+  border-radius: 4px;
+}
+
+.tax-invoice-table__company {
+  font-size: 14px;
+  color: var(--fh-text-primary);
+  font-weight: 500;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tax-invoice-table__amount {
+  font-family: var(--fh-font-display);
+  font-size: 14px;
+  color: var(--fh-text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-invoice-table__amount--tax {
+  color: var(--fh-text-secondary);
+  font-size: 13px;
+}
+
+.tax-invoice-table__amount--total {
+  font-weight: 700;
+  color: var(--fh-primary);
+}
+
+.tax-invoice-table__item {
+  font-size: 13px;
+  color: var(--fh-text-primary);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tax-invoice-table__category {
+  font-size: 12px;
+  color: var(--fh-text-secondary);
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(0, 70, 255, 0.08);
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* ============================================
+   Row Hover Effects
+   ============================================ */
+
+.tax-invoice-table .data-table__row:hover .tax-invoice-table__approval-number {
+  background: rgba(0, 70, 255, 0.12);
+  color: var(--fh-primary);
+}
+
+.tax-invoice-table .data-table__row:hover .tax-invoice-table__category {
+  background: rgba(0, 70, 255, 0.15);
+  color: var(--fh-primary);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+@media (max-width: 768px) {
+  .tax-invoice-table__approval-number {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+
+  .tax-invoice-table__amount {
+    font-size: 13px;
+  }
+
+  .tax-invoice-table__amount--total {
+    font-size: 14px;
+  }
+}

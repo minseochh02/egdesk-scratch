@@ -29,7 +29,7 @@ import { useTransactions } from '../../hooks/useTransactions';
 import { FullDiskAccessWarning } from '../../hooks/useFullDiskAccess';
 
 // Shared Components
-import { TransactionTable, TransactionStats } from './shared';
+import { TransactionTable, TransactionStats, TaxInvoiceTable } from './shared';
 import { SchedulerSettings } from './SchedulerSettings';
 
 // Types & Utils
@@ -142,6 +142,7 @@ const FinanceHub: React.FC = () => {
   const [taxInvoices, setTaxInvoices] = useState<any[]>([]);
   const [isLoadingTaxInvoices, setIsLoadingTaxInvoices] = useState(false);
   const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
+  const [taxInvoiceSort, setTaxInvoiceSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '작성일자', direction: 'desc' });
 
   // ============================================
   // Computed Values
@@ -160,6 +161,26 @@ const FinanceHub: React.FC = () => {
     const matchesCategory = selectedCardCategory === 'all' || card.category === selectedCardCategory;
     const matchesSearch = card.name.toLowerCase().includes(cardSearchQuery.toLowerCase()) || card.nameKo.includes(cardSearchQuery);
     return matchesCategory && matchesSearch;
+  });
+
+  const sortedTaxInvoices = [...taxInvoices].sort((a, b) => {
+    const key = taxInvoiceSort.key;
+    const direction = taxInvoiceSort.direction === 'asc' ? 1 : -1;
+
+    const aVal = a[key];
+    const bVal = b[key];
+
+    // Handle numbers
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return (aVal - bVal) * direction;
+    }
+
+    // Handle strings
+    if (typeof aVal === 'string' && typeof bVal === 'string') {
+      return aVal.localeCompare(bVal, 'ko-KR') * direction;
+    }
+
+    return 0;
   });
 
   // ============================================
@@ -838,6 +859,13 @@ const FinanceHub: React.FC = () => {
 
   const handleTaxInvoiceTabChange = async (type: 'sales' | 'purchase') => {
     setTaxInvoiceType(type);
+  };
+
+  const handleTaxInvoiceSort = (key: string) => {
+    setTaxInvoiceSort(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
   };
 
   // Load tax invoices when filters change
@@ -1797,12 +1825,7 @@ const FinanceHub: React.FC = () => {
                 </div>
 
                 {/* Tax Invoice Table */}
-                {isLoadingTaxInvoices ? (
-                  <div className="finance-hub__empty-state">
-                    <span className="finance-hub__spinner"></span>
-                    <p>세금계산서 불러오는 중...</p>
-                  </div>
-                ) : taxInvoices.length === 0 ? (
+                {taxInvoices.length === 0 && !isLoadingTaxInvoices ? (
                   <div className="finance-hub__empty-state">
                     <div className="finance-hub__empty-icon">🧾</div>
                     <h3>수집된 {taxInvoiceType === 'sales' ? '매출' : '매입'} 세금계산서가 없습니다</h3>
@@ -1812,44 +1835,14 @@ const FinanceHub: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className="finance-hub__tax-invoice-table-container">
-                    <div className="finance-hub__tax-invoice-table-scroll">
-                      <table className="finance-hub__tax-invoice-table">
-                        <thead>
-                          <tr>
-                            <th>작성일자</th>
-                            <th>승인번호</th>
-                            <th>{taxInvoiceType === 'sales' ? '공급받는자' : '공급자'}</th>
-                            <th>공급가액</th>
-                            <th>세액</th>
-                            <th>합계금액</th>
-                            <th>품목명</th>
-                            <th>분류</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {taxInvoices.map((invoice) => (
-                            <tr key={invoice.id}>
-                              <td>{invoice.작성일자}</td>
-                              <td style={{ fontSize: '11px', fontFamily: 'monospace' }}>{invoice.승인번호}</td>
-                              <td>
-                                {taxInvoiceType === 'sales'
-                                  ? invoice.공급받는자상호
-                                  : invoice.공급자상호}
-                              </td>
-                              <td style={{ textAlign: 'right' }}>{formatCurrency(invoice.공급가액)}</td>
-                              <td style={{ textAlign: 'right' }}>{formatCurrency(invoice.세액)}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                                {formatCurrency(invoice.합계금액)}
-                              </td>
-                              <td>{invoice.품목명}</td>
-                              <td style={{ fontSize: '12px' }}>{invoice.전자세금계산서분류}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  <TaxInvoiceTable
+                    invoices={sortedTaxInvoices}
+                    invoiceType={taxInvoiceType}
+                    onSort={handleTaxInvoiceSort}
+                    sortKey={taxInvoiceSort.key}
+                    sortDirection={taxInvoiceSort.direction}
+                    isLoading={isLoadingTaxInvoices}
+                  />
                 )}
               </section>
 
