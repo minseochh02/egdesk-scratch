@@ -284,6 +284,7 @@ const FinanceHub: React.FC = () => {
     loadDatabaseStats();
     loadRecentSyncOperations();
     checkExistingConnections();
+    checkExistingCardConnections();
     loadConnectedBusinesses();
   }, []);
 
@@ -330,7 +331,7 @@ const FinanceHub: React.FC = () => {
     try {
       const savedResult = await window.electron.financeHubDb.getAllAccounts();
       let savedBanks: ConnectedBank[] = [];
-      
+
       if (savedResult.success && savedResult.data && savedResult.data.length > 0) {
         // Group accounts by bankId
         const accountsByBank = savedResult.data.reduce((acc: any, account: any) => {
@@ -397,10 +398,96 @@ const FinanceHub: React.FC = () => {
           }
         });
       }
-      
+
       setConnectedBanks(mergedBanks);
     } catch (error) {
       console.error('[FinanceHub] Failed to check existing connections:', error);
+    }
+  };
+
+  const checkExistingCardConnections = async () => {
+    try {
+      const savedResult = await window.electron.financeHubDb.getAllAccounts();
+      let savedCards: ConnectedCard[] = [];
+
+      if (savedResult.success && savedResult.data && savedResult.data.length > 0) {
+        // Get list of valid card company IDs
+        const cardCompanyIds = KOREAN_CARD_COMPANIES.map(card => card.id);
+
+        // Filter for card accounts only (where bankId is a card company)
+        const cardAccounts = savedResult.data.filter((account: any) =>
+          cardCompanyIds.includes(account.bankId)
+        );
+
+        if (cardAccounts.length > 0) {
+          // Group cards by cardCompanyId
+          const cardsByCompany = cardAccounts.reduce((acc: any, account: any) => {
+            const cardCompanyId = account.bankId; // For cards, bankId is the card company ID
+            if (!acc[cardCompanyId]) {
+              acc[cardCompanyId] = [];
+            }
+            acc[cardCompanyId].push({
+              cardNumber: account.accountNumber,
+              cardName: account.accountName,
+              cardCompanyId: account.bankId,
+              balance: account.balance,
+              lastUpdated: account.lastSyncedAt
+            });
+            return acc;
+          }, {});
+
+          // Create ConnectedCard entries for each card company
+          for (const [cardCompanyId, cards] of Object.entries(cardsByCompany)) {
+            const firstCard = cardAccounts.find((acc: any) => acc.bankId === cardCompanyId);
+
+            // Get accountType from saved credentials
+            let accountType: 'personal' | 'corporate' = 'personal';
+            try {
+              const credResult = await window.electron.financeHub.getSavedCredentials(cardCompanyId);
+              if (credResult.success && credResult.credentials?.accountType) {
+                accountType = credResult.credentials.accountType;
+              }
+              // Migration: BC Card and Shinhan Card should always be corporate
+              if ((cardCompanyId === 'bc-card' || cardCompanyId === 'shinhan-card') && accountType === 'personal') {
+                console.log(`[Card Migration] Migrating ${cardCompanyId} from personal to corporate`);
+                accountType = 'corporate';
+                // Update saved credentials if they exist
+                if (credResult.success && credResult.credentials) {
+                  await window.electron.financeHub.saveCredentials(cardCompanyId, {
+                    ...credResult.credentials,
+                    accountType: 'corporate'
+                  });
+                }
+              }
+            } catch (error) {
+              console.log(`[Card Load] Using default accountType 'personal' for ${cardCompanyId}`);
+              // BC Card and Shinhan Card default to corporate even on error
+              if (cardCompanyId === 'bc-card' || cardCompanyId === 'shinhan-card') {
+                accountType = 'corporate';
+              }
+            }
+
+            savedCards.push({
+              cardCompanyId: cardCompanyId,
+              status: 'disconnected',
+              alias: firstCard?.customerName || '',
+              lastSync: firstCard?.lastSyncedAt ? new Date(firstCard.lastSyncedAt) : new Date(),
+              cards: cards as any[],
+              accountType: accountType
+            });
+          }
+
+          console.log(`[FinanceHub] Loaded ${savedCards.length} card companies with ${cardAccounts.length} total cards from database`);
+        }
+      }
+
+      // Check for active card connections (currently open browser sessions)
+      // Note: getConnectedBanks only returns bank connections, not cards
+      // For cards, we rely on saved data from database only
+
+      setConnectedCards(savedCards);
+    } catch (error) {
+      console.error('[FinanceHub] Failed to check existing card connections:', error);
     }
   };
 
@@ -418,6 +505,11 @@ const FinanceHub: React.FC = () => {
   // Function to reload connected banks
   const loadConnectedBanks = async () => {
     await checkExistingConnections();
+  };
+
+  // Function to reload connected cards
+  const loadConnectedCards = async () => {
+    await checkExistingCardConnections();
   };
 
   const handleReconnect = async (bankId: string) => {
@@ -664,7 +756,9 @@ const FinanceHub: React.FC = () => {
       return;
     }
     setSelectedCard(card);
-    setCardCredentials({ cardCompanyId: card.id, userId: '', password: '', accountType: 'personal' });
+    // BC Card and Shinhan Card are corporate only, others default to personal
+    const accountType = (card.id === 'bc-card' || card.id === 'shinhan-card') ? 'corporate' : 'personal';
+    setCardCredentials({ cardCompanyId: card.id, userId: '', password: '', accountType });
   };
 
   const handleConnectCard = async () => {
@@ -713,6 +807,8 @@ const FinanceHub: React.FC = () => {
           }
           loadDatabaseStats();
           loadBanksAndAccounts();
+          // Reload card connections from database
+          await loadConnectedCards();
         }
 
         // Track connection
@@ -758,6 +854,25 @@ const FinanceHub: React.FC = () => {
       });
 
       if (loginResult.success && loginResult.isLoggedIn) {
+        // Save cards to database as "accounts"
+        if (loginResult.cards && loginResult.cards.length > 0) {
+          for (const cardItem of loginResult.cards) {
+            await window.electron.financeHubDb.upsertAccount({
+              bankId: cardCompanyId,
+              accountNumber: cardItem.cardNumber,
+              accountName: cardItem.cardName || '카드',
+              customerName: loginResult.userName || '사용자',
+              balance: 0, // Cards don't track balance
+              availableBalance: 0,
+              openDate: ''
+            });
+          }
+          loadDatabaseStats();
+          loadBanksAndAccounts();
+          // Reload card connections from database
+          await loadConnectedCards();
+        }
+
         setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? {
           ...c,
           status: 'connected' as const,
@@ -1465,6 +1580,11 @@ const FinanceHub: React.FC = () => {
                                   👤 개인
                                 </span>
                               )}
+                              {connection.accountType === 'corporate' && (
+                                <span className={`finance-hub__account-type-badge finance-hub__account-type-badge--${connection.accountType}`}>
+                                  🏢 법인
+                                </span>
+                              )}
                             </div>
                             <span className="finance-hub__bank-name-en">{connection.alias ? `${connection.alias}님` : bank.name}</span>
                           </div>
@@ -1586,6 +1706,11 @@ const FinanceHub: React.FC = () => {
                               {connection.accountType === 'personal' && (
                                 <span className={`finance-hub__account-type-badge finance-hub__account-type-badge--${connection.accountType}`}>
                                   👤 개인
+                                </span>
+                              )}
+                              {connection.accountType === 'corporate' && (
+                                <span className={`finance-hub__account-type-badge finance-hub__account-type-badge--${connection.accountType}`}>
+                                  🏢 법인
                                 </span>
                               )}
                             </div>
@@ -1933,154 +2058,12 @@ const FinanceHub: React.FC = () => {
                 )}
               </section>
 
-              {/* Cash Receipts Section */}
-              <section className="finance-hub__tax-section">
-                <div className="finance-hub__section-header">
-                  <h2><span className="finance-hub__section-icon">🧾</span> 현금영수증 관리</h2>
-                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                    수집하기
-                  </button>
-                </div>
-
-                <div className="finance-hub__tax-feature-grid">
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">💳</div>
-                    <h4>발급 내역</h4>
-                    <p className="finance-hub__tax-feature-count">0건</p>
-                    <small>사업자 현금영수증 발급 내역</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📱</div>
-                    <h4>소득공제용</h4>
-                    <p className="finance-hub__tax-feature-count">0건</p>
-                    <small>개인 소득공제 자료</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📊</div>
-                    <h4>월별 합계</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>이번 달 현금영수증 합계</small>
-                  </div>
-                </div>
-              </section>
-
-              {/* Tax Payment & Refund Section */}
-              <section className="finance-hub__tax-section">
-                <div className="finance-hub__section-header">
-                  <h2><span className="finance-hub__section-icon">💰</span> 납부/환급 내역</h2>
-                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                    조회하기
-                  </button>
-                </div>
-
-                <div className="finance-hub__tax-feature-grid">
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📤</div>
-                    <h4>세금 납부</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>올해 총 납부액</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📥</div>
-                    <h4>세금 환급</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>올해 총 환급액</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">⚠️</div>
-                    <h4>미납 세금</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>체납 내역</small>
-                  </div>
-                </div>
-              </section>
-
-              {/* VAT Filing Assistant Section */}
-              <section className="finance-hub__tax-section">
-                <div className="finance-hub__section-header">
-                  <h2><span className="finance-hub__section-icon">📝</span> 부가가치세 신고 보조</h2>
-                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                    신고서 작성
-                  </button>
-                </div>
-
-                <div className="finance-hub__tax-notice-card">
-                  <div className="finance-hub__tax-notice-icon">📅</div>
-                  <div className="finance-hub__tax-notice-content">
-                    <h4>다음 신고 기한</h4>
-                    <p className="finance-hub__tax-notice-deadline">2024년 4월 25일</p>
-                    <small>1기 예정 신고 (1월~3월 실적)</small>
-                  </div>
-                </div>
-
-                <div className="finance-hub__tax-feature-grid" style={{ marginTop: '20px' }}>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📤</div>
-                    <h4>매출세액</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>과세표준 × 10%</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📥</div>
-                    <h4>매입세액</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>공제 가능 세액</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">💵</div>
-                    <h4>납부세액</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>매출세액 - 매입세액</small>
-                  </div>
-                </div>
-              </section>
-
-              {/* Year-end Tax Settlement Section */}
-              <section className="finance-hub__tax-section">
-                <div className="finance-hub__section-header">
-                  <h2><span className="finance-hub__section-icon">🎁</span> 연말정산 간소화</h2>
-                  <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" disabled>
-                    자료 수집
-                  </button>
-                </div>
-
-                <div className="finance-hub__tax-feature-grid">
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">🏥</div>
-                    <h4>의료비</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>소득공제 대상 의료비</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">📚</div>
-                    <h4>교육비</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>소득공제 대상 교육비</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">💳</div>
-                    <h4>신용카드</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>연간 사용액</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">❤️</div>
-                    <h4>기부금</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>세액공제 대상 기부금</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">🏠</div>
-                    <h4>주택자금</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>주택임차차입금 원리금상환액</small>
-                  </div>
-                  <div className="finance-hub__tax-feature-card">
-                    <div className="finance-hub__tax-feature-icon">🛡️</div>
-                    <h4>보험료</h4>
-                    <p className="finance-hub__tax-feature-count">₩0</p>
-                    <small>소득공제 대상 보험료</small>
-                  </div>
+              {/* Unimplemented features hidden - Coming Soon Notice */}
+              <section className="finance-hub__tax-section" style={{ marginTop: '24px' }}>
+                <div className="finance-hub__empty-state" style={{ padding: '40px 20px' }}>
+                  <div className="finance-hub__empty-icon">🚧</div>
+                  <h3>추가 기능 준비 중</h3>
+                  <p>현금영수증, 부가세 신고, 연말정산 등 더 많은 세무 기능이 곧 추가됩니다</p>
                 </div>
               </section>
 
@@ -2288,7 +2271,8 @@ const FinanceHub: React.FC = () => {
                         type="button"
                         className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
                         onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'personal' })}
-                        disabled={isConnectingCard}
+                        disabled={isConnectingCard || selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card'}
+                        title={(selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card') ? '이 카드는 법인 전용입니다' : undefined}
                       >
                         <span className="finance-hub__account-type-icon">👤</span>
                         <span>개인</span>
@@ -2297,8 +2281,8 @@ const FinanceHub: React.FC = () => {
                         type="button"
                         className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
                         onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'corporate' })}
-                        disabled={true}
-                        title="법인 계정은 준비 중입니다"
+                        disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
+                        title={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? '법인 계정은 BC카드와 신한카드만 지원됩니다' : undefined}
                       >
                         <span className="finance-hub__account-type-icon">🏢</span>
                         <span>법인</span>
