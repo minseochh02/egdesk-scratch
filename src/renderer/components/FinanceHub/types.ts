@@ -406,11 +406,11 @@ export const KOREAN_CARD_COMPANIES: CardConfig[] = [
     id: 'bc-card',
     name: 'BC Card',
     nameKo: 'BC카드',
-    loginUrl: 'https://www.bccard.com/',
+    loginUrl: 'https://wisebiz.bccard.com/app/corp/Intro.corp',
     category: 'major',
     color: '#E20613',
     icon: '💳',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'woori-card',
