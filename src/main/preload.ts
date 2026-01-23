@@ -2082,7 +2082,7 @@ const electronHandler = {
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
-    launchBrowserRecorderEnhanced: (url: string) => ipcRenderer.invoke('launch-browser-recorder-enhanced', { url }),
+    launchBrowserRecorderEnhanced: (params: { url: string; extensionPaths?: string[] }) => ipcRenderer.invoke('launch-browser-recorder-enhanced', params),
     stopBrowserRecorderEnhanced: () => ipcRenderer.invoke('stop-browser-recorder-enhanced'),
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
@@ -2212,6 +2212,20 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:collect-invoices', certificateData, certificatePassword),
     getInvoices: (filters: any) =>
       ipcRenderer.invoke('hometax:get-invoices', filters),
+  },
+
+  /**
+   * Chrome Extensions API - Scan and manage Chrome extensions for browser recorder
+   */
+  chromeExtensions: {
+    scanProfiles: () =>
+      ipcRenderer.invoke('chrome-extensions:scan-profiles'),
+    getUserDataDir: () =>
+      ipcRenderer.invoke('chrome-extensions:get-user-data-dir'),
+    savePreferences: (selectedExtensions: string[]) =>
+      ipcRenderer.invoke('chrome-extensions:save-preferences', selectedExtensions),
+    getPreferences: () =>
+      ipcRenderer.invoke('chrome-extensions:get-preferences'),
   },
 
   /**

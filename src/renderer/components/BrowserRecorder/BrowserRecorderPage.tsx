@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './BrowserRecorderPage.css';
+import { ChromeExtensionSelector } from '../ChromeExtensionSelector';
 
 interface Schedule {
   id: string;
@@ -41,6 +42,8 @@ const BrowserRecorderPage: React.FC = () => {
   });
   const [showRenameModal, setShowRenameModal] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
+  const [showExtensionSelector, setShowExtensionSelector] = useState(false);
+  const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
 
   // Helper functions
   const addDebugLog = (message: string) => {
@@ -269,6 +272,23 @@ const BrowserRecorderPage: React.FC = () => {
     loadPlaywrightDownloads();
   }, []);
 
+  // Load saved extension preferences when component mounts
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await (window as any).electron.chromeExtensions?.getPreferences();
+        if (result?.success && result.selectedExtensions) {
+          setSelectedExtensionPaths(result.selectedExtensions);
+          if (result.selectedExtensions.length > 0) {
+            addDebugLog(`🧩 Loaded ${result.selectedExtensions.length} saved extension(s)`);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load extension preferences:', error);
+      }
+    })();
+  }, []);
+
   // Listen for Playwright test saved events
   useEffect(() => {
     const handleTestSaved = (data: any) => {
@@ -406,59 +426,86 @@ const BrowserRecorderPage: React.FC = () => {
 
               <div className="browser-recorder-recording-controls">
                 {!isRecordingEnhanced ? (
-                  <button
-                    onClick={async () => {
-                      try {
-                        if (!chromeUrl) {
-                          addDebugLog('⚠️ Please enter a URL first');
-                          return;
+                  <>
+                    <button
+                      onClick={() => setShowExtensionSelector(true)}
+                      className="browser-recorder-btn browser-recorder-btn-secondary"
+                      disabled={isRecordingEnhanced}
+                      title="Select Chrome extensions to load during recording"
+                    >
+                      🧩 Extensions ({selectedExtensionPaths.length})
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          if (!chromeUrl) {
+                            addDebugLog('⚠️ Please enter a URL first');
+                            return;
+                          }
+
+                          addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
+                          if (selectedExtensionPaths.length > 0) {
+                            addDebugLog(`🧩 Loading ${selectedExtensionPaths.length} Chrome extension(s)`);
+                          }
+
+                          const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced({
+                            url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
+                            extensionPaths: selectedExtensionPaths
+                          });
+
+                          if (result?.success) {
+                            addDebugLog('✅ Enhanced recorder launched successfully');
+                            addDebugLog('📝 All keyboard events including Enter will be captured');
+                            addDebugLog(`📁 Test file: ${result.filePath}`);
+                            addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
+                            addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
+                            setIsRecordingEnhanced(true);
+                          } else {
+                            addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
+                          }
+                        } catch (error) {
+                          console.error('Error launching recorder:', error);
+                          addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
-
-                        addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
-
-                        const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced(
-                          chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`
-                        );
-
-                        if (result?.success) {
-                          addDebugLog('✅ Enhanced recorder launched successfully');
-                          addDebugLog('📝 All keyboard events including Enter will be captured');
-                          addDebugLog(`📁 Test file: ${result.filePath}`);
-                          addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
-                          addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
-                          setIsRecordingEnhanced(true);
-                        } else {
-                          addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
-                        }
-                      } catch (error) {
-                        console.error('Error launching recorder:', error);
-                        addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                      }
-                    }}
-                    className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
-                  >
-                    🎹 Start Recording
-                  </button>
+                      }}
+                      className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
+                    >
+                      🎹 Start Recording
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={async () => {
+                      console.log('🔴 Stop Recording button clicked');
                       addDebugLog('⏹️ Stopping enhanced recorder...');
 
-                      const result = await (window as any).electron.debug.stopBrowserRecorderEnhanced();
+                      try {
+                        console.log('📞 Calling stopBrowserRecorderEnhanced...');
+                        const result = await (window as any).electron.debug.stopBrowserRecorderEnhanced();
+                        console.log('📥 Received result:', result);
 
-                      if (result?.success) {
-                        addDebugLog('✅ Recording saved successfully');
-                        addDebugLog(`📁 Test saved to: ${result.filePath}`);
-                        setIsRecordingEnhanced(false);
-                        setCurrentTestCode(''); // Clear the code viewer
+                        if (result?.success) {
+                          addDebugLog('✅ Recording saved successfully');
+                          addDebugLog(`📁 Test saved to: ${result.filePath}`);
+                          setIsRecordingEnhanced(false);
+                          setCurrentTestCode(''); // Clear the code viewer
 
-                        // Refresh test list
-                        const testsResult = await (window as any).electron.debug.getPlaywrightTests();
-                        if (testsResult.success) {
-                          setSavedTests(testsResult.tests);
+                          // Refresh test list
+                          const testsResult = await (window as any).electron.debug.getPlaywrightTests();
+                          if (testsResult.success) {
+                            setSavedTests(testsResult.tests);
+                          }
+                        } else {
+                          addDebugLog(`❌ Failed to stop recorder: ${result?.error || 'Unknown error'}`);
+                          console.error('Stop recorder failed:', result);
+                          // Reset recording state even on failure so user isn't stuck
+                          setIsRecordingEnhanced(false);
                         }
-                      } else {
-                        addDebugLog(`❌ Failed to stop recorder: ${result?.error}`);
+                      } catch (error) {
+                        console.error('❌ Exception while stopping recorder:', error);
+                        addDebugLog(`❌ Exception: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        // Reset recording state on exception so user isn't stuck
+                        setIsRecordingEnhanced(false);
                       }
                     }}
                     className="browser-recorder-btn browser-recorder-btn-danger browser-recorder-btn-stop"
@@ -889,6 +936,16 @@ const BrowserRecorderPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Chrome Extension Selector Modal */}
+      <ChromeExtensionSelector
+        isOpen={showExtensionSelector}
+        onClose={() => setShowExtensionSelector(false)}
+        onSelect={(extensionPaths) => {
+          setSelectedExtensionPaths(extensionPaths);
+          addDebugLog(`🧩 Selected ${extensionPaths.length} Chrome extension(s)`);
+        }}
+      />
     </div>
   );
 };

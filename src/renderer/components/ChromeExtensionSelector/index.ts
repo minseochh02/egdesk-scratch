@@ -1,0 +1,1 @@
+export { ChromeExtensionSelector } from './ChromeExtensionSelector';
