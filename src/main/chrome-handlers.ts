@@ -7,6 +7,8 @@ import { pathToFileURL } from 'url';
 import { BrowserRecorder } from './browser-recorder';
 import { codeViewerWindow } from './code-viewer-window';
 import { Browser, BrowserContext, Page } from 'playwright-core';
+import { ChromeExtensionScanner } from './chrome-extension-scanner';
+import { getStore } from './storage';
 
 // ===== Paused Browser Session Management =====
 
@@ -1220,7 +1222,7 @@ export function registerChromeHandlers(): void {
         }
 
         if (googleKey?.fields?.apiKey) {
-          const { generateTextWithAI } = require('../gemini');
+          const { generateTextWithAI } = require('./gemini');
 
           const prompt = `Analyze the following SEO issues found across multiple websites and provide a comprehensive explanation and recommendations:
 
@@ -1405,10 +1407,13 @@ Please provide:
   // Enhanced Playwright recorder with keyboard tracking
   // (activeRecorder is now defined at module scope)
 
-  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url }) => {
+  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url, extensionPaths }) => {
     try {
       console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
-      
+      if (extensionPaths && extensionPaths.length > 0) {
+        console.log(`🧩 With ${extensionPaths.length} Chrome extensions`);
+      }
+
       // Clean up any existing recorder
       if (activeRecorder) {
         try {
@@ -1417,7 +1422,7 @@ Please provide:
           console.error('Error stopping previous recorder:', err);
         }
       }
-      
+
       // Generate output file path
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const scriptName = `egdesk-browser-recorder-${timestamp}`;
@@ -1440,6 +1445,11 @@ test('recorded test', async ({ page }) => {
       activeRecorder = new BrowserRecorder();
       activeRecorder.setOutputFile(outputFile);
       activeRecorder.setScriptName(scriptName);
+
+      // Set extensions if provided
+      if (extensionPaths && extensionPaths.length > 0) {
+        activeRecorder.setExtensions(extensionPaths);
+      }
       
       // Set up real-time updates
       activeRecorder.setUpdateCallback((code) => {
@@ -1640,16 +1650,21 @@ test('recorded test', async ({ page }) => {
   });
   
   ipcMain.handle('stop-browser-recorder-enhanced', async (event) => {
+    console.log('🛑 Stop recording called');
     try {
       if (!activeRecorder) {
+        console.log('❌ No active recorder found');
         return {
           success: false,
           error: 'No active recorder'
         };
       }
-      
+
+      console.log('✅ Active recorder found, stopping...');
       const testCode = await activeRecorder.stop();
+      console.log('✅ Recorder stopped, test code generated');
       const recordedActions = activeRecorder.getActions();
+      console.log(`✅ Got ${recordedActions.length} recorded actions`);
       activeRecorder = null;
 
       // The test file has already been created and updated in real-time
@@ -1661,6 +1676,7 @@ test('recorded test', async ({ page }) => {
 
       if (outputFiles.length > 0) {
         const outputFile = outputFiles[0]; // Most recent file
+        console.log(`📝 Processing output file: ${outputFile}`);
         const timedCode = createTimedTestFromCode(testCode);
         // Overwrite the file with the timed version
         fs.writeFileSync(outputFile, timedCode);
@@ -1668,28 +1684,33 @@ test('recorded test', async ({ page }) => {
         console.log(`✅ Enhanced test saved to: ${outputFile}`);
 
         // Close the code viewer window
+        console.log('🪟 Closing code viewer window');
         codeViewerWindow.close();
 
         // Notify renderer
+        console.log('📤 Notifying renderer about saved test');
         event.sender.send('playwright-test-saved', {
           filePath: outputFile,
           code: timedCode,
           timestamp: new Date().toISOString()
         });
 
+        console.log('✅ Stop recording completed successfully');
         return {
           success: true,
           filePath: outputFile,
           code: timedCode
         };
       } else {
+        console.log('❌ No test file found in output directory');
         return {
           success: false,
           error: 'No test file found'
         };
       }
     } catch (error: any) {
-      console.error('Error stopping recorder:', error);
+      console.error('❌ Error stopping recorder:', error);
+      console.error('Error stack:', error?.stack);
       return {
         success: false,
         error: error?.message || 'Failed to stop recorder'
@@ -2783,6 +2804,101 @@ const { chromium } = require('playwright-core');
     } catch (error: any) {
       console.error('❌ Error resuming recording:', error);
       return { success: false, error: error.message };
+    }
+  });
+
+  // ============================================
+  // Chrome Extension Management IPC Handlers
+  // ============================================
+
+  /**
+   * Scan all Chrome profiles and their extensions
+   */
+  ipcMain.handle('chrome-extensions:scan-profiles', async () => {
+    try {
+      console.log('[Chrome Extensions] Scanning Chrome profiles for extensions...');
+      const profiles = ChromeExtensionScanner.getAllProfiles();
+
+      // Convert icon paths to data URLs for frontend display
+      const profilesWithIcons = profiles.map(profile => ({
+        ...profile,
+        extensions: profile.extensions.map(ext => ({
+          ...ext,
+          iconDataUrl: ext.iconPath
+            ? ChromeExtensionScanner.getExtensionIconDataUrl(ext.iconPath)
+            : null
+        }))
+      }));
+
+      console.log(`[Chrome Extensions] Found ${profiles.length} profiles with ${profiles.reduce((sum, p) => sum + p.extensions.length, 0)} total extensions`);
+
+      return {
+        success: true,
+        profiles: profilesWithIcons
+      };
+    } catch (error) {
+      console.error('[Chrome Extensions] Error scanning Chrome extensions:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        profiles: []
+      };
+    }
+  });
+
+  /**
+   * Get Chrome user data directory path
+   */
+  ipcMain.handle('chrome-extensions:get-user-data-dir', async () => {
+    try {
+      const dir = ChromeExtensionScanner.getChromeUserDataDir();
+      return { success: !!dir, path: dir };
+    } catch (error) {
+      console.error('[Chrome Extensions] Error getting Chrome user data dir:', error);
+      return { success: false, path: null };
+    }
+  });
+
+  /**
+   * Save selected extensions for future use
+   */
+  ipcMain.handle('chrome-extensions:save-preferences', async (event, selectedExtensions: string[]) => {
+    try {
+      const store = getStore();
+
+      store.set('browser-recorder.selected-extensions', selectedExtensions);
+      console.log(`[Chrome Extensions] Saved ${selectedExtensions.length} extension preferences`);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[Chrome Extensions] Error saving extension preferences:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  /**
+   * Get saved extension preferences
+   */
+  ipcMain.handle('chrome-extensions:get-preferences', async () => {
+    try {
+      const store = getStore();
+
+      const selectedExtensions = store.get('browser-recorder.selected-extensions', []) as string[];
+      console.log(`[Chrome Extensions] Retrieved ${selectedExtensions.length} saved extension preferences`);
+
+      return {
+        success: true,
+        selectedExtensions
+      };
+    } catch (error) {
+      console.error('[Chrome Extensions] Error getting extension preferences:', error);
+      return {
+        success: false,
+        selectedExtensions: []
+      };
     }
   });
 

@@ -28,6 +28,9 @@ This document catalogs all instances where Chromium/Chrome is launched in the EG
 
 **Purpose:** Records user interactions with websites and generates Playwright test scripts.
 
+> **🎯 PLANNED FEATURE:** Chrome Extension UI integration - See `CHROME-EXTENSION-UI-IMPLEMENTATION.md`
+> Users will be able to select extensions from their Chrome profiles via UI, and those extensions will be loaded when launching the browser recorder.
+
 ### Launch Configuration
 
 ```typescript

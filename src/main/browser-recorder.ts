@@ -55,6 +55,8 @@ export class BrowserRecorder {
   private profileDir: string | null = null;
   private pageStack: Page[] = []; // Track page history for switching back
   private scriptName: string = 'egdesk-browser-recorder'; // Name for unique download paths
+  private extensionPaths: string[] = []; // Chrome extension paths to load
+  private tempExtensionsDir: string | null = null; // Temporary directory for copied extensions
 
   // Date marking mode state
   private isDateMarkingMode: boolean = false;
@@ -87,10 +89,156 @@ export class BrowserRecorder {
     this.scriptName = name;
   }
 
+  setExtensions(extensionPaths: string[]): void {
+    this.extensionPaths = extensionPaths;
+    console.log(`[Browser Recorder] Will load ${extensionPaths.length} extensions:`, extensionPaths);
+  }
+
   setWaitSettings(settings: { multiplier: number; maxDelay: number }): void {
     this.waitSettings = settings;
     // Regenerate code with new settings
     this.updateGeneratedCode();
+  }
+
+  /**
+   * Copy Chrome extensions from user's profile to temporary directory
+   * This allows loading extensions with Chromium (Chrome removed --load-extension support)
+   *
+   * Note: We don't copy Secure Preferences because it uses HMAC validation that will fail.
+   * Unpacked extensions loaded via --load-extension auto-grant all manifest permissions.
+   */
+  private copyExtensionsToTemp(): string[] {
+    if (this.extensionPaths.length === 0) {
+      return [];
+    }
+
+    try {
+      // Create temp directory for extensions
+      this.tempExtensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'egdesk-extensions-'));
+      console.log(`[Browser Recorder] Copying ${this.extensionPaths.length} extensions to:`, this.tempExtensionsDir);
+
+      const copiedPaths: string[] = [];
+      const extensionSettings: Record<string, any> = {};
+
+      for (const extPath of this.extensionPaths) {
+        if (!fs.existsSync(extPath)) {
+          console.warn(`[Browser Recorder] Extension path does not exist: ${extPath}`);
+          continue;
+        }
+
+        // Get extension ID and version from path
+        // Path format: .../Chrome/Profile X/Extensions/{extensionId}/{version}/
+        const version = path.basename(extPath);
+        const extensionId = path.basename(path.dirname(extPath));
+        const profilePath = path.dirname(path.dirname(path.dirname(extPath))); // Go up to Profile X
+
+        // Create destination directory
+        const destPath = path.join(this.tempExtensionsDir, `${extensionId}-${version}`);
+
+        // Copy extension directory
+        try {
+          fs.cpSync(extPath, destPath, { recursive: true });
+          copiedPaths.push(destPath);
+          console.log(`[Browser Recorder] ✓ Copied extension: ${extensionId}`);
+
+          // Log manifest permissions for debugging
+          const manifestPath = path.join(destPath, 'manifest.json');
+          if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+            console.log(`[Browser Recorder]   - Permissions: ${JSON.stringify(manifest.permissions || [])}`);
+            console.log(`[Browser Recorder]   - Host permissions: ${JSON.stringify(manifest.host_permissions || [])}`);
+          }
+        } catch (copyErr) {
+          console.error(`[Browser Recorder] Failed to copy extension ${extensionId}:`, copyErr);
+        }
+      }
+
+      // Copy native messaging host manifests to the profile directory
+      // This allows extensions to communicate with native apps
+      this.copyNativeMessagingHosts();
+
+      console.log(`[Browser Recorder] Successfully copied ${copiedPaths.length}/${this.extensionPaths.length} extensions`);
+      console.log(`[Browser Recorder] Extensions will auto-grant all manifest permissions (unpacked mode)`);
+      return copiedPaths;
+    } catch (error) {
+      console.error('[Browser Recorder] Error copying extensions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Copy native messaging host manifests to profile directory
+   * This allows extensions to communicate with native applications
+   */
+  private copyNativeMessagingHosts(): void {
+    if (!this.profileDir) {
+      return;
+    }
+
+    try {
+      // Native messaging host locations on macOS
+      const nativeHostLocations = [
+        '/Library/Google/Chrome/NativeMessagingHosts',
+        '/Library/Application Support/Google/Chrome/NativeMessagingHosts',
+        path.join(os.homedir(), 'Library/Application Support/Google/Chrome/NativeMessagingHosts'),
+        '/Library/Application Support/Chromium/NativeMessagingHosts',
+        path.join(os.homedir(), 'Library/Application Support/Chromium/NativeMessagingHosts')
+      ];
+
+      // Create NativeMessagingHosts directory in profile
+      const destNativeHostsDir = path.join(this.profileDir, 'NativeMessagingHosts');
+      if (!fs.existsSync(destNativeHostsDir)) {
+        fs.mkdirSync(destNativeHostsDir, { recursive: true });
+      }
+
+      let copiedHostsCount = 0;
+
+      // Copy all native messaging host manifests from all locations
+      for (const location of nativeHostLocations) {
+        if (fs.existsSync(location)) {
+          try {
+            const files = fs.readdirSync(location);
+            for (const file of files) {
+              if (file.endsWith('.json')) {
+                const sourcePath = path.join(location, file);
+                const destPath = path.join(destNativeHostsDir, file);
+
+                if (!fs.existsSync(destPath)) {
+                  fs.copyFileSync(sourcePath, destPath);
+                  copiedHostsCount++;
+                  console.log(`[Browser Recorder] ✓ Copied native host: ${file}`);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[Browser Recorder] Could not copy native hosts from ${location}:`, err);
+          }
+        }
+      }
+
+      if (copiedHostsCount > 0) {
+        console.log(`[Browser Recorder] ✓ Copied ${copiedHostsCount} native messaging host(s)`);
+      } else {
+        console.log(`[Browser Recorder] No native messaging hosts found to copy`);
+      }
+    } catch (error) {
+      console.error('[Browser Recorder] Error copying native messaging hosts:', error);
+    }
+  }
+
+  /**
+   * Clean up temporary extensions directory
+   */
+  private cleanupTempExtensions(): void {
+    if (this.tempExtensionsDir) {
+      try {
+        fs.rmSync(this.tempExtensionsDir, { recursive: true, force: true });
+        console.log('[Browser Recorder] 🧹 Cleaned up temporary extensions directory');
+      } catch (err) {
+        console.warn('[Browser Recorder] Failed to clean up temp extensions:', err);
+      }
+      this.tempExtensionsDir = null;
+    }
   }
 
   /**
@@ -170,27 +318,47 @@ export class BrowserRecorder {
     });
 
     try {
+      // Copy extensions to temporary directory if any are selected
+      // This is needed because Chrome removed --load-extension support in v137+
+      // We use Chromium channel when extensions are present
+      let copiedExtensionPaths: string[] = [];
+      if (this.extensionPaths.length > 0) {
+        copiedExtensionPaths = this.copyExtensionsToTemp();
+      }
+
+      // Build browser args
+      const args = [
+        `--window-size=${browserWidth},${browserHeight}`,
+        `--window-position=${browserX},${browserY}`,
+        '--no-default-browser-check',
+        '--disable-blink-features=AutomationControlled',
+        '--no-first-run',
+        // Permission handling for localhost and private network access
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--allow-running-insecure-content',
+        '--disable-features=PrivateNetworkAccessSendPreflights',
+        '--disable-features=PrivateNetworkAccessRespectPreflightResults'
+      ];
+
+      // Add Chrome extension args if extensions were successfully copied
+      if (copiedExtensionPaths.length > 0) {
+        const extensionPathsStr = copiedExtensionPaths.join(',');
+        args.push(`--disable-extensions-except=${extensionPathsStr}`);
+        args.push(`--load-extension=${extensionPathsStr}`);
+        console.log(`[Browser Recorder] Loading ${copiedExtensionPaths.length} Chrome extensions from temp location`);
+      }
+
       // Use launchPersistentContext for more reliable browser management
+      // Use 'chromium' channel when extensions are loaded (Chrome removed --load-extension support)
       this.context = await chromium.launchPersistentContext(this.profileDir, {
         headless: false,
-        channel: 'chrome',
+        channel: copiedExtensionPaths.length > 0 ? 'chromium' : 'chrome',
         viewport: null,
         permissions: ['clipboard-read', 'clipboard-write'],
         acceptDownloads: true,
         downloadsPath: downloadsPath,
-        args: [
-          `--window-size=${browserWidth},${browserHeight}`,
-          `--window-position=${browserX},${browserY}`,
-          '--no-default-browser-check',
-          '--disable-blink-features=AutomationControlled',
-          '--no-first-run',
-          // Permission handling for localhost and private network access
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--allow-running-insecure-content',
-          '--disable-features=PrivateNetworkAccessSendPreflights',
-          '--disable-features=PrivateNetworkAccessRespectPreflightResults'
-        ]
+        args: args
       });
       console.log('✅ Browser launched successfully with channel: chrome');
     } catch (err) {
@@ -4925,6 +5093,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             console.warn('Failed to clean up profile directory:', err);
           }
         }
+
+        // Clean up temporary extensions directory
+        this.cleanupTempExtensions();
       }, 1000);
     });
 
@@ -5143,6 +5314,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       }
       this.profileDir = null;
     }
+
+    // Clean up temporary extensions directory
+    this.cleanupTempExtensions();
 
     return testCode;
   }
