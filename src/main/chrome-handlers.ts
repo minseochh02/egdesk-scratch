@@ -469,16 +469,61 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
  * Get output directory path - uses userData in production, cwd in development
  */
 function getOutputDir(): string {
-  const outputDir = app.isPackaged
+  const baseDir = app.isPackaged
     ? path.join(app.getPath('userData'), 'output')
     : path.join(process.cwd(), 'output');
-  
+
+  // Browser recorder tests go in their own subdirectory
+  const outputDir = path.join(baseDir, 'browser-recorder-tests');
+
   // Ensure directory exists
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
-  
+
+  // Migrate old test files from the root output directory
+  migrateOldTestFiles(baseDir, outputDir);
+
   return outputDir;
+}
+
+/**
+ * Migrate old test files from root output directory to browser-recorder-tests folder
+ */
+function migrateOldTestFiles(baseDir: string, newDir: string): void {
+  try {
+    if (!fs.existsSync(baseDir)) return;
+
+    const files = fs.readdirSync(baseDir);
+    const oldTestFiles = files.filter(f =>
+      (f.startsWith('playwright-test-') || f.startsWith('egdesk-browser-recorder-')) &&
+      f.endsWith('.spec.js')
+    );
+
+    if (oldTestFiles.length === 0) return;
+
+    console.log(`📦 Migrating ${oldTestFiles.length} old test file(s) to new location...`);
+
+    for (const file of oldTestFiles) {
+      const oldPath = path.join(baseDir, file);
+      const newPath = path.join(newDir, file);
+
+      // Skip if already exists in new location
+      if (fs.existsSync(newPath)) {
+        console.log(`⏭️  Skipping ${file} (already exists in new location)`);
+        continue;
+      }
+
+      // Move the file
+      fs.renameSync(oldPath, newPath);
+      console.log(`✅ Migrated: ${file}`);
+    }
+
+    console.log('✅ Migration complete');
+  } catch (error) {
+    console.error('❌ Error migrating old test files:', error);
+    // Don't throw - migration failure shouldn't break the app
+  }
 }
 
 /**
@@ -1670,7 +1715,7 @@ test('recorded test', async ({ page }) => {
       // The test file has already been created and updated in real-time
       // Update it with the timed version (with realistic delays)
       const outputFiles = fs.readdirSync(getOutputDir())
-        .filter(f => f.startsWith('playwright-test-') && f.endsWith('.spec.js'))
+        .filter(f => f.endsWith('.spec.js'))
         .map(f => path.join(getOutputDir(), f))
         .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime());
 
@@ -2415,8 +2460,9 @@ const { chromium } = require('playwright-core');
       const outputDir = getOutputDir();
       const files = fs.readdirSync(outputDir);
       
+      // All .spec.js files in the browser-recorder-tests folder are valid tests
       const tests = files
-        .filter(file => file.startsWith('playwright-test-') && file.endsWith('.spec.js'))
+        .filter(file => file.endsWith('.spec.js'))
         .map(file => {
           const filePath = path.join(outputDir, file);
           const stats = fs.statSync(filePath);
@@ -2525,6 +2571,21 @@ const { chromium } = require('playwright-core');
       if (fs.existsSync(oldRunPath)) {
         fs.renameSync(oldRunPath, newRunPath);
         console.log('✅ Renamed run file');
+      }
+
+      // Rename the corresponding download folder if it exists
+      const browserDownloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
+      const oldDownloadFolder = path.join(browserDownloadsPath, oldBasename);
+      const newDownloadFolder = path.join(browserDownloadsPath, newBasename);
+
+      if (fs.existsSync(oldDownloadFolder)) {
+        try {
+          fs.renameSync(oldDownloadFolder, newDownloadFolder);
+          console.log('✅ Renamed download folder:', oldBasename, '→', newBasename);
+        } catch (folderErr) {
+          console.warn('⚠️ Could not rename download folder:', folderErr);
+          // Don't fail the whole operation if folder rename fails
+        }
       }
 
       return {
@@ -2642,33 +2703,50 @@ const { chromium } = require('playwright-core');
     }
   });
 
-  // Get list of downloaded files from EGDesk-Playwright directory
+  // Get list of downloaded files from EGDesk-Browser directory (scans all script subfolders)
   ipcMain.handle('get-playwright-downloads', async () => {
     try {
-      const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+      const browserDownloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
 
       // Check if directory exists
-      if (!fs.existsSync(downloadsPath)) {
+      if (!fs.existsSync(browserDownloadsPath)) {
         return {
           success: true,
           files: []
         };
       }
 
-      // Read directory and get file stats
-      const files = fs.readdirSync(downloadsPath);
-      const fileList = files.map(filename => {
-        const filePath = path.join(downloadsPath, filename);
-        const stats = fs.statSync(filePath);
+      // Scan all script subfolders for downloaded files
+      const fileList: any[] = [];
+      const scriptFolders = fs.readdirSync(browserDownloadsPath, { withFileTypes: true });
 
-        return {
-          name: filename,
-          path: filePath,
-          size: stats.size,
-          created: stats.birthtime,
-          modified: stats.mtime
-        };
-      });
+      for (const folder of scriptFolders) {
+        if (folder.isDirectory()) {
+          const scriptFolderPath = path.join(browserDownloadsPath, folder.name);
+          try {
+            const files = fs.readdirSync(scriptFolderPath);
+
+            for (const filename of files) {
+              const filePath = path.join(scriptFolderPath, filename);
+              const stats = fs.statSync(filePath);
+
+              // Only include files, not directories
+              if (stats.isFile()) {
+                fileList.push({
+                  name: filename,
+                  path: filePath,
+                  scriptFolder: folder.name,
+                  size: stats.size,
+                  created: stats.birthtime,
+                  modified: stats.mtime
+                });
+              }
+            }
+          } catch (folderErr) {
+            console.warn(`Could not read script folder ${folder.name}:`, folderErr);
+          }
+        }
+      }
 
       // Sort by modified date (newest first)
       fileList.sort((a, b) => b.modified.getTime() - a.modified.getTime());
@@ -2678,7 +2756,7 @@ const { chromium } = require('playwright-core');
         files: fileList
       };
     } catch (error: any) {
-      console.error('Error getting playwright downloads:', error);
+      console.error('Error getting browser recorder downloads:', error);
       return {
         success: false,
         error: error?.message || 'Failed to get downloads',
@@ -2702,11 +2780,11 @@ const { chromium } = require('playwright-core');
     }
   });
 
-  // Open EGDesk-Playwright folder in file viewer (Finder/Explorer)
+  // Open EGDesk-Browser folder in file viewer (Finder/Explorer)
   ipcMain.handle('open-playwright-downloads-folder', async () => {
     try {
       const { shell } = require('electron');
-      const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+      const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
 
       // Create directory if it doesn't exist
       if (!fs.existsSync(downloadsPath)) {

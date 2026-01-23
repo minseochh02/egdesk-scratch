@@ -10,43 +10,46 @@ This document tracks features that have been designed but not yet implemented.
 
 ### 1. Chrome Extension UI for Browser Recorder
 
-**Status:** ✅ APPROVED - Design Complete, Implementation Pending
+**Status:** ✅ IMPLEMENTED - On Hold for Production
 
 **Description:** Add UI to scan user's Chrome profiles and allow selection of extensions to load when launching browser recorder.
 
-**Documentation:** [`CHROME-EXTENSION-UI-IMPLEMENTATION.md`](../CHROME-EXTENSION-UI-IMPLEMENTATION.md)
+**Documentation:**
+- [`CHROME-EXTENSION-FEATURE-COMPLETE.md`](../CHROME-EXTENSION-FEATURE-COMPLETE.md) - **READ THIS FIRST**
+- [`CHROME-EXTENSION-UI-IMPLEMENTATION.md`](../CHROME-EXTENSION-UI-IMPLEMENTATION.md)
+- [`CHROME-EXTENSION-PERMISSIONS-RESEARCH.md`](../CHROME-EXTENSION-PERMISSIONS-RESEARCH.md)
 
 **Key Benefits:**
-- Visual extension selection (no manual path entry)
-- Supports all Chrome profiles on system
-- Persistent user preferences
-- Automatic extension loading in recorder
-
-**Integration Point:**
-```typescript
-// browser-recorder.ts
-const context = await chromium.launchPersistentContext(profileDir, {
-  args: [
-    '--load-extension=path1,path2,path3' // ← From UI selection
-  ]
-});
-```
+- ✅ Visual extension selection (no manual path entry)
+- ✅ Supports all Chrome profiles on system
+- ✅ Persistent user preferences
+- ✅ Automatic extension loading in recorder
+- ✅ Native messaging host support
 
 **Implementation Checklist:**
-- [ ] Backend: Create `ChromeExtensionScanner` class
-- [ ] Backend: Add IPC handlers for scanning/saving
-- [ ] Backend: Update `BrowserRecorder.setExtensions()`
-- [ ] Frontend: Create `ChromeExtensionSelector` component
-- [ ] Frontend: Integrate with recorder controls
-- [ ] Testing: End-to-end extension loading
+- [x] Backend: Create `ChromeExtensionScanner` class
+- [x] Backend: Add IPC handlers for scanning/saving
+- [x] Backend: Update `BrowserRecorder.setExtensions()`
+- [x] Frontend: Create `ChromeExtensionSelector` component
+- [x] Frontend: Integrate with recorder controls
+- [x] Testing: End-to-end extension loading
+- [x] Native messaging host copying
+- [x] Permission preservation from Secure Preferences
 
-**Estimated Effort:** 6-8 hours
+**Completed:** 2026-01-22
 
-**Related Files:**
-- `src/main/chrome-extension-scanner.ts` (new)
-- `src/main/chrome-handlers.ts` (update)
-- `src/main/browser-recorder.ts` (update)
-- `src/renderer/components/ChromeExtensionSelector/` (new)
+**Known Limitations (Documented):**
+- ⚠️ Site access defaults to "On click" - user must manually change to "On all sites"
+- ⚠️ Extension state not preserved - fresh start each session (wallets, settings, etc.)
+- ✅ Console warnings from extensions are cosmetic (safe to ignore)
+
+**Related Files (Implemented):**
+- `src/main/chrome-extension-scanner.ts` ✅
+- `src/main/chrome-handlers.ts` ✅
+- `src/main/browser-recorder.ts` ✅
+- `src/renderer/components/ChromeExtensionSelector/` ✅
+
+**Status:** READY FOR BETA TESTING
 
 ---
 

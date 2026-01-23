@@ -865,7 +865,7 @@ const BrowserRecorderPage: React.FC = () => {
             {/* Downloads Section */}
             <div className="browser-recorder-section">
               <div className="browser-recorder-section-header">
-                <h2 className="browser-recorder-section-title">📥 Playwright Downloads</h2>
+                <h2 className="browser-recorder-section-title">📥 Browser Recorder Downloads</h2>
                 <div className="browser-recorder-downloads-actions">
                   <button
                     onClick={async () => {
@@ -902,6 +902,7 @@ const BrowserRecorderPage: React.FC = () => {
                       <div className="browser-recorder-download-info">
                         <div className="browser-recorder-download-name">📄 {file.name}</div>
                         <div className="browser-recorder-download-meta">
+                          {file.scriptFolder && <span>📁 {file.scriptFolder} • </span>}
                           {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
                         </div>
                       </div>
