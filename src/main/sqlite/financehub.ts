@@ -124,6 +124,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
   // Seed card companies (stored in same table as banks)
   const cardCompanies = [
     ['nh-card', 'NH Card', 'NH농협카드', '#00B140', '💳', 1, 'https://card.nonghyup.com/'],
+    ['bc-card', 'BC Card', 'BC카드', '#E20613', '💳', 1, 'https://wisebiz.bccard.com/app/corp/Intro.corp'],
     ['shinhan-card', 'Shinhan Card', '신한카드', '#0046FF', '💳', 0, 'https://www.shinhancard.com/'],
     ['kb-card', 'KB Card', 'KB국민카드', '#FFBC00', '💳', 0, 'https://www.kbcard.com/'],
     ['samsung-card', 'Samsung Card', '삼성카드', '#1428A0', '💳', 0, 'https://www.samsungcard.com/'],
@@ -272,18 +273,25 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
   // 7. Triggers for updated_at
   // ========================================
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS update_accounts_timestamp 
+    CREATE TRIGGER IF NOT EXISTS update_accounts_timestamp
     AFTER UPDATE ON accounts
     BEGIN
       UPDATE accounts SET updated_at = datetime('now') WHERE id = NEW.id;
     END;
-    
-    CREATE TRIGGER IF NOT EXISTS update_credentials_timestamp 
+
+    CREATE TRIGGER IF NOT EXISTS update_credentials_timestamp
     AFTER UPDATE ON saved_credentials
     BEGIN
       UPDATE saved_credentials SET updated_at = datetime('now') WHERE id = NEW.id;
     END;
   `);
+
+  // Migration: Ensure BC Card exists in existing databases
+  const ensureBCCard = db.prepare(`
+    INSERT OR IGNORE INTO banks (id, name, name_ko, color, icon, supports_automation, login_url)
+    VALUES ('bc-card', 'BC Card', 'BC카드', '#E20613', '💳', 1, 'https://wisebiz.bccard.com/app/corp/Intro.corp')
+  `);
+  ensureBCCard.run();
 
   console.log('✅ Finance Hub multi-bank schema initialized');
 }

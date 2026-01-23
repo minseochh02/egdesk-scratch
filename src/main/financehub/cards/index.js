@@ -17,6 +17,7 @@ const kbCard = require('./kb-card');
 const lotteCard = require('./lotte-card');
 const hanaCard = require('./hana-card');
 const nhCard = require('./nh-card');
+const bcCard = require('./bc-card');
 
 // Card registry for easy access
 const CARDS = {
@@ -62,8 +63,13 @@ const CARDS = {
     create: nhCard.createNHCardAutomator,
     run: nhCard.runNHCardAutomation,
   },
+  'bc-card': {
+    config: bcCard.BC_CARD_INFO,
+    Automator: bcCard.BCCardAutomator,
+    create: bcCard.createBCCardAutomator,
+    run: bcCard.runBCCardAutomation,
+  },
   // Future card companies will be added here:
-  // 'bc-card': { ... },
   // 'woori-card': { ... },
   // 'citi-card': { ... },
 };
@@ -131,6 +137,7 @@ module.exports = {
   lotteCard,
   hanaCard,
   nhCard,
+  bcCard,
 
   // Card registry
   CARDS,
