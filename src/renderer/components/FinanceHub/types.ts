@@ -350,7 +350,7 @@ export const KOREAN_CARD_COMPANIES: CardConfig[] = [
     category: 'major',
     color: '#0046FF',
     icon: '💳',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'kb-card',
