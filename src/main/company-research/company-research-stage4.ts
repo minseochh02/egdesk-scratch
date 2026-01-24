@@ -300,6 +300,7 @@ export async function exportReportAsDocx(
  */
 export async function exportBothReportsAsDocx(
   domain: string,
+  companyName: string,
   execSummaryContent: string | null,
   detailedReportContent: string | null
 ): Promise<MultiExportResult> {
@@ -309,27 +310,27 @@ export async function exportBothReportsAsDocx(
       fs.mkdirSync(reportsDir, { recursive: true });
     }
 
-    const safeDomain = domain.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const safeCompanyName = companyName.replace(/[^a-z0-9가-힣]/gi, '_');
     const timestamp = new Date().toISOString().split('T')[0];
     const files: { type: string; filePath: string }[] = [];
 
     // Combine contents if both exist, otherwise use whichever is available
     let combinedContent = '';
-    let title = `Company Research Report - ${domain}`;
+    let title = `Company Research Report - ${companyName}`;
 
     if (execSummaryContent && detailedReportContent) {
       combinedContent = `# Executive Summary\n\n${execSummaryContent}\n\n---\n\n# Detailed Research Report\n\n${detailedReportContent}`;
-      title = `Combined Research Report - ${domain}`;
+      title = `Combined Research Report - ${companyName}`;
     } else if (execSummaryContent) {
       combinedContent = execSummaryContent;
-      title = `Executive Summary - ${domain}`;
+      title = `Executive Summary - ${companyName}`;
     } else if (detailedReportContent) {
       combinedContent = detailedReportContent;
-      title = `Detailed Research Report - ${domain}`;
+      title = `Detailed Research Report - ${companyName}`;
     }
 
     if (combinedContent) {
-      const fileName = `${safeDomain}_research_report_${timestamp}`;
+      const fileName = `${safeCompanyName}_research_report_${timestamp}`;
       const filePath = path.join(reportsDir, `${fileName}.docx`);
       
       const doc = markdownToDocx(combinedContent, title);

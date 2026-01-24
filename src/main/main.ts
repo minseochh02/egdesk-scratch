@@ -1298,11 +1298,11 @@ const createWindow = async () => {
       });
 
       // IPC handler for exporting both reports as DOCX
-      ipcMain.handle('company-research-export-docx', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
+      ipcMain.handle('company-research-export-docx', async (_event, domain: string, companyName: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
         try {
-          console.log(`[IPC] Exporting both reports as DOCX for: ${domain}`);
+          console.log(`[IPC] Exporting both reports as DOCX for: ${companyName} (${domain})`);
           const { exportBothReportsAsDocx } = await import('./company-research/company-research-stage4');
-          const result = await exportBothReportsAsDocx(domain, execSummaryContent, detailedReportContent);
+          const result = await exportBothReportsAsDocx(domain, companyName, execSummaryContent, detailedReportContent);
           return result;
         } catch (error: any) {
           console.error(`❌ DOCX Export failed:`, error);
