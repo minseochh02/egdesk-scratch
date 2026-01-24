@@ -97,41 +97,83 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
     await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3');
     await page.waitForTimeout(3000);
 
-    // Open certificate login popup
-    const newPagePromise = context.waitForEvent('page');
-    await page.locator('[id="mf_txppWframe_loginboxFrame_anchor22"]').click();
+    // Handle initial popup that appears on page load
+    console.log('[Hometax] Waiting for initial popup...');
+    const initialPopupPromise = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
+    const initialPopup = await initialPopupPromise;
 
-    // Handle popup
-    const newPage = await newPagePromise;
-    await newPage.waitForLoadState('domcontentloaded');
-    await newPage.waitForLoadState('networkidle').catch(() => {});
-    await newPage.waitForTimeout(2000);
+    if (initialPopup) {
+      console.log('[Hometax] Initial popup detected, handling...');
+      await initialPopup.waitForLoadState('domcontentloaded', { timeout: 60000 });
+      await initialPopup.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+      await initialPopup.waitForTimeout(3000);
+
+      pageStack.push(page);
+      page = initialPopup;
+      globalPage = page;
+
+      // Set up dialog handling for popup
+      page.on('dialog', async (dialog) => {
+        console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+        await dialog.accept();
+        console.log('✅ Dialog accepted');
+      });
+
+      await page.waitForTimeout(2000);
+      await page.mouse.click(865, 18); // Click at coordinates to close
+
+      // Wait for popup to close and switch back
+      await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});
+
+      const previousPage = pageStack.pop();
+      if (previousPage) {
+        page = previousPage;
+        globalPage = page;
+        console.log('⬅️ Switched back to previous page after initial popup:', page.url());
+      } else {
+        const allPages = context.pages();
+        page = allPages[0];
+        globalPage = page;
+      }
+    } else {
+      console.log('[Hometax] No initial popup detected, proceeding...');
+    }
+
+    // Now open certificate login popup
+    console.log('[Hometax] Opening certificate login popup...');
+    await page.waitForTimeout(2000);
+    const certPopupPromise = context.waitForEvent('page');
+    await page.locator('[id="mf_txppWframe_loginboxFrame_anchor22"]').click({ timeout: 30000 });
+
+    // Handle certificate popup
+    const certPopup = await certPopupPromise;
+    await certPopup.waitForLoadState('domcontentloaded', { timeout: 60000 });
+    await certPopup.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    await certPopup.waitForTimeout(5000);
 
     pageStack.push(page);
-    page = newPage;
+    page = certPopup;
     globalPage = page;
 
-    // Set up dialog handling for new page
+    // Set up dialog handling for certificate popup
     page.on('dialog', async (dialog) => {
       console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
       await dialog.accept();
       console.log('✅ Dialog accepted');
     });
 
-    await page.waitForTimeout(3000); // Human-like delay (1x multiplier)
-    await page.mouse.click(865, 18); // Click at coordinates
+    await page.waitForTimeout(3000);
+    await page.mouse.click(865, 18); // Click at coordinates to close certificate popup
 
-    // Popup/tab was closed during recording
-    // Wait for current page to close and switch back
+    // Wait for certificate popup to close and switch back
     {
       await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});
 
-      // Switch back to previous page
       const previousPage = pageStack.pop();
       if (previousPage) {
         page = previousPage;
         globalPage = page;
-        console.log('⬅️ Switched back to previous page:', page.url());
+        console.log('⬅️ Switched back to previous page after certificate popup:', page.url());
         console.log('📚 Stack size:', pageStack.length);
       } else {
         console.warn('⚠️ No previous page in stack, using first available page');
@@ -172,6 +214,22 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
 
             const rows = tbody.querySelectorAll('tr');
             const certificates = [];
+
+            // Add event listeners to log all click events for debugging
+            console.log('[Hometax] Adding event listeners to certificate rows for debugging...');
+            rows.forEach((row, index) => {
+              ['click', 'mousedown', 'mouseup', 'dblclick', 'mouseenter', 'mouseover'].forEach(eventType => {
+                row.addEventListener(eventType, (e) => {
+                  console.log(`[Hometax Event] ${eventType.toUpperCase()} on row ${index + 1}`, {
+                    bubbles: e.bubbles,
+                    cancelable: e.cancelable,
+                    target: e.target,
+                    currentTarget: e.currentTarget,
+                    eventPhase: e.eventPhase
+                  });
+                }, true);
+              });
+            });
 
             for (let i = 0; i < rows.length; i++) {
               const row = rows[i];
@@ -305,21 +363,65 @@ export async function connectToHometax(
       await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3');
       await page.waitForTimeout(3000);
 
-      // Open certificate login popup
-      const newPagePromise = context.waitForEvent('page');
-      await page.locator('[id="mf_txppWframe_loginboxFrame_anchor22"]').click();
+      // Handle initial popup that appears on page load
+      console.log('[Hometax] Waiting for initial popup...');
+      const initialPopupPromise = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
+      const initialPopup = await initialPopupPromise;
 
-      // Handle popup
-      const newPage = await newPagePromise;
-      await newPage.waitForLoadState('domcontentloaded');
-      await newPage.waitForLoadState('networkidle').catch(() => {});
-      await newPage.waitForTimeout(2000);
+      if (initialPopup) {
+        console.log('[Hometax] Initial popup detected, handling...');
+        await initialPopup.waitForLoadState('domcontentloaded', { timeout: 60000 });
+        await initialPopup.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+        await initialPopup.waitForTimeout(3000);
+
+        pageStack.push(page);
+        page = initialPopup;
+        globalPage = page;
+
+        // Set up dialog handling for popup
+        page.on('dialog', async (dialog) => {
+          console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+          await dialog.accept();
+          console.log('✅ Dialog accepted');
+        });
+
+        await page.waitForTimeout(2000);
+        await page.mouse.click(865, 18); // Click at coordinates to close
+
+        // Wait for popup to close and switch back
+        await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});
+
+        const previousPage = pageStack.pop();
+        if (previousPage) {
+          page = previousPage;
+          globalPage = page;
+          console.log('⬅️ Switched back to previous page after initial popup:', page.url());
+        } else {
+          const allPages = context.pages();
+          page = allPages[0];
+          globalPage = page;
+        }
+      } else {
+        console.log('[Hometax] No initial popup detected, proceeding...');
+      }
+
+      // Now open certificate login popup
+      console.log('[Hometax] Opening certificate login popup...');
+      await page.waitForTimeout(2000);
+      const certPopupPromise = context.waitForEvent('page');
+      await page.locator('[id="mf_txppWframe_loginboxFrame_anchor22"]').click({ timeout: 30000 });
+
+      // Handle certificate popup
+      const certPopup = await certPopupPromise;
+      await certPopup.waitForLoadState('domcontentloaded', { timeout: 60000 });
+      await certPopup.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+      await certPopup.waitForTimeout(5000);
 
       pageStack.push(page);
-      page = newPage;
+      page = certPopup;
       globalPage = page;
 
-      // Set up dialog handling for new page
+      // Set up dialog handling for certificate popup
       page.on('dialog', async (dialog) => {
         console.log(`🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
         await dialog.accept();
@@ -327,9 +429,9 @@ export async function connectToHometax(
       });
 
       await page.waitForTimeout(3000);
-      await page.mouse.click(865, 18);
+      await page.mouse.click(865, 18); // Click at coordinates to close certificate popup
 
-      // Handle popup close
+      // Handle certificate popup close
       {
         await page.waitForEvent('close', { timeout: 5000 }).catch(() => {});
 
@@ -337,7 +439,7 @@ export async function connectToHometax(
         if (previousPage) {
           page = previousPage;
           globalPage = page;
-          console.log('⬅️ Switched back to previous page:', page.url());
+          console.log('⬅️ Switched back to previous page after certificate popup:', page.url());
         } else {
           const allPages = context.pages();
           page = allPages[0];
@@ -358,8 +460,28 @@ export async function connectToHometax(
             const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
             const row = result.singleNodeValue as HTMLElement;
             if (row) {
-              console.log('[Hometax] Certificate row found, clicking:', xpath);
-              row.click();
+              console.log('[Hometax] Certificate row found:', xpath);
+
+              // Find the <a> element inside the row (the actual click target)
+              const anchor = row.querySelector('a');
+              if (!anchor) {
+                console.error('[Hometax] No anchor element found in row');
+                return false;
+              }
+
+              console.log('[Hometax] Found anchor element, clicking:', anchor);
+
+              // Dispatch proper mouse events sequence on the anchor element
+              console.log('[Hometax] Dispatching mousedown event');
+              anchor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+              console.log('[Hometax] Dispatching mouseup event');
+              anchor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
+              console.log('[Hometax] Dispatching click event');
+              anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+              console.log('[Hometax] All mouse events dispatched successfully on anchor');
               return true;
             }
             return false;
@@ -375,16 +497,16 @@ export async function connectToHometax(
       }
     }
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(3000);
 
     // Click on certificate password input in iframe
     console.log('[Hometax] Clicking certificate password input...');
-    await page.frameLocator('[id="dscert"]').locator('[id="input_cert_pw"]').click();
+    await page.frameLocator('[id="dscert"]').locator('[id="input_cert_pw"]').click({ timeout: 30000 });
     await page.waitForTimeout(3000); // Human-like delay
 
     // Fill certificate password in iframe
     console.log('[Hometax] Entering certificate password...');
-    await page.frameLocator('[id="dscert"]').locator('[id="input_cert_pw"]').fill(certificatePassword);
+    await page.frameLocator('[id="dscert"]').locator('[id="input_cert_pw"]').fill(certificatePassword, { timeout: 30000 });
     await page.waitForTimeout(3000); // Human-like delay
 
     // Click at coordinates inside iframe (submit button)
@@ -429,17 +551,52 @@ export async function connectToHometax(
     // Navigate to 전자세금계산서 목록조회 (Electronic Tax Invoice List)
     console.log('[Hometax] Navigating to tax invoice list...');
     await page.waitForTimeout(3000); // Human-like delay (1x multiplier)
-    await page.locator('[id="mf_wfHeader_wq_uuid_358"]').click();
+    await page.locator('[id="mf_wfHeader_wq_uuid_358"]').click({ timeout: 30000 });
     await page.waitForTimeout(2891); // Human-like delay (1x multiplier)
-    await page.locator('a:has-text("조회") >> nth=184').click();
+
+    // Try to click 조회 with fallback XPath
+    try {
+      await page.locator('a:has-text("조회") >> nth=184').click({ timeout: 30000 });
+      console.log('[Hometax] 조회 clicked with primary selector');
+    } catch (error) {
+      console.log('[Hometax] Primary selector failed, trying fallback XPath for 조회');
+      await page.evaluate(() => {
+        const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[2]/ul/li[1]/a';
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        if (element) {
+          element.click();
+          console.log('[Hometax] 조회 clicked with fallback XPath');
+        } else {
+          throw new Error('조회 element not found with fallback XPath');
+        }
+      });
+    }
+
     await page.waitForTimeout(2096); // Human-like delay (1x multiplier)
-    await page.locator('[id="grpMenuAtag_46_4609050300"]').click();
-    await page.evaluate(() => {
-      const xpath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[1]/dl[2]/dd/div/div/div[1]/label';
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    });
+
+    // Try to click 월, 분기별 with fallback XPath
+    try {
+      await page.locator('[id="grpMenuAtag_46_4609050300"]').click({ timeout: 30000 });
+      console.log('[Hometax] 월, 분기별 clicked with primary selector');
+    } catch (error) {
+      console.log('[Hometax] Primary selector failed, trying fallback XPath for 월, 분기별');
+      const periodClicked = await page.evaluate(() => {
+        const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[2]/ul/li[1]/ul/li[3]/a';
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        if (element) {
+          element.click();
+          console.log('[Hometax] 월, 분기별 clicked with fallback XPath');
+          return true;
+        }
+        return false;
+      });
+
+      if (!periodClicked) {
+        throw new Error('월, 분기별 element not found with primary or fallback selectors');
+      }
+    }
 
     // Wait for year select to be available
     await page.waitForTimeout(3000);
@@ -452,7 +609,7 @@ export async function connectToHometax(
     await page.waitForFunction((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       return result.singleNodeValue !== null;
-    }, yearXPath, { timeout: 10000 }).catch(() => console.log('[Hometax] Year select wait timed out'));
+    }, yearXPath, { timeout: 30000 }).catch(() => console.log('[Hometax] Year select wait timed out'));
 
     await page.evaluate((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -514,7 +671,7 @@ export async function connectToHometax(
     const radioIndex = invoiceType === 'sales' ? 0 : 1;
     const radioSelector = `#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_${radioIndex} > label`;
     console.log(`[Hometax] Selecting ${invoiceType === 'sales' ? '매출' : '매입'}...`);
-    await page.locator(radioSelector).click();
+    await page.locator(radioSelector).click({ timeout: 30000 });
     await page.waitForTimeout(1092); // Human-like delay (1x multiplier)
 
     console.log('[Hometax] Reached tax invoice list page');
@@ -696,7 +853,7 @@ export async function collectTaxInvoices(
 
     // Click 매입 radio button
     await page.waitForTimeout(2000);
-    await page.locator('#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_1 > label').click();
+    await page.locator('#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_1 > label').click({ timeout: 30000 });
     await page.waitForTimeout(1092);
 
     // Click 조회 button again

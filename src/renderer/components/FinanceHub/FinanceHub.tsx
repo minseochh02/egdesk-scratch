@@ -65,22 +65,31 @@ const FinanceHub: React.FC = () => {
   
   const {
     recentTransactions,
-    transactions,
+    bankTransactions,
+    cardTransactions,
     stats,
+    bankStats,
+    cardStats,
     monthlySummary,
     accounts,
     banks,
-    filters,
+    bankFilters,
+    cardFilters,
     pagination,
     sort,
-    isLoading,
+    isBankLoading,
+    isCardLoading,
     isLoadingRecent,
     isSyncing,
     error,
-    setFilters,
-    resetFilters,
+    setBankFilters,
+    setCardFilters,
+    resetBankFilters,
+    resetCardFilters,
     setPage,
     toggleSort,
+    loadBankTransactions,
+    loadCardTransactions,
     loadBanksAndAccounts,
     loadAllTransactions,
     refreshAll,
@@ -1938,11 +1947,11 @@ const FinanceHub: React.FC = () => {
           </>
         ) : currentView === 'bank-transactions' ? (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
-            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} transactionType="bank" />
+            <TransactionsPage transactions={bankTransactions} stats={bankStats} filters={bankFilters} pagination={pagination} sort={sort} isLoading={isBankLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setBankFilters} onResetFilters={resetBankFilters} onPageChange={setPage} onSort={toggleSort} loadTransactions={loadBankTransactions} loadAllTransactions={loadAllTransactions} transactionType="bank" />
           </div>
         ) : currentView === 'card-transactions' ? (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
-            <TransactionsPage transactions={transactions} stats={stats} filters={filters} pagination={pagination} sort={sort} isLoading={isLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setFilters} onResetFilters={resetFilters} onPageChange={setPage} onSort={toggleSort} loadAllTransactions={loadAllTransactions} transactionType="card" />
+            <TransactionsPage transactions={cardTransactions} stats={cardStats} filters={cardFilters} pagination={pagination} sort={sort} isLoading={isCardLoading} error={error} banks={banks} accounts={accounts} onFilterChange={setCardFilters} onResetFilters={resetCardFilters} onPageChange={setPage} onSort={toggleSort} loadTransactions={loadCardTransactions} loadAllTransactions={loadAllTransactions} transactionType="card" />
           </div>
         ) : currentView === 'tax-invoices' ? (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
