@@ -642,9 +642,35 @@ const createWindow = async () => {
 
       ipcMain.handle('finance-hub:card:get-transactions', async (_event, { cardCompanyId, cardNumber, startDate, endDate }) => {
         try {
-          const automator = activeAutomators.get(cardCompanyId);
+          let automator = activeAutomators.get(cardCompanyId);
+
+          // If no active session, try to login automatically with saved credentials
           if (!automator) {
-            throw new Error('No active browser session found. Please login first.');
+            console.log(`[FINANCE-HUB] No active session for ${cardCompanyId}, attempting auto-login...`);
+
+            // Get saved credentials
+            const fhConfig = getStore().get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+            const savedCredentials = (fhConfig.savedCredentials && fhConfig.savedCredentials[cardCompanyId]) || null;
+
+            if (!savedCredentials) {
+              throw new Error('No active browser session found. Please login first.');
+            }
+
+            console.log(`[FINANCE-HUB] Found saved credentials for ${cardCompanyId}, logging in...`);
+
+            // Create new automator
+            const { cards } = require('./financehub');
+            automator = cards.createCardAutomator(cardCompanyId, { headless: false });
+            activeAutomators.set(cardCompanyId, automator);
+
+            // Login with saved credentials
+            const loginResult = await automator.login(savedCredentials);
+            if (!loginResult.success) {
+              activeAutomators.delete(cardCompanyId);
+              throw new Error(`Auto-login failed: ${loginResult.error || 'Unknown error'}`);
+            }
+
+            console.log(`[FINANCE-HUB] Auto-login successful for ${cardCompanyId}`);
           }
 
           const transactions = await automator.getTransactions(cardNumber, startDate, endDate);
@@ -1262,7 +1288,7 @@ const createWindow = async () => {
       ipcMain.handle('company-research-export-combined', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
         try {
           console.log(`[IPC] Manually exporting combined report as DOCX for: ${domain}`);
-          const { exportCombinedReportToUserPath } = await import('./company-research-stage4');
+          const { exportCombinedReportToUserPath } = await import('./company-research/company-research-stage4');
           const result = await exportCombinedReportToUserPath(domain, execSummaryContent, detailedReportContent);
           return result;
         } catch (error: any) {
@@ -1275,7 +1301,7 @@ const createWindow = async () => {
       ipcMain.handle('company-research-export-docx', async (_event, domain: string, execSummaryContent: string | null, detailedReportContent: string | null) => {
         try {
           console.log(`[IPC] Exporting both reports as DOCX for: ${domain}`);
-          const { exportBothReportsAsDocx } = await import('./company-research-stage4');
+          const { exportBothReportsAsDocx } = await import('./company-research/company-research-stage4');
           const result = await exportBothReportsAsDocx(domain, execSummaryContent, detailedReportContent);
           return result;
         } catch (error: any) {
@@ -1287,7 +1313,7 @@ const createWindow = async () => {
       // IPC handler for opening reports folder
       ipcMain.handle('company-research-open-folder', async () => {
         try {
-          const { openReportsFolder } = await import('./company-research-stage4');
+          const { openReportsFolder } = await import('./company-research/company-research-stage4');
           await openReportsFolder();
           return { success: true };
         } catch (error: any) {

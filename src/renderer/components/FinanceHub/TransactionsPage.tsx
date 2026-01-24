@@ -3,7 +3,7 @@
 // Now receives data and callbacks via props from parent
 // ============================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import './TransactionsPage.css';
@@ -43,6 +43,7 @@ interface TransactionsPageProps {
   onResetFilters: () => void;
   onPageChange: (page: number) => void;
   onSort: (field: SortState['field']) => void;
+  loadTransactions: () => Promise<void>;
   loadAllTransactions: () => Promise<Transaction[]>;
   transactionType: 'bank' | 'card';
 }
@@ -65,6 +66,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   onResetFilters,
   onPageChange,
   onSort,
+  loadTransactions,
   loadAllTransactions,
   transactionType,
 }) => {
@@ -91,15 +93,26 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
     checkPersistentSpreadsheet();
   }, [transactionType]);
 
-  // Filter transactions based on type (bank or card)
+  // Load transactions when filters, pagination, or sort change
+  useEffect(() => {
+    loadTransactions();
+  }, [filters, pagination.currentPage, pagination.pageSize, sort, loadTransactions]);
+
+  // Transactions are already filtered by type in the hook, no need to filter here
+  const filteredTransactions = transactions;
+
+  // Helper function to check if a transaction is a card transaction
   const isCardTransaction = (tx: Transaction) => {
-    // Card companies have IDs ending with '-card' (e.g., 'nh-card', 'shinhan-card')
     return tx.bankId.endsWith('-card');
   };
 
-  const filteredTransactions = transactions.filter(tx =>
-    transactionType === 'card' ? isCardTransaction(tx) : !isCardTransaction(tx)
-  );
+  // Filter accounts based on transaction type
+  const typeFilteredAccounts = useMemo(() => {
+    return accounts.filter(account => {
+      const isCardAccount = account.bankId.endsWith('-card');
+      return transactionType === 'card' ? isCardAccount : !isCardAccount;
+    });
+  }, [accounts, transactionType]);
 
   // Handlers
   const handleFilterChange = (key: keyof Filters, value: string) => {
@@ -367,9 +380,10 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
         <TransactionFilters
           filters={filters}
           banks={banks}
-          accounts={accounts}
+          accounts={typeFilteredAccounts}
           onFilterChange={handleFilterChange}
           onResetFilters={onResetFilters}
+          transactionType={transactionType}
         />
       )}
 

@@ -18,6 +18,7 @@ interface TransactionFiltersProps {
   onFilterChange: (key: keyof Filters, value: string) => void;
   onResetFilters: () => void;
   showQuickDates?: boolean;
+  transactionType?: 'bank' | 'card';
 }
 
 // ============================================
@@ -31,6 +32,7 @@ const TransactionFilters: React.FC<TransactionFiltersProps> = ({
   onFilterChange,
   onResetFilters,
   showQuickDates = true,
+  transactionType = 'bank',
 }) => {
   // Get unique banks from accounts
   const uniqueBanks = React.useMemo(() => {
@@ -73,15 +75,15 @@ const TransactionFilters: React.FC<TransactionFiltersProps> = ({
           />
         </div>
 
-        {/* Bank Filter */}
+        {/* Bank/Card Company Filter */}
         <div className="tx-filters__group">
-          <label className="tx-filters__label">은행</label>
+          <label className="tx-filters__label">{transactionType === 'card' ? '카드사' : '은행'}</label>
           <select
             className="tx-filters__select"
             value={filters.bankId}
             onChange={(e) => handleBankChange(e.target.value)}
           >
-            <option value="all">전체 은행</option>
+            <option value="all">{transactionType === 'card' ? '전체 카드사' : '전체 은행'}</option>
             {uniqueBanks.map(bank => (
               <option key={bank.id} value={bank.id}>
                 {bank.icon} {bank.nameKo}
@@ -90,15 +92,15 @@ const TransactionFilters: React.FC<TransactionFiltersProps> = ({
           </select>
         </div>
 
-        {/* Account Filter */}
+        {/* Account/Card Filter */}
         <div className="tx-filters__group">
-          <label className="tx-filters__label">계좌</label>
+          <label className="tx-filters__label">{transactionType === 'card' ? '카드' : '계좌'}</label>
           <select
             className="tx-filters__select"
             value={filters.accountId}
             onChange={(e) => onFilterChange('accountId', e.target.value)}
           >
-            <option value="all">전체 계좌</option>
+            <option value="all">{transactionType === 'card' ? '전체 카드' : '전체 계좌'}</option>
             {filteredAccounts.map(account => (
               <option key={account.id} value={account.id}>
                 {formatAccountNumber(account.accountNumber)}
