@@ -376,15 +376,25 @@ const BrowserRecorderPage: React.FC = () => {
       if (data.success) {
         addDebugLog(`✅ Test completed successfully`);
       } else {
-        addDebugLog(`❌ Test failed: ${data.error || 'Unknown error'}`);
+        const errorMsg = data.error || 'Unknown error';
+        addDebugLog(`❌ Test failed: ${errorMsg}`);
 
-        // Show alert for test failures
-        alert(`Test replay failed: ${data.error || 'Unknown error'}`);
-
-        // Log details for debugging
-        if (data.details) {
-          console.log('Test failure details:', data.details);
+        // Log all details to console for debugging
+        console.error('=== Test Replay Failed ===');
+        console.error('Error:', errorMsg);
+        if (data.stack) {
+          console.error('Stack:', data.stack);
         }
+        if (data.details) {
+          console.error('Details:', data.details);
+        }
+        console.error('=========================');
+
+        // Show alert with truncated error (first 500 chars)
+        const displayError = errorMsg.length > 500
+          ? errorMsg.substring(0, 500) + '...\n\n(See browser console for full details)'
+          : errorMsg;
+        alert(`Test replay failed:\n\n${displayError}`);
       }
     };
 
