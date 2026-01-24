@@ -1919,20 +1919,53 @@ test('recorded test', async ({ page }) => {
           // Our new format: standalone IIFE with launchPersistentContext
           // Extract code between "try {" and "} finally {"
           console.log('🔍 Detected standalone launchPersistentContext format');
-          const tryMatch = generatedCode.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
 
-          if (tryMatch && tryMatch[1]) {
-            testBody = tryMatch[1].trim();
-            console.log('✅ Extracted test body from try block');
-          } else {
-            // Fallback: try to find actions after page setup
-            const lines = generatedCode.split('\n');
-            const tryIndex = lines.findIndex(line => line.trim() === 'try {');
-            const finallyIndex = lines.findIndex(line => line.includes('} finally {'));
+          const lines = generatedCode.split('\n');
 
-            if (tryIndex !== -1 && finallyIndex !== -1 && tryIndex < finallyIndex) {
+          // Find the '} finally {' line and get its indentation
+          let finallyIndex = -1;
+          let finallyIndent = -1;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('} finally {')) {
+              finallyIndex = i;
+              finallyIndent = lines[i].search(/\S/); // First non-whitespace character position
+              break;
+            }
+          }
+
+          if (finallyIndex !== -1 && finallyIndent !== -1) {
+            // Search backwards from finally to find a 'try {' with the SAME indentation
+            let tryIndex = -1;
+            for (let i = finallyIndex - 1; i >= 0; i--) {
+              const lineIndent = lines[i].search(/\S/);
+              if (lineIndent === finallyIndent && lines[i].trim() === 'try {') {
+                tryIndex = i;
+                console.log('✅ Found matching try block at line', i, 'with indentation', lineIndent);
+                break;
+              }
+            }
+
+            if (tryIndex !== -1) {
               testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
-              console.log('✅ Extracted test body using line-by-line fallback');
+              console.log('✅ Extracted test body from try block (lines', tryIndex + 1, 'to', finallyIndex, ')');
+            } else {
+              console.error('❌ Could not find matching try block with same indentation as finally');
+            }
+          }
+
+          if (!testBody) {
+            console.error('❌ Failed to extract test body, attempting fallback');
+            // Fallback: look for the pattern after page setup
+            const setupEndMarker = 'page.on(\'dialog\'';
+            const setupEndIndex = generatedCode.indexOf(setupEndMarker);
+            if (setupEndIndex !== -1) {
+              // Find the next 'try {' after setup
+              const afterSetup = generatedCode.substring(setupEndIndex);
+              const tryMatch = afterSetup.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
+              if (tryMatch && tryMatch[1]) {
+                testBody = tryMatch[1].trim();
+                console.log('⚠️ Extracted test body using post-setup regex fallback');
+              }
             }
           }
         }
@@ -1943,7 +1976,9 @@ test('recorded test', async ({ page }) => {
         }
 
         console.log('📋 Test body extracted, length:', testBody.length);
-        
+        console.log('📋 First 500 chars of testBody:', testBody.substring(0, 500));
+        console.log('📋 Last 500 chars of testBody:', testBody.substring(testBody.length - 500));
+
         // Send info to renderer
         event.sender.send('playwright-test-info', {
           message: 'Starting test replay in production mode...',
@@ -2006,7 +2041,23 @@ test('recorded test', async ({ page }) => {
 
           // Create a function from the test body and execute it
           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-          const testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', testBody);
+
+          let testFunction;
+          try {
+            testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', testBody);
+          } catch (syntaxError: any) {
+            // If there's a syntax error creating the function, provide detailed feedback
+            const errorMsg = `Failed to create test function: ${syntaxError.message}`;
+            console.error('❌', errorMsg);
+            console.error('Test body preview (first 1000 chars):', testBody.substring(0, 1000));
+            console.error('Test body preview (last 500 chars):', testBody.substring(Math.max(0, testBody.length - 500)));
+
+            // Write the problematic test body to a temp file for inspection
+            const tempDebugFile = path.join(os.tmpdir(), 'egdesk-test-debug.js');
+            fs.writeFileSync(tempDebugFile, testBody);
+
+            throw new Error(`${errorMsg}\n\nExtracted test body length: ${testBody.length} chars\nDebug file saved to: ${tempDebugFile}\n\nFirst 200 chars:\n${testBody.substring(0, 200)}\n\nLast 200 chars:\n${testBody.substring(Math.max(0, testBody.length - 200))}`);
+          }
 
           // Simple expect implementation for basic assertions
           const expect = (value: any) => ({
@@ -2036,12 +2087,14 @@ test('recorded test', async ({ page }) => {
         } catch (error: any) {
           console.error('❌ Test failed:', error);
 
-          // Send failure event
+          // Send failure event with full stack trace
           event.sender.send('playwright-test-completed', {
             success: false,
             testFile,
             exitCode: 1,
-            error: error?.message || 'Test execution failed'
+            error: error?.message || 'Test execution failed',
+            stack: error?.stack,
+            details: error?.toString()
           });
 
         } finally {

@@ -6136,7 +6136,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           break;
       }
     }
-    
+
     lines.push("  } finally {");
     lines.push("    await context.close();");
     lines.push("    // Clean up profile directory");
