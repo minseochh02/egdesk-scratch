@@ -2388,17 +2388,19 @@ gmailMCP: {
  * Google Sheets API
  */
 sheets: {
-  createTransactionsSpreadsheet: (params: { title: string; transactions: any[]; banks: Record<string, any>; accounts: any[] }) => 
+  createTransactionsSpreadsheet: (params: { title: string; transactions: any[]; banks: Record<string, any>; accounts: any[] }) =>
     ipcRenderer.invoke('sheets:create-transactions-spreadsheet', params),
-  getOrCreateTransactionsSpreadsheet: (params: { transactions: any[]; banks: Record<string, any>; accounts: any[]; persistentSpreadsheetId?: string }) => 
+  getOrCreateTransactionsSpreadsheet: (params: { transactions: any[]; banks: Record<string, any>; accounts: any[]; persistentSpreadsheetId?: string }) =>
     ipcRenderer.invoke('sheets:get-or-create-transactions-spreadsheet', params),
-  createSpreadsheet: (params: { title: string; data?: string[][] }) => 
+  exportTaxInvoicesToSpreadsheet: (params: { invoices: any[]; invoiceType: 'sales' | 'purchase' }) =>
+    ipcRenderer.invoke('sheets:export-tax-invoices', params),
+  createSpreadsheet: (params: { title: string; data?: string[][] }) =>
     ipcRenderer.invoke('sheets:create-spreadsheet', params),
-  getSpreadsheet: (spreadsheetId: string) => 
+  getSpreadsheet: (spreadsheetId: string) =>
     ipcRenderer.invoke('sheets:get-spreadsheet', spreadsheetId),
-  getRange: (params: { spreadsheetId: string; range: string }) => 
+  getRange: (params: { spreadsheetId: string; range: string }) =>
     ipcRenderer.invoke('sheets:get-range', params),
-  updateRange: (params: { spreadsheetId: string; range: string; values: string[][] }) => 
+  updateRange: (params: { spreadsheetId: string; range: string; values: string[][] }) =>
     ipcRenderer.invoke('sheets:update-range', params),
   importToSQL: (params: { spreadsheetId: string; sheetName?: string }) =>
     ipcRenderer.invoke('sheets:import-to-sql', params),

@@ -462,5 +462,74 @@ export class SheetsService {
 
     return result;
   }
+
+  /**
+   * Export tax invoices to Google Spreadsheet
+   */
+  async exportTaxInvoicesToSpreadsheet(
+    invoices: any[],
+    invoiceType: 'sales' | 'purchase'
+  ): Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; error?: string }> {
+    try {
+      const typeLabel = invoiceType === 'sales' ? '매출' : '매입';
+      const title = `EGDesk ${typeLabel} 전자세금계산서 ${new Date().toISOString().slice(0, 10)}`;
+
+      // Prepare headers based on invoice type
+      const headers = [
+        '작성일자',
+        '전자세금계산서분류',
+        invoiceType === 'sales' ? '공급받는자상호' : '공급자상호',
+        invoiceType === 'sales' ? '공급받는자등록번호' : '공급자등록번호',
+        invoiceType === 'sales' ? '공급받는자대표자' : '공급자대표자',
+        '공급가액',
+        '세액',
+        '합계금액',
+        '비고',
+        '사업자번호'
+      ];
+
+      // Prepare data rows
+      const rows = invoices.map(inv => {
+        const companyField = invoiceType === 'sales' ? '공급받는자상호' : '공급자상호';
+        const registrationField = invoiceType === 'sales' ? '공급받는자등록번호' : '공급자등록번호';
+        const representativeField = invoiceType === 'sales' ? '공급받는자대표자' : '공급자대표자';
+
+        return [
+          inv.작성일자 || '',
+          inv.전자세금계산서분류 || '',
+          inv[companyField] || '',
+          inv[registrationField] || '',
+          inv[representativeField] || '',
+          inv.공급가액?.toString() || '0',
+          inv.세액?.toString() || '0',
+          inv.합계금액?.toString() || '0',
+          inv.비고 || '',
+          inv.business_number || ''
+        ];
+      });
+
+      // Combine headers and data
+      const data = [headers, ...rows];
+
+      // Create the spreadsheet
+      const result = await this.createSpreadsheet(title, data);
+
+      // Format the headers
+      if (result.spreadsheetId) {
+        await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+      }
+
+      return {
+        success: true,
+        ...result
+      };
+    } catch (error) {
+      console.error('[SheetsService] Error exporting tax invoices:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
 }
 

@@ -37,7 +37,7 @@ export class PHPDownloadManager implements PHPInstaller {
 
   // GitHub release configuration
   private readonly GITHUB_OWNER = 'minseochh02';
-  private readonly GITHUB_REPO = 'egdesk-scratch';
+  private readonly GITHUB_REPO = 'egdesk-releases';
   private readonly PHP_VERSION = 'v1.0.0-php'; // Tag for PHP binaries release
 
   private constructor() {}
