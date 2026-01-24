@@ -469,11 +469,12 @@ const CompanyResearchPage: React.FC = () => {
       }
 
       const companyName = summaryResult?.companyName || companyUrl;
-      
+
       // Export reports as DOCX
       const exportResult = await window.electron.invoke(
         'company-research-export-docx',
         companyUrl,
+        companyName,
         execSummary?.content || null,
         detailedReport?.content || null
       );

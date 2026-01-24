@@ -22,8 +22,20 @@ export interface RangeData {
 }
 
 /**
+ * Helper function to format date string (YYYYMMDD or YYYY-MM-DD) to YYYY.MM.DD
+ */
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  const normalized = dateStr.replace(/-/g, '');
+  if (normalized.length === 8) {
+    return `${normalized.slice(0, 4)}.${normalized.slice(4, 6)}.${normalized.slice(6, 8)}`;
+  }
+  return dateStr;
+}
+
+/**
  * Google Sheets Service
- * 
+ *
  * Provides access to Google Sheets API for reading spreadsheet data.
  * Uses OAuth tokens from AuthService.
  */
@@ -388,7 +400,7 @@ export class SheetsService {
       const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
       const account = accounts.find(a => a.id === tx.accountId);
       return [
-        tx.date || '',
+        formatDate(tx.date),
         tx.time || '',
         bank.nameKo || '',
         account?.accountNumber || '',
@@ -436,7 +448,7 @@ export class SheetsService {
       const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
       const account = accounts.find(a => a.id === tx.accountId);
       return [
-        tx.date || '',
+        formatDate(tx.date),
         tx.time || '',
         bank.nameKo || '',
         account?.accountNumber || '',
