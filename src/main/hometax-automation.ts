@@ -296,9 +296,40 @@ export async function connectToHometax(
     let page = globalPage;
     let context = globalContext;
 
-    // If browser not initialized, run fetchCertificates flow first
-    if (!page || !context) {
-      console.log('[Hometax] Browser not initialized, starting browser...');
+    // Check if already logged in and on invoice page
+    const alreadyLoggedIn = page && context && await page.evaluate(() => {
+      const url = window.location.href;
+      // Check if we're on the tax invoice list page
+      return url.includes('grpMenuAtag_46_4609050300') || document.querySelector('#mf_txppWframe_radio3') !== null;
+    }).catch(() => false);
+
+    let companyName = '';
+    let companyType = '';
+
+    if (alreadyLoggedIn) {
+      console.log('[Hometax] Already logged in and on invoice page, skipping login...');
+
+      // Get company info from page if available
+      const companyNameXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[2]/div/span[1]';
+      companyName = await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        return element?.textContent?.trim() || '';
+      }, companyNameXPath).catch(() => '');
+
+      const companyTypeXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[1]/span';
+      companyType = await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        return element?.textContent?.trim() || '';
+      }, companyTypeXPath).catch(() => '');
+
+      console.log('[Hometax] Company name:', companyName, 'Type:', companyType);
+      // Jump to download section (skip all login and navigation)
+    } else {
+      // Need to login - either browser not initialized or not on invoice page
+      if (!page || !context) {
+        console.log('[Hometax] Browser not initialized, starting browser...');
 
       // Create downloads directory
       const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
@@ -522,29 +553,29 @@ export async function connectToHometax(
     // Wait for page to load after login
     await page.waitForTimeout(3000);
 
-    // Scrape company name from main page (not in iframe)
-    console.log('[Hometax] Scraping company name...');
-    const companyNameXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[2]/div/span[1]';
+      // Scrape company name from main page (not in iframe)
+      console.log('[Hometax] Scraping company name...');
+      const companyNameXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[2]/div/span[1]';
 
-    const companyName = await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      return element?.textContent?.trim() || null;
-    }, companyNameXPath);
+      companyName = await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        return element?.textContent?.trim() || '';
+      }, companyNameXPath);
 
-    console.log('[Hometax] Company name:', companyName);
+      console.log('[Hometax] Company name:', companyName);
 
-    // Scrape company type (법인, etc.) from main page (not in iframe)
-    console.log('[Hometax] Scraping company type...');
-    const companyTypeXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[1]/span';
+      // Scrape company type (법인, etc.) from main page (not in iframe)
+      console.log('[Hometax] Scraping company type...');
+      const companyTypeXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[1]/span';
 
-    const companyType = await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      return element?.textContent?.trim() || null;
-    }, companyTypeXPath);
+      companyType = await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        return element?.textContent?.trim() || '';
+      }, companyTypeXPath);
 
-    console.log('[Hometax] Company type:', companyType);
+      console.log('[Hometax] Company type:', companyType);
 
     // TODO: Extract business number from the page
 
@@ -662,10 +693,11 @@ export async function connectToHometax(
       } else {
         console.error('[Hometax] Month select element not found');
       }
-    }, monthXPath);
-    await page.waitForTimeout(1000);
+      }, monthXPath);
+      await page.waitForTimeout(1000);
 
-    await page.waitForTimeout(2853); // Human-like delay (1x multiplier)
+      await page.waitForTimeout(2853); // Human-like delay (1x multiplier)
+    } // End of login/navigation block
 
     // Click radio button for 매출 or 매입
     const radioIndex = invoiceType === 'sales' ? 0 : 1;

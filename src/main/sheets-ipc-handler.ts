@@ -172,6 +172,20 @@ export function registerSheetsHandlers(): void {
     }
   });
 
+  // Export tax invoices to spreadsheet
+  ipcMain.handle('sheets:export-tax-invoices', async (_, { invoices, invoiceType }) => {
+    try {
+      const result = await sheetsService.exportTaxInvoicesToSpreadsheet(invoices, invoiceType);
+      return result;
+    } catch (error: any) {
+      console.error('Error exporting tax invoices:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to export tax invoices',
+      };
+    }
+  });
+
   // Query imported table data
   ipcMain.handle('sheets:query-imported-table', async (_, { tableName, limit = 100, offset = 0 }) => {
     try {

@@ -1099,6 +1099,28 @@ const FinanceHub: React.FC = () => {
     });
   };
 
+  const handleExportTaxInvoices = async () => {
+    try {
+      // Use filtered and sorted invoices for export
+      const result = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
+        invoices: filteredAndSortedTaxInvoices,
+        invoiceType: taxInvoiceType,
+      });
+
+      if (result.success) {
+        // Open the spreadsheet in a new browser tab
+        window.open(result.spreadsheetUrl, '_blank');
+      } else {
+        const errorMsg = result.error || '알 수 없는 오류';
+        alert(`❌ 스프레드시트 내보내기 실패: ${errorMsg}`);
+      }
+    } catch (error) {
+      console.error('Error exporting tax invoices:', error);
+      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
+      alert(`스프레드시트 내보내기 중 오류 발생: ${errorMsg}`);
+    }
+  };
+
   // Load tax invoices when filters change
   useEffect(() => {
     if (currentView === 'tax-invoices') {
@@ -1969,6 +1991,7 @@ const FinanceHub: React.FC = () => {
               onFilterChange={handleTaxInvoiceFilterChange}
               onResetFilters={handleResetTaxInvoiceFilters}
               onSort={handleTaxInvoiceSort}
+              onExport={handleExportTaxInvoices}
             />
           </div>
         ) : currentView === 'tax-management' ? (

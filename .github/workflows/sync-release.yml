@@ -1,0 +1,31 @@
+name: Sync Release to Public Repo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        uses: robinraju/release-downloader@v1.10
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ github.event.release.tag_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tarBall: false
+          zipBall: false
+          out-file-path: "downloads"
+
+      - name: Create release in public repo
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: minseochh02/egdesk-releases  # Change this to your public repo name
+          tag_name: ${{ github.event.release.tag_name }}
+          name: ${{ github.event.release.name }}
+          body: ${{ github.event.release.body }}
+          draft: ${{ github.event.release.draft }}
+          prerelease: ${{ github.event.release.prerelease }}
+          files: downloads/**
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}

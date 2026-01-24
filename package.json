@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -310,7 +310,7 @@
     "publish": {
       "provider": "github",
       "owner": "minseochh02",
-      "repo": "egdesk-scratch",
+      "repo": "egdesk-releases",
       "releaseType": "release"
     }
   },
