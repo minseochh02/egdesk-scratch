@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import { pathToFileURL } from 'url';
 import { BrowserRecorder } from './browser-recorder';
+import { getChainMetadataStore } from './chain-metadata';
 import { codeViewerWindow } from './code-viewer-window';
 import { Browser, BrowserContext, Page } from 'playwright-core';
 import { ChromeExtensionScanner } from './chrome-extension-scanner';
@@ -1452,11 +1453,38 @@ Please provide:
   // Enhanced Playwright recorder with keyboard tracking
   // (activeRecorder is now defined at module scope)
 
-  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url, extensionPaths }) => {
+  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url, extensionPaths, chainId, previousDownload, previousScriptPath }) => {
     try {
       console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
       if (extensionPaths && extensionPaths.length > 0) {
         console.log(`🧩 With ${extensionPaths.length} Chrome extensions`);
+      }
+      if (chainId) {
+        console.log(`🔗 Chain ID: ${chainId}`);
+
+        // If this is a chain recording, add the previous script to the chain first
+        if (previousScriptPath && fs.existsSync(previousScriptPath)) {
+          const metadataStore = getChainMetadataStore();
+
+          // Extract the downloaded filename from previousDownload if available
+          let downloadedFilename: string | undefined;
+          if (previousDownload) {
+            downloadedFilename = path.basename(previousDownload);
+          }
+
+          // Add the previous script as Step 1
+          metadataStore.addScriptToChain(
+            chainId,
+            previousScriptPath,
+            path.basename(previousScriptPath),
+            true,  // hasDownloads
+            downloadedFilename
+          );
+          console.log(`🔗 Added previous script to chain as Step 1: ${path.basename(previousScriptPath)}`);
+        }
+      }
+      if (previousDownload) {
+        console.log(`📎 Previous download: ${previousDownload}`);
       }
 
       // Clean up any existing recorder
@@ -1495,7 +1523,12 @@ test('recorded test', async ({ page }) => {
       if (extensionPaths && extensionPaths.length > 0) {
         activeRecorder.setExtensions(extensionPaths);
       }
-      
+
+      // Set chain parameters if this is a chained recording
+      if (chainId && previousDownload) {
+        activeRecorder.setChainParameters(chainId, previousDownload);
+      }
+
       // Set up real-time updates
       activeRecorder.setUpdateCallback((code) => {
         console.log('🔔 Update callback triggered, code length:', code.length);
@@ -1663,11 +1696,53 @@ test('recorded test', async ({ page }) => {
           // Close the code viewer window
           codeViewerWindow.close();
 
+          // Check for downloads in recorded actions for chain support
+          const downloadActions = recordedActions.filter((action: RecordedAction) => action.type === 'download');
+          const hasDownloads = downloadActions.length > 0;
+          let lastDownloadedFile = null;
+          let lastDownloadPath = null;
+
+          if (hasDownloads && downloadActions.length > 0) {
+            const lastDownload = downloadActions[downloadActions.length - 1];
+            lastDownloadedFile = lastDownload.value; // filename with "Download completed: " prefix for display
+
+            // Strip "Download completed: " prefix to get actual filename
+            const actualFilename = (lastDownloadedFile || '').replace(/^Download completed:\s*/, '');
+
+            const scriptName = path.basename(outputFile, '.spec.js');
+            const downloadsDir = path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName);
+            lastDownloadPath = path.join(downloadsDir, actualFilename);  // Use clean filename
+
+            console.log(`📥 Download detected: ${lastDownloadedFile}`);
+            console.log(`📂 Actual filename: ${actualFilename}`);
+            console.log(`📂 Full path: ${lastDownloadPath}`);
+          }
+
+          // Get chain metadata if this is a chained recording
+          const chainMetadata = activeRecorder ? activeRecorder.getChainMetadata() : null;
+
+          // Store chain metadata if this is part of a chain
+          if (chainMetadata?.chainId) {
+            const metadataStore = getChainMetadataStore();
+            metadataStore.addScriptToChain(
+              chainMetadata.chainId,
+              outputFile,
+              path.basename(outputFile),
+              hasDownloads,
+              lastDownloadedFile || undefined
+            );
+          }
+
           // Notify renderer
           event.sender.send('playwright-test-saved', {
             filePath: outputFile,
             code: timedCode,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            hasDownloads,
+            lastDownloadedFile,
+            lastDownloadPath,
+            chainId: chainMetadata?.chainId || null,
+            isChainedRecording: chainMetadata?.isChainedRecording || false
           });
 
           event.sender.send('recorder-auto-stopped', {
@@ -1710,6 +1785,10 @@ test('recorded test', async ({ page }) => {
       console.log('✅ Recorder stopped, test code generated');
       const recordedActions = activeRecorder.getActions();
       console.log(`✅ Got ${recordedActions.length} recorded actions`);
+
+      // Get chain metadata BEFORE setting activeRecorder to null
+      const chainMetadata = activeRecorder.getChainMetadata();
+
       activeRecorder = null;
 
       // The test file has already been created and updated in real-time
@@ -1732,12 +1811,52 @@ test('recorded test', async ({ page }) => {
         console.log('🪟 Closing code viewer window');
         codeViewerWindow.close();
 
+        // Check for downloads in recorded actions for chain support
+        const downloadActions = recordedActions.filter((action: RecordedAction) => action.type === 'download');
+        const hasDownloads = downloadActions.length > 0;
+        let lastDownloadedFile = null;
+        let lastDownloadPath = null;
+
+        if (hasDownloads && downloadActions.length > 0) {
+          const lastDownload = downloadActions[downloadActions.length - 1];
+          lastDownloadedFile = lastDownload.value; // filename with "Download completed: " prefix for display
+
+          // Strip "Download completed: " prefix to get actual filename
+          const actualFilename = (lastDownloadedFile || '').replace(/^Download completed:\s*/, '');
+
+          // Construct the full path based on the scriptName used during recording
+          const scriptName = path.basename(outputFile, '.spec.js');
+          const downloadsDir = path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName);
+          lastDownloadPath = path.join(downloadsDir, actualFilename);  // Use clean filename
+
+          console.log(`📥 Download detected: ${lastDownloadedFile}`);
+          console.log(`📂 Actual filename: ${actualFilename}`);
+          console.log(`📂 Full path: ${lastDownloadPath}`);
+        }
+
+        // Store chain metadata if this is part of a chain (chainMetadata was obtained earlier before activeRecorder was set to null)
+        if (chainMetadata?.chainId) {
+          const metadataStore = getChainMetadataStore();
+          metadataStore.addScriptToChain(
+            chainMetadata.chainId,
+            outputFile,
+            path.basename(outputFile),
+            hasDownloads,
+            lastDownloadedFile || undefined
+          );
+        }
+
         // Notify renderer
         console.log('📤 Notifying renderer about saved test');
         event.sender.send('playwright-test-saved', {
           filePath: outputFile,
           code: timedCode,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          hasDownloads,
+          lastDownloadedFile,
+          lastDownloadPath,
+          chainId: chainMetadata?.chainId || null,
+          isChainedRecording: chainMetadata?.isChainedRecording || false
         });
 
         console.log('✅ Stop recording completed successfully');
@@ -2512,7 +2631,8 @@ const { chromium } = require('playwright-core');
     try {
       const outputDir = getOutputDir();
       const files = fs.readdirSync(outputDir);
-      
+      const metadataStore = getChainMetadataStore();
+
       // All .spec.js files in the browser-recorder-tests folder are valid tests
       const tests = files
         .filter(file => file.endsWith('.spec.js'))
@@ -2520,28 +2640,155 @@ const { chromium } = require('playwright-core');
           const filePath = path.join(outputDir, file);
           const stats = fs.statSync(filePath);
           const code = fs.readFileSync(filePath, 'utf8');
-          
+
+          // Check if this script is part of a chain
+          const chain = metadataStore.getChainByScript(filePath);
+          const scriptInChain = chain?.scripts.find(s => s.scriptPath === filePath);
+
           return {
             name: file,
             path: filePath,
             createdAt: stats.birthtime,
             size: stats.size,
-            preview: code.substring(0, 200) + '...'
+            preview: code.substring(0, 200) + '...',
+            // Chain metadata
+            chainId: chain?.chainId || null,
+            chainOrder: scriptInChain?.order || null,
+            chainScripts: chain?.scripts || null
           };
         })
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
+
+      // Clean up any chains that reference deleted scripts
+      const existingScriptPaths = new Set(tests.map(t => t.path));
+      metadataStore.cleanupDeletedScripts(existingScriptPaths);
+
       return { success: true, tests };
     } catch (error: any) {
       console.error('Error getting Playwright tests:', error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error?.message || 'Failed to get Playwright tests',
         tests: []
       };
     }
   });
-  
+
+  // Run a chain of tests sequentially
+  ipcMain.handle('run-chain', async (event, { chainId }) => {
+    try {
+      console.log(`🔗 Running chain: ${chainId}`);
+
+      const metadataStore = getChainMetadataStore();
+      const chain = metadataStore.getChain(chainId);
+
+      if (!chain) {
+        throw new Error(`Chain not found: ${chainId}`);
+      }
+
+      console.log(`📋 Chain has ${chain.scripts.length} script(s)`);
+
+      // Sort scripts by order
+      const sortedScripts = [...chain.scripts].sort((a, b) => a.order - b.order);
+
+      // Run each script sequentially
+      for (const script of sortedScripts) {
+        console.log(`🎬 Running step ${script.order}: ${script.scriptName}`);
+
+        // Verify script exists
+        if (!fs.existsSync(script.scriptPath)) {
+          event.sender.send('playwright-test-error', {
+            error: `Script not found: ${script.scriptPath}`,
+            testFile: script.scriptPath,
+            userFriendly: true
+          });
+          throw new Error(`Script not found: ${script.scriptPath}`);
+        }
+
+        // Run the script using the same logic as run-playwright-test
+        // For now, we'll use Node.js require to execute the script
+        const { chromium } = require('playwright-core');
+
+        // Read the generated code
+        let generatedCode = fs.readFileSync(script.scriptPath, 'utf8');
+
+        // Extract test body (same logic as run-playwright-test)
+        let testBody = '';
+
+        if (generatedCode.includes('@playwright/test')) {
+          const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
+          if (testMatch && testMatch[1]) {
+            testBody = testMatch[1].trim();
+          }
+        } else {
+          // For standalone scripts, extract code from IIFE
+          const iifeMatch = generatedCode.match(/\(async\s*\(\)\s*=>\s*\{([\s\S]+)\}\)\(\)\.catch/);
+          if (iifeMatch && iifeMatch[1]) {
+            testBody = iifeMatch[1].trim();
+          }
+        }
+
+        if (!testBody) {
+          throw new Error(`Could not extract test body from ${script.scriptName}`);
+        }
+
+        // Execute the test
+        console.log(`⚙️ Executing step ${script.order}...`);
+
+        try {
+          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+          const testFunction = new AsyncFunction('chromium', 'require', 'console', testBody);
+          await testFunction(chromium, require, console);
+
+          console.log(`✅ Step ${script.order} completed: ${script.scriptName}`);
+
+          // Send progress update to renderer
+          event.sender.send('chain-progress', {
+            chainId,
+            currentStep: script.order,
+            totalSteps: sortedScripts.length,
+            scriptName: script.scriptName,
+            status: 'completed'
+          });
+
+        } catch (stepError) {
+          console.error(`❌ Step ${script.order} failed:`, stepError);
+
+          event.sender.send('chain-progress', {
+            chainId,
+            currentStep: script.order,
+            totalSteps: sortedScripts.length,
+            scriptName: script.scriptName,
+            status: 'failed',
+            error: stepError.message
+          });
+
+          throw new Error(`Step ${script.order} (${script.scriptName}) failed: ${stepError.message}`);
+        }
+      }
+
+      console.log(`✅ Chain completed successfully: ${chainId}`);
+
+      return {
+        success: true,
+        message: `Chain completed: ${chain.scripts.length} step(s) executed`
+      };
+
+    } catch (error: any) {
+      console.error('❌ Chain execution failed:', error);
+
+      event.sender.send('playwright-test-error', {
+        error: error?.message || 'Chain execution failed',
+        userFriendly: true
+      });
+
+      return {
+        success: false,
+        error: error?.message || 'Chain execution failed'
+      };
+    }
+  });
+
   // Delete a Playwright test
   ipcMain.handle('delete-playwright-test', async (event, { testPath }) => {
     try {

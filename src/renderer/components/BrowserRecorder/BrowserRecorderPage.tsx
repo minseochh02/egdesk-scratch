@@ -45,6 +45,15 @@ const BrowserRecorderPage: React.FC = () => {
   const [showExtensionSelector, setShowExtensionSelector] = useState(false);
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
 
+  // Action Chain state
+  const [justStoppedRecording, setJustStoppedRecording] = useState(false);
+  const [lastRecordingHadDownload, setLastRecordingHadDownload] = useState(false);
+  const [lastDownloadedFile, setLastDownloadedFile] = useState<string>('');
+  const [lastDownloadPath, setLastDownloadPath] = useState<string>('');  // Full path to downloaded file
+  const [lastRecordingScriptPath, setLastRecordingScriptPath] = useState<string>('');  // Path to the script that had the download
+  const [uploadDestinationUrl, setUploadDestinationUrl] = useState('');
+  const [currentChainId, setCurrentChainId] = useState<string | null>(null);
+
   // Helper functions
   const addDebugLog = (message: string) => {
     setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
@@ -295,6 +304,24 @@ const BrowserRecorderPage: React.FC = () => {
       if (data && data.filePath) {
         addDebugLog(`📁 Test saved: ${data.filePath}`);
       }
+
+      // Check if downloads were detected for chain support
+      if (data && data.hasDownloads) {
+        setLastDownloadedFile(data.lastDownloadedFile || 'unknown file');
+        setLastDownloadPath(data.lastDownloadPath || '');  // Store full path from previous recording
+        setLastRecordingScriptPath(data.filePath || '');  // Store script path for chain linking
+        setLastRecordingHadDownload(true);
+        setJustStoppedRecording(true);
+        addDebugLog(`📥 Download detected: ${data.lastDownloadedFile}`);
+        addDebugLog(`📂 Full path: ${data.lastDownloadPath}`);
+
+        // Auto-hide chain UI after 5 minutes
+        setTimeout(() => {
+          setJustStoppedRecording(false);
+          setLastRecordingHadDownload(false);
+        }, 300000);
+      }
+
       // Refresh test list and schedules
       (async () => {
         const result = await (window as any).electron.debug.getPlaywrightTests();
@@ -408,6 +435,63 @@ const BrowserRecorderPage: React.FC = () => {
       unsubscribe3();
     };
   }, []);
+
+  // Handle starting upload recording (chain next action)
+  const startUploadRecording = async () => {
+    if (!uploadDestinationUrl) {
+      addDebugLog('⚠️ Please enter a destination URL');
+      return;
+    }
+
+    try {
+      addDebugLog(`🔗 Starting upload recording for ${lastDownloadedFile}...`);
+      addDebugLog(`📍 Destination: ${uploadDestinationUrl}`);
+
+      // Generate or use existing chain ID
+      const chainId = currentChainId || `chain-${Date.now()}`;
+
+      // Start new recording as part of chain
+      const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced({
+        url: uploadDestinationUrl.startsWith('http')
+          ? uploadDestinationUrl
+          : `https://${uploadDestinationUrl}`,
+        chainId: chainId,
+        previousDownload: lastDownloadPath,  // Use full path instead of just filename
+        previousScriptPath: lastRecordingScriptPath,  // Path to the download script
+        extensionPaths: selectedExtensionPaths,
+      });
+
+      if (result?.success) {
+        if (!currentChainId) {
+          setCurrentChainId(chainId);
+          addDebugLog(`🔗 Chain created: ${chainId}`);
+        }
+
+        setIsRecordingEnhanced(true);
+        setJustStoppedRecording(false);
+        setUploadDestinationUrl(''); // Clear input
+
+        addDebugLog('✅ Upload recording started');
+        addDebugLog('📌 When you click file upload input, your downloaded file will be auto-selected');
+      } else {
+        addDebugLog(`❌ Failed to start upload recording: ${result?.error}`);
+      }
+    } catch (error) {
+      console.error('Error starting upload recording:', error);
+      addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const finishWithoutChain = () => {
+    addDebugLog('✅ Recording complete (no upload chain)');
+    setJustStoppedRecording(false);
+    setLastRecordingHadDownload(false);
+    setLastDownloadedFile('');
+    setLastDownloadPath('');
+    setLastRecordingScriptPath('');
+    setUploadDestinationUrl('');
+    setCurrentChainId(null);
+  };
 
   return (
     <div className="browser-recorder-page">
@@ -534,6 +618,46 @@ const BrowserRecorderPage: React.FC = () => {
                   </pre>
                 </div>
               )}
+
+              {/* Action Chain Upload Section */}
+              {justStoppedRecording && lastRecordingHadDownload && !isRecordingEnhanced && (
+                <div className="action-chain-upload">
+                  <div className="chain-download-info">
+                    <span className="success-icon">✅</span>
+                    <span className="download-message">
+                      File downloaded: <strong>{lastDownloadedFile}</strong>
+                    </span>
+                  </div>
+
+                  <div className="chain-upload-form">
+                    <label className="chain-upload-label">
+                      Upload the downloaded file to:
+                    </label>
+                    <div className="chain-upload-controls">
+                      <input
+                        type="url"
+                        placeholder="https://upload.example.com"
+                        value={uploadDestinationUrl}
+                        onChange={(e) => setUploadDestinationUrl(e.target.value)}
+                        className="browser-recorder-url-input"
+                      />
+                      <button
+                        onClick={startUploadRecording}
+                        className="browser-recorder-btn browser-recorder-btn-primary"
+                        disabled={!uploadDestinationUrl}
+                      >
+                        🎥 Start Upload Recording
+                      </button>
+                      <button
+                        onClick={finishWithoutChain}
+                        className="browser-recorder-btn browser-recorder-btn-secondary"
+                      >
+                        ✅ Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Saved Tests Section */}
@@ -563,6 +687,11 @@ const BrowserRecorderPage: React.FC = () => {
                             <div className="browser-recorder-test-name-row">
                               <strong className="browser-recorder-test-name">{test.name}</strong>
                               <span className="browser-recorder-test-badge">⏱️ Auto-Timed</span>
+                              {test.chainId && test.chainOrder && (
+                                <span className="browser-recorder-test-badge browser-recorder-chain-badge" title={`Part of chain: ${test.chainId}`}>
+                                  🔗 Step {test.chainOrder}
+                                </span>
+                              )}
                               {(() => {
                                 const schedule = schedules.find(s => s.testPath === test.path);
                                 return schedule?.enabled && (
@@ -619,6 +748,25 @@ const BrowserRecorderPage: React.FC = () => {
                             >
                               ▶️ Replay
                             </button>
+                            {test.chainId && test.chainScripts && test.chainScripts.length > 1 && (
+                              <button
+                                onClick={async () => {
+                                  addDebugLog(`🔗 Running chain: ${test.chainId}`);
+                                  const result = await (window as any).electron.debug.runChain(test.chainId);
+                                  if (result.success) {
+                                    console.log(`🔗 Chain execution completed: ${test.chainId}`);
+                                    addDebugLog(`✅ Chain execution completed`);
+                                  } else {
+                                    alert(`Failed to run chain: ${result.error}`);
+                                    addDebugLog(`❌ Chain execution failed: ${result.error}`);
+                                  }
+                                }}
+                                className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-chain"
+                                title="Run entire chain of tests"
+                              >
+                                🔗 Replay Chain ({test.chainScripts.length} steps)
+                              </button>
+                            )}
                             <button
                               onClick={() => openScheduleModal(test.path)}
                               className={`browser-recorder-btn btn-sm browser-recorder-btn-schedule ${schedules.find(s => s.testPath === test.path && s.enabled) ? 'scheduled' : ''}`}

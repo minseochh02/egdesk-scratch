@@ -9,7 +9,7 @@ const NH_CARD_INFO = {
   id: 'nh-card',
   name: 'NH Card',
   nameKo: 'NH농협카드',
-  loginUrl: 'https://card.nonghyup.com/servlet/IpCo9151I.act',
+  loginUrl: 'https://nhbizcard.nonghyup.com/iccn0000i.act',
   category: 'major',
   color: '#00B140',
   icon: '💳',
@@ -24,60 +24,94 @@ const NH_CARD_CONFIG = {
   bank: NH_CARD_INFO,
 
   // Main URL
-  targetUrl: 'https://card.nonghyup.com/servlet/IpCo9151I.act',
+  targetUrl: 'https://nhbizcard.nonghyup.com/iccn0000i.act',
 
   // Chrome settings
   headless: false,
   chromeProfile: 'Default',
 
-  // XPath selectors (from Playwright test analysis)
+  // XPath selectors (from recorded browser actions)
   xpaths: {
-    // Login elements (from script lines 50-57)
-    idInput: '//input[@id="loginUserId"]',
-    passwordInput: '//input[@id="loginUserPwd"]',
-    // Original test: .btn_login > span:nth-child(1)
-    loginButton: '//*[contains(@class, "btn_login")]//span[1]',
+    // Login elements
+    loginLink: {
+      css: 'a:has-text("로그인")',
+      xpath: '//*[@id="wrapper"]/header[1]/div[1]/div[1]/div[2]/ul[1]/li[1]/a[1]'
+    },
+    loginTabFirst: {
+      css: 'ul > li:nth-child(1)',
+      xpath: '//*[@id="signForm"]/div[1]/div[2]/div[6]/div[1]/ul[1]/li[1]'
+    },
+    loginTabSpan: {
+      css: 'a > span:nth-child(2)',
+      xpath: '//*[@id="signForm"]/div[2]/div[2]/div[6]/div[1]/ul[1]/li[1]/a[1]/span[1]'
+    },
+    idInput: {
+      css: '[id="usrid"]',
+      xpath: '//*[@id="usrid"]'
+    },
+    passwordInput: {
+      css: '[id="io_pw30"]',
+      xpath: '//*[@id="io_pw30"]'
+    },
+    loginButton: {
+      css: 'button:has-text("로그인") >> nth=0',
+      xpath: '//*[@id="login-form_1"]/button[1]'
+    },
 
-    // Banner/popup controls (from script lines 59-64)
-    // These are optional popups - may not always appear
-    bannerStopButton: '//button[contains(text(), "배너 자동롤링 멈춤")]',
-    bannerStartButton: '//button[contains(text(), "배너 자동롤링 시작")]',
-    popupClose200: '//button[@id="btnPopClose_200"]',
-    // Original test: .pop_wrap > div:nth-child(2)
-    popupWrapper: '//div[contains(@class, "pop_wrap")]/div[2]',
-    // Original test uses nth(4) - this will be handled in code
-    popupCloseButton: '//button[contains(text(), "현재 창 닫기")]',
+    // Card Management Navigation (카드신청/관리 → 카드발급내역)
+    cardManagementMenu: {
+      css: 'a:has-text("카드신청/관리")',
+      xpath: '//*[@id="gnb"]/ul[1]/li[2]/a[1]'
+    },
+    cardIssuanceHistoryLink: {
+      css: 'a:has-text("카드발급내역") >> nth=0',
+      xpath: '//*[@id="gnb"]/ul[1]/li[2]/div[1]/div[2]/ul[1]/li[5]/ul[1]/li[4]/a[1]'
+    },
 
-    // Navigation (from script lines 67-69)
-    // Original test: a:has-text("마이") >> nth=0 - we'll use first() in code
-    myMenuLink: '//a[contains(text(), "마이")]',
-    // Original test: a > span:nth-child(1) - too generic, using more specific selector
-    transactionHistoryLink: '//div[@id="new_gnb"]//a[contains(., "카드이용내역")]//span | //a[contains(., "카드이용내역")]//span[1]',
+    // Transaction Navigation (조회/결제 → 승인내역)
+    inquiryPaymentMenu: {
+      css: 'a:has-text("조회/결제")',
+      xpath: '//*[@id="gnb"]/ul[1]/li[1]/a[1]'
+    },
+    approvalHistoryLink: {
+      css: 'a:has-text("승인내역") >> nth=0',
+      xpath: '//*[@id="gnb"]/ul[1]/li[1]/div[1]/div[2]/ul[1]/li[2]/ul[1]/li[2]/a[1]'
+    },
 
-    // Card selection (from script lines 71-76)
-    cardDropdown: '//select[@id="CrdNbr"]',
+    // Search controls
+    searchGubunRadio: {
+      css: '[id="rdoSchGubun2"]',
+      xpath: '//*[@id="rdoSchGubun2"]'
+    },
+    cardSearchButton: {
+      css: '[id="btnSubmit"] > span:nth-child(1)',
+      xpath: '//*[@id="btnSubmit"]/span[1]'
+    },
+    transactionSearchButton: {
+      css: '.btn-primary > span:nth-child(1)',
+      xpath: '//*[@id="form01"]/div[5]/button[1]/span[1]'
+    },
+    loadMoreButton: {
+      css: 'button:has-text("더보기")',
+      xpath: '//*[@id="formResult"]/div[2]/div[1]/div[2]/button[1]'
+    },
 
-    // Date selectors (from script lines 78-101)
-    startYearSelect: '//select[@id="start_year"]',
-    startMonthSelect: '//select[@id="start_month"]',
-    startDaySelect: '//select[@id="start_date"]',
-    endYearSelect: '//select[@id="end_year"]',
-    endMonthSelect: '//select[@id="end_month"]',
-    endDaySelect: '//select[@id="end_date"]',
-
-    // Search controls (from script lines 103-115)
-    searchButton: '/html/body/div[1]/div[2]/div/form/div/span/a',
-    // "다음 내역" (Next History) button - expands list to show more transactions
-    loadMoreButton: '/html/body/div[1]/div[2]/div/div[4]/div[1]/div[4]/div/span/a',
-
-    // Data tables (from script lines 122-241)
-    cardSelectorTable: '/html/body/div/div[2]/div/form/table',
-    summaryTable: '/html/body/div/div[2]/div/div[4]/div/table',
-    transactionTable: '/html/body/div[1]/div[2]/div/div[4]/div[1]/div[3]/table',
+    // Data tables
+    cardResultTable: {
+      css: '[id="resultTable"]',
+      xpath: '//*[@id="resultTable"]'
+    },
+    transactionTable: {
+      css: 'div.table-wrap > div.nh-table-wrapper > table.table',
+      xpath: '/html/body/div[3]/div[3]/div[2]/section/div[3]/div[2]/table'
+    },
+    summaryTable: {
+      css: 'section.result-wrap > div.table-area > table.customer-list',
+      xpath: '/html/body/div[3]/div[3]/div[2]/section/div[2]/table'
+    },
 
     // Session management
-    // Element: <a href="javascript:continueSession();" id="headerContinued"><span>연장</span></a>
-    extendSessionButton: '//a[@id="headerContinued"] | //a[contains(@href, "continueSession")] | //a[contains(@class, "time") and .//span[contains(text(), "연장")]]',
+    extendSessionButton: '//a[@id="headerContinued"] | //a[contains(@href, "continueSession")]',
   },
 
   // Timing configurations

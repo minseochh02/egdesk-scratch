@@ -6,7 +6,7 @@ import * as os from 'os';
 import { OSAutomation } from './utils/osAutomation';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab' | 'fileUpload';
   selector?: string;
   xpath?: string; // XPath as fallback selector
   value?: string;
@@ -39,6 +39,10 @@ interface RecordedAction {
   maxIterations?: number; // Maximum number of times to click (safety limit)
   checkCondition?: 'gone' | 'hidden' | 'disabled'; // What condition to check
   waitBetweenClicks?: number; // Milliseconds to wait between clicks
+  // File upload fields
+  filePath?: string; // Path to the file being uploaded
+  fileName?: string; // Name of the file for display
+  isChainedFile?: boolean; // Whether this is from a previous chain step
 }
 
 export class BrowserRecorder {
@@ -77,6 +81,13 @@ export class BrowserRecorder {
   // OS-level automation for native dialogs
   private osAutomation: OSAutomation | null = null;
 
+  // Action Chain support
+  private chainId: string | null = null;
+  private isChainedRecording: boolean = false;
+  private chainDownloadPath: string | null = null; // File from previous chain step
+  private chainDownloadName: string | null = null; // Filename for display
+  private previousChainSessionPath: string | null = null; // Previous test file path
+
   setOutputFile(filePath: string): void {
     this.outputFile = filePath;
   }
@@ -92,6 +103,33 @@ export class BrowserRecorder {
   setExtensions(extensionPaths: string[]): void {
     this.extensionPaths = extensionPaths;
     console.log(`[Browser Recorder] Will load ${extensionPaths.length} extensions:`, extensionPaths);
+  }
+
+  setChainParameters(chainId: string, previousDownloadPath: string): void {
+    this.chainId = chainId || `chain-${Date.now()}`;
+    this.isChainedRecording = true;
+
+    // previousDownloadPath is now the FULL PATH from previous recording
+    // e.g., /Users/.../EGDesk-Browser/egdesk-browser-recorder-2026-01-26T04-01-42-042Z/file.pdf
+    this.chainDownloadPath = previousDownloadPath;
+    this.chainDownloadName = path.basename(previousDownloadPath);
+
+    console.log(`[Browser Recorder] Chain mode activated`);
+    console.log(`[Browser Recorder]  - Chain ID: ${this.chainId}`);
+    console.log(`[Browser Recorder]  - Download path: ${this.chainDownloadPath}`);
+    console.log(`[Browser Recorder]  - Download filename: ${this.chainDownloadName}`);
+    console.log(`[Browser Recorder]  - File exists: ${fs.existsSync(this.chainDownloadPath)}`);
+    console.log(`[Browser Recorder]  - Previous download: ${this.chainDownloadName}`);
+    console.log(`[Browser Recorder]  - Full path: ${this.chainDownloadPath}`);
+  }
+
+  getChainMetadata(): { chainId: string | null; isChainedRecording: boolean; chainDownloadPath: string | null; chainDownloadName: string | null } {
+    return {
+      chainId: this.chainId,
+      isChainedRecording: this.isChainedRecording,
+      chainDownloadPath: this.chainDownloadPath,
+      chainDownloadName: this.chainDownloadName
+    };
   }
 
   setWaitSettings(settings: { multiplier: number; maxDelay: number }): void {
@@ -5257,6 +5295,215 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       console.log('🔄 Frame navigated:', frame.url());
       await this.injectIntoIframes();
     });
+
+    // Handle file chooser for uploads (ONLY in chain mode)
+    // In non-chain mode, we let the native file picker work normally
+    if (this.isChainedRecording && this.chainDownloadPath) {
+      console.log('🔗 Setting up file chooser listener for chain mode');
+      console.log('📂 Will auto-select:', this.chainDownloadPath);
+
+      // 🔍 DEBUG: Log conditions before registering listener
+      console.log('🔍 DEBUG: About to register filechooser listener');
+      console.log('🔍 DEBUG: isChainedRecording:', this.isChainedRecording);
+      console.log('🔍 DEBUG: chainDownloadPath:', this.chainDownloadPath);
+      console.log('🔍 DEBUG: File exists:', fs.existsSync(this.chainDownloadPath));
+      console.log('🔍 DEBUG: this.page exists:', !!this.page);
+      console.log('🔍 DEBUG: Current page URL:', this.page?.url());
+
+      this.page.on('filechooser', async (fileChooser) => {
+        // 🔍 DEBUG: Log IMMEDIATELY - before try/catch, before anything else
+        console.log('🔍 DEBUG: ========================================');
+        console.log('🔍 DEBUG: FILECHOOSER CALLBACK FIRED!!!');
+        console.log('🔍 DEBUG: ========================================');
+        console.log('🔍 DEBUG: fileChooser exists:', !!fileChooser);
+        console.log('🔍 DEBUG: this.page.url():', this.page?.url());
+        console.log('🔍 DEBUG: this.chainDownloadPath:', this.chainDownloadPath);
+
+        try {
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log('📎 FILE CHOOSER DETECTED IN CHAIN MODE!');
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+          // Chain mode: auto-select the downloaded file
+          console.log('🔗 Auto-selecting file:', this.chainDownloadPath);
+          console.log('🎯 File exists:', fs.existsSync(this.chainDownloadPath!));
+
+          if (!fs.existsSync(this.chainDownloadPath!)) {
+            console.error('❌ File not found at path:', this.chainDownloadPath);
+            throw new Error(`Downloaded file not found: ${this.chainDownloadPath}`);
+          }
+
+          await fileChooser.setFiles(this.chainDownloadPath!);
+          
+          const uploadedFilePath = this.chainDownloadPath!;
+          const uploadedFileName = this.chainDownloadName || path.basename(this.chainDownloadPath!);
+
+          // Don't record the upload action - the file chooser listener will handle it automatically during replay
+          console.log('✅ File upload handled automatically (not recorded as action)');
+          console.log('📝 File:', uploadedFileName);
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+          // Show visual notification in browser
+          await this.page!.evaluate((fileName) => {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+              position: fixed;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+              color: white;
+              padding: 24px 32px;
+              border-radius: 16px;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+              font-size: 16px;
+              font-weight: 600;
+              z-index: 999999;
+              box-shadow: 0 20px 60px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+              animation: uploadNotificationSlide 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+              text-align: center;
+              min-width: 320px;
+              backdrop-filter: blur(10px);
+            `;
+
+            notification.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                <span style="font-size: 32px;">📤</span>
+                <div style="flex: 1; text-align: left;">
+                  <div style="font-size: 18px; margin-bottom: 4px;">File Auto-Uploaded</div>
+                  <div style="font-size: 13px; opacity: 0.9; font-weight: 400;">${fileName}</div>
+                </div>
+                <span style="font-size: 24px;">✅</span>
+              </div>
+              <div style="font-size: 12px; opacity: 0.8; margin-top: 8px; font-weight: 400; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                Chain recording in progress
+              </div>
+            `;
+
+            // Add animation keyframes
+            if (!document.querySelector('#upload-notification-styles')) {
+              const style = document.createElement('style');
+              style.id = 'upload-notification-styles';
+              style.textContent = `
+                @keyframes uploadNotificationSlide {
+                  0% {
+                    opacity: 0;
+                    transform: translate(-50%, -50%) scale(0.8);
+                  }
+                  100% {
+                    opacity: 1;
+                    transform: translate(-50%, -50%) scale(1);
+                  }
+                }
+                @keyframes uploadNotificationFadeOut {
+                  0% {
+                    opacity: 1;
+                    transform: translate(-50%, -50%) scale(1);
+                  }
+                  100% {
+                    opacity: 0;
+                    transform: translate(-50%, -50%) scale(0.9);
+                  }
+                }
+              `;
+              document.head.appendChild(style);
+            }
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 3 seconds with fade out
+            setTimeout(() => {
+              notification.style.animation = 'uploadNotificationFadeOut 0.3s ease-out forwards';
+              setTimeout(() => {
+                if (notification.parentNode) {
+                  notification.parentNode.removeChild(notification);
+                }
+              }, 300);
+            }, 3000);
+          }, uploadedFileName);
+
+          // Update live code preview
+          if (this.updateCallback) {
+            this.updateCallback(this.generateTestCode());
+          }
+        } catch (err) {
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('❌ FAILED TO HANDLE FILE CHOOSER');
+          console.error('Error:', err);
+          console.error('Error message:', err instanceof Error ? err.message : String(err));
+          console.error('Stack trace:', err instanceof Error ? err.stack : 'No stack trace');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+          // Show error notification in browser
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          await this.page!.evaluate((errMsg) => {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+              position: fixed;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+              color: white;
+              padding: 24px 32px;
+              border-radius: 16px;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+              font-size: 16px;
+              font-weight: 600;
+              z-index: 999999;
+              box-shadow: 0 20px 60px rgba(239, 68, 68, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+              animation: uploadNotificationSlide 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+              text-align: center;
+              min-width: 320px;
+              max-width: 500px;
+              backdrop-filter: blur(10px);
+            `;
+
+            notification.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                <span style="font-size: 32px;">❌</span>
+                <div style="flex: 1; text-align: left;">
+                  <div style="font-size: 18px; margin-bottom: 4px;">File Upload Failed</div>
+                  <div style="font-size: 13px; opacity: 0.9; font-weight: 400; word-break: break-word;">${errMsg}</div>
+                </div>
+              </div>
+              <div style="font-size: 12px; opacity: 0.8; margin-top: 8px; font-weight: 400; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                You may need to select the file manually
+              </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 5 seconds (longer for error)
+            setTimeout(() => {
+              notification.style.animation = 'uploadNotificationFadeOut 0.3s ease-out forwards';
+              setTimeout(() => {
+                if (notification.parentNode) {
+                  notification.parentNode.removeChild(notification);
+                }
+              }, 300);
+            }, 5000);
+          }, errorMessage).catch(() => {
+            // Ignore if page context is destroyed
+          });
+        }
+      });
+
+      // 🔍 DEBUG: Confirm listener was attached
+      console.log('🔍 DEBUG: Filechooser listener attached successfully');
+      console.log('🔍 DEBUG: Listener is on page:', this.page?.url());
+    } else {
+      console.log('ℹ️ Not in chain mode - native file picker will work normally');
+
+      // 🔍 DEBUG: Log why listener was NOT registered
+      console.log('🔍 DEBUG: Filechooser listener NOT registered');
+      console.log('🔍 DEBUG: isChainedRecording:', this.isChainedRecording);
+      console.log('🔍 DEBUG: chainDownloadPath:', this.chainDownloadPath);
+      // In non-chain mode, we don't set up a file chooser listener
+      // This allows the native file picker to work as expected
+      // File uploads in non-chain mode won't be automatically recorded,
+      // but the clicks on file inputs will be captured as regular clicks
+    }
   }
 
   private async reapplyModeStates(): Promise<void> {
@@ -5751,6 +5998,21 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       }
     }
 
+    // Pre-scan for file uploads to identify which clicks should be skipped
+    const fileUploadClickIndices = new Set<number>();
+    for (let i = 0; i < this.actions.length; i++) {
+      if (this.actions[i].type === 'fileUpload') {
+        // Find the most recent click before this file upload
+        // That click triggered the file chooser, so we'll handle it in the fileUpload block
+        for (let j = i - 1; j >= 0; j--) {
+          if (this.actions[j].type === 'click') {
+            fileUploadClickIndices.add(j);
+            break;
+          }
+        }
+      }
+    }
+
     for (let i = 0; i < this.actions.length; i++) {
       const action = this.actions[i];
 
@@ -5769,6 +6031,11 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`    await page.goto('${action.url}');`);
           break;
         case 'click':
+          // Skip clicks that trigger file uploads (they'll be handled in the fileUpload block)
+          if (fileUploadClickIndices.has(i)) {
+            break; // Don't generate code for this click
+          }
+
           // If this click triggers a download, set up the promise first
           if (downloadTriggerIndices.has(i)) {
             lines.push(`    // Setting up download handler before clicking`);
@@ -5882,6 +6149,63 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`    }`);
           }
           // Skip download-wait as it's just informational now
+          break;
+        case 'fileUpload':
+          lines.push(`    // File Upload`);
+          if (action.isChainedFile && action.fileName) {
+            // For chained files, just click - listener is already set up on the page
+            lines.push(`    {`);
+            lines.push(`      // Upload file from previous chain step (listener already set up)`);
+            lines.push(`      console.log('📤 Uploading file from chain: ${action.fileName}');`);
+            if (action.xpath) {
+              lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
+              lines.push(`      try {`);
+              lines.push(`        await page.locator('${action.selector}').click({ timeout: 10000 });`);
+              lines.push(`      } catch (error) {`);
+              lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
+              lines.push(`        await page.locator('xpath=${action.xpath}').click();`);
+              lines.push(`      }`);
+            } else {
+              lines.push(`      await page.locator('${action.selector}').click();`);
+            }
+            lines.push(`      await page.waitForTimeout(1000);`);
+            lines.push(`    }`);
+          } else {
+            // For manual file uploads, add a comment explaining user needs to handle this
+            lines.push(`    {`);
+            lines.push(`      // Manual file upload - you'll need to specify the file path`);
+            lines.push(`      // Replace '/path/to/your/file' with the actual file path`);
+            lines.push(`      const uploadFilePath = '/path/to/your/file'; // TODO: Update this path`);
+            lines.push(`      console.log('📤 Uploading file:', uploadFilePath);`);
+            lines.push(`      `);
+            lines.push(`      // Set up file chooser listener BEFORE clicking`);
+            lines.push(`      let fileChooserHandled = false;`);
+            lines.push(`      const fileChooserHandler = async (fileChooser) => {`);
+            lines.push(`        if (!fileChooserHandled) {`);
+            lines.push(`          fileChooserHandled = true;`);
+            lines.push(`          console.log('🔍 File chooser intercepted');`);
+            lines.push(`          await fileChooser.setFiles(uploadFilePath);`);
+            lines.push(`          console.log('✅ File uploaded');`);
+            lines.push(`        }`);
+            lines.push(`      };`);
+            lines.push(`      page.once('filechooser', fileChooserHandler);`);
+            lines.push(`      `);
+            if (action.xpath) {
+              lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
+              lines.push(`      try {`);
+              lines.push(`        await page.locator('${action.selector}').click({ timeout: 10000 });`);
+              lines.push(`      } catch (error) {`);
+              lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
+              lines.push(`        await page.locator('xpath=${action.xpath}').click();`);
+              lines.push(`      }`);
+            } else {
+              lines.push(`      await page.locator('${action.selector}').click();`);
+            }
+            lines.push(`      `);
+            lines.push(`      // Wait for file chooser to be handled`);
+            lines.push(`      await page.waitForTimeout(1000);`);
+            lines.push(`    }`);
+          }
           break;
         case 'fill':
           // Escape single quotes in value
@@ -6098,6 +6422,25 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`        await dialog.accept();`);
           lines.push(`        console.log('✅ Dialog accepted');`);
           lines.push(`      });`);
+
+          // Check if there are any chained file uploads in remaining actions
+          const chainedFileUploadAction = this.actions.slice(i + 1).find(a =>
+            a.type === 'fileUpload' && a.isChainedFile
+          );
+
+          if (chainedFileUploadAction && chainedFileUploadAction.filePath) {
+            lines.push(`      `);
+            lines.push(`      // Set up file chooser listener for chain mode`);
+            lines.push(`      // IMPORTANT: Listener must be set up when page loads, not when clicking`);
+            lines.push(`      const uploadFilePath = '${chainedFileUploadAction.filePath}';`);
+            lines.push(`      page.on('filechooser', async (fileChooser) => {`);
+            lines.push(`        console.log('🔍 File chooser intercepted, uploading:', uploadFilePath);`);
+            lines.push(`        await fileChooser.setFiles(uploadFilePath);`);
+            lines.push(`        console.log('✅ File uploaded successfully');`);
+            lines.push(`      });`);
+            lines.push(`      console.log('✅ File chooser listener registered for new page');`);
+          }
+
           lines.push(`    }`);
           break;
         case 'closeTab':
@@ -6397,6 +6740,38 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`    }`);
           break;
 
+        case 'fileUpload':
+          lines.push(`    {`);
+          if (action.isChainedFile && action.fileName) {
+            // For chained files, just click - listener is already set up on the page
+            lines.push(`      // Upload file from previous chain step (listener already set up)`);
+            lines.push(`      console.log('📤 Uploading file from chain: ${action.fileName}');`);
+            const uploadSelector = action.xpath || action.selector;
+            lines.push(`      await page.locator('${uploadSelector}').click();`);
+            lines.push(`      await page.waitForTimeout(1000);`);
+          } else {
+            // For manual file uploads, set up one-time listener
+            lines.push(`      // Manual file upload - specify the file path`);
+            lines.push(`      const uploadFilePath = '/path/to/your/file'; // TODO: Update this path`);
+            lines.push(`      console.log('📤 Uploading file:', uploadFilePath);`);
+            lines.push(`      `);
+            lines.push(`      let fileChooserHandled = false;`);
+            lines.push(`      const fileChooserHandler = async (fileChooser) => {`);
+            lines.push(`        if (!fileChooserHandled) {`);
+            lines.push(`          fileChooserHandled = true;`);
+            lines.push(`          console.log('🔍 File chooser intercepted');`);
+            lines.push(`          await fileChooser.setFiles(uploadFilePath);`);
+            lines.push(`          console.log('✓ File uploaded:', uploadFilePath);`);
+            lines.push(`        }`);
+            lines.push(`      };`);
+            lines.push(`      page.once('filechooser', fileChooserHandler);`);
+            const uploadSelector2 = action.xpath || action.selector;
+            lines.push(`      await page.locator('${uploadSelector2}').click();`);
+            lines.push(`      await page.waitForTimeout(1000);`);
+          }
+          lines.push(`    }`);
+          break;
+
         case 'datePickerGroup':
           if (action.dateComponents) {
             lines.push(`    {`);
@@ -6464,6 +6839,25 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`      // Switch to new page for subsequent actions`);
           lines.push(`      page = newPage;`);
           lines.push(`      console.log('✓ Switched to new tab:', newPage.url());`);
+
+          // Check if there are any chained file uploads in remaining actions (alternative path)
+          const chainedFileUploadAction2 = this.actions.slice(i + 1).find(a =>
+            a.type === 'fileUpload' && a.isChainedFile
+          );
+
+          if (chainedFileUploadAction2 && chainedFileUploadAction2.filePath) {
+            lines.push(`      `);
+            lines.push(`      // Set up file chooser listener for chain mode`);
+            lines.push(`      // IMPORTANT: Listener must be set up when page loads, not when clicking`);
+            lines.push(`      const uploadFilePath = '${chainedFileUploadAction2.filePath}';`);
+            lines.push(`      page.on('filechooser', async (fileChooser) => {`);
+            lines.push(`        console.log('🔍 File chooser intercepted, uploading:', uploadFilePath);`);
+            lines.push(`        await fileChooser.setFiles(uploadFilePath);`);
+            lines.push(`        console.log('✅ File uploaded successfully');`);
+            lines.push(`      });`);
+            lines.push(`      console.log('✅ File chooser listener registered for new page');`);
+          }
+
           lines.push(`    }`);
           break;
 

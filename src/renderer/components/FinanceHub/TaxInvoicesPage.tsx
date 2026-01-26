@@ -4,12 +4,13 @@
 
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSync, faClock } from '@fortawesome/free-solid-svg-icons';
+import { faSync, faClock, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import './TaxInvoicesPage.css';
 
 // Shared Components
 import { TaxInvoiceTable, TaxInvoiceFilters, TaxInvoiceStats } from './shared';
 import type { TaxInvoice, TaxInvoiceFiltersType, TaxInvoiceStatsData } from './shared';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 // ============================================
 // Props Interface
@@ -32,12 +33,16 @@ interface TaxInvoicesPageProps {
   businesses: ConnectedBusiness[];
   sortKey: string;
   sortDirection: 'asc' | 'desc';
+  showGoogleAuth: boolean;
+  signingIn: boolean;
   onInvoiceTypeChange: (type: 'sales' | 'purchase') => void;
   onFilterChange: (key: keyof TaxInvoiceFiltersType, value: string) => void;
   onResetFilters: () => void;
   onSort: (key: string) => void;
   onCollectAll?: () => void;
   onExport?: () => void;
+  onGoogleSignIn?: () => void;
+  onCloseGoogleAuth?: () => void;
 }
 
 // ============================================
@@ -54,12 +59,16 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   businesses,
   sortKey,
   sortDirection,
+  showGoogleAuth,
+  signingIn,
   onInvoiceTypeChange,
   onFilterChange,
   onResetFilters,
   onSort,
   onCollectAll,
   onExport,
+  onGoogleSignIn,
+  onCloseGoogleAuth,
 }) => {
   // Local UI State
   const [showFilters, setShowFilters] = useState(false);
@@ -82,6 +91,34 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
           </p>
         </div>
         <div className="tip-header__actions">
+          {showGoogleAuth && (
+            <div className="tip-google-auth-container">
+              <span className="tip-google-auth-message">스프레드시트 접근을 위해 Google 로그인이 필요합니다</span>
+              <button
+                className="tip-btn tip-btn--google"
+                onClick={onGoogleSignIn}
+                disabled={signingIn}
+              >
+                {signingIn ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    <span>로그인 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="tip-google-icon">G</span>
+                    <span>Google 로그인</span>
+                  </>
+                )}
+              </button>
+              <button
+                className="tip-btn tip-btn--outline tip-btn--small"
+                onClick={onCloseGoogleAuth}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <button
             className="tip-btn tip-btn--outline"
             onClick={() => setShowFilters(!showFilters)}
@@ -93,7 +130,7 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
             onClick={onExport}
             disabled={!onExport}
           >
-            📊 엑셀로 내보내기
+            📊 스프레드시트에서 열기
           </button>
           <button
             className="tip-btn tip-btn--outline"
