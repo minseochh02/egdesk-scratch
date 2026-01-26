@@ -5334,7 +5334,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           }
 
           await fileChooser.setFiles(this.chainDownloadPath!);
-          
+
           const uploadedFilePath = this.chainDownloadPath!;
           const uploadedFileName = this.chainDownloadName || path.basename(this.chainDownloadPath!);
 
@@ -6423,16 +6423,12 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`        console.log('✅ Dialog accepted');`);
           lines.push(`      });`);
 
-          // Check if there are any chained file uploads in remaining actions
-          const chainedFileUploadAction = this.actions.slice(i + 1).find(a =>
-            a.type === 'fileUpload' && a.isChainedFile
-          );
-
-          if (chainedFileUploadAction && chainedFileUploadAction.filePath) {
+          // Check if this is a chained recording with a file from previous script
+          if (this.isChainedRecording && this.chainDownloadPath) {
             lines.push(`      `);
             lines.push(`      // Set up file chooser listener for chain mode`);
             lines.push(`      // IMPORTANT: Listener must be set up when page loads, not when clicking`);
-            lines.push(`      const uploadFilePath = '${chainedFileUploadAction.filePath}';`);
+            lines.push(`      const uploadFilePath = '${this.chainDownloadPath}';`);
             lines.push(`      page.on('filechooser', async (fileChooser) => {`);
             lines.push(`        console.log('🔍 File chooser intercepted, uploading:', uploadFilePath);`);
             lines.push(`        await fileChooser.setFiles(uploadFilePath);`);
@@ -6840,16 +6836,12 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(`      page = newPage;`);
           lines.push(`      console.log('✓ Switched to new tab:', newPage.url());`);
 
-          // Check if there are any chained file uploads in remaining actions (alternative path)
-          const chainedFileUploadAction2 = this.actions.slice(i + 1).find(a =>
-            a.type === 'fileUpload' && a.isChainedFile
-          );
-
-          if (chainedFileUploadAction2 && chainedFileUploadAction2.filePath) {
+          // Check if this is a chained recording with a file from previous script
+          if (this.isChainedRecording && this.chainDownloadPath) {
             lines.push(`      `);
             lines.push(`      // Set up file chooser listener for chain mode`);
             lines.push(`      // IMPORTANT: Listener must be set up when page loads, not when clicking`);
-            lines.push(`      const uploadFilePath = '${chainedFileUploadAction2.filePath}';`);
+            lines.push(`      const uploadFilePath = '${this.chainDownloadPath}';`);
             lines.push(`      page.on('filechooser', async (fileChooser) => {`);
             lines.push(`        console.log('🔍 File chooser intercepted, uploading:', uploadFilePath);`);
             lines.push(`        await fileChooser.setFiles(uploadFilePath);`);
