@@ -57,14 +57,8 @@ export class CodeViewerWindow {
     ipcMain.on('delete-action', (event, index) => {
       console.log('🗑️ Delete action requested for index:', index);
 
-      if (this.isViewMode) {
-        // In view mode, deleting is disabled (UI prevents this)
-        console.log('⚠️ Delete action ignored in view mode');
-        return;
-      }
-
       if (this.onDeleteAction) {
-        // In recording mode, use the callback
+        // Call the callback for both recording and view mode
         this.onDeleteAction(index);
       }
     });
@@ -109,9 +103,13 @@ export class CodeViewerWindow {
       }
     });
     this.actions = actions;
-    // Notify renderer of updated actions
-    if (this.window && !this.window.isDestroyed()) {
+
+    // Notify renderer if window is ready, otherwise actions will be sent when it becomes ready
+    if (this.isReady && this.window && !this.window.isDestroyed()) {
+      console.log('📤 Sending', actions.length, 'actions to renderer immediately (window already ready)');
       this.window.webContents.send('actions-updated', actions);
+    } else {
+      console.log('⏳ Window not ready yet, actions saved but will be sent when renderer is ready');
     }
   }
 
@@ -120,13 +118,26 @@ export class CodeViewerWindow {
     this.currentTestPath = testPath;
     console.log('📖 Code viewer in view mode for:', testPath);
 
-    // Notify the renderer (with delay to ensure window is ready)
-    if (this.window && !this.window.isDestroyed()) {
-      setTimeout(() => {
-        if (this.window && !this.window.isDestroyed()) {
-          this.window.webContents.send('set-view-mode', true);
+    // Notify the renderer after window is ready
+    const sendViewModeEvent = () => {
+      if (this.window && !this.window.isDestroyed()) {
+        console.log('📤 Sending set-view-mode event');
+        this.window.webContents.send('set-view-mode', true);
+      }
+    };
+
+    if (this.isReady) {
+      // Window already ready, send immediately
+      sendViewModeEvent();
+    } else {
+      // Wait for window to be ready, then send after actions
+      const checkReady = setInterval(() => {
+        if (this.isReady) {
+          clearInterval(checkReady);
+          // Small delay to ensure actions-updated event is processed first
+          setTimeout(sendViewModeEvent, 50);
         }
-      }, 200);
+      }, 50);
     }
   }
 
@@ -345,6 +356,7 @@ export class CodeViewerWindow {
       height: calc(100vh - 110px);
       overflow: auto;
       padding: 20px;
+      padding-bottom: 120px;
       scroll-behavior: smooth;
     }
     pre {
@@ -367,6 +379,7 @@ export class CodeViewerWindow {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      padding-bottom: 120px;
     }
     .action-block {
       background-color: #2d2d30;
@@ -735,18 +748,16 @@ test('recorded test', async ({ page }) => {
           };
           actionBlock.appendChild(playBtn);
 
-          // Only show delete button if NOT in view mode
-          if (!window.isViewMode) {
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'action-delete-btn';
-            deleteBtn.textContent = '✕ Delete';
-            deleteBtn.onclick = () => {
-              console.log('Delete button clicked for index:', index);
-              ipcRenderer.send('delete-action', index);
-            };
+          // Show delete button in both modes
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'action-delete-btn';
+          deleteBtn.textContent = '✕ Delete';
+          deleteBtn.onclick = () => {
+            console.log('Delete button clicked for index:', index);
+            ipcRenderer.send('delete-action', index);
+          };
 
-            actionBlock.appendChild(deleteBtn);
-          }
+          actionBlock.appendChild(deleteBtn);
 
           actionsContainer.appendChild(actionBlock);
         });
@@ -953,18 +964,14 @@ test('recorded test', async ({ page }) => {
     }
     
 
-    // Get initial code and actions
+    // Get initial code (actions will come via 'actions-updated' event)
     ipcRenderer.invoke('get-current-code').then(code => {
       console.log('Got initial code:', code);
       if (code) window.updateCode(code);
     });
 
-    ipcRenderer.invoke('get-actions').then(actions => {
-      console.log('Got initial actions:', actions);
-      if (actions && actions.length > 0) {
-        renderActions(actions);
-      }
-    });
+    // Don't fetch actions here - they'll be sent via 'actions-updated' event
+    // This avoids race condition where we fetch before updateActions() is called
   </script>
 </body>
 </html>
@@ -975,16 +982,25 @@ test('recorded test', async ({ page }) => {
     // Wait for content to load
     this.window.webContents.once('did-finish-load', () => {
       console.log('🌟 Code viewer window loaded');
-      
+
       // Give the script time to initialize
       setTimeout(() => {
         this.isReady = true;
-        
-        // Send any pending updates
+
+        // Send any pending code updates
         if (this.pendingUpdates.length > 0) {
           const latestCode = this.pendingUpdates[this.pendingUpdates.length - 1];
           this.pendingUpdates = [];
           this.updateCode(latestCode);
+        }
+
+        // Send actions if they exist
+        console.log('🔍 Checking actions on window ready: length =', this.actions.length);
+        if (this.actions.length > 0 && this.window && !this.window.isDestroyed()) {
+          console.log('📤 Sending', this.actions.length, 'actions to renderer now that window is ready');
+          this.window.webContents.send('actions-updated', this.actions);
+        } else if (this.actions.length === 0) {
+          console.log('⚠️ No actions to send - actions array is empty!');
         }
       }, 100);
     });
