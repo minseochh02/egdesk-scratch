@@ -3014,6 +3014,46 @@ const { chromium } = require('playwright-core');
         // Regenerate the code with the updated actions
         const tempRecorder = new BrowserRecorder();
         tempRecorder.setActions(actions);
+
+        // Set the script name for proper downloads path
+        const scriptName = path.basename(testPath, '.spec.js');
+        tempRecorder.setScriptName(scriptName);
+
+        // Check if this test is part of a chain and restore chain info
+        const metadataStore = getChainMetadataStore();
+        const chain = metadataStore.getChainByScript(testPath);
+        const scriptInChain = chain?.scripts.find(s => s.scriptPath === testPath);
+
+        console.log('🔍 Chain check - testPath:', testPath);
+        console.log('🔍 Chain check - chain exists:', !!chain);
+        console.log('🔍 Chain check - scriptInChain:', scriptInChain);
+
+        if (scriptInChain && scriptInChain.order > 1) {
+          // This is a chained script - find the previous script's download
+          const previousScript = chain?.scripts.find(s => s.order === scriptInChain.order - 1);
+
+          console.log('🔍 Previous script:', previousScript);
+
+          if (previousScript?.downloadedFile) {
+            console.log('🔗 Restoring chain info: downloaded file =', previousScript.downloadedFile);
+
+            // Reconstruct the download path
+            const prevScriptName = path.basename(previousScript.scriptPath, '.spec.js');
+            const downloadsDir = path.join(app.getPath('downloads'), 'EGDesk-Browser', prevScriptName);
+            const downloadPath = path.join(downloadsDir, previousScript.downloadedFile);
+
+            console.log('🔗 Reconstructed download path:', downloadPath);
+            console.log('🔗 File exists:', fs.existsSync(downloadPath));
+
+            // Set chain properties on the temporary recorder
+            tempRecorder.setChainParameters(chain.chainId, downloadPath);
+          } else {
+            console.log('⚠️ Previous script has no downloadedFile');
+          }
+        } else {
+          console.log('⚠️ Not a chained script or script order is 1');
+        }
+
         const updatedCode = tempRecorder.generateTestCode();
 
         // Update the code viewer with the new code
@@ -3029,6 +3069,45 @@ const { chromium } = require('playwright-core');
             // Create temporary recorder to generate and execute partial code
             const tempRecorder = new BrowserRecorder();
             tempRecorder.setActions(actions);
+
+            // Set the script name for proper downloads path
+            const scriptName = path.basename(testPath, '.spec.js');
+            tempRecorder.setScriptName(scriptName);
+
+            // Check if this test is part of a chain and restore chain info
+            const metadataStore = getChainMetadataStore();
+            const chain = metadataStore.getChainByScript(testPath);
+            const scriptInChain = chain?.scripts.find(s => s.scriptPath === testPath);
+
+            console.log('🔍 [Play] Chain check - testPath:', testPath);
+            console.log('🔍 [Play] Chain check - chain exists:', !!chain);
+            console.log('🔍 [Play] Chain check - scriptInChain:', scriptInChain);
+
+            if (scriptInChain && scriptInChain.order > 1) {
+              // This is a chained script - find the previous script's download
+              const previousScript = chain?.scripts.find(s => s.order === scriptInChain.order - 1);
+
+              console.log('🔍 [Play] Previous script:', previousScript);
+
+              if (previousScript?.downloadedFile) {
+                console.log('🔗 Restoring chain info for play-to-action: downloaded file =', previousScript.downloadedFile);
+
+                // Reconstruct the download path
+                const prevScriptName = path.basename(previousScript.scriptPath, '.spec.js');
+                const downloadsDir = path.join(app.getPath('downloads'), 'EGDesk-Browser', prevScriptName);
+                const downloadPath = path.join(downloadsDir, previousScript.downloadedFile);
+
+                console.log('🔗 [Play] Reconstructed download path:', downloadPath);
+                console.log('🔗 [Play] File exists:', fs.existsSync(downloadPath));
+
+                // Set chain properties on the temporary recorder
+                tempRecorder.setChainParameters(chain.chainId, downloadPath);
+              } else {
+                console.log('⚠️ [Play] Previous script has no downloadedFile');
+              }
+            } else {
+              console.log('⚠️ [Play] Not a chained script or script order is 1');
+            }
 
             // Generate partial test code
             const partialCode = tempRecorder.generateTestCodeUpToAction(index);
