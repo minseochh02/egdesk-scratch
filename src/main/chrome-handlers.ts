@@ -2714,6 +2714,9 @@ const { chromium } = require('playwright-core');
 
         // Extract test body (same logic as run-playwright-test)
         let testBody = '';
+        let extensionPaths: string[] = [];
+        let copyExtensionsToTempFn: Function | null = null;
+        let copyNativeMessagingHostsFn: Function | null = null;
 
         if (generatedCode.includes('@playwright/test')) {
           const testMatch = generatedCode.match(/test\s*\([^)]+\)\s*\{([\s\S]+)\}\);?\s*$/m);
@@ -2721,6 +2724,58 @@ const { chromium } = require('playwright-core');
             testBody = testMatch[1].trim();
           }
         } else {
+          // For standalone scripts, extract EXTENSION_PATHS constant
+          const extensionPathsMatch = generatedCode.match(/const EXTENSION_PATHS\s*=\s*(\[[\s\S]*?\]);/);
+          if (extensionPathsMatch && extensionPathsMatch[1]) {
+            try {
+              extensionPaths = JSON.parse(extensionPathsMatch[1]);
+            } catch (e) {
+              console.warn('Could not parse EXTENSION_PATHS:', e);
+              extensionPaths = [];
+            }
+          }
+
+          // Extract copyExtensionsToTemp function
+          const copyExtMatch = generatedCode.match(/function copyExtensionsToTemp\([\s\S]*?\n\}/);
+          if (copyExtMatch) {
+            try {
+              const fnCode = copyExtMatch[0];
+              copyExtensionsToTempFn = new Function('fs', 'path', 'os', 'EXTENSION_PATHS', 'copyNativeMessagingHosts', 'console',
+                `return (${fnCode.replace('function copyExtensionsToTemp', 'function')});`
+              )(fs, path, os, extensionPaths, null, console);
+            } catch (e) {
+              console.warn('Could not extract copyExtensionsToTemp:', e);
+            }
+          }
+
+          // Extract copyNativeMessagingHosts function
+          const copyNativeMatch = generatedCode.match(/function copyNativeMessagingHosts\([\s\S]*?\n\}/);
+          if (copyNativeMatch) {
+            try {
+              const fnCode = copyNativeMatch[0];
+              copyNativeMessagingHostsFn = new Function('fs', 'path', 'os', 'console',
+                `return (${fnCode.replace('function copyNativeMessagingHosts', 'function')});`
+              )(fs, path, os, console);
+            } catch (e) {
+              console.warn('Could not extract copyNativeMessagingHosts:', e);
+            }
+          }
+
+          // Update the copyExtensionsToTemp function to have access to copyNativeMessagingHosts
+          if (copyExtensionsToTempFn && copyNativeMessagingHostsFn) {
+            const copyExtMatch = generatedCode.match(/function copyExtensionsToTemp\([\s\S]*?\n\}/);
+            if (copyExtMatch) {
+              try {
+                const fnCode = copyExtMatch[0];
+                copyExtensionsToTempFn = new Function('fs', 'path', 'os', 'EXTENSION_PATHS', 'copyNativeMessagingHosts', 'console',
+                  `return (${fnCode.replace('function copyExtensionsToTemp', 'function')});`
+                )(fs, path, os, extensionPaths, copyNativeMessagingHostsFn, console);
+              } catch (e) {
+                console.warn('Could not re-extract copyExtensionsToTemp:', e);
+              }
+            }
+          }
+
           // For standalone scripts, extract code from IIFE
           const iifeMatch = generatedCode.match(/\(async\s*\(\)\s*=>\s*\{([\s\S]+)\}\)\(\)\.catch/);
           if (iifeMatch && iifeMatch[1]) {
@@ -2737,8 +2792,8 @@ const { chromium } = require('playwright-core');
 
         try {
           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-          const testFunction = new AsyncFunction('chromium', 'require', 'console', testBody);
-          await testFunction(chromium, require, console);
+          const testFunction = new AsyncFunction('chromium', 'require', 'console', 'path', 'os', 'fs', 'EXTENSION_PATHS', 'copyExtensionsToTemp', 'copyNativeMessagingHosts', testBody);
+          await testFunction(chromium, require, console, path, os, fs, extensionPaths, copyExtensionsToTempFn, copyNativeMessagingHostsFn);
 
           console.log(`✅ Step ${script.order} completed: ${script.scriptName}`);
 
@@ -2920,7 +2975,8 @@ const { chromium } = require('playwright-core');
       // Extract actions from the embedded JSON comment
       let actions: any[] = [];
       try {
-        const actionsMatch = testCode.match(/\/\*\*[\s\S]*?RECORDED_ACTIONS:[\s\S]*?\* (.*?)[\s\S]*?\*\//);
+        // Use greedy match to capture the entire JSON array on the line
+        const actionsMatch = testCode.match(/\/\*\*[\s\S]*?RECORDED_ACTIONS:[\s\S]*?\* (.*)[\s\S]*?\*\//);
         if (actionsMatch && actionsMatch[1]) {
           const actionsJson = actionsMatch[1].trim();
           actions = JSON.parse(actionsJson);
@@ -2935,14 +2991,37 @@ const { chromium } = require('playwright-core');
 
       // Open the code viewer window in view mode
       await codeViewerWindow.create();
+
+      // Update actions BEFORE setting view mode to avoid race condition
+      if (actions.length > 0) {
+        codeViewerWindow.updateActions(actions);
+      }
+
       codeViewerWindow.setViewMode(testPath);
       codeViewerWindow.updateCode(testCode);
 
-      // Send actions if we found them
-      if (actions.length > 0) {
+      // Set up delete-action for view mode
+      codeViewerWindow.setDeleteActionCallback(async (index) => {
+        console.log('🗑️ Delete action in view mode, index:', index);
+
+        // Remove the action from the array
+        actions.splice(index, 1);
+        console.log('✅ Removed action, remaining actions:', actions.length);
+
+        // Update the code viewer with the new actions list
         codeViewerWindow.updateActions(actions);
 
-        // Set up play-to-action for view mode
+        // Regenerate the code with the updated actions
+        const tempRecorder = new BrowserRecorder();
+        tempRecorder.setActions(actions);
+        const updatedCode = tempRecorder.generateTestCode();
+
+        // Update the code viewer with the new code
+        codeViewerWindow.updateCode(updatedCode);
+      });
+
+      // Set up play-to-action for view mode
+      if (actions.length > 0) {
         codeViewerWindow.setPlayToActionCallback(async (index) => {
           console.log('▶️ Play to action in view mode, index:', index);
 

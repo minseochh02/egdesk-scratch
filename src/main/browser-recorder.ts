@@ -5783,7 +5783,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     console.log('📅 Exited date marking mode');
   }
 
-  private generateTestCode(): string {
+  generateTestCode(): string {
     // Get screen dimensions (same as recording)
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
