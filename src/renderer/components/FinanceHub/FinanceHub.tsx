@@ -50,6 +50,7 @@ import {
   CARD_CATEGORY_LABELS,
 } from './types';
 import { formatAccountNumber, formatCurrency, getBankInfo } from './utils';
+import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 // Sub-component
 import TransactionsPage from './TransactionsPage';
@@ -106,6 +107,7 @@ const FinanceHub: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
+  const [bankAuthMethod, setBankAuthMethod] = useState<'certificate' | 'id' | null>(null);
   const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
   const [isConnecting, setIsConnecting] = useState(false);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState<string | null>(null);
@@ -124,6 +126,7 @@ const FinanceHub: React.FC = () => {
   const [selectedCardCategory, setSelectedCardCategory] = useState<string>('all');
   const [cardSearchQuery, setCardSearchQuery] = useState('');
   const [selectedCard, setSelectedCard] = useState<CardConfig | null>(null);
+  const [cardAuthMethod, setCardAuthMethod] = useState<'certificate' | 'id' | null>(null);
   const [cardCredentials, setCardCredentials] = useState<CardCredentials>({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
   const [isConnectingCard, setIsConnectingCard] = useState(false);
   const [cardConnectionProgress, setCardConnectionProgress] = useState<string>('');
@@ -165,6 +168,10 @@ const FinanceHub: React.FC = () => {
     classification: 'all',
     companyName: 'all',
   });
+
+  // Tax invoice Google auth state
+  const [showTaxGoogleAuth, setShowTaxGoogleAuth] = useState(false);
+  const [signingInTaxGoogle, setSigningInTaxGoogle] = useState(false);
 
   // ============================================
   // Computed Values
@@ -916,14 +923,24 @@ const FinanceHub: React.FC = () => {
   const handleCloseCardModal = () => {
     setShowCardSelector(false);
     setSelectedCard(null);
+    setCardAuthMethod(null);
     setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
     setCardConnectionProgress('');
   };
 
   const handleBackToCardList = () => {
     setSelectedCard(null);
+    setCardAuthMethod(null);
     setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
     setCardConnectionProgress('');
+  };
+
+  const handleSelectBankAuthMethod = (method: 'certificate' | 'id') => {
+    setBankAuthMethod(method);
+  };
+
+  const handleSelectCardAuthMethod = (method: 'certificate' | 'id') => {
+    setCardAuthMethod(method);
   };
 
   // ============================================
@@ -1112,13 +1129,64 @@ const FinanceHub: React.FC = () => {
         window.open(result.spreadsheetUrl, '_blank');
       } else {
         const errorMsg = result.error || '알 수 없는 오류';
-        alert(`❌ 스프레드시트 내보내기 실패: ${errorMsg}`);
+
+        // Check if it's an authentication error
+        if (errorMsg.toLowerCase().includes('auth') ||
+            errorMsg.toLowerCase().includes('token') ||
+            errorMsg.toLowerCase().includes('permission') ||
+            errorMsg.toLowerCase().includes('sign in with google')) {
+          setShowTaxGoogleAuth(true);
+          // Don't show alert for auth errors, just show the Google login UI
+        } else {
+          alert(`❌ 스프레드시트 내보내기 실패: ${errorMsg}`);
+        }
       }
     } catch (error) {
       console.error('Error exporting tax invoices:', error);
       const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
-      alert(`스프레드시트 내보내기 중 오류 발생: ${errorMsg}`);
+
+      // Check if it's an authentication error
+      if (errorMsg.toLowerCase().includes('auth') ||
+          errorMsg.toLowerCase().includes('token') ||
+          errorMsg.toLowerCase().includes('permission') ||
+          errorMsg.toLowerCase().includes('sign in with google')) {
+        setShowTaxGoogleAuth(true);
+        // Don't show alert for auth errors, just show the Google login UI
+      } else {
+        alert(`스프레드시트 내보내기 중 오류 발생: ${errorMsg}`);
+      }
     }
+  };
+
+  const handleTaxGoogleSignIn = async () => {
+    setSigningInTaxGoogle(true);
+
+    try {
+      // Use the same Google OAuth flow with proper scopes
+      const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING);
+
+      if (result.success && result.session) {
+        console.log('Google sign-in successful:', result.session.user.email);
+        setShowTaxGoogleAuth(false);
+        // Automatically retry the export
+        setTimeout(() => {
+          handleExportTaxInvoices();
+        }, 1000);
+      } else {
+        console.error('Google sign-in failed:', result);
+        throw new Error(result.error || 'Failed to sign in with Google');
+      }
+    } catch (err) {
+      console.error('Error signing in with Google:', err);
+      // Don't show alert for OAuth errors - user might have just cancelled the window
+      // Keep the Google login UI visible so they can try again
+    } finally {
+      setSigningInTaxGoogle(false);
+    }
+  };
+
+  const handleCloseTaxGoogleAuth = () => {
+    setShowTaxGoogleAuth(false);
   };
 
   // Load tax invoices when filters change
@@ -1409,8 +1477,8 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
-  const handleBackToList = () => { setSelectedBank(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
+  const handleCloseModal = () => { setShowBankSelector(false); setSelectedBank(null); setBankAuthMethod(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
+  const handleBackToList = () => { setSelectedBank(null); setBankAuthMethod(null); setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' }); setConnectionProgress(''); };
 
   // ============================================
   // Debug Handlers
@@ -1987,11 +2055,15 @@ const FinanceHub: React.FC = () => {
               businesses={connectedBusinesses}
               sortKey={taxInvoiceSort.key}
               sortDirection={taxInvoiceSort.direction}
+              showGoogleAuth={showTaxGoogleAuth}
+              signingIn={signingInTaxGoogle}
               onInvoiceTypeChange={handleTaxInvoiceTabChange}
               onFilterChange={handleTaxInvoiceFilterChange}
               onResetFilters={handleResetTaxInvoiceFilters}
               onSort={handleTaxInvoiceSort}
               onExport={handleExportTaxInvoices}
+              onGoogleSignIn={handleTaxGoogleSignIn}
+              onCloseGoogleAuth={handleCloseTaxGoogleAuth}
             />
           </div>
         ) : currentView === 'tax-management' ? (
@@ -2118,116 +2190,160 @@ const FinanceHub: React.FC = () => {
                   <span className="finance-hub__login-bank-icon" style={{ background: selectedBank.color }}>{selectedBank.icon}</span>
                   <div><h3>{selectedBank.nameKo}</h3><span>{selectedBank.name}</span></div>
                 </div>
-                <div className="finance-hub__login-fields">
-                  <div className="finance-hub__input-group">
-                    <label>계정 유형</label>
-                    <div className="finance-hub__account-type-selector">
+
+                {/* Connection Progress */}
+                {connectionProgress && (
+                  <div className="finance-hub__connection-progress">
+                    <span className="finance-hub__spinner"></span>
+                    <span>{connectionProgress}</span>
+                  </div>
+                )}
+
+                {/* Combined: Account Type Selection + Auth Method Selection */}
+                {!connectionProgress && (
+                  <div className="finance-hub__login-fields">
+                    {/* Account Type Selector */}
+                    <div className="finance-hub__input-group">
+                      <label>계정 유형</label>
+                      <div className="finance-hub__account-type-selector">
+                        <button
+                          type="button"
+                          className={`finance-hub__account-type-btn ${credentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
+                          onClick={() => setCredentials({ ...credentials, accountType: 'personal' })}
+                          disabled={isConnecting}
+                        >
+                          <span className="finance-hub__account-type-icon">👤</span>
+                          <span>개인</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`finance-hub__account-type-btn ${credentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
+                          onClick={() => setCredentials({ ...credentials, accountType: 'corporate' })}
+                          disabled={isConnecting}
+                        >
+                          <span className="finance-hub__account-type-icon">🏢</span>
+                          <span>법인</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Auth Method Selector */}
+                    <div className="finance-hub__auth-method-selector">
+                      <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)', textAlign: 'center' }}>로그인 방식을 선택하세요</h3>
                       <button
-                        type="button"
-                        className={`finance-hub__account-type-btn ${credentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
-                        onClick={() => setCredentials({ ...credentials, accountType: 'personal' })}
+                        className="finance-hub__auth-method-btn"
+                        onClick={() => handleSelectBankAuthMethod('certificate')}
                         disabled={isConnecting}
                       >
-                        <span className="finance-hub__account-type-icon">👤</span>
-                        <span>개인</span>
+                        <span className="finance-hub__auth-method-icon">🔐</span>
+                        <div className="finance-hub__auth-method-info">
+                          <h4>공동인증서</h4>
+                          <p>공동인증서(구 공인인증서)로 로그인</p>
+                        </div>
                       </button>
                       <button
-                        type="button"
-                        className={`finance-hub__account-type-btn ${credentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
-                        onClick={() => setCredentials({ ...credentials, accountType: 'corporate' })}
+                        className="finance-hub__auth-method-btn"
+                        onClick={() => handleSelectBankAuthMethod('id')}
                         disabled={isConnecting}
                       >
-                        <span className="finance-hub__account-type-icon">🏢</span>
-                        <span>법인</span>
+                        <span className="finance-hub__auth-method-icon">👤</span>
+                        <div className="finance-hub__auth-method-info">
+                          <h4>아이디 로그인</h4>
+                          <p>인터넷뱅킹 아이디와 비밀번호로 로그인</p>
+                        </div>
                       </button>
                     </div>
-                  </div>
 
-                  {/* Conditional rendering based on account type */}
-                  {credentials.accountType === 'corporate' ? (
-                    // Corporate account - Certificate password only
-                    <>
-                      <div className="finance-hub__login-notice" style={{ marginBottom: '16px' }}>
-                        <div className="finance-hub__notice-icon">🏢</div>
-                        <div>
-                          <strong>법인 인터넷뱅킹</strong>
-                          <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
+                    {/* Credential Fields - Show after auth method is selected */}
+                    {bankAuthMethod === 'certificate' && (
+                      <>
+                        <div className="finance-hub__login-notice" style={{ marginTop: '20px' }}>
+                          <div className="finance-hub__notice-icon">{credentials.accountType === 'corporate' ? '🏢' : '👤'}</div>
+                          <div>
+                            <strong>{credentials.accountType === 'corporate' ? '법인' : '개인'} 인터넷뱅킹</strong>
+                            <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="finance-hub__input-group">
-                        <label>공동인증서 비밀번호</label>
-                        <input
-                          type="password"
-                          placeholder="공동인증서 비밀번호"
-                          value={credentials.certificatePassword || ''}
-                          onChange={(e) => setCredentials({ ...credentials, certificatePassword: e.target.value })}
-                          className="finance-hub__input"
-                          disabled={isConnecting}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    // Personal account - UserId + Password
-                    <>
-                      <div className="finance-hub__input-group">
-                        <label>아이디</label>
-                        <input
-                          type="text"
-                          placeholder="인터넷뱅킹 아이디"
-                          value={credentials.userId}
-                          onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })}
-                          className="finance-hub__input"
-                          disabled={isConnecting}
-                        />
-                      </div>
-                      <div className="finance-hub__input-group">
-                        <label>비밀번호</label>
-                        <input
-                          type="password"
-                          placeholder="인터넷뱅킹 비밀번호"
-                          value={credentials.password}
-                          onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                          className="finance-hub__input"
-                          disabled={isConnecting}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
-                        />
-                      </div>
-                    </>
-                  )}
+                        <div className="finance-hub__input-group">
+                          <label>공동인증서 비밀번호</label>
+                          <input
+                            type="password"
+                            placeholder="공동인증서 비밀번호"
+                            value={credentials.certificatePassword || ''}
+                            onChange={(e) => setCredentials({ ...credentials, certificatePassword: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnecting}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
+                          />
+                        </div>
+                        <div className="finance-hub__checkbox-group">
+                          <label className="finance-hub__checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={saveCredentials}
+                              onChange={(e) => setSaveCredentials(e.target.checked)}
+                              disabled={isConnecting}
+                            />
+                            인증서 비밀번호 저장 (암호화하여 안전하게 보관)
+                          </label>
+                        </div>
+                        <button
+                          className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                          onClick={handleConnect}
+                          disabled={isConnecting || !credentials.certificatePassword}
+                        >
+                          {isConnecting ? <><span className="finance-hub__spinner"></span> 연결 중...</> : '은행 연결하기'}
+                        </button>
+                      </>
+                    )}
 
-                  <div className="finance-hub__checkbox-group">
-                    <label className="finance-hub__checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={saveCredentials}
-                        onChange={(e) => setSaveCredentials(e.target.checked)}
-                        disabled={isConnecting}
-                      />
-                      {credentials.accountType === 'corporate' ? '인증서 비밀번호 저장' : '아이디 및 비밀번호 저장'}
-                    </label>
+                    {bankAuthMethod === 'id' && (
+                      <>
+                        <div className="finance-hub__input-group" style={{ marginTop: '20px' }}>
+                          <label>아이디</label>
+                          <input
+                            type="text"
+                            placeholder="인터넷뱅킹 아이디"
+                            value={credentials.userId}
+                            onChange={(e) => setCredentials({ ...credentials, userId: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnecting}
+                          />
+                        </div>
+                        <div className="finance-hub__input-group">
+                          <label>비밀번호</label>
+                          <input
+                            type="password"
+                            placeholder="인터넷뱅킹 비밀번호"
+                            value={credentials.password}
+                            onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnecting}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
+                          />
+                        </div>
+                        <div className="finance-hub__checkbox-group">
+                          <label className="finance-hub__checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={saveCredentials}
+                              onChange={(e) => setSaveCredentials(e.target.checked)}
+                              disabled={isConnecting}
+                            />
+                            아이디 및 비밀번호 저장 (암호화하여 안전하게 보관)
+                          </label>
+                        </div>
+                        <button
+                          className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                          onClick={handleConnect}
+                          disabled={isConnecting || !credentials.userId || !credentials.password}
+                        >
+                          {isConnecting ? <><span className="finance-hub__spinner"></span> 연결 중...</> : '은행 연결하기'}
+                        </button>
+                      </>
+                    )}
                   </div>
-                </div>
-                {connectionProgress && <div className="finance-hub__connection-progress"><span className="finance-hub__spinner"></span><span>{connectionProgress}</span></div>}
-                <div className="finance-hub__login-notice">
-                  <div className="finance-hub__notice-icon">🔒</div>
-                  <div>
-                    <strong>안전한 연결</strong>
-                    <p>입력하신 정보는 암호화되어 전송됩니다.</p>
-                  </div>
-                </div>
-                <button
-                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
-                  onClick={handleConnect}
-                  disabled={
-                    isConnecting ||
-                    (credentials.accountType === 'corporate'
-                      ? !credentials.certificatePassword
-                      : (!credentials.userId || !credentials.password))
-                  }
-                >
-                  {isConnecting ? <><span className="finance-hub__spinner"></span> 연결 중...</> : '은행 연결하기'}
-                </button>
+                )}
               </div>
             ) : (
               <>
@@ -2295,95 +2411,193 @@ const FinanceHub: React.FC = () => {
                     <span>{selectedCard.name}</span>
                   </div>
                 </div>
-                <div className="finance-hub__login-fields">
-                  <div className="finance-hub__input-group">
-                    <label>계정 유형</label>
-                    <div className="finance-hub__account-type-selector">
-                      <button
-                        type="button"
-                        className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
-                        onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'personal' })}
-                        disabled={isConnectingCard || selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card'}
-                        title={(selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card') ? '이 카드는 법인 전용입니다' : undefined}
-                      >
-                        <span className="finance-hub__account-type-icon">👤</span>
-                        <span>개인</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
-                        onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'corporate' })}
-                        disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
-                        title={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? '법인 계정은 BC카드와 신한카드만 지원됩니다' : undefined}
-                      >
-                        <span className="finance-hub__account-type-icon">🏢</span>
-                        <span>법인</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="finance-hub__input-group">
-                    <label>아이디</label>
-                    <input
-                      type="text"
-                      placeholder="카드사 아이디"
-                      value={cardCredentials.userId}
-                      onChange={(e) => setCardCredentials({ ...cardCredentials, userId: e.target.value })}
-                      className="finance-hub__input"
-                      disabled={isConnectingCard}
-                    />
-                  </div>
-                  <div className="finance-hub__input-group">
-                    <label>비밀번호</label>
-                    <input
-                      type="password"
-                      placeholder="카드사 비밀번호"
-                      value={cardCredentials.password}
-                      onChange={(e) => setCardCredentials({ ...cardCredentials, password: e.target.value })}
-                      className="finance-hub__input"
-                      disabled={isConnectingCard}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isConnectingCard) handleConnectCard();
-                      }}
-                    />
-                  </div>
-                  <div className="finance-hub__checkbox-group">
-                    <label className="finance-hub__checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={saveCardCredentials}
-                        onChange={(e) => setSaveCardCredentials(e.target.checked)}
-                        disabled={isConnectingCard}
-                      />
-                      아이디 및 비밀번호 저장
-                    </label>
-                  </div>
-                </div>
+
+                {/* Connection Progress */}
                 {cardConnectionProgress && (
                   <div className="finance-hub__connection-progress">
                     <span className="finance-hub__spinner"></span>
                     <span>{cardConnectionProgress}</span>
                   </div>
                 )}
-                <div className="finance-hub__login-notice">
-                  <div className="finance-hub__notice-icon">🔒</div>
-                  <div>
-                    <strong>안전한 연결</strong>
-                    <p>입력하신 정보는 암호화되어 전송됩니다.</p>
+
+                {/* Combined: Account Type Selection + Auth Method Selection */}
+                {!cardConnectionProgress && (
+                  <div className="finance-hub__login-fields">
+                    {/* Account Type Selector */}
+                    <div className="finance-hub__input-group">
+                      <label>계정 유형</label>
+                      <div className="finance-hub__account-type-selector">
+                        <button
+                          type="button"
+                          className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
+                          onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'personal' })}
+                          disabled={isConnectingCard || selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card'}
+                          title={(selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card') ? '이 카드는 법인 전용입니다' : undefined}
+                        >
+                          <span className="finance-hub__account-type-icon">👤</span>
+                          <span>개인</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
+                          onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'corporate' })}
+                          disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
+                          title={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? '법인 계정은 BC카드와 신한카드만 지원됩니다' : undefined}
+                        >
+                          <span className="finance-hub__account-type-icon">🏢</span>
+                          <span>법인</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Auth Method Selector */}
+                    <div className="finance-hub__auth-method-selector">
+                      <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)', textAlign: 'center' }}>로그인 방식을 선택하세요</h3>
+                      <button
+                        className="finance-hub__auth-method-btn"
+                        onClick={() => handleSelectCardAuthMethod('certificate')}
+                        disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
+                        style={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? { opacity: 0.5 } : {}}
+                      >
+                        <span className="finance-hub__auth-method-icon">🔐</span>
+                        <div className="finance-hub__auth-method-info">
+                          <h4>공동인증서</h4>
+                          <p>공동인증서(구 공인인증서)로 로그인</p>
+                          {(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') && (
+                            <small style={{ color: 'var(--fh-text-muted)', marginTop: '4px' }}>법인 계정은 BC카드와 신한카드만 지원</small>
+                          )}
+                        </div>
+                      </button>
+                      <button
+                        className="finance-hub__auth-method-btn"
+                        onClick={() => handleSelectCardAuthMethod('id')}
+                        disabled={isConnectingCard}
+                      >
+                        <span className="finance-hub__auth-method-icon">👤</span>
+                        <div className="finance-hub__auth-method-info">
+                          <h4>아이디 로그인</h4>
+                          <p>카드사 아이디와 비밀번호로 로그인</p>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Credential Fields - Show after auth method is selected */}
+                    {cardAuthMethod === 'certificate' && (
+                      <>
+                        <div className="finance-hub__login-notice" style={{ marginTop: '20px' }}>
+                          <div className="finance-hub__notice-icon">{cardCredentials.accountType === 'corporate' ? '🏢' : '👤'}</div>
+                          <div>
+                            <strong>{cardCredentials.accountType === 'corporate' ? '법인' : '개인'} 카드</strong>
+                            <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
+                          </div>
+                        </div>
+                        <div className="finance-hub__input-group">
+                          <label>아이디</label>
+                          <input
+                            type="text"
+                            placeholder="카드사 아이디"
+                            value={cardCredentials.userId}
+                            onChange={(e) => setCardCredentials({ ...cardCredentials, userId: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnectingCard}
+                          />
+                        </div>
+                        <div className="finance-hub__input-group">
+                          <label>비밀번호</label>
+                          <input
+                            type="password"
+                            placeholder="카드사 비밀번호"
+                            value={cardCredentials.password}
+                            onChange={(e) => setCardCredentials({ ...cardCredentials, password: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnectingCard}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !isConnectingCard) handleConnectCard();
+                            }}
+                          />
+                        </div>
+                        <div className="finance-hub__checkbox-group">
+                          <label className="finance-hub__checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={saveCardCredentials}
+                              onChange={(e) => setSaveCardCredentials(e.target.checked)}
+                              disabled={isConnectingCard}
+                            />
+                            로그인 정보 저장 (암호화하여 안전하게 보관)
+                          </label>
+                        </div>
+                        <button
+                          className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                          onClick={handleConnectCard}
+                          disabled={isConnectingCard || !cardCredentials.userId || !cardCredentials.password}
+                        >
+                          {isConnectingCard ? (
+                            <>
+                              <span className="finance-hub__spinner"></span> 연결 중...
+                            </>
+                          ) : (
+                            '카드사 연결하기'
+                          )}
+                        </button>
+                      </>
+                    )}
+
+                    {cardAuthMethod === 'id' && (
+                      <>
+                        <div className="finance-hub__input-group" style={{ marginTop: '20px' }}>
+                          <label>아이디</label>
+                          <input
+                            type="text"
+                            placeholder="카드사 아이디"
+                            value={cardCredentials.userId}
+                            onChange={(e) => setCardCredentials({ ...cardCredentials, userId: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnectingCard}
+                          />
+                        </div>
+                        <div className="finance-hub__input-group">
+                          <label>비밀번호</label>
+                          <input
+                            type="password"
+                            placeholder="카드사 비밀번호"
+                            value={cardCredentials.password}
+                            onChange={(e) => setCardCredentials({ ...cardCredentials, password: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnectingCard}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !isConnectingCard) handleConnectCard();
+                            }}
+                          />
+                        </div>
+                        <div className="finance-hub__checkbox-group">
+                          <label className="finance-hub__checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={saveCardCredentials}
+                              onChange={(e) => setSaveCardCredentials(e.target.checked)}
+                              disabled={isConnectingCard}
+                            />
+                            아이디 및 비밀번호 저장 (암호화하여 안전하게 보관)
+                          </label>
+                        </div>
+                        <button
+                          className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                          onClick={handleConnectCard}
+                          disabled={isConnectingCard || !cardCredentials.userId || !cardCredentials.password}
+                        >
+                          {isConnectingCard ? (
+                            <>
+                              <span className="finance-hub__spinner"></span> 연결 중...
+                            </>
+                          ) : (
+                            '카드사 연결하기'
+                          )}
+                        </button>
+                      </>
+                    )}
                   </div>
-                </div>
-                <button
-                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
-                  onClick={handleConnectCard}
-                  disabled={isConnectingCard || !cardCredentials.userId || !cardCredentials.password}
-                >
-                  {isConnectingCard ? (
-                    <>
-                      <span className="finance-hub__spinner"></span> 연결 중...
-                    </>
-                  ) : (
-                    '카드사 연결하기'
-                  )}
-                </button>
+                )}
               </div>
             ) : (
               <>
