@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
-const { keyboard, Key } = require('@nut-tree-fork/nut-js');
+const { typeText } = require('../../../utils/nativeKeyboard');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
 
@@ -95,8 +95,8 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password using nut.js with SLOW human-like typing
-      this.log('Entering password with slow nut.js native keyboard...');
+      // Step 6: Fill password using native OS keyboard (robotjs/nut.js)
+      this.log('Entering password with native OS keyboard...');
       try {
         // Focus the password field
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
@@ -111,34 +111,22 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         await passwordField.click();
         await this.page.waitForTimeout(500);
 
-        // Type password VERY SLOWLY using nut.js character by character
-        this.log(`Typing password slowly with nut.js (${password.length} characters)...`);
+        // Type password using Interception driver (virtual HID keyboard)
+        // This creates kernel-level keyboard events that bypass TouchEn nxKey
+        const result = await typeText(password, {
+          slowTyping: true,  // Enable human-like slow typing (200-500ms delays)
+          preferredMethod: 'interception',  // Force Interception driver
+          page: this.page,  // Fallback to Playwright if Interception fails
+          onProgress: (msg) => this.log(msg)
+        });
 
-        for (let i = 0; i < password.length; i++) {
-          const char = password[i];
-
-          // Use nut.js to type single character (creates real OS keyboard events)
-          await keyboard.type(char);
-
-          // Human-like random delays between 200-500ms
-          // Real humans type at ~200-400ms per character with variations
-          const baseDelay = 200; // Minimum delay
-          const randomVariation = Math.random() * 300; // 0-300ms random
-          const humanDelay = baseDelay + randomVariation;
-
-          // Occasionally add longer pauses (like humans do when thinking)
-          const shouldPause = Math.random() < 0.15; // 15% chance
-          const extraPause = shouldPause ? Math.random() * 400 : 0;
-
-          const totalDelay = Math.floor(humanDelay + extraPause);
-
-          this.log(`  Typed char ${i + 1}/${password.length}, waiting ${totalDelay}ms`);
-          await this.page.waitForTimeout(totalDelay);
+        if (!result.success) {
+          throw new Error(result.error);
         }
 
-        this.log('Password entry completed with slow nut.js typing');
+        this.log(`Password entry completed using ${result.method}`);
       } catch (e) {
-        this.log('Slow nut.js keyboard entry failed:', e.message);
+        this.log('Native keyboard password entry failed:', e.message);
         throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
