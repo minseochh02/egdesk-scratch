@@ -5,7 +5,6 @@
 const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
-const { typeText } = require('../../../utils/nativeKeyboard');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
 
@@ -95,38 +94,33 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password using native OS keyboard (robotjs/nut.js)
-      this.log('Entering password with native OS keyboard...');
+      // Step 6: Fill password using keyboard events
+      this.log('Entering password using keyboard events...');
       try {
         // Focus the password field
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
-        await passwordField.click();
+        await passwordField.focus();
         await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-        // Clear any existing content first
+        // Clear any existing content
         await passwordField.fill('');
         await this.page.waitForTimeout(200);
 
-        // Click again to ensure focus
-        await passwordField.click();
-        await this.page.waitForTimeout(500);
+        // Type password character by character using keyboard events
+        this.log(`Typing password (${password.length} characters)...`);
+        for (let i = 0; i < password.length; i++) {
+          const char = password[i];
+          await this.page.keyboard.type(char, { delay: 100 });
 
-        // Type password using Interception driver (virtual HID keyboard)
-        // This creates kernel-level keyboard events that bypass TouchEn nxKey
-        const result = await typeText(password, {
-          slowTyping: true,  // Enable human-like slow typing (200-500ms delays)
-          preferredMethod: 'interception',  // Force Interception driver
-          page: this.page,  // Fallback to Playwright if Interception fails
-          onProgress: (msg) => this.log(msg)
-        });
-
-        if (!result.success) {
-          throw new Error(result.error);
+          // Small delay between characters
+          if (i < password.length - 1) {
+            await this.page.waitForTimeout(150);
+          }
         }
 
-        this.log(`Password entry completed using ${result.method}`);
+        this.log('Password entry completed');
       } catch (e) {
-        this.log('Native keyboard password entry failed:', e.message);
+        this.log('Keyboard password entry failed');
         throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
