@@ -242,7 +242,11 @@ class BCCardAutomator extends BaseCardAutomator {
       // Step 2: Click "보유카드조회" submenu
       this.log('Clicking 보유카드조회 submenu...');
       await this.page.locator('#lnb > div.lnbCon > nav > ul > li.KEY0106.on > ul > li.KEY010601 > a').click();
-      await this.page.waitForTimeout(2000);
+
+      // Wait for canvas table to be rendered (important for Windows)
+      this.log('Waiting for card table to render...');
+      await this.page.waitForSelector('#grid > div:nth-child(2) > canvas > table', { timeout: 10000 });
+      await this.page.waitForTimeout(1000); // Extra buffer for canvas painting
 
       // Step 3: Extract cards from table
       this.log('Extracting cards from table...');
