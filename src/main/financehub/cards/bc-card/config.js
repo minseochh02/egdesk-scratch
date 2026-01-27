@@ -86,20 +86,20 @@ const BC_CARD_XPATHS = {
 
 // Timeouts for various operations
 const BC_CARD_TIMEOUTS = {
-  pageLoad: 30000,
-  elementWait: 10000,
-  downloadWait: 60000,
-  navigationWait: 15000,
+  pageLoad: 60000,
+  elementWait: 20000,
+  downloadWait: 120000,
+  navigationWait: 30000,
 };
 
 // Delays between actions (from test recording)
 const BC_CARD_DELAYS = {
-  afterLogin: 3000,        // Line 185, 213
-  afterMenuClick: 2000,    // Between menu navigation
-  afterNavigation: 3000,   // Lines 221, 228
-  afterSearch: 3000,       // Line 252
-  afterDownload: 3000,     // Line 326
-  betweenActions: 1000,    // General delay between actions
+  afterLogin: 5000,        // Line 185, 213
+  afterMenuClick: 3000,    // Between menu navigation
+  afterNavigation: 5000,   // Lines 221, 228
+  afterSearch: 5000,       // Line 252
+  afterDownload: 5000,     // Line 326
+  betweenActions: 2000,    // General delay between actions
 };
 
 // Transaction table column mapping (actual BC Card Excel format - 16 columns)

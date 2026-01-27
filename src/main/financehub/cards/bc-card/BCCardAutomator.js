@@ -245,8 +245,11 @@ class BCCardAutomator extends BaseCardAutomator {
 
       // Wait for canvas table to be rendered (important for Windows)
       this.log('Waiting for card table to render...');
-      await this.page.waitForSelector('#grid > div:nth-child(2) > canvas > table', { timeout: 10000 });
-      await this.page.waitForTimeout(1000); // Extra buffer for canvas painting
+      await this.page.waitForSelector('#grid > div:nth-child(2) > canvas > table', {
+        state: 'attached', // Wait for DOM attachment, not visibility (canvas tables may be hidden initially)
+        timeout: this.config.timeouts.elementWait
+      });
+      await this.page.waitForTimeout(3000); // Extra buffer for canvas painting to become visible
 
       // Step 3: Extract cards from table
       this.log('Extracting cards from table...');

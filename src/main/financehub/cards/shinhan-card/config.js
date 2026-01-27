@@ -21,6 +21,7 @@ const SHINHAN_CARD_XPATHS = {
     css: '[id="loginC"]',
     xpath: '//*[@id="loginC"]',
   },
+  extendSessionButton: '/html/body/div[2]/header/header/div[1]/div/div[2]/div[4]/button[1]',
 
   // Card Discovery Section
   myCardsLink: {

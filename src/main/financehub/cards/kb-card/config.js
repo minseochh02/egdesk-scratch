@@ -21,11 +21,11 @@ const KB_CARD_XPATHS = {
   },
   idInput: {
     css: '[id="기업인터넷서비스로그인ID"]',
-    xpath: '//*[@id="기업인터넷서비스로그인ID"]'
+    xpath: '/html/body/div[1]/div[3]/div[1]/div[2]/form[2]/div[3]/div[1]/div[1]/div/div[1]/input'
   },
   passwordInput: {
     css: '[id="loginPwdBiz"]',
-    xpath: '//*[@id="loginPwdBiz"]'
+    xpath: '/html/body/div[1]/div[3]/div[1]/div[2]/form[2]/div[3]/div[1]/div[1]/div/div[2]/input[1]'
   },
   loginButton: {
     css: '[id="doBizIdLogin"]',
