@@ -772,8 +772,8 @@ const FinanceHub: React.FC = () => {
       return;
     }
     setSelectedCard(card);
-    // BC Card and Shinhan Card are corporate only, others default to personal
-    const accountType = (card.id === 'bc-card' || card.id === 'shinhan-card') ? 'corporate' : 'personal';
+    // BC Card, Shinhan Card, NH Card, and KB Card are corporate only, others default to personal
+    const accountType = (card.id === 'bc-card' || card.id === 'shinhan-card' || card.id === 'nh-card' || card.id === 'kb-card') ? 'corporate' : 'personal';
     setCardCredentials({ cardCompanyId: card.id, userId: '', password: '', accountType });
   };
 
@@ -2431,8 +2431,8 @@ const FinanceHub: React.FC = () => {
                           type="button"
                           className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'personal' ? 'finance-hub__account-type-btn--active' : ''}`}
                           onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'personal' })}
-                          disabled={isConnectingCard || selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card'}
-                          title={(selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card') ? '이 카드는 법인 전용입니다' : undefined}
+                          disabled={isConnectingCard || selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card' || selectedCard?.id === 'nh-card' || selectedCard?.id === 'kb-card'}
+                          title={(selectedCard?.id === 'bc-card' || selectedCard?.id === 'shinhan-card' || selectedCard?.id === 'nh-card' || selectedCard?.id === 'kb-card') ? '이 카드는 법인 전용입니다' : undefined}
                         >
                           <span className="finance-hub__account-type-icon">👤</span>
                           <span>개인</span>
@@ -2441,8 +2441,8 @@ const FinanceHub: React.FC = () => {
                           type="button"
                           className={`finance-hub__account-type-btn ${cardCredentials.accountType === 'corporate' ? 'finance-hub__account-type-btn--active' : ''}`}
                           onClick={() => setCardCredentials({ ...cardCredentials, accountType: 'corporate' })}
-                          disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
-                          title={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? '법인 계정은 BC카드와 신한카드만 지원됩니다' : undefined}
+                          disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card' && selectedCard?.id !== 'nh-card' && selectedCard?.id !== 'kb-card')}
+                          title={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card' && selectedCard?.id !== 'nh-card' && selectedCard?.id !== 'kb-card') ? '법인 계정은 BC카드, 신한카드, NH농협카드, KB국민카드만 지원됩니다' : undefined}
                         >
                           <span className="finance-hub__account-type-icon">🏢</span>
                           <span>법인</span>
@@ -2456,15 +2456,15 @@ const FinanceHub: React.FC = () => {
                       <button
                         className="finance-hub__auth-method-btn"
                         onClick={() => handleSelectCardAuthMethod('certificate')}
-                        disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card')}
-                        style={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') ? { opacity: 0.5 } : {}}
+                        disabled={isConnectingCard || (selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card' && selectedCard?.id !== 'nh-card' && selectedCard?.id !== 'kb-card')}
+                        style={(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card' && selectedCard?.id !== 'nh-card' && selectedCard?.id !== 'kb-card') ? { opacity: 0.5 } : {}}
                       >
                         <span className="finance-hub__auth-method-icon">🔐</span>
                         <div className="finance-hub__auth-method-info">
                           <h4>공동인증서</h4>
                           <p>공동인증서(구 공인인증서)로 로그인</p>
-                          {(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card') && (
-                            <small style={{ color: 'var(--fh-text-muted)', marginTop: '4px' }}>법인 계정은 BC카드와 신한카드만 지원</small>
+                          {(selectedCard?.id !== 'bc-card' && selectedCard?.id !== 'shinhan-card' && selectedCard?.id !== 'nh-card' && selectedCard?.id !== 'kb-card') && (
+                            <small style={{ color: 'var(--fh-text-muted)', marginTop: '4px' }}>법인 계정은 BC카드, 신한카드, NH농협카드, KB국민카드만 지원</small>
                           )}
                         </div>
                       </button>

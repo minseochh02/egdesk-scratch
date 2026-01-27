@@ -361,6 +361,10 @@ const BrowserRecorderPage: React.FC = () => {
       setIsRecordingEnhanced(false);
       setCurrentTestCode('');
 
+      // Reset chain ID so next recording starts fresh
+      // User can continue the chain by clicking "Start Upload Recording" while banner is showing
+      setCurrentChainId(null);
+
       // Refresh test list
       (async () => {
         const result = await (window as any).electron.debug.getPlaywrightTests();

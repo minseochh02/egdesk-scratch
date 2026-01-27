@@ -356,11 +356,11 @@ export const KOREAN_CARD_COMPANIES: CardConfig[] = [
     id: 'kb-card',
     name: 'KB Card',
     nameKo: 'KB국민카드',
-    loginUrl: 'https://www.kbcard.com/',
+    loginUrl: 'https://biz.kbcard.com/CXORMPIC0001.cms',
     category: 'major',
     color: '#FFBC00',
     icon: '💳',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'samsung-card',
