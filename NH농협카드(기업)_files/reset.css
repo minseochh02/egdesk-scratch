@@ -1,0 +1,367 @@
+@charset "utf-8";
+
+/*=========================================== Fonts ================================================*/
+@font-face {
+  font-family: 'Noto Sans KR';
+  font-style: normal;
+  font-weight: 100;
+  src: url(../font/NotoSansKR-Thin.woff2) format('woff2'),
+       url(../font/NotoSansKR-Thin.woff) format('woff'),
+       url(../font/NotoSansKR-Thin.otf) format('opentype');
+}
+@font-face {
+  font-family: 'Noto Sans KR';
+  font-style: normal;
+  font-weight: 300;
+  src: url(../font/NotoSansKR-Light.woff2) format('woff2'),
+       url(../font/NotoSansKR-Light.woff) format('woff'),
+       url(../font/NotoSansKR-Light.otf) format('opentype');
+}
+@font-face {
+  font-family: 'Noto Sans KR';
+  font-style: normal;
+  font-weight: 400;
+  src: url(../font/NotoSansKR-Regular.woff2) format('woff2'),
+       url(../font/NotoSansKR-Regular.woff) format('woff'),
+       url(../font/NotoSansKR-Regular.otf) format('opentype');
+}
+@font-face {
+   font-family: 'Noto Sans KR';
+   font-style: normal;
+   font-weight: 500;
+   src: url(../font/NotoSansKR-Medium.woff2) format('woff2'),
+        url(../font/NotoSansKR-Medium.woff) format('woff'),
+        url(../font/NotoSansKR-Medium.otf) format('opentype');
+}
+@font-face {
+   font-family: 'Noto Sans KR';
+   font-style: normal;
+   font-weight: 700;
+   src: url(../font/NotoSansKR-Bold.woff2) format('woff2'),
+        url(../font/NotoSansKR-Bold.woff) format('woff'),
+        url(../font/NotoSansKR-Bold.otf) format('opentype');
+}
+@font-face {
+   font-family: 'Noto Sans KR';
+   font-style: normal;
+   font-weight: 900;
+   src: url(../font/NotoSansKR-Black.woff2) format('woff2'),
+        url(../font/NotoSansKR-Black.woff) format('woff'),
+        url(../font/NotoSansKR-Black.otf) format('opentype');
+}
+
+/*=========================================== Reset ================================================*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video, button {margin: 0;padding: 0;border: 0;vertical-align: baseline;box-sizing: border-box;}
+input, select, textarea {margin: 0;padding: 0;box-sizing: border-box;}
+textarea {resize: none;}
+
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure, 
+footer, header, hgroup, main, menu, nav, section, summary {display: block;}
+audio, canvas, progress, video {display: inline-block;vertical-align: baseline;}
+
+html,
+pre {font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Dotum', '돋움', 'gulim', '굴림', Helvetica, sans-serif;font-weight: 400;}
+body {color: #666;line-height: 1.6;letter-spacing: -0.025em;-webkit-text-size-adjust: none;text-size-adjust: none;}
+h1,h2,h3,h4,h5,h6 {font-weight: inherit;font-size: inherit;color: inherit;}
+address {font-style: normal;}
+blockquote, q {quotes: none;}
+blockquote:before, blockquote:after,
+q:before, q:after {content: '';content: none;}
+pre {overflow: auto;}
+sup {line-height: 0;vertical-align: super;}
+i, em {font-style: normal;}
+img, fieldset {vertical-align: middle;}
+ol, ul, li {list-style: none;}
+table {table-layout: fixed;width: 100%;border-collapse: separate;border-spacing: 0;word-break: normal;}
+th, td {text-align: center;vertical-align: middle;}
+caption, legend {overflow: hidden;width: 1px;height: 1px;margin: -1px 0 0 0;padding: 0;font-size: 0;color: transparent;line-height: 0;border: 0;}
+fieldset, legend {border: 0;background-color: transparent;}
+hr {height: 0;border: 0;background-color: transparent;}
+
+a {color: inherit;vertical-align: inherit;text-decoration: none;}
+a:link, a:hover {text-decoration: none;}
+
+button {overflow: visible;display: inline-block;margin: 0;padding: 0;font-size: inherit;text-align: center;border: 0;background-color: transparent;box-sizing: border-box;}
+button,
+input[type=button], input[type=reset], input[type=submit] {vertical-align: middle;cursor: pointer;-webkit-appearance: button;}
+button[disabled], button[disabled]:hover, input[disabled] {cursor: default;}
+
+button, input, select, option, optgroup, textarea {font-family: 'Noto Sans KR', 'Malgun Gothic', 'Dotum', '돋움', 'gulim', '굴림', Helvetica, sans-serif;font-weight: 400;font-size: 16px;color: #333;border-radius: 0;}
+button, select {text-transform: none;}
+
+/* 아이폰(사파리) 터치 메뉴 활성화 관련 */
+a, button,
+[role=button], [role=link], [role=tab] {-webkit-touch-callout: none;}
+
+input,
+select,
+textarea {line-height: 1.2;vertical-align: middle;box-sizing: border-box;}
+/* ime-mode 주석처리
+input[type="text"] {ime-mode:auto}  개발요청 - ie에서 한영 둘 다 적용되도록 추가 
+*/
+input::-ms-clear {display: none;}
+select::-ms-expand {display: none;}
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button {-webkit-appearance: none;}
+/* placeholder, focus */
+input:not([type=checkbox]):not([type=radio])::placeholder,
+select::placeholder,
+textarea::placeholder {font-size: 16px;color: #bbb;opacity: 1;}
+input:not([type=checkbox]):not([type=radio])::-webkit-input-placeholder,
+select::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {font-size:16px;color: #bbb;opacity: 1;}
+input:not([type=checkbox]):not([type=radio])::-moz-placeholder,
+select::-moz-placeholder,
+textarea::-moz-placeholder {font-size: 16px;color: #bbb;opacity: 1;}
+input:not([type=checkbox]):not([type=radio]):-ms-input-placeholder,
+select:-ms-input-placeholder,
+textarea:-ms-input-placeholder {font-size: 16px;color: #bbb !important;opacity: 1;}
+
+input::placeholder {text-align: left !important; color:#939393 !important;}/* 2023-10-30 placeholder 000> 939393 변경 */
+input::-webkit-input-placeholder {text-align: left !important; color:#939393 !important;}/* 2023-10-30 placeholder 000> 939393 변경 */
+input:-ms-input-placeholder {text-align: left !important; color:#939393 !important;}/* 2023-10-30 placeholder 000> 939393 변경 */
+
+input:not([type=checkbox]):not([type=radio]):focus::-webkit-input-placeholder,
+select:focus::-webkit-input-placeholder,
+textarea:focus::-webkit-input-placeholder {color: #333;opacity: 0;}
+input:not([type=checkbox]):not([type=radio]):focus::-moz-placeholder,
+select:focus::-moz-placeholder,
+textarea:focus::-moz-placeholder {color: #333;opacity: 0;}
+input:not([type=checkbox]):not([type=radio]):focus:-ms-input-placeholder,
+select:focus:-ms-input-placeholder,
+textarea:focus:-ms-input-placeholder {color: #333;opacity: 0;}
+
+/* 아이폰(사파리) form 요소 박스선 없애기 */
+input,
+select,
+textarea {-webkit-appearance: none;-moz-appearance: none;-ms-appearance: none;-o-appearance: none;appearance: none;-webkit-border-radius: 0;}
+
+/*=============================================== Basic ===============================================*/
+.clfix:before,
+.clfix:after {content:'';display: block;}
+.clfix:after {clear: both;}
+.clfix {zoom: 1;}
+* html .clfix {height: 1%;} /* Hides from IE-mac */
+
+.blind {overflow: hidden;display: inline-block;position: absolute !important;width: 1px;height: 1px;margin: -1px;border: 0;clip: rect(1px, 1px, 1px, 1px);clip-path: inset(50%);}
+.sr-only {overflow: hidden;position: absolute;width: 1px;height: 1px;margin: -1px;padding: 0;border: 0 none;clip: rect(0,0,0,0);}
+.ellip {overflow: hidden;display: inline-block;max-width: 100%;text-overflow: ellipsis;white-space: nowrap;}
+.none {display: none !important;}
+
+.d-none {display: none !important;}
+.d-block {display: block !important;}
+
+/*============================================= font-size 정의 =========================================*/
+.fs14 {font-size: 14px !important;}
+.fs15 {font-size: 15px !important;}
+.fs16 {font-size: 16px !important;}
+.fs18 {font-size: 18px !important;}
+.fs20 {font-size: 20px !important;}
+.fs26 {font-size: 26px !important;}
+
+/*============================================= width 정의 =============================================*/
+.w-full {width: 100% !important;}
+.w88 {width: 88px !important;}
+.w100 {width: 100px !important;}
+.w110 {width: 110px !important;}
+.w120 {width: 120px !important;}
+.w135 {width: 135px !important;}
+.w136 {width: 136px !important;}
+.w140 {width: 140px !important;}
+.w150 {width: 150px !important;}
+.w153 {width: 153px !important;}
+.w160 {width: 160px !important;}
+.w166 {width: 166px !important;}
+.w180 {width: 180px !important;}
+.w190 {width: 190px !important;}/*230712 가맹점 현황 조회시 업종 코드 추가 */
+.w200 {width: 200px !important;}
+.w207 {width: 207px !important;}
+.w210 {width: 210px !important;}
+.w220 {width: 220px !important;}
+.w230 {width: 230px !important;}
+.w240 {width: 240px !important;}
+.w255 {width: 255px !important;}
+.w260 {width: 260px !important;}
+.w248 {width: 248px !important;}
+.w272 {width: 272px !important;}
+.w282 {width: 282px !important;}
+.w296 {width: 296px !important;}
+.w300 {width: 300px !important;}
+.w320 {width: 320px !important;}
+.w325 {width: 325px !important;}
+.w330 {width: 330px !important;}
+.w358 {width: 358px !important;}
+.w360 {width: 360px !important;}
+.w364 {width: 364px !important;}
+.w370 {width: 370px !important;}
+.w380 {width: 380px !important;}
+.w400 {width: 400px !important;}
+.w422 {width: 422px !important;}
+.w442 {width: 442px !important;}
+.w476 {width: 476px !important;}
+.w480 {width: 480px !important;}
+.w490 {width: 490px !important;}
+.w538 {width: 538px !important;}
+.w568 {width: 568px !important;}
+.w1200 {width: 1200px !important;}
+.w1400 {width: 1400px !important;}
+.w1600 {width: 1600px !important;}
+.w1800 {width: 1800px !important;}
+.w2000 {width: 2000px !important;}
+.w-100 {width:100% !important;}/*230803 기업카드 이용분석 리포트 서비스 신설*/
+
+/*================================================ 정렬 ================================================*/
+.fl {float: left !important;}
+.fr {float: right !important;}
+.fn {float: none !important;}
+
+.ac {text-align: center !important;}
+.al {text-align: left !important;}
+.ar {text-align: right !important;}
+.ar-fw500 {text-align: right !important;font-weight: 500;}
+
+.va-top {vertical-align: top !important;}
+.va-middle {vertical-align: middle !important;}
+.va-bottom {vertical-align: bottom !important;}
+/*================================================ 여백 ================================================*/
+.p0 {padding:0 !important;}/*230803 기업카드 이용분석 리포트 서비스 신설*/
+.pt0 {padding-top: 0 !important;}
+.pt8 {padding-top: 8px !important;}
+.pt10 {padding-top: 10px !important;}
+.pt15 {padding-top: 15px !important;}
+.pt16 {padding-top: 16px !important;}
+.pt20 {padding-top: 20px !important;}
+.pt28 {padding-top: 28px !important;}
+.pt40 {padding-top: 40px !important;}
+.pt60 {padding-top: 60px !important;}
+.pt80 {padding-top: 80px !important;}
+
+.pb0 {padding-bottom: 0 !important;}
+.pb3 {padding-bottom: 3px !important;}
+.pb5 {padding-bottom: 5px !important;}
+.pb7 {padding-bottom: 7px !important;}
+.pb10 {padding-bottom: 10px !important;}
+.pb12 {padding-bottom: 12px !important;}
+.pb14 {padding-bottom: 14px !important;}
+.pb15 {padding-bottom: 15px !important;}
+.pb16 {padding-bottom: 16px !important;}
+.pb18 {padding-bottom: 18px !important;}
+.pb20 {padding-bottom: 20px !important;}
+.pb24 {padding-bottom: 24px !important;}
+.pb28 {padding-bottom: 28px !important;}
+.pb40 {padding-bottom: 40px !important;}
+.pb55 {padding-bottom: 55px !important}/*230803 기업카드 이용분석 리포트 서비스 신설*/
+.pb60 {padding-bottom: 60px !important;}
+.pb80 {padding-bottom: 80px !important;}
+
+.pl0 {padding-left: 0 !important;}
+.pl20 {padding-left: 20px !important;}
+.pl24 {padding-left: 24px !important;}
+.pl40 {padding-left: 40px !important;}
+
+.pr0 {padding-right: 0 !important;}/* 2024-02-07 추가 */
+.pr20 {padding-right: 20px !important;}/*231030 카드재발급 리스트 항목 추가 */
+.pr24 {padding-right: 24px !important;}
+.pr40 {padding-right: 40px !important;}
+
+.m0 {margin: 0 !important;}
+.m-auto {margin: auto !important;}
+
+.mt_2 {margin-top: -2px !important;}
+.mt_11 {margin-top: -11px !important;}
+.mt0 {margin-top: 0 !important;}
+.mt5 {margin-top: 5px !important;}
+.mt6 {margin-top: 6px !important;}/*230803 기업카드 이용분석 리포트 서비스 신설*/
+.mt10 {margin-top: 10px !important;}
+.mt14 {margin-top: 14px !important;}
+.mt15 {margin-top: 15px !important;}
+.mt16 {margin-top: 16px !important;}
+.mt17 {margin-top: 17px !important;}
+.mt20 {margin-top: 20px !important;}
+.mt27 {margin-top: 27px !important;}
+.mt30 {margin-top: 30px !important;}
+.mt35 {margin-top: 35px !important;}
+.mt40 {margin-top: 40px !important;}
+.mt50 {margin-top: 50px !important;}
+.mt52 {margin-top: 52px !important;}
+.mt55 {margin-top: 55px !important;}
+.mt60 {margin-top: 60px !important;}
+.mt70 {margin-top: 70px !important;}
+.mt80 {margin-top: 80px !important;}
+.mt100 {margin-top: 100px !important;}
+.mt120 {margin-top: 120px !important;}
+
+.mr0 {margin-right: 0 !important;}
+.mr5 {margin-right: 5px !important;}
+.mr80 {margin-right: 80px !important;}
+.mr120 {margin-right: 120px !important;}
+
+.mb0 {margin-bottom: 0 !important;}
+.mb5 {margin-bottom: 5px !important;}
+.mb10 {margin-bottom: 10px !important;}
+.mb13 {margin-bottom: 13px !important;}
+.mb15 {margin-bottom: 15px !important;}
+.mb16 {margin-bottom: 16px !important;}
+.mb20 {margin-bottom: 20px !important;}
+.mb24 {margin-bottom: 24px !important;}/* 2024-10-08 추가 */
+.mb27 {margin-bottom: 27px !important;}
+.mb35 {margin-bottom: 35px !important;}
+.mb40 {margin-bottom: 40px !important;}
+.mb52 {margin-bottom: 52px !important;}
+.mb58 {margin-bottom: 58px !important;}
+.mb60 {margin-bottom: 60px !important;}
+.mb68 {margin-bottom: 68px !important;}
+.mb70 {margin-bottom: 70px !important;}
+.mb75 {margin-bottom: 75px !important;}
+.mb80 {margin-bottom: 80px !important;}
+.mb120 {margin-bottom: 120px !important;}
+
+.ml_22 {margin-left: -22px !important;}
+.ml0 {margin-left: 0 !important;}
+.ml3 {margin-left: 3px !important;}
+.ml12 {margin-left: 12px !important;}
+.ml5 {margin-left: 5px !important;}
+.ml6 {margin-left: 6px !important;}
+.ml8 {margin-left: 8px !important;}
+.ml15 {margin-left: 15px !important;}
+.ml16 {margin-left: 16px !important;}
+.ml19 {margin-left: 19px !important;}
+.ml20 {margin-left: 20px !important;}
+.ml24 {margin-left: 24px !important;}
+.ml25 {margin-left: 25px !important;}
+.ml40 {margin-left: 40px !important;}
+
+/*================================================ 색상 ================================================*/
+.fw-300 {font-weight: 300 !important;}
+.fw-400 {font-weight: 400 !important;}
+.fw-500 {font-weight: 500 !important;}
+.fw-700 {font-weight: 700 !important;}
+.fc-666 {color: #666 !important;}
+.fc-333 {color: #333 !important;}
+.fc-111 {color: #111 !important;}
+.fc-85 {color: #858585 !important;}
+.fc-blue {color: #0051c7 !important;}
+.fc-dark {color: #111 !important;}
+.fc-gray {color: #666 !important;}
+.fc-red {color: #ff4019 !important;}
+.fc-navy {color: #4942cc !important;}
+
+/*================================================ UnderLine ================================================*/
+.a-uline {text-decoration: underline !important;}
+.a-none {text-decoration: none !important;}
+.a-through {text-decoration: line-through !important;}
+.table tbody td a.a-none::after {display: none;} /* table 안 a 태그 밑줄 삭제 시 a-none 클래스 추가 */
+.customer-list tbody td a.a-none::after {display: none;} /* table 안 a 태그 밑줄 삭제 시 a-none 클래스 추가 */

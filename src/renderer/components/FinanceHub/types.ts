@@ -400,7 +400,7 @@ export const KOREAN_CARD_COMPANIES: CardConfig[] = [
     category: 'major',
     color: '#009775',
     icon: '💳',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'bc-card',

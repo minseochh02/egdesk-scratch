@@ -10,13 +10,23 @@ const HANA_CARD_INFO = {
   category: 'major',
   color: '#009775',
   icon: '💳',
-  supportsAutomation: false,
+  supportsAutomation: true,
 };
 
 const HANA_CARD_XPATHS = {
-  idInput: '',
-  passwordInput: '',
-  loginButton: '',
+  // Initial popup
+  initialPopup: '/html/body/div[1]/section/div/div',
+  initialPopupClose: '/html/body/div[1]/section/div/button',
+
+  // Navigation - Use text-based XPath or CSS for more reliable selection
+  businessSelector: '//a[contains(text(), "기업")]', // 기업 selector using text
+  loginButton: '/html/body/div[7]/header/div/nav[1]/ul[2]/li[1]/a', // Login button after 기업
+
+  // Login form - Using ID selectors (simpler and more reliable)
+  idInput: '#USER_ID',
+  passwordInput: '#PASSWORD',
+
+  // Legacy fields (kept for compatibility)
   keyboardLower: '',
   keyboardUpper: '',
   securityPopup: '',
@@ -29,12 +39,14 @@ const HANA_CARD_XPATHS = {
 };
 
 const HANA_CARD_TIMEOUTS = {
-  elementWait: 10000,
+  elementWait: 60000, // Increased from 10000 to 60000 for slower page loads
   click: 5000,
   frameSearch: 3000,
   passwordWait: 30000,
-  pageLoad: 3000,
+  pageLoad: 30000,
   scrollWait: 500,
+  popupWait: 5000, // Wait time for initial popup
+  downloadWait: 60000,
 };
 
 const HANA_CARD_DELAYS = {
@@ -44,6 +56,11 @@ const HANA_CARD_DELAYS = {
   shiftDeactivate: 200,
   keyboardUpdate: 500,
   keyboardReturn: 300,
+  betweenActions: 1000,
+  afterLogin: 3000,
+  afterMenuClick: 1000,
+  afterNavigation: 2000,
+  afterSearch: 2000,
 };
 
 const HANA_CARD_CONFIG = {

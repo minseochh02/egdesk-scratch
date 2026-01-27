@@ -21,6 +21,9 @@ class KBCardAutomator extends BaseBankAutomator {
     // Merge options with default config
     const config = {
       ...KB_CARD_CONFIG,
+      targetUrl: KB_CARD_INFO.loginUrl,
+      bank: KB_CARD_INFO,
+      card: KB_CARD_INFO,
       headless: options.headless ?? KB_CARD_CONFIG.headless,
       chromeProfile: options.chromeProfile ?? KB_CARD_CONFIG.chromeProfile,
     };
@@ -78,7 +81,7 @@ class KBCardAutomator extends BaseBankAutomator {
 
       // Step 2: Navigate to main page
       this.log('Navigating to KB Card business login page...');
-      await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await this.page.goto(this.config.targetUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
 
       // Step 3: Select business login type
@@ -86,17 +89,55 @@ class KBCardAutomator extends BaseBankAutomator {
       await this.clickElement(this.config.xpaths.loginTypeRadio);
       await this.page.waitForTimeout(3000);
 
-      // Step 4: Enter user ID
+      // Step 4: Enter user ID using keyboard events
       this.log('Entering user ID...');
-      await this.clickElement(this.config.xpaths.idInput);
-      await this.page.waitForTimeout(1500);
-      await this.page.fill(this.config.xpaths.idInput.css, userId);
+      const idField = this.page.locator(this.config.xpaths.idInput.css);
+      await idField.click();
+      await this.page.waitForTimeout(1000);
 
-      // Step 5: Enter password
-      this.log('Entering password...');
-      await this.clickElement(this.config.xpaths.passwordInput);
-      await this.page.waitForTimeout(3000);
-      await this.page.fill(this.config.xpaths.passwordInput.css, password);
+      // Clear any existing content
+      await idField.fill('');
+      await this.page.waitForTimeout(200);
+
+      // Type user ID character by character
+      for (let i = 0; i < userId.length; i++) {
+        const char = userId[i];
+        await this.page.keyboard.type(char, { delay: 100 });
+        if (i < userId.length - 1) {
+          await this.page.waitForTimeout(150);
+        }
+      }
+      await this.page.waitForTimeout(500);
+
+      // Step 5: Enter password using keyboard events
+      this.log('Entering password using keyboard events...');
+      try {
+        // Focus the password field
+        const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
+        await passwordField.click();
+        await this.page.waitForTimeout(1000);
+
+        // Clear any existing content
+        await passwordField.fill('');
+        await this.page.waitForTimeout(200);
+
+        // Type password character by character using keyboard events
+        this.log(`Typing password (${password.length} characters)...`);
+        for (let i = 0; i < password.length; i++) {
+          const char = password[i];
+          await this.page.keyboard.type(char, { delay: 100 });
+
+          // Small delay between characters
+          if (i < password.length - 1) {
+            await this.page.waitForTimeout(150);
+          }
+        }
+
+        this.log('Password entry completed');
+      } catch (e) {
+        this.log('Keyboard password entry failed');
+        throw new Error(`Password entry failed: ${e.message}`);
+      }
       await this.page.waitForTimeout(3000);
 
       // Step 6: Click login button

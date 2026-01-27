@@ -5,6 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
+const { keyboard, Key } = require('@nut-tree-fork/nut-js');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
 
@@ -94,14 +95,51 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password (try standard fill first)
-      this.log('Entering password...');
+      // Step 6: Fill password using nut.js with SLOW human-like typing
+      this.log('Entering password with slow nut.js native keyboard...');
       try {
-        await this.page.fill(this.config.xpaths.passwordInput.css, password);
+        // Focus the password field
+        const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
+        await passwordField.click();
+        await this.page.waitForTimeout(this.config.delays.betweenActions);
+
+        // Clear any existing content first
+        await passwordField.fill('');
+        await this.page.waitForTimeout(200);
+
+        // Click again to ensure focus
+        await passwordField.click();
+        await this.page.waitForTimeout(500);
+
+        // Type password VERY SLOWLY using nut.js character by character
+        this.log(`Typing password slowly with nut.js (${password.length} characters)...`);
+
+        for (let i = 0; i < password.length; i++) {
+          const char = password[i];
+
+          // Use nut.js to type single character (creates real OS keyboard events)
+          await keyboard.type(char);
+
+          // Human-like random delays between 200-500ms
+          // Real humans type at ~200-400ms per character with variations
+          const baseDelay = 200; // Minimum delay
+          const randomVariation = Math.random() * 300; // 0-300ms random
+          const humanDelay = baseDelay + randomVariation;
+
+          // Occasionally add longer pauses (like humans do when thinking)
+          const shouldPause = Math.random() < 0.15; // 15% chance
+          const extraPause = shouldPause ? Math.random() * 400 : 0;
+
+          const totalDelay = Math.floor(humanDelay + extraPause);
+
+          this.log(`  Typed char ${i + 1}/${password.length}, waiting ${totalDelay}ms`);
+          await this.page.waitForTimeout(totalDelay);
+        }
+
+        this.log('Password entry completed with slow nut.js typing');
       } catch (e) {
-        this.log('Standard password fill failed, may need virtual keyboard');
-        // TODO: Implement virtual keyboard handler if needed
-        throw new Error('Password entry failed - virtual keyboard may be required');
+        this.log('Slow nut.js keyboard entry failed:', e.message);
+        throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
@@ -114,7 +152,7 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.handlePostLoginPopups();
 
       // Step 9: Start session keep-alive
-      this.startKeepAlive();
+      this.startSessionKeepAlive();
 
       this.log('Login successful!');
       return {

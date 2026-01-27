@@ -43,10 +43,19 @@ class NHCardAutomator extends BaseBankAutomator {
     }
 
     try {
-      await this.page.locator(selector.css).click({ timeout: 10000 });
+      const element = this.page.locator(selector.css);
+      await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+      await element.click({ timeout: 10000 });
     } catch (e) {
       this.log('CSS selector failed, trying XPath fallback...');
-      await this.page.locator(`xpath=${selector.xpath}`).click({ timeout: 10000 });
+      try {
+        const element = this.page.locator(`xpath=${selector.xpath}`);
+        await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+        await element.click({ timeout: 10000 });
+      } catch (xpathError) {
+        this.log('XPath click failed, trying force click...');
+        await this.page.locator(`xpath=${selector.xpath}`).click({ force: true, timeout: 10000 });
+      }
     }
   }
 
@@ -79,36 +88,42 @@ class NHCardAutomator extends BaseBankAutomator {
       // Step 2: Navigate to main page
       this.log('Navigating to NH Card main page...');
       await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await this.page.waitForTimeout(5000);
+
+      // Step 3: Click the user selection tab span
+      this.log('Clicking login tab for user selection...');
+      await this.clickElement(this.config.xpaths.loginTabSpan);
       await this.page.waitForTimeout(3000);
 
-      // Step 3: Click login link
-      this.log('Clicking login link...');
-      await this.clickElement(this.config.xpaths.loginLink);
-
-      // Step 4: Click first tab (if needed for login form)
-      try {
-        await this.clickElement(this.config.xpaths.loginTabFirst);
-        await this.page.waitForTimeout(3000);
-        await this.clickElement(this.config.xpaths.loginTabSpan);
-        await this.page.waitForTimeout(3000);
-      } catch (e) {
-        this.log('Login tab navigation skipped or not needed');
-      }
-
-      // Step 5: Click and fill user ID
+      // Step 4: Click and fill user ID
       this.log('Entering user ID...');
       await this.clickElement(this.config.xpaths.idInput);
       await this.page.waitForTimeout(3000);
       await this.page.fill(this.config.xpaths.idInput.css, userId);
       await this.page.waitForTimeout(3000);
 
-      // Step 6: Click and fill password
+      // Step 5: Click and type password using keyboard
       this.log('Entering password...');
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(3000);
-      await this.page.fill(this.config.xpaths.passwordInput.css, password);
 
-      // Step 7: Click login button
+      // Focus the password field
+      const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
+      await passwordField.focus();
+      await this.page.waitForTimeout(500);
+
+      // Clear any existing content
+      await passwordField.fill('');
+      await this.page.waitForTimeout(200);
+
+      // Type password character by character using keyboard events
+      this.log(`Typing password (${password.length} characters)...`);
+      for (let i = 0; i < password.length; i++) {
+        const char = password[i];
+        await this.page.keyboard.type(char, { delay: 100 });
+      }
+
+      // Step 6: Click login button
       this.log('Clicking login button...');
       await this.clickElement(this.config.xpaths.loginButton);
       await this.page.waitForTimeout(3000);

@@ -43,7 +43,7 @@ const NH_CARD_CONFIG = {
     },
     loginTabSpan: {
       css: 'a > span:nth-child(2)',
-      xpath: '//*[@id="signForm"]/div[2]/div[2]/div[6]/div[1]/ul[1]/li[1]/a[1]/span[1]'
+      xpath: '/html/body/div[3]/div[3]/form/div[2]/div[2]/div[6]/div/ul/li[1]/a/span'
     },
     idInput: {
       css: '[id="usrid"]',
