@@ -1,0 +1,487 @@
+🔬 Form Submission Data Capture Test
+
+═══════════════════════════════════════════════════════
+This test will capture ALL data sent to server
+═══════════════════════════════════════════════════════
+
+🌐 Navigating to Shinhan Card...
+
+🔑 SESSION DATA DETECTED in response!
+   URL: https://www.shinhancard.com/clogic/js/crp/cmm/include/inc-incaNos.js
+   Status: 200
+   Body length: 8181 bytes
+
+🔑 SESSION DATA DETECTED in response!
+   URL: https://www.shinhancard.com/csolution/inca_nos/pluginfree/js/nppfs-1.13.0.js
+   Status: 200
+   Body length: 353407 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/cmm/CRPLOGIN/grv3Cache.ajax
+   Method: POST
+
+📥 Response received:
+   Status: 200
+   Response length: 142 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/cmm/COMMON/frontHistoryCheck.ajax
+   Method: POST
+
+📥 Response received:
+   Status: 200
+   Response length: 423 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.key.jsp
+   Method: POST
+   Post Data Length: 18 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp        
+   Method: POST
+   Post Data Length: 21 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp        
+   Method: POST
+   Post Data Length: 374 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp
+   Method: POST
+   Post Data Length: 376 bytes
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp        
+   Method: POST
+   Post Data Length: 376 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 1088 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 960 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 32991 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 33000 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 33039 bytes
+
+📸 Snapshot 1: Right after page load...
+   Found 12 hidden fields
+📸 Snapshot 2: After 3 seconds...
+   Found 12 hidden fields
+   ✅ E2E session fields detected!
+      __E2E_UNIQUE__: 176958520339989
+
+📝 Filling ID field with "testuser"...
+   ⚠️  Could not find #userId field, skipping...
+
+🎯 Focusing password field...
+📸 Snapshot 3: After focusing password field...
+   Found 12 hidden fields
+
+═══════════════════════════════════════════════════════
+STEP 1: Capture hidden fields BEFORE typing
+═══════════════════════════════════════════════════════
+
+Found 12 hidden fields before typing
+Sample E2E fields:
+  __E2E_UNIQUE__: 176958520339989
+  __E2E_RESULT__: 705423e04ddb0e500ee8f867ce21f407b07d598fcd1b6601b0...
+  __E2E_KEYPAD__: a04c60758344c2108d47d3c438ba45e774bf85c69e7139cae4...
+  __KI_pwd: 314116ad4184e032d1bed884436888a0b59e0570d81c2304df...
+
+═══════════════════════════════════════════════════════
+⌨️  IMPORTANT: Type the password with REAL KEYBOARD
+═══════════════════════════════════════════════════════
+
+ID: testuser (already filled)
+Password: test123 (TYPE THIS NOW)
+
+
+STEP 2: TYPE "test123" in the password field, then press ENTER here
+Press ENTER to continue...
+
+═══════════════════════════════════════════════════════
+STEP 3: Capture hidden fields AFTER typing
+═══════════════════════════════════════════════════════
+
+Visible field: "aaaa111"
+Expected: "aaaa111" (test123 = 4 letters + 3 numbers)
+Found 13 hidden fields after typing
+
+pwd__E2E__ length: 448 chars
+Expected length: 448 chars (7 chars × 64)
+Match: ✅ YES
+
+🔄 Fields that CHANGED:
+
+  pwd__E2E__:
+    Before: (empty)
+    After:  de406de005179ccfec5d390eae290c4d7fba0cd59ff97053fb2765e84908...
+    Length: 0 → 448
+
+═══════════════════════════════════════════════════════
+STEP 4: Submit the form
+═══════════════════════════════════════════════════════
+
+⚠️  IMPORTANT:
+   - Network monitoring is ACTIVE
+   - All POST requests will be captured
+   - Click the LOGIN/SUBMIT button when ready
+   - Come back here after you see the response
+
+
+Press ENTER, then click the LOGIN button in the browser
+Press ENTER to continue...
+
+⏳ Waiting for form submission (30 seconds max)...
+
+📤 POST Request detected:
+   URL: https://www.shinhancard.com/crp/cmm/CRPLOGIN/CMMServiceMemLoginC.ajax
+   Method: POST
+   Post Data Length: 2465 bytes
+
+📥 Response received:
+   Status: 200
+   Response length: 194 bytes
+
+═══════════════════════════════════════════════════════
+📊 CAPTURED NETWORK REQUESTS
+═══════════════════════════════════════════════════════
+
+Total POST requests captured: 8
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #1
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/cmm/CRPLOGIN/grv3Cache.ajax
+Status: 200
+
+Post Data (raw): undefined...
+
+Post Data (parsed):
+null
+
+Response: {
+  "crp_result": "S",
+  "crp_json":   {
+    "useF": "N",
+    "blkF": "N",
+    "score": "0.1"
+  },
+  "crp_code": null,
+  "crp_message": null
+}...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/cmm/COMMON/frontHistoryCheck.ajax
+Status: 200
+
+Post Data (raw): undefined...
+
+Post Data (parsed):
+null
+
+Response: {
+  "crp_result": "S",
+  "crp_json":   {
+    "reload": null,
+    "history": null,
+    "request": null,
+    "login": false,
+    "loginInitTime": "10:00",
+    "_headToday": "2026/01/28:16:26:45",
+    "domain": "https://www.shinhancard.com",
+    "mode": "run",
+    "one_id": null,
+    "mainAcvF": null,
+    "httpSrch": "/crp/csolution/n_search/",
+    "httpCms": "/cconts/json/"
+  },
+  "crp_code": null,
+  "crp_message": null
+}...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #3
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.key.jsp
+Status: 200
+
+Post Data (raw): id=176958520339989...
+
+Post Data (parsed):
+{
+  "id": "176958520339989"
+}
+
+Response: 7ffc9100129c7006f0b9b00e1c5780b58b0c5aaf52517d48e6d928b96408e2acc5c8745bbddd6bfd186ac94ee1e91212652f45c4dae0d76acdf7a7792d4029641e213a9c84bbc2b4374ff9f9706a2be371748928b168f2e873ca3b397af104ed56996a3f085df4575824d62a73e231abc8c1b9c19cf2c8d689232a12a80206ddbc5e97dabd379f190c657efab8801b80b280a2b2d83edce4cd373b009bbe84552ce9ff2775035e03497cf6853866aa74f4de7268e4eb51740706ed2708501c16de1df7fe6b9acba40a4dfaddfd44eb72460855af4fa3b45b2d0289caabd78c34aa130169d72d6cc6b4b0a8aba0728dacf7fd9f2784821ed57f41...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #4
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp
+Status: 200
+
+Post Data (raw): m=p&u=176958520339989...
+
+Post Data (parsed):
+{
+  "m": "p",
+  "u": "176958520339989"
+}
+
+Response: 3f16fe3ef0aaa8e66d7b5397350903cd16f147e5986693cba203b1ef165584c407818e0e08e85b6cc6fac1d3af3734a49f3f5115c560d7ad081ec4b306e691e2a6d420144508d081430cc6966c4467a0e5f340f619fa201f28a8c58eb1cf83df487d8156ca1241a0d94cb8fce80c0e6d5a4555e31b3c8249231452885be5a6cb39a0c19a0bbaa2bfc4aa0b60b7f9f0703f3657d09c906e33ad8ce57539ed3f0faa3687207b467bbf517aa6eebeaadce82cc1e638e03efb67ffcad26ce68e5678c8e00a92394043350a63d526d4664cf8f9360c6ed1a1c46be967d606427dc755f513d983c587e19d70b8786af9aca6e3085f6b12a9fa026b008f...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp
+Status: 200
+
+Post Data (raw): m=e&u=176958520339989&ev=v4&d=nppfs-keypad-div&jv=1.13.0&t=b&at=r&st=l&dp=hide&ut=t&ui=pwd_useyn_toggle&ta=false&to=%2Fpluginfree%2Ficon%2Ficon_mouse_on.gif&tf=%2Fpluginfree%2Ficon%2Ficon_mouse_off.gi...
+
+Post Data (parsed):
+{
+  "m": "e",
+  "u": "176958520339989",
+  "ev": "v4",
+  "d": "nppfs-keypad-div",
+  "jv": "1.13.0",
+  "t": "b",
+  "at": "r",
+  "st": "l",
+  "dp": "hide",
+  "ut": "t",
+  "ui": "pwd_useyn_toggle",
+  "ta": "false",
+  "to": "/pluginfree/icon/icon_mouse_on.gif",
+  "tf": "/pluginfree/icon/icon_mouse_off.gif",
+  "f": "d67c39250d6184c98",
+  "i": "pwd",
+  "il": "20",
+  "th": "shinhancard",
+  "w": "1265",
+  "h": "720",
+  "ar": "false",
+  "ip": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp"      
+}
+
+Response: {
+        "info" : {
+                "keypadUuid" : "3b239f365f22"
+                , "type" : "keyboard"
+                , "src" : "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=d3d250b25f5f308cc950d4b21e0513a133b57bdf306d984fc893855d15c76fb515eafde937e44fe2c9e2e044a97026ec648012e6608137ac10f840eda1aea32c899f9d8ab2550c4dc078e407745448d5cdad971c6b08a4651cea9f492d4ce45c&pi=N&in=3b239f365f22&kv=v4&ci=788816dc2955ffcfe957549442b577207c6206f0ebe27991c3e038cf9f2a514465237c8bf7841196b312161bd929f84fa3781b3f5...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #6
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp
+Status: 200
+
+Post Data (raw): m=e&u=176958520339989&ev=v4&d=nppfs-keypad-div&jv=1.13.0&t=b&at=r&st=l&dp=hide&ut=t&ui=pwd_useyn_toggle2&ta=false&to=%2Fpluginfree%2Ficon%2Ficon_mouse_on.gif&tf=%2Fpluginfree%2Ficon%2Ficon_mouse_off.g...
+
+Post Data (parsed):
+{
+  "m": "e",
+  "u": "176958520339989",
+  "ev": "v4",
+  "d": "nppfs-keypad-div",
+  "jv": "1.13.0",
+  "t": "b",
+  "at": "r",
+  "st": "l",
+  "dp": "hide",
+  "ut": "t",
+  "ui": "pwd_useyn_toggle2",
+  "ta": "false",
+  "to": "/pluginfree/icon/icon_mouse_on.gif",
+  "tf": "/pluginfree/icon/icon_mouse_off.gif",
+  "f": "d67c39250d6184c98",
+  "i": "pwd2",
+  "il": "20",
+  "th": "shinhancard",
+  "w": "1265",
+  "h": "720",
+  "ar": "false",
+  "ip": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp"      
+}
+
+Response: {
+        "info" : {
+                "keypadUuid" : "94b74063a0c0"
+                , "type" : "keyboard"
+                , "src" : "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=c52e0e9334f3a8ed537ddcfc3251c9d1ef78a1bc8353991b84cb95cb8ca80827ef9111bbc87b35cd0ca50c4c810013c1d2f951ee8b4b59242b765debe76e1e713ccaaec5051975ce9ffd43a923c6e79dfc6aad25710d1d92d98dd8c6d8841beb&pi=N&in=94b74063a0c0&kv=v4&ci=6d99bb22ec13339101361a672683d1ea756518d5b92f780045fb726e3c1cd41a173a39904f1b1f9efac285b240b34b47fa7e16a94...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #7
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp
+Status: 200
+
+Post Data (raw): m=e&u=176958520339989&ev=v4&d=nppfs-keypad-div&jv=1.13.0&t=b&at=r&st=l&dp=hide&ut=t&ui=pwd_useyn_toggle3&ta=false&to=%2Fpluginfree%2Ficon%2Ficon_mouse_on.gif&tf=%2Fpluginfree%2Ficon%2Ficon_mouse_off.g...
+
+Post Data (parsed):
+{
+  "m": "e",
+  "u": "176958520339989",
+  "ev": "v4",
+  "d": "nppfs-keypad-div",
+  "jv": "1.13.0",
+  "t": "b",
+  "at": "r",
+  "st": "l",
+  "dp": "hide",
+  "ut": "t",
+  "ui": "pwd_useyn_toggle3",
+  "ta": "false",
+  "to": "/pluginfree/icon/icon_mouse_on.gif",
+  "tf": "/pluginfree/icon/icon_mouse_off.gif",
+  "f": "d67c39250d6184c98",
+  "i": "pwd3",
+  "il": "20",
+  "th": "shinhancard",
+  "w": "1265",
+  "h": "720",
+  "ar": "false",
+  "ip": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp"      
+}
+
+Response: {
+        "info" : {
+                "keypadUuid" : "132944ffb07a"
+                , "type" : "keyboard"
+                , "src" : "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=abbbc0fb70b30544c67d3e6253166dfd08f5fde70bbfc3310ca0aaa13bd60e360f821eb0bb5cf752163eae98a4852ffcb9da5dde4f8ca306122a1d8825d8377e38447597feefabeb00c5075b2e74f1dee8ecf4114c0b0412e457062efd438e24&pi=N&in=132944ffb07a&kv=v4&ci=391e008bf4eff48deed090c10144328685ed5ab66494932f8fea611ec832414eddec61b6b158b4fce34851da591ef101b854c0871...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST #8
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: https://www.shinhancard.com/crp/cmm/CRPLOGIN/CMMServiceMemLoginC.ajax
+Status: 200
+
+Post Data (raw): memid=testuser&pwd=aaaa111&mode=loginIDPWD&channel=corp&utype=C&RECAPT_TOKEN=&device=Q7&__E2E_RESULT__=705423e04ddb0e500ee8f867ce21f407b07d598fcd1b6601b0a78d7c92bf984a1f6ea05dc852455c7a60292da2c67ead9...
+
+Post Data (parsed):
+{
+  "memid": "testuser",
+  "pwd": "aaaa111",
+  "mode": "loginIDPWD",
+  "channel": "corp",
+  "utype": "C",
+  "RECAPT_TOKEN": "",
+  "device": "Q7",
+  "__E2E_RESULT__": "705423e04ddb0e500ee8f867ce21f407b07d598fcd1b6601b0a78d7c92bf984a1f6ea05dc852455c7a60292da2c67ead98dc73a2bafe93cc8dbc4a175f34063b926ba8240594f119fd900f9a80acce33267f46b988c501a6d7ba942b709b36af0aea6652acb39c6a816e256f1f9dec260458bca3cb23f768ae57fa61427784797f95eec15487f2fc86182007ab5e6216fb51e71a32834bf26aa9546239df1dc0ed3f8bdab1c615967c45e1a0ed3d2d2cfdba07faf7e68d230dac626a8fad6321d2209576c16a234f9c4ebbe9815ffe650ca97c10a842f77154192e96354559a6ad50cd198bf1a05007db720ed8300ecf39d8604e6962333cdd998f1dcf41d8fd",
+  "__E2E_UNIQUE__": "176958520339989",
+  "pwd__E2E__": "de406de005179ccfec5d390eae290c4d7fba0cd59ff97053fb2765e84908e1fc5e797d364722b50e1c1b69b9b409d7b80ffa75e1c0703427fcad91cc1ba79d5442459be9018400c9c084ef2b18022732c8b5b7cbc394ea5f813b05014040a112a31f8ede055229bdd3cf9175fd409756ad7337cb5446cd872f8e00a6bf599203131cc59639e109f8a263fa6f6a7acd65d146ecd9884e35270aec9d070f2d0af37a1b4312b9d0cd85eed8d3de50a4178ccedc1bcadabe2a1ab66e5f8a320919e9ca3e4135d55c7f217563e320296d44a2b759ff494727654708fc0c525e0d7c86",
+  "pwd2__E2E__": "",
+  "pwd3__E2E__": "",
+  "__E2E_KEYPAD__": "a04c60758344c2108d47d3c438ba45e774bf85c69e7139cae46cc05ee51aea7355ac270d4376097dd71cce951d2bd442e7c825daa2553055b476bb293319b95c1487dcba040a68a8bb9c0e07dc4e33c404dbcb80e9c1a665a57bffdcd3cbdd30d1c15465346e60b87882edfd79658fbd44ca1e4f6214a2ed9b9f67bffb80a0b23e0f19b5807861ed42ab064019b63d7bcab3c9a3c734dee62d028c4713be45f0c34d6de4043dd35de8d288ddc9d915dcdab48efc7dc4eed7387bebbad98df9452fa03af8979e8b12389fe47dd5a01a6cf5395bcf35f110422228184fdd828c69745ca632c73ba8e2ed32a4a9448e7794d429da9e3566d1137f035b61db8e7714",
+  "__KH_3b239f365f22": "",
+  "__KI_pwd": "314116ad4184e032d1bed884436888a0b59e0570d81c2304df0a71b3f28101c072c27296aa10dd27cb685f1522091df7d13707c6791aabb52a6a6099fe545a503de1ec77cd73769c75bad18be3a07d2b4ba2ae05b94a321ea895684bd22b3925",
+  "__KU_3b239f365f22": "N",
+  "__KH_94b74063a0c0": "",
+  "__KI_pwd2": "e85cde942d6bd507624532a90060a204d50378d2920524f55884088a908bdac76e855490250c2fd52135062f2cf5ca1aa5c3dfea3d6434349ba18c45d30a96001a5b28163e05a6d8d0d199a3c074b60b954bbbdb977b455f395e768a6d562483",
+  "__KU_94b74063a0c0": "N",
+  "__KH_132944ffb07a": "",
+  "__KI_pwd3": "7fc3219c5cbeda6c9ab56f6b9e0dbaafb32ed2e70cf5d850ab98efc1479e821962329079487bbac68237c12b97f64de0f5fa0531796f2de5ffbc5c6d19a14e986f37025170f0869089dff1394b69db88a29985f1f79b6b13a3dac60625c2b1c5",
+  "__KU_132944ffb07a": "N",
+  "INCA_KB_YN": "Y",
+  "memid2": "",
+  "pwd2": "",
+  "memid3": "",
+  "pwd3": "",
+  "pwdId": "pwd",
+  "sKey": "undefined",
+  "other": "",
+  "app": "pc"
+}
+
+Response: {
+  "crp_result": "F",
+  "crp_code": "scwi.inf.hpg.imem002",
+  "crp_message": "입력하신 정보는 존재하지 않습니다. 홈페이지 회원가입 후 로그인해 주세요.\n (scwi.inf.hpg.imem002)",
+  "crp_focus": null,
+  "crp_returnurl": null
+}...
+
+═══════════════════════════════════════════════════════
+🔍 SESSION TOKEN INITIALIZATION ANALYSIS
+═══════════════════════════════════════════════════════
+
+Snapshot 1: after_page_load
+  __E2E_UNIQUE__: 176958520339989
+  Total fields: 12
+
+Snapshot 2: after_3_seconds
+  __E2E_UNIQUE__: 176958520339989
+  Total fields: 12
+
+Snapshot 3: after_focus
+  __E2E_UNIQUE__: 176958520339989
+  Total fields: 12
+
+Snapshot 4: before_typing
+  __E2E_UNIQUE__: 176958520339989
+  Total fields: 12
+
+
+💾 Saved complete data to: form-submission-data.json
+
+═══════════════════════════════════════════════════════
+🌐 NETWORK REQUESTS (First 10)
+═══════════════════════════════════════════════════════
+
+1. [REQUEST] GET https://www.shinhancard.com/cconts/html/main.html
+2. [REQUEST] GET https://www.shinhancard.com/cconts/css/font.css
+3. [REQUEST] GET https://www.shinhancard.com/cconts/css/lib/jquery.mCustomScrollbar.css
+4. [REQUEST] GET https://www.shinhancard.com/cconts/css/common.css
+5. [REQUEST] GET https://www.shinhancard.com/cconts/css/contents.css
+6. [REQUEST] GET https://www.shinhancard.com/cconts/css/main.css
+7. [REQUEST] GET https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js
+8. [REQUEST] GET https://www.shinhancard.com/cconts/js/lib/jquery-ui.min.js
+9. [REQUEST] GET https://www.shinhancard.com/cconts/js/lib/jquery.mousewheel-3.0.6.min.js
+10. [REQUEST] GET https://www.shinhancard.com/cconts/js/lib/jquery.mCustomScrollbar.min.js        
+
+═══════════════════════════════════════════════════════
+🔑 KEY FIELDS IN SUBMISSION
+═══════════════════════════════════════════════════════
+
+pwd__E2E__:
+  Length: 448 chars
+  Value: de406de005179ccfec5d390eae290c4d7fba0cd59ff97053fb2765e84908e1fc5e797d364722b50e1c1b69b9b409d7b80ffa...
+
+__E2E_RESULT__:
+  Length: 512 chars
+  Value: 705423e04ddb0e500ee8f867ce21f407b07d598fcd1b6601b0a78d7c92bf984a1f6ea05dc852455c7a60292da2c67ead98dc...
+
+__E2E_KEYPAD__:
+  Length: 512 chars
+  Value: a04c60758344c2108d47d3c438ba45e774bf85c69e7139cae46cc05ee51aea7355ac270d4376097dd71cce951d2bd442e7c8...
+
+__KI_pwd:
+  Length: 192 chars
+  Value: 314116ad4184e032d1bed884436888a0b59e0570d81c2304df0a71b3f28101c072c27296aa10dd27cb685f1522091df7d137...
+
+__E2E_UNIQUE__:
+  Length: 15 chars
+  Value: 176958520339989...
+
+
+
+Test complete! Press ENTER to close browser
+Press ENTER to continue...
