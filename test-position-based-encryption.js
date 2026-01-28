@@ -48,19 +48,22 @@ async function getEncryptedFields(page) {
     const pwd = document.querySelector('#pwd');
     const visibleValue = pwd ? pwd.value : '';
 
-    // Get all E2E fields
+    // Get all hidden fields
     const fields = {};
-    document.querySelectorAll('input[type="hidden"]').forEach(input => {
-      if (input.name && input.name.includes('E2E')) {
-        fields[input.name] = input.value;
+    document.querySelectorAll('input[type="hidden"]').forEach(field => {
+      if (field.name && field.value) {
+        fields[field.name] = field.value;
       }
     });
 
     return {
+      timestamp: Date.now(),
       visible: visibleValue,
-      pwd__E2E__: fields['pwd__E2E__'] || '',
-      __E2E_RESULT__: fields['__E2E_RESULT__'] || '',
-      __E2E_UNIQUE__: fields['__E2E_UNIQUE__'] || '',
+      pwd__E2E__: fields['pwd__E2E__'] || null,
+      __E2E_RESULT__: fields['__E2E_RESULT__'] || null,
+      __E2E_KEYPAD__: fields['__E2E_KEYPAD__'] || null,
+      __KI_pwd: fields['__KI_pwd'] || null,
+      __E2E_UNIQUE__: fields['__E2E_UNIQUE__'] || null,
       allFields: fields
     };
   });
@@ -221,6 +224,29 @@ function splitIntoHashes(hexString) {
     console.log('   ❌ Each keystroke generates unique hash');
   }
 
+  console.log('\n═══════════════════════════════════════════════════════');
+  console.log('🔐 STATIC FIELDS COMPARISON:');
+  console.log('═══════════════════════════════════════════════════════');
+
+  const sameE2EResult = after_b1.__E2E_RESULT__ === after_b2.__E2E_RESULT__;
+  const sameE2EKeypad = after_b1.__E2E_KEYPAD__ === after_b2.__E2E_KEYPAD__;
+  const sameKIPwd = after_b1.__KI_pwd === after_b2.__KI_pwd;
+  const sameUnique = after_b1.__E2E_UNIQUE__ === after_b2.__E2E_UNIQUE__;
+
+  console.log(`\n__E2E_RESULT__ same: ${sameE2EResult ? '✅ YES' : '❌ NO'}`);
+  console.log(`__E2E_KEYPAD__ same: ${sameE2EKeypad ? '✅ YES' : '❌ NO'}`);
+  console.log(`__KI_pwd same:       ${sameKIPwd ? '✅ YES' : '❌ NO'}`);
+  console.log(`__E2E_UNIQUE__ same: ${sameUnique ? '✅ YES' : '❌ NO'}`);
+
+  if (sameE2EResult && sameE2EKeypad && sameKIPwd && sameUnique) {
+    console.log('\n💡 All static session fields are IDENTICAL!');
+    console.log('   These are session-level constants (set once at page load)');
+    console.log('   They provide the encryption context/keys for the session');
+  } else {
+    console.log('\n⚠️  Some static fields changed between rounds!');
+    console.log('   This is unexpected - they should be session-level constants');
+  }
+
   // Full data dump
   console.log('\n═══════════════════════════════════════════════════════');
   console.log('📋 FULL DATA DUMP');
@@ -230,19 +256,30 @@ function splitIntoHashes(hexString) {
     round1: {
       visible: after_b1.visible,
       pwd__E2E__: after_b1.pwd__E2E__,
+      __E2E_RESULT__: after_b1.__E2E_RESULT__,
+      __E2E_KEYPAD__: after_b1.__E2E_KEYPAD__,
+      __KI_pwd: after_b1.__KI_pwd,
+      __E2E_UNIQUE__: after_b1.__E2E_UNIQUE__,
       hashes: round1_hashes,
-      __E2E_UNIQUE__: after_b1.__E2E_UNIQUE__
+      allFields: after_b1.allFields
     },
     round2: {
       visible: after_b2.visible,
       pwd__E2E__: after_b2.pwd__E2E__,
+      __E2E_RESULT__: after_b2.__E2E_RESULT__,
+      __E2E_KEYPAD__: after_b2.__E2E_KEYPAD__,
+      __KI_pwd: after_b2.__KI_pwd,
+      __E2E_UNIQUE__: after_b2.__E2E_UNIQUE__,
       hashes: round2_hashes,
-      __E2E_UNIQUE__: after_b2.__E2E_UNIQUE__
+      allFields: after_b2.allFields
     },
     comparison: {
       firstCharMatch,
       secondCharMatch,
-      sameSession: after_b1.__E2E_UNIQUE__ === after_b2.__E2E_UNIQUE__
+      sameSession: after_b1.__E2E_UNIQUE__ === after_b2.__E2E_UNIQUE__,
+      sameE2EResult: after_b1.__E2E_RESULT__ === after_b2.__E2E_RESULT__,
+      sameE2EKeypad: after_b1.__E2E_KEYPAD__ === after_b2.__E2E_KEYPAD__,
+      sameKIPwd: after_b1.__KI_pwd === after_b2.__KI_pwd
     }
   };
 
