@@ -2213,6 +2213,10 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:collect-invoices', certificateData, certificatePassword),
     getInvoices: (filters: any) =>
       ipcRenderer.invoke('hometax:get-invoices', filters),
+    getSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase') =>
+      ipcRenderer.invoke('hometax:get-spreadsheet-url', businessNumber, invoiceType),
+    saveSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) =>
+      ipcRenderer.invoke('hometax:save-spreadsheet-url', businessNumber, invoiceType, spreadsheetUrl),
   },
 
   /**
@@ -2393,7 +2397,7 @@ sheets: {
     ipcRenderer.invoke('sheets:create-transactions-spreadsheet', params),
   getOrCreateTransactionsSpreadsheet: (params: { transactions: any[]; banks: Record<string, any>; accounts: any[]; persistentSpreadsheetId?: string }) =>
     ipcRenderer.invoke('sheets:get-or-create-transactions-spreadsheet', params),
-  exportTaxInvoicesToSpreadsheet: (params: { invoices: any[]; invoiceType: 'sales' | 'purchase' }) =>
+  exportTaxInvoicesToSpreadsheet: (params: { invoices: any[]; invoiceType: 'sales' | 'purchase'; existingSpreadsheetUrl?: string }) =>
     ipcRenderer.invoke('sheets:export-tax-invoices', params),
   createSpreadsheet: (params: { title: string; data?: string[][] }) =>
     ipcRenderer.invoke('sheets:create-spreadsheet', params),

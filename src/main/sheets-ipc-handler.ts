@@ -173,9 +173,26 @@ export function registerSheetsHandlers(): void {
   });
 
   // Export tax invoices to spreadsheet
-  ipcMain.handle('sheets:export-tax-invoices', async (_, { invoices, invoiceType }) => {
+  ipcMain.handle('sheets:export-tax-invoices', async (_, { invoices, invoiceType, existingSpreadsheetUrl }) => {
     try {
-      const result = await sheetsService.exportTaxInvoicesToSpreadsheet(invoices, invoiceType);
+      const result = await sheetsService.exportTaxInvoicesToSpreadsheet(invoices, invoiceType, existingSpreadsheetUrl);
+
+      // If successful and we have a spreadsheet URL, save it to the database
+      if (result.success && result.spreadsheetUrl && invoices.length > 0) {
+        const businessNumber = invoices[0].business_number;
+        if (businessNumber) {
+          try {
+            const { saveSpreadsheetUrl } = await import('./sqlite/hometax');
+            const sqliteManager = getSQLiteManager();
+            const db = sqliteManager.getFinanceHubDatabase();
+            saveSpreadsheetUrl(db, businessNumber, invoiceType, result.spreadsheetUrl);
+          } catch (saveError) {
+            console.error('Error saving spreadsheet URL:', saveError);
+            // Don't fail the export if URL saving fails
+          }
+        }
+      }
+
       return result;
     } catch (error: any) {
       console.error('Error exporting tax invoices:', error);

@@ -9,6 +9,7 @@ import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
 import { migrateToUnifiedSchema } from './migrations/001-unified-schema';
 import { createHometaxSchema } from './migrations/002-hometax-schema';
+import { addHometaxSpreadsheetUrlColumns } from './migrations/003-hometax-spreadsheet-urls';
 import { createSyncDatabase } from './sheet-sync-init';
 import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 
@@ -139,6 +140,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeShinhanTransactionsSchema(conversationsDb); // Initialize Shinhan transactions schema
     migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema and migrate Shinhan data
     createHometaxSchema(conversationsDb); // Initialize Hometax schema for tax invoice management
+    addHometaxSpreadsheetUrlColumns(conversationsDb); // Add spreadsheet URL columns to Hometax tables
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);

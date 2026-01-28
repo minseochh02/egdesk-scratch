@@ -231,7 +231,7 @@ node output/browser-recorder-tests/egdesk-browser-recorder-2026-01-26T05-10-27-2
 ## 📝 Documentation Metadata
 
 - **Created**: 2026-01-26
-- **Version**: 1.0.18
+- **Version**: 1.0.19
 - **Feature**: File Upload Code Generation
 - **System**: EGDesk Browser Recorder
 - **Technology**: Playwright, TypeScript, Node.js

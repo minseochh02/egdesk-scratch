@@ -16,6 +16,8 @@ export function createHometaxSchema(db: Database.Database) {
       last_connected_at DATETIME,
       sales_count INTEGER DEFAULT 0,
       purchase_count INTEGER DEFAULT 0,
+      sales_spreadsheet_url TEXT,
+      purchase_spreadsheet_url TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -111,6 +113,8 @@ export function createHometaxSchema(db: Database.Database) {
       purchase_duplicate INTEGER DEFAULT 0,
       sales_excel_path TEXT,
       purchase_excel_path TEXT,
+      sales_spreadsheet_url TEXT,
+      purchase_spreadsheet_url TEXT,
       error_message TEXT,
       started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME,

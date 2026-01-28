@@ -158,6 +158,8 @@ const FinanceHub: React.FC = () => {
   const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
   const [taxInvoiceSort, setTaxInvoiceSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '작성일자', direction: 'desc' });
   const [showTaxFilters, setShowTaxFilters] = useState(false);
+  const [taxSalesSpreadsheetUrl, setTaxSalesSpreadsheetUrl] = useState<string | null>(null);
+  const [taxPurchaseSpreadsheetUrl, setTaxPurchaseSpreadsheetUrl] = useState<string | null>(null);
   const [taxInvoiceFilters, setTaxInvoiceFilters] = useState<TaxInvoiceFiltersType>({
     businessNumber: 'all',
     searchText: '',
@@ -1087,6 +1089,29 @@ const FinanceHub: React.FC = () => {
       ...prev,
       companyName: 'all'
     }));
+    // Load saved spreadsheet URL for this invoice type
+    await loadTaxSpreadsheetUrl(type);
+  };
+
+  // Load saved spreadsheet URL for the current business and invoice type
+  const loadTaxSpreadsheetUrl = async (invoiceType: 'sales' | 'purchase') => {
+    if (filteredAndSortedTaxInvoices.length === 0) return;
+
+    const businessNumber = filteredAndSortedTaxInvoices[0].business_number;
+    if (!businessNumber) return;
+
+    try {
+      const result = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
+      if (result.success && result.spreadsheetUrl) {
+        if (invoiceType === 'sales') {
+          setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
+        } else {
+          setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading tax spreadsheet URL:', error);
+    }
   };
 
   const handleTaxInvoiceSort = (key: string) => {
@@ -1118,13 +1143,24 @@ const FinanceHub: React.FC = () => {
 
   const handleExportTaxInvoices = async () => {
     try {
+      // Get the existing spreadsheet URL for this invoice type
+      const existingUrl = taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl : taxPurchaseSpreadsheetUrl;
+
       // Use filtered and sorted invoices for export
       const result = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
         invoices: filteredAndSortedTaxInvoices,
         invoiceType: taxInvoiceType,
+        existingSpreadsheetUrl: existingUrl || undefined,
       });
 
       if (result.success) {
+        // Update the saved spreadsheet URL
+        if (taxInvoiceType === 'sales') {
+          setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
+        } else {
+          setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+        }
+
         // Open the spreadsheet in a new browser tab
         window.open(result.spreadsheetUrl, '_blank');
       } else {
@@ -1155,6 +1191,31 @@ const FinanceHub: React.FC = () => {
       } else {
         alert(`스프레드시트 내보내기 중 오류 발생: ${errorMsg}`);
       }
+    }
+  };
+
+  const handleClearTaxSpreadsheet = async () => {
+    const typeLabel = taxInvoiceType === 'sales' ? '매출' : '매입';
+    if (confirm(`기존 ${typeLabel} 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?`)) {
+      if (taxInvoiceType === 'sales') {
+        setTaxSalesSpreadsheetUrl(null);
+      } else {
+        setTaxPurchaseSpreadsheetUrl(null);
+      }
+
+      // Clear from database
+      if (filteredAndSortedTaxInvoices.length > 0) {
+        const businessNumber = filteredAndSortedTaxInvoices[0].business_number;
+        if (businessNumber) {
+          try {
+            await window.electron.hometax.saveSpreadsheetUrl(businessNumber, taxInvoiceType, '');
+          } catch (error) {
+            console.error('Error clearing tax spreadsheet URL:', error);
+          }
+        }
+      }
+
+      alert('스프레드시트 연결이 해제되었습니다. 다음번에 새로운 스프레드시트가 생성됩니다.');
     }
   };
 
@@ -1195,6 +1256,13 @@ const FinanceHub: React.FC = () => {
       loadTaxInvoices();
     }
   }, [taxInvoiceType, selectedBusinessFilter, currentView]);
+
+  // Load saved spreadsheet URL when tax invoices change
+  useEffect(() => {
+    if (filteredAndSortedTaxInvoices.length > 0) {
+      loadTaxSpreadsheetUrl(taxInvoiceType);
+    }
+  }, [filteredAndSortedTaxInvoices, taxInvoiceType]);
 
   const handleConnectHometax = async () => {
     if (hometaxAuthMethod === 'certificate') {
@@ -2057,11 +2125,13 @@ const FinanceHub: React.FC = () => {
               sortDirection={taxInvoiceSort.direction}
               showGoogleAuth={showTaxGoogleAuth}
               signingIn={signingInTaxGoogle}
+              savedSpreadsheetUrl={taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl : taxPurchaseSpreadsheetUrl}
               onInvoiceTypeChange={handleTaxInvoiceTabChange}
               onFilterChange={handleTaxInvoiceFilterChange}
               onResetFilters={handleResetTaxInvoiceFilters}
               onSort={handleTaxInvoiceSort}
               onExport={handleExportTaxInvoices}
+              onClearSpreadsheet={handleClearTaxSpreadsheet}
               onGoogleSignIn={handleTaxGoogleSignIn}
               onCloseGoogleAuth={handleCloseTaxGoogleAuth}
             />
