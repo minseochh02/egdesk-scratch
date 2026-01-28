@@ -191,8 +191,11 @@ async function testPynputOSLevel(page, field) {
     const pythonScript = path.join(__dirname, 'src/main/financehub/utils/virtual-hid-keyboard.py');
     const testText = 'Test123';
 
+    // Use 'python' on Windows, 'python3' on Unix
+    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+
     const pynputSuccess = await new Promise((resolve) => {
-      const python = spawn('python3', [pythonScript, testText, '--delay', '100', '--pre-delay', '500']);
+      const python = spawn(pythonCmd, [pythonScript, testText, '--delay', '100', '--pre-delay', '500']);
 
       python.on('close', (code) => resolve(code === 0));
       python.on('error', () => resolve(false));
@@ -286,15 +289,80 @@ async function runSecurityKeyboardTests() {
   let browser, context, page;
 
   try {
-    // Launch browser
-    console.log('🌐 Launching browser...');
+    // Launch browser with same flags as actual automation
+    console.log('🌐 Launching Chrome browser...');
+    console.log('   Using production automation flags for accurate testing');
+
     browser = await chromium.launch({
+      channel: 'chrome', // Use installed Chrome instead of Chromium
       headless: TEST_CONFIG.headless,
-      args: ['--disable-blink-features=AutomationControlled']
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--allow-running-insecure-content',
+        '--disable-features=PrivateNetworkAccessSendPreflights',
+        '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+      ]
     });
 
-    context = await browser.newContext();
+    context = await browser.newContext({
+      locale: 'ko-KR',
+      viewport: { width: 1280, height: 1024 },
+      permissions: ['clipboard-read', 'clipboard-write']
+    });
+
+    // Hide automation flags
+    await context.addInitScript(() => {
+      // Remove webdriver flag
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+
+      // Override plugins and languages to look like a real browser
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['ko-KR', 'ko', 'en-US', 'en'],
+      });
+
+      // Chrome specific properties
+      window.chrome = {
+        runtime: {},
+      };
+
+      // Permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+    });
     page = await context.newPage();
+
+    // Verify automation hiding is working
+    console.log('\n🔍 Verifying automation hiding...');
+    const automationCheck = await page.evaluate(() => ({
+      webdriver: navigator.webdriver,
+      pluginsCount: navigator.plugins.length,
+      languages: navigator.languages,
+      hasChrome: !!window.chrome,
+      userAgent: navigator.userAgent
+    }));
+
+    console.log(`   navigator.webdriver: ${automationCheck.webdriver} ${automationCheck.webdriver === false ? '✅' : '❌ DETECTED!'}`);
+    console.log(`   navigator.plugins: ${automationCheck.pluginsCount} items ${automationCheck.pluginsCount > 0 ? '✅' : '❌'}`);
+    console.log(`   navigator.languages: [${automationCheck.languages.join(', ')}] ✅`);
+    console.log(`   window.chrome: ${automationCheck.hasChrome ? '✅ present' : '❌ missing'}`);
+    console.log(`   User-Agent: ${automationCheck.userAgent.substring(0, 50)}...`);
+
+    if (automationCheck.webdriver !== false) {
+      console.log('\n⚠️  WARNING: Automation may be detected (webdriver flag is true)!');
+    }
+    console.log('');
 
     // Navigate to Shinhan Card
     console.log('🔗 Navigating to Shinhan Card...');

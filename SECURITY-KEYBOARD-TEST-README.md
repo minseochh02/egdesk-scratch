@@ -39,25 +39,46 @@ The suite tests 4 different input levels:
 
 ## 🚀 How to Run
 
-```bash
+### On Windows (Recommended for Korean Banking Sites)
+
+```cmd
+REM 1. Install Node.js dependencies
+npm install playwright-core
+
+REM 2. Install Python and pynput
+python --version
+pip install pynput
+
+REM 3. Install Chrome (if not already)
+REM Download from: https://www.google.com/chrome/
+
+REM 4. Run the test
 node test-security-keyboard-levels.js
 ```
 
-### Prerequisites
-
-For Test 4 (OS-level), you need Python and pynput:
+### On macOS (For Development)
 
 ```bash
-# Check Python
-python3 --version
-
-# Install pynput
+# 1. Install dependencies
+npm install playwright-core
 pip3 install pynput
 
-# Grant accessibility permissions (macOS)
+# 2. Install Chrome (if not already)
+# Download from: https://www.google.com/chrome/
+
+# 3. Grant accessibility permissions
+# 시스템 설정 → 개인 정보 보호 및 보안 → 손쉬운 사용
 # System Settings → Privacy & Security → Accessibility
-# Add Terminal or your IDE
+
+# 4. Run the test
+node test-security-keyboard-levels.js
 ```
+
+### Important Notes
+
+- **Uses Chrome browser** (not Chromium) for accurate testing
+- **Windows testing is recommended** - Korean security keyboards target Windows
+- For Test 4, Python pynput needs to be installed
 
 ## 📊 Interpreting Results
 
