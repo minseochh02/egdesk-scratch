@@ -310,7 +310,7 @@
     "publish": {
       "provider": "github",
       "owner": "minseochh02",
-      "repo": "egdesk-releases",
+      "repo": "egdesk-scratch",
       "releaseType": "release"
     }
   },

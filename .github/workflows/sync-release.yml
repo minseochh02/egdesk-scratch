@@ -21,7 +21,7 @@ jobs:
       - name: Create release in public repo
         uses: softprops/action-gh-release@v2
         with:
-          repository: minseochh02/egdesk-releases  # Change this to your public repo name
+          repository: minseochh02/egdesk-scratch  # Change this to your public repo name
           tag_name: ${{ github.event.release.tag_name }}
           name: ${{ github.event.release.name }}
           body: ${{ github.event.release.body }}
