@@ -92,10 +92,8 @@ function splitIntoHashes(hexString) {
 
   const page = await context.newPage();
 
-  console.log('\n📡 Navigating to login page...');
-  await page.goto('https://www.shinhancard.com/pconts/html/member/login/MOBMLLOG002_02.html', {
-    waitUntil: 'networkidle'
-  });
+  console.log('\n📡 Navigating to Shinhan Card...');
+  await page.goto('https://www.shinhancard.com/cconts/html/main.html');
 
   await page.waitForTimeout(3000);
 
