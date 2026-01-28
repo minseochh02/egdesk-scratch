@@ -26,8 +26,9 @@
  *   ❌ Includes timestamp/nonce (harder to defeat)
  */
 
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright-core');
 const readline = require('readline');
+const fs = require('fs');
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -65,11 +66,6 @@ async function getEncryptedFields(page) {
   });
 }
 
-async function typeCharacter(page, char) {
-  await page.type('#pwd', char);
-  await new Promise(resolve => setTimeout(resolve, 500)); // Wait for encryption
-}
-
 function splitIntoHashes(hexString) {
   // Each SHA-256 hash is 64 characters
   const hashes = [];
@@ -83,42 +79,50 @@ function splitIntoHashes(hexString) {
   console.log('🧪 Position-Based Encryption Test\n');
   console.log('═══════════════════════════════════════════════════════');
 
-  const browser = await puppeteer.launch({
+  const browser = await chromium.launch({
+    channel: 'chrome',
     headless: false,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--disable-blink-features=AutomationControlled']
   });
 
-  const page = await browser.newPage();
+  const context = await browser.newContext({ locale: 'ko-KR' });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  });
+
+  const page = await context.newPage();
 
   console.log('\n📡 Navigating to login page...');
   await page.goto('https://www.shinhancard.com/pconts/html/member/login/MOBMLLOG002_02.html', {
-    waitUntil: 'networkidle2'
+    waitUntil: 'networkidle'
   });
 
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  await page.waitForTimeout(3000);
 
   // Focus on password field
   console.log('🎯 Focusing on password field...');
-  await page.click('#pwd');
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await page.locator('#pwd').click();
+  await page.waitForTimeout(1000);
 
   console.log('\n═══════════════════════════════════════════════════════');
   console.log('ROUND 1: First attempt at typing "ab"');
   console.log('═══════════════════════════════════════════════════════');
 
   // Step 1: Type "a"
-  await waitForEnter('Step 1: About to type "a"');
-  await typeCharacter(page, 'a');
+  await waitForEnter('Step 1: Now TYPE "a" in the password field (just press "a" key)');
+  await page.waitForTimeout(500);
+
   const after_a1 = await getEncryptedFields(page);
-  console.log(`\n✅ Typed "a"`);
+  console.log(`\n✅ You typed something`);
   console.log(`   Visible: "${after_a1.visible}"`);
   console.log(`   pwd__E2E__ length: ${after_a1.pwd__E2E__.length} chars`);
 
   // Step 2: Type "b"
-  await waitForEnter('Step 2: About to type "b"');
-  await typeCharacter(page, 'b');
+  await waitForEnter('Step 2: Now TYPE "b" in the password field (just press "b" key)');
+  await page.waitForTimeout(500);
+
   const after_b1 = await getEncryptedFields(page);
-  console.log(`\n✅ Typed "b"`);
+  console.log(`\n✅ You typed something more`);
   console.log(`   Visible: "${after_b1.visible}"`);
   console.log(`   pwd__E2E__ length: ${after_b1.pwd__E2E__.length} chars`);
 
@@ -133,7 +137,7 @@ function splitIntoHashes(hexString) {
   console.log('MANUAL CLEAR: Delete both characters');
   console.log('═══════════════════════════════════════════════════════');
 
-  await waitForEnter('Step 3: NOW manually press BACKSPACE twice to clear the field completely');
+  await waitForEnter('Step 3: Now MANUALLY press BACKSPACE TWICE to clear the field completely');
 
   const after_clear = await getEncryptedFields(page);
   console.log(`\n📋 After clearing:`);
@@ -146,18 +150,20 @@ function splitIntoHashes(hexString) {
   console.log('═══════════════════════════════════════════════════════');
 
   // Step 4: Type "a" again
-  await waitForEnter('Step 4: About to type "a" AGAIN');
-  await typeCharacter(page, 'a');
+  await waitForEnter('Step 4: Now TYPE "a" AGAIN in the password field (press "a" key)');
+  await page.waitForTimeout(500);
+
   const after_a2 = await getEncryptedFields(page);
-  console.log(`\n✅ Typed "a" (2nd time)`);
+  console.log(`\n✅ You typed something (2nd time)`);
   console.log(`   Visible: "${after_a2.visible}"`);
   console.log(`   pwd__E2E__ length: ${after_a2.pwd__E2E__.length} chars`);
 
   // Step 5: Type "b" again
-  await waitForEnter('Step 5: About to type "b" AGAIN');
-  await typeCharacter(page, 'b');
+  await waitForEnter('Step 5: Now TYPE "b" AGAIN in the password field (press "b" key)');
+  await page.waitForTimeout(500);
+
   const after_b2 = await getEncryptedFields(page);
-  console.log(`\n✅ Typed "b" (2nd time)`);
+  console.log(`\n✅ You typed something more (2nd time)`);
   console.log(`   Visible: "${after_b2.visible}"`);
   console.log(`   pwd__E2E__ length: ${after_b2.pwd__E2E__.length} chars`);
 
@@ -243,6 +249,10 @@ function splitIntoHashes(hexString) {
   };
 
   console.log(JSON.stringify(results, null, 2));
+
+  // Save to file
+  fs.writeFileSync('position-based-test-results.json', JSON.stringify(results, null, 2));
+  console.log('\n💾 Saved to: position-based-test-results.json');
 
   await waitForEnter('\nTest complete! Press ENTER to close browser');
 
