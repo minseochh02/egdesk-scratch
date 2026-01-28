@@ -24,16 +24,15 @@ async function findWebSocketAPI() {
   });
 
   const context = await browser.newContext({ locale: 'ko-KR' });
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => false });
-  });
-
-  const page = await context.newPage();
 
   console.log('🔧 Installing WebSocket monitoring...');
 
   // Hook WebSocket BEFORE page loads
-  await page.evaluateOnNewDocument(() => {
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+    // WebSocket monitoring
+
     window.__websocketLogs__ = [];
 
     // Hook WebSocket constructor
@@ -95,6 +94,8 @@ async function findWebSocketAPI() {
 
     console.log('[WebSocket Hook] Installed');
   });
+
+  const page = await context.newPage();
 
   console.log('✅ WebSocket hooks installed');
   console.log('');
