@@ -17,7 +17,8 @@ const TEST_CONFIG = {
   passwordFieldSelector: '[id="pwd"]', // Exact password field from production
   testPassword: 'Test1234!',
   headless: false,
-  timeout: 60000
+  timeout: 60000,
+  skipDependencyCheck: false // Set to true to skip pynput check if you know it's installed
 };
 
 /**
@@ -146,43 +147,89 @@ async function checkDependencies() {
 
   // Check Python
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  console.log(`   Testing command: ${pythonCmd}`);
+
   const pythonCheck = await new Promise((resolve) => {
     const proc = spawn(pythonCmd, ['--version']);
     let version = '';
+    let stderr = '';
 
     proc.stdout.on('data', (data) => { version += data.toString(); });
-    proc.stderr.on('data', (data) => { version += data.toString(); });
-    proc.on('close', (code) => resolve({ success: code === 0, version: version.trim() }));
-    proc.on('error', () => resolve({ success: false, version: 'Not found' }));
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+      version += data.toString(); // Python sometimes outputs version to stderr
+    });
+    proc.on('close', (code) => {
+      resolve({ success: code === 0, version: version.trim(), stderr: stderr.trim() });
+    });
+    proc.on('error', (err) => {
+      resolve({ success: false, version: 'Not found', error: err.message });
+    });
   });
 
   console.log(`   Python: ${pythonCheck.success ? '✅' : '❌'} ${pythonCheck.version}`);
+  if (!pythonCheck.success && pythonCheck.error) {
+    console.log(`   Error: ${pythonCheck.error}`);
+  }
 
-  // Check pynput
+  // Check pynput with better error handling
   const pynputCheck = await new Promise((resolve) => {
-    const proc = spawn(pythonCmd, ['-c', 'import pynput; print(pynput.__version__)']);
-    let version = '';
+    const proc = spawn(pythonCmd, ['-c', 'import pynput; print("OK")']);
+    let stdout = '';
+    let stderr = '';
 
-    proc.stdout.on('data', (data) => { version += data.toString(); });
-    proc.on('close', (code) => resolve({ success: code === 0, version: version.trim() }));
-    proc.on('error', () => resolve({ success: false, version: 'Not installed' }));
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('close', (code) => {
+      resolve({
+        success: code === 0 && stdout.includes('OK'),
+        stdout: stdout.trim(),
+        stderr: stderr.trim()
+      });
+    });
+    proc.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      proc.kill();
+      resolve({ success: false, error: 'Timeout' });
+    }, 5000);
   });
 
-  console.log(`   pynput: ${pynputCheck.success ? '✅' : '❌'} ${pynputCheck.version}`);
+  console.log(`   pynput: ${pynputCheck.success ? '✅ Installed' : '❌ Not detected'}`);
+  if (!pynputCheck.success) {
+    if (pynputCheck.stderr) {
+      console.log(`   Error output: ${pynputCheck.stderr}`);
+    }
+    if (pynputCheck.error) {
+      console.log(`   Error: ${pynputCheck.error}`);
+    }
+  }
   console.log('');
 
   if (!pythonCheck.success) {
-    console.log('❌ Python is not installed!');
+    console.log('❌ Python is not installed or not in PATH!');
     console.log('   Please install Python 3 from: https://www.python.org/downloads/');
     console.log('');
     return false;
   }
 
   if (!pynputCheck.success) {
-    console.log('⚠️  pynput is not installed!');
-    console.log(`   Install with: ${pythonCmd === 'python' ? 'pip' : 'pip3'} install pynput`);
+    console.log('⚠️  pynput check failed!');
     console.log('');
-    return false;
+    console.log('   If you KNOW pynput is installed, you can:');
+    console.log('   1. Set TEST_CONFIG.skipDependencyCheck = true in the script');
+    console.log('   2. Or manually verify: ' + pythonCmd + ' -c "import pynput; print(\'OK\')"');
+    console.log('');
+    console.log(`   If pynput is NOT installed: ${pythonCmd === 'python' ? 'pip' : 'pip3'} install pynput`);
+    console.log('');
+
+    // Ask if they want to continue anyway
+    console.log('   The test will try to run anyway...');
+    console.log('');
+    return true; // Changed to return true to allow continuing
   }
 
   console.log('✅ All dependencies are installed!');
@@ -208,11 +255,17 @@ async function runPynputTest() {
   console.log('═'.repeat(70));
   console.log('');
 
-  // Check dependencies first
-  const depsOk = await checkDependencies();
-  if (!depsOk) {
-    console.log('❌ Cannot run test without dependencies');
-    process.exit(1);
+  // Check dependencies first (unless skipped)
+  if (!TEST_CONFIG.skipDependencyCheck) {
+    const depsOk = await checkDependencies();
+    if (!depsOk) {
+      console.log('⚠️  Dependency check failed, but continuing anyway...');
+      console.log('   Set TEST_CONFIG.skipDependencyCheck = true to skip this check');
+      console.log('');
+    }
+  } else {
+    console.log('⏭️  Skipping dependency check (TEST_CONFIG.skipDependencyCheck = true)');
+    console.log('');
   }
 
   let browser, context, page;
