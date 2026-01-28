@@ -7,6 +7,7 @@ const fs = require('fs');
 const XLSX = require('xlsx');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
+const { sendPasswordViaVirtualHID } = require('../../utils/virtual-hid-bridge');
 
 /**
  * Shinhan Card Automator
@@ -94,34 +95,64 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password using keyboard events
-      this.log('Entering password using keyboard events...');
+      // Step 6: Fill password using Virtual HID keyboard (Python pynput)
+      this.log('Entering password using Virtual HID keyboard...');
       try {
         // Focus the password field
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
         await passwordField.focus();
         await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-        // Clear any existing content
+        // Clear any existing content using browser (not virtual HID)
         await passwordField.fill('');
         await this.page.waitForTimeout(200);
 
-        // Type password character by character using keyboard events
-        this.log(`Typing password (${password.length} characters)...`);
-        for (let i = 0; i < password.length; i++) {
-          const char = password[i];
-          await this.page.keyboard.type(char, { delay: 100 });
+        // Ensure focus is still on the password field
+        await passwordField.click();
+        await this.page.waitForTimeout(300);
 
-          // Small delay between characters
-          if (i < password.length - 1) {
-            await this.page.waitForTimeout(150);
-          }
+        this.log(`Typing password via Virtual HID (${password.length} characters)...`);
+        this.log('⚠️  IMPORTANT: Do not move mouse or type on keyboard during password entry!');
+        this.log('Virtual HID creates OS-level keyboard events through kernel input stack');
+
+        // Send password via Virtual HID keyboard
+        const success = await sendPasswordViaVirtualHID(password, {
+          charDelay: 120,        // Human-like delay between characters
+          preDelay: 800,         // Wait to ensure focus is correct
+          debug: true,
+          autoInstall: true      // Auto-install pynput if missing
+        });
+
+        if (success) {
+          this.log('✅ Password entry via Virtual HID completed successfully');
+          this.log('   Input went through OS kernel input stack like a real USB keyboard');
+        } else {
+          throw new Error('Virtual HID password entry returned false');
         }
-
-        this.log('Password entry completed');
       } catch (e) {
-        this.log('Keyboard password entry failed');
-        throw new Error(`Password entry failed: ${e.message}`);
+        this.log(`❌ Virtual HID password entry failed: ${e.message}`, 'error');
+
+        // Fallback to standard Playwright keyboard (likely won't work with security keyboard)
+        this.log('⚠️  Attempting fallback to Playwright keyboard (may not work with security keyboard)...');
+        try {
+          const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
+          await passwordField.focus();
+          await this.page.waitForTimeout(200);
+          await passwordField.fill('');
+          await this.page.waitForTimeout(200);
+
+          for (let i = 0; i < password.length; i++) {
+            const char = password[i];
+            await this.page.keyboard.type(char, { delay: 100 });
+            if (i < password.length - 1) {
+              await this.page.waitForTimeout(150);
+            }
+          }
+
+          this.log('Fallback keyboard entry completed');
+        } catch (fallbackError) {
+          throw new Error(`Password entry failed (Virtual HID and fallback): ${fallbackError.message}`);
+        }
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
