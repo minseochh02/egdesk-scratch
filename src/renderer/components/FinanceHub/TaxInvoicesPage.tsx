@@ -35,12 +35,14 @@ interface TaxInvoicesPageProps {
   sortDirection: 'asc' | 'desc';
   showGoogleAuth: boolean;
   signingIn: boolean;
+  savedSpreadsheetUrl?: string | null;
   onInvoiceTypeChange: (type: 'sales' | 'purchase') => void;
   onFilterChange: (key: keyof TaxInvoiceFiltersType, value: string) => void;
   onResetFilters: () => void;
   onSort: (key: string) => void;
   onCollectAll?: () => void;
   onExport?: () => void;
+  onClearSpreadsheet?: () => void;
   onGoogleSignIn?: () => void;
   onCloseGoogleAuth?: () => void;
 }
@@ -61,12 +63,14 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   sortDirection,
   showGoogleAuth,
   signingIn,
+  savedSpreadsheetUrl,
   onInvoiceTypeChange,
   onFilterChange,
   onResetFilters,
   onSort,
   onCollectAll,
   onExport,
+  onClearSpreadsheet,
   onGoogleSignIn,
   onCloseGoogleAuth,
 }) => {
@@ -130,8 +134,17 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
             onClick={onExport}
             disabled={!onExport}
           >
-            📊 스프레드시트에서 열기
+            📊 {invoiceType === 'sales' ? '매출' : '매입'} 스프레드시트 열기 {savedSpreadsheetUrl && '(기존 시트 업데이트)'}
           </button>
+          {savedSpreadsheetUrl && onClearSpreadsheet && (
+            <button
+              className="tip-btn tip-btn--outline tip-btn--small"
+              onClick={onClearSpreadsheet}
+              title="기존 스프레드시트 연결 해제"
+            >
+              🔄 새 시트
+            </button>
+          )}
           <button
             className="tip-btn tip-btn--outline"
             onClick={onCollectAll}

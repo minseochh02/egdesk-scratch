@@ -1288,7 +1288,7 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 
 import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
 import { parseHometaxExcel } from './hometax-excel-parser';
-import { importTaxInvoices, recordSyncOperation, getTaxInvoices } from './sqlite/hometax';
+import { importTaxInvoices, recordSyncOperation, getTaxInvoices, getSpreadsheetUrl, saveSpreadsheetUrl } from './sqlite/hometax';
 import { getConversationsDatabase } from './sqlite/init';
 
 /**
@@ -1501,6 +1501,40 @@ ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
     return result;
   } catch (error) {
     console.error('[IPC] hometax:get-invoices error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Get saved spreadsheet URL for a business and invoice type
+ */
+ipcMain.handle('hometax:get-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase') => {
+  try {
+    const db = getConversationsDatabase();
+    const result = getSpreadsheetUrl(db, businessNumber, invoiceType);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-spreadsheet-url error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Save spreadsheet URL for a business and invoice type
+ */
+ipcMain.handle('hometax:save-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) => {
+  try {
+    const db = getConversationsDatabase();
+    const result = saveSpreadsheetUrl(db, businessNumber, invoiceType, spreadsheetUrl);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:save-spreadsheet-url error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

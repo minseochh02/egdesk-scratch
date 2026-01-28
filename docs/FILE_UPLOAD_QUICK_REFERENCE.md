@@ -287,4 +287,4 @@ node output/browser-recorder-tests/egdesk-browser-recorder-2026-01-26T05-10-27-2
 ---
 
 **Last Updated**: 2026-01-26
-**Version**: 1.0.18
+**Version**: 1.0.19

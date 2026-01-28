@@ -244,3 +244,83 @@ export function getTaxInvoices(
     };
   }
 }
+
+/**
+ * Save spreadsheet URL for exported tax invoices
+ */
+export function saveSpreadsheetUrl(
+  db: Database.Database,
+  businessNumber: string,
+  invoiceType: 'sales' | 'purchase',
+  spreadsheetUrl: string
+): { success: boolean; error?: string } {
+  try {
+    console.log(`[Hometax DB] Saving spreadsheet URL for ${businessNumber} (${invoiceType})`);
+
+    const columnName = invoiceType === 'sales' ? 'sales_spreadsheet_url' : 'purchase_spreadsheet_url';
+
+    // Update hometax_connections table
+    const stmt = db.prepare(`
+      UPDATE hometax_connections
+      SET ${columnName} = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE business_number = ?
+    `);
+
+    const result = stmt.run(spreadsheetUrl, businessNumber);
+
+    if (result.changes === 0) {
+      console.warn(`[Hometax DB] No connection found for business ${businessNumber}, creating one`);
+
+      // Insert if doesn't exist
+      const insertStmt = db.prepare(`
+        INSERT INTO hometax_connections (business_number, ${columnName})
+        VALUES (?, ?)
+        ON CONFLICT(business_number) DO UPDATE SET ${columnName} = excluded.${columnName}, updated_at = CURRENT_TIMESTAMP
+      `);
+
+      insertStmt.run(businessNumber, spreadsheetUrl);
+    }
+
+    console.log(`[Hometax DB] Spreadsheet URL saved successfully`);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax DB] Error saving spreadsheet URL:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Get saved spreadsheet URL for a business and invoice type
+ */
+export function getSpreadsheetUrl(
+  db: Database.Database,
+  businessNumber: string,
+  invoiceType: 'sales' | 'purchase'
+): { success: boolean; spreadsheetUrl?: string; error?: string } {
+  try {
+    const columnName = invoiceType === 'sales' ? 'sales_spreadsheet_url' : 'purchase_spreadsheet_url';
+
+    const stmt = db.prepare(`
+      SELECT ${columnName} as spreadsheet_url
+      FROM hometax_connections
+      WHERE business_number = ?
+    `);
+
+    const result = stmt.get(businessNumber) as { spreadsheet_url: string | null } | undefined;
+
+    return {
+      success: true,
+      spreadsheetUrl: result?.spreadsheet_url || undefined
+    };
+  } catch (error) {
+    console.error('[Hometax DB] Error getting spreadsheet URL:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}

@@ -477,48 +477,117 @@ export class SheetsService {
 
   /**
    * Export tax invoices to Google Spreadsheet
+   * Exports all 33 columns from the database
    */
   async exportTaxInvoicesToSpreadsheet(
     invoices: any[],
-    invoiceType: 'sales' | 'purchase'
+    invoiceType: 'sales' | 'purchase',
+    existingSpreadsheetUrl?: string
   ): Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; error?: string }> {
     try {
+      // Extract spreadsheet ID from URL if provided
+      let spreadsheetId: string | undefined;
+      if (existingSpreadsheetUrl) {
+        const match = existingSpreadsheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (match) {
+          spreadsheetId = match[1];
+
+          // Try to update existing spreadsheet
+          try {
+            await this.getSpreadsheet(spreadsheetId);
+            await this.updateTaxInvoicesData(spreadsheetId, invoices, invoiceType);
+
+            return {
+              success: true,
+              spreadsheetId,
+              spreadsheetUrl: existingSpreadsheetUrl
+            };
+          } catch (error) {
+            console.warn('Existing spreadsheet not accessible, creating new one:', error);
+            // Fall through to create new spreadsheet
+          }
+        }
+      }
+
+      // Create new spreadsheet
       const typeLabel = invoiceType === 'sales' ? '매출' : '매입';
       const title = `EGDesk ${typeLabel} 전자세금계산서 ${new Date().toISOString().slice(0, 10)}`;
 
-      // Prepare headers based on invoice type
+      // All 33 columns from the Excel/database
       const headers = [
         '작성일자',
-        '전자세금계산서분류',
-        invoiceType === 'sales' ? '공급받는자상호' : '공급자상호',
-        invoiceType === 'sales' ? '공급받는자등록번호' : '공급자등록번호',
-        invoiceType === 'sales' ? '공급받는자대표자' : '공급자대표자',
+        '승인번호',
+        '발급일자',
+        '전송일자',
+        '공급자사업자등록번호',
+        '공급자종사업장번호',
+        '공급자상호',
+        '공급자대표자명',
+        '공급자주소',
+        '공급받는자사업자등록번호',
+        '공급받는자종사업장번호',
+        '공급받는자상호',
+        '공급받는자대표자명',
+        '공급받는자주소',
+        '합계금액',
         '공급가액',
         '세액',
-        '합계금액',
+        '전자세금계산서분류',
+        '전자세금계산서종류',
+        '발급유형',
         '비고',
+        '영수청구구분',
+        '공급자이메일',
+        '공급받는자이메일1',
+        '공급받는자이메일2',
+        '품목일자',
+        '품목명',
+        '품목규격',
+        '품목수량',
+        '품목단가',
+        '품목공급가액',
+        '품목세액',
+        '품목비고',
         '사업자번호'
       ];
 
-      // Prepare data rows
-      const rows = invoices.map(inv => {
-        const companyField = invoiceType === 'sales' ? '공급받는자상호' : '공급자상호';
-        const registrationField = invoiceType === 'sales' ? '공급받는자등록번호' : '공급자등록번호';
-        const representativeField = invoiceType === 'sales' ? '공급받는자대표자' : '공급자대표자';
-
-        return [
-          inv.작성일자 || '',
-          inv.전자세금계산서분류 || '',
-          inv[companyField] || '',
-          inv[registrationField] || '',
-          inv[representativeField] || '',
-          inv.공급가액?.toString() || '0',
-          inv.세액?.toString() || '0',
-          inv.합계금액?.toString() || '0',
-          inv.비고 || '',
-          inv.business_number || ''
-        ];
-      });
+      // Prepare data rows with all columns
+      const rows = invoices.map(inv => [
+        inv.작성일자 || '',
+        inv.승인번호 || '',
+        inv.발급일자 || '',
+        inv.전송일자 || '',
+        inv.공급자사업자등록번호 || '',
+        inv.공급자종사업장번호 || '',
+        inv.공급자상호 || '',
+        inv.공급자대표자명 || '',
+        inv.공급자주소 || '',
+        inv.공급받는자사업자등록번호 || '',
+        inv.공급받는자종사업장번호 || '',
+        inv.공급받는자상호 || '',
+        inv.공급받는자대표자명 || '',
+        inv.공급받는자주소 || '',
+        inv.합계금액?.toString() || '0',
+        inv.공급가액?.toString() || '0',
+        inv.세액?.toString() || '0',
+        inv.전자세금계산서분류 || '',
+        inv.전자세금계산서종류 || '',
+        inv.발급유형 || '',
+        inv.비고 || '',
+        inv.영수청구구분 || '',
+        inv.공급자이메일 || '',
+        inv.공급받는자이메일1 || '',
+        inv.공급받는자이메일2 || '',
+        inv.품목일자 || '',
+        inv.품목명 || '',
+        inv.품목규격 || '',
+        inv.품목수량 || '',
+        inv.품목단가 || '',
+        inv.품목공급가액?.toString() || '0',
+        inv.품목세액?.toString() || '0',
+        inv.품목비고 || '',
+        inv.business_number || ''
+      ]);
 
       // Combine headers and data
       const data = [headers, ...rows];
@@ -542,6 +611,108 @@ export class SheetsService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  /**
+   * Update existing spreadsheet with new tax invoices data
+   */
+  async updateTaxInvoicesData(
+    spreadsheetId: string,
+    invoices: any[],
+    invoiceType: 'sales' | 'purchase'
+  ): Promise<void> {
+    // All 33 columns from the Excel/database
+    const headers = [
+      '작성일자',
+      '승인번호',
+      '발급일자',
+      '전송일자',
+      '공급자사업자등록번호',
+      '공급자종사업장번호',
+      '공급자상호',
+      '공급자대표자명',
+      '공급자주소',
+      '공급받는자사업자등록번호',
+      '공급받는자종사업장번호',
+      '공급받는자상호',
+      '공급받는자대표자명',
+      '공급받는자주소',
+      '합계금액',
+      '공급가액',
+      '세액',
+      '전자세금계산서분류',
+      '전자세금계산서종류',
+      '발급유형',
+      '비고',
+      '영수청구구분',
+      '공급자이메일',
+      '공급받는자이메일1',
+      '공급받는자이메일2',
+      '품목일자',
+      '품목명',
+      '품목규격',
+      '품목수량',
+      '품목단가',
+      '품목공급가액',
+      '품목세액',
+      '품목비고',
+      '사업자번호'
+    ];
+
+    // Prepare data rows with all columns
+    const rows = invoices.map(inv => [
+      inv.작성일자 || '',
+      inv.승인번호 || '',
+      inv.발급일자 || '',
+      inv.전송일자 || '',
+      inv.공급자사업자등록번호 || '',
+      inv.공급자종사업장번호 || '',
+      inv.공급자상호 || '',
+      inv.공급자대표자명 || '',
+      inv.공급자주소 || '',
+      inv.공급받는자사업자등록번호 || '',
+      inv.공급받는자종사업장번호 || '',
+      inv.공급받는자상호 || '',
+      inv.공급받는자대표자명 || '',
+      inv.공급받는자주소 || '',
+      inv.합계금액?.toString() || '0',
+      inv.공급가액?.toString() || '0',
+      inv.세액?.toString() || '0',
+      inv.전자세금계산서분류 || '',
+      inv.전자세금계산서종류 || '',
+      inv.발급유형 || '',
+      inv.비고 || '',
+      inv.영수청구구분 || '',
+      inv.공급자이메일 || '',
+      inv.공급받는자이메일1 || '',
+      inv.공급받는자이메일2 || '',
+      inv.품목일자 || '',
+      inv.품목명 || '',
+      inv.품목규격 || '',
+      inv.품목수량 || '',
+      inv.품목단가 || '',
+      inv.품목공급가액?.toString() || '0',
+      inv.품목세액?.toString() || '0',
+      inv.품목비고 || '',
+      inv.business_number || ''
+    ]);
+
+    // Combine headers and data
+    const data = [headers, ...rows];
+
+    // Clear existing data and add new data
+    try {
+      // Clear the entire sheet
+      await this.clearRange(spreadsheetId, 'Sheet1');
+    } catch (error) {
+      console.warn('Failed to clear existing data, continuing anyway:', error);
+    }
+
+    // Add new data
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+
+    // Format headers
+    await this.formatHeaders(spreadsheetId, 'Sheet1');
   }
 }
 
