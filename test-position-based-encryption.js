@@ -143,8 +143,8 @@ function splitIntoHashes(hexString) {
   const after_clear = await getEncryptedFields(page);
   console.log(`\n📋 After clearing:`);
   console.log(`   Visible: "${after_clear.visible}"`);
-  console.log(`   pwd__E2E__ length: ${after_clear.pwd__E2E__.length} chars`);
-  console.log(`   (Encrypted field persists: ${after_clear.pwd__E2E__.length > 0 ? 'YES' : 'NO'})`);
+  console.log(`   pwd__E2E__ length: ${after_clear.pwd__E2E__ ? after_clear.pwd__E2E__.length : 0} chars`);
+  console.log(`   (Encrypted field persists: ${after_clear.pwd__E2E__ && after_clear.pwd__E2E__.length > 0 ? 'YES' : 'NO'})`);
 
   console.log('\n═══════════════════════════════════════════════════════');
   console.log('ROUND 2: Second attempt at typing "ab"');
