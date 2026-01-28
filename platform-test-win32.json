@@ -1,0 +1,13 @@
+{
+  "platform": "win32",
+  "timestamp": "2026-01-28T05:47:02.531Z",
+  "securityProcesses": [
+    "veraport",
+    "I3GProc",
+    "delfino"
+  ],
+  "websocketExists": true,
+  "websocketUrl": "wss://127.0.0.1:14440",
+  "encryptionHappens": true,
+  "encryptedFieldValue": "dcfcc042f2fcca66b513d4030b6a161d0aa1aa168f0d968aee65e8073ec93c88"
+}
