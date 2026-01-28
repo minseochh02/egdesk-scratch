@@ -7,7 +7,6 @@ const fs = require('fs');
 const XLSX = require('xlsx');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
-const { sendPasswordViaVirtualHID } = require('../../utils/virtual-hid-bridge');
 
 /**
  * Shinhan Card Automator
@@ -95,64 +94,73 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password using Virtual HID keyboard (Python pynput)
-      this.log('Entering password using Virtual HID keyboard...');
+      // Step 6: Fill password using Encrypted Value Injection (bypasses security keyboard!)
+      this.log('Entering password using encrypted value injection...');
       try {
-        // Focus the password field
+        // Focus the password field to activate the security keyboard
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
-        await passwordField.focus();
-        await this.page.waitForTimeout(this.config.delays.betweenActions);
-
-        // Clear any existing content using browser (not virtual HID)
-        await passwordField.fill('');
-        await this.page.waitForTimeout(200);
-
-        // Ensure focus is still on the password field
         await passwordField.click();
-        await this.page.waitForTimeout(300);
+        await this.page.waitForTimeout(1500);
 
-        this.log(`Typing password via Virtual HID (${password.length} characters)...`);
-        this.log('⚠️  IMPORTANT: Do not move mouse or type on keyboard during password entry!');
-        this.log('Virtual HID creates OS-level keyboard events through kernel input stack');
+        this.log('Security keyboard activated, injecting encrypted values...');
 
-        // Send password via Virtual HID keyboard
-        const success = await sendPasswordViaVirtualHID(password, {
-          charDelay: 120,        // Human-like delay between characters
-          preDelay: 800,         // Wait to ensure focus is correct
-          debug: true,
-          autoInstall: true      // Auto-install pynput if missing
-        });
+        // Load encrypted password from config file
+        const fs = require('fs');
+        const encryptedConfigPath = path.join(__dirname, '../../../../shinhan-card-encrypted-password.json');
 
-        if (success) {
-          this.log('✅ Password entry via Virtual HID completed successfully');
-          this.log('   Input went through OS kernel input stack like a real USB keyboard');
-        } else {
-          throw new Error('Virtual HID password entry returned false');
+        if (!fs.existsSync(encryptedConfigPath)) {
+          throw new Error(
+            'Encrypted password not found! Run: node capture-encrypted-password.js\n' +
+            'You must capture the encrypted password once before automation works.'
+          );
         }
-      } catch (e) {
-        this.log(`❌ Virtual HID password entry failed: ${e.message}`, 'error');
 
-        // Fallback to standard Playwright keyboard (likely won't work with security keyboard)
-        this.log('⚠️  Attempting fallback to Playwright keyboard (may not work with security keyboard)...');
-        try {
-          const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
-          await passwordField.focus();
-          await this.page.waitForTimeout(200);
-          await passwordField.fill('');
-          await this.page.waitForTimeout(200);
+        const encryptedConfig = JSON.parse(fs.readFileSync(encryptedConfigPath, 'utf8'));
+        this.log(`Using encrypted password captured at: ${encryptedConfig.capturedAt}`);
 
-          for (let i = 0; i < password.length; i++) {
-            const char = password[i];
-            await this.page.keyboard.type(char, { delay: 100 });
-            if (i < password.length - 1) {
-              await this.page.waitForTimeout(150);
+        // Inject the encrypted values
+        const injectionSuccess = await this.page.evaluate((config) => {
+          try {
+            // Set the masked pattern in the visible field
+            const pwdField = document.getElementById('pwd');
+            if (!pwdField) return { success: false, error: 'Password field not found' };
+
+            pwdField.value = config.maskedPattern;
+            pwdField.dispatchEvent(new Event('input', { bubbles: true }));
+            pwdField.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Inject all encrypted hidden fields
+            let injectedCount = 0;
+            for (const [fieldName, fieldValue] of Object.entries(config.encryptedFields)) {
+              const field = document.querySelector(`input[name="${fieldName}"]`);
+              if (field) {
+                field.value = fieldValue;
+                injectedCount++;
+              }
             }
-          }
 
-          this.log('Fallback keyboard entry completed');
-        } catch (fallbackError) {
-          throw new Error(`Password entry failed (Virtual HID and fallback): ${fallbackError.message}`);
+            return {
+              success: true,
+              maskedPattern: pwdField.value,
+              injectedFields: injectedCount
+            };
+          } catch (e) {
+            return { success: false, error: e.message };
+          }
+        }, encryptedConfig);
+
+        if (!injectionSuccess.success) {
+          throw new Error(`Injection failed: ${injectionSuccess.error}`);
         }
+
+        this.log(`✅ Successfully injected encrypted password`);
+        this.log(`   Masked pattern: ${injectionSuccess.maskedPattern}`);
+        this.log(`   Encrypted fields: ${injectionSuccess.injectedFields} fields injected`);
+        this.log('   Security keyboard: BYPASSED! 🎉');
+
+      } catch (e) {
+        this.log(`❌ Encrypted password injection failed: ${e.message}`, 'error');
+        throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
