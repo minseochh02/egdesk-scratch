@@ -141,9 +141,12 @@ async function sendPasswordViaVirtualHID(password, options = {}) {
       // Ignore chmod errors
     }
 
-    // Spawn Python script
+    // Spawn Python script with timeout protection
     return new Promise((resolve, reject) => {
-      const python = spawn('python3', [
+      // Use 'python' on Windows, 'python3' on Unix
+      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+
+      const python = spawn(pythonCmd, [
         scriptPath,
         password,
         '--delay', charDelay.toString(),
@@ -152,6 +155,25 @@ async function sendPasswordViaVirtualHID(password, options = {}) {
 
       let stdout = '';
       let stderr = '';
+      let completed = false;
+
+      // Timeout to kill hanging processes (15 seconds should be plenty)
+      const timeout = setTimeout(() => {
+        if (!completed) {
+          console.error('[Virtual-HID] ⚠️  Timeout - killing Python process');
+          try {
+            python.kill('SIGTERM');
+            setTimeout(() => {
+              if (!python.killed) {
+                python.kill('SIGKILL');
+              }
+            }, 1000);
+          } catch (e) {
+            console.error(`[Virtual-HID] Error killing process: ${e.message}`);
+          }
+          reject(new Error('Virtual HID typing timeout (15s)'));
+        }
+      }, 15000);
 
       python.stdout.on('data', (data) => {
         const output = data.toString();
@@ -170,6 +192,9 @@ async function sendPasswordViaVirtualHID(password, options = {}) {
       });
 
       python.on('close', (code) => {
+        completed = true;
+        clearTimeout(timeout);
+
         if (code === 0 && stdout.includes('SUCCESS')) {
           if (debug) {
             console.log('[Virtual-HID] ✅ Password typed successfully via virtual HID');
@@ -183,9 +208,22 @@ async function sendPasswordViaVirtualHID(password, options = {}) {
       });
 
       python.on('error', (err) => {
+        completed = true;
+        clearTimeout(timeout);
         const error = `Failed to spawn Python: ${err.message}`;
         console.error(`[Virtual-HID] ❌ ${error}`);
         reject(new Error(error));
+      });
+
+      // Cleanup on process exit
+      process.on('exit', () => {
+        if (!completed) {
+          try {
+            python.kill();
+          } catch (e) {
+            // Ignore
+          }
+        }
       });
     });
   } catch (error) {
