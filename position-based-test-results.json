@@ -1,0 +1,25 @@
+{
+  "round1": {
+    "visible": "aa",
+    "pwd__E2E__": "c4999cb0df77e1369e8a69e31235981fab62506bb11b41e74b082288e802da0ba1da2a07c0ef97824ff1383bfee4290a552cd4ebc2be1dd642ad75142db9ec35",
+    "hashes": [
+      "c4999cb0df77e1369e8a69e31235981fab62506bb11b41e74b082288e802da0b",
+      "a1da2a07c0ef97824ff1383bfee4290a552cd4ebc2be1dd642ad75142db9ec35"
+    ],
+    "__E2E_UNIQUE__": "176958293564723"
+  },
+  "round2": {
+    "visible": "aa",
+    "pwd__E2E__": "f9cbbaa25dbc90b22925457e4f763f05c5e8cf5fb8a47a038a31cd0bde210f27e4fb8f44d2815fcbab4835ee38641f25b82aca419e3f552c37e3e923449758a4",
+    "hashes": [
+      "f9cbbaa25dbc90b22925457e4f763f05c5e8cf5fb8a47a038a31cd0bde210f27",
+      "e4fb8f44d2815fcbab4835ee38641f25b82aca419e3f552c37e3e923449758a4"
+    ],
+    "__E2E_UNIQUE__": "176958293564723"
+  },
+  "comparison": {
+    "firstCharMatch": false,
+    "secondCharMatch": false,
+    "sameSession": true
+  }
+}
