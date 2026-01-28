@@ -693,4 +693,387 @@ curl "https://www.shinhancard.com/csolution/inca_nos/pluginfree/js/nppfs-1.13.0.
 
 ---
 
-**End of findings document. Ready to decide next approach.**
+---
+
+## 🏗️ SYSTEM ARCHITECTURE MAP
+
+### **Component Overview:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     SHINHAN CARD SERVER                         │
+│                                                                 │
+│  - Has decryption keys (from Veraport)                         │
+│  - Receives encrypted pwd__E2E__ value                         │
+│  - Decrypts and validates password                             │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ HTTPS POST
+                              │ Form submission with:
+                              │ - pwd: "aaaa111" (masked)
+                              │ - pwd__E2E__: "encrypted..."
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│                     CHROME BROWSER                              │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  WEB PAGE (HTML/JavaScript)                             │  │
+│  │                                                          │  │
+│  │  - Password field: <input id="pwd">                     │  │
+│  │  - Hidden field: <input name="pwd__E2E__">              │  │
+│  │  - nppfs-1.13.0.js (nProtect JavaScript library)        │  │
+│  │  - jQuery keypad plugin: $.fn.keypad()                  │  │
+│  │                                                          │  │
+│  │  Event Listeners:                                       │  │
+│  │    - onkeyup: checkMods() (only checks Enter key)       │  │
+│  │    - onfocus: ??? (activates encryption system)         │  │
+│  │                                                          │  │
+│  │  WebSocket Client:                                      │  │
+│  │    - Connects to: wss://127.0.0.1:14440/                │  │
+│  │    - Sends: ~18 messages per character                  │  │
+│  │    - Receives: ??? (not captured yet)                   │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ WebSocket (wss://)
+                              │ Messages: Hex-encoded
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│              LOCALHOST nProtect SERVICE                         │
+│                 (User's Computer)                               │
+│                                                                 │
+│  Processes:                                                     │
+│    - veraport.exe, veraport-x64.exe                            │
+│    - I3GProc.exe (IPinside)                                    │
+│    - delfino.exe                                               │
+│                                                                 │
+│  WebSocket Server:                                             │
+│    - Listening on: 127.0.0.1:14440                            │
+│    - Protocol: WebSocket Secure (TLS)                          │
+│                                                                 │
+│  Functions:                                                     │
+│    - Receives keystroke data from browser                      │
+│    - Encrypts using stored keys                                │
+│    - Sends encrypted value back (?)                            │
+│    - OR directly modifies browser memory (?)                   │
+│                                                                 │
+│  Encryption Keys:                                              │
+│    - Downloaded from Veraport server during install            │
+│    - Same keys that Shinhan Card server has                    │
+│    - Can encrypt offline (no internet needed)                  │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Monitors keyboard
+                              │ Blocks non-USB input
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│                  KERNEL DRIVER (TKFWVT64.sys)                   │
+│                    (Windows Kernel Space)                       │
+│                                                                 │
+│  Role:                                                          │
+│    - Monitors ALL keyboard input at kernel level               │
+│    - Blocks automation tools (Playwright, pynput, etc.)        │
+│    - Allows only REAL USB keyboard input                       │
+│    - ??? Possibly communicates with nProtect service ???       │
+│                                                                 │
+│  How it knows which field:                                     │
+│    - ??? Browser/service tells it which field to monitor ???   │
+│    - ??? Registers field #pwd for encryption ???               │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Hardware input
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│                    PHYSICAL USB KEYBOARD                        │
+│                                                                 │
+│  - Real hardware device                                         │
+│  - Kernel driver ACCEPTS input from this                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 **The Complete Flow (Our Best Guess):**
+
+### **Initialization Phase (When field gets focus):**
+
+```
+Step 1: User tabs/clicks password field
+        ↓
+Step 2: Browser detects focus event
+        ↓
+Step 3: JavaScript sends WebSocket messages to localhost:14440
+        "Hey nProtect service, field #pwd needs encryption"
+        ↓
+Step 4: nProtect service receives registration
+        "OK, monitoring field #pwd"
+        ↓
+Step 5: ??? Service tells kernel driver about this field ???
+        "TKFWVT64.sys, watch for input to #pwd"
+        ↓
+Step 6: System is ARMED - ready for encrypted input
+```
+
+### **Keystroke Phase (After field is focused):**
+
+```
+Step 1: User types "g" on REAL USB keyboard
+        ↓
+Step 2: Kernel driver (TKFWVT64.sys) intercepts keystroke
+        - Checks: Is this from real USB keyboard? ✅ YES
+        - Checks: Is this for registered field #pwd? ✅ YES
+        - Action: Allow it to continue
+        ↓
+Step 3A: ??? WHO captures the keystroke now? ???
+
+        Theory A: Kernel driver sends to nProtect service directly
+        Theory B: Browser JavaScript captures and sends to WebSocket
+        Theory C: Browser extension intercepts
+
+        ↓
+Step 4: nProtect service (localhost:14440) receives keystroke data
+        ↓
+Step 5: nProtect service encrypts it using stored keys
+        "g" → "99dcd5e948b0..."
+        ↓
+Step 6: ??? HOW does encrypted value get back to browser? ???
+
+        Theory A: WebSocket response to browser
+        Theory B: Service directly writes to browser memory
+        Theory C: Kernel driver injects value into pwd__E2E__ field
+
+        ↓
+Step 7: pwd__E2E__ field gets populated with encrypted value
+        ↓
+Step 8: Browser shows masked pattern "a" in visible field
+```
+
+---
+
+## ❓ CRITICAL UNKNOWNS
+
+### **Unknown #1: How does kernel driver know which field?**
+
+**Theories:**
+
+**A) Browser JavaScript registers the field:**
+```javascript
+// Browser tells service/kernel: "Monitor field #pwd"
+nProtectAPI.registerField('pwd', { type: 'password', encrypt: true });
+```
+
+**B) Field attributes signal the system:**
+```html
+<input id="pwd"
+       data-keypad-type="alpha"     ← These attributes
+       data-keypad-theme="shinhancard"  ← Tell the system
+       data-keypad-useyn-input="__KU_89aad1fbb663">  ← To monitor this field
+```
+
+**C) jQuery keypad initialization:**
+```javascript
+$('#pwd').keypad({ data: config });  ← Registers field with service
+```
+
+**Evidence needed:** Check WebSocket messages sent on focus
+
+---
+
+### **Unknown #2: Who captures keystrokes after kernel driver allows them?**
+
+**Theories:**
+
+**A) Kernel driver sends to nProtect service:**
+```
+Kernel driver → veraport.exe (via IPC/shared memory)
+```
+
+**B) Browser JavaScript captures:**
+```
+Browser event listener → WebSocket → veraport.exe
+```
+
+**C) Browser extension captures:**
+```
+Chrome extension → WebSocket → veraport.exe
+```
+
+**Evidence:** We saw ~18 WebSocket messages sent per keystroke
+**Implies:** Browser IS sending messages (Theory B or C)
+
+---
+
+### **Unknown #3: How does encrypted value get back?**
+
+**Theories:**
+
+**A) WebSocket response to browser:**
+```
+veraport.exe → WebSocket response → Browser JavaScript → Sets pwd__E2E__
+```
+**Problem:** We couldn't capture responses
+
+**B) Direct browser memory write:**
+```
+veraport.exe → Chrome process memory → Direct write to pwd__E2E__ field
+```
+**Problem:** Would bypass our JavaScript hooks
+
+**C) Kernel driver injects:**
+```
+veraport.exe → Kernel driver → Injects into browser DOM
+```
+**Problem:** Would bypass our hooks too
+
+**Evidence needed:** Our deepest hook should catch it if it's JavaScript
+
+---
+
+### **Unknown #4: What do the 18 messages contain?**
+
+**For ONE character "g", we send ~18 WebSocket messages**
+
+**Theories:**
+
+**A) Different message types:**
+```
+Messages 1-5: Initialization/handshake
+Messages 6-10: Session management
+Message 11: The actual keystroke "g"
+Messages 12-18: Validation/confirmation
+```
+
+**B) Character sent multiple times:**
+```
+Each message: Different encryption of "g"
+For validation or redundancy
+```
+
+**C) Protocol overhead:**
+```
+Keep-alive, heartbeat, status checks
+Plus the actual data
+```
+
+**Evidence needed:** Analyze message content/format
+
+---
+
+## 🎯 WHAT WE NEED TO FIND
+
+### **Priority 1: Analyze WebSocket Messages on Focus** ⭐
+
+**Test:**
+```
+1. Clear all messages
+2. Focus on password field (don't type yet!)
+3. Capture messages sent
+4. These are REGISTRATION/INITIALIZATION messages
+```
+
+**What this reveals:**
+- How field gets registered
+- What initialization looks like
+- Possibly the protocol format
+
+---
+
+### **Priority 2: Capture Messages for Single Keystroke** ⭐
+
+**Test:**
+```
+1. Field already focused (initialized)
+2. Type ONLY "g"
+3. Separate initialization messages from keystroke messages
+```
+
+**What this reveals:**
+- Which message(s) contain the actual keystroke
+- Message format for character encryption
+- How to craft our own messages
+
+---
+
+### **Priority 3: Run Deepest Hook Test** ⭐
+
+**Test:** Run `test-kernel-vs-browser.js`
+
+**What this reveals:**
+- If JavaScript sets pwd__E2E__ → We can intercept ✅
+- If something else sets it → Hardware needed ❌
+
+---
+
+## 🧪 PROPOSED NEXT EXPERIMENTS
+
+### **Experiment A: Focus-Only Message Capture**
+```javascript
+// Capture baseline
+await page.goto(url);
+let messages = await getWebSocketMessages(); // = 0
+
+// Focus field
+await page.locator('#pwd').focus();
+await wait(2s);
+
+let afterFocus = await getWebSocketMessages(); // = X messages
+// These X messages are INITIALIZATION
+```
+
+### **Experiment B: Keystroke-Only Message Capture**
+```javascript
+// Field already focused
+let beforeType = await getWebSocketMessages(); // = X
+
+// Type "g"
+// (manually or somehow)
+
+let afterType = await getWebSocketMessages(); // = X + Y
+// The Y new messages are for keystroke "g"
+```
+
+### **Experiment C: Run Definitive JavaScript Hook Test**
+```bash
+node test-kernel-vs-browser.js
+```
+
+---
+
+## 📋 QUESTIONS TO ANSWER
+
+Before we proceed, we need to answer:
+
+**Q1:** Does our deepest hook catch `pwd__E2E__` being set?
+- ✅ YES → Browser JavaScript does it, we can intercept
+- ❌ NO → Kernel/service does it directly, much harder
+
+**Q2:** What messages are sent on field focus (before typing)?
+- Tells us initialization/registration protocol
+
+**Q3:** What messages are sent for a single character?
+- Tells us how to send our own characters
+
+**Q4:** Can we decode the WebSocket message format?
+- Hex data → What does it represent?
+
+---
+
+## 🎯 RECOMMENDED ORDER
+
+1. **Run `test-kernel-vs-browser.js`** first
+   - Answers Q1: Does JS set the field?
+   - This determines if software solution is even possible
+
+2. **If Q1 = YES, analyze WebSocket messages**
+   - Separate focus messages from keystroke messages
+   - Understand protocol format
+   - Try to replicate
+
+3. **If Q1 = NO, hardware solution**
+   - USB Rubber Ducky or Arduino
+   - Done in 1-2 days
+
+---
+
+**End of findings document. Next: Run definitive test, then update this doc with results.**
+
