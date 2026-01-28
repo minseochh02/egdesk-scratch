@@ -18,7 +18,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const TEST_CONFIG = {
-  url: 'https://www.shinhancard.com',
+  url: 'https://www.shinhancard.com/cconts/html/main.html', // Exact login URL from production
+  passwordFieldSelector: '[id="pwd"]', // Exact selector from production config
   testPassword: 'Test1234!',
   headless: false,
   timeout: 60000
@@ -283,7 +284,9 @@ async function runSecurityKeyboardTests() {
   console.log('═'.repeat(70));
   console.log('🔬 Security Keyboard Monitoring Level Test Suite');
   console.log('═'.repeat(70));
-  console.log('\nTarget: Shinhan Card Password Field');
+  console.log('\nTarget: Shinhan Card Login Page');
+  console.log(`URL: ${TEST_CONFIG.url}`);
+  console.log(`Password Field: ${TEST_CONFIG.passwordFieldSelector}`);
   console.log('Goal: Determine at what level the security keyboard monitors input\n');
 
   let browser, context, page;
@@ -369,9 +372,10 @@ async function runSecurityKeyboardTests() {
     await page.goto(TEST_CONFIG.url, { waitUntil: 'networkidle', timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Wait for password field
+    // Wait for password field (using exact selector from production config)
     console.log('🔍 Locating password field...');
-    const passwordField = page.locator('input[type="password"]').first();
+    console.log(`   Using selector: ${TEST_CONFIG.passwordFieldSelector}`);
+    const passwordField = page.locator(TEST_CONFIG.passwordFieldSelector);
     await passwordField.waitFor({ state: 'visible', timeout: 10000 });
 
     console.log('✅ Password field found!\n');
