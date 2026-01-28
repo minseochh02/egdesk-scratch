@@ -56,9 +56,17 @@ pip install pynput
 
 ### 5. Run the Test
 
+**Simplified Test (Recommended)** - Only tests OS-level input:
+```cmd
+node test-pynput-only.js
+```
+
+**Full Test** - Tests all 4 methods:
 ```cmd
 node test-security-keyboard-levels.js
 ```
+
+We recommend `test-pynput-only.js` since browser methods are likely blocked anyway.
 
 ## 🔍 What to Expect on Windows
 
