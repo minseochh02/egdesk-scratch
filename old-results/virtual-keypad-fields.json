@@ -1,0 +1,75 @@
+{
+  "test": "Virtual Keypad Field Discovery",
+  "clickedCharacter": "a",
+  "before": {
+    "visible": "",
+    "allHiddenFields": {
+      "__E2E_KEYPAD__": "0d031cf1e1fac18817243fddd112ad67eb494cdd1f2de1fa6f5ab62489423741288d1c01c1d208aea7ca792644ade55f6fbcd534cc66fd6ca79479626b54088291cb3bd1fffc0c5d53af136556e7098d17b5dead0c6f0ca53df3d8446f7fedd6a1961eff2088322540fb54f7669d8d0a27f67f83b33cf0d41cf2a9814f68d98ca77f2539c52bfc5af86fa18dea7a03e24e13e0c4acb2fdda196019f53886a2e0cd881f37144bc7c5ee45aac094e456d08f281bbb7e7b050c6213986de9e9b85ae7decff1aa78314214044734b5387442d16164dce03bb8d44de24dbd046edce73f08e16544ab9d791f222839b96fccc195421f2137a89ede110c30f0a213cd8c",
+      "__E2E_UNIQUE__": "176965512998112",
+      "__KH_b3c17f82febd": "",
+      "__KI_pwd": "1830c8e7c4aa166a7bb0ada14d11d6d9fe981313fd5b756df67b6c1a4ffc67138f73b1c212f18a4a06492eaa53edf4521eb835498bf0c8f24acb48facb1371669f31af24d6b6c0c4f95db5035be593383f1e457f5cde5fdb3c66198d262c1184",
+      "__KU_b3c17f82febd": "Y",
+      "__KH_6b317dee692c": "",
+      "__KI_pwd2": "e8121f1ce63a6b786c2e9720bc01571b54f8f43235273e979c94157f65e90de2ce60580df5d2fd9e191d662784722f0287c8b2b56ef90220cb8563a265a29a143d64319d2eb4f0f62d91dd9be5cde1628b5cf1078cff6920f02ba5e1acd751c5",
+      "__KU_6b317dee692c": "Y",
+      "__KH_776a2b814a92": "",
+      "__KI_pwd3": "596494b4f7d4e27d7099458a0507b8e88e2cbc141d3a3385afff51c2564ae197494f09ff5819edb248b75c0f35f370d763a0308425499bc00055ed2504246011d8dee2af33b8dadaccf7104f3af15802b990af563c0ae106aa598022a58e3c02",
+      "__KU_776a2b814a92": "Y",
+      "INCA_KB_YN": "Y",
+      "pwdId": "pwd",
+      "PKCS7": "",
+      "VID_RANDOM": "",
+      "_action": "",
+      "idn": "",
+      "certStatusCheckType": "",
+      "utype": "C"
+    },
+    "totalFields": 19
+  },
+  "after": {
+    "visible": "a",
+    "allHiddenFields": {
+      "__E2E_KEYPAD__": "0d031cf1e1fac18817243fddd112ad67eb494cdd1f2de1fa6f5ab62489423741288d1c01c1d208aea7ca792644ade55f6fbcd534cc66fd6ca79479626b54088291cb3bd1fffc0c5d53af136556e7098d17b5dead0c6f0ca53df3d8446f7fedd6a1961eff2088322540fb54f7669d8d0a27f67f83b33cf0d41cf2a9814f68d98ca77f2539c52bfc5af86fa18dea7a03e24e13e0c4acb2fdda196019f53886a2e0cd881f37144bc7c5ee45aac094e456d08f281bbb7e7b050c6213986de9e9b85ae7decff1aa78314214044734b5387442d16164dce03bb8d44de24dbd046edce73f08e16544ab9d791f222839b96fccc195421f2137a89ede110c30f0a213cd8c",
+      "__E2E_UNIQUE__": "176965512998112",
+      "__KH_b3c17f82febd": "1d0dc15daaf3a23609163268896ecbb5fc8faa885aea26044ec68951bb7bf006b5ccd6cd5cb419de180729df46e9e816",
+      "__KI_pwd": "1830c8e7c4aa166a7bb0ada14d11d6d9fe981313fd5b756df67b6c1a4ffc67138f73b1c212f18a4a06492eaa53edf4521eb835498bf0c8f24acb48facb1371669f31af24d6b6c0c4f95db5035be593383f1e457f5cde5fdb3c66198d262c1184",
+      "__KU_b3c17f82febd": "Y",
+      "__KH_6b317dee692c": "",
+      "__KI_pwd2": "e8121f1ce63a6b786c2e9720bc01571b54f8f43235273e979c94157f65e90de2ce60580df5d2fd9e191d662784722f0287c8b2b56ef90220cb8563a265a29a143d64319d2eb4f0f62d91dd9be5cde1628b5cf1078cff6920f02ba5e1acd751c5",
+      "__KU_6b317dee692c": "Y",
+      "__KH_776a2b814a92": "",
+      "__KI_pwd3": "596494b4f7d4e27d7099458a0507b8e88e2cbc141d3a3385afff51c2564ae197494f09ff5819edb248b75c0f35f370d763a0308425499bc00055ed2504246011d8dee2af33b8dadaccf7104f3af15802b990af563c0ae106aa598022a58e3c02",
+      "__KU_776a2b814a92": "Y",
+      "INCA_KB_YN": "Y",
+      "pwdId": "pwd",
+      "PKCS7": "",
+      "VID_RANDOM": "",
+      "_action": "",
+      "idn": "",
+      "certStatusCheckType": "",
+      "utype": "C"
+    },
+    "totalFields": 19
+  },
+  "changedFields": [
+    {
+      "fieldName": "__KH_b3c17f82febd",
+      "before": "",
+      "after": "1d0dc15daaf3a23609163268896ecbb5fc8faa885aea26044ec68951bb7bf006b5ccd6cd5cb419de180729df46e9e816",
+      "lengthChange": 96
+    }
+  ],
+  "analysis": {
+    "visibleFieldUpdated": true,
+    "anyHiddenFieldsChanged": true,
+    "khFieldsChanged": [
+      {
+        "fieldName": "__KH_b3c17f82febd",
+        "before": "",
+        "after": "1d0dc15daaf3a23609163268896ecbb5fc8faa885aea26044ec68951bb7bf006b5ccd6cd5cb419de180729df46e9e816",
+        "lengthChange": 96
+      }
+    ],
+    "pwdE2EChanged": false
+  }
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "timestamp": 1769663363864,
+    "oldValue": "",
+    "newValue": "9cf2d2a50691e635b862fc701e875ce178827edf879c2898d40c18e2439b9f594bddf88c383d41f17580c27202bea07f",
+    "valueChange": 96,
+    "stackTrace": "Error\n    at HTMLInputElement.set (eval at evaluate (:290:30), <anonymous>:30:23)\n    at HTMLInputElement.<anonymous> (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:3:9668)\n    at n.each (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:1:2881)\n    at n.fn.init.each (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:1:846)\n    at n.fn.init.val (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:3:9367)\n    at HTMLImageElement.ai (https://www.shinhancard.com/csolution/inca_nos/pluginfree/js/nppfs-1.13.0.js:6021:27)\n    at HTMLImageElement.dispatch (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:2:12444)\n    at r.handle (https://www.shinhancard.com/cconts/js/lib/jquery-1.12.4.min.js:2:9173)"
+  }
+]

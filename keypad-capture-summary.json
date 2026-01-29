@@ -1,0 +1,40 @@
+{
+  "captured": "2026-01-29T05:40:08.460Z",
+  "layouts": [
+    {
+      "field": "pwd",
+      "uuid": "d1726ddc4554",
+      "buttonCount": 132
+    },
+    {
+      "field": "pwd2",
+      "uuid": "0e1d5f4c8d3c",
+      "buttonCount": 132
+    },
+    {
+      "field": "pwd3",
+      "uuid": "3b8e10383e3d",
+      "buttonCount": 132
+    }
+  ],
+  "images": [
+    {
+      "fileName": "keypad-sprite-pwd.png",
+      "url": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=f5b13c05831b4346bbcbb6fac42cc5e8269057001e3084f55d8311e300ba46be61d3fdcee9bc65f57a138c98e834231ace87a9509131e5b059151fe4d1164e5d70941b4ec6f90079c960c7310ef52257354d60b952f348aefaa36715e7613bfb&pi=N&in=d1726ddc4554&kv=v4&ci=3457fb4f12fbaed9302060aca3ca58086a5a974bda3e7db7973ab00173d1d4485d98f571fd243d6966c2e73ebcd3ef0715fd310f3a70751089b8ea666a76d7a3e273308c4ef47764dd5eaedead6728266252cb8d65f46be9cc83c28bfc7602172d4ba9bbb64369cf09aef8f7e210cfa5656dadf03249ab661c8b7faf6ccf0ba815d6004d9a7a90fc437899b72a7756ba6cc851d8166f9d3b4806372c32cc8671e7384a0169e9ac0accce1cc76d5c06d02eb146b9841ffdfba2d8de611b1363cdaae43d34bde7eb021ab49ecc75bd02e011209ef2a682f0fcececa85956b8f694ba45cdf485a155c752fae8341b4d8f517e2a594f5ed3721286e2265fb4c268e7799baa57336cdab4c636ec9fd98ed2e25e209f8337d60b82503317a41e0148b8c08a73aaef148e62df74f43fe50c87c0",
+      "size": 39622,
+      "matchedField": "pwd"
+    },
+    {
+      "fileName": "keypad-sprite-pwd.png",
+      "url": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=b883628f27bbc56a3dc71fd24cd0aca5be9f52614318e089bd6f8fbdbdabc7921961d1d06be34e54640fb9034ee433284420625b46c8adbcf73937c9fa7287b50ded57add282ee435194e9e7adf87191726daef2273da94aed83ee99339d47b3&pi=N&in=0e1d5f4c8d3c&kv=v4&ci=e8dc8b20bf532653f4169c4fdd8d74c381ec5ecfa723c82d6e5ad65dab56ac2e06b4581f7ef13e9e08e29c8708b286e531455ce4c5d2403be5f33db10f0dd7b171fddf70ce5f730dbc68269a5db9963c08a47f2dbe7971b267659c8687f6b9bab9111e33c04e35b38e7ad85d0db974eb3bbbf2e760d0023063641cab4e2fd356187910d69a6b3ece387825b994a63a293bfdab828e93fa0f95f5ca1a4f195d97c96eed42e2ac10e2f76822b6c849aa979d4e993136a3f07662f07f2c6875e29b3eec4c6972d0d0ddc7fbdf71b3363919bbe76a7e84ab86c8af0a37594c76c2e6e85d90ebe9e2169e50792525ee35d9dde7e73644ef00a4fea9817ac4842adb724c6c980ccf79e2b9873cf9ffb0befe0ef9dfa24d9c5188ad0720e1f4bac9c979b892348274b0e4290055857af73d7c10",
+      "size": 39550,
+      "matchedField": "pwd"
+    },
+    {
+      "fileName": "keypad-sprite-pwd.png",
+      "url": "https://www.shinhancard.com/crp/csolution/inca_nos/pluginfree/jsp/nppfs.keypad.jsp?m=i&k=7157f7a444631e5a2913bb0feed43d6a60c37d0b60425eb43291c91f89a922ec8b723bc764c246a12c1f513937baab92b50a0c7df7936357e0c97bec7b1c7769cf4f0a2913b1df0ede6ff6759c252bcabf7df741ff0d27ae456a80dc3738e4ce&pi=N&in=3b8e10383e3d&kv=v4&ci=b4d6488eb63573f1382274e13d5bf2ea8c11e7b15a7d06cc6e7454b4401c8d90e30d36ce8f41df848880e0de4da01fb9adf3970e2b6ffd0b1a9a1b828f119cde1ed6b7ad531bd7b7dda0febc7c0eddfb09acea531f8e809e77230681708ec345bae65ea90d626bf56b7d4ca4bbbb6774b59079feb5637fa8227a59490065a5cc058431609ca37d11fac6a32a1c1dd214d81b3a52c823e2264cdf284a70f1b54f3d9ea3f7712912a8cfb649b047c17325b09ce1df0d8d5dd74c54807ff542f69190852c63f55f94c3d58e4dd1cc05d2402adef7650b9cdc6776d8446794c203241c27e65e1aa8da57840adde197d843c3694e9a41454f3ef88cce193317d55ddf6be8e690ebd50dd2476d5afa9f814a31e993d179dcf0519b03245a7b7e3771531b9fa62973c3a244833b0ed37e697911",
+      "size": 39728,
+      "matchedField": "pwd"
+    }
+  ]
+}
