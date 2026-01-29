@@ -140,22 +140,23 @@ function waitForEnter(message) {
   results.garbledHash = garbledPwdE2E;
 
   console.log('═'.repeat(70));
-  console.log('STEP 2: Clear and inject garbled hash');
+  console.log('STEP 2: Inject garbled hash');
   console.log('═'.repeat(70));
   console.log('');
 
-  // Clear password field
-  await page.evaluate(() => {
-    document.getElementById('pwd').value = '';
-  });
+  console.log('Injecting garbled pwd__E2E__ AND visible password...');
 
-  console.log('Injecting garbled pwd__E2E__ value...');
+  await page.evaluate((garbledValue, visiblePwd) => {
+    // Set visible password field (masked)
+    document.getElementById('pwd').value = visiblePwd;
 
-  await page.evaluate((garbledValue) => {
+    // Set hidden pwd__E2E__ field (garbled hash)
     document.querySelector('input[name="pwd__E2E__"]').value = garbledValue;
-  }, garbledPwdE2E);
+  }, garbledPwdE2E, validData.visible);
 
-  console.log('✅ Injected garbled hash');
+  console.log(`✅ Injected:`);
+  console.log(`   Visible field: "${validData.visible}"`);
+  console.log(`   pwd__E2E__: ${garbledPwdE2E.substring(0, 60)}... (garbled)`);
   console.log('');
 
   console.log('═'.repeat(70));
