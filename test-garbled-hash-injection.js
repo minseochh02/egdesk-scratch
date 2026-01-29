@@ -146,13 +146,13 @@ function waitForEnter(message) {
 
   console.log('Injecting garbled pwd__E2E__ AND visible password...');
 
-  await page.evaluate((garbledValue, visiblePwd) => {
+  await page.evaluate(({ garbledValue, visiblePwd }) => {
     // Set visible password field (masked)
     document.getElementById('pwd').value = visiblePwd;
 
     // Set hidden pwd__E2E__ field (garbled hash)
     document.querySelector('input[name="pwd__E2E__"]').value = garbledValue;
-  }, garbledPwdE2E, validData.visible);
+  }, { garbledValue: garbledPwdE2E, visiblePwd: validData.visible });
 
   console.log(`✅ Injected:`);
   console.log(`   Visible field: "${validData.visible}"`);
