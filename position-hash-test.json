@@ -1,0 +1,15 @@
+{
+  "test": "Position-Based Hash Test (g → gg → g)",
+  "sessionID": "176967177096216",
+  "sessionTimestamp": "2026-01-29T07:29:30.962Z",
+  "character": "g",
+  "step1_hash_position1": "8636bd81d12b5d83250d77f474a4ceb1735ea823ee5438741447ebb5ca0cf88f",
+  "step2_hash_gg_position1": "8636bd81d12b5d83250d77f474a4ceb1735ea823ee5438741447ebb5ca0cf88f",
+  "step2_hash_gg_position2": "7be902c5d8d4d34a74bf183dc6fedede4e5e697331b219417cc2676338fdbc87",
+  "step3_hash_after_backspace": "8636bd81d12b5d83250d77f474a4ceb1735ea823ee5438741447ebb5ca0cf88f",
+  "comparison": {
+    "position1_before_vs_after": true,
+    "position1_step1_vs_step2": true
+  },
+  "conclusion": "Position-based (deterministic)"
+}
