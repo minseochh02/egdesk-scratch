@@ -168,8 +168,8 @@ const EGSocialMedia: React.FC = () => {
     loadConnections();
   }, [location.state]);
 
-  const handleShowConnectionList = () => {
-    setCurrentView('connection-list');
+  const handleShowConnectionList = async () => {
+    await checkExistingConnections();
   };
 
   const handleBackFromConnectionList = () => {
@@ -280,12 +280,10 @@ const EGSocialMedia: React.FC = () => {
               }
             </p>
             <div className="hero-actions">
-              {hasConnections && (
-                <button className="view-connections-btn" onClick={handleShowConnectionList}>
-                  <FontAwesomeIcon icon={faArrowRight} />
-                  <span>See my accounts</span>
-                </button>
-              )}
+              <button className="view-connections-btn" onClick={handleShowConnectionList}>
+                <FontAwesomeIcon icon={faArrowRight} />
+                <span>See my accounts</span>
+              </button>
             </div>
           </div>
         </div>
