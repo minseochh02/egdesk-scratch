@@ -1,0 +1,18 @@
+{
+  "test": "Virtual Keypad Click Test",
+  "clickedCharacter": "a",
+  "before": {
+    "visible": "",
+    "pwd__E2E__": ""
+  },
+  "after": {
+    "visible": "a",
+    "pwd__E2E__": ""
+  },
+  "changes": {
+    "visibleFieldChange": "\"\" → \"a\"",
+    "pwdE2ELengthChange": "0 → 0",
+    "newHashAdded": false,
+    "newHash": null
+  }
+}

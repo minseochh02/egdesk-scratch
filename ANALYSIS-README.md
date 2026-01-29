@@ -122,6 +122,65 @@ Response: {
 
 ---
 
+## 🆔 Two-ID System
+
+The system uses **two separate IDs** for different purposes:
+
+### ID 1: Shinhan Session ID
+```
+__E2E_UNIQUE__: "176965174957734"
+```
+
+**Purpose:** Correlation between browser ↔ Shinhan server
+- Identifies the session for HTTP communication
+- Links all POST requests to the same login session
+
+**Where it's used:**
+- Hidden field: `<input name="__E2E_UNIQUE__" value="176965174957734">`
+- POST requests: `id=176965174957734`, `u=176965174957734`
+- Final login submission: `__E2E_UNIQUE__=176965174957734`
+
+**Generated:** Client-side (browser or INCA), likely timestamp-based
+
+---
+
+### ID 2: INCA Field ID
+```
+Field ID: "b2f598e8e1424d8683e394c4eacc2647"
+```
+
+**Purpose:** Identifies which password field the keystroke data belongs to
+- Tells INCA: "This is for the `pwd` field, not `pwd2` or `pwd3`"
+- Allows INCA to filter keyboard actions per field
+
+**Where it's used:**
+- WebSocket messages to localhost:14440 (browser → INCA)
+- Parameters: `name=pwd&ID=b2f598e8e1424d8683e394c4eacc2647`
+- Same ID for all three password fields (pwd, pwd2, pwd3)
+
+**Generated:** Client-side, purpose is field identification not session correlation
+
+**Note on Multiple Password Fields:**
+The site has three password fields (pwd, pwd2, pwd3) for **three different login types**:
+- Each login type has its own password field
+- Each gets its own virtual keypad (with unique keypad UUID)
+- Each has its own set of hidden fields (__KI_pwd, __KI_pwd2, __KI_pwd3)
+- Only one is used at a time depending on which login type the user selects
+
+---
+
+### Why Two Different IDs?
+
+**Separation of concerns:**
+- **Shinhan session ID** (`176965174957734`): Server-side session tracking
+- **INCA field ID** (`b2f598...`): Client-side field identification for INCA
+
+**They serve different purposes:**
+- Shinhan doesn't need field-level details (INCA's job)
+- INCA doesn't need session correlation (Shinhan's job)
+
+---
+
 ## 🔑 Key Fields Explained
 
 ### 1. `pwd__E2E__` (Dynamic - Changes Per Keystroke)

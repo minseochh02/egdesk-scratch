@@ -1,0 +1,51 @@
+{
+  "test": "Virtual Keypad Mapping Learning",
+  "keypadUUID": "5feaeb871a58",
+  "khFieldName": "__KH_5feaeb871a58",
+  "learnedMapping": {
+    "1": "7e0e90a229d866d83550ad1457f979c445c22bccc5bd605297e79befbdceec3f6c96dad7b0ba6d6460a84fcf19d8694b",
+    "2": "468c66dbe33b92abeb3ad663c242956b52c84a50d8165068894cf5a68871cbce8ebbe70049ea1a933c1d8f553e252344",
+    "3": "f3dfbc49ae7a1300a72073f3a86ec9a989326cb83af82a401d02d272dc8e4e9f7efc6eb6b6e1ed073fc9a47e24a901a1",
+    "a": "4dd7681195d6af431e97e16e7f7e3abfe0754242e30f171ed778880b95bd937053639bb139ac8d4aa5fa3bc8d21b1156",
+    "b": "cd34071aabefff9f8bd679b713399330e7b991ac774d57caa2b726db0fd33a6a6cddc05cc637bd71a66c17adb9203c42",
+    "c": "b30efa89cce5a411ddfd3d2a04eea99f0bac4d884d6e163ca921e92418fb7e6c1c362ac4726024c1c8b0a3a027b3b6a5"
+  },
+  "hashSequence": [
+    {
+      "character": "a",
+      "hash": "4dd7681195d6af431e97e16e7f7e3abfe0754242e30f171ed778880b95bd937053639bb139ac8d4aa5fa3bc8d21b1156",
+      "hashLength": 96
+    },
+    {
+      "character": "b",
+      "hash": "cd34071aabefff9f8bd679b713399330e7b991ac774d57caa2b726db0fd33a6a6cddc05cc637bd71a66c17adb9203c42",
+      "hashLength": 96
+    },
+    {
+      "character": "c",
+      "hash": "b30efa89cce5a411ddfd3d2a04eea99f0bac4d884d6e163ca921e92418fb7e6c1c362ac4726024c1c8b0a3a027b3b6a5",
+      "hashLength": 96
+    },
+    {
+      "character": "1",
+      "hash": "7e0e90a229d866d83550ad1457f979c445c22bccc5bd605297e79befbdceec3f6c96dad7b0ba6d6460a84fcf19d8694b",
+      "hashLength": 96
+    },
+    {
+      "character": "2",
+      "hash": "468c66dbe33b92abeb3ad663c242956b52c84a50d8165068894cf5a68871cbce8ebbe70049ea1a933c1d8f553e252344",
+      "hashLength": 96
+    },
+    {
+      "character": "3",
+      "hash": "f3dfbc49ae7a1300a72073f3a86ec9a989326cb83af82a401d02d272dc8e4e9f7efc6eb6b6e1ed073fc9a47e24a901a1",
+      "hashLength": 96
+    }
+  ],
+  "keypadLayoutHashes": 324,
+  "analysis": {
+    "successfullyLearned": 6,
+    "totalAttempted": 6,
+    "hashLength": 96
+  }
+}

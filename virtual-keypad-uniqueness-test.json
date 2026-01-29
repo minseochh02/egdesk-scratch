@@ -1,0 +1,7 @@
+{
+  "test": "Virtual Keypad Hash Uniqueness",
+  "firstClick": "1225631a3cd2191b0ee0cb342cac4d289094c09d811437ca6e3722483d4365c44664abd12fcf8196ca0663325d284441",
+  "secondClick": "1225631a3cd2191b0ee0cb342cac4d289094c09d811437ca6e3722483d4365c44664abd12fcf8196ca0663325d284441",
+  "match": true,
+  "conclusion": "EXPLOITABLE"
+}
