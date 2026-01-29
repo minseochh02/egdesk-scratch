@@ -1,0 +1,133 @@
+{
+  "virtual": {
+    "timestamp": 1769666907493,
+    "url": "https://www.shinhancard.com/crp/cmm/CRPLOGIN/CMMServiceMemLoginC.ajax",
+    "postData": "memid=testuser&pwd=aaaa&mode=loginIDPWD&channel=corp&utype=C&RECAPT_TOKEN=&device=Q7&__E2E_RESULT__=30bf36df9388e8cff5995d632302a41a54010e036496f46c663619429e11101ed2e01d0f98ffb804bb03c15ea47aebbdba4b3f08e02320fa60775a09e4736c92cc2f980e12b14a1bf8088709ae8b7902954cbfc1afacce2a96b7822b3b64040741c39722bf23a31fc7451fccf893aac96ef3feec4d4d106cfc3cc492f2c0d56b68d20638d5baa4ddc9e373eb1f5dfa0d4d19bc633e4f498bcc686fe2476e77b9a222e550eb3038a871d40f87320ad6c71ac1571cb4fb189a4529c972e08eddf730e10d47c32adec6094d7271af1807d65184fa18722ca9e1ab8365f869a7471eb468fd397cbdceaf847876217119576f36122ad384b848ef0cc467fe04350624&__E2E_UNIQUE__=176966689223174&pwd__E2E__=&pwd2__E2E__=&pwd3__E2E__=&__E2E_KEYPAD__=183d268b07b1e24ce6c434bf26eab8b743a5277b564c1aadc22873f5b7c7005a8c089d016f7217d685e9cdff9cd686da53a90e8a09707d2f01d21e3268e0cb003077fa7439773a71a84d42ead2f38917bf4b0580ce2b96f08ee1fedc4f8a3ea64cba97eb9c4f9d99be04786b950b8d3c5ae4a6f5747540e75d9f8fed3611ea6e05a55f5639e581da99d6b6a3dfd4a396a9993d0b7d740bd09a6815adf1b997d02a5944fcb6b86b973614a58866112852c431235a93f8519bbea94e82ff9c95bbe2c8cb6414d978fc7e4839dcf98e9d65160272b70a2590604834a79142c0813ca142ab27a712f77fb459da633fc3314e69cfe740a1e399c0e6ce9b4d0ed65fbb&__KH_9bcde752010f=1629c59ee3f65147ae9469de1bcd668156884769deffd027f22ba9daf8ba79a50b6cf36aa8064b11b452dd181d78befb6840ae5c7772a55a6908fc3a8a275226dd49d8378b24f6773a578f28f2ce3892e814f26560f4e40b2aeb72fefa984d71d1d7b86e7f3d2fbb3b4f0ab933196bfa87124aab7fd3bf26ed9336af180c9feac6568a4e40dd4c597bfbc083d1cd34201629c59ee3f65147ae9469de1bcd668156884769deffd027f22ba9daf8ba79a50b6cf36aa8064b11b452dd181d78befb&__KI_pwd=12d693b96daaee62a7879948fe67a4aa5787ee5f4ba8f41b242a6c72cde7ee0be6e16bbd12a7bce7a5a64a9b7bcf0a007b45e10eea408897632e3fe7513a320acf9bf3a73b4fda6f88889cb2e22a8777acb01f661abb8b81534d47cedf5e11e9&__KU_9bcde752010f=Y&__KH_343398c2e0cd=&__KI_pwd2=3a0fa67a3e1169fb0e672765b13f46f2290569a977960b1eaba401b656ac94d4fec6a315dd14931bfb0cbf06ced0fcbeb3db6cc6d90dc3787d9dce04fddfe221088c0004d83d933eb3f02fe530eac80603aaca444b066cb2c4a46fb7d6c9b1d0&__KU_343398c2e0cd=N&__KH_c86d2c0072bb=&__KI_pwd3=b1d22489f94fb77d8f068f0064d7e27ab0a5ff6d813f8bc0d6e34ec996be064b49e2db0afd7e25c1e5427305ee9bf56c35a9b3636dacce14ec08e930a9fe8a6a3d6df23a82357dd7c66962ed714b7655fb2b45788cf7873832fde75bc4f68825&__KU_c86d2c0072bb=N&INCA_KB_YN=Y&memid2=&pwd2=&memid3=&pwd3=&pwdId=pwd&sKey=undefined&other=&app=pc",
+    "parsed": {
+      "memid": "testuser",
+      "pwd": "aaaa",
+      "mode": "loginIDPWD",
+      "channel": "corp",
+      "utype": "C",
+      "RECAPT_TOKEN": "",
+      "device": "Q7",
+      "__E2E_RESULT__": "30bf36df9388e8cff5995d632302a41a54010e036496f46c663619429e11101ed2e01d0f98ffb804bb03c15ea47aebbdba4b3f08e02320fa60775a09e4736c92cc2f980e12b14a1bf8088709ae8b7902954cbfc1afacce2a96b7822b3b64040741c39722bf23a31fc7451fccf893aac96ef3feec4d4d106cfc3cc492f2c0d56b68d20638d5baa4ddc9e373eb1f5dfa0d4d19bc633e4f498bcc686fe2476e77b9a222e550eb3038a871d40f87320ad6c71ac1571cb4fb189a4529c972e08eddf730e10d47c32adec6094d7271af1807d65184fa18722ca9e1ab8365f869a7471eb468fd397cbdceaf847876217119576f36122ad384b848ef0cc467fe04350624",
+      "__E2E_UNIQUE__": "176966689223174",
+      "pwd__E2E__": "",
+      "pwd2__E2E__": "",
+      "pwd3__E2E__": "",
+      "__E2E_KEYPAD__": "183d268b07b1e24ce6c434bf26eab8b743a5277b564c1aadc22873f5b7c7005a8c089d016f7217d685e9cdff9cd686da53a90e8a09707d2f01d21e3268e0cb003077fa7439773a71a84d42ead2f38917bf4b0580ce2b96f08ee1fedc4f8a3ea64cba97eb9c4f9d99be04786b950b8d3c5ae4a6f5747540e75d9f8fed3611ea6e05a55f5639e581da99d6b6a3dfd4a396a9993d0b7d740bd09a6815adf1b997d02a5944fcb6b86b973614a58866112852c431235a93f8519bbea94e82ff9c95bbe2c8cb6414d978fc7e4839dcf98e9d65160272b70a2590604834a79142c0813ca142ab27a712f77fb459da633fc3314e69cfe740a1e399c0e6ce9b4d0ed65fbb",
+      "__KH_9bcde752010f": "1629c59ee3f65147ae9469de1bcd668156884769deffd027f22ba9daf8ba79a50b6cf36aa8064b11b452dd181d78befb6840ae5c7772a55a6908fc3a8a275226dd49d8378b24f6773a578f28f2ce3892e814f26560f4e40b2aeb72fefa984d71d1d7b86e7f3d2fbb3b4f0ab933196bfa87124aab7fd3bf26ed9336af180c9feac6568a4e40dd4c597bfbc083d1cd34201629c59ee3f65147ae9469de1bcd668156884769deffd027f22ba9daf8ba79a50b6cf36aa8064b11b452dd181d78befb",
+      "__KI_pwd": "12d693b96daaee62a7879948fe67a4aa5787ee5f4ba8f41b242a6c72cde7ee0be6e16bbd12a7bce7a5a64a9b7bcf0a007b45e10eea408897632e3fe7513a320acf9bf3a73b4fda6f88889cb2e22a8777acb01f661abb8b81534d47cedf5e11e9",
+      "__KU_9bcde752010f": "Y",
+      "__KH_343398c2e0cd": "",
+      "__KI_pwd2": "3a0fa67a3e1169fb0e672765b13f46f2290569a977960b1eaba401b656ac94d4fec6a315dd14931bfb0cbf06ced0fcbeb3db6cc6d90dc3787d9dce04fddfe221088c0004d83d933eb3f02fe530eac80603aaca444b066cb2c4a46fb7d6c9b1d0",
+      "__KU_343398c2e0cd": "N",
+      "__KH_c86d2c0072bb": "",
+      "__KI_pwd3": "b1d22489f94fb77d8f068f0064d7e27ab0a5ff6d813f8bc0d6e34ec996be064b49e2db0afd7e25c1e5427305ee9bf56c35a9b3636dacce14ec08e930a9fe8a6a3d6df23a82357dd7c66962ed714b7655fb2b45788cf7873832fde75bc4f68825",
+      "__KU_c86d2c0072bb": "N",
+      "INCA_KB_YN": "Y",
+      "memid2": "",
+      "pwd2": "",
+      "memid3": "",
+      "pwd3": "",
+      "pwdId": "pwd",
+      "sKey": "undefined",
+      "other": "",
+      "app": "pc"
+    }
+  },
+  "hardware": {
+    "timestamp": 1769666935917,
+    "url": "https://www.shinhancard.com/crp/cmm/CRPLOGIN/CMMServiceMemLoginC.ajax",
+    "postData": "memid=testuser&pwd=aaaa&mode=loginIDPWD&channel=corp&utype=C&RECAPT_TOKEN=&device=Q7&__E2E_RESULT__=8171534357e3ee8297344346ca9ea663c0619325d12353c4073516eb08ec1767362aad58b3e32e01eccd8d52212a1698c70b9855b132f6b50f56684530247b66a1ec6e541fd3fae25f6e15a16de50410bf1c978c99ac49d0453029766afa021e679c83f8afcd95fd79cee335a9cbdc387774fec1d1add3b15b3161117215dcf3292fbdb25ea8e421c62a93b5b38818504caecc1215bed92779e0b6e7abb225b4d2731aa0e41979b3f154d4e354492e60061a53d0a1081305d98a0987ad49956fc92d3eef700fbd5dbbb515a72ca425741d91737b832e429b348138ff6d9bfcc7d0b1de57f79991672ece9f098de003e61eab7289b24264fd5052e4393e78c6b2&__E2E_UNIQUE__=176966692359961&pwd__E2E__=0cb4c5b1203184c3ef7a35e4739bf80cc6de33d24f120237a20aee93a5eb5a001c3254324ff77e5711f49393bba85a6e2943b3ac18e28a3b05d1288bda84c8ee4ccd8179ef5d5c438c7443c39381369baa0c6b65d38bd93fd24043fcaa94a3029be47e13a8d3a1621bedf582971c8c44256543f7c750c4172dc2cae7420144ea&pwd2__E2E__=&pwd3__E2E__=&__E2E_KEYPAD__=9d324bde55d07b1bf098248569ba3161c720f39b6589e1c25062bc49b38c412f317e5c3bb6a68b43a24e007457c78ff1bfb6d1d7391c043302ff4b3319bb188d7b56d59101c2ecaf2810232f452fc8398ba0af70248607b1f7a8a18b96cf2d8ca5950329aebdcf8ad5019e672804e71bef8ae47150cd844775acd40fcf29628f7527b5be4f26c6c5099d3786a610626734ed28dbaada8cfe7ad7cf2c8ad5907279ec815d7f9bbe28fcfa0b092b1ccfad16ece94c94a7691f8da6266484172aa8a8007df7c33b57d427b922f751eb704634ff6feeafff32f26bbc08079f398e9f4c23829854f9001b6917e003711c0a765ebd20178796557e92546f3b281021c4&__KH_35901554dc55=&__KI_pwd=d6dccbfa6be8e235434efc1b1ae937fd0f63064b9371c327482171e56b17a1b4c5c4d28613b13e5d5b89f910714f001677272714ffb81299799b4b8b4417e32e5d9888285e786c91fa05ddd06110fe9669a161bebaca8bf822082bc140447a6c&__KU_35901554dc55=N&__KH_1bff28d0b2c1=&__KI_pwd2=955b4a3d8c6ad5a13212b5bd3ca4494534c8d8d73c2db3b40bab6cc3265623eb70330d6560a581e7db2e354e1573ad4b4ddd94980554ef69105b66fd6d6994f5bdaae04be652ff978c362ffb695c3799e59e870090ffc6ece6efb557a26eb9c0&__KU_1bff28d0b2c1=N&__KH_841491de55aa=&__KI_pwd3=a6cf3040f02f7972a78bf043ec445abc9abc21c63d4e610035a47bbd1c3f4acf879cd52195ecfc33e151df4e3bf4828681fa1ecca6c7b069470408cb37926638231cc5061a2be098ad9bcd1d7c6e775f97815f9a9412ef3e585a47611442d24c&__KU_841491de55aa=N&INCA_KB_YN=Y&memid2=&pwd2=&memid3=&pwd3=&pwdId=pwd&sKey=undefined&other=&app=pc",
+    "parsed": {
+      "memid": "testuser",
+      "pwd": "aaaa",
+      "mode": "loginIDPWD",
+      "channel": "corp",
+      "utype": "C",
+      "RECAPT_TOKEN": "",
+      "device": "Q7",
+      "__E2E_RESULT__": "8171534357e3ee8297344346ca9ea663c0619325d12353c4073516eb08ec1767362aad58b3e32e01eccd8d52212a1698c70b9855b132f6b50f56684530247b66a1ec6e541fd3fae25f6e15a16de50410bf1c978c99ac49d0453029766afa021e679c83f8afcd95fd79cee335a9cbdc387774fec1d1add3b15b3161117215dcf3292fbdb25ea8e421c62a93b5b38818504caecc1215bed92779e0b6e7abb225b4d2731aa0e41979b3f154d4e354492e60061a53d0a1081305d98a0987ad49956fc92d3eef700fbd5dbbb515a72ca425741d91737b832e429b348138ff6d9bfcc7d0b1de57f79991672ece9f098de003e61eab7289b24264fd5052e4393e78c6b2",
+      "__E2E_UNIQUE__": "176966692359961",
+      "pwd__E2E__": "0cb4c5b1203184c3ef7a35e4739bf80cc6de33d24f120237a20aee93a5eb5a001c3254324ff77e5711f49393bba85a6e2943b3ac18e28a3b05d1288bda84c8ee4ccd8179ef5d5c438c7443c39381369baa0c6b65d38bd93fd24043fcaa94a3029be47e13a8d3a1621bedf582971c8c44256543f7c750c4172dc2cae7420144ea",
+      "pwd2__E2E__": "",
+      "pwd3__E2E__": "",
+      "__E2E_KEYPAD__": "9d324bde55d07b1bf098248569ba3161c720f39b6589e1c25062bc49b38c412f317e5c3bb6a68b43a24e007457c78ff1bfb6d1d7391c043302ff4b3319bb188d7b56d59101c2ecaf2810232f452fc8398ba0af70248607b1f7a8a18b96cf2d8ca5950329aebdcf8ad5019e672804e71bef8ae47150cd844775acd40fcf29628f7527b5be4f26c6c5099d3786a610626734ed28dbaada8cfe7ad7cf2c8ad5907279ec815d7f9bbe28fcfa0b092b1ccfad16ece94c94a7691f8da6266484172aa8a8007df7c33b57d427b922f751eb704634ff6feeafff32f26bbc08079f398e9f4c23829854f9001b6917e003711c0a765ebd20178796557e92546f3b281021c4",
+      "__KH_35901554dc55": "",
+      "__KI_pwd": "d6dccbfa6be8e235434efc1b1ae937fd0f63064b9371c327482171e56b17a1b4c5c4d28613b13e5d5b89f910714f001677272714ffb81299799b4b8b4417e32e5d9888285e786c91fa05ddd06110fe9669a161bebaca8bf822082bc140447a6c",
+      "__KU_35901554dc55": "N",
+      "__KH_1bff28d0b2c1": "",
+      "__KI_pwd2": "955b4a3d8c6ad5a13212b5bd3ca4494534c8d8d73c2db3b40bab6cc3265623eb70330d6560a581e7db2e354e1573ad4b4ddd94980554ef69105b66fd6d6994f5bdaae04be652ff978c362ffb695c3799e59e870090ffc6ece6efb557a26eb9c0",
+      "__KU_1bff28d0b2c1": "N",
+      "__KH_841491de55aa": "",
+      "__KI_pwd3": "a6cf3040f02f7972a78bf043ec445abc9abc21c63d4e610035a47bbd1c3f4acf879cd52195ecfc33e151df4e3bf4828681fa1ecca6c7b069470408cb37926638231cc5061a2be098ad9bcd1d7c6e775f97815f9a9412ef3e585a47611442d24c",
+      "__KU_841491de55aa": "N",
+      "INCA_KB_YN": "Y",
+      "memid2": "",
+      "pwd2": "",
+      "memid3": "",
+      "pwd3": "",
+      "pwdId": "pwd",
+      "sKey": "undefined",
+      "other": "",
+      "app": "pc"
+    }
+  },
+  "analysis": {
+    "onlyInHardware": [
+      "__KH_35901554dc55",
+      "__KU_35901554dc55",
+      "__KH_1bff28d0b2c1",
+      "__KU_1bff28d0b2c1",
+      "__KH_841491de55aa",
+      "__KU_841491de55aa"
+    ],
+    "onlyInVirtual": [
+      "__KH_9bcde752010f",
+      "__KU_9bcde752010f",
+      "__KH_343398c2e0cd",
+      "__KU_343398c2e0cd",
+      "__KH_c86d2c0072bb",
+      "__KU_c86d2c0072bb"
+    ],
+    "differentValues": [
+      {
+        "field": "__E2E_RESULT__",
+        "virtualLength": 512,
+        "hardwareLength": 512
+      },
+      {
+        "field": "__E2E_UNIQUE__",
+        "virtualLength": 15,
+        "hardwareLength": 15
+      },
+      {
+        "field": "pwd__E2E__",
+        "virtualLength": 0,
+        "hardwareLength": 256
+      },
+      {
+        "field": "__E2E_KEYPAD__",
+        "virtualLength": 512,
+        "hardwareLength": 512
+      },
+      {
+        "field": "__KI_pwd",
+        "virtualLength": 192,
+        "hardwareLength": 192
+      },
+      {
+        "field": "__KI_pwd2",
+        "virtualLength": 192,
+        "hardwareLength": 192
+      },
+      {
+        "field": "__KI_pwd3",
+        "virtualLength": 192,
+        "hardwareLength": 192
+      }
+    ]
+  }
+}
