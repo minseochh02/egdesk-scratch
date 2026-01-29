@@ -85,16 +85,11 @@ function waitForEnter(message) {
   console.log('');
 
   console.log('═'.repeat(70));
-  console.log('ROUND 1: Type "g"');
+  console.log('STEP 1: Type "g" (position 1)');
   console.log('═'.repeat(70));
   console.log('');
-  console.log('Instructions:');
-  console.log('  1. Click on password field');
-  console.log('  2. Type the letter "g" with your HARDWARE KEYBOARD');
-  console.log('  3. Press ENTER here (do NOT delete yet)');
-  console.log('');
 
-  await waitForEnter('Press ENTER after typing "g"');
+  await waitForEnter('Type "g" with hardware keyboard, then press ENTER');
 
   const afterFirstG = await page.evaluate(() => {
     return {
@@ -103,142 +98,144 @@ function waitForEnter(message) {
     };
   });
 
-  console.log('After first "g":');
-  console.log(`  Visible field: "${afterFirstG.visible}"`);
-  console.log(`  pwd__E2E__: ${afterFirstG.pwd__E2E__}`);
-  console.log(`  Length: ${afterFirstG.pwd__E2E__.length} chars`);
+  console.log(`Visible: "${afterFirstG.visible}"`);
+  console.log(`pwd__E2E__: ${afterFirstG.pwd__E2E__}`);
+  console.log(`Length: ${afterFirstG.pwd__E2E__.length} chars`);
   console.log('');
 
-  const hash1 = afterFirstG.pwd__E2E__;
-
-  if (hash1.length !== 64) {
-    console.log(`⚠️  Expected 64 chars for one character, got ${hash1.length}`);
-    console.log('   You might have typed more than one character');
-  }
+  const hash_position1 = afterFirstG.pwd__E2E__;
 
   console.log('═'.repeat(70));
-  console.log('DELETE: Remove "g"');
+  console.log('STEP 2: Type "g" again (now "gg")');
   console.log('═'.repeat(70));
   console.log('');
-  console.log('Instructions:');
-  console.log('  1. Press BACKSPACE on your keyboard to delete "g"');
-  console.log('  2. Verify password field is empty');
-  console.log('  3. Press ENTER here');
-  console.log('');
 
-  await waitForEnter('Press ENTER after deleting');
+  await waitForEnter('Type "g" AGAIN (don\'t delete), then press ENTER');
 
-  const afterDelete = await page.evaluate(() => {
+  const afterGG = await page.evaluate(() => {
     return {
       visible: document.getElementById('pwd')?.value || '',
       pwd__E2E__: document.querySelector('input[name="pwd__E2E__"]')?.value || ''
     };
   });
 
-  console.log('After delete:');
-  console.log(`  Visible field: "${afterDelete.visible}"`);
-  console.log(`  pwd__E2E__: ${afterDelete.pwd__E2E__.length > 0 ? afterDelete.pwd__E2E__.substring(0, 60) + '...' : '(empty)'}`);
-  console.log(`  Length: ${afterDelete.pwd__E2E__.length} chars`);
+  console.log(`Visible: "${afterGG.visible}"`);
+  console.log(`pwd__E2E__ length: ${afterGG.pwd__E2E__.length} chars`);
   console.log('');
 
-  if (afterDelete.pwd__E2E__.length > 0) {
-    console.log('⚠️  pwd__E2E__ not empty after delete!');
-    console.log('   Manual backspace should have cleared it');
-  }
+  const fullGG = afterGG.pwd__E2E__;
+  const hash_pos1_from_gg = fullGG.substring(0, 64);
+  const hash_pos2_from_gg = fullGG.substring(64, 128);
+
+  console.log('Extracted hashes:');
+  console.log(`  Position 1: ${hash_pos1_from_gg}`);
+  console.log(`  Position 2: ${hash_pos2_from_gg}`);
+  console.log('');
 
   console.log('═'.repeat(70));
-  console.log('ROUND 2: Type "g" again');
+  console.log('STEP 3: Backspace (delete second "g")');
   console.log('═'.repeat(70));
   console.log('');
-  console.log('Instructions:');
-  console.log('  1. Type the letter "g" with your HARDWARE KEYBOARD (same as before)');
-  console.log('  2. Press ENTER here');
-  console.log('');
 
-  await waitForEnter('Press ENTER after typing "g" again');
+  await waitForEnter('Press BACKSPACE once, then press ENTER');
 
-  const afterSecondG = await page.evaluate(() => {
+  const afterBackspace = await page.evaluate(() => {
     return {
       visible: document.getElementById('pwd')?.value || '',
       pwd__E2E__: document.querySelector('input[name="pwd__E2E__"]')?.value || ''
     };
   });
 
-  console.log('After second "g":');
-  console.log(`  Visible field: "${afterSecondG.visible}"`);
-  console.log(`  pwd__E2E__: ${afterSecondG.pwd__E2E__}`);
-  console.log(`  Length: ${afterSecondG.pwd__E2E__.length} chars`);
+  console.log(`Visible: "${afterBackspace.visible}"`);
+  console.log(`pwd__E2E__: ${afterBackspace.pwd__E2E__}`);
+  console.log(`Length: ${afterBackspace.pwd__E2E__.length} chars`);
   console.log('');
 
-  const hash2 = afterSecondG.pwd__E2E__;
+  const hash_after_backspace = afterBackspace.pwd__E2E__;
 
   // Compare
   console.log('═'.repeat(70));
-  console.log('🎯 COMPARISON');
+  console.log('🎯 CRITICAL COMPARISON');
   console.log('═'.repeat(70));
   console.log('');
 
-  console.log('Session ID:', sessionData.sessionID);
-  console.log('Character typed: "g" (both times)');
-  console.log('Position: 1st character (both times)');
+  console.log('Session ID:', sessionData.sessionID, '(same session throughout)');
   console.log('');
 
-  console.log('Hash 1 (first "g"):');
-  console.log(`  ${hash1}`);
+  console.log('Hash for position 1 (step 1, typing "g"):');
+  console.log(`  ${hash_position1}`);
   console.log('');
 
-  console.log('Hash 2 (second "g"):');
-  console.log(`  ${hash2}`);
+  console.log('Hash for position 1 (step 3, after backspace):');
+  console.log(`  ${hash_after_backspace}`);
   console.log('');
 
-  const match = hash1 === hash2;
+  const match = hash_position1 === hash_after_backspace;
 
   console.log(`Match: ${match ? '✅ SAME' : '❌ DIFFERENT'}`);
   console.log('');
 
+  // Bonus check: Did position 1 hash stay consistent in step 2?
+  console.log('Bonus check - Position 1 hash in "gg" (step 2):');
+  console.log(`  ${hash_pos1_from_gg}`);
+  console.log(`  Same as step 1? ${hash_position1 === hash_pos1_from_gg ? '✅ YES' : '❌ NO'}`);
+  console.log('');
+
   if (match) {
-    console.log('🤔 Unexpected Result:');
+    console.log('🎉 POSITION-BASED HASHING!');
     console.log('');
-    console.log('Same character, same session, same position = SAME hash');
+    console.log('Same character at same position = SAME hash');
     console.log('');
     console.log('This means:');
-    console.log('  - Hash does NOT include timestamp/nonce');
-    console.log('  - Hash formula: SHA256(session_key + char + position) only');
-    console.log('  - We can PREDICT hashes!');
-    console.log('  - Massive exploit opportunity!');
+    console.log('  ✅ Hash formula: SHA256(session_key + char + POSITION)');
+    console.log('  ✅ Position determines hash (not timestamp!)');
+    console.log('  ✅ We can PREDICT hashes if we know session keys!');
+    console.log('  ✅ Typing/deleting/retyping at same position = same hash');
+    console.log('');
+    console.log('Exploitation potential:');
+    console.log('  - Extract session keys from page');
+    console.log('  - Calculate hash for each character at each position');
+    console.log('  - Build pwd__E2E__ field manually');
+    console.log('  - BYPASS hardware keyboard requirement!');
     console.log('');
   } else {
-    console.log('✅ Expected Result:');
+    console.log('🔴 TIMESTAMP/SEQUENCE-BASED HASHING!');
     console.log('');
-    console.log('Same character, same session, same position = DIFFERENT hash');
+    console.log('Same character at same position = DIFFERENT hash');
     console.log('');
     console.log('This confirms:');
-    console.log('  - Hash includes timestamp or nonce');
-    console.log('  - Cannot predict hashes from session data alone');
-    console.log('  - Timestamp must be sent somewhere (WebSocket or embedded)');
+    console.log('  ✅ Hash includes timestamp or sequence counter');
+    console.log('  ✅ Each keystroke gets unique hash (even if deleted and retyped)');
+    console.log('  ✅ Cannot predict hashes from position alone');
+    console.log('  ✅ Backspace doesn\'t reset the hash generation');
     console.log('');
-    console.log('Evidence for timestamp in hash:');
-    console.log('  ✅ Same char = different hash (proven again)');
-    console.log('  ✅ Only pwd__E2E__ changes during typing (other fields static)');
-    console.log('  ✅ Timestamp NOT in separate field');
-    console.log('  → Conclusion: Timestamp embedded in pwd__E2E__ hashes');
-    console.log('  → Server receives timestamp via WebSocket separately');
+    console.log('This means:');
+    console.log('  - Hash formula includes time-variant component');
+    console.log('  - Likely: SHA256(key + char + position + timestamp/counter)');
+    console.log('  - Timestamp data sent via WebSocket (to INCA localhost)');
+    console.log('  - Server needs timestamp to recreate hash for verification');
     console.log('');
   }
 
   // Save results
   const results = {
-    test: 'Same Character Same Session',
+    test: 'Position-Based Hash Test (g → gg → g)',
     sessionID: sessionData.sessionID,
+    sessionTimestamp: date.toISOString(),
     character: 'g',
-    hash1: hash1,
-    hash2: hash2,
-    match: match,
-    conclusion: match ? 'Hashes are deterministic' : 'Hashes include timestamp/nonce'
+    step1_hash_position1: hash_position1,
+    step2_hash_gg_position1: hash_pos1_from_gg,
+    step2_hash_gg_position2: hash_pos2_from_gg,
+    step3_hash_after_backspace: hash_after_backspace,
+    comparison: {
+      position1_before_vs_after: match,
+      position1_step1_vs_step2: hash_position1 === hash_pos1_from_gg
+    },
+    conclusion: match ? 'Position-based (deterministic)' : 'Timestamp/sequence-based (non-deterministic)'
   };
 
-  fs.writeFileSync('same-char-hash-test.json', JSON.stringify(results, null, 2));
-  console.log('💾 Saved to: same-char-hash-test.json');
+  fs.writeFileSync('position-hash-test.json', JSON.stringify(results, null, 2));
+  console.log('💾 Saved to: position-hash-test.json');
   console.log('');
 
   await waitForEnter('Press ENTER to close browser');
