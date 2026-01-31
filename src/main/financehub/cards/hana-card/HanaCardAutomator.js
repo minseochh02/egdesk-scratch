@@ -4,6 +4,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { SerialPort } = require('serialport');
 const { BaseCardAutomator } = require('../../core');
 const { HANA_CARD_INFO, HANA_CARD_CONFIG } = require('./config');
 
@@ -21,6 +22,9 @@ class HanaCardAutomator extends BaseCardAutomator {
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'hana-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
+    this.arduinoPort = options.arduinoPort || null;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this.arduino = null;
 
     // Ensure output directories exist
     if (!fs.existsSync(this.outputDir)) {
@@ -111,36 +115,20 @@ class HanaCardAutomator extends BaseCardAutomator {
       await idLocator.fill(userId, { timeout: this.config.timeouts.elementWait });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 9: Fill password using keyboard events
-      this.log('Entering password using keyboard events...');
+      // Step 9: Fill password via Arduino HID
+      this.log('Entering password via Arduino HID...');
       const passwordLocator = this.getLocatorInFrame(this.config.xpaths.passwordInput);
       await passwordLocator.click({ timeout: this.config.timeouts.elementWait });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
       try {
-        // Focus the password field
         await passwordLocator.focus({ timeout: this.config.timeouts.elementWait });
         await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-        // Clear any existing content
-        await passwordLocator.fill('', { timeout: this.config.timeouts.elementWait });
-        await this.page.waitForTimeout(200);
-
-        // Type password character by character using keyboard events
-        this.log(`Typing password (${password.length} characters)...`);
-        for (let i = 0; i < password.length; i++) {
-          const char = password[i];
-          await this.page.keyboard.type(char, { delay: 100 });
-
-          // Small delay between characters
-          if (i < password.length - 1) {
-            await this.page.waitForTimeout(150);
-          }
-        }
-
-        this.log('Password entry completed');
+        await this.typeViaArduino(password);
+        this.log('Password typed via Arduino HID');
       } catch (e) {
-        this.log('Keyboard password entry failed');
+        this.log('Arduino HID password entry failed');
         throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
@@ -177,6 +165,55 @@ class HanaCardAutomator extends BaseCardAutomator {
         success: false,
         error: error.message,
       };
+    } finally {
+      await this.disconnectArduino();
+    }
+  }
+
+  // ============================================================================
+  // ARDUINO HID METHODS
+  // ============================================================================
+
+  async connectArduino() {
+    if (!this.arduinoPort) {
+      throw new Error('Arduino port not configured. Pass arduinoPort in options (e.g. "COM6")');
+    }
+    return new Promise((resolve, reject) => {
+      this.arduino = new SerialPort({ path: this.arduinoPort, baudRate: this.arduinoBaudRate });
+      this.arduino.on('open', () => {
+        this.log(`Arduino connected on ${this.arduinoPort}`);
+        setTimeout(() => resolve(), 2000);
+      });
+      this.arduino.on('error', (err) => reject(err));
+      this.arduino.on('data', (data) => {
+        this.log(`[Arduino] ${data.toString().trim()}`);
+      });
+    });
+  }
+
+  async typeViaArduino(text) {
+    if (!this.arduino) {
+      await this.connectArduino();
+    }
+    return new Promise((resolve, reject) => {
+      this.arduino.write(text + '\n', (err) => {
+        if (err) return reject(err);
+        this.log(`Sent ${text.length} chars to Arduino HID`);
+        const typingTime = text.length * 700 + 500;
+        setTimeout(() => resolve(), typingTime);
+      });
+    });
+  }
+
+  async disconnectArduino() {
+    if (this.arduino && this.arduino.isOpen) {
+      return new Promise((resolve) => {
+        this.arduino.close(() => {
+          this.log('Arduino disconnected');
+          this.arduino = null;
+          resolve();
+        });
+      });
     }
   }
 

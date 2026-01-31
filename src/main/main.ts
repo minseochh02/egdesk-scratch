@@ -617,7 +617,7 @@ const createWindow = async () => {
 
           if (!automator) {
             const { cards } = require('./financehub');
-            automator = cards.createCardAutomator(cardCompanyId, { headless: false });
+            automator = cards.createCardAutomator(cardCompanyId, { headless: false, arduinoPort: 'COM6' });
             activeAutomators.set(cardCompanyId, automator);
           }
 
@@ -660,7 +660,7 @@ const createWindow = async () => {
 
             // Create new automator
             const { cards } = require('./financehub');
-            automator = cards.createCardAutomator(cardCompanyId, { headless: false });
+            automator = cards.createCardAutomator(cardCompanyId, { headless: false, arduinoPort: 'COM6' });
             activeAutomators.set(cardCompanyId, automator);
 
             // Login with saved credentials

@@ -4,6 +4,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { SerialPort } = require('serialport');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { KB_CARD_INFO, KB_CARD_CONFIG } = require('./config');
 const {
@@ -30,6 +31,9 @@ class KBCardAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'kb-card');
+    this.arduinoPort = options.arduinoPort || null;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this.arduino = null;
   }
 
   // ============================================================================
@@ -109,33 +113,17 @@ class KBCardAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(500);
 
-      // Step 5: Enter password using keyboard events
-      this.log('Entering password using keyboard events...');
+      // Step 5: Enter password via Arduino HID
+      this.log('Entering password via Arduino HID...');
       try {
-        // Focus the password field
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
         await passwordField.click();
         await this.page.waitForTimeout(1000);
 
-        // Clear any existing content
-        await passwordField.fill('');
-        await this.page.waitForTimeout(200);
-
-        // Type password character by character using keyboard events
-        this.log(`Typing password (${password.length} characters)...`);
-        for (let i = 0; i < password.length; i++) {
-          const char = password[i];
-          await this.page.keyboard.type(char, { delay: 100 });
-
-          // Small delay between characters
-          if (i < password.length - 1) {
-            await this.page.waitForTimeout(150);
-          }
-        }
-
-        this.log('Password entry completed');
+        await this.typeViaArduino(password);
+        this.log('Password typed via Arduino HID');
       } catch (e) {
-        this.log('Keyboard password entry failed');
+        this.log('Arduino HID password entry failed');
         throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(3000);
@@ -161,6 +149,8 @@ class KBCardAutomator extends BaseBankAutomator {
         success: false,
         error: error.message,
       };
+    } finally {
+      await this.disconnectArduino();
     }
   }
 
@@ -463,6 +453,53 @@ class KBCardAutomator extends BaseBankAutomator {
     this.log(`Summary: ${extractedData.summary.totalCount} transactions, total amount: ${extractedData.summary.totalAmount}`);
 
     return extractedData;
+  }
+
+  // ============================================================================
+  // ARDUINO HID METHODS
+  // ============================================================================
+
+  async connectArduino() {
+    if (!this.arduinoPort) {
+      throw new Error('Arduino port not configured. Pass arduinoPort in options (e.g. "COM6")');
+    }
+    return new Promise((resolve, reject) => {
+      this.arduino = new SerialPort({ path: this.arduinoPort, baudRate: this.arduinoBaudRate });
+      this.arduino.on('open', () => {
+        this.log(`Arduino connected on ${this.arduinoPort}`);
+        setTimeout(() => resolve(), 2000);
+      });
+      this.arduino.on('error', (err) => reject(err));
+      this.arduino.on('data', (data) => {
+        this.log(`[Arduino] ${data.toString().trim()}`);
+      });
+    });
+  }
+
+  async typeViaArduino(text) {
+    if (!this.arduino) {
+      await this.connectArduino();
+    }
+    return new Promise((resolve, reject) => {
+      this.arduino.write(text + '\n', (err) => {
+        if (err) return reject(err);
+        this.log(`Sent ${text.length} chars to Arduino HID`);
+        const typingTime = text.length * 700 + 500;
+        setTimeout(() => resolve(), typingTime);
+      });
+    });
+  }
+
+  async disconnectArduino() {
+    if (this.arduino && this.arduino.isOpen) {
+      return new Promise((resolve) => {
+        this.arduino.close(() => {
+          this.log('Arduino disconnected');
+          this.arduino = null;
+          resolve();
+        });
+      });
+    }
   }
 
   // Note: cleanup() is inherited from BaseBankAutomator
