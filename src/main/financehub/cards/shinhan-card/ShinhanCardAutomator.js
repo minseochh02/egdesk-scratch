@@ -5,6 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
+const { SerialPort } = require('serialport');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
 
@@ -32,6 +33,9 @@ class ShinhanCardAutomator extends BaseCardAutomator {
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'shinhan-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
+    this.arduinoPort = options.arduinoPort || null; // e.g. 'COM6'
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this.arduino = null;
 
     // Ensure output directories exist
     if (!fs.existsSync(this.outputDir)) {
@@ -94,72 +98,18 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 6: Fill password using Encrypted Value Injection (bypasses security keyboard!)
-      this.log('Entering password using encrypted value injection...');
+      // Step 6: Fill password via Arduino HID keyboard (bypasses security keyboard!)
+      this.log('Entering password via Arduino HID...');
       try {
-        // Focus the password field to activate the security keyboard
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
         await passwordField.click();
         await this.page.waitForTimeout(1500);
 
-        this.log('Security keyboard activated, injecting encrypted values...');
-
-        // Load encrypted password from config file
-        const fs = require('fs');
-        const encryptedConfigPath = path.join(__dirname, '../../../../shinhan-card-encrypted-password.json');
-
-        if (!fs.existsSync(encryptedConfigPath)) {
-          throw new Error(
-            'Encrypted password not found! Run: node capture-encrypted-password.js\n' +
-            'You must capture the encrypted password once before automation works.'
-          );
-        }
-
-        const encryptedConfig = JSON.parse(fs.readFileSync(encryptedConfigPath, 'utf8'));
-        this.log(`Using encrypted password captured at: ${encryptedConfig.capturedAt}`);
-
-        // Inject the encrypted values
-        const injectionSuccess = await this.page.evaluate((config) => {
-          try {
-            // Set the masked pattern in the visible field
-            const pwdField = document.getElementById('pwd');
-            if (!pwdField) return { success: false, error: 'Password field not found' };
-
-            pwdField.value = config.maskedPattern;
-            pwdField.dispatchEvent(new Event('input', { bubbles: true }));
-            pwdField.dispatchEvent(new Event('change', { bubbles: true }));
-
-            // Inject all encrypted hidden fields
-            let injectedCount = 0;
-            for (const [fieldName, fieldValue] of Object.entries(config.encryptedFields)) {
-              const field = document.querySelector(`input[name="${fieldName}"]`);
-              if (field) {
-                field.value = fieldValue;
-                injectedCount++;
-              }
-            }
-
-            return {
-              success: true,
-              maskedPattern: pwdField.value,
-              injectedFields: injectedCount
-            };
-          } catch (e) {
-            return { success: false, error: e.message };
-          }
-        }, encryptedConfig);
-
-        if (!injectionSuccess.success) {
-          throw new Error(`Injection failed: ${injectionSuccess.error}`);
-        }
-
-        this.log(`✅ Successfully injected encrypted password`);
-        this.log(`   Masked pattern: ${injectionSuccess.maskedPattern}`);
-        this.log(`   Encrypted fields: ${injectionSuccess.injectedFields} fields injected`);
-        this.log('   Security keyboard: BYPASSED! 🎉');
-
+        this.log('Security keyboard activated, typing via Arduino HID...');
+        await this.typeViaArduino(password);
+        this.log('Password typed via Arduino HID');
       } catch (e) {
-        this.log(`❌ Encrypted password injection failed: ${e.message}`, 'error');
+        this.log(`Arduino HID password entry failed: ${e.message}`, 'error');
         throw new Error(`Password entry failed: ${e.message}`);
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
@@ -199,6 +149,8 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         success: false,
         error: error.message,
       };
+    } finally {
+      await this.disconnectArduino();
     }
   }
 
@@ -633,6 +585,57 @@ class ShinhanCardAutomator extends BaseCardAutomator {
   }
 
   // ============================================================================
+  // ARDUINO HID METHODS
+  // ============================================================================
+
+  async connectArduino() {
+    if (!this.arduinoPort) {
+      throw new Error('Arduino port not configured. Pass arduinoPort in options (e.g. "COM6")');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.arduino = new SerialPort({ path: this.arduinoPort, baudRate: this.arduinoBaudRate });
+      this.arduino.on('open', () => {
+        this.log(`Arduino connected on ${this.arduinoPort}`);
+        // Wait for Arduino to initialize
+        setTimeout(() => resolve(), 2000);
+      });
+      this.arduino.on('error', (err) => reject(err));
+      this.arduino.on('data', (data) => {
+        this.log(`[Arduino] ${data.toString().trim()}`);
+      });
+    });
+  }
+
+  async typeViaArduino(text) {
+    if (!this.arduino) {
+      await this.connectArduino();
+    }
+
+    return new Promise((resolve, reject) => {
+      this.arduino.write(text + '\n', (err) => {
+        if (err) return reject(err);
+        this.log(`Sent ${text.length} chars to Arduino HID`);
+        // 603ms per char (247ms press + 356ms release) + buffer
+        const typingTime = text.length * 700 + 500;
+        setTimeout(() => resolve(), typingTime);
+      });
+    });
+  }
+
+  async disconnectArduino() {
+    if (this.arduino && this.arduino.isOpen) {
+      return new Promise((resolve) => {
+        this.arduino.close(() => {
+          this.log('Arduino disconnected');
+          this.arduino = null;
+          resolve();
+        });
+      });
+    }
+  }
+
+  // ============================================================================
   // HELPER METHODS
   // ============================================================================
 
@@ -701,6 +704,7 @@ async function runShinhanCardAutomation(credentials, options = {}) {
       error: error.message,
     };
   } finally {
+    await automator.disconnectArduino();
     if (automator.browser) {
       await automator.cleanup();
     }
