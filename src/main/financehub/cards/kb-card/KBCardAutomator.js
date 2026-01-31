@@ -50,10 +50,10 @@ class KBCardAutomator extends BaseBankAutomator {
     }
 
     try {
-      await this.page.locator(selector.css).click({ timeout: 10000 });
-    } catch (e) {
-      this.log('CSS selector failed, trying XPath fallback...');
       await this.page.locator(`xpath=${selector.xpath}`).click({ timeout: 10000 });
+    } catch (e) {
+      this.log('XPath selector failed, trying CSS fallback...');
+      await this.page.locator(selector.css).click({ timeout: 10000 });
     }
   }
 
@@ -484,7 +484,7 @@ class KBCardAutomator extends BaseBankAutomator {
       this.arduino.write(text + '\n', (err) => {
         if (err) return reject(err);
         this.log(`Sent ${text.length} chars to Arduino HID`);
-        const typingTime = text.length * 700 + 500;
+        const typingTime = text.length * 950 + 800;
         setTimeout(() => resolve(), typingTime);
       });
     });

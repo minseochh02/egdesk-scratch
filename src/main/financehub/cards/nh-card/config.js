@@ -60,8 +60,8 @@ const NH_CARD_CONFIG = {
 
     // Card Management Navigation (카드신청/관리 → 카드발급내역)
     cardManagementMenu: {
-      css: 'a:has-text("카드신청/관리")',
-      xpath: '//*[@id="gnb"]/ul[1]/li[2]/a[1]'
+      css: 'body > div:nth-child(2) > header > div:nth-child(3) > nav > ul > li:nth-child(2) > a',
+      xpath: '/html/body/div[2]/header/div[3]/nav/ul[1]/li[2]/a'
     },
     cardIssuanceHistoryLink: {
       css: 'a:has-text("카드발급내역") >> nth=0',
@@ -81,11 +81,11 @@ const NH_CARD_CONFIG = {
     // Search controls
     searchGubunRadio: {
       css: '[id="rdoSchGubun2"]',
-      xpath: '//*[@id="rdoSchGubun2"]'
+      xpath: '/html/body/div[3]/div[3]/div[1]/form/section/div[2]/div[2]/ul/li[2]/input'
     },
     cardSearchButton: {
       css: '[id="btnSubmit"] > span:nth-child(1)',
-      xpath: '//*[@id="btnSubmit"]/span[1]'
+      xpath: '/html/body/div[3]/div[3]/div[1]/form/section/div[3]/button'
     },
     transactionSearchButton: {
       css: '.btn-primary > span:nth-child(1)',

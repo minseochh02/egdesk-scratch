@@ -199,7 +199,7 @@ class HanaCardAutomator extends BaseCardAutomator {
       this.arduino.write(text + '\n', (err) => {
         if (err) return reject(err);
         this.log(`Sent ${text.length} chars to Arduino HID`);
-        const typingTime = text.length * 700 + 500;
+        const typingTime = text.length * 950 + 800;
         setTimeout(() => resolve(), typingTime);
       });
     });

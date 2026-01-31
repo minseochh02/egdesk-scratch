@@ -47,17 +47,17 @@ class NHCardAutomator extends BaseBankAutomator {
     }
 
     try {
-      const element = this.page.locator(selector.css);
+      const element = this.page.locator(`xpath=${selector.xpath}`);
       await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
       await element.click({ timeout: 10000 });
     } catch (e) {
-      this.log('CSS selector failed, trying XPath fallback...');
+      this.log('XPath selector failed, trying CSS fallback...');
       try {
-        const element = this.page.locator(`xpath=${selector.xpath}`);
+        const element = this.page.locator(selector.css);
         await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
         await element.click({ timeout: 10000 });
-      } catch (xpathError) {
-        this.log('XPath click failed, trying force click...');
+      } catch (cssError) {
+        this.log('CSS click failed, trying force click...');
         await this.page.locator(`xpath=${selector.xpath}`).click({ force: true, timeout: 10000 });
       }
     }
@@ -204,8 +204,6 @@ class NHCardAutomator extends BaseBankAutomator {
 
       // Step 3: Click radio button #rdoSchGubun2
       await this.clickElement(this.config.xpaths.searchGubunRadio);
-      await this.page.waitForTimeout(1002);
-      await this.page.fill(this.config.xpaths.searchGubunRadio.css, 'on');
       await this.page.waitForTimeout(3000);
 
       // Step 4: Click search button
@@ -336,10 +334,8 @@ class NHCardAutomator extends BaseBankAutomator {
       // Step 1: Navigate to transaction history
       await this.navigateToTransactionHistory();
 
-      // Step 2: Click radio button #rdoSchGubun2
-      await this.clickElement(this.config.xpaths.searchGubunRadio);
-      await this.page.waitForTimeout(1002);
-      await this.page.fill(this.config.xpaths.searchGubunRadio.css, 'on');
+      // Step 2: Click radio button for transaction search
+      await this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[1]/form/div[3]/div[2]/ul/li[3]/input').click({ timeout: 10000 });
       await this.page.waitForTimeout(3000);
 
       // Step 3: Click search button
@@ -513,7 +509,7 @@ class NHCardAutomator extends BaseBankAutomator {
       this.arduino.write(text + '\n', (err) => {
         if (err) return reject(err);
         this.log(`Sent ${text.length} chars to Arduino HID`);
-        const typingTime = text.length * 700 + 500;
+        const typingTime = text.length * 950 + 800;
         setTimeout(() => resolve(), typingTime);
       });
     });

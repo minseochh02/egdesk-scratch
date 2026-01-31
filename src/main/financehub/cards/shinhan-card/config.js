@@ -38,7 +38,7 @@ const SHINHAN_CARD_XPATHS = {
   },
   cardSearchButton: {
     css: 'a:has-text("조회")',
-    xpath: '//*[@id="contents"]/div[1]/div[2]/div[2]/div[2]/a[1]',
+    xpath: '/html/body/div[2]/div/div/div/div[2]/div[2]/div[2]/a',
   },
   cardListContainer: {
     css: '#CRP21120PH01_detail_list',
@@ -102,11 +102,11 @@ const SHINHAN_CARD_XPATHS = {
   },
   searchButton: {
     css: '.button > span:nth-child(1)',
-    xpath: '//*[@id="contents"]/div[1]/div[2]/div[2]/div[3]/a[1]/span[1]',
+    xpath: '/html/body/div[2]/div/div/div[1]/div/div[2]/div[2]/div[3]/a',
   },
   downloadButton: {
     css: '.button > span:nth-child(1)',
-    xpath: '//*[@id="contents"]/div[1]/div[4]/div[1]/div[1]/button[1]/span[1]',
+    xpath: '/html/body/div[2]/div/div/div[1]/div/div[4]/div[1]/div/button[1]',
   },
   downloadConfirmButton: {
     css: 'button:has-text("예")',
