@@ -203,16 +203,12 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.myCardsLink);
       await this.page.waitForTimeout(this.config.delays.afterNavigation);
 
-      // Step 2: Click search target radio button
-      this.log('Setting search filter...');
-      await this.clickElement(this.config.xpaths.searchTargetRadio);
+      // Step 2: Click category radio button
+      this.log('Selecting card category...');
+      await this.page.locator('xpath=/html/body/div[2]/div/div/div/div[2]/div[2]/div[1]/form/div[4]/div/ul/li[1]/div/div[2]/div[1]/ol/li/div/label[2]/input').click({ timeout: 10000 });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 3: Fill search target input with "2"
-      await this.page.fill(this.config.xpaths.searchTargetInput.css, '2');
-      await this.page.waitForTimeout(this.config.delays.betweenActions);
-
-      // Step 4: Click search/조회 button
+      // Step 3: Click 조회 button
       await this.clickElement(this.config.xpaths.cardSearchButton);
       await this.page.waitForTimeout(this.config.delays.afterSearch);
 
@@ -617,7 +613,7 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         if (err) return reject(err);
         this.log(`Sent ${text.length} chars to Arduino HID`);
         // 603ms per char (247ms press + 356ms release) + buffer
-        const typingTime = text.length * 700 + 500;
+        const typingTime = text.length * 950 + 800;
         setTimeout(() => resolve(), typingTime);
       });
     });
@@ -645,10 +641,10 @@ class ShinhanCardAutomator extends BaseCardAutomator {
    */
   async clickElement(selector) {
     try {
-      await this.page.locator(selector.css).click({ timeout: this.config.timeouts.elementWait });
-    } catch (e) {
-      this.log('CSS selector failed, trying XPath fallback...');
       await this.page.locator(`xpath=${selector.xpath}`).click({ timeout: this.config.timeouts.elementWait });
+    } catch (e) {
+      this.log('XPath selector failed, trying CSS fallback...');
+      await this.page.locator(selector.css).click({ timeout: this.config.timeouts.elementWait });
     }
   }
 }
