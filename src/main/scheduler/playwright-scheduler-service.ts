@@ -46,6 +46,9 @@ export class PlaywrightSchedulerService {
     this.isRunning = true;
     console.log('🎭 Starting Playwright scheduler service...');
 
+    // Validate and clean up orphaned tests on startup
+    await this.validateAndCleanupTests();
+
     // Schedule all enabled tests
     await this.scheduleAllTests();
 
@@ -110,6 +113,36 @@ export class PlaywrightSchedulerService {
   // ============================================
   // Scheduling Methods
   // ============================================
+
+  /**
+   * Validate all tests and cleanup orphaned entries
+   */
+  private async validateAndCleanupTests(): Promise<void> {
+    try {
+      const fs = require('fs');
+      const playwrightSchedulerManager = this.sqliteManager.getPlaywrightSchedulerManager();
+      const allTests = playwrightSchedulerManager.getAllTests();
+
+      let removedCount = 0;
+
+      for (const test of allTests) {
+        if (!fs.existsSync(test.testPath)) {
+          console.warn(`⚠️ Orphaned test found: "${test.testName}" (file: ${test.testPath})`);
+          console.log(`🧹 Auto-cleanup: Removing orphaned test from database`);
+
+          // Delete from database (no need to unschedule since we haven't scheduled yet)
+          playwrightSchedulerManager.deleteTest(test.id);
+          removedCount++;
+        }
+      }
+
+      if (removedCount > 0) {
+        console.log(`✅ Cleaned up ${removedCount} orphaned test(s)`);
+      }
+    } catch (error) {
+      console.error('❌ Error during test validation:', error);
+    }
+  }
 
   /**
    * Schedule all enabled tests
@@ -270,11 +303,29 @@ export class PlaywrightSchedulerService {
   }
 
   /**
-   * Check for schedule updates
+   * Check for schedule updates and validate test files
    */
   private async checkAndUpdateSchedules(): Promise<void> {
     if (process.env.DEBUG_PLAYWRIGHT_SCHEDULER === 'true') {
       console.log('🔍 Checking Playwright scheduler for updates...');
+    }
+
+    // Validate all enabled tests - auto-cleanup orphaned tests
+    const fs = require('fs');
+    const playwrightSchedulerManager = this.sqliteManager.getPlaywrightSchedulerManager();
+    const enabledTests = playwrightSchedulerManager.getEnabledTests();
+
+    for (const test of enabledTests) {
+      if (!fs.existsSync(test.testPath)) {
+        console.warn(`⚠️ Test file not found during validation: ${test.testPath}`);
+        console.log(`🧹 Auto-cleanup: Removing orphaned test "${test.testName}" from scheduler`);
+
+        // Unschedule the job
+        this.unscheduleTest(test.id);
+
+        // Delete from database
+        playwrightSchedulerManager.deleteTest(test.id);
+      }
     }
   }
 
@@ -299,6 +350,21 @@ export class PlaywrightSchedulerService {
     const test = playwrightSchedulerManager.getTest(testId);
     if (!test) {
       return { success: false, error: 'Test not found' };
+    }
+
+    // Auto-cleanup: Check if test file exists, if not delete from scheduler
+    const fs = require('fs');
+    if (!fs.existsSync(test.testPath)) {
+      console.warn(`⚠️ Test file not found: ${test.testPath}`);
+      console.log(`🧹 Auto-cleanup: Removing orphaned test "${test.testName}" from scheduler`);
+
+      // Unschedule the job
+      this.unscheduleTest(testId);
+
+      // Delete from database
+      playwrightSchedulerManager.deleteTest(testId);
+
+      return { success: false, error: `Test file not found and removed from scheduler: ${test.testPath}` };
     }
 
     // Deduplication: Check if already ran today
