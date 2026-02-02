@@ -1,9 +1,11 @@
 // Scheduled Posts Executor Service
 // This service handles the execution of scheduled blog posts
 
+import { randomUUID } from 'crypto';
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { generateSingleImage } from '../gemini';
+import { getSchedulerRecoveryService } from './recovery-service';
 
 export class ScheduledPostsExecutor {
   private sqliteManager = getSQLiteManager();
@@ -211,6 +213,30 @@ export class ScheduledPostsExecutor {
 
       if (job) {
         this.scheduledJobs.set(post.id, job);
+
+        // Create execution intent for recovery tracking
+        try {
+          const recoveryService = getSchedulerRecoveryService();
+          const nextInvocation = job.nextInvocation();
+          if (nextInvocation) {
+            const nextRunDate = nextInvocation.toDate();
+            const windowEnd = new Date(nextRunDate.getTime() + 2 * 60 * 60 * 1000); // 2-hour window
+
+            await recoveryService.createIntent({
+              schedulerType: 'scheduled_posts',
+              taskId: post.id,
+              taskName: post.title,
+              intendedDate: nextRunDate.toISOString().split('T')[0],
+              intendedTime: post.scheduledTime,
+              executionWindowStart: nextRunDate.toISOString(),
+              executionWindowEnd: windowEnd.toISOString(),
+              status: 'pending',
+            });
+          }
+        } catch (error) {
+          console.error(`[ScheduledPostsExecutor] Failed to create execution intent for post "${post.title}":`, error);
+        }
+
         console.log(`✅ Scheduled post "${post.title}" with cron: ${cronExpression}`);
       } else {
         console.log(`❌ Failed to schedule post "${post.title}"`);
@@ -258,26 +284,70 @@ export class ScheduledPostsExecutor {
    * Execute a scheduled post with full blog generation and upload
    */
   public async executeScheduledPost(post: any): Promise<void> {
-    // Route to appropriate execution method based on connection type
-    const normalizedType = (post.connectionType || '').toLowerCase();
+    const today = new Date().toISOString().split('T')[0];
+    const executionId = randomUUID();
+    const recoveryService = getSchedulerRecoveryService();
 
-    if (post.connectionType === 'wordpress') {
-      await this.executeWordPressScheduledPost(post);
-    } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
-      await this.executeNaverScheduledPost(post);
-    } else if (normalizedType === 'instagram') {
-      await this.executeInstagramScheduledPost(post);
-    } else if (normalizedType === 'facebook' || normalizedType === 'fb') {
-      await this.executeFacebookScheduledPost(post);
-    } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
-      await this.executeYouTubeScheduledPost(post);
-    } else if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
-      console.log(
+    // Deduplication: Check if already ran today
+    try {
+      const hasRun = await recoveryService.hasRunToday('scheduled_posts', post.id);
+      if (hasRun) {
+        console.log(`[ScheduledPostsExecutor] Post "${post.title}" already ran today - skipping duplicate execution`);
+        return;
+      }
+    } catch (error) {
+      console.error('[ScheduledPostsExecutor] Failed to check hasRunToday:', error);
+    }
+
+    // Mark intent as running
+    try {
+      await recoveryService.markIntentRunning('scheduled_posts', post.id, today, executionId);
+    } catch (error) {
+      console.error('[ScheduledPostsExecutor] Failed to mark intent as running:', error);
+    }
+
+    let success = false;
+    let errorMessage: string | undefined;
+
+    try {
+      // Route to appropriate execution method based on connection type
+      const normalizedType = (post.connectionType || '').toLowerCase();
+
+      if (post.connectionType === 'wordpress') {
+        await this.executeWordPressScheduledPost(post);
+      } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
+        await this.executeNaverScheduledPost(post);
+      } else if (normalizedType === 'instagram') {
+        await this.executeInstagramScheduledPost(post);
+      } else if (normalizedType === 'facebook' || normalizedType === 'fb') {
+        await this.executeFacebookScheduledPost(post);
+      } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
+        await this.executeYouTubeScheduledPost(post);
+      } else if (normalizedType === 'business_identity' || normalizedType === 'business identity') {
+        console.log(
         `Skipping Business Identity scheduled post "${post.title}" — automation not yet implemented.`,
       );
       return;
-    } else {
-      throw new Error(`Unsupported connection type: ${post.connectionType}`);
+      } else {
+        throw new Error(`Unsupported connection type: ${post.connectionType}`);
+      }
+
+      success = true;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+      success = false;
+      console.error(`[ScheduledPostsExecutor] Execution failed for post "${post.title}":`, error);
+    } finally {
+      // Mark intent as completed or failed
+      try {
+        if (success) {
+          await recoveryService.markIntentCompleted('scheduled_posts', post.id, today, executionId);
+        } else {
+          await recoveryService.markIntentFailed('scheduled_posts', post.id, today, new Error(errorMessage || 'Execution failed'));
+        }
+      } catch (error) {
+        console.error('[ScheduledPostsExecutor] Failed to mark intent status:', error);
+      }
     }
   }
 

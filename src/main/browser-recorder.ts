@@ -388,10 +388,9 @@ export class BrowserRecorder {
       }
 
       // Use launchPersistentContext for more reliable browser management
-      // Use 'chromium' channel when extensions are loaded (Chrome removed --load-extension support)
       this.context = await chromium.launchPersistentContext(this.profileDir, {
         headless: false,
-        channel: copiedExtensionPaths.length > 0 ? 'chromium' : 'chrome',
+        channel: 'chrome',
         viewport: null,
         permissions: ['clipboard-read', 'clipboard-write'],
         acceptDownloads: true,

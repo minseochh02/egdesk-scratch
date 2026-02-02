@@ -3056,6 +3056,32 @@ const createWindow = async () => {
     }
 
     console.log('✅ All components initialized successfully');
+
+    // Initialize Scheduler Recovery Service (5 seconds after startup)
+    setTimeout(async () => {
+      try {
+        console.log('🔄 Checking for missed scheduler executions...');
+
+        const { getSchedulerRecoveryService } = await import('./scheduler/recovery-service');
+        const recoveryService = getSchedulerRecoveryService();
+
+        const report = await recoveryService.recoverMissedExecutions({
+          lookbackDays: 3,         // 3-day lookback window (user preference)
+          autoExecute: true,       // Auto-execute missed tasks
+          maxCatchUpExecutions: 3, // Max 3 catch-up executions
+          priorityOrder: 'oldest_first',
+        });
+
+        console.log('📊 Recovery Report:', report);
+
+        // Send notification to renderer if missed executions were found
+        if (report.missedCount > 0 && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('scheduler:recovery-report', report);
+        }
+      } catch (error) {
+        console.error('❌ Scheduler recovery failed:', error);
+      }
+    }, 5000); // 5-second delay to ensure all services are initialized
   } catch (error) {
     console.error('❌ Failed to initialize components:', error);
   }
@@ -3082,6 +3108,10 @@ const createWindow = async () => {
 
     // Register Sync Setup handlers (auto-inject sync endpoints)
     registerSyncSetupHandlers();
+
+    // Register Scheduler Recovery handlers
+    const { registerSchedulerRecoveryHandlers } = await import('./scheduler/recovery-ipc-handler');
+    registerSchedulerRecoveryHandlers();
 
     // Register MCP Server Manager handlers
     const mcpServerManager = getMCPServerManager();

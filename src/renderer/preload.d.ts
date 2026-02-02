@@ -725,6 +725,16 @@ interface AutoStartAPI {
   toggle: () => Promise<{ success: boolean; enabled: boolean; message?: string; error?: string }>;
 }
 
+/**
+ * Interface for Scheduler Recovery API.
+ */
+interface SchedulerRecoveryAPI {
+  getMissed: (options?: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  execute: (options?: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  hasRunToday: (schedulerType: string, taskId: string) => Promise<{ success: boolean; data?: boolean; error?: string }>;
+  cleanup: (retentionDays?: number) => Promise<{ success: boolean; data?: number; error?: string }>;
+  onRecoveryReport: (callback: (report: any) => void) => () => void;
+}
 
 /**
  * Main Electron API handler that exposes functionality to the renderer process
@@ -784,6 +794,7 @@ export interface IElectronAPI {
   financeHubDb: FinanceHubDbAPI;
   keepAwake: KeepAwakeAPI;
   autoStart: AutoStartAPI;
+  schedulerRecovery: SchedulerRecoveryAPI;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

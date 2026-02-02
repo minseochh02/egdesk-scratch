@@ -12,6 +12,7 @@ import { createHometaxSchema } from './migrations/002-hometax-schema';
 import { addHometaxSpreadsheetUrlColumns } from './migrations/003-hometax-spreadsheet-urls';
 import { createSyncDatabase } from './sheet-sync-init';
 import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
+import { initializeSchedulerDatabaseSchema } from './scheduler-init';
 
 /**
  * SQLite Database Initialization
@@ -80,7 +81,14 @@ export function getDatabaseSize(dbPath: string): number {
     return new Database(financeHubDbPath);
   }
 
+  export function getSchedulerDatabasePath(): string {
+    return path.join(app.getPath('userData'), 'database', 'scheduler.db');
+  }
 
+  export function getSchedulerDatabase(): Database.Database {
+    const schedulerDbPath = getSchedulerDatabasePath();
+    return new Database(schedulerDbPath);
+  }
 
 export interface DatabaseInitResult {
   success: boolean;
@@ -91,6 +99,7 @@ export interface DatabaseInitResult {
   activityDatabase?: Database.Database;
   cloudmcpDatabase?: Database.Database;
   financeHubDatabase?: Database.Database;
+  schedulerDatabase?: Database.Database;
   taskManager?: SQLiteTaskManager;
   conversationsDbPath?: string;
   taskDbPath?: string;
@@ -98,6 +107,7 @@ export interface DatabaseInitResult {
   activityDbPath?: string;
   cloudmcpDbPath?: string;
   financeHubDbPath?: string;
+  schedulerDbPath?: string;
   syncDatabase?: Database.Database;
   syncDbPath?: string;
 }
@@ -122,6 +132,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const activityDbPath = path.join(dataDir, 'activity.db');
     const cloudmcpDbPath = path.join(dataDir, 'cloudmcp.db');
     const financeHubDbPath = path.join(dataDir, 'financehub.db');
+    const schedulerDbPath = path.join(dataDir, 'scheduler.db');
     const syncDbPath = path.join(dataDir, 'egdesk.db');
 
     console.log('🔍 Database paths:');
@@ -132,6 +143,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     console.log('  Activity DB:', activityDbPath);
     console.log('  CloudMCP DB:', cloudmcpDbPath);
     console.log('  FinanceHub DB:', financeHubDbPath);
+    console.log('  Scheduler DB:', schedulerDbPath);
     console.log('  Sync DB:', syncDbPath);
 
     const conversationsDb = new Database(conversationsDbPath);
@@ -140,6 +152,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const activityDb = new Database(activityDbPath);
     const cloudmcpDb = new Database(cloudmcpDbPath);
     const financeHubDb = new Database(financeHubDbPath);
+    const schedulerDb = new Database(schedulerDbPath);
     const syncDb = createSyncDatabase({ dbPath: syncDbPath });
     
     // Initialize database schemas
@@ -151,6 +164,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeActivityDatabaseSchema(activityDb);
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
+    initializeSchedulerDatabaseSchema(schedulerDb); // Dedicated database for scheduler recovery system
 
     // ========================================
     // FinanceHub Database Separation
@@ -188,7 +202,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const taskManager = new SQLiteTaskManager(taskDb);
     
     console.log('🎉 SQLite Database fully initialized');
-    
+
     return {
       success: true,
       conversationsDatabase: conversationsDb,
@@ -197,6 +211,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       activityDatabase: activityDb,
       cloudmcpDatabase: cloudmcpDb,
       financeHubDatabase: financeHubDb,
+      schedulerDatabase: schedulerDb,
       taskManager,
       conversationsDbPath,
       taskDbPath,
@@ -204,6 +219,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       activityDbPath,
       cloudmcpDbPath,
       financeHubDbPath,
+      schedulerDbPath,
       syncDatabase: syncDb,
       syncDbPath
     };

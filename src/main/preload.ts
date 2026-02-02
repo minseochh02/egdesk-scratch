@@ -2657,6 +2657,25 @@ auth: {
   },
 
   // ========================================================================
+  // SCHEDULER RECOVERY
+  // ========================================================================
+  /**
+   * Scheduler Recovery API - manages missed execution recovery
+   */
+  schedulerRecovery: {
+    getMissed: (options?: any) => ipcRenderer.invoke('scheduler-recovery-get-missed', options),
+    execute: (options?: any) => ipcRenderer.invoke('scheduler-recovery-execute', options),
+    hasRunToday: (schedulerType: string, taskId: string) =>
+      ipcRenderer.invoke('scheduler-recovery-has-run-today', schedulerType, taskId),
+    cleanup: (retentionDays?: number) => ipcRenderer.invoke('scheduler-recovery-cleanup', retentionDays),
+    onRecoveryReport: (callback: (report: any) => void) => {
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
+      ipcRenderer.on('scheduler:recovery-report', subscription);
+      return () => ipcRenderer.removeListener('scheduler:recovery-report', subscription);
+    },
+  },
+
+  // ========================================================================
   // GENERIC IPC INVOKE METHOD
   // ========================================================================
   /**

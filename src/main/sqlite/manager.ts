@@ -47,6 +47,7 @@ export class SQLiteManager {
   private activityDb: Database.Database | null = null;
   private cloudmcpDb: Database.Database | null = null;
   private financeHubDb: Database.Database | null = null;
+  private schedulerDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -97,6 +98,7 @@ export class SQLiteManager {
       this.activityDb = result.activityDatabase!;
       this.cloudmcpDb = result.cloudmcpDatabase!;
       this.financeHubDb = result.financeHubDatabase!;
+      this.schedulerDb = result.schedulerDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
@@ -190,6 +192,14 @@ export class SQLiteManager {
   }
 
   /**
+   * Get Scheduler database size in MB
+   */
+  public getSchedulerDatabaseSize(): number {
+    if (!this.schedulerDb) return 0;
+    return getDatabaseSize(this.schedulerDb.name);
+  }
+
+  /**
    * Clean up database connections
    */
   public cleanup(): void {
@@ -198,12 +208,12 @@ export class SQLiteManager {
         this.conversationsDb.close();
         this.conversationsDb = null;
       }
-      
+
       if (this.taskDb) {
         this.taskDb.close();
         this.taskDb = null;
       }
-      
+
       if (this.wordpressDb) {
         this.wordpressDb.close();
         this.wordpressDb = null;
@@ -212,6 +222,11 @@ export class SQLiteManager {
       if (this.activityDb) {
         this.activityDb.close();
         this.activityDb = null;
+      }
+
+      if (this.schedulerDb) {
+        this.schedulerDb.close();
+        this.schedulerDb = null;
       }
       
       this.isInitialized = false;
@@ -287,6 +302,15 @@ export class SQLiteManager {
   public getFinanceHubDatabase(): Database.Database {
     this.ensureInitialized();
     return this.financeHubDb!;
+  }
+
+  /**
+   * Get the Scheduler database instance (for scheduler recovery system)
+   * Contains: execution intents, recovery tracking
+   */
+  public getSchedulerDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.schedulerDb!;
   }
 
   public getActivityManager(): SQLiteActivityManager {
