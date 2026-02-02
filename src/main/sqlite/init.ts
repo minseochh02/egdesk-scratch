@@ -71,7 +71,16 @@ export function getDatabaseSize(dbPath: string): number {
     return new Database(activityDbPath);
   }
 
-  
+  export function getFinanceHubDatabasePath(): string {
+    return path.join(app.getPath('userData'), 'database', 'financehub.db');
+  }
+
+  export function getFinanceHubDatabase(): Database.Database {
+    const financeHubDbPath = getFinanceHubDatabasePath();
+    return new Database(financeHubDbPath);
+  }
+
+
 
 export interface DatabaseInitResult {
   success: boolean;
@@ -80,15 +89,17 @@ export interface DatabaseInitResult {
   taskDatabase?: Database.Database;
   wordpressDatabase?: Database.Database;
   activityDatabase?: Database.Database;
-      cloudmcpDatabase?: Database.Database;
-      taskManager?: SQLiteTaskManager;
-      conversationsDbPath?: string;
-      taskDbPath?: string;
-      wordpressDbPath?: string;
-      activityDbPath?: string;
-      cloudmcpDbPath?: string;
-      syncDatabase?: Database.Database;
-      syncDbPath?: string;
+  cloudmcpDatabase?: Database.Database;
+  financeHubDatabase?: Database.Database;
+  taskManager?: SQLiteTaskManager;
+  conversationsDbPath?: string;
+  taskDbPath?: string;
+  wordpressDbPath?: string;
+  activityDbPath?: string;
+  cloudmcpDbPath?: string;
+  financeHubDbPath?: string;
+  syncDatabase?: Database.Database;
+  syncDbPath?: string;
 }
 
 /**
@@ -110,8 +121,9 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const wordpressDbPath = path.join(dataDir, 'wordpress.db');
     const activityDbPath = path.join(dataDir, 'activity.db');
     const cloudmcpDbPath = path.join(dataDir, 'cloudmcp.db');
+    const financeHubDbPath = path.join(dataDir, 'financehub.db');
     const syncDbPath = path.join(dataDir, 'egdesk.db');
-    
+
     console.log('🔍 Database paths:');
     console.log('  Data directory:', dataDir);
     console.log('  Conversations DB:', conversationsDbPath);
@@ -119,13 +131,15 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     console.log('  WordPress DB:', wordpressDbPath);
     console.log('  Activity DB:', activityDbPath);
     console.log('  CloudMCP DB:', cloudmcpDbPath);
+    console.log('  FinanceHub DB:', financeHubDbPath);
     console.log('  Sync DB:', syncDbPath);
-    
+
     const conversationsDb = new Database(conversationsDbPath);
     const taskDb = new Database(taskDbPath);
     const wordpressDb = new Database(wordpressDbPath);
     const activityDb = new Database(activityDbPath);
     const cloudmcpDb = new Database(cloudmcpDbPath);
+    const financeHubDb = new Database(financeHubDbPath);
     const syncDb = createSyncDatabase({ dbPath: syncDbPath });
     
     // Initialize database schemas
@@ -137,29 +151,59 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeActivityDatabaseSchema(activityDb);
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
-    initializeShinhanTransactionsSchema(conversationsDb); // Initialize Shinhan transactions schema
-    migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema and migrate Shinhan data
-    createHometaxSchema(conversationsDb); // Initialize Hometax schema for tax invoice management
-    addHometaxSpreadsheetUrlColumns(conversationsDb); // Add spreadsheet URL columns to Hometax tables
+
+    // ========================================
+    // FinanceHub Database Separation
+    // ========================================
+    const { separateFinanceHubDatabase, hasFinanceHubSeparation } = await import('./migrations/004-separate-financehub-database');
+
+    if (!hasFinanceHubSeparation(conversationsDb)) {
+      console.log('🔄 FinanceHub tables found in conversations.db - running separation migration...');
+
+      // First initialize old schema in conversations.db (if needed for migration)
+      initializeShinhanTransactionsSchema(conversationsDb);
+      migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema in conversations.db
+      createHometaxSchema(conversationsDb);
+      addHometaxSpreadsheetUrlColumns(conversationsDb);
+
+      // Now migrate to new database
+      const migrationResult = separateFinanceHubDatabase(conversationsDb, financeHubDb);
+
+      if (!migrationResult.success) {
+        console.error('❌ FinanceHub separation failed:', migrationResult.error);
+        console.error('⚠️ Continuing with FinanceHub in conversations.db (fallback)');
+      } else {
+        console.log('✅ FinanceHub successfully separated into dedicated database');
+      }
+    } else {
+      console.log('✅ FinanceHub already in dedicated database - initializing schema...');
+      // Just ensure schema exists in financehub.db
+      const { initializeFinanceHubSchema } = await import('./financehub');
+      const { createHometaxSchema } = await import('./migrations/002-hometax-schema');
+      initializeFinanceHubSchema(financeHubDb);
+      createHometaxSchema(financeHubDb);
+    }
     
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
     
     console.log('🎉 SQLite Database fully initialized');
     
-    return { 
-      success: true, 
-      conversationsDatabase: conversationsDb, 
+    return {
+      success: true,
+      conversationsDatabase: conversationsDb,
       taskDatabase: taskDb,
       wordpressDatabase: wordpressDb,
       activityDatabase: activityDb,
       cloudmcpDatabase: cloudmcpDb,
-      taskManager, 
+      financeHubDatabase: financeHubDb,
+      taskManager,
       conversationsDbPath,
       taskDbPath,
       wordpressDbPath,
       activityDbPath,
       cloudmcpDbPath,
+      financeHubDbPath,
       syncDatabase: syncDb,
       syncDbPath
     };

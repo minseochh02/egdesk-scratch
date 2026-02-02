@@ -31,6 +31,7 @@ class NHCardAutomator extends BaseBankAutomator {
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;
+    this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
   }
 
   // ============================================================================
@@ -61,6 +62,64 @@ class NHCardAutomator extends BaseBankAutomator {
         await this.page.locator(`xpath=${selector.xpath}`).click({ force: true, timeout: 10000 });
       }
     }
+  }
+
+  // ============================================================================
+  // DEBUG MODE - MANUAL PASSWORD ENTRY
+  // ============================================================================
+
+  /**
+   * Waits for user to press Enter in console after manually typing password
+   * @returns {Promise<void>}
+   */
+  async waitForManualPasswordEntry() {
+    this.log('DEBUG MODE: Waiting for manual password entry...');
+
+    const { BrowserWindow, ipcMain } = require('electron');
+
+    return new Promise((resolve, reject) => {
+      // Get the main window to send event to renderer
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+
+      if (!mainWindow) {
+        this.log('No main window found, falling back to timeout');
+        // Fallback: just wait 10 seconds
+        setTimeout(() => resolve(), 10000);
+        return;
+      }
+
+      this.log('Sending show-continue event to renderer...');
+
+      // Set up listener BEFORE sending the show event
+      const continueHandler = () => {
+        this.log('✅ Continue button clicked! Hiding modal and proceeding...');
+
+        try {
+          // Clean up listener
+          ipcMain.removeListener('manual-password:continue', continueHandler);
+
+          // Hide the modal
+          mainWindow.webContents.send('manual-password:hide-continue');
+
+          // Small delay to let modal close
+          setTimeout(() => {
+            this.log('Resuming automation...');
+            resolve();
+          }, 300);
+        } catch (error) {
+          this.log(`Error in continue handler: ${error.message}`, 'error');
+          reject(error);
+        }
+      };
+
+      // Attach listener
+      ipcMain.on('manual-password:continue', continueHandler);
+
+      // Now send event to show the modal
+      mainWindow.webContents.send('manual-password:show-continue');
+
+      this.log('Modal should now be visible. Waiting for user to click continue...');
+    });
   }
 
   // ============================================================================
@@ -106,21 +165,39 @@ class NHCardAutomator extends BaseBankAutomator {
       await this.page.fill(this.config.xpaths.idInput.css, userId);
       await this.page.waitForTimeout(3000);
 
-      // Step 5: Click and type password using keyboard
+      // Step 5: Click and type password
       this.log('Entering password...');
       await this.clickElement(this.config.xpaths.passwordInput);
       await this.page.waitForTimeout(3000);
 
-      // Focus the password field and type via Arduino HID
+      // Focus the password field
       const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
       await passwordField.focus();
       await this.page.waitForTimeout(500);
 
-      this.log('Typing password via Arduino HID...');
-      await this.typeViaArduino(password);
-      this.log('Password typed via Arduino HID');
+      // Step 6: Fill password (Arduino HID or Manual)
+      if (this.manualPassword) {
+        // DEBUG MODE: Manual password entry
+        this.log('Manual password mode enabled');
+        await passwordField.click();
+        await this.page.waitForTimeout(1500);
 
-      // Step 6: Click login button
+        this.log('Waiting for manual password entry...');
+        await this.waitForManualPasswordEntry();
+        this.log('Manual password entry completed');
+      } else {
+        // AUTOMATIC MODE: Arduino HID keyboard (bypasses security keyboard!)
+        this.log('Typing password via Arduino HID...');
+        try {
+          await this.typeViaArduino(password);
+          this.log('Password typed via Arduino HID');
+        } catch (e) {
+          this.log(`Arduino HID password entry failed: ${e.message}`, 'error');
+          throw new Error(`Password entry failed: ${e.message}`);
+        }
+      }
+
+      // Step 7: Click login button
       this.log('Clicking login button...');
       await this.clickElement(this.config.xpaths.loginButton);
       await this.page.waitForTimeout(3000);

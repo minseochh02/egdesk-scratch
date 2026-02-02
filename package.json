@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -121,7 +121,6 @@
     "@supabase/supabase-js": "^2.75.1",
     "@types/ws": "^8.18.1",
     "adm-zip": "^0.5.16",
-    "canvas": "^2.11.2",
     "cheerio": "^1.1.2",
     "docx": "^9.5.1",
     "dotenv": "^17.2.3",

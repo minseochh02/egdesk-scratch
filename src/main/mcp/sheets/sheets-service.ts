@@ -1,4 +1,5 @@
 import { getAuthService } from '../../auth/auth-service';
+import { getDriveService } from '../../drive-service';
 
 export interface SheetInfo {
   sheetId: number;
@@ -472,6 +473,16 @@ export class SheetsService {
       await this.formatHeaders(result.spreadsheetId, 'Sheet1');
     }
 
+    // Move to Transactions folder
+    try {
+      const driveService = getDriveService();
+      await driveService.moveFileToFolder(result.spreadsheetId, 'Transactions');
+      console.log('✅ Moved transactions spreadsheet to EGDesk/Transactions/');
+    } catch (error) {
+      console.warn('⚠️ Could not organize spreadsheet:', error);
+      // Don't fail the entire operation if folder organization fails
+    }
+
     return result;
   }
 
@@ -598,6 +609,16 @@ export class SheetsService {
       // Format the headers
       if (result.spreadsheetId) {
         await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+      }
+
+      // Move to Tax Invoices folder
+      try {
+        const driveService = getDriveService();
+        await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
+        console.log('✅ Moved tax invoice spreadsheet to EGDesk/Tax Invoices/');
+      } catch (error) {
+        console.warn('⚠️ Could not organize spreadsheet:', error);
+        // Don't fail the entire operation if folder organization fails
       }
 
       return {

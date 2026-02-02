@@ -13,6 +13,7 @@ import { google, sheets_v4 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import Store from 'electron-store';
 import { getAuthService } from './auth/auth-service';
+import { getDriveService } from './drive-service';
 
 // Types
 export interface EGDeskDevFolderConfig {
@@ -144,129 +145,28 @@ export class EGDeskDevSpreadsheetService {
   }
 
   /**
-   * Find or create the main EGDesk folder in Google Drive
+   * Migrate old dev folder config to new unified format
    */
-  private async findOrCreateEGDeskFolder(drive: any): Promise<string> {
-    console.log('🔍 Searching for EGDesk folder in Google Drive...');
-    
-    const searchResponse = await drive.files.list({
-      q: "name = 'EGDesk' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-      fields: 'files(id, name)',
-      spaces: 'drive',
-    });
-
-    if (searchResponse.data.files && searchResponse.data.files.length > 0) {
-      const folderId = searchResponse.data.files[0].id!;
-      console.log('✅ Found existing EGDesk folder:', folderId);
-      return folderId;
-    }
-
-    // Create EGDesk folder
-    console.log('📁 EGDesk folder not found, creating...');
-    const createResponse = await drive.files.create({
-      requestBody: {
-        name: 'EGDesk',
-        mimeType: 'application/vnd.google-apps.folder',
-      },
-      fields: 'id, webViewLink',
-    });
-
-    if (!createResponse.data.id) {
-      throw new Error('Failed to create EGDesk folder');
-    }
-
-    console.log('✅ Created EGDesk folder:', createResponse.data.id);
-    return createResponse.data.id;
-  }
-
-  /**
-   * Find or create the Dev folder inside EGDesk folder
-   * Structure: Google Drive / EGDesk / Dev / [dev spreadsheets]
-   */
-  async findOrCreateDevFolder(): Promise<EGDeskDevFolderConfig> {
-    // Check if we already have a stored dev folder config
-    const existingConfig = this.getDevFolderConfig();
-    if (existingConfig) {
-      // Verify the folder still exists
-      try {
-        const auth = await this.getOAuth2Client();
-        const drive = google.drive({ version: 'v3', auth });
-        
-        const folderCheck = await drive.files.get({
-          fileId: existingConfig.folderId,
-          fields: 'id, trashed',
+  private migrateDevFolderConfig(): void {
+    try {
+      const oldConfig = this.getDevFolderConfig();
+      if (oldConfig && oldConfig.folderId) {
+        console.log('🔄 Migrating old Dev folder config to unified format...');
+        const driveService = getDriveService();
+        // The DriveService uses getStore() which accesses the same storage,
+        // so we can directly save to the new format
+        const { saveFolderConfig } = require('./storage');
+        saveFolderConfig('Dev', {
+          folderId: oldConfig.folderId,
+          parentId: oldConfig.parentFolderId,
+          lastVerified: oldConfig.createdAt,
         });
-        
-        if (folderCheck.data.id && !folderCheck.data.trashed) {
-          console.log('📁 Using existing Dev folder:', existingConfig.folderId);
-          return existingConfig;
-        }
-      } catch (error) {
-        console.log('⚠️ Stored Dev folder not accessible, will create new one');
+        console.log('✅ Migrated Dev folder config to unified format');
       }
+    } catch (error) {
+      console.warn('⚠️ Could not migrate old Dev folder config:', error);
+      // Non-critical, continue without migrating
     }
-
-    console.log('📂 Creating Dev folder structure...');
-    
-    const auth = await this.getOAuth2Client();
-    const drive = google.drive({ version: 'v3', auth });
-
-    // Step 1: Find or create the main EGDesk folder
-    const egdeskFolderId = await this.findOrCreateEGDeskFolder(drive);
-
-    // Step 2: Check if Dev folder already exists inside EGDesk
-    const devFolderSearch = await drive.files.list({
-      q: `name = 'Dev' and mimeType = 'application/vnd.google-apps.folder' and '${egdeskFolderId}' in parents and trashed = false`,
-      fields: 'files(id, name, webViewLink)',
-      spaces: 'drive',
-    });
-
-    let devFolderId: string;
-    let devFolderUrl: string;
-
-    if (devFolderSearch.data.files && devFolderSearch.data.files.length > 0) {
-      // Dev folder exists
-      devFolderId = devFolderSearch.data.files[0].id!;
-      devFolderUrl = devFolderSearch.data.files[0].webViewLink || 
-                     `https://drive.google.com/drive/folders/${devFolderId}`;
-      console.log('✅ Found existing Dev folder:', devFolderId);
-    } else {
-      // Create Dev folder inside EGDesk
-      console.log('📁 Creating Dev folder inside EGDesk...');
-      const createDevFolder = await drive.files.create({
-        requestBody: {
-          name: 'Dev',
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [egdeskFolderId],
-        },
-        fields: 'id, webViewLink',
-      });
-
-      if (!createDevFolder.data.id) {
-        throw new Error('Failed to create Dev folder');
-      }
-
-      devFolderId = createDevFolder.data.id;
-      devFolderUrl = createDevFolder.data.webViewLink || 
-                     `https://drive.google.com/drive/folders/${devFolderId}`;
-      console.log('✅ Created Dev folder:', devFolderId);
-    }
-
-    // Save the configuration
-    const folderConfig: EGDeskDevFolderConfig = {
-      folderId: devFolderId,
-      folderUrl: devFolderUrl,
-      parentFolderId: egdeskFolderId,
-      createdAt: new Date().toISOString(),
-    };
-
-    this.saveDevFolderConfig(folderConfig);
-    
-    console.log('📂 Dev folder structure ready:');
-    console.log(`   EGDesk: ${egdeskFolderId}`);
-    console.log(`   └── Dev: ${devFolderId}`);
-
-    return folderConfig;
   }
 
   /**
@@ -280,16 +180,19 @@ export class EGDeskDevSpreadsheetService {
   }> {
     console.log('📝 Creating new dev spreadsheet...');
 
-    // Step 1: Ensure dev folder exists first
-    const devFolderConfig = await this.findOrCreateDevFolder();
+    // Migrate old config if needed (one-time operation)
+    this.migrateDevFolderConfig();
+
+    // Step 1: Ensure dev folder exists first using unified DriveService
+    const driveService = getDriveService();
+    const devFolderConfig = await driveService.findOrCreateSubfolder('Dev');
 
     const auth = await this.getOAuth2Client();
     const sheets = google.sheets({ version: 'v4', auth });
-    const drive = google.drive({ version: 'v3', auth });
 
     // Step 2: Create the spreadsheet with schema headers
     const title = `EGDesk MCP Servers (Dev) - ${new Date().toISOString().split('T')[0]}`;
-    
+
     const createResponse = await sheets.spreadsheets.create({
       requestBody: {
         properties: {
@@ -332,20 +235,10 @@ export class EGDeskDevSpreadsheetService {
 
     console.log(`✅ Created dev spreadsheet: ${spreadsheetId}`);
 
-    // Step 3: Move spreadsheet to the Dev folder
+    // Step 3: Move spreadsheet to the Dev folder using DriveService
     try {
-      // Get current parents and move file
-      const file = await drive.files.get({ fileId: spreadsheetId, fields: 'parents' });
-      const previousParents = file.data.parents?.join(',') || '';
-      
-      await drive.files.update({
-        fileId: spreadsheetId,
-        addParents: devFolderConfig.folderId,
-        removeParents: previousParents,
-        fields: 'id, parents',
-      });
-
-      console.log('📁 Moved dev spreadsheet to Dev folder:', devFolderConfig.folderId);
+      await driveService.moveFileToFolder(spreadsheetId, 'Dev');
+      console.log('✅ Moved dev spreadsheet to Dev folder');
     } catch (error) {
       console.warn('⚠️ Could not move to Dev folder:', error);
     }
@@ -365,11 +258,13 @@ export class EGDeskDevSpreadsheetService {
 
     this.saveDevConfig(config);
 
+    const devFolderUrl = `https://drive.google.com/drive/folders/${devFolderConfig.folderId}`;
+
     return {
       spreadsheetId,
       spreadsheetUrl,
       message: `Created dev spreadsheet: ${title}`,
-      devFolderUrl: devFolderConfig.folderUrl,
+      devFolderUrl,
     };
   }
 

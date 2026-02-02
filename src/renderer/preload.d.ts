@@ -582,6 +582,7 @@ interface AuthAPI {
     switchAccount: (userId: string) => Promise<{ success: boolean; session?: any; error?: string }>;
     handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
   getGoogleWorkspaceToken: () => Promise<{ success: boolean; token: any | null }>;
+  debugForceRefreshToken: () => Promise<{ success: boolean; token?: any; message?: string; error?: string }>;
     saveSession: (session: any) => Promise<{ success: boolean; error?: string }>;
   callEdgeFunction: (options: any) => Promise<{ success: boolean; status?: number; statusText?: string; data?: any; error?: string }>;
     onAuthStateChanged: (callback: (data: { success: boolean; session: any | null; user: any | null }) => void) => () => void;

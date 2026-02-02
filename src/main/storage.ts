@@ -1289,7 +1289,7 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
 import { parseHometaxExcel } from './hometax-excel-parser';
 import { importTaxInvoices, recordSyncOperation, getTaxInvoices, getSpreadsheetUrl, saveSpreadsheetUrl } from './sqlite/hometax';
-import { getConversationsDatabase } from './sqlite/init';
+import { getConversationsDatabase, getFinanceHubDatabase } from './sqlite/init';
 
 /**
  * Fetch available certificates from Hometax
@@ -1496,7 +1496,7 @@ ipcMain.handle('hometax:get-all-saved-certificates', async () => {
  */
 ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
   try {
-    const db = getConversationsDatabase();
+    const db = getFinanceHubDatabase();
     const result = getTaxInvoices(db, filters);
     return result;
   } catch (error) {
@@ -1513,7 +1513,7 @@ ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
  */
 ipcMain.handle('hometax:get-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase') => {
   try {
-    const db = getConversationsDatabase();
+    const db = getFinanceHubDatabase();
     const result = getSpreadsheetUrl(db, businessNumber, invoiceType);
     return result;
   } catch (error) {
@@ -1530,7 +1530,7 @@ ipcMain.handle('hometax:get-spreadsheet-url', async (event, businessNumber: stri
  */
 ipcMain.handle('hometax:save-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) => {
   try {
-    const db = getConversationsDatabase();
+    const db = getFinanceHubDatabase();
     const result = saveSpreadsheetUrl(db, businessNumber, invoiceType, spreadsheetUrl);
     return result;
   } catch (error) {
@@ -1557,7 +1557,7 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     }
 
     // Parse and save the downloaded Excel files
-    const db = getConversationsDatabase();
+    const db = getFinanceHubDatabase();
     let salesInserted = 0;
     let salesDuplicate = 0;
     let purchaseInserted = 0;
@@ -1617,6 +1617,135 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+// ========================================================================
+// DRIVE SERVICE FOLDER MANAGEMENT HELPERS
+// ========================================================================
+
+/**
+ * Folder configuration type for Drive Service
+ */
+export interface FolderConfig {
+  folderId: string;
+  parentId?: string;
+  lastVerified: string;
+}
+
+/**
+ * Get folder configuration from electron-store
+ * @param subfolder - The subfolder key (e.g., 'root', 'Dev', 'Transactions', 'Tax Invoices')
+ */
+export function getFolderConfig(subfolder: string): FolderConfig | null {
+  try {
+    const folders = store.get('egdeskFolders') as Record<string, FolderConfig> | undefined;
+    return folders?.[subfolder] || null;
+  } catch (error) {
+    console.error('Error getting folder config:', error);
+    return null;
+  }
+}
+
+/**
+ * Save folder configuration to electron-store
+ * @param subfolder - The subfolder key (e.g., 'root', 'Dev', 'Transactions', 'Tax Invoices')
+ * @param config - The folder configuration to save
+ */
+export function saveFolderConfig(subfolder: string, config: FolderConfig): void {
+  try {
+    const folders = store.get('egdeskFolders') as Record<string, FolderConfig> | undefined || {};
+    folders[subfolder] = config;
+    store.set('egdeskFolders', folders);
+    console.log(`💾 Saved ${subfolder} folder config to store`);
+  } catch (error) {
+    console.error('Error saving folder config:', error);
+  }
+}
+
+/**
+ * Get all folder configurations
+ */
+export function getAllFolderConfigs(): Record<string, FolderConfig> {
+  try {
+    return store.get('egdeskFolders') as Record<string, FolderConfig> | undefined || {};
+  } catch (error) {
+    console.error('Error getting all folder configs:', error);
+    return {};
+  }
+}
+
+/**
+ * Clear all folder configurations (useful for testing or reset)
+ */
+export function clearAllFolderConfigs(): void {
+  try {
+    store.delete('egdeskFolders');
+    console.log('🗑️ Cleared all folder configs from store');
+  } catch (error) {
+    console.error('Error clearing folder configs:', error);
+  }
+}
+
+/**
+ * IPC Handler: Manually trigger spreadsheet re-organization
+ */
+ipcMain.handle('finance-hub:reorganize-spreadsheets', async () => {
+  try {
+    const { organizeExistingSpreadsheets } = await import('./migrations/organize-existing-spreadsheets');
+    const result = await organizeExistingSpreadsheets();
+    return {
+      success: true,
+      organized: result.organized,
+      skipped: result.skipped,
+      failed: result.failed,
+    };
+  } catch (error) {
+    console.error('Error reorganizing spreadsheets:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+/**
+ * IPC Handler: Reset spreadsheet organization migration status
+ */
+ipcMain.handle('finance-hub:reset-organization-migration', async () => {
+  try {
+    const { resetMigrationStatus } = await import('./migrations/organize-existing-spreadsheets');
+    resetMigrationStatus();
+    return { success: true };
+  } catch (error) {
+    console.error('Error resetting migration status:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+/**
+ * IPC Handler: Check if spreadsheet organization migration has run
+ */
+ipcMain.handle('finance-hub:check-organization-migration', async () => {
+  try {
+    const { hasMigrationRun } = await import('./migrations/organize-existing-spreadsheets');
+    const hasRun = hasMigrationRun();
+    const store = getStore();
+    const ranAt = store.get('migrations.spreadsheetsOrganizedAt') as string | undefined;
+    return {
+      success: true,
+      hasRun,
+      ranAt: ranAt || null,
+    };
+  } catch (error) {
+    console.error('Error checking migration status:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 });

@@ -46,6 +46,7 @@ export class SQLiteManager {
   private wordpressDb: Database.Database | null = null;
   private activityDb: Database.Database | null = null;
   private cloudmcpDb: Database.Database | null = null;
+  private financeHubDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -95,6 +96,7 @@ export class SQLiteManager {
       this.wordpressDb = result.wordpressDatabase!;
       this.activityDb = result.activityDatabase!;
       this.cloudmcpDb = result.cloudmcpDatabase!;
+      this.financeHubDb = result.financeHubDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
@@ -104,7 +106,7 @@ export class SQLiteManager {
       this.activityManager = new SQLiteActivityManager(this.activityDb);
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
-      this.financeHubManager = new FinanceHubDbManager(this.conversationsDb);
+      this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
       this.isInitialized = true;
       
       return { success: true };
@@ -177,6 +179,14 @@ export class SQLiteManager {
   public getWordPressDatabaseSize(): number {
     if (!this.wordpressDb) return 0;
     return getDatabaseSize(this.wordpressDb.name);
+  }
+
+  /**
+   * Get FinanceHub database size in MB
+   */
+  public getFinanceHubDatabaseSize(): number {
+    if (!this.financeHubDb) return 0;
+    return getDatabaseSize(this.financeHubDb.name);
   }
 
   /**
@@ -270,6 +280,15 @@ export class SQLiteManager {
     return this.activityDb!;
   }
 
+  /**
+   * Get the FinanceHub database instance (for direct database operations)
+   * Contains: banks, accounts, transactions, hometax tables
+   */
+  public getFinanceHubDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.financeHubDb!;
+  }
+
   public getActivityManager(): SQLiteActivityManager {
     this.ensureInitialized();
     if (!this.activityManager) {
@@ -313,7 +332,7 @@ export class SQLiteManager {
   public getFinanceHubManager(): FinanceHubDbManager {
     this.ensureInitialized();
     if (!this.financeHubManager) {
-      this.financeHubManager = new FinanceHubDbManager(this.conversationsDb!);
+      this.financeHubManager = new FinanceHubDbManager(this.financeHubDb!);
     }
     return this.financeHubManager;
   }
@@ -594,6 +613,13 @@ export class SQLiteManager {
       const { getFinanceHubScheduler } = require('../financehub/scheduler/FinanceHubScheduler');
       const scheduler = getFinanceHubScheduler();
       const settings = scheduler.getSettings();
+
+      // Migration: Update old default times to new default (09:00)
+      if (settings.time === '06:00' || settings.time === '09:46' || settings.time === '09:52' || settings.time === '09:55' || settings.time === '10:10' || settings.time === '10:13' || settings.time === '10:15' || settings.time === '10:20' || settings.time === '10:33') {
+        console.log(`[FinanceHubScheduler] Migrating time from ${settings.time} to 09:00`);
+        scheduler.updateSettings({ time: '09:00' });
+      }
+
       if (settings.enabled) {
         scheduler.start();
       }
@@ -775,7 +801,8 @@ export class SQLiteManager {
           sizes: {
             conversations: this.getConversationsDatabaseSize(),
             tasks: this.getTaskDatabaseSize(),
-            wordpress: this.getWordPressDatabaseSize()
+            wordpress: this.getWordPressDatabaseSize(),
+            financeHub: this.getFinanceHubDatabaseSize()
           }
         };
       } catch (error) {
@@ -789,15 +816,15 @@ export class SQLiteManager {
     // Get database paths
     ipcMain.handle('sqlite-get-database-paths', async () => {
       try {
-        const { getConversationsDatabasePath, getWordPressDatabasePath } = require('./init');
-        const { getTaskDatabasePath } = require('./init');
-        
+        const { getConversationsDatabasePath, getWordPressDatabasePath, getTaskDatabasePath, getFinanceHubDatabasePath } = require('./init');
+
         return {
           success: true,
           paths: {
             conversations: getConversationsDatabasePath(),
             tasks: getTaskDatabasePath(),
-            wordpress: getWordPressDatabasePath()
+            wordpress: getWordPressDatabasePath(),
+            financeHub: getFinanceHubDatabasePath()
           }
         };
       } catch (error) {

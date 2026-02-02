@@ -2,6 +2,23 @@ import { ipcMain } from 'electron';
 import { SheetsService } from './mcp/sheets/sheets-service';
 import { createSheetToSQLImporter } from './mcp/sheets/sheet-to-sql';
 import { getSQLiteManager } from './sqlite/manager';
+import { organizeExistingSpreadsheets, hasMigrationRun } from './migrations/organize-existing-spreadsheets';
+
+/**
+ * Run migration once before first spreadsheet sync
+ */
+async function ensureMigrationRun(): Promise<void> {
+  if (!hasMigrationRun()) {
+    console.log('🔄 First spreadsheet sync - running organization migration...');
+    try {
+      await organizeExistingSpreadsheets();
+      console.log('✅ Migration complete');
+    } catch (error) {
+      console.warn('⚠️ Migration failed (non-blocking):', error);
+      // Don't block spreadsheet sync if migration fails
+    }
+  }
+}
 
 export function registerSheetsHandlers(): void {
   const sheetsService = new SheetsService();
@@ -26,6 +43,9 @@ export function registerSheetsHandlers(): void {
   // Get or create persistent transactions spreadsheet
   ipcMain.handle('sheets:get-or-create-transactions-spreadsheet', async (_, { transactions, banks, accounts, persistentSpreadsheetId }) => {
     try {
+      // Trigger migration on first sync
+      await ensureMigrationRun();
+
       const result = await sheetsService.getOrCreateTransactionsSpreadsheet(transactions, banks, accounts, persistentSpreadsheetId);
       return {
         success: true,
@@ -175,6 +195,9 @@ export function registerSheetsHandlers(): void {
   // Export tax invoices to spreadsheet
   ipcMain.handle('sheets:export-tax-invoices', async (_, { invoices, invoiceType, existingSpreadsheetUrl }) => {
     try {
+      // Trigger migration on first sync
+      await ensureMigrationRun();
+
       const result = await sheetsService.exportTaxInvoicesToSpreadsheet(invoices, invoiceType, existingSpreadsheetUrl);
 
       // If successful and we have a spreadsheet URL, save it to the database

@@ -12,6 +12,7 @@ interface ScheduleSettings {
   retryCount: number;
   retryDelayMinutes: number;
   includeTaxSync: boolean; // Include Hometax tax invoice sync
+  spreadsheetSyncEnabled?: boolean; // Enable auto-export to spreadsheet
   lastSyncTime?: string;
   lastSyncStatus?: 'success' | 'failed' | 'running';
 }
@@ -43,10 +44,11 @@ export class FinanceHubScheduler extends EventEmitter {
   private settings: ScheduleSettings;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
-    time: '06:00',
+    time: '09:00',
     retryCount: 3,
     retryDelayMinutes: 5,
     includeTaxSync: true,
+    spreadsheetSyncEnabled: true,
   };
 
   private constructor() {
@@ -223,10 +225,25 @@ export class FinanceHubScheduler extends EventEmitter {
         const taxSuccessCount = taxResults.filter(r => r.success).length;
         const status = totalFailed === 0 ? 'success' : 'failed';
 
+        // Export to spreadsheet if enabled
+        let spreadsheetResult: { success: boolean; spreadsheetUrl?: string; error?: string } | undefined;
+        if (this.settings.spreadsheetSyncEnabled) {
+          try {
+            spreadsheetResult = await this.exportToSpreadsheet(bankResults, taxResults);
+          } catch (error) {
+            console.warn('[FinanceHubScheduler] ⚠️ Spreadsheet export failed (non-blocking):', error);
+            spreadsheetResult = {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+          }
+        }
+
         this.updateSyncStatus(status);
         this.emit('sync-completed', {
           bankResults,
           taxResults,
+          spreadsheetResult,
           bankSuccessCount,
           taxSuccessCount,
           bankFailedCount: failedBankSyncs.length,
@@ -264,80 +281,11 @@ export class FinanceHubScheduler extends EventEmitter {
       // Get all active accounts
       const accounts = financeHubManager.getAllAccounts().filter(acc => acc.isActive);
 
-      console.log(`[FinanceHubScheduler] Syncing ${accounts.length} active accounts`);
+      console.log(`[FinanceHubScheduler] Found ${accounts.length} active accounts (bank sync disabled - use manual sync)`);
 
-      // Import FinanceHubService
-      const { FinanceHubService } = require('../FinanceHubService');
-      const financeHubService = FinanceHubService.getInstance();
-
-      // Sync each account
-      for (const account of accounts) {
-        try {
-          console.log(`[FinanceHubScheduler] Syncing ${account.bankId} - ${account.accountNumber}`);
-
-          // Get transactions for last 3 months by default
-          const endDate = new Date();
-          const startDate = new Date();
-          startDate.setMonth(startDate.getMonth() - 3);
-
-          const transactionResult = await financeHubService.getTransactions(
-            account.bankId,
-            account.accountNumber,
-            startDate.toISOString().split('T')[0].replace(/-/g, ''),
-            endDate.toISOString().split('T')[0].replace(/-/g, '')
-          );
-
-          if (transactionResult.success && transactionResult.data) {
-            // Import transactions to database
-            const accountData = {
-              accountNumber: account.accountNumber,
-              accountName: account.accountName,
-              customerName: account.customerName,
-              balance: transactionResult.data.metadata?.balance || account.balance,
-              availableBalance: transactionResult.data.metadata?.availableBalance || account.availableBalance,
-            };
-
-            const transactionsData = (transactionResult.data.transactions || []).map((tx: any) => ({
-              date: tx.date,
-              time: tx.time,
-              type: tx.type,
-              withdrawal: tx.withdrawal || 0,
-              deposit: tx.deposit || 0,
-              description: tx.description,
-              balance: tx.balance || 0,
-              branch: tx.branch,
-            }));
-
-            const importResult = financeHubManager.importTransactions(
-              account.bankId,
-              accountData,
-              transactionsData,
-              {
-                queryPeriodStart: startDate.toISOString().split('T')[0],
-                queryPeriodEnd: endDate.toISOString().split('T')[0],
-              }
-            );
-
-            bankResults.push({
-              bankId: account.bankId,
-              accountNumber: account.accountNumber,
-              success: true,
-              inserted: importResult.inserted,
-              skipped: importResult.skipped,
-            });
-          } else {
-            throw new Error(transactionResult.error || 'Failed to fetch transactions');
-          }
-        } catch (error) {
-          console.error(`[FinanceHubScheduler] Failed to sync ${account.accountNumber}:`, error);
-          bankResults.push({
-            bankId: account.bankId,
-            accountNumber: account.accountNumber,
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      // TODO: Bank account syncing requires FinanceHubService which doesn't exist yet
+      // For now, automatic syncing only supports tax invoices
+      // Users should manually sync bank accounts via the UI
 
       // Sync tax invoices if enabled
       if (this.settings.includeTaxSync) {
@@ -368,8 +316,8 @@ export class FinanceHubScheduler extends EventEmitter {
       console.log(`[FinanceHubScheduler] Syncing tax invoices for ${businessNumbers.length} businesses`);
 
       // Get database
-      const { getConversationsDatabase } = require('../../sqlite/init');
-      const db = getConversationsDatabase();
+      const { getFinanceHubDatabase } = require('../../sqlite/init');
+      const db = getFinanceHubDatabase();
 
       // Sync each business
       for (const businessNumber of businessNumbers) {
@@ -461,6 +409,136 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     } catch (error) {
       console.error('[FinanceHubScheduler] Tax sync error:', error);
+    }
+  }
+
+  /**
+   * Export collected data to Google Spreadsheet
+   */
+  private async exportToSpreadsheet(
+    bankResults: SyncResult[],
+    taxResults: TaxSyncResult[]
+  ): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
+    try {
+      console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet...');
+
+      const { getSheetsService } = await import('../../mcp/sheets/sheets-service');
+      const { getSQLiteManager } = await import('../../sqlite/manager');
+
+      const sheetsService = getSheetsService();
+      const sqliteManager = getSQLiteManager();
+      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+      const conversationsDb = financeHubDb; // For backward compatibility with hometax queries
+
+      // 1. Export bank transactions to spreadsheet
+      const transactions = financeHubDb.prepare(`
+        SELECT * FROM transactions
+        ORDER BY date DESC, time DESC
+        LIMIT 1000
+      `).all();
+
+      const banks = financeHubDb.prepare('SELECT * FROM banks').all();
+      const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
+
+      const banksMap: any = {};
+      for (const bank of banks as any[]) {
+        banksMap[bank.id] = bank;
+      }
+
+      const store = getStore();
+      const financeHub = store.get('financeHub') as any || {};
+      if (!financeHub.persistentSpreadsheets) {
+        financeHub.persistentSpreadsheets = {};
+      }
+      const persistentSpreadsheetId = financeHub.persistentSpreadsheets['scheduler-sync']?.spreadsheetId;
+
+      const transactionsResult = await sheetsService.getOrCreateTransactionsSpreadsheet(
+        'FinanceHub Auto-Sync',
+        transactions,
+        banksMap,
+        accounts,
+        persistentSpreadsheetId
+      );
+
+      financeHub.persistentSpreadsheets['scheduler-sync'] = {
+        spreadsheetId: transactionsResult.spreadsheetId,
+        spreadsheetUrl: transactionsResult.spreadsheetUrl,
+        title: 'FinanceHub Auto-Sync',
+        lastUpdated: new Date().toISOString(),
+      };
+      store.set('financeHub', financeHub);
+
+      console.log('[FinanceHubScheduler] ✅ Transactions spreadsheet export complete:', transactionsResult.spreadsheetUrl);
+
+      // 2. Export tax invoices to spreadsheets (if any were collected)
+      const taxSpreadsheetUrls: string[] = [];
+
+      for (const taxResult of taxResults) {
+        if (!taxResult.success) continue;
+
+        const businessNumber = taxResult.businessNumber;
+
+        // Export sales invoices
+        if (taxResult.salesInserted && taxResult.salesInserted > 0) {
+          const salesInvoices = conversationsDb.prepare(`
+            SELECT * FROM tax_invoices
+            WHERE business_number = ? AND invoice_type = 'sales'
+            ORDER BY 작성일자 DESC
+            LIMIT 1000
+          `).all(businessNumber);
+
+          if (salesInvoices.length > 0) {
+            console.log(`[FinanceHubScheduler] Exporting ${salesInvoices.length} sales invoices for ${businessNumber}...`);
+            const salesResult = await sheetsService.exportTaxInvoicesToSpreadsheet(
+              salesInvoices,
+              'sales'
+            );
+
+            if (salesResult.success && salesResult.spreadsheetUrl) {
+              taxSpreadsheetUrls.push(salesResult.spreadsheetUrl);
+              console.log(`[FinanceHubScheduler] ✅ Sales invoices exported: ${salesResult.spreadsheetUrl}`);
+            }
+          }
+        }
+
+        // Export purchase invoices
+        if (taxResult.purchaseInserted && taxResult.purchaseInserted > 0) {
+          const purchaseInvoices = conversationsDb.prepare(`
+            SELECT * FROM tax_invoices
+            WHERE business_number = ? AND invoice_type = 'purchase'
+            ORDER BY 작성일자 DESC
+            LIMIT 1000
+          `).all(businessNumber);
+
+          if (purchaseInvoices.length > 0) {
+            console.log(`[FinanceHubScheduler] Exporting ${purchaseInvoices.length} purchase invoices for ${businessNumber}...`);
+            const purchaseResult = await sheetsService.exportTaxInvoicesToSpreadsheet(
+              purchaseInvoices,
+              'purchase'
+            );
+
+            if (purchaseResult.success && purchaseResult.spreadsheetUrl) {
+              taxSpreadsheetUrls.push(purchaseResult.spreadsheetUrl);
+              console.log(`[FinanceHubScheduler] ✅ Purchase invoices exported: ${purchaseResult.spreadsheetUrl}`);
+            }
+          }
+        }
+      }
+
+      const allUrls = [transactionsResult.spreadsheetUrl, ...taxSpreadsheetUrls].join('\n');
+      console.log('[FinanceHubScheduler] ✅ All spreadsheet exports complete');
+
+      return {
+        success: true,
+        spreadsheetUrl: allUrls
+      };
+
+    } catch (error) {
+      console.error('[FinanceHubScheduler] ❌ Spreadsheet export failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
