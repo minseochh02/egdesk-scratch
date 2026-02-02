@@ -236,13 +236,34 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
       encryption_iv TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      
+
       FOREIGN KEY (bank_id) REFERENCES banks(id)
     )
   `);
 
   // ========================================
-  // 6. Indexes for Performance
+  // 6. Scheduler Execution History Table
+  // ========================================
+  // Tracks FinanceHub scheduler executions for recovery system
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS financehub_scheduler_executions (
+      id TEXT PRIMARY KEY,
+      execution_type TEXT NOT NULL CHECK (execution_type IN ('bank_sync', 'tax_sync', 'combined')),
+      status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      duration INTEGER,
+      bank_sync_results TEXT,
+      tax_sync_results TEXT,
+      total_accounts_synced INTEGER DEFAULT 0,
+      total_transactions_synced INTEGER DEFAULT 0,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ========================================
+  // 7. Indexes for Performance
   // ========================================
   db.exec(`
     -- Account indexes
@@ -267,10 +288,15 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sync_operations_bank_id ON sync_operations(bank_id);
     CREATE INDEX IF NOT EXISTS idx_sync_operations_status ON sync_operations(status);
     CREATE INDEX IF NOT EXISTS idx_sync_operations_started_at ON sync_operations(started_at);
+
+    -- Scheduler execution history indexes
+    CREATE INDEX IF NOT EXISTS idx_fh_exec_date ON financehub_scheduler_executions(DATE(started_at));
+    CREATE INDEX IF NOT EXISTS idx_fh_exec_status ON financehub_scheduler_executions(status);
+    CREATE INDEX IF NOT EXISTS idx_fh_exec_started_at ON financehub_scheduler_executions(started_at);
   `);
 
   // ========================================
-  // 7. Triggers for updated_at
+  // 8. Triggers for updated_at
   // ========================================
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS update_accounts_timestamp

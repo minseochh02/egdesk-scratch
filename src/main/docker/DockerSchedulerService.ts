@@ -1,10 +1,11 @@
 /**
  * Docker Scheduler Service
- * 
+ *
  * This service handles the scheduling and execution of Docker container tasks
  * using node-schedule for cron-like scheduling.
  */
 
+import { randomUUID } from 'crypto';
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { dockerService } from './DockerService';
@@ -12,6 +13,7 @@ import {
   DockerScheduledTask,
   CreateDockerTaskExecutionData,
 } from '../sqlite/docker-scheduler';
+import { getSchedulerRecoveryService } from '../scheduler/recovery-service';
 
 export class DockerSchedulerService {
   private static instance: DockerSchedulerService | null = null;
@@ -167,12 +169,32 @@ export class DockerSchedulerService {
 
       if (job) {
         this.scheduledJobs.set(task.id, job);
-        
+
         // Update next run time in database
         const nextInvocation = job.nextInvocation();
         if (nextInvocation) {
           const dockerSchedulerManager = this.sqliteManager.getDockerSchedulerManager();
           dockerSchedulerManager.updateNextRun(task.id, nextInvocation.toDate());
+
+          // Create execution intent for recovery tracking
+          try {
+            const recoveryService = getSchedulerRecoveryService();
+            const nextRunDate = nextInvocation.toDate();
+            const windowEnd = new Date(nextRunDate.getTime() + 2 * 60 * 60 * 1000); // 2-hour window
+
+            await recoveryService.createIntent({
+              schedulerType: 'docker',
+              taskId: task.id,
+              taskName: task.name,
+              intendedDate: nextRunDate.toISOString().split('T')[0],
+              intendedTime: task.scheduledTime,
+              executionWindowStart: nextRunDate.toISOString(),
+              executionWindowEnd: windowEnd.toISOString(),
+              status: 'pending',
+            });
+          } catch (error) {
+            console.error(`[DockerScheduler] Failed to create execution intent for task "${task.name}":`, error);
+          }
         }
 
         console.log(`✅ Scheduled task "${task.name}" - Next run: ${nextInvocation?.toDate().toISOString() || 'unknown'}`);
@@ -302,12 +324,26 @@ export class DockerSchedulerService {
     containerId?: string;
   }> {
     const startTime = new Date();
+    const today = startTime.toISOString().split('T')[0];
+    const executionId = randomUUID();
     const dockerSchedulerManager = this.sqliteManager.getDockerSchedulerManager();
-    
+    const recoveryService = getSchedulerRecoveryService();
+
     // Get fresh task data
     const task = dockerSchedulerManager.getTask(taskId);
     if (!task) {
       return { success: false, error: 'Task not found' };
+    }
+
+    // Deduplication: Check if already ran today
+    try {
+      const hasRun = await recoveryService.hasRunToday('docker', task.id);
+      if (hasRun) {
+        console.log(`[DockerScheduler] Task "${task.name}" already ran today - skipping duplicate execution`);
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('[DockerScheduler] Failed to check hasRunToday:', error);
     }
 
     // Check custom interval
@@ -320,6 +356,13 @@ export class DockerSchedulerService {
     console.log(`📝 Task: ${task.name}`);
     console.log(`🔧 Type: ${task.taskType}`);
     console.log(`🕐 Started at: ${startTime.toISOString()}`);
+
+    // Mark intent as running
+    try {
+      await recoveryService.markIntentRunning('docker', task.id, today, executionId);
+    } catch (error) {
+      console.error('[DockerScheduler] Failed to mark intent as running:', error);
+    }
 
     // Create execution record
     const executionData: CreateDockerTaskExecutionData = {
@@ -447,6 +490,17 @@ export class DockerSchedulerService {
     console.log(`🕐 Completed at: ${completedAt.toISOString()}`);
     console.log(`⏱️ Duration: ${duration}ms`);
     console.log(`===== END DOCKER TASK =====\n`);
+
+    // Mark intent as completed or failed
+    try {
+      if (success) {
+        await recoveryService.markIntentCompleted('docker', task.id, today, executionId);
+      } else {
+        await recoveryService.markIntentFailed('docker', task.id, today, new Error(errorMessage || 'Execution failed'));
+      }
+    } catch (error) {
+      console.error('[DockerScheduler] Failed to mark intent status:', error);
+    }
 
     return { success, error: errorMessage, containerId };
   }

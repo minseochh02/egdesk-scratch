@@ -4,11 +4,13 @@
  * Handles scheduling and execution of Playwright test runs using node-schedule
  */
 
+import { randomUUID } from 'crypto';
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { PlaywrightScheduledTest } from '../sqlite/playwright-scheduler';
 import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
+import { getSchedulerRecoveryService } from './recovery-service';
 
 export class PlaywrightSchedulerService {
   private static instance: PlaywrightSchedulerService | null = null;
@@ -161,6 +163,26 @@ export class PlaywrightSchedulerService {
         if (nextInvocation) {
           const playwrightSchedulerManager = this.sqliteManager.getPlaywrightSchedulerManager();
           playwrightSchedulerManager.updateNextRun(test.id, nextInvocation.toDate());
+
+          // Create execution intent for recovery tracking
+          try {
+            const recoveryService = getSchedulerRecoveryService();
+            const nextRunDate = nextInvocation.toDate();
+            const windowEnd = new Date(nextRunDate.getTime() + 2 * 60 * 60 * 1000); // 2-hour window
+
+            await recoveryService.createIntent({
+              schedulerType: 'playwright',
+              taskId: test.id,
+              taskName: test.testName,
+              intendedDate: nextRunDate.toISOString().split('T')[0],
+              intendedTime: test.scheduledTime,
+              executionWindowStart: nextRunDate.toISOString(),
+              executionWindowEnd: windowEnd.toISOString(),
+              status: 'pending',
+            });
+          } catch (error) {
+            console.error(`[PlaywrightScheduler] Failed to create execution intent for test "${test.testName}":`, error);
+          }
         }
 
         console.log(`✅ Scheduled test "${test.testName}" - Next run: ${nextInvocation?.toDate().toISOString() || 'unknown'}`);
@@ -268,12 +290,26 @@ export class PlaywrightSchedulerService {
     error?: string;
   }> {
     const startTime = new Date();
+    const today = startTime.toISOString().split('T')[0];
+    const executionId = randomUUID();
     const playwrightSchedulerManager = this.sqliteManager.getPlaywrightSchedulerManager();
+    const recoveryService = getSchedulerRecoveryService();
 
     // Get fresh test data
     const test = playwrightSchedulerManager.getTest(testId);
     if (!test) {
       return { success: false, error: 'Test not found' };
+    }
+
+    // Deduplication: Check if already ran today
+    try {
+      const hasRun = await recoveryService.hasRunToday('playwright', test.id);
+      if (hasRun) {
+        console.log(`[PlaywrightScheduler] Test "${test.testName}" already ran today - skipping duplicate execution`);
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('[PlaywrightScheduler] Failed to check hasRunToday:', error);
     }
 
     // Check custom interval
@@ -286,6 +322,13 @@ export class PlaywrightSchedulerService {
     console.log(`📝 Test: ${test.testName}`);
     console.log(`📁 Path: ${test.testPath}`);
     console.log(`🕐 Started at: ${startTime.toISOString()}`);
+
+    // Mark intent as running
+    try {
+      await recoveryService.markIntentRunning('playwright', test.id, today, executionId);
+    } catch (error) {
+      console.error('[PlaywrightScheduler] Failed to mark intent as running:', error);
+    }
 
     // Create execution record
     const execution = playwrightSchedulerManager.createExecution({
@@ -344,6 +387,17 @@ export class PlaywrightSchedulerService {
     console.log(`🕐 Completed at: ${completedAt.toISOString()}`);
     console.log(`⏱️ Duration: ${duration}ms`);
     console.log(`===== END PLAYWRIGHT TEST =====\n`);
+
+    // Mark intent as completed or failed
+    try {
+      if (success) {
+        await recoveryService.markIntentCompleted('playwright', test.id, today, executionId);
+      } else {
+        await recoveryService.markIntentFailed('playwright', test.id, today, new Error(errorMessage || 'Test execution failed'));
+      }
+    } catch (error) {
+      console.error('[PlaywrightScheduler] Failed to mark intent status:', error);
+    }
 
     return { success, error: errorMessage };
   }

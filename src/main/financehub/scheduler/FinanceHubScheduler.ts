@@ -1,10 +1,12 @@
 import { app } from 'electron';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import { getStore } from '../../storage';
 import { SQLiteManager } from '../../sqlite/manager';
 import { collectTaxInvoices } from '../../hometax-automation';
 import { parseHometaxExcel } from '../../hometax-excel-parser';
 import { importTaxInvoices } from '../../sqlite/hometax';
+import { getSchedulerRecoveryService } from '../../scheduler/recovery-service';
 
 interface ScheduleSettings {
   enabled: boolean;
@@ -132,23 +134,42 @@ export class FinanceHubScheduler extends EventEmitter {
     this.emit('scheduler-stopped');
   }
 
-  private scheduleNextSync(): void {
+  private async scheduleNextSync(): Promise<void> {
     const now = new Date();
     const [targetHour, targetMinute] = this.settings.time.split(':').map(Number);
-    
+
     // Calculate next sync time
     const nextSync = new Date();
     nextSync.setHours(targetHour, targetMinute, 0, 0);
-    
+
     // If the time has already passed today, schedule for tomorrow
     if (nextSync <= now) {
       nextSync.setDate(nextSync.getDate() + 1);
     }
-    
+
     const msUntilSync = nextSync.getTime() - now.getTime();
-    
+
     console.log(`[FinanceHubScheduler] Next sync scheduled for ${nextSync.toLocaleString()}`);
-    
+
+    // Create execution intent for recovery tracking
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+      const windowEnd = new Date(nextSync.getTime() + 2 * 60 * 60 * 1000); // 2-hour execution window
+
+      await recoveryService.createIntent({
+        schedulerType: 'financehub',
+        taskId: 'daily_sync',
+        taskName: 'FinanceHub Daily Sync',
+        intendedDate: nextSync.toISOString().split('T')[0],
+        intendedTime: this.settings.time,
+        executionWindowStart: nextSync.toISOString(),
+        executionWindowEnd: windowEnd.toISOString(),
+        status: 'pending',
+      });
+    } catch (error) {
+      console.error('[FinanceHubScheduler] Failed to create execution intent:', error);
+    }
+
     this.scheduleTimer = setTimeout(() => {
       this.executeSyncWithRetry();
       // Schedule next day's sync
@@ -200,9 +221,31 @@ export class FinanceHubScheduler extends EventEmitter {
       return;
     }
 
+    const today = new Date().toISOString().split('T')[0];
+    const executionId = randomUUID();
+    const recoveryService = getSchedulerRecoveryService();
+
+    // Deduplication: Check if already ran today
+    try {
+      const hasRun = await recoveryService.hasRunToday('financehub', 'daily_sync');
+      if (hasRun) {
+        console.log('[FinanceHubScheduler] Already synced today - skipping duplicate execution');
+        return;
+      }
+    } catch (error) {
+      console.error('[FinanceHubScheduler] Failed to check hasRunToday:', error);
+    }
+
     this.isSyncing = true;
     this.updateSyncStatus('running');
     this.emit('sync-started');
+
+    // Mark intent as running
+    try {
+      await recoveryService.markIntentRunning('financehub', 'daily_sync', today, executionId);
+    } catch (error) {
+      console.error('[FinanceHubScheduler] Failed to mark intent as running:', error);
+    }
 
     try {
       const { bankResults, taxResults } = await this.performSync();
@@ -251,6 +294,18 @@ export class FinanceHubScheduler extends EventEmitter {
         });
 
         console.log(`[FinanceHubScheduler] Sync completed: Banks (${bankSuccessCount}/${bankResults.length}), Tax (${taxSuccessCount}/${taxResults.length})`);
+
+        // Mark intent as completed or failed
+        try {
+          if (totalFailed === 0) {
+            await recoveryService.markIntentCompleted('financehub', 'daily_sync', today, executionId);
+          } else {
+            const errorMsg = `${totalFailed} syncs failed (${failedBankSyncs.length} bank, ${failedTaxSyncs.length} tax)`;
+            await recoveryService.markIntentFailed('financehub', 'daily_sync', today, new Error(errorMsg));
+          }
+        } catch (error) {
+          console.error('[FinanceHubScheduler] Failed to mark intent status:', error);
+        }
       }
     } catch (error) {
       console.error('[FinanceHubScheduler] Sync error:', error);
@@ -263,6 +318,13 @@ export class FinanceHubScheduler extends EventEmitter {
       } else {
         this.updateSyncStatus('failed');
         this.emit('sync-failed', error);
+
+        // Mark intent as failed
+        try {
+          await recoveryService.markIntentFailed('financehub', 'daily_sync', today, error);
+        } catch (err) {
+          console.error('[FinanceHubScheduler] Failed to mark intent as failed:', err);
+        }
       }
     } finally {
       this.isSyncing = false;

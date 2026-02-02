@@ -1040,37 +1040,66 @@ export class AuthService {
       token = await this.tokenStorage.getGoogleToken(userId);
     } catch (error) {
       console.error('❌ Error fetching token from storage:', error);
-      return null;
+      // Don't return null yet - we might be able to get refresh_token from session
     }
 
-    if (!token) {
-      console.log('❌ No Google Workspace token found for user:', userId);
-      return null;
-    }
-
-    // Check if token is expired (with 5 minute buffer)
+    // Determine if we need to refresh:
+    // 1. No token at all (token is null)
+    // 2. Token exists but access_token is missing or empty
+    // 3. Token exists but is expired (within 5 minute buffer)
     const bufferSeconds = 5 * 60; // 5 minutes buffer before actual expiry
-    const isExpired = token.expires_at && (token.expires_at - bufferSeconds) < Math.floor(Date.now() / 1000);
+    const isExpired = token?.expires_at && (token.expires_at - bufferSeconds) < Math.floor(Date.now() / 1000);
+    const needsRefresh = !token?.access_token || isExpired;
 
-    if (!isExpired) {
-      // Token still valid
+    if (!needsRefresh && token) {
+      // Token exists, has access_token, and is not expired
+      console.log('✅ Using existing valid Google OAuth token');
       return token;
     }
 
-    console.log('🔄 Google OAuth token expired or about to expire, attempting refresh...');
+    // Need to refresh - log the reason
+    if (!token) {
+      console.log('🔄 No Google OAuth token found in database, attempting to refresh from Supabase session...');
+    } else if (!token.access_token) {
+      console.log('🔄 Google OAuth token missing access_token, attempting refresh...');
+    } else if (isExpired) {
+      console.log('🔄 Google OAuth token expired or about to expire, attempting refresh...');
+    }
 
-    if (!token.refresh_token) {
+    // Try to get refresh token from stored token or Supabase session
+    let refreshToken = token?.refresh_token;
+
+    if (!refreshToken) {
+      // Try to get refresh token from Supabase session (useful on first boot or if token not in DB)
+      console.log('🔍 No refresh token in database, checking Supabase session...');
+      const isGoogleAuth =
+        session.user?.app_metadata?.provider === 'google' ||
+        session.user?.identities?.some((id: any) => id.provider === 'google');
+
+      if (isGoogleAuth) {
+        refreshToken = (session as any).provider_refresh_token ||
+                       session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token;
+
+        if (refreshToken) {
+          console.log('✅ Found refresh token in Supabase session');
+        }
+      }
+    }
+
+    if (!refreshToken) {
       console.error('❌ No refresh token available - cannot refresh');
+      console.error('💡 User needs to sign in with Google to obtain OAuth tokens');
       return null;
     }
 
     // Try to refresh using Supabase Edge Function (keeps secrets server-side)
+    console.log('🔄 Attempting token refresh via Supabase Edge Function...');
     let refreshedToken = await this.refreshGoogleTokenViaEdgeFunction();
 
     // Fallback: Direct refresh if Edge Function fails (development/debugging)
     if (!refreshedToken) {
       console.warn('⚠️ Edge Function refresh failed, trying direct refresh as fallback...');
-      refreshedToken = await this.refreshGoogleTokenDirectly(token.refresh_token);
+      refreshedToken = await this.refreshGoogleTokenDirectly(refreshToken);
     }
 
     if (refreshedToken) {
@@ -1079,9 +1108,9 @@ export class AuthService {
 
       const updatedToken: GoogleWorkspaceToken = {
         access_token: refreshedToken.access_token,
-        refresh_token: refreshedToken.refresh_token || token.refresh_token, // Keep old refresh token if not returned
+        refresh_token: refreshedToken.refresh_token || refreshToken, // Keep old refresh token if not returned
         expires_at: newExpiresAt,
-        scopes: token.scopes,
+        scopes: token?.scopes || [],
         saved_at: Date.now(),
       };
 
@@ -1100,11 +1129,6 @@ export class AuthService {
     // Fallback: Try to get token from Supabase session (less reliable but worth trying)
     console.log('🔄 Direct refresh failed, trying Supabase session fallback...');
     try {
-      if (!session) {
-        console.error('❌ No Supabase session available for Google token refresh');
-        return null;
-      }
-
       // Check if this is a Google auth session
       const isGoogleAuth =
         session.user?.app_metadata?.provider === 'google' ||
@@ -1127,9 +1151,9 @@ export class AuthService {
           access_token: providerToken,
           refresh_token: (session as any).provider_refresh_token ||
                         session.user?.identities?.find((id: any) => id.provider === 'google')?.identity_data?.refresh_token ||
-                        token.refresh_token,
+                        refreshToken,
           expires_at: newExpiresAt,
-          scopes: (session as any).provider_scopes || token.scopes || [],
+          scopes: (session as any).provider_scopes || token?.scopes || [],
           saved_at: Date.now(),
         };
 
