@@ -81,7 +81,8 @@ export interface OllamaAPI {
 export type Channels =
   | 'sync-completed'
   | 'navigate-to-synced-folder'
-  | 'ai-stream-event';
+  | 'ai-stream-event'
+  | 'auth:token-invalid';
 
 /**
  * File system item information
@@ -2174,12 +2175,24 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet', key),
     // Card company methods
     card: {
-      loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string) =>
-        ipcRenderer.invoke('finance-hub:card:login-and-get-cards', { cardCompanyId, credentials, proxyUrl }),
+      loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string, manualPassword?: boolean) =>
+        ipcRenderer.invoke('finance-hub:card:login-and-get-cards', { cardCompanyId, credentials, proxyUrl, manualPassword }),
       getTransactions: (cardCompanyId: string, cardNumber: string, startDate: string, endDate: string) =>
         ipcRenderer.invoke('finance-hub:card:get-transactions', { cardCompanyId, cardNumber, startDate, endDate }),
       disconnect: (cardCompanyId: string) =>
         ipcRenderer.invoke('finance-hub:card:disconnect', cardCompanyId),
+    },
+    // Manual password mode
+    manualPassword: {
+      continue: () => ipcRenderer.send('manual-password:continue'),
+      onShowContinue: (callback: () => void) => {
+        ipcRenderer.on('manual-password:show-continue', callback);
+        return () => ipcRenderer.removeListener('manual-password:show-continue', callback);
+      },
+      onHideContinue: (callback: () => void) => {
+        ipcRenderer.on('manual-password:hide-continue', callback);
+        return () => ipcRenderer.removeListener('manual-password:hide-continue', callback);
+      },
     },
   },
 
@@ -2463,6 +2476,7 @@ auth: {
   switchAccount: (userId: string) => ipcRenderer.invoke('auth:switch-account', userId),
   handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
     getGoogleWorkspaceToken: () => ipcRenderer.invoke('auth:get-google-workspace-token'),
+  debugForceRefreshToken: () => ipcRenderer.invoke('auth:debug-force-refresh-token'),
   saveSession: (session: any) => ipcRenderer.invoke('auth:save-session', session),
   callEdgeFunction: (options: { url: string; method?: string; body?: any; headers?: Record<string, string> }) =>
     ipcRenderer.invoke('auth:call-edge-function', options),

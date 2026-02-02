@@ -288,7 +288,9 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
 export async function connectToHometax(
   selectedCertificate: any,
   certificatePassword: string,
-  invoiceType: 'sales' | 'purchase' = 'sales'
+  invoiceType: 'sales' | 'purchase' = 'sales',
+  year?: number,
+  month?: number
 ): Promise<HometaxConnectionResult & { downloadedFile?: string }> {
   try {
     console.log('[Hometax] Logging in with selected certificate...');
@@ -307,7 +309,7 @@ export async function connectToHometax(
     let companyType = '';
 
     if (alreadyLoggedIn) {
-      console.log('[Hometax] Already logged in and on invoice page, skipping login...');
+      console.log('[Hometax] ✅ Already logged in, proceeding with data collection...');
 
       // Get company info from page if available
       const companyNameXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[2]/div/span[1]';
@@ -552,6 +554,7 @@ export async function connectToHometax(
 
     // Wait for page to load after login
     await page.waitForTimeout(3000);
+    console.log('[Hometax] ✅ Login successful, continuing automation...');
 
       // Scrape company name from main page (not in iframe)
       console.log('[Hometax] Scraping company name...');
@@ -585,55 +588,63 @@ export async function connectToHometax(
     await page.locator('[id="mf_wfHeader_wq_uuid_358"]').click({ timeout: 180000 });
     await page.waitForTimeout(2891); // Human-like delay (1x multiplier)
 
-    // Try to click 조회 with fallback XPath
+    // Expand 조회 menu (it's collapsed by default - "닫혀있음")
+    console.log('[Hometax] Expanding 조회 menu...');
     try {
-      await page.locator('a:has-text("조회") >> nth=184').click({ timeout: 180000 });
-      console.log('[Hometax] 조회 clicked with primary selector');
-    } catch (error) {
-      console.log('[Hometax] Primary selector failed, trying fallback XPath for 조회');
       await page.evaluate(() => {
         const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[2]/ul/li[1]/a';
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
         if (element) {
           element.click();
-          console.log('[Hometax] 조회 clicked with fallback XPath');
         } else {
-          throw new Error('조회 element not found with fallback XPath');
+          throw new Error('조회 element not found');
         }
       });
+      console.log('[Hometax] 조회 menu expanded with XPath');
+    } catch (error) {
+      console.log('[Hometax] XPath failed, trying CSS selector for 조회');
+      await page.locator('#grpMenuLi_46_4609050000 > a').click({ timeout: 10000 });
+      console.log('[Hometax] 조회 menu expanded with CSS selector');
     }
+
+    // Wait for menu to expand
+    await page.waitForTimeout(1000);
 
     await page.waitForTimeout(2096); // Human-like delay (1x multiplier)
 
-    // Try to click 월, 분기별 with fallback XPath
+    // Click 월/분기별 목록조회 submenu
+    console.log('[Hometax] Clicking 월/분기별 목록조회...');
     try {
-      await page.locator('[id="grpMenuAtag_46_4609050300"]').click({ timeout: 180000 });
-      console.log('[Hometax] 월, 분기별 clicked with primary selector');
-    } catch (error) {
-      console.log('[Hometax] Primary selector failed, trying fallback XPath for 월, 분기별');
-      const periodClicked = await page.evaluate(() => {
+      await page.evaluate(() => {
         const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[2]/ul/li[1]/ul/li[3]/a';
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
         if (element) {
           element.click();
-          console.log('[Hometax] 월, 분기별 clicked with fallback XPath');
-          return true;
+        } else {
+          throw new Error('월/분기별 element not found');
         }
-        return false;
       });
-
-      if (!periodClicked) {
-        throw new Error('월, 분기별 element not found with primary or fallback selectors');
-      }
+      console.log('[Hometax] 월/분기별 clicked with XPath');
+    } catch (error) {
+      console.log('[Hometax] XPath failed, trying ID selector for 월/분기별');
+      await page.locator('[id="grpMenuAtag_46_4609050300"]').click({ timeout: 10000 });
+      console.log('[Hometax] 월/분기별 clicked with ID selector');
     }
+
+      await page.waitForTimeout(2853); // Human-like delay (1x multiplier)
+    } // End of login/navigation block
 
     // Wait for year select to be available
     await page.waitForTimeout(3000);
 
-    // Select year from dropdown
-    console.log('[Hometax] Selecting year...');
+    // Use provided year/month or default to current date
+    const targetYear = year || new Date().getFullYear();
+    const targetMonth = month || (new Date().getMonth() + 1);
+
+    // Select year from dropdown (works both for fresh login and already logged in)
+    console.log(`[Hometax] Selecting year: ${targetYear}...`);
     const yearXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[2]/dl[2]/dd/div/select[2]';
 
     // Wait for year select to exist
@@ -642,16 +653,16 @@ export async function connectToHometax(
       return result.singleNodeValue !== null;
     }, yearXPath, { timeout: 180000 }).catch(() => console.log('[Hometax] Year select wait timed out'));
 
-    await page.evaluate((xpath) => {
+    await page.evaluate(({ xpath, yearToSelect }) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const select = result.singleNodeValue as HTMLSelectElement;
       if (select) {
-        const currentYear = new Date().getFullYear().toString();
-        console.log('[Hometax] Setting year to:', currentYear);
+        const yearString = yearToSelect.toString();
+        console.log('[Hometax] Setting year to:', yearString);
         console.log('[Hometax] Available options:', Array.from(select.options).map(o => `"${o.value}"`));
 
         // Find and click the option instead of setting value
-        const option = Array.from(select.options).find(o => o.value === currentYear || o.value === currentYear + '년');
+        const option = Array.from(select.options).find(o => o.value === yearString || o.value === yearString + '년');
         if (option) {
           select.selectedIndex = option.index;
           // Trigger native events that Hometax expects
@@ -659,28 +670,28 @@ export async function connectToHometax(
           select.dispatchEvent(new Event('change', { bubbles: true }));
           console.log('[Hometax] Year selected:', select.value);
         } else {
-          console.error('[Hometax] Year option not found for:', currentYear);
+          console.error('[Hometax] Year option not found for:', yearString);
         }
       } else {
         console.error('[Hometax] Year select element not found');
       }
-    }, yearXPath);
+    }, { xpath: yearXPath, yearToSelect: targetYear });
     await page.waitForTimeout(1000);
 
-    // Select month from dropdown
-    console.log('[Hometax] Selecting month...');
+    // Select month from dropdown (works both for fresh login and already logged in)
+    console.log(`[Hometax] Selecting month: ${targetMonth}...`);
     const monthXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[2]/dl[2]/dd/div/select[3]';
 
-    await page.evaluate((xpath) => {
+    await page.evaluate(({ xpath, monthToSelect }) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const select = result.singleNodeValue as HTMLSelectElement;
       if (select) {
-        const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
-        console.log('[Hometax] Setting month to:', currentMonth);
+        const monthString = monthToSelect.toString().padStart(2, '0');
+        console.log('[Hometax] Setting month to:', monthString);
         console.log('[Hometax] Available options:', Array.from(select.options).map(o => `"${o.value}"`));
 
         // Find and click the option (try both "03" and "03월" formats)
-        const option = Array.from(select.options).find(o => o.value === currentMonth || o.value === currentMonth + '월');
+        const option = Array.from(select.options).find(o => o.value === monthString || o.value === monthString + '월');
         if (option) {
           select.selectedIndex = option.index;
           // Trigger native events that Hometax expects
@@ -688,16 +699,13 @@ export async function connectToHometax(
           select.dispatchEvent(new Event('change', { bubbles: true }));
           console.log('[Hometax] Month selected:', select.value);
         } else {
-          console.error('[Hometax] Month option not found for:', currentMonth);
+          console.error('[Hometax] Month option not found for:', monthString);
         }
       } else {
         console.error('[Hometax] Month select element not found');
       }
-      }, monthXPath);
+      }, { xpath: monthXPath, monthToSelect: targetMonth });
       await page.waitForTimeout(1000);
-
-      await page.waitForTimeout(2853); // Human-like delay (1x multiplier)
-    } // End of login/navigation block
 
     // Click radio button for 매출 or 매입
     const radioIndex = invoiceType === 'sales' ? 0 : 1;
@@ -718,68 +726,70 @@ export async function connectToHometax(
     }, searchButtonXPath);
     await page.waitForTimeout(3000);
 
-    // Click excel download button
-    console.log('[Hometax] Clicking excel download button...');
+    // Click excel download button and handle confirmations automatically
+    console.log('[Hometax] Starting download with auto-confirmations...');
     const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
     await page.evaluate((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const element = result.singleNodeValue as HTMLElement;
       element?.click();
     }, excelButtonXPath);
-    await page.waitForTimeout(2000);
 
-    // First confirmation
-    console.log('[Hometax] Clicking first confirmation...');
+    // Wait for and auto-click first confirmation (skip if doesn't exist - no data case)
     const firstConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[3]/span[2]/input';
-    const firstConfirmClicked = await page.evaluate((xpath) => {
+    const firstConfirmExists = await page.waitForFunction((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      if (element) {
-        console.log('[Hometax] First confirmation element found:', element);
-        element.click();
-        return true;
-      } else {
-        console.error('[Hometax] First confirmation element not found');
-        return false;
-      }
-    }, firstConfirmXPath);
-    console.log('[Hometax] First confirmation clicked:', firstConfirmClicked);
-    await page.waitForTimeout(2000);
+      return result.singleNodeValue !== null;
+    }, firstConfirmXPath, { timeout: 5000 }).then(() => true).catch(() => false);
 
-    // Second confirmation
-    console.log('[Hometax] Clicking second confirmation...');
+    if (firstConfirmExists) {
+      await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        element?.click();
+      }, firstConfirmXPath);
+      console.log('[Hometax] First confirmation clicked');
+    } else {
+      console.log('[Hometax] First confirmation skipped (not present - likely no data)');
+    }
+
+    // Wait for and auto-click second confirmation (skip if doesn't exist - no data case)
     const secondConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[3]/span[2]/input';
-    const secondConfirmClicked = await page.evaluate((xpath) => {
+    const secondConfirmExists = await page.waitForFunction((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      if (element) {
-        console.log('[Hometax] Second confirmation element found:', element);
-        element.click();
-        return true;
-      } else {
-        console.error('[Hometax] Second confirmation element not found');
-        return false;
-      }
-    }, secondConfirmXPath);
-    console.log('[Hometax] Second confirmation clicked:', secondConfirmClicked);
-    await page.waitForTimeout(2000);
+      return result.singleNodeValue !== null;
+    }, secondConfirmXPath, { timeout: 5000 }).then(() => true).catch(() => false);
 
-    // Close confirmation dialog
-    console.log('[Hometax] Closing confirmation dialog...');
+    if (secondConfirmExists) {
+      await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        element?.click();
+      }, secondConfirmXPath);
+      console.log('[Hometax] Second confirmation clicked');
+    } else {
+      console.log('[Hometax] Second confirmation skipped (not present - likely no data)');
+    }
+
+    // Wait for and auto-close confirmation dialog (skip if doesn't exist - no data case)
     const closeDialogXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[2]/input';
-    await page.evaluate((xpath) => {
+    const closeDialogExists = await page.waitForFunction((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      if (element) {
-        console.log('[Hometax] Close button found, clicking');
-        element.click();
-      } else {
-        console.error('[Hometax] Close button not found');
-      }
-    }, closeDialogXPath);
-    await page.waitForTimeout(1000);
+      return result.singleNodeValue !== null;
+    }, closeDialogXPath, { timeout: 5000 }).then(() => true).catch(() => false);
 
-    console.log('[Hometax] Excel download completed');
+    if (closeDialogExists) {
+      await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        element?.click();
+      }, closeDialogXPath);
+      console.log('[Hometax] Close dialog clicked');
+    } else {
+      console.log('[Hometax] Close dialog skipped (not present - likely no data)');
+    }
+
+    console.log('[Hometax] Download completed (confirmations auto-handled)');
 
     // Wait a bit for download to complete and get the file path
     await page.waitForTimeout(2000);
@@ -848,119 +858,80 @@ export function getHometaxConnectionStatus(): { isConnected: boolean } {
 
 /**
  * Collect tax invoices (매출/매입) for a business
- * Uses saved certificate data to login and navigate to invoice list
+ * Collects data for both current month and last month, for both sales and purchases (4 downloads total)
  */
 export async function collectTaxInvoices(
   certificateData: any,
   certificatePassword: string
-): Promise<{ success: boolean; salesFile?: string; purchaseFile?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  thisMonthSalesFile?: string;
+  lastMonthSalesFile?: string;
+  thisMonthPurchaseFile?: string;
+  lastMonthPurchaseFile?: string;
+  error?: string
+}> {
   try {
-    console.log('[Hometax] Starting tax invoice collection...');
+    console.log('[Hometax] Starting tax invoice collection for current and last month...');
 
-    // Collect 매출 (sales)
-    console.log('[Hometax] Collecting 매출 invoices...');
-    const salesResult = await connectToHometax(certificateData, certificatePassword, 'sales');
+    // Calculate current and last month
+    const now = new Date();
+    const thisYear = now.getFullYear();
+    const thisMonth = now.getMonth() + 1; // JavaScript months are 0-indexed
 
-    if (!salesResult.success) {
-      return {
-        success: false,
-        error: salesResult.error
-      };
+    let lastYear = thisYear;
+    let lastMonth = thisMonth - 1;
+    if (lastMonth === 0) {
+      lastMonth = 12;
+      lastYear = thisYear - 1;
     }
 
-    const salesFile = salesResult.downloadedFile;
-    console.log('[Hometax] 매출 collection completed, file:', salesFile);
+    console.log(`[Hometax] Target months - This: ${thisYear}-${thisMonth.toString().padStart(2, '0')}, Last: ${lastYear}-${lastMonth.toString().padStart(2, '0')}`);
+    console.log('[Hometax] ==================== Starting 4-part collection ====================');
 
-    // Collect 매입 (purchases) - browser is still open, just need to select 매입 radio
-    console.log('[Hometax] Collecting 매입 invoices...');
-
-    if (!globalPage) {
-      return {
-        success: false,
-        error: 'Browser closed unexpectedly'
-      };
+    // 1. Collect this month 매출 (sales)
+    console.log('[Hometax] ▶ (1/4) Collecting this month 매출...');
+    const thisMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', thisYear, thisMonth);
+    if (!thisMonthSalesResult.success) {
+      return { success: false, error: thisMonthSalesResult.error };
     }
+    const thisMonthSalesFile = thisMonthSalesResult.downloadedFile;
+    console.log('[Hometax] ✓ (1/4) Completed:', thisMonthSalesFile);
 
-    const page = globalPage;
+    // 2. Collect last month 매출 (sales)
+    console.log('[Hometax] ▶ (2/4) Collecting last month 매출...');
+    const lastMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', lastYear, lastMonth);
+    if (!lastMonthSalesResult.success) {
+      return { success: false, error: lastMonthSalesResult.error };
+    }
+    const lastMonthSalesFile = lastMonthSalesResult.downloadedFile;
+    console.log('[Hometax] ✓ (2/4) Completed:', lastMonthSalesFile);
 
-    // Click 매입 radio button
-    await page.waitForTimeout(2000);
-    await page.locator('#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_1 > label').click({ timeout: 180000 });
-    await page.waitForTimeout(1092);
+    // 3. Collect this month 매입 (purchases)
+    console.log('[Hometax] ▶ (3/4) Collecting this month 매입...');
+    const thisMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', thisYear, thisMonth);
+    if (!thisMonthPurchaseResult.success) {
+      return { success: false, error: thisMonthPurchaseResult.error };
+    }
+    const thisMonthPurchaseFile = thisMonthPurchaseResult.downloadedFile;
+    console.log('[Hometax] ✓ (3/4) Completed:', thisMonthPurchaseFile);
 
-    // Click 조회 button again
-    console.log('[Hometax] Clicking search button for 매입...');
-    const searchButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[4]/div/span';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, searchButtonXPath);
-    await page.waitForTimeout(3000);
+    // 4. Collect last month 매입 (purchases)
+    console.log('[Hometax] ▶ (4/4) Collecting last month 매입...');
+    const lastMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', lastYear, lastMonth);
+    if (!lastMonthPurchaseResult.success) {
+      return { success: false, error: lastMonthPurchaseResult.error };
+    }
+    const lastMonthPurchaseFile = lastMonthPurchaseResult.downloadedFile;
+    console.log('[Hometax] ✓ (4/4) Completed:', lastMonthPurchaseFile);
 
-    // Click excel download button
-    console.log('[Hometax] Clicking excel download button for 매입...');
-    const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, excelButtonXPath);
-    await page.waitForTimeout(2000);
-
-    // First confirmation
-    const firstConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[3]/span[2]/input';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, firstConfirmXPath);
-    await page.waitForTimeout(2000);
-
-    // Second confirmation
-    const secondConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[3]/span[2]/input';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, secondConfirmXPath);
-    await page.waitForTimeout(2000);
-
-    // Close confirmation dialog
-    const closeDialogXPath = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div[2]/input';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, closeDialogXPath);
-    await page.waitForTimeout(1000);
-
-    console.log('[Hometax] 매입 collection completed');
-
-    // Wait for download to complete and get the file path
-    await page.waitForTimeout(2000);
-
-    // Get downloaded file from the downloads folder
-    const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
-    const files = fs.readdirSync(downloadsPath);
-
-    // Find the most recently downloaded file (매입)
-    const recentFile = files
-      .filter((f: string) => f.endsWith('.xls') || f.endsWith('.xlsx'))
-      .map((f: string) => ({
-        name: f,
-        path: path.join(downloadsPath, f),
-        time: fs.statSync(path.join(downloadsPath, f)).mtime.getTime()
-      }))
-      .sort((a: any, b: any) => b.time - a.time)[0];
-
-    const purchaseFile = recentFile?.path;
-    console.log('[Hometax] Downloaded purchase file:', purchaseFile);
-
+    console.log('[Hometax] ==================== ✅ All 4 collections completed! ====================');
     return {
       success: true,
-      salesFile,
-      purchaseFile
+      thisMonthSalesFile,
+      lastMonthSalesFile,
+      thisMonthPurchaseFile,
+      lastMonthPurchaseFile
     };
 
   } catch (error) {

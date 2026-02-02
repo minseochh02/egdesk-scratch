@@ -9,6 +9,7 @@ interface ScheduleSettings {
   retryCount: number;
   retryDelayMinutes: number;
   includeTaxSync: boolean; // Include Hometax tax invoice sync
+  spreadsheetSyncEnabled?: boolean; // Enable auto-export to spreadsheet
   lastSyncTime?: string;
   lastSyncStatus?: 'success' | 'failed' | 'running';
 }
@@ -44,6 +45,9 @@ export const SchedulerSettings: React.FC = () => {
           if (data.taxSuccessCount > 0) {
             messages.push(`세금계산서: ${data.taxSuccessCount}건`);
           }
+          if (data.spreadsheetResult?.success) {
+            messages.push(`📊 스프레드시트 동기화 완료`);
+          }
           alert(`✅ 동기화 완료!\n${messages.join('\n')}`);
         } else {
           const messages = [];
@@ -52,6 +56,11 @@ export const SchedulerSettings: React.FC = () => {
           }
           if (data.taxSuccessCount > 0 || data.taxFailedCount > 0) {
             messages.push(`세금계산서: 성공 ${data.taxSuccessCount}건, 실패 ${data.taxFailedCount}건`);
+          }
+          if (data.spreadsheetResult?.success) {
+            messages.push(`📊 스프레드시트 동기화 완료`);
+          } else if (data.spreadsheetResult?.error) {
+            messages.push(`⚠️ 스프레드시트 동기화 실패: ${data.spreadsheetResult.error}`);
           }
           alert(`⚠️ 동기화 부분 완료\n${messages.join('\n')}`);
         }
@@ -153,6 +162,25 @@ export const SchedulerSettings: React.FC = () => {
     } catch (error) {
       console.error('Failed to update tax sync setting:', error);
       alert('세금계산서 동기화 설정 변경 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleSpreadsheetSync = async () => {
+    if (!settings) return;
+
+    const newSpreadsheetSyncEnabled = !settings.spreadsheetSyncEnabled;
+    setSaving(true);
+
+    try {
+      const result = await window.electron.financeHubScheduler.updateSettings({ spreadsheetSyncEnabled: newSpreadsheetSyncEnabled });
+      if (result.success) {
+        setSettings(result.settings);
+      }
+    } catch (error) {
+      console.error('Failed to update spreadsheet sync setting:', error);
+      alert('스프레드시트 동기화 설정 변경 실패');
     } finally {
       setSaving(false);
     }
@@ -267,6 +295,26 @@ export const SchedulerSettings: React.FC = () => {
 
         <div className="scheduler-settings__row">
           <label className="scheduler-settings__label">
+            스프레드시트 자동 동기화
+          </label>
+          <div className="scheduler-settings__toggle">
+            <label className="scheduler-settings__switch">
+              <input
+                type="checkbox"
+                checked={settings.spreadsheetSyncEnabled ?? true}
+                onChange={handleToggleSpreadsheetSync}
+                disabled={!settings.enabled || saving}
+              />
+              <span className="scheduler-settings__slider"></span>
+            </label>
+            <span className="scheduler-settings__status">
+              {settings.spreadsheetSyncEnabled ?? true ? '활성화' : '비활성화'}
+            </span>
+          </div>
+        </div>
+
+        <div className="scheduler-settings__row">
+          <label className="scheduler-settings__label">
             마지막 동기화
           </label>
           <div className="scheduler-settings__last-sync">
@@ -296,6 +344,7 @@ export const SchedulerSettings: React.FC = () => {
           <p>
             <strong>참고:</strong> 자동 동기화는 모든 활성 계좌의 최근 3개월 거래내역을 가져옵니다.
             {settings.includeTaxSync && ' 세금계산서 동기화가 활성화된 경우 저장된 모든 사업자의 당월 세금계산서도 함께 수집됩니다.'}
+            {(settings.spreadsheetSyncEnabled ?? true) && ' 스프레드시트 자동 동기화가 활성화된 경우 동기화 후 자동으로 Google 스프레드시트에 데이터를 내보냅니다.'}
           </p>
         </div>
       </div>

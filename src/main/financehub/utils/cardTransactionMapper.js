@@ -32,6 +32,12 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     const parsed = parseCardDateTime(cardTx.dateTime);
     date = parsed.date;
     time = parsed.time;
+  } else if (cardTx.transactionDate || cardTx['이용일시']) {
+    // Shinhan Card format: '이용일시' -> 'transactionDate'
+    const dateTimeValue = cardTx.transactionDate || cardTx['이용일시'];
+    const parsed = parseCardDateTime(dateTimeValue);
+    date = parsed.date;
+    time = parsed.time;
   } else if (cardTx.approvalDate) {
     // BC Card format: separate approvalDate and approvalTime, or combined approvalDateTime
     date = cardTx.approvalDate;
@@ -45,13 +51,15 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     }
   }
 
-  // Parse amount from different field names
-  const amount = parseInt(cardTx.amount || cardTx.approvalAmount) || 0;
+  // Parse amount from different field names (check both English and Korean)
+  const amountValue = cardTx.amount || cardTx['이용금액'] || cardTx.approvalAmount || 0;
+  const amount = parseInt(String(amountValue).replace(/[^\d-]/g, '')) || 0;
 
   // Handle cancellations/refunds
   // NH Card: cancellationStatus field
   // BC Card: salesType field (매출종류)
-  const cancellationField = cardTx.cancellationStatus || cardTx.salesType || '';
+  // Shinhan Card: transactionType field (이용구분)
+  const cancellationField = cardTx.cancellationStatus || cardTx.salesType || cardTx.transactionType || '';
   const isCancelled = cancellationField === '취소' ||
                      (typeof cancellationField === 'string' && cancellationField.includes('취소')) ||
                      cancellationField === '매입취소';
@@ -61,17 +69,17 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
   const deposit = isCancelled ? amount : 0;
 
   // Prefix type with "취소 -" for cancelled transactions
-  const transactionType = cardTx.transactionMethod || cardTx.usageType || '카드결제';
+  const transactionMethod = cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || '카드결제';
   const type = isCancelled
-    ? `취소 - ${transactionType}`
-    : transactionType;
+    ? `취소 - ${transactionMethod}`
+    : transactionMethod;
 
   // Store card-specific fields in metadata
   const metadata = {
-    cardNumber: cardTx.cardNumber,
+    cardNumber: cardTx.cardNumber || cardTx.cardUsed || cardTx['이용카드'],
     approvalNumber: cardTx.approvalNumber,
-    transactionMethod: cardTx.transactionMethod || cardTx.usageType,
-    installmentPeriod: cardTx.installmentPeriod,
+    transactionMethod: cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType,
+    installmentPeriod: cardTx.installmentPeriod || cardTx.installmentMonths,
     cancellationStatus: cardTx.cancellationStatus,
     salesType: cardTx.salesType,
     isCancelled: isCancelled,
@@ -83,12 +91,19 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     transactionBank: cardTx.transactionBank,
     exchangeRate: cardTx.exchangeRate,
     foreignAmountKRW: cardTx.foreignAmountKRW,
+    // Shinhan Card specific fields
+    userName: cardTx.userName || cardTx['이용자명'],
+    userNumber: cardTx.userNumber || cardTx['이용자번호'],
+    virtualCardNumber: cardTx.virtualCardNumber || cardTx['가상카드번호'],
+    cancellationDate: cardTx.cancellationDate || cardTx['취소일자'],
+    purchaseStatus: cardTx.purchaseStatus || cardTx['매입상태'],
+    paymentDueDate: cardTx.paymentDueDate || cardTx['결제예정일'],
     // Mark as card transaction for UI filtering
     isCardTransaction: true,
     cardCompanyId: cardCompanyId
   };
 
-  const merchantName = cardTx.merchantName || '';
+  const merchantName = cardTx.merchantName || cardTx['가맹점명'] || '';
 
   return {
     date: date || '',

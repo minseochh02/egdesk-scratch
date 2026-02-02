@@ -287,7 +287,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.19</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.20</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2196,6 +2196,9 @@ function RouteWindowBoundsManager() {
 function AppContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showGoogleAuthModal, setShowGoogleAuthModal] = useState(false);
+  const [googleAuthMessage, setGoogleAuthMessage] = useState('');
+  const [signingInGoogle, setSigningInGoogle] = useState(false);
   const { user, loading } = useAuth();
   const [ollamaStatus, setOllamaStatus] = useState<'checking' | 'installed' | 'not_installed' | 'error'>('checking');
   const [ollamaMessage, setOllamaMessage] = useState<string | null>(null);
@@ -2288,6 +2291,120 @@ function AppContent() {
       setGemmaMessage(null);
     }
   }, [ollamaStatus, ensureGemmaModel]);
+
+  // Check if Google Workspace token exists
+  const checkWorkspaceToken = async () => {
+    try {
+      const tokenCheck = await window.electron.auth.getGoogleWorkspaceToken();
+      console.log('[App] Manual token check:', tokenCheck);
+
+      if (tokenCheck.success && tokenCheck.token?.access_token) {
+        setShowGoogleAuthModal(false);
+        alert('✅ Google Workspace 토큰이 확인되었습니다!\n\n스프레드시트 자동 동기화를 사용할 수 있습니다.');
+      } else {
+        alert('❌ Google Workspace 토큰을 찾을 수 없습니다.\n\n"Google Workspace 연결" 버튼을 클릭하여 권한을 부여해주세요.');
+      }
+    } catch (err) {
+      console.error('[App] Error checking workspace token:', err);
+      alert('❌ 토큰 확인 중 오류가 발생했습니다.');
+    }
+  };
+
+  // Listen for OAuth token validation events
+  useEffect(() => {
+    console.log('[App] Setting up auth:token-invalid listener');
+    console.log('[App] window.electron.ipcRenderer.on exists:', !!window.electron?.ipcRenderer?.on);
+
+    const handleTokenInvalid = (data: any) => {
+      console.log('[App] 🔔 OAuth token invalid event received:', data);
+
+      // Set message and show modal
+      const message = data.needsSignIn
+        ? '스프레드시트 자동 동기화를 사용하려면 Google Workspace 권한이 필요합니다.\n\n이것은 앱 로그인과 별도로, Google Sheets/Drive API 접근을 위한 권한입니다.'
+        : 'Google Workspace 권한이 만료되었습니다.\n\n스프레드시트 자동 동기화를 계속 사용하려면 다시 연결해주세요.';
+
+      setGoogleAuthMessage(message);
+      setShowGoogleAuthModal(true);
+    };
+
+    const handleAuthStateChanged = async (data: any) => {
+      console.log('[App] 🔔 Auth state changed event received:', data);
+
+      if (data.success && data.session) {
+        // OAuth completed successfully - verify token was saved
+        const tokenCheck = await window.electron.auth.getGoogleWorkspaceToken();
+        console.log('[App] Token check after OAuth:', tokenCheck);
+
+        if (tokenCheck.success && tokenCheck.token?.access_token) {
+          alert('✅ Google Workspace 연결 성공!\n\n스프레드시트 자동 동기화를 사용할 수 있습니다.');
+        } else {
+          alert('⚠️ Google 로그인은 성공했지만 Workspace 토큰을 가져오지 못했습니다.\n\n잠시 후 다시 시도해주세요.');
+        }
+      }
+    };
+
+    // Register the event listeners using window.electron.ipcRenderer.on
+    if (window.electron?.ipcRenderer?.on) {
+      console.log('[App] Registering auth event listeners');
+      const cleanup1 = window.electron.ipcRenderer.on('auth:token-invalid', handleTokenInvalid);
+      const cleanup2 = window.electron.ipcRenderer.on('auth:state-changed', handleAuthStateChanged);
+      console.log('[App] Listeners registered successfully');
+      return () => {
+        cleanup1();
+        cleanup2();
+      };
+    } else {
+      console.warn('[App] window.electron.ipcRenderer.on not available');
+    }
+  }, []);
+
+  // Handle Google OAuth sign-in for Workspace access
+  const handleGoogleSignIn = async () => {
+    setSigningInGoogle(true);
+
+    try {
+      // Import the scopes - these are specifically for Google Workspace APIs (Sheets, Drive)
+      const { GOOGLE_OAUTH_SCOPES_STRING } = await import('./constants/googleScopes');
+      const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING);
+
+      console.log('[App] Google Workspace OAuth result:', result);
+
+      // Always close the modal after sign-in attempt
+      setShowGoogleAuthModal(false);
+
+      if (result.success && result.session) {
+        console.log('[App] Google Workspace OAuth successful:', result.session.user.email);
+
+        // Verify the token was saved by checking if we can get it
+        const tokenCheck = await window.electron.auth.getGoogleWorkspaceToken();
+        console.log('[App] Token check after sign-in:', tokenCheck);
+
+        if (tokenCheck.success && tokenCheck.token?.access_token) {
+          alert('✅ Google Workspace 연결 성공!\n\n스프레드시트 자동 동기화를 사용할 수 있습니다.');
+        } else {
+          alert('⚠️ Google 로그인은 성공했지만 Workspace 토큰을 가져오지 못했습니다.\n\n잠시 후 다시 시도해주세요.');
+        }
+      } else if (result.success && !result.session) {
+        // OAuth window opened - user needs to complete the flow in the OAuth window
+        // Don't check for token yet - wait for the OAuth callback to complete
+        console.log('[App] OAuth window opened - waiting for user to complete authorization...');
+        // The auth:state-changed event will be fired when OAuth completes
+        // No alert needed here - let the user complete the OAuth flow
+      } else {
+        console.error('[App] Google Workspace OAuth failed:', result);
+        if (result.error) {
+          alert('❌ Google Workspace 연결 실패\n\n' + result.error);
+        }
+        // Don't show alert if no error - user likely cancelled
+      }
+    } catch (err) {
+      console.error('[App] Error signing in with Google Workspace:', err);
+      setShowGoogleAuthModal(false);
+      // Don't show alert for OAuth errors - user might have just cancelled
+    } finally {
+      setSigningInGoogle(false);
+    }
+  };
 
   const handleEnsureGemma = useCallback(async () => {
     await ensureGemmaModel();
@@ -2405,6 +2522,110 @@ function AppContent() {
         <SupportModal isOpen={showSupportModal} onClose={() => setShowSupportModal(false)} />
         <DebugModal isOpen={showDebugModal} onClose={() => setShowDebugModal(false)} />
         <UpdateDialog />
+
+        {/* Google OAuth Modal */}
+        {showGoogleAuthModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '8px',
+              padding: '24px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            }}>
+              <h2 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: '600' }}>
+                Google Workspace 권한 필요
+              </h2>
+              <p style={{ margin: '0 0 24px 0', color: '#666', lineHeight: '1.5', whiteSpace: 'pre-line' }}>
+                {googleAuthMessage}
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between' }}>
+                <button
+                  onClick={checkWorkspaceToken}
+                  disabled={signingInGoogle}
+                  style={{
+                    padding: '8px 16px',
+                    border: '1px solid #4285f4',
+                    borderRadius: '4px',
+                    background: 'white',
+                    color: '#4285f4',
+                    cursor: signingInGoogle ? 'not-allowed' : 'pointer',
+                    opacity: signingInGoogle ? 0.5 : 1,
+                  }}
+                >
+                  토큰 확인
+                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setShowGoogleAuthModal(false)}
+                    disabled={signingInGoogle}
+                    style={{
+                      padding: '8px 16px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      background: 'white',
+                      cursor: signingInGoogle ? 'not-allowed' : 'pointer',
+                      opacity: signingInGoogle ? 0.5 : 1,
+                    }}
+                  >
+                    나중에
+                  </button>
+                  <button
+                    onClick={handleGoogleSignIn}
+                    disabled={signingInGoogle}
+                    style={{
+                      padding: '8px 16px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      background: '#4285f4',
+                      color: 'white',
+                      cursor: signingInGoogle ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontWeight: '500',
+                    }}
+                  >
+                    {signingInGoogle ? (
+                      <>
+                        <span>🔄</span>
+                        <span>연결 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{
+                          background: 'white',
+                          color: '#4285f4',
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '3px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                        }}>G</span>
+                        <span>Google Workspace 연결</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <main className="main-content">
           <Routes>
             <Route path="/" element={<LandingPage />} />

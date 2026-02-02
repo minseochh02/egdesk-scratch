@@ -113,6 +113,8 @@ const FinanceHub: React.FC = () => {
   const [isFetchingAccounts, setIsFetchingAccounts] = useState<string | null>(null);
   const [connectionProgress, setConnectionProgress] = useState<string>('');
   const [saveCredentials, setSaveCredentials] = useState(true);
+  const [manualPasswordMode, setManualPasswordMode] = useState(false);
+  const [showManualPasswordContinue, setShowManualPasswordContinue] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
@@ -304,6 +306,24 @@ const FinanceHub: React.FC = () => {
     checkExistingConnections();
     checkExistingCardConnections();
     loadConnectedBusinesses();
+  }, []);
+
+  // Manual password mode listener
+  useEffect(() => {
+    const cleanupShow = window.electron.financeHub.manualPassword.onShowContinue(() => {
+      console.log('[Manual Password] Show continue modal');
+      setShowManualPasswordContinue(true);
+    });
+
+    const cleanupHide = window.electron.financeHub.manualPassword.onHideContinue(() => {
+      console.log('[Manual Password] Hide continue modal');
+      setShowManualPasswordContinue(false);
+    });
+
+    return () => {
+      cleanupShow();
+      cleanupHide();
+    };
   }, []);
 
   const loadConnectedBusinesses = async () => {
@@ -680,24 +700,35 @@ const FinanceHub: React.FC = () => {
   // ============================================
 
   const handleSyncCardTransactions = async (cardCompanyId: string, cardNumber: string, period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year' = '3months') => {
-    // For BC Card, use connection ID as sync state (account-level sync), otherwise use card number
-    const syncStateKey = cardCompanyId === 'bc-card' ? cardCompanyId : cardNumber;
+    // For Shinhan Card and BC Card, use connection ID as sync state (fetches all cards at once)
+    const syncStateKey = (cardCompanyId === 'bc-card' || cardCompanyId === 'shinhan-card') ? cardCompanyId : cardNumber;
     setIsSyncingCard(syncStateKey);
     try {
+      // Shinhan Card has strict ~7 day limit, limit to week max
       // BC Card has strict 30-day limit, so use day-based calculation instead of month-based
-      const { startDate, endDate } = cardCompanyId === 'bc-card' && period === 'month'
-        ? (() => {
-            const today = new Date();
-            const start = new Date();
-            start.setDate(today.getDate() - 30); // Exactly 30 days
-            const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
-            return { startDate: formatDateStr(start), endDate: formatDateStr(today) };
-          })()
-        : getDateRange(period);
+      let dateRange;
+      if (cardCompanyId === 'shinhan-card') {
+        // Shinhan Card: Max 7 days
+        if (!['day', 'week'].includes(period)) {
+          alert('신한카드는 최대 7일까지만 조회 가능합니다.');
+          return;
+        }
+        dateRange = getDateRange(period);
+      } else if (cardCompanyId === 'bc-card' && period === 'month') {
+        const today = new Date();
+        const start = new Date();
+        start.setDate(today.getDate() - 30); // Exactly 30 days
+        const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+        dateRange = { startDate: formatDateStr(start), endDate: formatDateStr(today) };
+      } else {
+        dateRange = getDateRange(period);
+      }
+
+      const { startDate, endDate } = dateRange;
 
       const result = await window.electron.financeHub.card.getTransactions(
         cardCompanyId,
-        cardNumber,
+        cardNumber, // For Shinhan Card, this is ignored - fetches all cards
         startDate,
         endDate
       );
@@ -706,18 +737,7 @@ const FinanceHub: React.FC = () => {
         throw new Error(result.error || '거래내역 조회 실패');
       }
 
-      // Prepare card account data (card as "account")
-      const cardConnection = connectedCards.find(c => c.cardCompanyId === cardCompanyId);
-      const cardInfo = cardConnection?.cards?.find(c => c.cardNumber === cardNumber);
-
-      const accountData = {
-        accountNumber: cardNumber,
-        accountName: cardInfo?.cardName || '카드',
-        customerName: cardConnection?.alias || '',
-        balance: 0,  // Cards don't track balance
-      };
-
-      // Card transactions are already in card format from extractNHCardTransactions
+      // Card transactions data
       const transactionsData = result.transactions[0]?.extractedData?.transactions || [];
 
       if (transactionsData.length === 0) {
@@ -725,23 +745,66 @@ const FinanceHub: React.FC = () => {
         return;
       }
 
-      const syncMetadata = {
-        queryPeriodStart: startDate,
-        queryPeriodEnd: endDate,
-        excelFilePath: result.transactions[0]?.path || '',
-      };
+      const cardConnection = connectedCards.find(c => c.cardCompanyId === cardCompanyId);
 
-      // Import to database with isCard flag
-      const importResult = await window.electron.financeHubDb.importTransactions(
-        cardCompanyId,
-        accountData,
-        transactionsData,
-        syncMetadata,
-        true  // isCard flag - triggers transformation
-      );
+      // For Shinhan Card, transactions are for ALL cards - group by card and import separately
+      if (cardCompanyId === 'shinhan-card') {
+        this.log('Processing Shinhan Card transactions for all cards...');
 
-      if (importResult.success) {
-        const { inserted, skipped } = importResult.data;
+        // Group transactions by card number (이용카드 or cardUsed column)
+        const transactionsByCard = new Map();
+
+        transactionsData.forEach((tx: any) => {
+          const txCardNumber = tx['이용카드'] || tx.cardUsed || 'unknown';
+          if (!transactionsByCard.has(txCardNumber)) {
+            transactionsByCard.set(txCardNumber, []);
+          }
+          transactionsByCard.get(txCardNumber).push(tx);
+        });
+
+        console.log(`[Shinhan Card] Found transactions for ${transactionsByCard.size} different cards`);
+        console.log('[Shinhan Card] Card numbers:', Array.from(transactionsByCard.keys()));
+
+        let totalInserted = 0;
+        let totalSkipped = 0;
+
+        // Import transactions for each card separately
+        for (const [txCardNumber, cardTransactions] of transactionsByCard.entries()) {
+          const cardInfo = cardConnection?.cards?.find(c => c.cardNumber.includes(txCardNumber) || txCardNumber.includes(c.cardNumber));
+
+          const accountData = {
+            accountNumber: txCardNumber,
+            accountName: cardInfo?.cardName || `신한카드 ${txCardNumber}`,
+            customerName: cardConnection?.alias || '',
+            balance: 0,
+          };
+
+          console.log(`[Shinhan Card] Importing ${cardTransactions.length} transactions for card ${txCardNumber}`);
+          console.log('[Shinhan Card] Account data:', accountData);
+          console.log('[Shinhan Card] Sample transaction:', cardTransactions[0]);
+
+          const syncMetadata = {
+            queryPeriodStart: startDate,
+            queryPeriodEnd: endDate,
+            excelFilePath: result.transactions[0]?.path || '',
+          };
+
+          const importResult = await window.electron.financeHubDb.importTransactions(
+            cardCompanyId,
+            accountData,
+            cardTransactions,
+            syncMetadata,
+            true  // isCard flag
+          );
+
+          console.log(`[Shinhan Card] Import result for ${txCardNumber}:`, importResult);
+
+          if (importResult.success) {
+            totalInserted += importResult.data.inserted || 0;
+            totalSkipped += importResult.data.skipped || 0;
+          }
+        }
+
         await Promise.all([
           loadDatabaseStats(),
           loadRecentSyncOperations(),
@@ -752,9 +815,49 @@ const FinanceHub: React.FC = () => {
           c.cardCompanyId === cardCompanyId ? { ...c, lastSync: new Date() } : c
         ));
 
-        alert(`✅ 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
+        alert(`✅ 전체 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 카드 수: ${transactionsByCard.size}개\n\n※ 신한카드는 모든 카드의 거래내역을 한번에 조회합니다`);
+
       } else {
-        throw new Error(importResult.error || '데이터베이스 저장 실패');
+        // Other cards: import normally with single card number
+        const cardInfo = cardConnection?.cards?.find(c => c.cardNumber === cardNumber);
+
+        const accountData = {
+          accountNumber: cardNumber,
+          accountName: cardInfo?.cardName || '카드',
+          customerName: cardConnection?.alias || '',
+          balance: 0,
+        };
+
+        const syncMetadata = {
+          queryPeriodStart: startDate,
+          queryPeriodEnd: endDate,
+          excelFilePath: result.transactions[0]?.path || '',
+        };
+
+        const importResult = await window.electron.financeHubDb.importTransactions(
+          cardCompanyId,
+          accountData,
+          transactionsData,
+          syncMetadata,
+          true  // isCard flag
+        );
+
+        if (importResult.success) {
+          const { inserted, skipped } = importResult.data;
+          await Promise.all([
+            loadDatabaseStats(),
+            loadRecentSyncOperations(),
+            refreshAll()
+          ]);
+
+          setConnectedCards(prev => prev.map(c =>
+            c.cardCompanyId === cardCompanyId ? { ...c, lastSync: new Date() } : c
+          ));
+
+          alert(`✅ 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
+        } else {
+          throw new Error(importResult.error || '데이터베이스 저장 실패');
+        }
       }
     } catch (error: any) {
       console.error('[FinanceHub] Card sync error:', error);
@@ -791,7 +894,7 @@ const FinanceHub: React.FC = () => {
         userId: cardCredentials.userId,
         password: cardCredentials.password,
         accountType: cardCredentials.accountType || 'personal'
-      });
+      }, undefined, manualPasswordMode);
 
       if (result.success && result.isLoggedIn) {
         setCardConnectionProgress('카드 정보를 불러왔습니다!');
@@ -869,7 +972,7 @@ const FinanceHub: React.FC = () => {
         userId: credResult.credentials.userId,
         password: credResult.credentials.password,
         accountType: credResult.credentials.accountType || 'personal'
-      });
+      }, undefined, manualPasswordMode);
 
       if (loginResult.success && loginResult.isLoggedIn) {
         // Save cards to database as "accounts"
@@ -928,10 +1031,12 @@ const FinanceHub: React.FC = () => {
     setCardAuthMethod(null);
     setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
     setCardConnectionProgress('');
+    setManualPasswordMode(false);
   };
 
   const handleBackToCardList = () => {
     setSelectedCard(null);
+    setManualPasswordMode(false);
     setCardAuthMethod(null);
     setCardCredentials({ cardCompanyId: '', userId: '', password: '', accountType: 'personal' });
     setCardConnectionProgress('');
@@ -1890,7 +1995,7 @@ const FinanceHub: React.FC = () => {
                             {connection.status === 'disconnected' && '연결 끊김'}
                           </span>
                         </div>
-                        {connection.cardCompanyId === 'bc-card' && connection.cards && connection.cards.length > 0 && (
+                        {(connection.cardCompanyId === 'bc-card' || connection.cardCompanyId === 'shinhan-card') && connection.cards && connection.cards.length > 0 && (
                           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                               <div style={{
@@ -1902,7 +2007,7 @@ const FinanceHub: React.FC = () => {
                                 color: '#856404',
                                 flex: 1
                               }}>
-                                <strong>⚠️ BC카드:</strong> 최대 1개월, 모든 카드 일괄 동기화
+                                <strong>⚠️ {connection.cardCompanyId === 'shinhan-card' ? '신한카드: 최대 7일' : 'BC카드: 최대 1개월'}</strong>, 모든 카드 일괄 동기화
                               </div>
                             </div>
                             <div className="finance-hub__sync-dropdown" style={{ display: 'inline-block' }}>
@@ -1921,11 +2026,13 @@ const FinanceHub: React.FC = () => {
                                     <FontAwesomeIcon icon={faClock} /> 1일
                                   </button>
                                   <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'week'); setShowCardSyncOptions(null); }}>
-                                    <FontAwesomeIcon icon={faClock} /> 1주일
+                                    <FontAwesomeIcon icon={faClock} /> 1주일 {connection.cardCompanyId === 'shinhan-card' && '(최대)'}
                                   </button>
-                                  <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
-                                    <FontAwesomeIcon icon={faClock} /> 1개월 (최대)
-                                  </button>
+                                  {connection.cardCompanyId !== 'shinhan-card' && (
+                                    <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
+                                      <FontAwesomeIcon icon={faClock} /> 1개월 (최대)
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1943,7 +2050,7 @@ const FinanceHub: React.FC = () => {
                                   {cardItem.balance && cardItem.balance > 0 && (
                                     <span className="finance-hub__account-balance">{formatCurrency(cardItem.balance)}</span>
                                   )}
-                                  {connection.cardCompanyId !== 'bc-card' && (
+                                  {connection.cardCompanyId !== 'bc-card' && connection.cardCompanyId !== 'shinhan-card' && (
                                     <div className="finance-hub__sync-dropdown">
                                       <button
                                         className="finance-hub__btn finance-hub__btn--icon"
@@ -2597,6 +2704,24 @@ const FinanceHub: React.FC = () => {
                             로그인 정보 저장 (암호화하여 안전하게 보관)
                           </label>
                         </div>
+                        {selectedCard?.id === 'shinhan-card' && (
+                          <div className="finance-hub__checkbox-group">
+                            <label className="finance-hub__checkbox-label" style={{ color: '#ff6b6b', fontWeight: 500 }}>
+                              <input
+                                type="checkbox"
+                                checked={manualPasswordMode}
+                                onChange={(e) => setManualPasswordMode(e.target.checked)}
+                                disabled={isConnectingCard}
+                              />
+                              🔧 디버그 모드 (수동 비밀번호 입력)
+                            </label>
+                            {manualPasswordMode && (
+                              <p style={{ fontSize: '12px', color: '#666', marginTop: '5px', marginLeft: '24px' }}>
+                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력하고 터미널에서 Enter를 누르세요
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <button
                           className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
                           onClick={handleConnectCard}
@@ -2651,6 +2776,24 @@ const FinanceHub: React.FC = () => {
                             아이디 및 비밀번호 저장 (암호화하여 안전하게 보관)
                           </label>
                         </div>
+                        {selectedCard?.id === 'shinhan-card' && (
+                          <div className="finance-hub__checkbox-group">
+                            <label className="finance-hub__checkbox-label" style={{ color: '#ff6b6b', fontWeight: 500 }}>
+                              <input
+                                type="checkbox"
+                                checked={manualPasswordMode}
+                                onChange={(e) => setManualPasswordMode(e.target.checked)}
+                                disabled={isConnectingCard}
+                              />
+                              🔧 디버그 모드 (수동 비밀번호 입력)
+                            </label>
+                            {manualPasswordMode && (
+                              <p style={{ fontSize: '12px', color: '#666', marginTop: '5px', marginLeft: '24px' }}>
+                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력하고 터미널에서 Enter를 누르세요
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <button
                           className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
                           onClick={handleConnectCard}
@@ -2932,6 +3075,38 @@ const FinanceHub: React.FC = () => {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Password Continue Modal */}
+      {showManualPasswordContinue && (
+        <div className="finance-hub__modal-overlay" style={{ zIndex: 10000 }}>
+          <div className="finance-hub__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              <h2>🔐 디버그 모드: 수동 비밀번호 입력</h2>
+            </div>
+            <div className="finance-hub__modal-body" style={{ textAlign: 'center', padding: '40px' }}>
+              <p style={{ fontSize: '16px', lineHeight: '1.6', marginBottom: '30px' }}>
+                브라우저 창에서 비밀번호를 입력한 후<br />
+                아래 버튼을 클릭하여 자동화를 계속하세요.
+              </p>
+              <button
+                className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--large"
+                onClick={() => {
+                  console.log('[Manual Password] Continue button clicked');
+                  try {
+                    window.electron.financeHub.manualPassword.continue();
+                    console.log('[Manual Password] Continue event sent');
+                  } catch (error) {
+                    console.error('[Manual Password] Error sending continue:', error);
+                  }
+                }}
+                style={{ fontSize: '18px', padding: '15px 50px' }}
+              >
+                ✅ 계속하기
+              </button>
             </div>
           </div>
         </div>

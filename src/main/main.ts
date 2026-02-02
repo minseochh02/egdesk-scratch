@@ -41,6 +41,7 @@ import { generateDetailedReport, DetailedReport } from './company-research/compa
 import { generateExecutiveSummary, ExecutiveSummary } from './company-research/company-research-stage3b2';
 import { exportReport } from './company-research/company-research-stage4';
 import { processFullCompanyResearch } from './company-research/company-research-workflow';
+import { migrateTokensToSupabase, hasTokenMigrationRun } from './auth/migrate-tokens-to-supabase';
 
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
@@ -160,6 +161,60 @@ const activeInstagramSessions: AuthContext[] = [];
 function generateRandomServerName(): string {
   const randomString = Math.random().toString(36).substring(2, 8);
   return `mcp-server-${randomString}`;
+}
+
+/**
+ * Validate OAuth token on app startup
+ * Shows notification to user if token is invalid and needs refresh
+ */
+async function validateOAuthToken(mainWindow: BrowserWindow): Promise<void> {
+  try {
+    console.log('🔐 Checking OAuth token validity...');
+
+    const authService = getAuthService();
+    const token = await authService.getGoogleWorkspaceToken();
+
+    if (!token || !token.access_token) {
+      // No token found - user hasn't signed in yet
+      console.log('⚠️ No Google OAuth token found - user needs to sign in');
+
+      // Ensure webContents is ready before sending
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log('📤 Sending auth:token-invalid event to renderer...');
+        mainWindow.webContents.send('auth:token-invalid', {
+          message: 'Google 계정 연결이 필요합니다',
+          detail: '스프레드시트 자동 동기화를 사용하려면 Google 계정으로 로그인해주세요.',
+          needsSignIn: true
+        });
+        console.log('✅ Event sent successfully');
+      } else {
+        console.error('❌ Main window not ready or destroyed');
+      }
+
+      return;
+    }
+
+    // Token exists - check if it's valid by trying to use it
+    // getGoogleWorkspaceToken() already handles refresh automatically
+    // If we got here with a token, it should be valid
+    console.log('✅ OAuth token is valid');
+
+  } catch (error) {
+    console.error('❌ OAuth token validation error:', error);
+
+    // Show notification to user
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log('📤 Sending auth:token-invalid event (error case) to renderer...');
+      mainWindow.webContents.send('auth:token-invalid', {
+        message: 'Google 계정 인증 오류',
+        detail: '계정을 다시 연결해주세요.',
+        needsReauth: true
+      });
+      console.log('✅ Event sent successfully');
+    } else {
+      console.error('❌ Main window not ready or destroyed');
+    }
+  }
 }
 
 class AppUpdater {
@@ -594,11 +649,23 @@ const createWindow = async () => {
 
       ipcMain.handle('finance-hub:disconnect', async (_event, bankId) => {
         try {
+          // Close browser and cleanup automator
           const automator = activeAutomators.get(bankId);
           if (automator) {
-            await automator.cleanup();
+            await automator.cleanup(false); // Close browser on disconnect
             activeAutomators.delete(bankId);
           }
+
+          // Delete all accounts for this bank from database
+          const sqliteManager = getSQLiteManager();
+          const financeHubManager = sqliteManager.getFinanceHubManager();
+          const accounts = financeHubManager.getAccountsByBank(bankId);
+
+          for (const account of accounts) {
+            financeHubManager.deleteAccount(account.accountNumber);
+            console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${bankId}`);
+          }
+
           return { success: true };
         } catch (error) {
           console.error(`[FINANCE-HUB] Disconnect failed for ${bankId}:`, error);
@@ -610,14 +677,18 @@ const createWindow = async () => {
       // CARD COMPANY AUTOMATION HANDLERS
       // ========================================================================
 
-      ipcMain.handle('finance-hub:card:login-and-get-cards', async (_event, { cardCompanyId, credentials, proxyUrl }) => {
+      ipcMain.handle('finance-hub:card:login-and-get-cards', async (_event, { cardCompanyId, credentials, proxyUrl, manualPassword }) => {
         try {
           // Check if we have an existing automator instance
           let automator = activeAutomators.get(cardCompanyId);
 
           if (!automator) {
             const { cards } = require('./financehub');
-            automator = cards.createCardAutomator(cardCompanyId, { headless: false, arduinoPort: 'COM6' });
+            automator = cards.createCardAutomator(cardCompanyId, {
+              headless: false,
+              arduinoPort: 'COM6',
+              manualPassword: manualPassword ?? false
+            });
             activeAutomators.set(cardCompanyId, automator);
           }
 
@@ -683,11 +754,23 @@ const createWindow = async () => {
 
       ipcMain.handle('finance-hub:card:disconnect', async (_event, cardCompanyId) => {
         try {
+          // Close browser and cleanup automator
           const automator = activeAutomators.get(cardCompanyId);
           if (automator) {
-            await automator.cleanup();
+            await automator.cleanup(false); // Close browser on disconnect
             activeAutomators.delete(cardCompanyId);
           }
+
+          // Delete all accounts (cards) for this card company from database
+          const sqliteManager = getSQLiteManager();
+          const financeHubManager = sqliteManager.getFinanceHubManager();
+          const accounts = financeHubManager.getAccountsByBank(cardCompanyId);
+
+          for (const account of accounts) {
+            financeHubManager.deleteAccount(account.accountNumber);
+            console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${cardCompanyId}`);
+          }
+
           return { success: true };
         } catch (error) {
           console.error(`[FINANCE-HUB] Card disconnect failed for ${cardCompanyId}:`, error);
@@ -2790,6 +2873,20 @@ const createWindow = async () => {
     },
   });
 
+  // Register OAuth validation listener immediately after window creation
+  // This ensures the listener is registered before the page loads
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('🕒 Renderer loaded, checking OAuth token...');
+    // Give React a moment to mount
+    setTimeout(async () => {
+      try {
+        await validateOAuthToken(mainWindow);
+      } catch (error) {
+        console.error('OAuth token validation failed:', error);
+      }
+    }, 2000); // Wait 2 seconds after page load to ensure React is mounted
+  });
+
   // Now that mainWindow is created, initialize components that need it
   // Only register handlers once, but update component references each time
   try {
@@ -3411,8 +3508,40 @@ app
     // Set up deep link handler for OAuth callbacks (for production and non-Windows dev)
     // Pass a function that returns the current main window
     authService.setupDeepLinkHandler(() => mainWindow);
-    
+
+    // Run token migration to Supabase (Phase 3: Supabase Only)
+    // This runs in the background after app startup
+    setTimeout(async () => {
+      if (!hasTokenMigrationRun()) {
+        console.log('🔄 Starting automatic token migration to Supabase...');
+        try {
+          const results = await migrateTokensToSupabase();
+          console.log('✅ Token migration complete:', results);
+
+          if (results.migrated > 0) {
+            console.log(`   ✅ Successfully migrated ${results.migrated} token(s) to Supabase`);
+          }
+          if (results.skipped > 0) {
+            console.log(`   ℹ️ Skipped ${results.skipped} token(s) (already in Supabase)`);
+          }
+          if (results.failed > 0) {
+            console.error(`   ⚠️ Failed to migrate ${results.failed} token(s)`);
+          }
+        } catch (error) {
+          console.error('❌ Token migration failed:', error);
+        }
+      } else {
+        console.log('✅ Token migration already completed previously');
+      }
+    }, 5000); // Wait 5 seconds after app startup to ensure everything is initialized
+
     // Note: activate handler is set up earlier in the file (line ~3226)
     // to ensure it's registered before app is ready
+
+    // Note: Spreadsheet organization migration has been moved to run on first spreadsheet sync
+    // instead of app startup to ensure Google OAuth token is available
+
+    // Note: OAuth token validation is registered in createWindow() function
+    // to ensure the listener is set up before the page loads
   })
   .catch(console.log);

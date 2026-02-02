@@ -7,6 +7,7 @@ import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import Store from 'electron-store';
 import { ipcMain } from 'electron';
+import { getDriveService } from './drive-service';
 
 interface GoogleWorkspaceToken {
   access_token?: string;
@@ -37,9 +38,6 @@ export class GoogleWorkspaceService {
     return token || null;
   }
 
-  // Cache the EGDesk folder ID to avoid repeated lookups
-  private egdeskFolderId: string | null = null;
-
   /**
    * Initialize OAuth2 client with stored token
    */
@@ -69,84 +67,6 @@ export class GoogleWorkspaceService {
 
     this.oauth2Client = oauth2Client;
     return oauth2Client;
-  }
-
-  /**
-   * Find or create the EGDesk folder in Google Drive
-   * Returns the folder ID
-   */
-  private async findOrCreateEGDeskFolder(): Promise<string> {
-    // Return cached folder ID if available
-    if (this.egdeskFolderId) {
-      console.log('📁 Using cached EGDesk folder ID:', this.egdeskFolderId);
-      return this.egdeskFolderId;
-    }
-
-    const auth = await this.initializeOAuthClient();
-    const drive = google.drive({ version: 'v3', auth });
-
-    // Search for existing EGDesk folder
-    console.log('🔍 Searching for EGDesk folder in Google Drive...');
-    const searchResponse = await drive.files.list({
-      q: "name = 'EGDesk' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-      fields: 'files(id, name)',
-      spaces: 'drive',
-    });
-
-    if (searchResponse.data.files && searchResponse.data.files.length > 0) {
-      // Folder exists
-      this.egdeskFolderId = searchResponse.data.files[0].id!;
-      console.log('✅ Found existing EGDesk folder:', this.egdeskFolderId);
-      return this.egdeskFolderId;
-    }
-
-    // Folder doesn't exist, create it
-    console.log('📁 EGDesk folder not found, creating...');
-    const createResponse = await drive.files.create({
-      requestBody: {
-        name: 'EGDesk',
-        mimeType: 'application/vnd.google-apps.folder',
-      },
-      fields: 'id, webViewLink',
-    });
-
-    if (!createResponse.data.id) {
-      throw new Error('Failed to create EGDesk folder: No folder ID returned');
-    }
-
-    this.egdeskFolderId = createResponse.data.id;
-    console.log('✅ Created EGDesk folder:', this.egdeskFolderId);
-    console.log('📂 Folder URL:', createResponse.data.webViewLink || `https://drive.google.com/drive/folders/${this.egdeskFolderId}`);
-
-    return this.egdeskFolderId;
-  }
-
-  /**
-   * Move a file to a specific folder in Google Drive
-   * @param fileId - The ID of the file to move
-   * @param folderId - The ID of the destination folder
-   */
-  private async moveFileToFolder(fileId: string, folderId: string): Promise<void> {
-    const auth = await this.initializeOAuthClient();
-    const drive = google.drive({ version: 'v3', auth });
-
-    // Get the current parents of the file
-    const file = await drive.files.get({
-      fileId: fileId,
-      fields: 'parents',
-    });
-
-    const previousParents = file.data.parents?.join(',') || '';
-
-    // Move the file to the new folder
-    await drive.files.update({
-      fileId: fileId,
-      addParents: folderId,
-      removeParents: previousParents,
-      fields: 'id, parents',
-    });
-
-    console.log(`✅ Moved file ${fileId} to folder ${folderId}`);
   }
 
   /**
@@ -499,11 +419,29 @@ export class GoogleWorkspaceService {
         }
       }
 
-      // Step 7: Move spreadsheet to EGDesk folder
+      // Step 7: Move spreadsheet to EGDesk folder (root level)
       try {
         console.log('📁 Moving spreadsheet to EGDesk folder...');
-        const egdeskFolderId = await this.findOrCreateEGDeskFolder();
-        await this.moveFileToFolder(spreadsheetId, egdeskFolderId);
+        const driveService = getDriveService();
+        // For workspace templates, we'll put them in the root EGDesk folder
+        // If you want a specific subfolder, you can change this to 'Dev', 'Transactions', etc.
+        const rootFolder = await driveService.findOrCreateEGDeskFolder();
+        const auth = await this.initializeOAuthClient();
+        const drive = google.drive({ version: 'v3', auth });
+
+        // Move the file to EGDesk root folder
+        const file = await drive.files.get({
+          fileId: spreadsheetId,
+          fields: 'parents',
+        });
+        const previousParents = file.data.parents?.join(',') || '';
+
+        await drive.files.update({
+          fileId: spreadsheetId,
+          addParents: rootFolder,
+          removeParents: previousParents,
+          fields: 'id, parents',
+        });
         console.log('✅ Spreadsheet moved to EGDesk folder');
       } catch (folderError: any) {
         // Log the error but don't fail the operation - moving to folder is optional
