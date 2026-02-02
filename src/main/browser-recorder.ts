@@ -706,11 +706,54 @@ export class BrowserRecorder {
 
     // Inject into main frame
     await this.page.evaluate(() => {
+      // Define helper functions first (before any usage)
+      // Clean function to remove non-serializable properties before sending to Playwright
+      const cleanForPlaywright = (obj: any): any => {
+        if (obj === null || obj === undefined) return obj;
+
+        try {
+          const originalToJSON = Array.prototype.toJSON;
+          if (originalToJSON) {
+            delete (Array.prototype as any).toJSON;
+          }
+
+          const jsonString = JSON.stringify(obj);
+          const cleaned = JSON.parse(jsonString);
+
+          if (originalToJSON) {
+            (Array.prototype as any).toJSON = originalToJSON;
+          }
+
+          return cleaned;
+        } catch (e) {
+          console.error('Failed to clean object for Playwright:', e);
+          return obj;
+        }
+      };
+
+      // Wrapper to call Playwright functions with clean Array prototype
+      const callPlaywrightFunction = (fn: Function, ...args: any[]) => {
+        const originalToJSON = Array.prototype.toJSON;
+        if (originalToJSON) {
+          delete (Array.prototype as any).toJSON;
+        }
+
+        try {
+          fn(...args);
+        } finally {
+          setTimeout(() => {
+            if (originalToJSON) {
+              (Array.prototype as any).toJSON = originalToJSON;
+            }
+          }, 0);
+        }
+      };
+
       // Check if controller already exists
       if (document.getElementById('browser-recorder-controller')) {
         return;
       }
-      
+
       // Create controller container
       const controller = document.createElement('div');
       controller.id = 'browser-recorder-controller';
@@ -1173,7 +1216,7 @@ export class BrowserRecorder {
 
         // Notify main process about coordinate mode change
         if ((window as any).__playwrightRecorderOnCoordinateModeChange) {
-          (window as any).__playwrightRecorderOnCoordinateModeChange(coordinateMode);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnCoordinateModeChange, coordinateMode);
         }
       });
       
@@ -1202,7 +1245,7 @@ export class BrowserRecorder {
       stopBtn.addEventListener('click', () => {
         // Send stop signal to Playwright recorder
         if ((window as any).__playwrightRecorderOnStop) {
-          (window as any).__playwrightRecorderOnStop();
+          callPlaywrightFunction((window as any).__playwrightRecorderOnStop);
         }
         
         // Hide the controller to indicate stopping
@@ -1831,7 +1874,8 @@ export class BrowserRecorder {
 
         // Send to recorder
         if ((window as any).__playwrightRecorderOnCaptureTable) {
-          (window as any).__playwrightRecorderOnCaptureTable(tableData);
+          const cleanedTableData = cleanForPlaywright(tableData);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnCaptureTable, cleanedTableData);
         }
 
         // Show success notification
@@ -2105,7 +2149,8 @@ export class BrowserRecorder {
 
             // Now send to code viewer with image included
             if ((window as any).__playwrightRecorderOnGemini) {
-              (window as any).__playwrightRecorderOnGemini(elementInfo);
+              const cleanedElementInfo = cleanForPlaywright(elementInfo);
+              callPlaywrightFunction((window as any).__playwrightRecorderOnGemini, cleanedElementInfo);
             }
 
             // Show brief success notification instead of modal
@@ -2142,7 +2187,8 @@ export class BrowserRecorder {
 
             // Send element info without image
             if ((window as any).__playwrightRecorderOnGemini) {
-              (window as any).__playwrightRecorderOnGemini(elementInfo);
+              const cleanedElementInfo = cleanForPlaywright(elementInfo);
+              callPlaywrightFunction((window as any).__playwrightRecorderOnGemini, cleanedElementInfo);
             }
 
             // Show warning notification
@@ -2332,6 +2378,42 @@ export class BrowserRecorder {
       console.log('🚀 INIT SCRIPT RUNNING - Page:', window.location.href);
       console.log('🚀 Setting up event listeners for coordinate mode, click tracking, etc.');
 
+      // Define helper functions first (needed by event handlers)
+      const cleanForPlaywright = (obj: any): any => {
+        if (obj === null || obj === undefined) return obj;
+        try {
+          const originalToJSON = Array.prototype.toJSON;
+          if (originalToJSON) {
+            delete (Array.prototype as any).toJSON;
+          }
+          const jsonString = JSON.stringify(obj);
+          const cleaned = JSON.parse(jsonString);
+          if (originalToJSON) {
+            (Array.prototype as any).toJSON = originalToJSON;
+          }
+          return cleaned;
+        } catch (e) {
+          console.error('Failed to clean object for Playwright:', e);
+          return obj;
+        }
+      };
+
+      const callPlaywrightFunction = (fn: Function, ...args: any[]) => {
+        const originalToJSON = Array.prototype.toJSON;
+        if (originalToJSON) {
+          delete (Array.prototype as any).toJSON;
+        }
+        try {
+          fn(...args);
+        } finally {
+          setTimeout(() => {
+            if (originalToJSON) {
+              (Array.prototype as any).toJSON = originalToJSON;
+            }
+          }, 0);
+        }
+      };
+
       // Initialize global state if not exists
       if ((window as any).__playwrightRecorderCoordinateModeActive === undefined) {
         (window as any).__playwrightRecorderCoordinateModeActive = false;
@@ -2347,7 +2429,7 @@ export class BrowserRecorder {
           console.log('🚨 Controller disappeared, notifying parent...');
           (window as any).__playwrightRecorderControllerExists = false;
           if ((window as any).__playwrightRecorderOnControllerLost) {
-            (window as any).__playwrightRecorderOnControllerLost();
+            callPlaywrightFunction((window as any).__playwrightRecorderOnControllerLost);
           }
         } else if (controller && !(window as any).__playwrightRecorderControllerExists) {
           (window as any).__playwrightRecorderControllerExists = true;
@@ -2369,51 +2451,53 @@ export class BrowserRecorder {
           checkControllerExists();
         });
       }
-      // Continuously monitor and fix Array.prototype.toJSON
-      // This prevents "serializedArgs is not an array" errors
-      const fixArrayToJSON = () => {
-        if (Array.prototype.toJSON) {
-          // Store the custom implementation if not already stored
-          if (!(window as any).__customArrayToJSON) {
-            (window as any).__customArrayToJSON = Array.prototype.toJSON;
-          }
-          delete Array.prototype.toJSON;
-        }
-      };
-      
-      // Fix it immediately
-      fixArrayToJSON();
-      
-      // Use Object.defineProperty to prevent re-definition
-      Object.defineProperty(Array.prototype, 'toJSON', {
-        get: function() {
-          return undefined;
-        },
-        set: function(value) {
-          // Store the attempted override but don't actually set it
-          (window as any).__customArrayToJSON = value;
-          console.warn('Blocked Array.prototype.toJSON override for Playwright compatibility');
-        },
-        configurable: false
-      });
-      
-      // Also fix it periodically in case the site finds a way around our blocker
-      setInterval(fixArrayToJSON, 100);
+      // TESTING: Disabled Array.prototype.toJSON fix - was preventing framework from adding custom methods
+      // // Continuously monitor and fix Array.prototype.toJSON
+      // // This prevents "serializedArgs is not an array" errors
+      // const fixArrayToJSON = () => {
+      //   if (Array.prototype.toJSON) {
+      //     // Store the custom implementation if not already stored
+      //     if (!(window as any).__customArrayToJSON) {
+      //       (window as any).__customArrayToJSON = Array.prototype.toJSON;
+      //     }
+      //     delete Array.prototype.toJSON;
+      //   }
+      // };
+      //
+      // // Fix it immediately
+      // fixArrayToJSON();
+      //
+      // // Use Object.defineProperty to prevent re-definition
+      // Object.defineProperty(Array.prototype, 'toJSON', {
+      //   get: function() {
+      //     return undefined;
+      //   },
+      //   set: function(value) {
+      //     // Store the attempted override but don't actually set it
+      //     (window as any).__customArrayToJSON = value;
+      //     console.warn('Blocked Array.prototype.toJSON override for Playwright compatibility');
+      //   },
+      //   configurable: false
+      // });
+      //
+      // // Also fix it periodically in case the site finds a way around our blocker
+      // setInterval(fixArrayToJSON, 100);
       
       // Store events
       (window as any).__recordedEvents = [];
-      
+
       // Override addEventListener to capture all event listeners
-      const originalAddEventListener = EventTarget.prototype.addEventListener;
-      EventTarget.prototype.addEventListener = function(type: string, listener: any, options?: any) {
-        // Call original first
-        originalAddEventListener.call(this, type, listener, options);
-        
-        // For click events, add our own capture phase listener
-        if (type === 'click' && this === document) {
-          console.log('🎯 Intercepted document click listener registration');
-        }
-      };
+      // TESTING: Disabled addEventListener override - was breaking SPA frameworks
+      // const originalAddEventListener = EventTarget.prototype.addEventListener;
+      // EventTarget.prototype.addEventListener = function(type: string, listener: any, options?: any) {
+      //   // Call original first
+      //   originalAddEventListener.call(this, type, listener, options);
+      //
+      //   // For click events, add our own capture phase listener
+      //   if (type === 'click' && this === document) {
+      //     console.log('🎯 Intercepted document click listener registration');
+      //   }
+      // };
       
       // Function to add styles when DOM is ready
       const addHighlightStyles = () => {
@@ -2655,7 +2739,8 @@ export class BrowserRecorder {
           setTimeout(() => recentIframeClicks.delete(clickId), 1000);
 
           if ((window as any).__playwrightRecorderOnClick) {
-            (window as any).__playwrightRecorderOnClick(clickEvent);
+            const cleanedClickEvent = cleanForPlaywright(clickEvent);
+            callPlaywrightFunction((window as any).__playwrightRecorderOnClick, cleanedClickEvent);
           }
         }
 
@@ -2677,7 +2762,8 @@ export class BrowserRecorder {
           console.log('  - Frame:', fillEvent.frameSelector);
 
           if ((window as any).__playwrightRecorderOnFill) {
-            (window as any).__playwrightRecorderOnFill(fillEvent);
+            const cleanedFillEvent = cleanForPlaywright(fillEvent);
+            callPlaywrightFunction((window as any).__playwrightRecorderOnFill, cleanedFillEvent);
             console.log('✅ Iframe fill sent to recorder');
           } else {
             console.error('❌ __playwrightRecorderOnFill not available!');
@@ -2689,7 +2775,7 @@ export class BrowserRecorder {
           console.log('⏭️ Skip date component:', event.data.step);
 
           if ((window as any).__playwrightRecorderSkipDateComponent) {
-            (window as any).__playwrightRecorderSkipDateComponent(event.data.step);
+            callPlaywrightFunction((window as any).__playwrightRecorderSkipDateComponent, event.data.step);
           }
         }
       });
@@ -2812,7 +2898,7 @@ export class BrowserRecorder {
           // Don't prevent default - let the print dialog open naturally
           // Just record the action
           if ((window as any).__playwrightRecorderOnPrint) {
-            (window as any).__playwrightRecorderOnPrint();
+            callPlaywrightFunction((window as any).__playwrightRecorderOnPrint);
           }
         }
 
@@ -2874,7 +2960,8 @@ export class BrowserRecorder {
 
         // Send to Playwright context
         if ((window as any).__playwrightRecorderOnKeyboard) {
-          (window as any).__playwrightRecorderOnKeyboard(event);
+          const cleanedEvent = cleanForPlaywright(event);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnKeyboard, cleanedEvent);
         }
       }, true);
 
@@ -2884,7 +2971,7 @@ export class BrowserRecorder {
         window.print = function() {
           console.log('🖨️ window.print() called');
           if ((window as any).__playwrightRecorderOnPrint) {
-            (window as any).__playwrightRecorderOnPrint();
+            callPlaywrightFunction((window as any).__playwrightRecorderOnPrint);
           }
           // Call the original print function
           return originalPrint();
@@ -2954,7 +3041,8 @@ export class BrowserRecorder {
 
               // Send fill event
               if ((window as any).__playwrightRecorderOnFill) {
-                (window as any).__playwrightRecorderOnFill(event);
+                const cleanedEvent = cleanForPlaywright(event);
+                callPlaywrightFunction((window as any).__playwrightRecorderOnFill, cleanedEvent);
               }
 
               lastInputValues.set(target, currentValue);
@@ -3278,9 +3366,33 @@ export class BrowserRecorder {
           selector = `${dateElement.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
         }
 
+        // Generate XPath for robust fallback (same as regular clicks)
+        const getXPath = (element: Element): string => {
+          if (element.id) {
+            return `//*[@id="${element.id}"]`;
+          }
+          if (element === document.body) {
+            return '/html/body';
+          }
+          let ix = 0;
+          const siblings = element.parentNode ? Array.from(element.parentNode.childNodes).filter(n => n.nodeType === 1) : [];
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i] as Element;
+            if (sibling === element) {
+              const tagName = element.tagName.toLowerCase();
+              return (element.parentNode ? getXPath(element.parentNode as Element) : '') + '/' + tagName + '[' + (ix + 1) + ']';
+            }
+            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+              ix++;
+            }
+          }
+          return '';
+        };
+
+        const xpath = getXPath(dateElement);
         const step = (window as any).__playwrightRecorderDateMarkingStep;
 
-        console.log('📅 Date element marked:', { selector, elementType, step });
+        console.log('📅 Date element marked:', { selector, xpath, elementType, step });
 
         // Visual feedback - highlight the selected element with green outline
         dateElement.style.outline = '3px solid #4CAF50';
@@ -3351,13 +3463,13 @@ export class BrowserRecorder {
 
             // Send to recorder with dropdown selector
             if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
-              (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step, dropdownSelector);
+              callPlaywrightFunction((window as any).__playwrightRecorderOnDateDropdownMarked, selector, xpath, elementType, step, dropdownSelector);
             }
           }, 300); // Wait 300ms for dropdown to appear
         } else {
           // For non-button elements (select, input), no dropdown detection needed
           if ((window as any).__playwrightRecorderOnDateDropdownMarked) {
-            (window as any).__playwrightRecorderOnDateDropdownMarked(selector, elementType, step, '');
+            callPlaywrightFunction((window as any).__playwrightRecorderOnDateDropdownMarked, selector, xpath, elementType, step, '');
           }
         }
 
@@ -3536,7 +3648,7 @@ export class BrowserRecorder {
 
             // Send the offset to the recorder
             if ((window as any).__playwrightRecorderOnDateOffsetSelected) {
-              (window as any).__playwrightRecorderOnDateOffsetSelected(offset);
+              callPlaywrightFunction((window as any).__playwrightRecorderOnDateOffsetSelected, offset);
             }
 
             modal.remove();
@@ -3823,7 +3935,8 @@ export class BrowserRecorder {
             
             // Send wait action to recorder
             if ((window as any).__playwrightRecorderOnWaitForElement) {
-              (window as any).__playwrightRecorderOnWaitForElement(waitAction);
+              const cleanedWaitAction = cleanForPlaywright(waitAction);
+              callPlaywrightFunction((window as any).__playwrightRecorderOnWaitForElement, cleanedWaitAction);
             }
             
             modal.remove();
@@ -4365,7 +4478,8 @@ export class BrowserRecorder {
         // Check if in click until gone mode
         if (isClickUntilGoneMode && (window as any).__playwrightRecorderOnClickUntilGone) {
           console.log('🔄 Sending click until gone event to recorder:', event);
-          (window as any).__playwrightRecorderOnClickUntilGone(event);
+          const cleanedEvent = cleanForPlaywright(event);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnClickUntilGone, cleanedEvent);
           // Turn off mode after recording one action
           isClickUntilGoneMode = false;
           document.dispatchEvent(new CustomEvent('browser-recorder-click-until-gone-toggle', {
@@ -4373,32 +4487,36 @@ export class BrowserRecorder {
           }));
         } else if ((window as any).__playwrightRecorderOnClick) {
           console.log('📤 Sending click event to recorder:', event);
-          (window as any).__playwrightRecorderOnClick(event);
+          const cleanedEvent = cleanForPlaywright(event);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnClick, cleanedEvent);
         } else {
           console.error('❌ __playwrightRecorderOnClick not available!');
         }
       };
       
       // Track clicks - add multiple listeners to catch events even if stopPropagation is used
-      
+
       // 1. Document-level capture phase (earliest possible)
       document.addEventListener('click', handleClick, true);
-      
+
       // 2. Window-level capture phase
-      window.addEventListener('click', handleClick, true);
-      
+      // DISABLED: Redundant - document capture phase already catches everything
+      // window.addEventListener('click', handleClick, true);
+
       // 3. Document-level bubble phase (fallback)
-      document.addEventListener('click', handleClick, false);
+      // DISABLED: Redundant - capture phase runs first
+      // document.addEventListener('click', handleClick, false);
       
       // 4. Override dispatchEvent to intercept all click events
-      const originalDispatchEvent = EventTarget.prototype.dispatchEvent;
-      EventTarget.prototype.dispatchEvent = function(event: Event) {
-        if (event.type === 'click' && event.isTrusted) {
-          console.log('🎯 Intercepted dispatchEvent for click');
-          handleClick(event as MouseEvent);
-        }
-        return originalDispatchEvent.call(this, event);
-      };
+      // TESTING: Disabled to isolate issue
+      // const originalDispatchEvent = EventTarget.prototype.dispatchEvent;
+      // EventTarget.prototype.dispatchEvent = function(event: Event) {
+      //   if (event.type === 'click' && event.isTrusted) {
+      //     console.log('🎯 Intercepted dispatchEvent for click');
+      //     handleClick(event as MouseEvent);
+      //   }
+      //   return originalDispatchEvent.call(this, event);
+      // };
       
       // 5. Add pointer events as fallback for touch/stylus (disabled by default)
       const enablePointerFallback = false; // Can be enabled for specific problematic sites
@@ -5151,9 +5269,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       this.updateGeneratedCode();
     });
 
-    await this.page.exposeFunction('__playwrightRecorderOnDateDropdownMarked', async (selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string) => {
-      console.log('📅 Date element marked:', { selector, elementType, step, dropdownSelector });
-      this.handleDateDropdownMarked(selector, elementType, step, dropdownSelector);
+    await this.page.exposeFunction('__playwrightRecorderOnDateDropdownMarked', async (selector: string, xpath: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string) => {
+      console.log('📅 Date element marked:', { selector, xpath, elementType, step, dropdownSelector });
+      this.handleDateDropdownMarked(selector, xpath, elementType, step, dropdownSelector);
     });
 
     await this.page.exposeFunction('__playwrightRecorderOnDateOffsetSelected', async (offset: number) => {
@@ -5567,11 +5685,11 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     return testCode;
   }
 
-  private handleDateDropdownMarked(selector: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string): void {
-    console.log(`📅 Handling date element marked: ${step} = ${selector} (${elementType}), dropdown: ${dropdownSelector}`);
+  private handleDateDropdownMarked(selector: string, xpath: string, elementType: 'select' | 'button' | 'input', step: 'year' | 'month' | 'day', dropdownSelector: string): void {
+    console.log(`📅 Handling date element marked: ${step} = ${selector} (${elementType}), xpath: ${xpath}, dropdown: ${dropdownSelector}`);
 
-    // Store the selector, element type, and dropdown selector for this date component
-    this.dateMarkingSelectors[step] = { selector, elementType, dropdownSelector: dropdownSelector || undefined };
+    // Store the selector, xpath, element type, and dropdown selector for this date component
+    this.dateMarkingSelectors[step] = { selector, xpath, elementType, dropdownSelector: dropdownSelector || undefined };
     this.dateMarkingStep = step;
 
     // Advance to next step
@@ -5713,6 +5831,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     if (hasYear) {
       dateComponents.year = {
         selector: this.dateMarkingSelectors.year!.selector,
+        xpath: this.dateMarkingSelectors.year!.xpath,
         elementType: this.dateMarkingSelectors.year!.elementType,
         dropdownSelector: this.dateMarkingSelectors.year!.dropdownSelector
       };
@@ -5721,6 +5840,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     if (hasMonth) {
       dateComponents.month = {
         selector: this.dateMarkingSelectors.month!.selector,
+        xpath: this.dateMarkingSelectors.month!.xpath,
         elementType: this.dateMarkingSelectors.month!.elementType,
         dropdownSelector: this.dateMarkingSelectors.month!.dropdownSelector
       };
@@ -5729,6 +5849,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     if (hasDay) {
       dateComponents.day = {
         selector: this.dateMarkingSelectors.day!.selector,
+        xpath: this.dateMarkingSelectors.day!.xpath,
         elementType: this.dateMarkingSelectors.day!.elementType,
         dropdownSelector: this.dateMarkingSelectors.day!.dropdownSelector
       };
@@ -6276,18 +6397,35 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           if (hasYear) {
             const yearType = action.dateComponents!.year.elementType;
             const yearSelector = action.dateComponents!.year.selector;
+            const yearXPath = action.dateComponents!.year.xpath;
             const yearDropdownSelector = action.dateComponents!.year.dropdownSelector;
 
             if (yearType === 'select') {
-              lines.push(`    await page.selectOption('${yearSelector}', year);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.selectOption('${yearSelector}', year);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${yearXPath}').selectOption(year);`);
+              lines.push(`    }`);
             } else if (yearType === 'input') {
-              lines.push(`    await page.locator('${yearSelector}').fill(year);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.locator('${yearSelector}').fill(year);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${yearXPath}').fill(year);`);
+              lines.push(`    }`);
             } else {
               if (yearSelector.includes(':has-text')) {
                 const baseYearSelector = yearSelector.split(':has-text')[0];
-                lines.push(`    await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${baseYearSelector}').filter({ hasText: year }).click();`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${yearXPath}').click();`);
+                lines.push(`    }`);
               } else {
-                lines.push(`    await page.locator('${yearSelector}').click(); // Open year dropdown`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${yearSelector}').click(); // Open year dropdown`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${yearXPath}').click();`);
+                lines.push(`    }`);
                 if (yearDropdownSelector) {
                   lines.push(`    await page.locator('${yearDropdownSelector} a, ${yearDropdownSelector} button, ${yearDropdownSelector} div, ${yearDropdownSelector} li').filter({ hasText: year }).first().click();`);
                 } else {
@@ -6306,18 +6444,35 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           if (hasMonth) {
             const monthType = action.dateComponents!.month.elementType;
             const monthSelector = action.dateComponents!.month.selector;
+            const monthXPath = action.dateComponents!.month.xpath;
             const monthDropdownSelector = action.dateComponents!.month.dropdownSelector;
 
             if (monthType === 'select') {
-              lines.push(`    await page.selectOption('${monthSelector}', month);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.selectOption('${monthSelector}', month);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${monthXPath}').selectOption(month);`);
+              lines.push(`    }`);
             } else if (monthType === 'input') {
-              lines.push(`    await page.locator('${monthSelector}').fill(month);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.locator('${monthSelector}').fill(month);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${monthXPath}').fill(month);`);
+              lines.push(`    }`);
             } else {
               if (monthSelector.includes(':has-text')) {
                 const baseMonthSelector = monthSelector.split(':has-text')[0];
-                lines.push(`    await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${baseMonthSelector}').filter({ hasText: month }).click();`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${monthXPath}').click();`);
+                lines.push(`    }`);
               } else {
-                lines.push(`    await page.locator('${monthSelector}').click(); // Open month dropdown`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${monthSelector}').click(); // Open month dropdown`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${monthXPath}').click();`);
+                lines.push(`    }`);
                 if (monthDropdownSelector) {
                   lines.push(`    await page.locator('${monthDropdownSelector} a, ${monthDropdownSelector} button, ${monthDropdownSelector} div, ${monthDropdownSelector} li').filter({ hasText: month }).first().click();`);
                 } else {
@@ -6336,18 +6491,35 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           if (hasDay) {
             const dayType = action.dateComponents!.day.elementType;
             const daySelector = action.dateComponents!.day.selector;
+            const dayXPath = action.dateComponents!.day.xpath;
             const dayDropdownSelector = action.dateComponents!.day.dropdownSelector;
 
             if (dayType === 'select') {
-              lines.push(`    await page.selectOption('${daySelector}', day);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.selectOption('${daySelector}', day);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${dayXPath}').selectOption(day);`);
+              lines.push(`    }`);
             } else if (dayType === 'input') {
-              lines.push(`    await page.locator('${daySelector}').fill(day);`);
+              lines.push(`    try {`);
+              lines.push(`      await page.locator('${daySelector}').fill(day);`);
+              lines.push(`    } catch (e) {`);
+              lines.push(`      await page.locator('xpath=${dayXPath}').fill(day);`);
+              lines.push(`    }`);
             } else {
               if (daySelector.includes(':has-text')) {
                 const baseDaySelector = daySelector.split(':has-text')[0];
-                lines.push(`    await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${baseDaySelector}').filter({ hasText: day }).click();`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${dayXPath}').click();`);
+                lines.push(`    }`);
               } else {
-                lines.push(`    await page.locator('${daySelector}').click(); // Open day dropdown`);
+                lines.push(`    try {`);
+                lines.push(`      await page.locator('${daySelector}').click(); // Open day dropdown`);
+                lines.push(`    } catch (e) {`);
+                lines.push(`      await page.locator('xpath=${dayXPath}').click();`);
+                lines.push(`    }`);
                 if (dayDropdownSelector) {
                   lines.push(`    await page.locator('${dayDropdownSelector} a, ${dayDropdownSelector} button, ${dayDropdownSelector} div, ${dayDropdownSelector} li').filter({ hasText: day }).first().click();`);
                 } else {
@@ -6788,15 +6960,27 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 lines.push(`      // ${component.charAt(0).toUpperCase() + component.slice(1)}`);
 
                 if (comp.elementType === 'select') {
-                  lines.push(`      await page.locator('${comp.selector}').selectOption(\${${value}});`);
+                  lines.push(`      try {`);
+                  lines.push(`        await page.locator('${comp.selector}').selectOption(\${${value}});`);
+                  lines.push(`      } catch (e) {`);
+                  lines.push(`        await page.locator('xpath=${comp.xpath}').selectOption(\${${value}});`);
+                  lines.push(`      }`);
                   lines.push(`      console.log('✓ Selected ${component}:', ${value});`);
                 } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-                  lines.push(`      await page.locator('${comp.selector}').click();`);
+                  lines.push(`      try {`);
+                  lines.push(`        await page.locator('${comp.selector}').click();`);
+                  lines.push(`      } catch (e) {`);
+                  lines.push(`        await page.locator('xpath=${comp.xpath}').click();`);
+                  lines.push(`      }`);
                   lines.push(`      await page.waitForTimeout(500);`);
                   lines.push(`      await page.locator('${comp.dropdownSelector}').locator(\`text="\${${value}}"\`).first().click();`);
                   lines.push(`      console.log('✓ Selected ${component}:', ${value});`);
                 } else if (comp.elementType === 'input') {
-                  lines.push(`      await page.locator('${comp.selector}').fill(\${${value}});`);
+                  lines.push(`      try {`);
+                  lines.push(`        await page.locator('${comp.selector}').fill(\${${value}});`);
+                  lines.push(`      } catch (e) {`);
+                  lines.push(`        await page.locator('xpath=${comp.xpath}').fill(\${${value}});`);
+                  lines.push(`      }`);
                   lines.push(`      console.log('✓ Filled ${component}:', ${value});`);
                 }
               }
