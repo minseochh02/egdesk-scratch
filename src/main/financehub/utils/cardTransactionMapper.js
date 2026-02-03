@@ -88,7 +88,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
   }
 
   // Parse amount from different field names (check both English and Korean)
-  const amountValue = cardTx.amount || cardTx['이용금액'] || cardTx.approvalAmount || 0;
+  const amountValue = cardTx.amount || cardTx['이용금액'] || cardTx['국내이용금액(원)'] || cardTx.approvalAmount || 0;
   const amount = parseInt(String(amountValue).replace(/[^\d-]/g, '')) || 0;
 
   // Handle cancellations/refunds
