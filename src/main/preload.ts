@@ -2194,6 +2194,12 @@ const electronHandler = {
         return () => ipcRenderer.removeListener('manual-password:hide-continue', callback);
       },
     },
+    // Arduino settings
+    arduino: {
+      getPort: () => ipcRenderer.invoke('finance-hub:get-arduino-port'),
+      setPort: (port: string) => ipcRenderer.invoke('finance-hub:set-arduino-port', port),
+      listPorts: () => ipcRenderer.invoke('finance-hub:list-serial-ports'),
+    },
   },
 
   /**
