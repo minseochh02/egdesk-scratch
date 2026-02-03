@@ -9,6 +9,37 @@ const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { BC_CARD_INFO, BC_CARD_CONFIG } = require('./config');
 
 /**
+ * Clean card number by removing company name prefixes and extra whitespace
+ * @param {string} cardNumber - Raw card number from Excel
+ * @returns {string} Cleaned card number
+ */
+function cleanCardNumber(cardNumber) {
+  if (!cardNumber) return '';
+
+  // Remove common card company prefixes
+  const prefixes = [
+    'BC카드',
+    'KB국민카드', 'KB카드',
+    'NH농협카드', 'NH카드',
+    '신한카드',
+    '삼성카드',
+    '현대카드',
+    '롯데카드',
+    '하나카드'
+  ];
+
+  let cleaned = cardNumber;
+  for (const prefix of prefixes) {
+    cleaned = cleaned.replace(new RegExp(`^${prefix}\\s*`, 'g'), '');
+  }
+
+  // Remove extra whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
+}
+
+/**
  * BC Card Automator
  * Handles login and transaction automation for BC Card (wisebiz.bccard.com)
  *
@@ -545,7 +576,7 @@ class BCCardAutomator extends BaseCardAutomator {
               transaction.departmentName = value;
               break;
             case '카드번호':
-              transaction.cardNumber = value;
+              transaction.cardNumber = cleanCardNumber(value);
               break;
             case '카드구분':
               transaction.cardType = value;

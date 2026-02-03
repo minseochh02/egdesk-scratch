@@ -39,7 +39,7 @@ interface Transaction {
 export async function exportCardTransactions(options: CardExportOptions = {}): Promise<void> {
   try {
     // 1. Fetch transactions from database via IPC
-    const result = await (window as any).electron.financeHub.exportCardTransactions(options);
+    const result = await (window as any).electron.financeHubDb.exportCardTransactions(options);
 
     if (!result.success) {
       throw new Error(result.error || 'Failed to fetch transactions');
@@ -59,8 +59,9 @@ export async function exportCardTransactions(options: CardExportOptions = {}): P
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet(exportData);
 
-    // 4. Set column widths (15 columns)
+    // 4. Set column widths (16 columns)
     worksheet['!cols'] = [
+      { wch: 12 }, // 카드사
       { wch: 12 }, // 본부명
       { wch: 15 }, // 부서명
       { wch: 20 }, // 카드번호
@@ -82,7 +83,7 @@ export async function exportCardTransactions(options: CardExportOptions = {}): P
     if (worksheet['!ref']) {
       const range = XLSX.utils.decode_range(worksheet['!ref']);
       for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-        const cardNumCell = XLSX.utils.encode_cell({ r: R, c: 2 }); // Column 3 (카드번호)
+        const cardNumCell = XLSX.utils.encode_cell({ r: R, c: 3 }); // Column 4 (카드번호)
         if (worksheet[cardNumCell]) {
           worksheet[cardNumCell].t = 's'; // Force string type
         }
@@ -105,7 +106,7 @@ export async function exportCardTransactions(options: CardExportOptions = {}): P
 }
 
 /**
- * Map transaction to 15-column export format
+ * Map transaction to 16-column export format
  * (Duplicated from main process mapper for renderer use)
  */
 function mapTransactionToExportRow(transaction: Transaction): Record<string, any> {
@@ -116,6 +117,7 @@ function mapTransactionToExportRow(transaction: Transaction): Record<string, any
   const cardCompanyId = metadata.cardCompanyId || transaction.bank_id;
 
   return {
+    '카드사': extractCardCompany(cardCompanyId),
     '본부명': extractHeadquarters(metadata, cardCompanyId),
     '부서명': extractDepartment(metadata, cardCompanyId),
     '카드번호': metadata.cardNumber || '',
@@ -135,6 +137,20 @@ function mapTransactionToExportRow(transaction: Transaction): Record<string, any
 }
 
 // Field extraction functions (duplicated from main process)
+
+function extractCardCompany(cardCompanyId: string): string {
+  const cardCompanyNames: Record<string, string> = {
+    'bc-card': 'BC카드',
+    'kb-card': 'KB국민카드',
+    'nh-card': 'NH농협카드',
+    'shinhan-card': '신한카드',
+    'samsung-card': '삼성카드',
+    'hyundai-card': '현대카드',
+    'lotte-card': '롯데카드',
+    'hana-card': '하나카드'
+  };
+  return cardCompanyNames[cardCompanyId] || '';
+}
 
 function extractHeadquarters(metadata: any, cardCompanyId: string): string {
   return cardCompanyId === 'bc-card' ? (metadata.headquartersName || '') : '';
