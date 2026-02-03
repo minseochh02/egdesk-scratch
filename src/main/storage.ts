@@ -70,6 +70,7 @@ export function initializeStore(): Promise<void> {
           financeHub: {
             savedCredentials: {}, // { bankId: { userId, password } }
             connectedBanks: [],
+            arduinoPort: 'COM6', // Default Arduino HID keyboard port
             persistentSpreadsheet: {
               spreadsheetId: null, // Google Sheets ID for persistent transactions spreadsheet
               lastUpdated: null,
@@ -1771,6 +1772,97 @@ export function clearAllFolderConfigs(): void {
     console.error('Error clearing folder configs:', error);
   }
 }
+
+/**
+ * Auto-detect Arduino port
+ */
+async function detectArduinoPort(): Promise<string | null> {
+  try {
+    const { SerialPort } = require('serialport');
+    const ports = await SerialPort.list();
+
+    // Look for Arduino by manufacturer or product name
+    const arduinoPort = ports.find((port: any) =>
+      port.manufacturer?.toLowerCase().includes('arduino') ||
+      port.manufacturer?.toLowerCase().includes('ftdi') ||
+      port.manufacturer?.toLowerCase().includes('ch340') ||
+      port.productId?.toLowerCase().includes('2341') || // Arduino Vendor ID
+      port.path?.includes('usbserial') ||
+      port.path?.includes('usbmodem')
+    );
+
+    if (arduinoPort) {
+      console.log(`🔍 Auto-detected Arduino on port: ${arduinoPort.path}`);
+      console.log(`   Manufacturer: ${arduinoPort.manufacturer || 'Unknown'}`);
+      return arduinoPort.path;
+    }
+
+    console.log('⚠️  No Arduino detected. Available ports:', ports.map((p: any) => p.path).join(', '));
+    return null;
+  } catch (error) {
+    console.error('Error detecting Arduino port:', error);
+    return null;
+  }
+}
+
+/**
+ * IPC Handler: Get Arduino port setting (with auto-detection)
+ */
+ipcMain.handle('finance-hub:get-arduino-port', async () => {
+  try {
+    // First try auto-detection
+    const detectedPort = await detectArduinoPort();
+
+    if (detectedPort) {
+      // Save the detected port for future use
+      store.set('financeHub.arduinoPort', detectedPort);
+      return { success: true, port: detectedPort, autoDetected: true };
+    }
+
+    // Fall back to saved setting
+    const savedPort = store.get('financeHub.arduinoPort', 'COM6');
+    return { success: true, port: savedPort, autoDetected: false };
+  } catch (error) {
+    console.error('Error getting Arduino port:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', port: 'COM6' };
+  }
+});
+
+/**
+ * IPC Handler: Set Arduino port setting
+ */
+ipcMain.handle('finance-hub:set-arduino-port', async (event, port: string) => {
+  try {
+    store.set('financeHub.arduinoPort', port);
+    console.log(`✅ Arduino port set to: ${port}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting Arduino port:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * IPC Handler: List all available serial ports
+ */
+ipcMain.handle('finance-hub:list-serial-ports', async () => {
+  try {
+    const { SerialPort } = require('serialport');
+    const ports = await SerialPort.list();
+    return {
+      success: true,
+      ports: ports.map((p: any) => ({
+        path: p.path,
+        manufacturer: p.manufacturer,
+        productId: p.productId,
+        vendorId: p.vendorId
+      }))
+    };
+  } catch (error) {
+    console.error('Error listing serial ports:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', ports: [] };
+  }
+});
 
 /**
  * IPC Handler: Manually trigger spreadsheet re-organization

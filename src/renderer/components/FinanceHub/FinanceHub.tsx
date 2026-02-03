@@ -1792,8 +1792,8 @@ const FinanceHub: React.FC = () => {
           </div>
         </div>
 
-        {/* Debug Panel - Hidden in production */}
-        {true && (
+        {/* Debug Panel - Only visible in development */}
+        {import.meta.env.DEV && (
           <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
             <button className="finance-hub__debug-toggle" onClick={() => setShowDebugPanel(!showDebugPanel)}>🔧 Debug Tools {showDebugPanel ? '▼' : '▶'}</button>
             {showDebugPanel && (
@@ -1914,7 +1914,7 @@ const FinanceHub: React.FC = () => {
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleDisconnectAccount(connection.bankId, account.accountNumber)} title="이 계좌 비활성화">
                                           <FontAwesomeIcon icon={faUnlink} />
                                         </button>
-                                        {showDebugPanel && (
+                                        {import.meta.env.DEV && showDebugPanel && (
                                           <button className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger" onClick={() => handleDeleteAccount(connection.bankId, account.accountNumber)} title="계좌 삭제 (DEBUG)">
                                             <FontAwesomeIcon icon={faTrash} />
                                           </button>
@@ -2100,7 +2100,7 @@ const FinanceHub: React.FC = () => {
                                   >
                                     <FontAwesomeIcon icon={faUnlink} />
                                   </button>
-                                  {showDebugPanel && (
+                                  {import.meta.env.DEV && showDebugPanel && (
                                     <button
                                       className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger"
                                       onClick={() => {

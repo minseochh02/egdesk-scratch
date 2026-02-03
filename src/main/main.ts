@@ -677,6 +677,41 @@ const createWindow = async () => {
       // CARD COMPANY AUTOMATION HANDLERS
       // ========================================================================
 
+      /**
+       * Helper: Get Arduino port with auto-detection
+       */
+      async function getArduinoPort(): Promise<string> {
+        try {
+          const { SerialPort } = require('serialport');
+          const ports = await SerialPort.list();
+
+          // Look for Arduino by manufacturer or product name
+          const arduinoPort = ports.find((port: any) =>
+            port.manufacturer?.toLowerCase().includes('arduino') ||
+            port.manufacturer?.toLowerCase().includes('ftdi') ||
+            port.manufacturer?.toLowerCase().includes('ch340') ||
+            port.productId?.toLowerCase().includes('2341') || // Arduino Vendor ID
+            port.path?.includes('usbserial') ||
+            port.path?.includes('usbmodem')
+          );
+
+          if (arduinoPort) {
+            console.log(`🔍 Auto-detected Arduino on port: ${arduinoPort.path}`);
+            // Save for future use
+            store.set('financeHub.arduinoPort', arduinoPort.path);
+            return arduinoPort.path;
+          }
+
+          // Fall back to saved setting
+          const savedPort = store.get('financeHub.arduinoPort', 'COM6');
+          console.log(`⚠️  No Arduino detected. Using saved port: ${savedPort}`);
+          return savedPort;
+        } catch (error) {
+          console.error('Error detecting Arduino port:', error);
+          return store.get('financeHub.arduinoPort', 'COM6');
+        }
+      }
+
       ipcMain.handle('finance-hub:card:login-and-get-cards', async (_event, { cardCompanyId, credentials, proxyUrl, manualPassword }) => {
         try {
           // Check if we have an existing automator instance
@@ -684,9 +719,10 @@ const createWindow = async () => {
 
           if (!automator) {
             const { cards } = require('./financehub');
+            const arduinoPort = await getArduinoPort();
             automator = cards.createCardAutomator(cardCompanyId, {
               headless: false,
-              arduinoPort: 'COM6',
+              arduinoPort,
               manualPassword: manualPassword ?? false
             });
             activeAutomators.set(cardCompanyId, automator);
@@ -731,7 +767,8 @@ const createWindow = async () => {
 
             // Create new automator
             const { cards } = require('./financehub');
-            automator = cards.createCardAutomator(cardCompanyId, { headless: false, arduinoPort: 'COM6' });
+            const arduinoPort = await getArduinoPort();
+            automator = cards.createCardAutomator(cardCompanyId, { headless: false, arduinoPort });
             activeAutomators.set(cardCompanyId, automator);
 
             // Login with saved credentials
