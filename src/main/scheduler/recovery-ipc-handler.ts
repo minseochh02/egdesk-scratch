@@ -65,5 +65,20 @@ export function registerSchedulerRecoveryHandlers(): void {
     }
   });
 
+  // Cancel a task
+  ipcMain.handle('scheduler-recovery-cancel-task', async (event, schedulerType, taskId, intendedDate) => {
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+      await recoveryService.markIntentCancelled(schedulerType, taskId, intendedDate);
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   console.log('✅ Scheduler recovery IPC handlers registered');
 }

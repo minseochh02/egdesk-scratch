@@ -2173,6 +2173,8 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:save-persistent-spreadsheet', spreadsheetInfo, key),
     clearPersistentSpreadsheet: (key?: string) =>
       ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet', key),
+    cleanupDownloadedFiles: (bankOrCardId: string) =>
+      ipcRenderer.invoke('finance-hub:cleanup-downloaded-files', bankOrCardId),
     // Card company methods
     card: {
       loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string, manualPassword?: boolean) =>

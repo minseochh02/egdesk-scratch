@@ -257,6 +257,28 @@ export class SchedulerRecoveryService {
     `).run(skipReason, schedulerType, taskId, intendedDate);
   }
 
+  /**
+   * Mark intent as cancelled
+   */
+  public async markIntentCancelled(
+    schedulerType: string,
+    taskId: string,
+    intendedDate: string,
+    cancelReason?: string
+  ): Promise<void> {
+    const db = this.getDb();
+
+    db.prepare(`
+      UPDATE scheduler_execution_intents
+      SET status = 'cancelled',
+          skip_reason = ?,
+          updated_at = datetime('now')
+      WHERE scheduler_type = ?
+        AND task_id = ?
+        AND intended_date = ?
+    `).run(cancelReason || 'Cancelled by user', schedulerType, taskId, intendedDate);
+  }
+
   // ============================================
   // Recovery Detection
   // ============================================

@@ -1906,6 +1906,71 @@ ipcMain.handle('finance-hub:list-serial-ports', async () => {
 });
 
 /**
+ * IPC Handler: Get scheduler execution intents
+ */
+ipcMain.handle('sqlite-scheduler-get-intents', async (event, options?: { schedulerType?: string; limit?: number; offset?: number }) => {
+  try {
+    const { getSQLiteManager } = require('./sqlite/manager');
+    const manager = getSQLiteManager();
+    const db = manager.getSchedulerDatabase();
+
+    const { schedulerType, limit = 500, offset = 0 } = options || {};
+
+    let query = `
+      SELECT * FROM scheduler_execution_intents
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (schedulerType) {
+      query += ` AND scheduler_type = ?`;
+      params.push(schedulerType);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    const intents = db.prepare(query).all(...params);
+
+    // Get total count
+    let countQuery = `SELECT COUNT(*) as total FROM scheduler_execution_intents WHERE 1=1`;
+    const countParams: any[] = [];
+    if (schedulerType) {
+      countQuery += ` AND scheduler_type = ?`;
+      countParams.push(schedulerType);
+    }
+    const totalResult = db.prepare(countQuery).get(...countParams) as { total: number };
+
+    return {
+      success: true,
+      intents: intents.map((intent: any) => ({
+        id: intent.id,
+        schedulerType: intent.scheduler_type,
+        taskId: intent.task_id,
+        taskName: intent.task_name,
+        intendedDate: intent.intended_date,
+        intendedTime: intent.intended_time,
+        status: intent.status,
+        executionWindowStart: intent.execution_window_start,
+        executionWindowEnd: intent.execution_window_end,
+        actualExecutionTime: intent.actual_started_at,
+        completedAt: intent.actual_completed_at,
+        errorMessage: intent.error_message,
+        retryCount: intent.retry_count || 0,
+        createdAt: intent.created_at,
+        updatedAt: intent.updated_at,
+      })),
+      total: totalResult.total,
+      offset,
+      limit
+    };
+  } catch (error) {
+    console.error('Error getting scheduler intents:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', intents: [], total: 0 };
+  }
+});
+
+/**
  * IPC Handler: Manually trigger spreadsheet re-organization
  */
 ipcMain.handle('finance-hub:reorganize-spreadsheets', async () => {
@@ -1920,6 +1985,27 @@ ipcMain.handle('finance-hub:reorganize-spreadsheets', async () => {
     };
   } catch (error) {
     console.error('Error reorganizing spreadsheets:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+/**
+ * IPC Handler: Cleanup deleted Playwright test schedules
+ */
+ipcMain.handle('scheduler:cleanup-deleted-tests', async () => {
+  try {
+    const { cleanupDeletedPlaywrightTests } = await import('./migrations/cleanup-deleted-playwright-tests');
+    const result = await cleanupDeletedPlaywrightTests();
+    return {
+      success: true,
+      removed: result.removed,
+      checked: result.checked,
+    };
+  } catch (error) {
+    console.error('Error cleaning up deleted tests:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

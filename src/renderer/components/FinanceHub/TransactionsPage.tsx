@@ -24,7 +24,6 @@ import {
 } from './types';
 import { formatCurrency, formatDate, formatAccountNumber, getBankInfo } from './utils';
 import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
-import { exportCardTransactions } from '../../utils/cardExportService';
 
 // ============================================
 // Props Interface
@@ -193,22 +192,6 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
     }
   };
 
-  const handleExportCardTransactions = async () => {
-    try {
-      // Use current filters to export
-      await exportCardTransactions({
-        accountId: filters.accountId,
-        cardCompanyId: filters.bankId,
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-        includeRefunds: true
-      });
-    } catch (error) {
-      console.error('Card export failed:', error);
-      // Error already shown by export service
-    }
-  };
-
   const handleGoogleSignIn = async () => {
     setSigningIn(true);
     
@@ -371,11 +354,6 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           <button className="txp-btn txp-btn--outline" onClick={handleOpenInSpreadsheet}>
             📊 스프레드시트에서 열기 {hasPersistentSpreadsheet && '(기존 시트 업데이트)'}
           </button>
-          {transactionType === 'card' && (
-            <button className="txp-btn txp-btn--primary" onClick={handleExportCardTransactions}>
-              📥 카드 거래내역 엑셀 다운로드
-            </button>
-          )}
           {hasPersistentSpreadsheet && (
             <button className="txp-btn txp-btn--outline txp-btn--small" onClick={async () => {
               const typeLabel = transactionType === 'bank' ? '은행' : '카드';

@@ -110,7 +110,16 @@ export class SQLiteManager {
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
       this.isInitialized = true;
-      
+
+      // Run cleanup migration for deleted Playwright tests
+      try {
+        const { cleanupDeletedPlaywrightTests } = await import('../migrations/cleanup-deleted-playwright-tests');
+        await cleanupDeletedPlaywrightTests();
+      } catch (cleanupError) {
+        console.error('Migration warning: Failed to cleanup deleted Playwright tests:', cleanupError);
+        // Don't fail initialization if cleanup fails
+      }
+
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

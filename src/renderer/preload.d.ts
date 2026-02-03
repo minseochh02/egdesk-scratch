@@ -688,6 +688,7 @@ interface FinanceHubAPI {
   saveCredentials: (bankId: string, credentials: any) => Promise<{ success: boolean; error?: string }>;
   getSavedCredentials: (bankId: string) => Promise<{ success: boolean; credentials?: any; error?: string }>;
   removeCredentials: (bankId: string) => Promise<{ success: boolean; error?: string }>;
+  cleanupDownloadedFiles: (bankOrCardId: string) => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
 }
 
 /**

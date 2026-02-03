@@ -27,6 +27,7 @@ import {
   faChartBar,
   faWrench,
   faLaptopCode,
+  faClock,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -52,6 +53,7 @@ import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
+import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -287,7 +289,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.24</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.25</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -1957,7 +1959,8 @@ function NavigationBar({
   ].some(path => location.pathname.startsWith(path));
 
   const isOperationsActive = [
-    '/finance-hub'
+    '/finance-hub',
+    '/scheduler-status'
   ].some(path => location.pathname.startsWith(path));
 
   // Check environment
@@ -2066,15 +2069,19 @@ function NavigationBar({
           </NavDropdown>
 
           {/* Operations Group */}
-          <NavDropdown 
-            title="Operations" 
-            icon={faChartBar} 
+          <NavDropdown
+            title="Operations"
+            icon={faChartBar}
             isActive={isOperationsActive}
             isNarrow={isNarrow}
           >
             <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faChartBar} fixedWidth />
               <span>Finance Hub</span>
+            </Link>
+            <Link to="/scheduler-status" className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faClock} fixedWidth />
+              <span>Scheduler Status</span>
             </Link>
           </NavDropdown>
 
@@ -2659,9 +2666,10 @@ function AppContent() {
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
+            <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />
-            
+
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
