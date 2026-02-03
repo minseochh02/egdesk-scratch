@@ -8,7 +8,6 @@ const XLSX = require('xlsx');
 const { SerialPort } = require('serialport');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { NH_CARD_INFO, NH_CARD_CONFIG } = require('./config');
-const { sendPasswordWithNaturalTiming } = require('../../utils/virtual-hid-bridge');
 
 /**
  * NH Card Automator
@@ -25,6 +24,9 @@ class NHCardAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'nh-card');
+    this.arduinoPort = options.arduinoPort || null;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
   }
 
@@ -169,7 +171,7 @@ class NHCardAutomator extends BaseBankAutomator {
       await passwordField.focus();
       await this.page.waitForTimeout(500);
 
-      // Step 6: Fill password (Virtual HID with Natural Timing or Manual)
+      // Step 6: Fill password (Arduino HID with Natural Timing or Manual)
       if (this.manualPassword) {
         // DEBUG MODE: Manual password entry
         this.log('Manual password mode enabled');
@@ -180,28 +182,16 @@ class NHCardAutomator extends BaseBankAutomator {
         await this.waitForManualPasswordEntry();
         this.log('Manual password entry completed');
       } else {
-        // AUTOMATIC MODE: Virtual HID keyboard with natural timing (bypasses security keyboard!)
-        this.log('Typing password via Virtual HID with natural timing...');
+        // AUTOMATIC MODE: Arduino HID keyboard with app-controlled natural timing (bypasses security keyboard!)
+        this.log('Typing password via Arduino HID with natural timing...');
         try {
-          const success = await sendPasswordWithNaturalTiming(password, {
+          await this.typeViaArduinoWithNaturalTiming(password, {
             minDelay: 80,
-            maxDelay: 200,
-            preDelay: 300,
-            debug: true,
-            onProgress: (index, char, total) => {
-              if ((index + 1) % 5 === 0) {
-                this.log(`Password progress: ${index + 1}/${total}`);
-              }
-            }
+            maxDelay: 200
           });
-
-          if (!success) {
-            throw new Error('Virtual HID password entry failed');
-          }
-
-          this.log('Password typed via Virtual HID with natural timing');
+          this.log('Password typed via Arduino HID with natural timing');
         } catch (e) {
-          this.log(`Virtual HID password entry failed: ${e.message}`, 'error');
+          this.log(`Arduino HID password entry failed: ${e.message}`, 'error');
           throw new Error(`Password entry failed: ${e.message}`);
         }
       }
@@ -227,6 +217,8 @@ class NHCardAutomator extends BaseBankAutomator {
         success: false,
         error: error.message,
       };
+    } finally {
+      await this.disconnectArduino();
     }
   }
 
@@ -593,6 +585,52 @@ class NHCardAutomator extends BaseBankAutomator {
         setTimeout(() => resolve(), typingTime);
       });
     });
+  }
+
+  /**
+   * Type password character-by-character via Arduino with app-controlled natural timing
+   * @param {string} text - Text to type
+   * @param {Object} options - Timing options
+   * @param {number} options.minDelay - Minimum delay between characters in ms (default: 80)
+   * @param {number} options.maxDelay - Maximum delay between characters in ms (default: 200)
+   */
+  async typeViaArduinoWithNaturalTiming(text, options = {}) {
+    const { minDelay = 80, maxDelay = 200 } = options;
+
+    if (!this.arduino) {
+      await this.connectArduino();
+    }
+
+    this.log(`Typing ${text.length} characters with natural timing (${minDelay}-${maxDelay}ms delays)`);
+
+    // Type each character individually
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      // Send single character to Arduino
+      await new Promise((resolve, reject) => {
+        this.arduino.write(char + '\n', (err) => {
+          if (err) return reject(err);
+
+          // Wait for Arduino to finish typing this character
+          // Arduino takes ~950ms per character based on its programming
+          setTimeout(() => resolve(), 950);
+        });
+      });
+
+      // Progress logging
+      if ((i + 1) % 5 === 0) {
+        this.log(`Password progress: ${i + 1}/${text.length}`);
+      }
+
+      // Add variable delay before next character (except after last char)
+      if (i < text.length - 1) {
+        const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    this.log(`Completed typing ${text.length} characters`);
   }
 
   async disconnectArduino() {
