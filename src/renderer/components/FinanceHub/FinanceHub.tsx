@@ -178,7 +178,7 @@ const FinanceHub: React.FC = () => {
   const [signingInTaxGoogle, setSigningInTaxGoogle] = useState(false);
 
   // Arduino port settings state
-  const [arduinoPort, setArduinoPort] = useState<string>('COM6');
+  const [arduinoPort, setArduinoPort] = useState<string>('COM3');
   const [availablePorts, setAvailablePorts] = useState<any[]>([]);
   const [isDetectingArduino, setIsDetectingArduino] = useState(false);
   const [arduinoStatus, setArduinoStatus] = useState<'unknown' | 'detected' | 'not-found'>('unknown');
@@ -1881,89 +1881,29 @@ const FinanceHub: React.FC = () => {
       <main className="finance-hub__main">
         {currentView === 'account-management' ? (
           <>
-            {/* Arduino Settings */}
-            <section className="finance-hub__section">
-              <div className="finance-hub__section-header">
-                <h2><span className="finance-hub__section-icon">🔌</span> Arduino HID 설정</h2>
+            {/* Arduino Settings - Compact */}
+            <div className="finance-hub__arduino-compact">
+              <div className="finance-hub__arduino-row">
+                <span className="finance-hub__arduino-label">🔌 Arduino: </span>
+                <span className="finance-hub__arduino-port-compact">{arduinoPort}</span>
+                {arduinoStatus === 'detected' && <span className="finance-hub__arduino-badge finance-hub__arduino-badge--success">✓</span>}
+                <input
+                  type="text"
+                  value={arduinoPort}
+                  onChange={(e) => setArduinoPort(e.target.value)}
+                  placeholder="COM3"
+                  className="finance-hub__arduino-input-compact"
+                />
+                <button className="finance-hub__arduino-btn-compact" onClick={() => updateArduinoPort(arduinoPort)}>저장</button>
                 <button
-                  className="finance-hub__btn finance-hub__btn--secondary"
+                  className="finance-hub__arduino-btn-compact"
                   onClick={detectArduinoPort}
                   disabled={isDetectingArduino}
                 >
-                  {isDetectingArduino ? (
-                    <>
-                      <FontAwesomeIcon icon={faSpinner} spin /> 감지 중...
-                    </>
-                  ) : (
-                    <>
-                      <FontAwesomeIcon icon={faSync} /> 자동 감지
-                    </>
-                  )}
+                  {isDetectingArduino ? <FontAwesomeIcon icon={faSpinner} spin /> : '자동감지'}
                 </button>
               </div>
-              <div className="finance-hub__arduino-settings">
-                <div className="finance-hub__arduino-info">
-                  <div className="finance-hub__arduino-port">
-                    <label>현재 포트:</label>
-                    <div className="finance-hub__arduino-port-display">
-                      <span className="finance-hub__port-value">{arduinoPort}</span>
-                      {arduinoStatus === 'detected' && (
-                        <span className="finance-hub__arduino-status finance-hub__arduino-status--success">
-                          <FontAwesomeIcon icon={faCheckCircle} /> 자동 감지됨
-                        </span>
-                      )}
-                      {arduinoStatus === 'not-found' && (
-                        <span className="finance-hub__arduino-status finance-hub__arduino-status--warning">
-                          <FontAwesomeIcon icon={faExclamationTriangle} /> 감지 실패
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="finance-hub__arduino-manual">
-                    <label>수동 설정:</label>
-                    <div className="finance-hub__arduino-manual-input">
-                      <input
-                        type="text"
-                        value={arduinoPort}
-                        onChange={(e) => setArduinoPort(e.target.value)}
-                        placeholder="예: COM3, COM4, /dev/ttyUSB0"
-                        className="finance-hub__input"
-                      />
-                      <button
-                        className="finance-hub__btn finance-hub__btn--primary"
-                        onClick={() => updateArduinoPort(arduinoPort)}
-                      >
-                        저장
-                      </button>
-                    </div>
-                  </div>
-                  {availablePorts.length > 0 && (
-                    <div className="finance-hub__available-ports">
-                      <label>사용 가능한 포트:</label>
-                      <div className="finance-hub__ports-list">
-                        {availablePorts.map((port) => (
-                          <button
-                            key={port.path}
-                            className={`finance-hub__port-item ${port.path === arduinoPort ? 'active' : ''}`}
-                            onClick={() => updateArduinoPort(port.path)}
-                          >
-                            <span className="finance-hub__port-path">{port.path}</span>
-                            {port.manufacturer && (
-                              <span className="finance-hub__port-manufacturer">{port.manufacturer}</span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="finance-hub__arduino-help">
-                  <p>💡 Arduino HID 키보드는 카드사 보안 키패드를 우회하여 비밀번호를 입력합니다.</p>
-                  <p>• Windows: Device Manager에서 Arduino 포트를 확인하세요 (예: COM3, COM4)</p>
-                  <p>• Mac/Linux: /dev/ttyUSB0 또는 /dev/ttyACM0 형식입니다</p>
-                </div>
-              </div>
-            </section>
+            </div>
 
             {/* Connected Banks */}
             <section className="finance-hub__section">

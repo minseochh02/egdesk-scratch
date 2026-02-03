@@ -70,7 +70,7 @@ export function initializeStore(): Promise<void> {
           financeHub: {
             savedCredentials: {}, // { bankId: { userId, password } }
             connectedBanks: [],
-            arduinoPort: 'COM6', // Default Arduino HID keyboard port
+            arduinoPort: 'COM3', // Default Arduino HID keyboard port
             persistentSpreadsheet: {
               spreadsheetId: null, // Google Sheets ID for persistent transactions spreadsheet
               lastUpdated: null,
@@ -1775,25 +1775,66 @@ export function clearAllFolderConfigs(): void {
 
 /**
  * Auto-detect Arduino port
+ * Reference: https://dev.to/azzamjiul/how-to-connect-to-arduino-automatically-using-serial-port-in-nodejs-plh
  */
 async function detectArduinoPort(): Promise<string | null> {
   try {
     const { SerialPort } = require('serialport');
     const ports = await SerialPort.list();
 
-    // Look for Arduino by manufacturer or product name
-    const arduinoPort = ports.find((port: any) =>
-      port.manufacturer?.toLowerCase().includes('arduino') ||
-      port.manufacturer?.toLowerCase().includes('ftdi') ||
-      port.manufacturer?.toLowerCase().includes('ch340') ||
-      port.productId?.toLowerCase().includes('2341') || // Arduino Vendor ID
-      port.path?.includes('usbserial') ||
-      port.path?.includes('usbmodem')
-    );
+    console.log('🔍 Scanning for Arduino...');
+    console.log('Available ports:', ports.map((p: any) => ({
+      path: p.path,
+      manufacturer: p.manufacturer,
+      vendorId: p.vendorId,
+      productId: p.productId
+    })));
+
+    // Look for Arduino by Vendor ID (VID) and Product ID (PID)
+    // Arduino boards typically have VID 2341 (hex) or 0x2341
+    // Common Arduino PIDs: 0043, 0001, 8036, etc.
+    const arduinoPort = ports.find((port: any) => {
+      // Check by Vendor ID (Arduino's official VID)
+      if (port.vendorId === '2341' || port.vendorId === '0x2341') {
+        return true;
+      }
+
+      // Check by manufacturer name (case-insensitive)
+      if (port.manufacturer &&
+          (port.manufacturer.toLowerCase().includes('arduino') ||
+           port.manufacturer.toLowerCase().includes('(www.arduino.cc)'))) {
+        return true;
+      }
+
+      // Check for common USB-Serial chips used in Arduino clones
+      // FTDI (Future Technology Devices International)
+      if (port.vendorId === '0403' || port.manufacturer?.toLowerCase().includes('ftdi')) {
+        return true;
+      }
+
+      // CH340 (common in Chinese Arduino clones)
+      if (port.vendorId === '1a86' || port.manufacturer?.toLowerCase().includes('ch340')) {
+        return true;
+      }
+
+      // CP210x (Silicon Labs)
+      if (port.vendorId === '10c4' || port.manufacturer?.toLowerCase().includes('silicon labs')) {
+        return true;
+      }
+
+      // Check path patterns for Mac/Linux
+      if (port.path?.includes('usbserial') || port.path?.includes('usbmodem')) {
+        return true;
+      }
+
+      return false;
+    });
 
     if (arduinoPort) {
-      console.log(`🔍 Auto-detected Arduino on port: ${arduinoPort.path}`);
+      console.log(`✅ Auto-detected Arduino on port: ${arduinoPort.path}`);
       console.log(`   Manufacturer: ${arduinoPort.manufacturer || 'Unknown'}`);
+      console.log(`   Vendor ID: ${arduinoPort.vendorId || 'Unknown'}`);
+      console.log(`   Product ID: ${arduinoPort.productId || 'Unknown'}`);
       return arduinoPort.path;
     }
 

@@ -2919,161 +2919,89 @@
 }
 
 /* ============================================
-   Arduino HID Settings
+   Arduino HID Settings - Compact
    ============================================ */
 
-.finance-hub__arduino-settings {
-  background: var(--fh-bg-card);
-  border-radius: var(--fh-radius-md);
-  padding: 20px;
-  border: 1px solid var(--fh-border);
-}
-
-.finance-hub__arduino-info {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.finance-hub__arduino-compact {
+  background: rgba(0, 70, 255, 0.03);
+  border: 1px solid rgba(0, 70, 255, 0.1);
+  border-radius: var(--fh-radius-sm);
+  padding: 8px 12px;
   margin-bottom: 16px;
 }
 
-.finance-hub__arduino-port,
-.finance-hub__arduino-manual {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.finance-hub__arduino-port label,
-.finance-hub__arduino-manual label,
-.finance-hub__available-ports label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fh-text-secondary);
-}
-
-.finance-hub__arduino-port-display {
+.finance-hub__arduino-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  font-size: 12px;
 }
 
-.finance-hub__port-value {
-  font-size: 16px;
-  font-weight: 600;
+.finance-hub__arduino-label {
+  color: var(--fh-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.finance-hub__arduino-port-compact {
   font-family: 'SF Mono', 'Consolas', monospace;
+  font-weight: 600;
   color: var(--fh-primary);
-  background: rgba(0, 70, 255, 0.1);
-  padding: 8px 16px;
-  border-radius: var(--fh-radius-sm);
+  font-size: 13px;
 }
 
-.finance-hub__arduino-status {
+.finance-hub__arduino-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 4px 12px;
-  border-radius: var(--fh-radius-sm);
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
 }
 
-.finance-hub__arduino-status--success {
-  color: var(--fh-success);
-  background: rgba(16, 185, 129, 0.1);
+.finance-hub__arduino-badge--success {
+  background: var(--fh-success);
+  color: white;
 }
 
-.finance-hub__arduino-status--warning {
-  color: var(--fh-warning);
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.finance-hub__arduino-manual-input {
-  display: flex;
-  gap: 8px;
-}
-
-.finance-hub__arduino-manual-input input {
+.finance-hub__arduino-input-compact {
   flex: 1;
+  max-width: 120px;
   background: var(--fh-bg-dark);
   border: 1px solid var(--fh-border);
-  border-radius: var(--fh-radius-sm);
-  padding: 10px 14px;
+  border-radius: 4px;
+  padding: 4px 8px;
   color: var(--fh-text-primary);
-  font-size: 14px;
+  font-size: 12px;
   font-family: 'SF Mono', 'Consolas', monospace;
-  transition: var(--fh-transition);
 }
 
-.finance-hub__arduino-manual-input input:focus {
+.finance-hub__arduino-input-compact:focus {
   outline: none;
   border-color: var(--fh-primary);
-  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.1);
 }
 
-.finance-hub__available-ports {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.finance-hub__ports-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.finance-hub__port-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--fh-bg-dark);
+.finance-hub__arduino-btn-compact {
+  background: var(--fh-bg-card);
   border: 1px solid var(--fh-border);
-  border-radius: var(--fh-radius-sm);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--fh-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   transition: var(--fh-transition);
+  white-space: nowrap;
 }
 
-.finance-hub__port-item:hover {
+.finance-hub__arduino-btn-compact:hover:not(:disabled) {
+  background: var(--fh-bg-card-hover);
   border-color: var(--fh-primary);
-  background: rgba(0, 70, 255, 0.05);
+  color: var(--fh-primary);
 }
 
-.finance-hub__port-item.active {
-  border-color: var(--fh-primary);
-  background: rgba(0, 70, 255, 0.1);
-}
-
-.finance-hub__port-path {
-  font-family: 'SF Mono', 'Consolas', monospace;
-  font-weight: 600;
-  color: var(--fh-text-primary);
-}
-
-.finance-hub__port-manufacturer {
-  font-size: 12px;
-  color: var(--fh-text-secondary);
-}
-
-.finance-hub__arduino-help {
-  background: rgba(0, 212, 170, 0.05);
-  border: 1px solid rgba(0, 212, 170, 0.2);
-  border-radius: var(--fh-radius-sm);
-  padding: 12px 16px;
-}
-
-.finance-hub__arduino-help p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--fh-text-secondary);
-  line-height: 1.6;
-}
-
-.finance-hub__arduino-help p:not(:last-child) {
-  margin-bottom: 6px;
-}
-
-.finance-hub__arduino-help p:first-child {
-  color: var(--fh-secondary);
-  font-weight: 500;
+.finance-hub__arduino-btn-compact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
