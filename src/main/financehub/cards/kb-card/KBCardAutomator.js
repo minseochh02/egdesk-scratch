@@ -34,6 +34,55 @@ class KBCardAutomator extends BaseBankAutomator {
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;
+    this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
+  }
+
+  // ============================================================================
+  // DEBUG MODE - MANUAL PASSWORD ENTRY
+  // ============================================================================
+
+  /**
+   * Waits for user to click Continue button in app after manually typing password
+   * @returns {Promise<void>}
+   */
+  async waitForManualPasswordEntry() {
+    this.log('DEBUG MODE: Waiting for manual password entry...');
+
+    const { BrowserWindow, ipcMain } = require('electron');
+
+    return new Promise((resolve, reject) => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+
+      if (!mainWindow) {
+        this.log('No main window found, falling back to timeout');
+        setTimeout(() => resolve(), 10000);
+        return;
+      }
+
+      this.log('Sending show-continue event to renderer...');
+
+      const continueHandler = () => {
+        this.log('✅ Continue button clicked! Hiding modal and proceeding...');
+
+        try {
+          ipcMain.removeListener('manual-password:continue', continueHandler);
+          mainWindow.webContents.send('manual-password:hide-continue');
+
+          setTimeout(() => {
+            this.log('Resuming automation...');
+            resolve();
+          }, 300);
+        } catch (error) {
+          this.log(`Error in continue handler: ${error.message}`, 'error');
+          reject(error);
+        }
+      };
+
+      ipcMain.on('manual-password:continue', continueHandler);
+      mainWindow.webContents.send('manual-password:show-continue');
+
+      this.log('Modal should now be visible. Waiting for user to click continue...');
+    });
   }
 
   // ============================================================================
@@ -113,18 +162,31 @@ class KBCardAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(500);
 
-      // Step 5: Enter password via Arduino HID
-      this.log('Entering password via Arduino HID...');
-      try {
+      // Step 5: Enter password (Arduino HID or Manual)
+      if (this.manualPassword) {
+        // DEBUG MODE: Manual password entry
+        this.log('Manual password mode enabled');
         const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
         await passwordField.click();
         await this.page.waitForTimeout(1000);
 
-        await this.typeViaArduino(password);
-        this.log('Password typed via Arduino HID');
-      } catch (e) {
-        this.log('Arduino HID password entry failed');
-        throw new Error(`Password entry failed: ${e.message}`);
+        this.log('Waiting for manual password entry...');
+        await this.waitForManualPasswordEntry();
+        this.log('Manual password entry completed');
+      } else {
+        // AUTOMATIC MODE: Enter password via Arduino HID
+        this.log('Entering password via Arduino HID...');
+        try {
+          const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
+          await passwordField.click();
+          await this.page.waitForTimeout(1000);
+
+          await this.typeViaArduino(password);
+          this.log('Password typed via Arduino HID');
+        } catch (e) {
+          this.log('Arduino HID password entry failed');
+          throw new Error(`Password entry failed: ${e.message}`);
+        }
       }
       await this.page.waitForTimeout(3000);
 
@@ -253,7 +315,17 @@ class KBCardAutomator extends BaseBankAutomator {
    */
   async navigateToTransactionHistory() {
     this.log('Navigating to transaction history...');
-    await this.clickElement(this.config.xpaths.approvalHistoryButton);
+
+    // Step 1: Hover over menu tree to expand it
+    this.log('Hovering over menu to expand...');
+    const menuTreeHover = this.page.locator('xpath=/html/body/div[1]/div[1]/div[3]/div[2]/div[1]/ul/li[1]/a/span');
+    await menuTreeHover.hover();
+    await this.page.waitForTimeout(1000);
+
+    // Step 2: Click 승인내역조회 link
+    this.log('Clicking 승인내역조회...');
+    const approvalHistoryLink = this.page.locator('xpath=/html/body/div[1]/div[1]/div[3]/div[2]/div[1]/ul/li[1]/div/div/ul/li[2]/ul/li[2]/a/span');
+    await approvalHistoryLink.click();
     await this.page.waitForTimeout(3000);
   }
 
@@ -315,31 +387,72 @@ class KBCardAutomator extends BaseBankAutomator {
       // Step 1: Navigate to transaction history
       await this.navigateToTransactionHistory();
 
-      // Step 2: Set date range
-      this.log('Setting date range...');
-      await this.clickElement(this.config.xpaths.startDateInput);
-      await this.page.waitForTimeout(3000);
-      await this.page.fill(this.config.xpaths.startDateInput.css, startDate.toString());
-      await this.page.waitForTimeout(3000);
+      // Step 2: Set date range (requires manual deletion, format: 20260103)
+      this.log(`Setting date range: ${startDate} to ${endDate}`);
 
-      await this.clickElement(this.config.xpaths.endDateInput);
-      await this.page.waitForTimeout(3000);
-      await this.page.fill(this.config.xpaths.endDateInput.css, endDate.toString());
-      await this.page.waitForTimeout(3000);
+      // Start date
+      const startDateInput = this.page.locator('xpath=/html/body/div[1]/div[3]/div/div[2]/div[1]/form/table/tbody/tr[4]/td/div/div[1]/div[1]/div/input');
+      await startDateInput.click();
+      await this.page.waitForTimeout(500);
+      // Manually delete each character
+      for (let i = 0; i < 20; i++) {
+        await this.page.keyboard.press('Backspace');
+        await this.page.waitForTimeout(50);
+      }
+      await startDateInput.fill(startDate.toString());
+      await this.page.waitForTimeout(1000);
+
+      // End date
+      const endDateInput = this.page.locator('xpath=/html/body/div[1]/div[3]/div/div[2]/div[1]/form/table/tbody/tr[4]/td/div/div[1]/div[2]/div/input');
+      await endDateInput.click();
+      await this.page.waitForTimeout(500);
+      // Manually delete each character
+      for (let i = 0; i < 20; i++) {
+        await this.page.keyboard.press('Backspace');
+        await this.page.waitForTimeout(50);
+      }
+      await endDateInput.fill(endDate.toString());
+      await this.page.waitForTimeout(1000);
 
       // Step 3: Click search button
       this.log('Clicking search button...');
       await this.clickElement(this.config.xpaths.transactionSearchButton);
       await this.page.waitForTimeout(3000);
 
-      // Step 4: Load all pages
-      await this.loadAllTransactionPages();
+      // Step 4: Download Excel file
+      this.log('Downloading Excel file...');
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
 
-      // Step 5: Extract data
-      const extractedData = await this.extractKBCardTransactions();
+      // Click Excel download button
+      await this.page.locator('xpath=/html/body/div[1]/div[3]/div/div[2]/div[2]/div/div[1]/div/button[3]').click();
+      await this.page.waitForTimeout(1000);
 
-      // Step 6: Create Excel file
-      const excelPath = await createExcelFromData(this, extractedData);
+      // Check for confirmation popup and click if exists
+      const popupExists = await this.page.locator('#pop_fileSave > div.layContainer').isVisible({ timeout: 2000 }).catch(() => false);
+      if (popupExists) {
+        this.log('Clicking download confirmation button...');
+        await this.page.locator('xpath=/html/body/div[5]/div/div[1]/div[2]/button[1]').click();
+      }
+
+      // Wait for download
+      const download = await downloadPromise;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `KB카드_거래내역_${timestamp}.xls`;
+      const downloadPath = path.join(this.outputDir, 'downloads', filename);
+
+      // Ensure download directory exists
+      if (!fs.existsSync(path.dirname(downloadPath))) {
+        fs.mkdirSync(path.dirname(downloadPath), { recursive: true });
+      }
+
+      await download.saveAs(downloadPath);
+      this.log(`Downloaded file: ${downloadPath}`);
+
+      // Step 5: Parse Excel file
+      const extractedData = await this.parseKBCardExcel(downloadPath);
+
+      // Step 6: Return result
+      const excelPath = downloadPath;
 
       return [{
         status: 'downloaded',
@@ -355,13 +468,132 @@ class KBCardAutomator extends BaseBankAutomator {
   }
 
   // ============================================================================
-  // DATA EXTRACTION
+  // EXCEL PARSING
+  // ============================================================================
+
+  /**
+   * Parse KB Card Excel file
+   * @param {string} filePath - Path to downloaded Excel file
+   * @returns {Promise<Object>} Parsed transaction data
+   */
+  async parseKBCardExcel(filePath) {
+    this.log(`Parsing KB Card Excel: ${filePath}`);
+
+    const XLSX = require('xlsx');
+    const fileBuffer = fs.readFileSync(filePath);
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+    // Column mapping for KB Card
+    const columnMapping = {
+      '승인일': 'approvalDate',
+      '승인시간': 'approvalTime',
+      '부서번호': 'departmentNumber',
+      '부서명': 'departmentName',
+      '카드번호': 'cardNumber',
+      '이용자명': 'userName',
+      '가맹점명': 'merchantName',
+      '업종명': 'businessType',
+      '결제방법': 'paymentMethod',
+      '할부개월수': 'installmentMonths',
+      '승인금액': 'amount',
+      '부가세': 'vat',
+      '승인구분': 'approvalType',
+      '승인방식': 'approvalMethod',
+      '승인번호': 'approvalNumber',
+      '상태': 'status',
+      '과세유형': 'taxType',
+      '가맹점상태': 'merchantStatus',
+      '가맹점번호': 'merchantNumber',
+      '가맹점사업자등록번호': 'merchantBusinessNumber',
+      '대표자성명': 'representativeName',
+      '가맹점주소': 'merchantAddress',
+      '가맹점전화번호': 'merchantPhone',
+    };
+
+    // Find header row
+    let headerRowIndex = -1;
+    let headers = [];
+
+    for (let i = 0; i < Math.min(10, rawData.length); i++) {
+      const row = rawData[i];
+      const rowText = row.join(' ');
+      if (rowText.includes('승인일') && rowText.includes('카드번호') && rowText.includes('가맹점명')) {
+        headerRowIndex = i;
+        headers = row.map(h => String(h || '').trim());
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      this.log('Header row not found, using first row', 'warn');
+      headerRowIndex = 0;
+      headers = rawData[0].map(h => String(h || '').trim());
+    }
+
+    this.log(`Found headers at row ${headerRowIndex}: ${headers.join(', ')}`);
+
+    // Parse transactions
+    const transactions = [];
+    let totalAmount = 0;
+
+    for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || row.length === 0) continue;
+
+      // Skip total rows
+      const firstCell = String(row[0] || '').trim();
+      if (firstCell.includes('합계') || firstCell.includes('총')) continue;
+
+      // Map to object with both Korean and English names
+      const transaction = {};
+      headers.forEach((header, index) => {
+        const value = row[index];
+        transaction[header] = value;
+        const englishColumn = columnMapping[header];
+        if (englishColumn) {
+          transaction[englishColumn] = value;
+        }
+      });
+
+      transactions.push(transaction);
+
+      // Calculate total
+      const amountValue = transaction.amount || transaction['승인금액'] || 0;
+      const amount = parseInt(String(amountValue).replace(/[^\d-]/g, '')) || 0;
+      totalAmount += amount;
+    }
+
+    this.log(`Parsed ${transactions.length} transactions, total: ${totalAmount}`);
+
+    return {
+      metadata: {
+        bankName: 'KB국민카드',
+        downloadDate: new Date().toISOString(),
+        sourceFile: path.basename(filePath),
+        sheetName: sheetName,
+        columnMapping: columnMapping,
+      },
+      summary: {
+        totalCount: transactions.length,
+        totalAmount: totalAmount,
+      },
+      headers: headers,
+      transactions: transactions,
+    };
+  }
+
+  // ============================================================================
+  // DATA EXTRACTION (OLD - DEPRECATED)
   // ============================================================================
 
   /**
    * Extracts transaction data from KB Card's HTML structure
    * Reference: KBCard-alltransactions.spec.js (table capture comments)
    * @returns {Promise<Object>} Extracted transaction data
+   * @deprecated Use parseKBCardExcel instead
    */
   async extractKBCardTransactions() {
     this.log('Extracting KB Card transaction data...');

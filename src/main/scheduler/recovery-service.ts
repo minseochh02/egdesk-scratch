@@ -312,20 +312,20 @@ export class SchedulerRecoveryService {
       params.unshift(...options.schedulerFilter);
     }
 
-    const pendingIntents = db.prepare(query).all(...params) as ExecutionIntent[];
+    const pendingIntents = db.prepare(query).all(...params) as any[];
 
-    // Convert to MissedExecution format
-    const missedExecutions: MissedExecution[] = pendingIntents.map(intent => {
-      const windowEnd = new Date(intent.executionWindowEnd);
+    // Convert to MissedExecution format (SQLite returns snake_case columns)
+    const missedExecutions: MissedExecution[] = pendingIntents.map((intent: any) => {
+      const windowEnd = new Date(intent.execution_window_end);
       const now = new Date();
       const daysMissed = Math.floor((now.getTime() - windowEnd.getTime()) / (1000 * 60 * 60 * 24));
 
       return {
         intentId: intent.id,
-        schedulerType: intent.schedulerType,
-        taskId: intent.taskId,
-        taskName: intent.taskName,
-        intendedDate: intent.intendedDate,
+        schedulerType: intent.scheduler_type,
+        taskId: intent.task_id,
+        taskName: intent.task_name,
+        intendedDate: intent.intended_date,
         daysMissed,
       };
     });
@@ -352,6 +352,13 @@ export class SchedulerRecoveryService {
 
     console.log('[RecoveryService] 🔄 Starting recovery process...');
     console.log('[RecoveryService] Options:', opts);
+
+    // Clean up invalid intents first (e.g., from deleted tasks)
+    try {
+      await this.cleanupInvalidIntents();
+    } catch (error) {
+      console.warn('[RecoveryService] Failed to cleanup invalid intents:', error);
+    }
 
     // Detect missed executions
     const missedExecutions = await this.detectMissedExecutions(opts);
@@ -441,7 +448,16 @@ export class SchedulerRecoveryService {
    * Prioritize tasks for execution
    */
   private prioritizeTasks(tasks: MissedExecution[], order: 'oldest_first' | 'newest_first'): MissedExecution[] {
-    const sorted = [...tasks];
+    // Filter out tasks with invalid dates
+    const validTasks = tasks.filter(task => {
+      if (!task.intendedDate) {
+        console.warn('[RecoveryService] Skipping task with undefined intendedDate:', task.taskName, task.taskId);
+        return false;
+      }
+      return true;
+    });
+
+    const sorted = [...validTasks];
 
     sorted.sort((a, b) => {
       if (order === 'oldest_first') {
@@ -571,6 +587,25 @@ export class SchedulerRecoveryService {
     `).run(cutoffDateStr);
 
     console.log(`[RecoveryService] Cleaned up ${result.changes} old intents (older than ${retentionDays} days)`);
+
+    return result.changes;
+  }
+
+  /**
+   * Clean up invalid or corrupted intents (e.g., from deleted tasks)
+   */
+  public async cleanupInvalidIntents(): Promise<number> {
+    const db = this.getDb();
+
+    // Delete intents with null/undefined critical fields
+    const result = db.prepare(`
+      DELETE FROM scheduler_execution_intents
+      WHERE intended_date IS NULL
+        OR task_id IS NULL
+        OR scheduler_type IS NULL
+    `).run();
+
+    console.log(`[RecoveryService] Cleaned up ${result.changes} invalid intents`);
 
     return result.changes;
   }

@@ -38,16 +38,21 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     const parsed = parseCardDateTime(dateTimeValue);
     date = parsed.date;
     time = parsed.time;
-  } else if (cardTx.approvalDate) {
-    // BC Card format: separate approvalDate and approvalTime, or combined approvalDateTime
-    date = cardTx.approvalDate;
-    time = cardTx.approvalTime || null;
+  } else if (cardTx.approvalDate || cardTx['승인일']) {
+    // KB Card & BC Card format: separate approvalDate and approvalTime
+    date = cardTx.approvalDate || cardTx['승인일'] || '';
+    time = cardTx.approvalTime || cardTx['승인시간'] || null;
 
     // If approvalDateTime exists, use that instead
     if (cardTx.approvalDateTime) {
       const parsed = parseCardDateTime(cardTx.approvalDateTime);
       date = parsed.date;
       time = parsed.time;
+    }
+
+    // Format date if needed (YYYYMMDD -> YYYY-MM-DD)
+    if (date && date.length === 8 && !date.includes('-')) {
+      date = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
     }
   }
 
@@ -59,7 +64,8 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
   // NH Card: cancellationStatus field
   // BC Card: salesType field (매출종류)
   // Shinhan Card: transactionType field (이용구분)
-  const cancellationField = cardTx.cancellationStatus || cardTx.salesType || cardTx.transactionType || '';
+  // KB Card: approvalType field (승인구분)
+  const cancellationField = cardTx.cancellationStatus || cardTx.salesType || cardTx.transactionType || cardTx.approvalType || cardTx['승인구분'] || '';
   const isCancelled = cancellationField === '취소' ||
                      (typeof cancellationField === 'string' && cancellationField.includes('취소')) ||
                      cancellationField === '매입취소';
@@ -69,17 +75,17 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
   const deposit = isCancelled ? amount : 0;
 
   // Prefix type with "취소 -" for cancelled transactions
-  const transactionMethod = cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || '카드결제';
+  const transactionMethod = cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || cardTx.paymentMethod || cardTx['결제방법'] || '카드결제';
   const type = isCancelled
     ? `취소 - ${transactionMethod}`
     : transactionMethod;
 
   // Store card-specific fields in metadata
   const metadata = {
-    cardNumber: cardTx.cardNumber || cardTx.cardUsed || cardTx['이용카드'],
-    approvalNumber: cardTx.approvalNumber,
-    transactionMethod: cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType,
-    installmentPeriod: cardTx.installmentPeriod || cardTx.installmentMonths,
+    cardNumber: cardTx.cardNumber || cardTx.cardUsed || cardTx['이용카드'] || cardTx['카드번호'],
+    approvalNumber: cardTx.approvalNumber || cardTx['승인번호'],
+    transactionMethod: cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || cardTx.paymentMethod || cardTx['결제방법'],
+    installmentPeriod: cardTx.installmentPeriod || cardTx.installmentMonths || cardTx['할부개월수'],
     cancellationStatus: cardTx.cancellationStatus,
     salesType: cardTx.salesType,
     isCancelled: isCancelled,
@@ -98,12 +104,26 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     cancellationDate: cardTx.cancellationDate || cardTx['취소일자'],
     purchaseStatus: cardTx.purchaseStatus || cardTx['매입상태'],
     paymentDueDate: cardTx.paymentDueDate || cardTx['결제예정일'],
+    // KB Card specific fields
+    departmentNumber: cardTx.departmentNumber || cardTx['부서번호'],
+    departmentName: cardTx.departmentName || cardTx['부서명'],
+    businessType: cardTx.businessType || cardTx['업종명'],
+    vat: cardTx.vat || cardTx['부가세'],
+    approvalMethod: cardTx.approvalMethod || cardTx['승인방식'],
+    status: cardTx.status || cardTx['상태'],
+    taxType: cardTx.taxType || cardTx['과세유형'],
+    merchantStatus: cardTx.merchantStatus || cardTx['가맹점상태'],
+    merchantNumber: cardTx.merchantNumber || cardTx['가맹점번호'],
+    merchantBusinessNumber: cardTx.merchantBusinessNumber || cardTx['가맹점사업자등록번호'],
+    representativeName: cardTx.representativeName || cardTx['대표자성명'],
+    merchantAddress: cardTx.merchantAddress || cardTx['가맹점주소'],
+    merchantPhone: cardTx.merchantPhone || cardTx['가맹점전화번호'],
     // Mark as card transaction for UI filtering
     isCardTransaction: true,
     cardCompanyId: cardCompanyId
   };
 
-  const merchantName = cardTx.merchantName || cardTx['가맹점명'] || '';
+  const merchantName = cardTx.merchantName || cardTx['가맹점명'] || cardTx.representativeName || cardTx['대표자성명'] || '';
 
   return {
     date: date || '',

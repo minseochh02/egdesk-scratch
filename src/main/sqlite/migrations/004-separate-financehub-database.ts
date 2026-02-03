@@ -139,6 +139,10 @@ export function separateFinanceHubDatabase(
     // ========================================
     console.log('🗑️ Removing FinanceHub tables from conversations.db...');
 
+    // Disable foreign key constraints temporarily to allow dropping tables
+    conversationsDb.pragma('foreign_keys = OFF');
+    console.log('🔓 Foreign key constraints disabled');
+
     for (const table of report.tablesProcessed) {
       try {
         conversationsDb.exec(`DROP TABLE IF EXISTS ${table}`);
@@ -149,6 +153,10 @@ export function separateFinanceHubDatabase(
         report.errors.push(errorMsg);
       }
     }
+
+    // Re-enable foreign key constraints
+    conversationsDb.pragma('foreign_keys = ON');
+    console.log('🔒 Foreign key constraints re-enabled');
 
     // ========================================
     // Step 7: Vacuum both databases
