@@ -749,7 +749,7 @@ const FinanceHub: React.FC = () => {
 
       // For Shinhan Card, transactions are for ALL cards - group by card and import separately
       if (cardCompanyId === 'shinhan-card') {
-        this.log('Processing Shinhan Card transactions for all cards...');
+        console.log('[Shinhan Card] Processing transactions for all cards...');
 
         // Group transactions by card number (이용카드 or cardUsed column)
         const transactionsByCard = new Map();
@@ -2704,7 +2704,7 @@ const FinanceHub: React.FC = () => {
                             로그인 정보 저장 (암호화하여 안전하게 보관)
                           </label>
                         </div>
-                        {selectedCard?.id === 'shinhan-card' && (
+                        {(selectedCard?.id === 'shinhan-card' || selectedCard?.id === 'nh-card' || selectedCard?.id === 'hana-card' || selectedCard?.id === 'kb-card') && (
                           <div className="finance-hub__checkbox-group">
                             <label className="finance-hub__checkbox-label" style={{ color: '#ff6b6b', fontWeight: 500 }}>
                               <input
@@ -2717,7 +2717,7 @@ const FinanceHub: React.FC = () => {
                             </label>
                             {manualPasswordMode && (
                               <p style={{ fontSize: '12px', color: '#666', marginTop: '5px', marginLeft: '24px' }}>
-                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력하고 터미널에서 Enter를 누르세요
+                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력한 후 앱에서 "계속하기" 버튼을 클릭하세요
                               </p>
                             )}
                           </div>
@@ -2776,7 +2776,7 @@ const FinanceHub: React.FC = () => {
                             아이디 및 비밀번호 저장 (암호화하여 안전하게 보관)
                           </label>
                         </div>
-                        {selectedCard?.id === 'shinhan-card' && (
+                        {(selectedCard?.id === 'shinhan-card' || selectedCard?.id === 'nh-card' || selectedCard?.id === 'hana-card' || selectedCard?.id === 'kb-card') && (
                           <div className="finance-hub__checkbox-group">
                             <label className="finance-hub__checkbox-label" style={{ color: '#ff6b6b', fontWeight: 500 }}>
                               <input
@@ -2789,7 +2789,7 @@ const FinanceHub: React.FC = () => {
                             </label>
                             {manualPasswordMode && (
                               <p style={{ fontSize: '12px', color: '#666', marginTop: '5px', marginLeft: '24px' }}>
-                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력하고 터미널에서 Enter를 누르세요
+                                Arduino HID 대신 브라우저에서 직접 비밀번호를 입력한 후 앱에서 "계속하기" 버튼을 클릭하세요
                               </p>
                             )}
                           </div>

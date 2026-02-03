@@ -4,14 +4,10 @@
 
 const path = require('path');
 const fs = require('fs');
+const XLSX = require('xlsx');
 const { SerialPort } = require('serialport');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { NH_CARD_INFO, NH_CARD_CONFIG } = require('./config');
-const {
-  parseTransactionExcel,
-  extractTransactionsFromPage,
-  createExcelFromData
-} = require('../../utils/transactionParser');
 
 /**
  * NH Card Automator
@@ -347,59 +343,11 @@ class NHCardAutomator extends BaseBankAutomator {
   // ============================================================================
 
   /**
-   * Clicks "더보기" (Load More) button until all transactions are loaded
-   * Reference: NHCard-getalltransactions.spec.js line 258
-   */
-  async loadAllTransactions() {
-    this.log('Loading all transactions...');
-
-    let totalExpansions = 0;
-    const maxClicks = 50; // Safety limit
-
-    while (totalExpansions < maxClicks) {
-      try {
-        const loadMoreButton = this.page.locator(this.config.xpaths.loadMoreButton.css);
-        const isVisible = await loadMoreButton.isVisible({ timeout: 2000 });
-
-        if (isVisible) {
-          const isDisabled = await loadMoreButton.evaluate(el => {
-            return el.classList.contains('disabled') ||
-                   el.hasAttribute('disabled') ||
-                   el.disabled;
-          }).catch(() => false);
-
-          if (!isDisabled) {
-            await loadMoreButton.click();
-            totalExpansions++;
-            this.log(`Clicked "더보기" button (${totalExpansions} expansions)`);
-            await this.page.waitForTimeout(3000);
-          } else {
-            this.log('Button is disabled - all data loaded');
-            break;
-          }
-        } else {
-          this.log('No more "더보기" button found - all data loaded');
-          break;
-        }
-      } catch (e) {
-        this.log('Button not found or error clicking:', e.message);
-        break;
-      }
-    }
-
-    if (totalExpansions >= maxClicks) {
-      this.warn(`Reached safety limit of ${maxClicks} expansions`);
-    } else {
-      this.log(`Loading complete: ${totalExpansions} total expansions`);
-    }
-  }
-
-  /**
    * Gets transactions for selected card and date range
    * Reference: NHCard-getalltransactions.spec.js
    * @param {string} [cardNumber] - Card number (not used - NH Card shows all by default)
-   * @param {string|number} startDate - Start date (not used in recording)
-   * @param {string|number} endDate - End date (not used in recording)
+   * @param {string|number} startDate - Start date in YYYYMMDD format (e.g., 20260203)
+   * @param {string|number} endDate - End date in YYYYMMDD format (e.g., 20260203)
    * @returns {Promise<Array>} Transaction data
    */
   async getTransactions(cardNumber, startDate, endDate) {
@@ -411,28 +359,88 @@ class NHCardAutomator extends BaseBankAutomator {
       // Step 1: Navigate to transaction history
       await this.navigateToTransactionHistory();
 
-      // Step 2: Click radio button for transaction search
-      await this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[1]/form/div[3]/div[2]/ul/li[3]/input').click({ timeout: 10000 });
+      // Step 2: Click label for transaction search (not a radio button!)
+      await this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[1]/form/div[3]/div[2]/ul/li[3]/label').click({ timeout: 10000 });
       await this.page.waitForTimeout(3000);
+
+      // Step 2.5: Set date range if provided
+      if (startDate && endDate) {
+        this.log(`Setting date range: ${startDate} to ${endDate}`);
+
+        // Fill start date
+        this.log('Setting start date...');
+        const startDateInput = this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[1]/form/div[4]/div[2]/div[1]/input');
+        await startDateInput.click({ timeout: 10000 });
+        await this.page.waitForTimeout(300);
+        await startDateInput.press('Control+a'); // Select all on the input
+        await this.page.waitForTimeout(100);
+        await startDateInput.fill(String(startDate));
+        await this.page.waitForTimeout(1000);
+
+        // Fill end date
+        this.log('Setting end date...');
+        const endDateInput = this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[1]/form/div[4]/div[2]/div[3]/input');
+        await endDateInput.click({ timeout: 10000 });
+        await this.page.waitForTimeout(300);
+        await endDateInput.press('Control+a'); // Select all on the input
+        await this.page.waitForTimeout(100);
+        await endDateInput.fill(String(endDate));
+        await this.page.waitForTimeout(1000);
+
+        this.log('Date range set successfully');
+      }
 
       // Step 3: Click search button
       this.log('Clicking search button...');
       await this.clickElement(this.config.xpaths.transactionSearchButton);
       await this.page.waitForTimeout(3000);
 
-      // Step 4: Load all results by clicking "더보기"
-      await this.loadAllTransactions();
+      // Step 4: Select company division and navigate to transaction list
+      this.log('Selecting company division...');
+      // Wait for division selector to appear (#formResult > div.payment-list)
+      await this.page.waitForSelector('#formResult > div.payment-list', { timeout: 10000 });
+      await this.page.waitForTimeout(1000);
 
-      // Step 5: Extract data
-      const extractedData = await this.extractNHCardTransactions();
+      // Click division button to navigate to transaction list page
+      this.log('Clicking division button...');
+      await this.page.locator('xpath=/html/body/div[3]/div[3]/div[1]/section[2]/div[2]/form/div[2]/div/div[2]/button').click({ timeout: 10000 });
+      await this.page.waitForTimeout(3000);
 
-      // Step 6: Create Excel file
-      const excelPath = await createExcelFromData(this, extractedData);
+      // Step 5: Click download button to trigger popup
+      this.log('Clicking download button...');
+      await this.page.locator('xpath=/html/body/div[3]/div[3]/div[2]/div/div/ul/li[2]/button/span').click({ timeout: 10000 });
+      await this.page.waitForTimeout(2000);
+
+      // Step 6: Confirm download (skip popup check, go straight to confirmation)
+      this.log('Confirming Excel download...');
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 30000 });
+
+      // Click confirmation button in popup
+      await this.page.locator('xpath=/html/body/div[6]/div[2]/div/div/div[2]/div/button[2]').click({ timeout: 10000 });
+
+      // Wait for download to complete
+      this.log('Waiting for download to complete...');
+      const download = await downloadPromise;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `NH카드_승인내역_${timestamp}.xlsx`;
+      const downloadPath = path.join(this.outputDir, 'downloads', filename);
+
+      // Ensure download directory exists
+      const downloadDir = path.join(this.outputDir, 'downloads');
+      if (!fs.existsSync(downloadDir)) {
+        fs.mkdirSync(downloadDir, { recursive: true });
+      }
+
+      await download.saveAs(downloadPath);
+      this.log(`Downloaded file: ${downloadPath}`);
+
+      // Parse the downloaded Excel file
+      const extractedData = this.parseNHCardExcel(downloadPath);
 
       return [{
         status: 'downloaded',
-        filename: path.basename(excelPath),
-        path: excelPath,
+        filename: filename,
+        path: downloadPath,
         extractedData: extractedData
       }];
 
@@ -443,118 +451,102 @@ class NHCardAutomator extends BaseBankAutomator {
   }
 
   // ============================================================================
-  // DATA EXTRACTION
+  // EXCEL PARSING
   // ============================================================================
 
   /**
-   * Extracts transaction data from NH Card's HTML structure
-   * Reference: NHCard-getalltransactions.spec.js (table capture comments)
-   * @returns {Promise<Object>} Extracted transaction data
+   * Parses downloaded Excel file from NH Card
+   * @param {string} filePath - Path to downloaded Excel file
+   * @returns {Object} Extracted transaction data
    */
-  async extractNHCardTransactions() {
-    this.log('Extracting NH Card transaction data...');
+  parseNHCardExcel(filePath) {
+    try {
+      this.log(`Parsing Excel file: ${filePath}`);
 
-    const bankName = this.config.bank.nameKo;
+      // Read Excel file
+      const fileBuffer = fs.readFileSync(filePath);
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
 
-    const extractedData = await this.page.evaluate((bankName) => {
-      const data = {
+      // Get first sheet
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Convert to JSON
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // NH Card Excel header is at row 10 (index 9)
+      const headerRowIndex = 9;
+
+      if (rawData.length <= headerRowIndex) {
+        throw new Error(`Excel file has insufficient rows. Expected at least ${headerRowIndex + 1} rows, got ${rawData.length}`);
+      }
+
+      const headers = rawData[headerRowIndex].map(h => String(h || '').trim());
+      this.log(`Found headers at row ${headerRowIndex + 1}: ${headers.join(', ')}`);
+
+      // Expected headers for validation:
+      // 이용카드, 사용자명, 이용일시, 승인번호, 국내이용금액(원), 취소금액, 가맹점명, 매출종류, 할부기간, 취소여부,
+      // 접수년월일, 결제일, 국내외구분, 공급가액(원), 부가세(원), 보증금(원), 봉사료(원), 가맹점사업자번호,
+      // 가맹점업종, 가맹점우편번호, 가맹점주소1, 가맹점주소2, 가맹점주소(전체), 가맹점전화번호, 가맹점대표자명,
+      // 기타도로명우편번호, 신주소
+
+      // Parse transaction rows (starting from row 11, index 10)
+      const transactions = [];
+      let totalAmount = 0;
+
+      for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+        const row = rawData[i];
+
+        // Skip empty rows
+        if (!row || row.length === 0) continue;
+
+        // Skip rows where first cell is empty or contains summary text
+        const firstCell = String(row[0] || '').trim();
+        if (!firstCell || firstCell.includes('합계') || firstCell.includes('총') || firstCell.includes('계')) {
+          continue;
+        }
+
+        // Map row to object using headers
+        const transaction = {};
+        headers.forEach((header, index) => {
+          const value = row[index];
+          transaction[header] = value !== undefined && value !== null ? value : '';
+        });
+
+        transactions.push(transaction);
+
+        // Extract amount for total - use "국내이용금액(원)" column
+        const amountValue = transaction['국내이용금액(원)'];
+        if (amountValue !== undefined && amountValue !== null && amountValue !== '') {
+          const amount = parseFloat(String(amountValue).replace(/[^\d.-]/g, ''));
+          if (!isNaN(amount)) {
+            totalAmount += amount;
+          }
+        }
+      }
+
+      const result = {
         metadata: {
-          companyName: '',
-          businessNumber: '',
-          bankName: bankName,
+          bankName: 'NH농협카드',
+          downloadDate: new Date().toISOString(),
+          sourceFile: path.basename(filePath),
+          sheetName: sheetName,
+          headerRowIndex: headerRowIndex + 1, // 1-based for user display
         },
         summary: {
-          totalCount: 0,
-          totalAmount: 0,
+          totalCount: transactions.length,
+          totalAmount: totalAmount,
         },
-        transactions: [],
-        headers: [],
+        headers: headers,
+        transactions: transactions,
       };
 
-      // Extract company info (Table 1)
-      // XPath: /html/body/div[3]/div[3]/div/section[2]/div/table
-      const companyTable = document.querySelector('section.result-wrap > div.result-group > table.customer-list');
-      if (companyTable) {
-        const cells = companyTable.querySelectorAll('td');
-        if (cells.length >= 4) {
-          data.metadata.companyName = cells[1]?.textContent.trim() || '';
-          data.metadata.businessNumber = cells[3]?.textContent.trim() || '';
-        }
-      }
-
-      // Extract summary (Table 2)
-      // XPath: /html/body/div[3]/div[3]/div[2]/section/div[2]/table
-      const summaryTable = document.querySelector('section.result-wrap > div.table-area > table.customer-list');
-      if (summaryTable) {
-        const summaryText = summaryTable.textContent;
-        // Parse "0건", "0" format
-        const countMatch = summaryText.match(/(\d+)건/);
-        const amountMatch = summaryText.match(/총금액.*?(\d+)/);
-        if (countMatch) {
-          data.summary.totalCount = parseInt(countMatch[1]) || 0;
-        }
-        if (amountMatch) {
-          data.summary.totalAmount = parseInt(amountMatch[1]) || 0;
-        }
-      }
-
-      // Extract transactions (Table 3: Main transaction table)
-      // XPath: /html/body/div[3]/div[3]/div[2]/section/div[3]/div[2]/table
-      // Headers: 이용카드, 이용일시, 승인번호, 이용금액, 가맹점명, 매출종류, 할부기간, 접수일, 즉시결제, 취소여부, 결제(예정일), 매출전표
-      const transactionTable = document.querySelector('div.table-wrap > div.nh-table-wrapper > table.table');
-
-      if (transactionTable) {
-        // Extract headers
-        const headerCells = transactionTable.querySelectorAll('thead th');
-        headerCells.forEach(th => {
-          data.headers.push(th.textContent.trim());
-        });
-
-        // Extract transaction rows
-        const rows = transactionTable.querySelectorAll('tbody tr');
-        rows.forEach(row => {
-          const cells = row.querySelectorAll('td');
-
-          // Check if it's a "no data" row
-          if (cells.length === 1) {
-            console.log('[extractNHCard] No transaction data row detected');
-            return;
-          }
-
-          if (cells.length >= 12) {
-            const transaction = {
-              cardNumber: cells[0]?.textContent.trim() || '',
-              dateTime: cells[1]?.textContent.trim() || '',
-              approvalNumber: cells[2]?.textContent.trim() || '',
-              amount: cells[3]?.textContent.replace(/[^0-9]/g, '') || '0',
-              merchantName: cells[4]?.textContent.trim() || '',
-              salesType: cells[5]?.textContent.trim() || '',
-              installmentPeriod: cells[6]?.textContent.trim() || '',
-              receiptDate: cells[7]?.textContent.trim() || '',
-              immediatePayment: cells[8]?.textContent.trim() || '',
-              cancellationStatus: cells[9]?.textContent.trim() || '',
-              paymentDate: cells[10]?.textContent.trim() || '',
-              receipt: cells[11]?.textContent.trim() || '',
-            };
-
-            // Only add if there's actual transaction data
-            if (transaction.amount !== '0' || transaction.merchantName) {
-              data.transactions.push(transaction);
-            }
-          }
-        });
-      } else {
-        console.log('[extractNHCard] Transaction table not found!');
-      }
-
-      return data;
-    }, bankName);
-
-    this.log(`Extracted ${extractedData.transactions.length} transactions`);
-    this.log(`Company: ${extractedData.metadata.companyName} (${extractedData.metadata.businessNumber})`);
-    this.log(`Summary: ${extractedData.summary.totalCount} transactions, total amount: ${extractedData.summary.totalAmount}`);
-
-    return extractedData;
+      this.log(`Parsed ${transactions.length} transactions, total amount: ${totalAmount.toLocaleString()}원`);
+      return result;
+    } catch (error) {
+      this.log(`Excel parsing failed: ${error.message}`, 'error');
+      throw error;
+    }
   }
 
   // ============================================================================
