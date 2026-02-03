@@ -340,7 +340,7 @@ const FinanceHub: React.FC = () => {
   // Arduino Port Functions
   const loadArduinoPort = async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('finance-hub:get-arduino-port');
+      const result = await window.electron.financeHub.arduino.getPort();
       if (result.success) {
         setArduinoPort(result.port);
         setArduinoStatus(result.autoDetected ? 'detected' : 'unknown');
@@ -353,13 +353,13 @@ const FinanceHub: React.FC = () => {
   const detectArduinoPort = async () => {
     setIsDetectingArduino(true);
     try {
-      const result = await window.electron.ipcRenderer.invoke('finance-hub:get-arduino-port');
+      const result = await window.electron.financeHub.arduino.getPort();
       if (result.success) {
         setArduinoPort(result.port);
         setArduinoStatus(result.autoDetected ? 'detected' : 'not-found');
         if (!result.autoDetected) {
           // Also list all available ports for manual selection
-          const portsResult = await window.electron.ipcRenderer.invoke('finance-hub:list-serial-ports');
+          const portsResult = await window.electron.financeHub.arduino.listPorts();
           if (portsResult.success) {
             setAvailablePorts(portsResult.ports);
           }
@@ -375,7 +375,7 @@ const FinanceHub: React.FC = () => {
 
   const updateArduinoPort = async (port: string) => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('finance-hub:set-arduino-port', port);
+      const result = await window.electron.financeHub.arduino.setPort(port);
       if (result.success) {
         setArduinoPort(port);
         setArduinoStatus('unknown');
