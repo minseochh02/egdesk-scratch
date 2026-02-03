@@ -247,8 +247,8 @@ export class SheetsService {
    */
   async updateRange(spreadsheetId: string, range: string, values: string[][]): Promise<void> {
     const encodedRange = encodeURIComponent(range);
-    const endpoint = `/${spreadsheetId}/values/${encodedRange}?valueInputOption=USER_ENTERED`;
-    
+    const endpoint = `/${spreadsheetId}/values/${encodedRange}?valueInputOption=RAW`;
+
     await this.fetchSheets<any>(endpoint, {
       method: 'PUT',
       body: JSON.stringify({
@@ -268,14 +268,14 @@ export class SheetsService {
   async appendValues(spreadsheetId: string, range: string, values: string[][]): Promise<void> {
     const encodedRange = encodeURIComponent(range);
     const endpoint = `/${spreadsheetId}/values/${encodedRange}:append`;
-    
+
     await this.fetchSheets<any>(endpoint, {
       method: 'POST',
       body: JSON.stringify({
         range,
         majorDimension: 'ROWS',
         values,
-        valueInputOption: 'USER_ENTERED',
+        valueInputOption: 'RAW',
       }),
       headers: {
         'Content-Type': 'application/json',
@@ -393,26 +393,64 @@ export class SheetsService {
     banks: Record<string, any>,
     accounts: any[]
   ): Promise<void> {
-    // Prepare headers
-    const headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
-    
-    // Prepare data rows
-    const rows = transactions.map(tx => {
-      const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
-      const account = accounts.find(a => a.id === tx.accountId);
-      return [
-        formatDate(tx.date),
-        tx.time || '',
-        bank.nameKo || '',
-        account?.accountNumber || '',
-        tx.type || '',
-        tx.description || '',
-        tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
-        tx.deposit > 0 ? tx.deposit.toString() : '',
-        tx.balance.toString(),
-        tx.branch || '',
-      ];
-    });
+    // Check if these are card transactions
+    const isCardTransactions = transactions.length > 0 &&
+      transactions[0].metadata &&
+      (typeof transactions[0].metadata === 'string'
+        ? JSON.parse(transactions[0].metadata).isCardTransaction
+        : transactions[0].metadata.isCardTransaction);
+
+    let headers: string[];
+    let rows: any[][];
+
+    if (isCardTransactions) {
+      // Card transaction format (16 columns)
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+
+      rows = transactions.map(tx => {
+        const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
+        const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
+
+        return [
+          this.extractCardCompany(cardCompanyId),
+          this.extractHeadquarters(metadata, cardCompanyId),
+          this.extractDepartment(metadata, cardCompanyId),
+          metadata?.cardNumber || '',
+          this.extractCardType(metadata, cardCompanyId),
+          this.extractCardholder(metadata, cardCompanyId),
+          this.extractTransactionBank(metadata, cardCompanyId),
+          this.extractUsageType(metadata, cardCompanyId),
+          metadata?.salesType || '일반매출',
+          this.formatDateForExport(tx.date),
+          this.extractBillingDate(metadata, cardCompanyId),
+          metadata?.approvalNumber || '',
+          tx.description || tx.counterparty || '',
+          this.formatAmount(tx.withdrawal, tx.deposit),
+          this.calculateUSDAmount(metadata),
+          this.generateNotes(metadata, tx)
+        ];
+      });
+    } else {
+      // Bank transaction format (10 columns)
+      headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
+
+      rows = transactions.map(tx => {
+        const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
+        const account = accounts.find(a => a.id === tx.accountId);
+        return [
+          formatDate(tx.date),
+          tx.time || '',
+          bank.nameKo || '',
+          account?.accountNumber || '',
+          tx.type || '',
+          tx.description || '',
+          tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
+          tx.deposit > 0 ? tx.deposit.toString() : '',
+          tx.balance.toString(),
+          tx.branch || '',
+        ];
+      });
+    }
 
     // Combine headers and data
     const data = [headers, ...rows];
@@ -441,26 +479,64 @@ export class SheetsService {
     banks: Record<string, any>,
     accounts: any[]
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-    // Prepare headers
-    const headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
-    
-    // Prepare data rows
-    const rows = transactions.map(tx => {
-      const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
-      const account = accounts.find(a => a.id === tx.accountId);
-      return [
-        formatDate(tx.date),
-        tx.time || '',
-        bank.nameKo || '',
-        account?.accountNumber || '',
-        tx.type || '',
-        tx.description || '',
-        tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
-        tx.deposit > 0 ? tx.deposit.toString() : '',
-        tx.balance.toString(),
-        tx.branch || '',
-      ];
-    });
+    // Check if these are card transactions
+    const isCardTransactions = transactions.length > 0 &&
+      transactions[0].metadata &&
+      (typeof transactions[0].metadata === 'string'
+        ? JSON.parse(transactions[0].metadata).isCardTransaction
+        : transactions[0].metadata.isCardTransaction);
+
+    let headers: string[];
+    let rows: any[][];
+
+    if (isCardTransactions) {
+      // Card transaction format (16 columns)
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+
+      rows = transactions.map(tx => {
+        const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
+        const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
+
+        return [
+          this.extractCardCompany(cardCompanyId),
+          this.extractHeadquarters(metadata, cardCompanyId),
+          this.extractDepartment(metadata, cardCompanyId),
+          metadata?.cardNumber || '',
+          this.extractCardType(metadata, cardCompanyId),
+          this.extractCardholder(metadata, cardCompanyId),
+          this.extractTransactionBank(metadata, cardCompanyId),
+          this.extractUsageType(metadata, cardCompanyId),
+          metadata?.salesType || '일반매출',
+          this.formatDateForExport(tx.date),
+          this.extractBillingDate(metadata, cardCompanyId),
+          metadata?.approvalNumber || '',
+          tx.description || tx.counterparty || '',
+          this.formatAmount(tx.withdrawal, tx.deposit),
+          this.calculateUSDAmount(metadata),
+          this.generateNotes(metadata, tx)
+        ];
+      });
+    } else {
+      // Bank transaction format (10 columns)
+      headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
+
+      rows = transactions.map(tx => {
+        const bank = banks[tx.bankId] || { nameKo: 'Unknown' };
+        const account = accounts.find(a => a.id === tx.accountId);
+        return [
+          formatDate(tx.date),
+          tx.time || '',
+          bank.nameKo || '',
+          account?.accountNumber || '',
+          tx.type || '',
+          tx.description || '',
+          tx.withdrawal > 0 ? tx.withdrawal.toString() : '',
+          tx.deposit > 0 ? tx.deposit.toString() : '',
+          tx.balance.toString(),
+          tx.branch || '',
+        ];
+      });
+    }
 
     // Combine headers and data
     const data = [headers, ...rows];
@@ -734,6 +810,126 @@ export class SheetsService {
 
     // Format headers
     await this.formatHeaders(spreadsheetId, 'Sheet1');
+  }
+
+  // ============================================
+  // Card Transaction Helper Methods
+  // ============================================
+
+  private extractCardCompany(cardCompanyId: string): string {
+    const cardCompanyNames: Record<string, string> = {
+      'bc-card': 'BC카드',
+      'kb-card': 'KB국민카드',
+      'nh-card': 'NH농협카드',
+      'shinhan-card': '신한카드',
+      'samsung-card': '삼성카드',
+      'hyundai-card': '현대카드',
+      'lotte-card': '롯데카드',
+      'hana-card': '하나카드'
+    };
+    return cardCompanyNames[cardCompanyId] || '';
+  }
+
+  private extractHeadquarters(metadata: any, cardCompanyId: string): string {
+    return cardCompanyId === 'bc-card' ? (metadata?.headquartersName || '') : '';
+  }
+
+  private extractDepartment(metadata: any, cardCompanyId: string): string {
+    if (cardCompanyId === 'bc-card' || cardCompanyId === 'kb-card') {
+      return metadata?.departmentName || '';
+    }
+    return '';
+  }
+
+  private extractCardType(metadata: any, cardCompanyId: string): string {
+    if (cardCompanyId === 'bc-card' && metadata?.cardType) {
+      return metadata.cardType;
+    }
+    return '법인';
+  }
+
+  private extractCardholder(metadata: any, cardCompanyId: string): string {
+    if (cardCompanyId === 'bc-card') {
+      return metadata?.cardHolder || '';
+    }
+    if (cardCompanyId === 'kb-card') {
+      return metadata?.representativeName || '';
+    }
+    return metadata?.userName || '';
+  }
+
+  private extractTransactionBank(metadata: any, cardCompanyId: string): string {
+    return cardCompanyId === 'bc-card' ? (metadata?.transactionBank || '') : '';
+  }
+
+  private extractUsageType(metadata: any, cardCompanyId: string): string {
+    if (cardCompanyId === 'bc-card') {
+      return metadata?.usageType || '';
+    }
+    if (cardCompanyId === 'kb-card') {
+      return metadata?.approvalType || '';
+    }
+    if (cardCompanyId === 'shinhan-card') {
+      return metadata?.transactionType || '';
+    }
+    return metadata?.transactionMethod || '';
+  }
+
+  private extractBillingDate(metadata: any, cardCompanyId: string): string {
+    if (metadata?.billingDate || metadata?.['결제일']) {
+      const billingDate = metadata.billingDate || metadata['결제일'];
+      return this.formatDateForExport(billingDate);
+    }
+    if (cardCompanyId === 'shinhan-card' && metadata?.paymentDueDate) {
+      return this.formatDateForExport(metadata.paymentDueDate);
+    }
+    return '';
+  }
+
+  private calculateUSDAmount(metadata: any): string {
+    if (metadata?.exchangeRate && metadata?.foreignAmountKRW) {
+      const rate = parseFloat(metadata.exchangeRate);
+      const krw = parseFloat(metadata.foreignAmountKRW);
+      if (!isNaN(rate) && !isNaN(krw) && rate > 0) {
+        return (krw / rate).toFixed(2);
+      }
+    }
+    return '';
+  }
+
+  private generateNotes(metadata: any, transaction: any): string {
+    const notes: string[] = [];
+
+    if (metadata?.isCancelled) {
+      notes.push('취소');
+    }
+
+    const installment = metadata?.installmentPeriod;
+    if (installment && installment !== '00' && installment !== '0') {
+      notes.push(`${installment}개월 할부`);
+    }
+
+    if (metadata?.foreignAmountKRW) {
+      notes.push('해외결제');
+    }
+
+    return notes.join(', ');
+  }
+
+  private formatAmount(withdrawal: number, deposit: number): string {
+    if (deposit > 0) {
+      return (-deposit).toString();
+    }
+    return (withdrawal || 0).toString();
+  }
+
+  private formatDateForExport(dateString: string): string {
+    if (!dateString) return '';
+    const cleaned = String(dateString).replace(/[-/]/g, '');
+    if (cleaned.length === 8) {
+      return cleaned;
+    }
+    return dateString;
   }
 }
 

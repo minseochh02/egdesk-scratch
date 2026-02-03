@@ -18,6 +18,7 @@ function mapTransactionToExportRow(transaction, accountInfo = {}) {
   const cardCompanyId = metadata.cardCompanyId || transaction.bank_id;
 
   return {
+    '카드사': extractCardCompany(cardCompanyId),
     '본부명': extractHeadquarters(metadata, cardCompanyId),
     '부서명': extractDepartment(metadata, cardCompanyId),
     '카드번호': metadata.cardNumber || '',
@@ -34,6 +35,25 @@ function mapTransactionToExportRow(transaction, accountInfo = {}) {
     '(US $)': calculateUSDAmount(metadata),
     '비고': generateNotes(metadata, transaction)
   };
+}
+
+/**
+ * Extract card company name from ID
+ * @param {string} cardCompanyId - Card company identifier
+ * @returns {string} Card company name in Korean
+ */
+function extractCardCompany(cardCompanyId) {
+  const cardCompanyNames = {
+    'bc-card': 'BC카드',
+    'kb-card': 'KB국민카드',
+    'nh-card': 'NH농협카드',
+    'shinhan-card': '신한카드',
+    'samsung-card': '삼성카드',
+    'hyundai-card': '현대카드',
+    'lotte-card': '롯데카드',
+    'hana-card': '하나카드'
+  };
+  return cardCompanyNames[cardCompanyId] || '';
 }
 
 /**
@@ -249,6 +269,7 @@ function mapTransactionsToExportRows(transactions, accountInfo = {}) {
 module.exports = {
   mapTransactionToExportRow,
   mapTransactionsToExportRows,
+  extractCardCompany,
   extractHeadquarters,
   extractDepartment,
   extractCardType,

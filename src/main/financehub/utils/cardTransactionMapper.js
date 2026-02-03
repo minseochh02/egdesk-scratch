@@ -4,6 +4,37 @@
 // Transforms card transaction data to bank transaction format for database storage
 
 /**
+ * Clean card number by removing company name prefixes and extra whitespace
+ * @param {string} cardNumber - Raw card number
+ * @returns {string} Cleaned card number
+ */
+function cleanCardNumber(cardNumber) {
+  if (!cardNumber) return '';
+
+  // Remove common card company prefixes (e.g., "BC카드            V330930" -> "V330930")
+  const prefixes = [
+    'BC카드',
+    'KB국민카드', 'KB카드',
+    'NH농협카드', 'NH카드',
+    '신한카드',
+    '삼성카드',
+    '현대카드',
+    '롯데카드',
+    '하나카드'
+  ];
+
+  let cleaned = String(cardNumber);
+  for (const prefix of prefixes) {
+    cleaned = cleaned.replace(new RegExp(`^${prefix}\\s*`, 'g'), '');
+  }
+
+  // Remove extra whitespace and trim
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
+}
+
+/**
  * Parse card dateTime to separate date and time
  * @param {string} dateTime - '2026/01/19 14:46:51'
  * @returns {{date: string, time: string}}
@@ -81,8 +112,9 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     : transactionMethod;
 
   // Store card-specific fields in metadata
+  const rawCardNumber = cardTx.cardNumber || cardTx.cardUsed || cardTx['이용카드'] || cardTx['카드번호'];
   const metadata = {
-    cardNumber: cardTx.cardNumber || cardTx.cardUsed || cardTx['이용카드'] || cardTx['카드번호'],
+    cardNumber: cleanCardNumber(rawCardNumber),
     approvalNumber: cardTx.approvalNumber || cardTx['승인번호'],
     transactionMethod: cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || cardTx.paymentMethod || cardTx['결제방법'],
     installmentPeriod: cardTx.installmentPeriod || cardTx.installmentMonths || cardTx['할부개월수'],
@@ -156,6 +188,7 @@ function transformCardTransactions(cardTransactions, cardAccountId, cardCompanyI
 }
 
 module.exports = {
+  cleanCardNumber,
   parseCardDateTime,
   transformCardTransaction,
   transformCardTransactions,
