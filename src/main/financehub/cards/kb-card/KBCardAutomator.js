@@ -142,8 +142,8 @@ class KBCardAutomator extends BaseBankAutomator {
       await this.clickElement(this.config.xpaths.loginTypeRadio);
       await this.page.waitForTimeout(3000);
 
-      // Step 4: Enter user ID using keyboard events
-      this.log('Entering user ID...');
+      // Step 4: Enter user ID using Arduino HID with natural timing
+      this.log('Entering user ID via Arduino HID...');
       const idField = this.page.locator(this.config.xpaths.idInput.css);
       await idField.click();
       await this.page.waitForTimeout(1000);
@@ -152,14 +152,12 @@ class KBCardAutomator extends BaseBankAutomator {
       await idField.fill('');
       await this.page.waitForTimeout(200);
 
-      // Type user ID character by character
-      for (let i = 0; i < userId.length; i++) {
-        const char = userId[i];
-        await this.page.keyboard.type(char, { delay: 100 });
-        if (i < userId.length - 1) {
-          await this.page.waitForTimeout(150);
-        }
-      }
+      // Type user ID via Arduino with natural timing
+      await this.typeViaArduinoWithNaturalTiming(userId, {
+        minDelay: 150,
+        maxDelay: 400
+      });
+      this.log('User ID typed via Arduino HID');
       await this.page.waitForTimeout(500);
 
       // Step 5: Enter password (Arduino HID with Natural Timing or Manual)
