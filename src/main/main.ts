@@ -685,15 +685,24 @@ const createWindow = async () => {
           const { SerialPort } = require('serialport');
           const ports = await SerialPort.list();
 
-          // Look for Arduino by manufacturer or product name
-          const arduinoPort = ports.find((port: any) =>
-            port.manufacturer?.toLowerCase().includes('arduino') ||
-            port.manufacturer?.toLowerCase().includes('ftdi') ||
-            port.manufacturer?.toLowerCase().includes('ch340') ||
-            port.productId?.toLowerCase().includes('2341') || // Arduino Vendor ID
-            port.path?.includes('usbserial') ||
-            port.path?.includes('usbmodem')
-          );
+          // Look for Arduino by Vendor ID, manufacturer, or common USB-Serial chips
+          const arduinoPort = ports.find((port: any) => {
+            // Arduino official VID
+            if (port.vendorId === '2341' || port.vendorId === '0x2341') return true;
+
+            // Manufacturer name
+            if (port.manufacturer?.toLowerCase().includes('arduino')) return true;
+
+            // Common USB-Serial chips in Arduino clones
+            if (port.vendorId === '0403' || port.manufacturer?.toLowerCase().includes('ftdi')) return true;
+            if (port.vendorId === '1a86' || port.manufacturer?.toLowerCase().includes('ch340')) return true;
+            if (port.vendorId === '10c4' || port.manufacturer?.toLowerCase().includes('silicon labs')) return true;
+
+            // Path patterns
+            if (port.path?.includes('usbserial') || port.path?.includes('usbmodem')) return true;
+
+            return false;
+          });
 
           if (arduinoPort) {
             console.log(`🔍 Auto-detected Arduino on port: ${arduinoPort.path}`);
@@ -703,12 +712,12 @@ const createWindow = async () => {
           }
 
           // Fall back to saved setting
-          const savedPort = store.get('financeHub.arduinoPort', 'COM6');
+          const savedPort = store.get('financeHub.arduinoPort', 'COM3');
           console.log(`⚠️  No Arduino detected. Using saved port: ${savedPort}`);
           return savedPort;
         } catch (error) {
           console.error('Error detecting Arduino port:', error);
-          return store.get('financeHub.arduinoPort', 'COM6');
+          return store.get('financeHub.arduinoPort', 'COM3');
         }
       }
 
