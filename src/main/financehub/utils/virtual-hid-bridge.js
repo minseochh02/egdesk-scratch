@@ -246,8 +246,100 @@ async function getSystemInfo() {
   };
 }
 
+/**
+ * Send password character-by-character with app-controlled timing
+ * This gives you full control over delays for more natural typing
+ *
+ * @param {string} password - Password to type
+ * @param {Object} options - Typing options
+ * @param {number} options.minDelay - Minimum delay between characters in ms (default: 50)
+ * @param {number} options.maxDelay - Maximum delay between characters in ms (default: 150)
+ * @param {number} options.preDelay - Delay before starting to type in ms (default: 500)
+ * @param {boolean} options.debug - Enable debug logging (default: false)
+ * @param {Function} options.onProgress - Callback for progress (index, char, total)
+ * @returns {Promise<boolean>} Success status
+ */
+async function sendPasswordWithNaturalTiming(password, options = {}) {
+  const {
+    minDelay = 50,
+    maxDelay = 150,
+    preDelay = 500,
+    debug = false,
+    onProgress = null
+  } = options;
+
+  try {
+    // Check dependencies first
+    if (debug) {
+      console.log('[Virtual-HID] Checking dependencies...');
+    }
+
+    const deps = await checkDependencies();
+
+    if (!deps.hasPython) {
+      throw new Error('Python3 is not installed. Please install Python 3.');
+    }
+
+    if (!deps.hasPynput) {
+      console.log('[Virtual-HID] pynput not found, attempting to install...');
+      await installPynput();
+    }
+
+    if (debug) {
+      console.log('[Virtual-HID] Dependencies OK');
+      console.log(`[Virtual-HID] Typing ${password.length} characters with delays ${minDelay}-${maxDelay}ms`);
+    }
+
+    // Initial delay before starting
+    await new Promise(resolve => setTimeout(resolve, preDelay));
+
+    // Type each character with variable delays
+    for (let i = 0; i < password.length; i++) {
+      const char = password[i];
+
+      // Call sendPasswordViaVirtualHID with single character and no delays
+      // (the Python script will handle the character immediately)
+      const success = await sendPasswordViaVirtualHID(char, {
+        charDelay: 0,
+        preDelay: 0,
+        debug: false,
+        autoInstall: false // Already checked above
+      });
+
+      if (!success) {
+        throw new Error(`Failed to type character at position ${i}`);
+      }
+
+      // Progress callback
+      if (onProgress) {
+        onProgress(i, char, password.length);
+      }
+
+      if (debug && (i + 1) % 10 === 0) {
+        console.log(`[Virtual-HID] Progress: ${i + 1}/${password.length}`);
+      }
+
+      // Add variable delay before next character (except after last char)
+      if (i < password.length - 1) {
+        const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    if (debug) {
+      console.log('[Virtual-HID] ✅ All characters typed successfully');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[Virtual-HID] Error:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   sendPasswordViaVirtualHID,
+  sendPasswordWithNaturalTiming,
   checkDependencies,
   installPynput,
   getSystemInfo
