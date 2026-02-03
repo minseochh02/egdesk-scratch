@@ -177,6 +177,12 @@ const FinanceHub: React.FC = () => {
   const [showTaxGoogleAuth, setShowTaxGoogleAuth] = useState(false);
   const [signingInTaxGoogle, setSigningInTaxGoogle] = useState(false);
 
+  // Arduino port settings state
+  const [arduinoPort, setArduinoPort] = useState<string>('COM6');
+  const [availablePorts, setAvailablePorts] = useState<any[]>([]);
+  const [isDetectingArduino, setIsDetectingArduino] = useState(false);
+  const [arduinoStatus, setArduinoStatus] = useState<'unknown' | 'detected' | 'not-found'>('unknown');
+
   // ============================================
   // Computed Values
   // ============================================
@@ -325,6 +331,59 @@ const FinanceHub: React.FC = () => {
       cleanupHide();
     };
   }, []);
+
+  // Load Arduino port on mount
+  useEffect(() => {
+    loadArduinoPort();
+  }, []);
+
+  // Arduino Port Functions
+  const loadArduinoPort = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('finance-hub:get-arduino-port');
+      if (result.success) {
+        setArduinoPort(result.port);
+        setArduinoStatus(result.autoDetected ? 'detected' : 'unknown');
+      }
+    } catch (error) {
+      console.error('Error loading Arduino port:', error);
+    }
+  };
+
+  const detectArduinoPort = async () => {
+    setIsDetectingArduino(true);
+    try {
+      const result = await window.electron.ipcRenderer.invoke('finance-hub:get-arduino-port');
+      if (result.success) {
+        setArduinoPort(result.port);
+        setArduinoStatus(result.autoDetected ? 'detected' : 'not-found');
+        if (!result.autoDetected) {
+          // Also list all available ports for manual selection
+          const portsResult = await window.electron.ipcRenderer.invoke('finance-hub:list-serial-ports');
+          if (portsResult.success) {
+            setAvailablePorts(portsResult.ports);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error detecting Arduino port:', error);
+      setArduinoStatus('not-found');
+    } finally {
+      setIsDetectingArduino(false);
+    }
+  };
+
+  const updateArduinoPort = async (port: string) => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('finance-hub:set-arduino-port', port);
+      if (result.success) {
+        setArduinoPort(port);
+        setArduinoStatus('unknown');
+      }
+    } catch (error) {
+      console.error('Error updating Arduino port:', error);
+    }
+  };
 
   const loadConnectedBusinesses = async () => {
     try {
@@ -1793,7 +1852,7 @@ const FinanceHub: React.FC = () => {
         </div>
 
         {/* Debug Panel - Only visible in development */}
-        {import.meta.env.DEV && (
+        {process.env.NODE_ENV === 'development' && (
           <div className="finance-hub__debug-panel finance-hub__debug-panel--header">
             <button className="finance-hub__debug-toggle" onClick={() => setShowDebugPanel(!showDebugPanel)}>🔧 Debug Tools {showDebugPanel ? '▼' : '▶'}</button>
             {showDebugPanel && (
@@ -1822,6 +1881,90 @@ const FinanceHub: React.FC = () => {
       <main className="finance-hub__main">
         {currentView === 'account-management' ? (
           <>
+            {/* Arduino Settings */}
+            <section className="finance-hub__section">
+              <div className="finance-hub__section-header">
+                <h2><span className="finance-hub__section-icon">🔌</span> Arduino HID 설정</h2>
+                <button
+                  className="finance-hub__btn finance-hub__btn--secondary"
+                  onClick={detectArduinoPort}
+                  disabled={isDetectingArduino}
+                >
+                  {isDetectingArduino ? (
+                    <>
+                      <FontAwesomeIcon icon={faSpinner} spin /> 감지 중...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faSync} /> 자동 감지
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="finance-hub__arduino-settings">
+                <div className="finance-hub__arduino-info">
+                  <div className="finance-hub__arduino-port">
+                    <label>현재 포트:</label>
+                    <div className="finance-hub__arduino-port-display">
+                      <span className="finance-hub__port-value">{arduinoPort}</span>
+                      {arduinoStatus === 'detected' && (
+                        <span className="finance-hub__arduino-status finance-hub__arduino-status--success">
+                          <FontAwesomeIcon icon={faCheckCircle} /> 자동 감지됨
+                        </span>
+                      )}
+                      {arduinoStatus === 'not-found' && (
+                        <span className="finance-hub__arduino-status finance-hub__arduino-status--warning">
+                          <FontAwesomeIcon icon={faExclamationTriangle} /> 감지 실패
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="finance-hub__arduino-manual">
+                    <label>수동 설정:</label>
+                    <div className="finance-hub__arduino-manual-input">
+                      <input
+                        type="text"
+                        value={arduinoPort}
+                        onChange={(e) => setArduinoPort(e.target.value)}
+                        placeholder="예: COM3, COM4, /dev/ttyUSB0"
+                        className="finance-hub__input"
+                      />
+                      <button
+                        className="finance-hub__btn finance-hub__btn--primary"
+                        onClick={() => updateArduinoPort(arduinoPort)}
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                  {availablePorts.length > 0 && (
+                    <div className="finance-hub__available-ports">
+                      <label>사용 가능한 포트:</label>
+                      <div className="finance-hub__ports-list">
+                        {availablePorts.map((port) => (
+                          <button
+                            key={port.path}
+                            className={`finance-hub__port-item ${port.path === arduinoPort ? 'active' : ''}`}
+                            onClick={() => updateArduinoPort(port.path)}
+                          >
+                            <span className="finance-hub__port-path">{port.path}</span>
+                            {port.manufacturer && (
+                              <span className="finance-hub__port-manufacturer">{port.manufacturer}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="finance-hub__arduino-help">
+                  <p>💡 Arduino HID 키보드는 카드사 보안 키패드를 우회하여 비밀번호를 입력합니다.</p>
+                  <p>• Windows: Device Manager에서 Arduino 포트를 확인하세요 (예: COM3, COM4)</p>
+                  <p>• Mac/Linux: /dev/ttyUSB0 또는 /dev/ttyACM0 형식입니다</p>
+                </div>
+              </div>
+            </section>
+
             {/* Connected Banks */}
             <section className="finance-hub__section">
               <div className="finance-hub__section-header">
@@ -1914,7 +2057,7 @@ const FinanceHub: React.FC = () => {
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleDisconnectAccount(connection.bankId, account.accountNumber)} title="이 계좌 비활성화">
                                           <FontAwesomeIcon icon={faUnlink} />
                                         </button>
-                                        {import.meta.env.DEV && showDebugPanel && (
+                                        {process.env.NODE_ENV === 'development' && showDebugPanel && (
                                           <button className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger" onClick={() => handleDeleteAccount(connection.bankId, account.accountNumber)} title="계좌 삭제 (DEBUG)">
                                             <FontAwesomeIcon icon={faTrash} />
                                           </button>
@@ -2100,7 +2243,7 @@ const FinanceHub: React.FC = () => {
                                   >
                                     <FontAwesomeIcon icon={faUnlink} />
                                   </button>
-                                  {import.meta.env.DEV && showDebugPanel && (
+                                  {process.env.NODE_ENV === 'development' && showDebugPanel && (
                                     <button
                                       className="finance-hub__btn finance-hub__btn--icon finance-hub__btn--danger"
                                       onClick={() => {
