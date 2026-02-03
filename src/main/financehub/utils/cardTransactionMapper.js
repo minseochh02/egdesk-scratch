@@ -88,22 +88,38 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
   }
 
   // Parse amount from different field names (check both English and Korean)
+  // NH Card: Check for separate cancellation amount field first
+  const cancellationAmount = cardTx['취소금액'] || cardTx.cancellationAmount;
+  const hasCancellationAmount = cancellationAmount && parseInt(String(cancellationAmount).replace(/[^\d-]/g, '')) !== 0;
+
   const amountValue = cardTx.amount || cardTx['이용금액'] || cardTx['국내이용금액(원)'] || cardTx.approvalAmount || 0;
   const amount = parseInt(String(amountValue).replace(/[^\d-]/g, '')) || 0;
 
   // Handle cancellations/refunds
-  // NH Card: cancellationStatus field
+  // NH Card: cancellationStatus field OR 취소금액 field
   // BC Card: salesType field (매출종류)
-  // Shinhan Card: transactionType field (이용구분)
+  // Shinhan Card: transactionType field (이용구분) OR cancellationDate field (취소일자)
   // KB Card: approvalType field (승인구분)
   const cancellationField = cardTx.cancellationStatus || cardTx.salesType || cardTx.transactionType || cardTx.approvalType || cardTx['승인구분'] || '';
-  const isCancelled = cancellationField === '취소' ||
-                     (typeof cancellationField === 'string' && cancellationField.includes('취소')) ||
-                     cancellationField === '매입취소';
+  const hasCancellationDate = !!(cardTx.cancellationDate || cardTx['취소일자']);
+
+  const isCancelled = hasCancellationAmount ||
+                     hasCancellationDate ||
+                     cancellationField === '취소' ||
+                     cancellationField === '승인취소' ||
+                     cancellationField === '매입취소' ||
+                     (typeof cancellationField === 'string' && cancellationField.includes('취소'));
+
+  // Determine the amount to use
+  // For NH Card cancellations, use the 취소금액 field instead of 국내이용금액(원)
+  const finalAmount = hasCancellationAmount
+    ? parseInt(String(cancellationAmount).replace(/[^\d-]/g, '')) || 0
+    : amount;
 
   // Cancelled transactions are refunds (deposits), normal transactions are withdrawals
-  const withdrawal = isCancelled ? 0 : amount;
-  const deposit = isCancelled ? amount : 0;
+  // Use absolute value to handle BC Card's negative amounts for cancellations
+  const withdrawal = isCancelled ? 0 : Math.abs(finalAmount);
+  const deposit = isCancelled ? Math.abs(finalAmount) : 0;
 
   // Prefix type with "취소 -" for cancelled transactions
   const transactionMethod = cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || cardTx.paymentMethod || cardTx['결제방법'] || '카드결제';
