@@ -798,6 +798,46 @@ const createWindow = async () => {
         }
       });
 
+      ipcMain.handle('finance-hub:cleanup-downloaded-files', async (_event, bankOrCardId) => {
+        try {
+          const fs = require('fs');
+          const path = require('path');
+
+          // Determine the downloads directory for this bank/card
+          const outputDir = path.join(process.cwd(), 'output', bankOrCardId, 'downloads');
+
+          if (!fs.existsSync(outputDir)) {
+            return { success: true, deletedCount: 0 };
+          }
+
+          // Get all files in the downloads directory
+          const files = fs.readdirSync(outputDir);
+          let deletedCount = 0;
+
+          // Delete all Excel and ZIP files
+          for (const file of files) {
+            const filePath = path.join(outputDir, file);
+            const isFile = fs.statSync(filePath).isFile();
+            const isDownloadFile = /\.(xls|xlsx|zip)$/i.test(file);
+
+            if (isFile && isDownloadFile) {
+              try {
+                fs.unlinkSync(filePath);
+                deletedCount++;
+                console.log(`[Cleanup] Deleted: ${file}`);
+              } catch (error) {
+                console.error(`[Cleanup] Failed to delete ${file}:`, error);
+              }
+            }
+          }
+
+          return { success: true, deletedCount };
+        } catch (error) {
+          console.error('[Cleanup] Error cleaning up files:', error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
       ipcMain.handle('finance-hub:card:disconnect', async (_event, cardCompanyId) => {
         try {
           // Close browser and cleanup automator

@@ -95,8 +95,10 @@ export {
 // Media icons
 export {
   faPlay,
+  faPlayCircle,
   faPause,
   faStop,
+  faStopCircle,
   faVolumeUp,
   faVolumeDown,
   faVolumeMute,
@@ -155,6 +157,7 @@ export {
   faExternalLinkAlt,
   faQuestion,
   faRefresh,
+  faRedo,
   faDownload,
   faMagic,
   faUpload,

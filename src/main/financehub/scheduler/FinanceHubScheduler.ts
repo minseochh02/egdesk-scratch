@@ -410,6 +410,25 @@ export class FinanceHubScheduler extends EventEmitter {
 
         console.log(`[FinanceHubScheduler] ${entityKey} sync ${success ? 'completed' : 'failed'}: ${error || 'OK'}`);
 
+        // After successful sync: export to spreadsheet and cleanup files
+        if (success && this.settings.spreadsheetSyncEnabled) {
+          try {
+            console.log(`[FinanceHubScheduler] 📊 Exporting ${entityKey} to spreadsheet...`);
+            const exportResult = await this.exportToSpreadsheet();
+
+            if (exportResult.success) {
+              console.log(`[FinanceHubScheduler] ✅ Spreadsheet updated: ${exportResult.spreadsheetUrl}`);
+
+              // Cleanup downloaded files only after successful spreadsheet export
+              await this.cleanupDownloadedFiles(entityType, entityId);
+            } else {
+              console.warn(`[FinanceHubScheduler] ⚠️  Spreadsheet export failed: ${exportResult.error}`);
+            }
+          } catch (exportError) {
+            console.error(`[FinanceHubScheduler] Error during post-sync export/cleanup:`, exportError);
+          }
+        }
+
         // Mark intent as completed or failed
         try {
           if (success) {
@@ -455,14 +474,125 @@ export class FinanceHubScheduler extends EventEmitter {
     console.log(`[FinanceHubScheduler] Syncing card: ${cardId}`);
 
     try {
-      // TODO: Implement card sync using card automator
-      // Map cardId to the appropriate automator (e.g., 'shinhan' -> ShinhanCardAutomator)
+      const store = getStore();
+      const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
+      const savedCredentials = financeHub.savedCredentials?.[cardId];
 
-      // For now, return placeholder
-      return {
-        success: false,
-        error: 'Card sync not yet implemented'
+      if (!savedCredentials) {
+        return {
+          success: false,
+          error: 'No saved credentials found for this card'
+        };
+      }
+
+      // Get Arduino port
+      const arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
+
+      // Create card automator
+      const { cards } = require('../index');
+      const automator = cards.createCardAutomator(cardId, {
+        headless: true, // Run headless for scheduled sync
+        arduinoPort,
+        manualPassword: false
+      });
+
+      // Login
+      console.log(`[FinanceHubScheduler] Logging in to ${cardId}...`);
+      const loginResult = await automator.login(savedCredentials);
+
+      if (!loginResult.success) {
+        await automator.cleanup();
+        return {
+          success: false,
+          error: `Login failed: ${loginResult.error || 'Unknown error'}`
+        };
+      }
+
+      // Get date range for yesterday (1 day)
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}${month}${day}`;
       };
+
+      const startDate = formatDate(yesterday);
+      const endDate = formatDate(today);
+
+      console.log(`[FinanceHubScheduler] Fetching ${cardId} transactions from ${startDate} to ${endDate}...`);
+
+      // Get all cards for this card company
+      let cardList = [];
+      if (typeof automator.getCards === 'function') {
+        cardList = await automator.getCards();
+      }
+
+      let totalInserted = 0;
+      let totalSkipped = 0;
+
+      // Fetch transactions for each card
+      for (const card of cardList) {
+        const cardNumber = card.cardNumber;
+        console.log(`[FinanceHubScheduler] Fetching transactions for card ${cardNumber}...`);
+
+        const result = await automator.getTransactions(cardNumber, startDate, endDate);
+
+        if (!result.success || !result.transactions) {
+          console.warn(`[FinanceHubScheduler] Failed to get transactions for card ${cardNumber}`);
+          continue;
+        }
+
+        // Import to database
+        const { getSQLiteManager } = await import('../../sqlite/manager');
+        const sqliteManager = getSQLiteManager();
+        const financeHubDb = sqliteManager.getFinanceHubDatabase();
+
+        const transactionsData = result.transactions[0]?.extractedData?.transactions || [];
+
+        if (transactionsData.length > 0) {
+          const cardData = {
+            accountNumber: cardNumber,
+            accountName: card.cardName || '카드',
+            customerName: card.cardholderName || '',
+            balance: 0,
+            availableBalance: 0,
+            openDate: card.issueDate || '',
+          };
+
+          const syncMetadata = {
+            queryPeriodStart: startDate,
+            queryPeriodEnd: endDate,
+            excelFilePath: result.transactions[0]?.path || ''
+          };
+
+          const importResult = financeHubDb.importTransactions(
+            cardId,
+            cardData,
+            transactionsData,
+            syncMetadata
+          );
+
+          if (importResult.success) {
+            totalInserted += importResult.inserted;
+            totalSkipped += importResult.skipped;
+            console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions for card ${cardNumber}`);
+          }
+        }
+      }
+
+      await automator.cleanup();
+
+      console.log(`[FinanceHubScheduler] Card sync complete for ${cardId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
+      return {
+        success: true,
+        inserted: totalInserted,
+        skipped: totalSkipped
+      };
+
     } catch (error) {
       console.error(`[FinanceHubScheduler] Card sync error for ${cardId}:`, error);
       return {
@@ -476,14 +606,143 @@ export class FinanceHubScheduler extends EventEmitter {
     console.log(`[FinanceHubScheduler] Syncing bank: ${bankId}`);
 
     try {
-      // TODO: Implement bank sync using bank automator
-      // Map bankId to the appropriate automator (e.g., 'shinhan' -> ShinhanBankAutomator)
+      const store = getStore();
+      const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
+      const savedCredentials = financeHub.savedCredentials?.[bankId];
 
-      // For now, return placeholder
-      return {
-        success: false,
-        error: 'Bank sync not yet implemented'
+      if (!savedCredentials) {
+        return {
+          success: false,
+          error: 'No saved credentials found for this bank'
+        };
+      }
+
+      // Create bank automator
+      const { createAutomator } = require('../index');
+      const automator = createAutomator(bankId, {
+        headless: true // Run headless for scheduled sync
+      });
+
+      // Login
+      console.log(`[FinanceHubScheduler] Logging in to ${bankId}...`);
+      const loginResult = await automator.login(savedCredentials);
+
+      if (!loginResult.success) {
+        await automator.cleanup();
+        return {
+          success: false,
+          error: `Login failed: ${loginResult.error || 'Unknown error'}`
+        };
+      }
+
+      // Get accounts
+      let accounts = [];
+      if (typeof automator.getAccounts === 'function') {
+        accounts = await automator.getAccounts();
+      }
+
+      if (accounts.length === 0) {
+        await automator.cleanup();
+        return {
+          success: false,
+          error: 'No accounts found'
+        };
+      }
+
+      // Get date range for yesterday (1 day)
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}${month}${day}`;
       };
+
+      const startDate = formatDate(yesterday);
+      const endDate = formatDate(today);
+
+      console.log(`[FinanceHubScheduler] Fetching ${bankId} transactions from ${startDate} to ${endDate}...`);
+
+      let totalInserted = 0;
+      let totalSkipped = 0;
+
+      // Get database
+      const { getSQLiteManager } = await import('../../sqlite/manager');
+      const sqliteManager = getSQLiteManager();
+      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+
+      // Fetch transactions for each account
+      for (const account of accounts) {
+        const accountNumber = account.accountNumber;
+        console.log(`[FinanceHubScheduler] Fetching transactions for account ${accountNumber}...`);
+
+        try {
+          const result = await automator.getTransactions(accountNumber, startDate, endDate);
+
+          if (!result.success) {
+            console.warn(`[FinanceHubScheduler] Failed to get transactions for account ${accountNumber}`);
+            continue;
+          }
+
+          // Parse transactions
+          const transactionsData = (result.transactions || []).map((tx: any) => ({
+            date: tx.date ? tx.date.replace(/[-.]/g, '') : '',
+            time: tx.time || '',
+            type: tx.type || '',
+            withdrawal: tx.withdrawal || 0,
+            deposit: tx.deposit || 0,
+            description: tx.description || '',
+            balance: tx.balance || 0,
+            branch: tx.branch || '',
+          }));
+
+          if (transactionsData.length > 0) {
+            const accountData = {
+              accountNumber,
+              accountName: account.accountName || '계좌',
+              customerName: loginResult.userName || '',
+              balance: result.metadata?.balance || account.balance || 0,
+              availableBalance: result.metadata?.availableBalance || 0,
+              openDate: result.metadata?.openDate || '',
+            };
+
+            const syncMetadata = {
+              queryPeriodStart: startDate,
+              queryPeriodEnd: endDate,
+              excelFilePath: result.file || result.filename || ''
+            };
+
+            const importResult = financeHubDb.importTransactions(
+              bankId,
+              accountData,
+              transactionsData,
+              syncMetadata
+            );
+
+            if (importResult.success) {
+              totalInserted += importResult.inserted;
+              totalSkipped += importResult.skipped;
+              console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions for account ${accountNumber}`);
+            }
+          }
+        } catch (accountError) {
+          console.error(`[FinanceHubScheduler] Error syncing account ${accountNumber}:`, accountError);
+          continue;
+        }
+      }
+
+      await automator.cleanup();
+
+      console.log(`[FinanceHubScheduler] Bank sync complete for ${bankId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
+      return {
+        success: true,
+        inserted: totalInserted,
+        skipped: totalSkipped
+      };
+
     } catch (error) {
       console.error(`[FinanceHubScheduler] Bank sync error for ${bankId}:`, error);
       return {
@@ -585,6 +844,75 @@ export class FinanceHubScheduler extends EventEmitter {
         success: false,
         error: error instanceof Error ? error.message : String(error)
       };
+    }
+  }
+
+  /**
+   * Cleanup downloaded files after successful sync
+   */
+  private async cleanupDownloadedFiles(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<void> {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+
+      let downloadDir: string;
+
+      if (entityType === 'card') {
+        downloadDir = path.join(process.cwd(), 'output', entityId, 'downloads');
+      } else if (entityType === 'bank') {
+        downloadDir = path.join(process.cwd(), 'output', entityId, 'downloads');
+      } else {
+        // Tax files cleanup handled separately
+        return;
+      }
+
+      if (!fs.existsSync(downloadDir)) {
+        console.log(`[FinanceHubScheduler] Download directory not found: ${downloadDir}`);
+        return;
+      }
+
+      const files = fs.readdirSync(downloadDir);
+      let deletedCount = 0;
+
+      for (const file of files) {
+        const filePath = path.join(downloadDir, file);
+        try {
+          const stats = fs.statSync(filePath);
+
+          // Delete files (skip directories)
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+            console.log(`[FinanceHubScheduler] 🗑️  Deleted: ${file}`);
+          }
+        } catch (error) {
+          console.error(`[FinanceHubScheduler] Failed to delete ${filePath}:`, error);
+        }
+      }
+
+      // Special handling for BC Card - cleanup extracted temp folders
+      if (entityId === 'bc-card') {
+        const tmpDir = require('os').tmpdir();
+        const tmpFiles = fs.readdirSync(tmpDir);
+
+        for (const tmpFile of tmpFiles) {
+          if (tmpFile.startsWith('bc-card-extract-')) {
+            const tmpPath = path.join(tmpDir, tmpFile);
+            try {
+              // Delete directory recursively
+              fs.rmSync(tmpPath, { recursive: true, force: true });
+              deletedCount++;
+              console.log(`[FinanceHubScheduler] 🗑️  Deleted temp folder: ${tmpFile}`);
+            } catch (error) {
+              console.error(`[FinanceHubScheduler] Failed to delete temp folder ${tmpPath}:`, error);
+            }
+          }
+        }
+      }
+
+      console.log(`[FinanceHubScheduler] ✅ Cleaned up ${deletedCount} file(s) from ${entityType}:${entityId}`);
+    } catch (error) {
+      console.error(`[FinanceHubScheduler] File cleanup error for ${entityType}:${entityId}:`, error);
     }
   }
 

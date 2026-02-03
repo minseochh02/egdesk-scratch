@@ -682,6 +682,84 @@ const FinanceHub: React.FC = () => {
     };
   };
 
+  // ============================================
+  // Auto-Update Spreadsheet Helper
+  // ============================================
+
+  const autoUpdateSpreadsheet = async (transactionType: 'bank' | 'card') => {
+    try {
+      const spreadsheetKey = transactionType === 'bank' ? 'bank-spreadsheet' : 'card-spreadsheet';
+      const persistentResult = await window.electron.financeHub.getPersistentSpreadsheet(spreadsheetKey);
+
+      if (!persistentResult.success || !persistentResult.persistentSpreadsheet?.spreadsheetId) {
+        // No persistent spreadsheet exists, skip auto-update
+        return { updated: false };
+      }
+
+      const spreadsheetId = persistentResult.persistentSpreadsheet.spreadsheetId;
+
+      // Load all transactions for this type
+      const transactionsResult = await window.electron.financeHubDb.queryTransactions({
+        limit: 100000, // Load all
+      });
+
+      if (!transactionsResult.success || !transactionsResult.data) {
+        throw new Error('Failed to load transactions');
+      }
+
+      const allTransactions = transactionsResult.data;
+
+      // Filter by transaction type
+      const filteredTransactions = allTransactions.filter((tx: any) => {
+        const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata || '{}') : tx.metadata;
+        const isCardTx = metadata?.isCardTransaction === true;
+        return transactionType === 'card' ? isCardTx : !isCardTx;
+      });
+
+      // Get banks and accounts data
+      const banksResult = await window.electron.financeHubDb.getAllBanks();
+      const accountsResult = await window.electron.financeHubDb.getAllAccounts();
+
+      const banks = (banksResult.data || []).reduce((acc: any, bank: any) => {
+        acc[bank.id] = bank;
+        return acc;
+      }, {});
+
+      const accounts = accountsResult.data || [];
+
+      // Update the spreadsheet
+      await (window as any).electron.sheets.getOrCreateTransactionsSpreadsheet({
+        transactions: filteredTransactions,
+        banks,
+        accounts,
+        persistentSpreadsheetId: spreadsheetId,
+      });
+
+      return { updated: true, count: filteredTransactions.length };
+    } catch (error) {
+      console.error('[AutoUpdate] Failed to update spreadsheet:', error);
+      return { updated: false, error };
+    }
+  };
+
+  // ============================================
+  // Auto-Cleanup Downloaded Files
+  // ============================================
+
+  const cleanupDownloadedFiles = async (bankOrCardId: string) => {
+    try {
+      const result = await (window as any).electron.financeHub.cleanupDownloadedFiles(bankOrCardId);
+      if (result.success) {
+        console.log(`[Cleanup] Deleted ${result.deletedCount} files for ${bankOrCardId}`);
+        return { cleaned: true, count: result.deletedCount };
+      }
+      return { cleaned: false };
+    } catch (error) {
+      console.error('[Cleanup] Failed to cleanup files:', error);
+      return { cleaned: false, error };
+    }
+  };
+
   const handleSyncAndSaveTransactions = async (bankId: string, accountNumber: string, period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year' = '3months') => {
     setIsSyncing(accountNumber);
     try {
@@ -742,7 +820,22 @@ const FinanceHub: React.FC = () => {
         const { inserted, skipped } = importResult.data;
         await Promise.all([loadDatabaseStats(), loadRecentSyncOperations(), refreshAll()]);
         setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'connected' as const, lastSync: new Date() } : b));
-        alert(`✅ 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
+
+        // Auto-update spreadsheet if it exists
+        const spreadsheetUpdate = await autoUpdateSpreadsheet('bank');
+        let spreadsheetMsg = spreadsheetUpdate.updated
+          ? '\n\n📊 스프레드시트 자동 업데이트 완료!'
+          : '';
+
+        // Cleanup downloaded files after successful spreadsheet update
+        if (spreadsheetUpdate.updated) {
+          const cleanup = await cleanupDownloadedFiles(bankId);
+          if (cleanup.cleaned && cleanup.count > 0) {
+            spreadsheetMsg += `\n🗑️ 다운로드 파일 ${cleanup.count}개 정리 완료`;
+          }
+        }
+
+        alert(`✅ 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건${spreadsheetMsg}`);
       } else {
         throw new Error(importResult.error);
       }
@@ -874,7 +967,21 @@ const FinanceHub: React.FC = () => {
           c.cardCompanyId === cardCompanyId ? { ...c, lastSync: new Date() } : c
         ));
 
-        alert(`✅ 전체 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 카드 수: ${transactionsByCard.size}개\n\n※ 신한카드는 모든 카드의 거래내역을 한번에 조회합니다`);
+        // Auto-update spreadsheet if it exists
+        const spreadsheetUpdate = await autoUpdateSpreadsheet('card');
+        let spreadsheetMsg = spreadsheetUpdate.updated
+          ? '\n\n📊 스프레드시트 자동 업데이트 완료!'
+          : '';
+
+        // Cleanup downloaded files after successful spreadsheet update
+        if (spreadsheetUpdate.updated) {
+          const cleanup = await cleanupDownloadedFiles(cardCompanyId);
+          if (cleanup.cleaned && cleanup.count > 0) {
+            spreadsheetMsg += `\n🗑️ 다운로드 파일 ${cleanup.count}개 정리 완료`;
+          }
+        }
+
+        alert(`✅ 전체 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 카드 수: ${transactionsByCard.size}개\n\n※ 신한카드는 모든 카드의 거래내역을 한번에 조회합니다${spreadsheetMsg}`);
 
       } else {
         // Other cards: import normally with single card number
@@ -913,7 +1020,21 @@ const FinanceHub: React.FC = () => {
             c.cardCompanyId === cardCompanyId ? { ...c, lastSync: new Date() } : c
           ));
 
-          alert(`✅ 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건`);
+          // Auto-update spreadsheet if it exists
+          const spreadsheetUpdate = await autoUpdateSpreadsheet('card');
+          let spreadsheetMsg = spreadsheetUpdate.updated
+            ? '\n\n📊 스프레드시트 자동 업데이트 완료!'
+            : '';
+
+          // Cleanup downloaded files after successful spreadsheet update
+          if (spreadsheetUpdate.updated) {
+            const cleanup = await cleanupDownloadedFiles(cardCompanyId);
+            if (cleanup.cleaned && cleanup.count > 0) {
+              spreadsheetMsg += `\n🗑️ 다운로드 파일 ${cleanup.count}개 정리 완료`;
+            }
+          }
+
+          alert(`✅ 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${inserted}건\n• 중복 건너뜀: ${skipped}건${spreadsheetMsg}`);
         } else {
           throw new Error(importResult.error || '데이터베이스 저장 실패');
         }

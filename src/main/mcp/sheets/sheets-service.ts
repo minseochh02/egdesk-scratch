@@ -382,31 +382,8 @@ export class SheetsService {
       // Use provided custom title (no date timestamp)
       title = customTitle;
     } else {
-      // Auto-generate title based on transaction type
-      const isCardTransaction = transactions.length > 0 &&
-        transactions[0].metadata &&
-        (typeof transactions[0].metadata === 'string'
-          ? JSON.parse(transactions[0].metadata).isCardTransaction
-          : transactions[0].metadata.isCardTransaction);
-
-      if (isCardTransaction && transactions.length > 0) {
-        // Extract card company name from first transaction
-        const firstTx = transactions[0];
-        const metadata = typeof firstTx.metadata === 'string' ? JSON.parse(firstTx.metadata) : firstTx.metadata;
-        const cardCompanyId = metadata?.cardCompanyId || firstTx.bankId;
-        const cardCompany = this.extractCardCompany(cardCompanyId);
-        // Card company names already include "카드" (e.g., "신한카드", "BC카드")
-        title = `${cardCompany} 내역`;
-      } else if (transactions.length > 0) {
-        // Extract bank name from first transaction
-        const firstTx = transactions[0];
-        const bankId = firstTx.bankId;
-        const bankName = banks[bankId]?.name || bankId;
-        title = `${bankName} 내역`;
-      } else {
-        // Fallback for empty transactions
-        title = 'EGDesk 거래내역';
-      }
+      // Default title for merged transactions (cards + banks combined)
+      title = 'EGDesk 거래내역';
     }
 
     const result = await this.createTransactionsSpreadsheet(title, transactions, banks, accounts);
