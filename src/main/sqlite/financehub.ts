@@ -849,6 +849,60 @@ export class FinanceHubDbManager {
     };
   }
 
+  /**
+   * Query card transactions for export with filtering
+   * Used by card export functionality to generate Excel files
+   */
+  exportCardTransactions(options: {
+    accountId?: string;
+    cardCompanyId?: string;
+    startDate?: string;
+    endDate?: string;
+    includeRefunds?: boolean;
+  } = {}): Array<Transaction & { account_name: string; customer_name: string; bank_id: string }> {
+    let query = `
+      SELECT
+        t.*,
+        a.account_name,
+        a.customer_name,
+        a.bank_id
+      FROM transactions t
+      JOIN accounts a ON t.account_id = a.id
+      WHERE json_extract(t.metadata, '$.isCardTransaction') = 1
+    `;
+
+    const params: any[] = [];
+
+    if (options.accountId) {
+      query += ` AND t.account_id = ?`;
+      params.push(options.accountId);
+    }
+
+    if (options.cardCompanyId) {
+      query += ` AND t.bank_id = ?`;
+      params.push(options.cardCompanyId);
+    }
+
+    if (options.startDate) {
+      query += ` AND t.date >= ?`;
+      params.push(options.startDate);
+    }
+
+    if (options.endDate) {
+      query += ` AND t.date <= ?`;
+      params.push(options.endDate);
+    }
+
+    if (options.includeRefunds === false) {
+      query += ` AND (json_extract(t.metadata, '$.isCancelled') IS NULL OR json_extract(t.metadata, '$.isCancelled') != 1)`;
+    }
+
+    query += ` ORDER BY t.date DESC, t.time DESC`;
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params) as any[];
+  }
+
   // ========================================
   // Sync Operations
   // ========================================

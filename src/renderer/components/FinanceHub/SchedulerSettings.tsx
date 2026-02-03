@@ -1,18 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faClock, faSync, faCheck, faTimes, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { faClock, faSync, faCheck, faTimes, faSpinner, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import './SchedulerSettings.css';
+
+interface EntitySchedule {
+  enabled: boolean;
+  time: string;
+}
 
 interface ScheduleSettings {
   enabled: boolean;
-  time: string; // HH:MM format
   retryCount: number;
   retryDelayMinutes: number;
-  includeTaxSync: boolean; // Include Hometax tax invoice sync
-  spreadsheetSyncEnabled?: boolean; // Enable auto-export to spreadsheet
+  spreadsheetSyncEnabled?: boolean;
+
+  cards: {
+    bc?: EntitySchedule;
+    hana?: EntitySchedule;
+    hyundai?: EntitySchedule;
+    kb?: EntitySchedule;
+    lotte?: EntitySchedule;
+    nh?: EntitySchedule;
+    samsung?: EntitySchedule;
+    shinhan?: EntitySchedule;
+  };
+
+  banks: {
+    kookmin?: EntitySchedule;
+    nh?: EntitySchedule;
+    nhBusiness?: EntitySchedule;
+    shinhan?: EntitySchedule;
+  };
+
+  tax: {
+    [businessNumber: string]: EntitySchedule;
+  };
+
   lastSyncTime?: string;
   lastSyncStatus?: 'success' | 'failed' | 'running';
 }
+
+const CARD_LABELS: Record<string, string> = {
+  bc: 'BC카드',
+  hana: '하나카드',
+  hyundai: '현대카드',
+  kb: 'KB국민카드',
+  lotte: '롯데카드',
+  nh: 'NH농협카드',
+  samsung: '삼성카드',
+  shinhan: '신한카드',
+};
+
+const BANK_LABELS: Record<string, string> = {
+  kookmin: 'KB국민은행',
+  nh: 'NH농협은행',
+  nhBusiness: 'NH농협기업은행',
+  shinhan: '신한은행',
+};
 
 export const SchedulerSettings: React.FC = () => {
   const [settings, setSettings] = useState<ScheduleSettings | null>(null);
@@ -20,6 +64,11 @@ export const SchedulerSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncInfo, setLastSyncInfo] = useState<any>(null);
+
+  // Collapse state for sections
+  const [cardsExpanded, setCardsExpanded] = useState(true);
+  const [banksExpanded, setBanksExpanded] = useState(true);
+  const [taxExpanded, setTaxExpanded] = useState(true);
 
   useEffect(() => {
     loadSettings();
@@ -34,41 +83,12 @@ export const SchedulerSettings: React.FC = () => {
       window.electron.financeHubScheduler.onSyncCompleted((data) => {
         setSyncing(false);
         loadLastSyncInfo();
-
-        const totalFailed = (data.bankFailedCount || 0) + (data.taxFailedCount || 0);
-
-        if (totalFailed === 0) {
-          const messages = [];
-          if (data.bankSuccessCount > 0) {
-            messages.push(`은행 계좌: ${data.bankSuccessCount}건`);
-          }
-          if (data.taxSuccessCount > 0) {
-            messages.push(`세금계산서: ${data.taxSuccessCount}건`);
-          }
-          if (data.spreadsheetResult?.success) {
-            messages.push(`📊 스프레드시트 동기화 완료`);
-          }
-          alert(`✅ 동기화 완료!\n${messages.join('\n')}`);
-        } else {
-          const messages = [];
-          if (data.bankSuccessCount > 0 || data.bankFailedCount > 0) {
-            messages.push(`은행 계좌: 성공 ${data.bankSuccessCount}건, 실패 ${data.bankFailedCount}건`);
-          }
-          if (data.taxSuccessCount > 0 || data.taxFailedCount > 0) {
-            messages.push(`세금계산서: 성공 ${data.taxSuccessCount}건, 실패 ${data.taxFailedCount}건`);
-          }
-          if (data.spreadsheetResult?.success) {
-            messages.push(`📊 스프레드시트 동기화 완료`);
-          } else if (data.spreadsheetResult?.error) {
-            messages.push(`⚠️ 스프레드시트 동기화 실패: ${data.spreadsheetResult.error}`);
-          }
-          alert(`⚠️ 동기화 부분 완료\n${messages.join('\n')}`);
-        }
+        alert(`✅ ${data.entityType} 동기화 완료: ${data.entityId}`);
       }),
       window.electron.financeHubScheduler.onSyncFailed((data) => {
         setSyncing(false);
         loadLastSyncInfo();
-        alert(`❌ 동기화 실패: ${data.error}`);
+        alert(`❌ ${data.entityType} 동기화 실패: ${data.entityId} - ${data.error}`);
       }),
       window.electron.financeHubScheduler.onSettingsUpdated((newSettings) => {
         setSettings(newSettings);
@@ -107,16 +127,15 @@ export const SchedulerSettings: React.FC = () => {
 
   const handleToggleEnabled = async () => {
     if (!settings) return;
-    
+
     const newEnabled = !settings.enabled;
     setSaving(true);
-    
+
     try {
       const result = await window.electron.financeHubScheduler.updateSettings({ enabled: newEnabled });
       if (result.success) {
         setSettings(result.settings);
-        
-        // Start or stop the scheduler based on enabled state
+
         if (newEnabled) {
           await window.electron.financeHubScheduler.start();
         } else {
@@ -131,37 +150,55 @@ export const SchedulerSettings: React.FC = () => {
     }
   };
 
-  const handleTimeChange = async (newTime: string) => {
+  const handleEntityToggle = async (entityType: 'cards' | 'banks' | 'tax', entityId: string) => {
     if (!settings) return;
+
+    const currentSchedule = settings[entityType][entityId as keyof typeof settings[typeof entityType]];
+    if (!currentSchedule) return;
+
+    const newSchedule = { ...currentSchedule, enabled: !currentSchedule.enabled };
 
     setSaving(true);
     try {
-      const result = await window.electron.financeHubScheduler.updateSettings({ time: newTime });
+      const result = await window.electron.financeHubScheduler.updateSettings({
+        [entityType]: {
+          ...settings[entityType],
+          [entityId]: newSchedule,
+        },
+      });
       if (result.success) {
         setSettings(result.settings);
       }
     } catch (error) {
-      console.error('Failed to update scheduler time:', error);
-      alert('동기화 시간 변경 실패');
+      console.error('Failed to update entity schedule:', error);
+      alert('설정 변경 실패');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleToggleTaxSync = async () => {
+  const handleEntityTimeChange = async (entityType: 'cards' | 'banks' | 'tax', entityId: string, newTime: string) => {
     if (!settings) return;
 
-    const newIncludeTaxSync = !settings.includeTaxSync;
-    setSaving(true);
+    const currentSchedule = settings[entityType][entityId as keyof typeof settings[typeof entityType]];
+    if (!currentSchedule) return;
 
+    const newSchedule = { ...currentSchedule, time: newTime };
+
+    setSaving(true);
     try {
-      const result = await window.electron.financeHubScheduler.updateSettings({ includeTaxSync: newIncludeTaxSync });
+      const result = await window.electron.financeHubScheduler.updateSettings({
+        [entityType]: {
+          ...settings[entityType],
+          [entityId]: newSchedule,
+        },
+      });
       if (result.success) {
         setSettings(result.settings);
       }
     } catch (error) {
-      console.error('Failed to update tax sync setting:', error);
-      alert('세금계산서 동기화 설정 변경 실패');
+      console.error('Failed to update entity time:', error);
+      alert('시간 변경 실패');
     } finally {
       setSaving(false);
     }
@@ -232,6 +269,34 @@ export const SchedulerSettings: React.FC = () => {
     return null;
   };
 
+  const renderEntitySchedule = (entityType: 'cards' | 'banks' | 'tax', entityId: string, label: string, schedule?: EntitySchedule) => {
+    if (!schedule) return null;
+
+    return (
+      <div key={entityId} className="scheduler-settings__entity">
+        <label className="scheduler-settings__entity-label">{label}</label>
+        <div className="scheduler-settings__entity-controls">
+          <label className="scheduler-settings__switch scheduler-settings__switch--small">
+            <input
+              type="checkbox"
+              checked={schedule.enabled}
+              onChange={() => handleEntityToggle(entityType, entityId)}
+              disabled={!settings.enabled || saving}
+            />
+            <span className="scheduler-settings__slider"></span>
+          </label>
+          <input
+            type="time"
+            value={schedule.time}
+            onChange={(e) => handleEntityTimeChange(entityType, entityId, e.target.value)}
+            disabled={!settings.enabled || !schedule.enabled || saving}
+            className="scheduler-settings__time-input scheduler-settings__time-input--small"
+          />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="scheduler-settings">
       <div className="scheduler-settings__content">
@@ -255,42 +320,54 @@ export const SchedulerSettings: React.FC = () => {
           </div>
         </div>
 
-        <div className="scheduler-settings__row">
-          <label className="scheduler-settings__label">
-            동기화 시간
-          </label>
-          <div className="scheduler-settings__time">
-            <input
-              type="time"
-              value={settings.time}
-              onChange={(e) => handleTimeChange(e.target.value)}
-              disabled={!settings.enabled || saving}
-              className="scheduler-settings__time-input"
-            />
-            <span className="scheduler-settings__time-hint">
-              매일 이 시간에 자동으로 동기화됩니다
-            </span>
+        {/* Cards Section */}
+        <div className="scheduler-settings__section">
+          <div className="scheduler-settings__section-header" onClick={() => setCardsExpanded(!cardsExpanded)}>
+            <FontAwesomeIcon icon={cardsExpanded ? faChevronDown : faChevronRight} />
+            <h3>카드 ({Object.values(settings.cards).filter(s => s?.enabled).length}/{Object.keys(settings.cards).length})</h3>
           </div>
+          {cardsExpanded && (
+            <div className="scheduler-settings__section-content">
+              {Object.entries(settings.cards).map(([cardId, schedule]) =>
+                renderEntitySchedule('cards', cardId, CARD_LABELS[cardId] || cardId, schedule)
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="scheduler-settings__row">
-          <label className="scheduler-settings__label">
-            세금계산서 동기화
-          </label>
-          <div className="scheduler-settings__toggle">
-            <label className="scheduler-settings__switch">
-              <input
-                type="checkbox"
-                checked={settings.includeTaxSync}
-                onChange={handleToggleTaxSync}
-                disabled={!settings.enabled || saving}
-              />
-              <span className="scheduler-settings__slider"></span>
-            </label>
-            <span className="scheduler-settings__status">
-              {settings.includeTaxSync ? '포함' : '제외'}
-            </span>
+        {/* Banks Section */}
+        <div className="scheduler-settings__section">
+          <div className="scheduler-settings__section-header" onClick={() => setBanksExpanded(!banksExpanded)}>
+            <FontAwesomeIcon icon={banksExpanded ? faChevronDown : faChevronRight} />
+            <h3>은행 ({Object.values(settings.banks).filter(s => s?.enabled).length}/{Object.keys(settings.banks).length})</h3>
           </div>
+          {banksExpanded && (
+            <div className="scheduler-settings__section-content">
+              {Object.entries(settings.banks).map(([bankId, schedule]) =>
+                renderEntitySchedule('banks', bankId, BANK_LABELS[bankId] || bankId, schedule)
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tax Section */}
+        <div className="scheduler-settings__section">
+          <div className="scheduler-settings__section-header" onClick={() => setTaxExpanded(!taxExpanded)}>
+            <FontAwesomeIcon icon={taxExpanded ? faChevronDown : faChevronRight} />
+            <h3>세금계산서 ({Object.values(settings.tax).filter(s => s?.enabled).length}/{Object.keys(settings.tax).length})</h3>
+          </div>
+          {taxExpanded && (
+            <div className="scheduler-settings__section-content">
+              {Object.entries(settings.tax).map(([businessNumber, schedule]) =>
+                renderEntitySchedule('tax', businessNumber, businessNumber, schedule)
+              )}
+              {Object.keys(settings.tax).length === 0 && (
+                <div className="scheduler-settings__empty">
+                  저장된 사업자가 없습니다. Hometax 탭에서 사업자를 추가하세요.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="scheduler-settings__row">
@@ -332,7 +409,7 @@ export const SchedulerSettings: React.FC = () => {
             disabled={syncing || saving}
           >
             <FontAwesomeIcon icon={faSync} spin={syncing} />
-            {syncing ? '동기화 중...' : '지금 동기화'}
+            {syncing ? '동기화 중...' : '지금 전체 동기화'}
           </button>
         </div>
 
@@ -342,9 +419,9 @@ export const SchedulerSettings: React.FC = () => {
             (각 {settings.retryDelayMinutes}분 간격)
           </p>
           <p>
-            <strong>참고:</strong> 자동 동기화는 모든 활성 계좌의 최근 3개월 거래내역을 가져옵니다.
-            {settings.includeTaxSync && ' 세금계산서 동기화가 활성화된 경우 저장된 모든 사업자의 당월 세금계산서도 함께 수집됩니다.'}
-            {(settings.spreadsheetSyncEnabled ?? true) && ' 스프레드시트 자동 동기화가 활성화된 경우 동기화 후 자동으로 Google 스프레드시트에 데이터를 내보냅니다.'}
+            <strong>참고:</strong> 각 카드, 은행, 세금계산서는 개별적으로 설정된 시간에 자동 동기화됩니다.
+            브라우저 충돌을 방지하기 위해 각 항목은 10분 간격으로 실행되도록 기본 설정되어 있습니다.
+            {(settings.spreadsheetSyncEnabled ?? true) && ' 동기화 후 자동으로 Google 스프레드시트에 데이터를 내보냅니다.'}
           </p>
         </div>
       </div>

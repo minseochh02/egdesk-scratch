@@ -638,12 +638,6 @@ export class SQLiteManager {
       const scheduler = getFinanceHubScheduler();
       const settings = scheduler.getSettings();
 
-      // Migration: Update old default times to new default (09:00)
-      if (settings.time === '06:00' || settings.time === '09:46' || settings.time === '09:52' || settings.time === '09:55' || settings.time === '10:10' || settings.time === '10:13' || settings.time === '10:15' || settings.time === '10:20' || settings.time === '10:33') {
-        console.log(`[FinanceHubScheduler] Migrating time from ${settings.time} to 09:00`);
-        scheduler.updateSettings({ time: '09:00' });
-      }
-
       if (settings.enabled) {
         scheduler.start();
       }
@@ -721,6 +715,16 @@ export class SQLiteManager {
       try {
         const stats = this.getFinanceHubManager().getOverallStats();
         return { success: true, data: stats };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Export card transactions
+    ipcMain.handle('sqlite-financehub-export-card-transactions', async (event, options) => {
+      try {
+        const transactions = this.getFinanceHubManager().exportCardTransactions(options);
+        return { success: true, data: transactions };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }

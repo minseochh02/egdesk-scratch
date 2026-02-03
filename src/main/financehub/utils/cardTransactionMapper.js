@@ -92,6 +92,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     detailLink: cardTx.detailLink,
     xmlData: cardTx.xmlData,
     // BC Card specific fields
+    headquartersName: cardTx.headquartersName || cardTx['본부명'],
     cardHolder: cardTx.cardHolder,
     cardType: cardTx.cardType,
     transactionBank: cardTx.transactionBank,
@@ -104,6 +105,9 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     cancellationDate: cardTx.cancellationDate || cardTx['취소일자'],
     purchaseStatus: cardTx.purchaseStatus || cardTx['매입상태'],
     paymentDueDate: cardTx.paymentDueDate || cardTx['결제예정일'],
+    // NH Card specific fields
+    receiptDate: cardTx.receiptDate || cardTx['접수년월일'],
+    billingDate: cardTx.billingDate || cardTx['결제일'],
     // KB Card specific fields
     departmentNumber: cardTx.departmentNumber || cardTx['부서번호'],
     departmentName: cardTx.departmentName || cardTx['부서명'],
