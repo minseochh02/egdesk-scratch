@@ -26,8 +26,7 @@ class KBCardAutomator extends BaseBankAutomator {
       bank: KB_CARD_INFO,
       card: KB_CARD_INFO,
       headless: options.headless ?? KB_CARD_CONFIG.headless,
-      // Force null chromeProfile to ensure fresh browser without cache
-      chromeProfile: null,
+      chromeProfile: options.chromeProfile ?? KB_CARD_CONFIG.chromeProfile,
     };
     super(config);
 
@@ -105,47 +104,6 @@ class KBCardAutomator extends BaseBankAutomator {
       this.log('XPath selector failed, trying CSS fallback...');
       await this.page.locator(selector.css).click({ timeout: 10000 });
     }
-  }
-
-  // ============================================================================
-  // BROWSER CREATION - OVERRIDE FOR FRESH BROWSER
-  // ============================================================================
-
-  /**
-   * Override createBrowser to ensure fresh browser without any cache
-   * @param {Object} proxy - Proxy configuration
-   */
-  async createBrowser(proxy) {
-    const { chromium } = require('playwright');
-    const os = require('os');
-    const fs = require('fs');
-    const path = require('path');
-
-    // Always create a NEW temporary directory for KB Card (no cache reuse)
-    const tempPrefix = path.join(os.tmpdir(), `egdesk-kb-card-fresh-${Date.now()}-`);
-    const persistentProfileDir = fs.mkdtempSync(tempPrefix);
-    this.log('Using fresh temporary Chrome profile:', persistentProfileDir);
-
-    const launchOptions = {
-      headless: this.config.headless,
-      channel: 'chrome',
-      proxy,
-      locale: 'ko-KR',
-      viewport: { width: 1280, height: 1024 },
-      permissions: ['clipboard-read', 'clipboard-write'],
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=PrivateNetworkAccessRespectPreflightResults',
-        '--disable-application-cache',
-        '--disable-cache',
-        '--disable-offline-load-stale-cache',
-        '--disk-cache-size=0',
-        '--media-cache-size=0',
-      ]
-    };
-
-    const context = await chromium.launchPersistentContext(persistentProfileDir, launchOptions);
-    return { browser: context, context };
   }
 
   // ============================================================================

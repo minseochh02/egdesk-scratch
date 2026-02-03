@@ -161,6 +161,25 @@ class BaseBankAutomator {
       }
     }
 
+    const args = [
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--allow-running-insecure-content',
+      '--disable-features=PrivateNetworkAccessSendPreflights',
+      '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+    ];
+
+    // Add cache-disabling flags if configured
+    if (this.config.disableCache) {
+      args.push(
+        '--disable-application-cache',
+        '--disable-cache',
+        '--disable-offline-load-stale-cache',
+        '--disk-cache-size=0',
+        '--media-cache-size=0'
+      );
+    }
+
     const launchOptions = {
       headless: this.config.headless,
       channel: 'chrome',
@@ -168,13 +187,7 @@ class BaseBankAutomator {
       locale: 'ko-KR',
       viewport: { width: 1280, height: 1024 },
       permissions: ['clipboard-read', 'clipboard-write'],
-      args: [
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--allow-running-insecure-content',
-        '--disable-features=PrivateNetworkAccessSendPreflights',
-        '--disable-features=PrivateNetworkAccessRespectPreflightResults',
-      ]
+      args
     };
 
     if (persistentProfileDir) {
@@ -187,7 +200,7 @@ class BaseBankAutomator {
       headless: this.config.headless,
       channel: 'chrome',
       proxy,
-      args: launchOptions.args
+      args
     });
 
     const context = await browser.newContext({
