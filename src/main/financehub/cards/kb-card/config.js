@@ -102,7 +102,7 @@ const KB_CARD_CONFIG = {
   targetUrl: 'https://biz.kbcard.com/CXORMPIC0001.cms',
   undesiredHostnames: [],
   headless: false,
-  chromeProfile: 'Default',
+  chromeProfile: null, // Use fresh browser without cache to avoid detection
   xpaths: KB_CARD_XPATHS,
   timeouts: KB_CARD_TIMEOUTS,
   delays: KB_CARD_DELAYS,
