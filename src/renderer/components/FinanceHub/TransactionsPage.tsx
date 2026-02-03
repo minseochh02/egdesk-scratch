@@ -156,7 +156,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           await window.electron.financeHub.savePersistentSpreadsheet({
             spreadsheetId: result.spreadsheetId,
             spreadsheetUrl: result.spreadsheetUrl,
-            title: `EGDesk ${typeLabel} 거래내역 ${new Date().toISOString().slice(0, 10)}`,
+            title: `EGDesk ${typeLabel} 내역`,
           }, spreadsheetKey);
           setHasPersistentSpreadsheet(true);
         }

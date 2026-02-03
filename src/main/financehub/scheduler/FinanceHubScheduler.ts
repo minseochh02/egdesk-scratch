@@ -626,17 +626,17 @@ export class FinanceHubScheduler extends EventEmitter {
       const persistentSpreadsheetId = financeHub.persistentSpreadsheets['scheduler-sync']?.spreadsheetId;
 
       const transactionsResult = await sheetsService.getOrCreateTransactionsSpreadsheet(
-        'FinanceHub Auto-Sync',
         transactions,
         banksMap,
         accounts,
-        persistentSpreadsheetId
+        persistentSpreadsheetId,
+        'EGDesk 거래내역' // Custom title without date timestamp
       );
 
       financeHub.persistentSpreadsheets['scheduler-sync'] = {
         spreadsheetId: transactionsResult.spreadsheetId,
         spreadsheetUrl: transactionsResult.spreadsheetUrl,
-        title: 'FinanceHub Auto-Sync',
+        title: 'EGDesk 거래내역',
         lastUpdated: new Date().toISOString(),
       };
       store.set('financeHub', financeHub);
