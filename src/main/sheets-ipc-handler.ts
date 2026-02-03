@@ -41,12 +41,12 @@ export function registerSheetsHandlers(): void {
   });
 
   // Get or create persistent transactions spreadsheet
-  ipcMain.handle('sheets:get-or-create-transactions-spreadsheet', async (_, { transactions, banks, accounts, persistentSpreadsheetId }) => {
+  ipcMain.handle('sheets:get-or-create-transactions-spreadsheet', async (_, { transactions, banks, accounts, persistentSpreadsheetId, customTitle }) => {
     try {
       // Trigger migration on first sync
       await ensureMigrationRun();
 
-      const result = await sheetsService.getOrCreateTransactionsSpreadsheet(transactions, banks, accounts, persistentSpreadsheetId);
+      const result = await sheetsService.getOrCreateTransactionsSpreadsheet(transactions, banks, accounts, persistentSpreadsheetId, customTitle);
       return {
         success: true,
         ...result,

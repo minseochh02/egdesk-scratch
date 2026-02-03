@@ -352,17 +352,18 @@ export class SheetsService {
     transactions: any[],
     banks: Record<string, any>,
     accounts: any[],
-    persistentSpreadsheetId?: string
+    persistentSpreadsheetId?: string,
+    customTitle?: string
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string; wasCreated: boolean }> {
     // Try to use existing spreadsheet if provided
     if (persistentSpreadsheetId) {
       try {
         // Check if spreadsheet still exists and is accessible
         await this.getSpreadsheet(persistentSpreadsheetId);
-        
+
         // Update with new data
         await this.updateTransactionsData(persistentSpreadsheetId, transactions, banks, accounts);
-        
+
         return {
           spreadsheetId: persistentSpreadsheetId,
           spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${persistentSpreadsheetId}/edit`,
@@ -374,10 +375,42 @@ export class SheetsService {
       }
     }
 
-    // Create new spreadsheet
-    const title = `EGDesk 거래내역 ${new Date().toISOString().slice(0, 10)}`;
+    // Generate title
+    let title: string;
+
+    if (customTitle) {
+      // Use provided custom title (no date timestamp)
+      title = customTitle;
+    } else {
+      // Auto-generate title based on transaction type
+      const isCardTransaction = transactions.length > 0 &&
+        transactions[0].metadata &&
+        (typeof transactions[0].metadata === 'string'
+          ? JSON.parse(transactions[0].metadata).isCardTransaction
+          : transactions[0].metadata.isCardTransaction);
+
+      if (isCardTransaction && transactions.length > 0) {
+        // Extract card company name from first transaction
+        const firstTx = transactions[0];
+        const metadata = typeof firstTx.metadata === 'string' ? JSON.parse(firstTx.metadata) : firstTx.metadata;
+        const cardCompanyId = metadata?.cardCompanyId || firstTx.bankId;
+        const cardCompany = this.extractCardCompany(cardCompanyId);
+        // Card company names already include "카드" (e.g., "신한카드", "BC카드")
+        title = `${cardCompany} 내역`;
+      } else if (transactions.length > 0) {
+        // Extract bank name from first transaction
+        const firstTx = transactions[0];
+        const bankId = firstTx.bankId;
+        const bankName = banks[bankId]?.name || bankId;
+        title = `${bankName} 내역`;
+      } else {
+        // Fallback for empty transactions
+        title = 'EGDesk 거래내역';
+      }
+    }
+
     const result = await this.createTransactionsSpreadsheet(title, transactions, banks, accounts);
-    
+
     return {
       ...result,
       wasCreated: true
