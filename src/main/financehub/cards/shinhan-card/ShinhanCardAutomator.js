@@ -8,6 +8,7 @@ const XLSX = require('xlsx');
 const { SerialPort } = require('serialport');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
+const { sendPasswordWithNaturalTiming } = require('../../utils/virtual-hid-bridge');
 
 /**
  * Shinhan Card Automator
@@ -33,9 +34,6 @@ class ShinhanCardAutomator extends BaseCardAutomator {
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'shinhan-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
-    this.arduinoPort = options.arduinoPort || null; // e.g. 'COM6'
-    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
-    this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
 
     // Ensure output directories exist
@@ -169,18 +167,33 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         await this.waitForManualPasswordEntry();
         this.log('Manual password entry completed');
       } else {
-        // AUTOMATIC MODE: Arduino HID keyboard (bypasses security keyboard!)
-        this.log('Entering password via Arduino HID...');
+        // AUTOMATIC MODE: Virtual HID keyboard with natural timing (bypasses security keyboard!)
+        this.log('Entering password via Virtual HID with natural timing...');
         try {
           const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
           await passwordField.click();
           await this.page.waitForTimeout(1500);
 
-          this.log('Security keyboard activated, typing via Arduino HID...');
-          await this.typeViaArduino(password);
-          this.log('Password typed via Arduino HID');
+          this.log('Security keyboard activated, typing via Virtual HID...');
+          const success = await sendPasswordWithNaturalTiming(password, {
+            minDelay: 80,
+            maxDelay: 200,
+            preDelay: 300,
+            debug: true,
+            onProgress: (index, char, total) => {
+              if ((index + 1) % 5 === 0) {
+                this.log(`Password progress: ${index + 1}/${total}`);
+              }
+            }
+          });
+
+          if (!success) {
+            throw new Error('Virtual HID password entry failed');
+          }
+
+          this.log('Password typed via Virtual HID with natural timing');
         } catch (e) {
-          this.log(`Arduino HID password entry failed: ${e.message}`, 'error');
+          this.log(`Virtual HID password entry failed: ${e.message}`, 'error');
           throw new Error(`Password entry failed: ${e.message}`);
         }
       }
@@ -221,8 +234,6 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         success: false,
         error: error.message,
       };
-    } finally {
-      await this.disconnectArduino();
     }
   }
 
@@ -886,7 +897,6 @@ async function runShinhanCardAutomation(credentials, options = {}) {
       error: error.message,
     };
   } finally {
-    await automator.disconnectArduino();
     if (automator.browser) {
       await automator.cleanup();
     }

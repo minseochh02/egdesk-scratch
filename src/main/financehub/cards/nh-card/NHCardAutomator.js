@@ -8,6 +8,7 @@ const XLSX = require('xlsx');
 const { SerialPort } = require('serialport');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { NH_CARD_INFO, NH_CARD_CONFIG } = require('./config');
+const { sendPasswordWithNaturalTiming } = require('../../utils/virtual-hid-bridge');
 
 /**
  * NH Card Automator
@@ -24,9 +25,6 @@ class NHCardAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'nh-card');
-    this.arduinoPort = options.arduinoPort || null;
-    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
-    this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
   }
 
@@ -171,7 +169,7 @@ class NHCardAutomator extends BaseBankAutomator {
       await passwordField.focus();
       await this.page.waitForTimeout(500);
 
-      // Step 6: Fill password (Arduino HID or Manual)
+      // Step 6: Fill password (Virtual HID with Natural Timing or Manual)
       if (this.manualPassword) {
         // DEBUG MODE: Manual password entry
         this.log('Manual password mode enabled');
@@ -182,13 +180,28 @@ class NHCardAutomator extends BaseBankAutomator {
         await this.waitForManualPasswordEntry();
         this.log('Manual password entry completed');
       } else {
-        // AUTOMATIC MODE: Arduino HID keyboard (bypasses security keyboard!)
-        this.log('Typing password via Arduino HID...');
+        // AUTOMATIC MODE: Virtual HID keyboard with natural timing (bypasses security keyboard!)
+        this.log('Typing password via Virtual HID with natural timing...');
         try {
-          await this.typeViaArduino(password);
-          this.log('Password typed via Arduino HID');
+          const success = await sendPasswordWithNaturalTiming(password, {
+            minDelay: 80,
+            maxDelay: 200,
+            preDelay: 300,
+            debug: true,
+            onProgress: (index, char, total) => {
+              if ((index + 1) % 5 === 0) {
+                this.log(`Password progress: ${index + 1}/${total}`);
+              }
+            }
+          });
+
+          if (!success) {
+            throw new Error('Virtual HID password entry failed');
+          }
+
+          this.log('Password typed via Virtual HID with natural timing');
         } catch (e) {
-          this.log(`Arduino HID password entry failed: ${e.message}`, 'error');
+          this.log(`Virtual HID password entry failed: ${e.message}`, 'error');
           throw new Error(`Password entry failed: ${e.message}`);
         }
       }
@@ -214,8 +227,6 @@ class NHCardAutomator extends BaseBankAutomator {
         success: false,
         error: error.message,
       };
-    } finally {
-      await this.disconnectArduino();
     }
   }
 

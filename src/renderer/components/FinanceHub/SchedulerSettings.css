@@ -289,6 +289,114 @@
   font-weight: 600;
 }
 
+/* Section */
+.scheduler-settings__section {
+  margin: 16px 0;
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  overflow: hidden;
+}
+
+.scheduler-settings__section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--fh-bg-dark);
+  cursor: pointer;
+  transition: var(--fh-transition);
+}
+
+.scheduler-settings__section-header:hover {
+  background: var(--fh-bg-card-hover);
+}
+
+.scheduler-settings__section-header svg {
+  font-size: 14px;
+  color: var(--fh-text-secondary);
+  transition: var(--fh-transition);
+}
+
+.scheduler-settings__section-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fh-text-primary);
+  flex: 1;
+}
+
+.scheduler-settings__section-content {
+  padding: 12px;
+  background: var(--fh-bg-card);
+}
+
+.scheduler-settings__empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--fh-text-muted);
+  font-size: 13px;
+}
+
+/* Entity */
+.scheduler-settings__entity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--fh-bg-dark);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-sm);
+  transition: var(--fh-transition);
+}
+
+.scheduler-settings__entity:last-child {
+  margin-bottom: 0;
+}
+
+.scheduler-settings__entity:hover {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-primary);
+}
+
+.scheduler-settings__entity-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fh-text-primary);
+  flex: 1;
+}
+
+.scheduler-settings__entity-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Small switch for entities */
+.scheduler-settings__switch--small {
+  width: 32px;
+  height: 16px;
+}
+
+.scheduler-settings__switch--small .scheduler-settings__slider:before {
+  height: 10px;
+  width: 10px;
+  left: 2px;
+  bottom: 2px;
+}
+
+.scheduler-settings__switch--small input:checked + .scheduler-settings__slider:before {
+  transform: translateX(16px);
+}
+
+/* Small time input for entities */
+.scheduler-settings__time-input--small {
+  width: 90px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .scheduler-settings {
@@ -320,5 +428,19 @@
 
   .scheduler-settings__time-input {
     width: 100%;
+  }
+
+  .scheduler-settings__entity {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .scheduler-settings__entity-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .scheduler-settings__time-input--small {
+    width: 120px;
   }
 }

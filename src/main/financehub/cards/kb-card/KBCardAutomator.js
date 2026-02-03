@@ -12,6 +12,7 @@ const {
   extractTransactionsFromPage,
   createExcelFromData
 } = require('../../utils/transactionParser');
+const { sendPasswordWithNaturalTiming } = require('../../utils/virtual-hid-bridge');
 
 /**
  * KB Card Automator
@@ -31,9 +32,6 @@ class KBCardAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'kb-card');
-    this.arduinoPort = options.arduinoPort || null;
-    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
-    this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
   }
 
@@ -162,7 +160,7 @@ class KBCardAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(500);
 
-      // Step 5: Enter password (Arduino HID or Manual)
+      // Step 5: Enter password (Virtual HID with Natural Timing or Manual)
       if (this.manualPassword) {
         // DEBUG MODE: Manual password entry
         this.log('Manual password mode enabled');
@@ -174,21 +172,37 @@ class KBCardAutomator extends BaseBankAutomator {
         await this.waitForManualPasswordEntry();
         this.log('Manual password entry completed');
       } else {
-        // AUTOMATIC MODE: Enter password via Arduino HID
-        this.log('Entering password via Arduino HID...');
+        // AUTOMATIC MODE: Enter password via Virtual HID with natural timing
+        this.log('Entering password via Virtual HID with natural timing...');
         try {
           const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
           await passwordField.click();
           await this.page.waitForTimeout(1000);
 
-          await this.typeViaArduino(password);
-          this.log('Password typed via Arduino HID');
+          // Use natural timing: 80-200ms between characters
+          const success = await sendPasswordWithNaturalTiming(password, {
+            minDelay: 80,
+            maxDelay: 200,
+            preDelay: 300,
+            debug: true,
+            onProgress: (index, char, total) => {
+              if ((index + 1) % 5 === 0) {
+                this.log(`Password progress: ${index + 1}/${total}`);
+              }
+            }
+          });
+
+          if (!success) {
+            throw new Error('Virtual HID password entry failed');
+          }
+
+          this.log('Password typed via Virtual HID with natural timing');
         } catch (e) {
-          this.log('Arduino HID password entry failed');
+          this.log('Virtual HID password entry failed');
           throw new Error(`Password entry failed: ${e.message}`);
         }
       }
-      await this.page.waitForTimeout(3000);
+      await this.page.waitForTimeout(2000);
 
       // Step 6: Click login button
       this.log('Clicking login button...');
@@ -211,8 +225,6 @@ class KBCardAutomator extends BaseBankAutomator {
         success: false,
         error: error.message,
       };
-    } finally {
-      await this.disconnectArduino();
     }
   }
 

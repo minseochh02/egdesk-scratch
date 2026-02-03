@@ -2276,6 +2276,7 @@ const electronHandler = {
     getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
     getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),
     getOverallStats: () => ipcRenderer.invoke('sqlite-financehub-get-overall-stats'),
+    exportCardTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-export-card-transactions', options),
     getRecentSyncOperations: (limit?: number) => ipcRenderer.invoke('sqlite-financehub-get-recent-sync-operations', limit),
     upsertAccount: (accountData: any) => ipcRenderer.invoke('sqlite-financehub-upsert-account', accountData),
     importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any, isCard?: boolean) =>

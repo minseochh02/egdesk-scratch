@@ -701,6 +701,7 @@ interface FinanceHubDbAPI {
   getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getOverallStats: () => Promise<{ success: boolean; data?: any; error?: string }>;
+  exportCardTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getRecentSyncOperations: (limit?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   upsertAccount: (accountData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;

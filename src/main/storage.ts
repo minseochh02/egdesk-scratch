@@ -240,27 +240,111 @@ function migrateFinanceHub() {
 }
 
 /**
- * Migration: Add financeHubScheduler with default enabled state
+ * Migration: Add financeHubScheduler with default enabled state and individual entity schedules
  */
 function migrateFinanceHubScheduler() {
   try {
-    const schedulerConfig = store.get('financeHubScheduler');
-    
+    const schedulerConfig = store.get('financeHubScheduler') as any;
+
     // If scheduler config doesn't exist, create it with defaults
     if (!schedulerConfig) {
-      console.log('🔄 Migrating: Adding financeHubScheduler to store with default enabled');
+      console.log('🔄 Migrating: Adding financeHubScheduler to store with individual entity schedules');
       store.set('financeHubScheduler', {
         enabled: true,
-        time: '06:00',
         retryCount: 3,
         retryDelayMinutes: 5,
+        spreadsheetSyncEnabled: true,
+
+        // Cards: 4:00 - 5:10 (10-minute intervals)
+        cards: {
+          bc: { enabled: true, time: '04:00' },
+          hana: { enabled: true, time: '04:10' },
+          hyundai: { enabled: true, time: '04:20' },
+          kb: { enabled: true, time: '04:30' },
+          lotte: { enabled: true, time: '04:40' },
+          nh: { enabled: true, time: '04:50' },
+          samsung: { enabled: true, time: '05:00' },
+          shinhan: { enabled: true, time: '05:10' },
+        },
+
+        // Banks: 5:20 - 5:50 (10-minute intervals)
+        banks: {
+          kookmin: { enabled: true, time: '05:20' },
+          nh: { enabled: true, time: '05:30' },
+          nhBusiness: { enabled: true, time: '05:40' },
+          shinhan: { enabled: true, time: '05:50' },
+        },
+
+        // Tax: Dynamic based on saved businesses (will be populated when businesses are added)
+        tax: {},
       });
-      console.log('✅ financeHubScheduler added to store with auto-sync enabled');
+      console.log('✅ financeHubScheduler added to store with staggered entity schedules');
     } else if (schedulerConfig.enabled === undefined) {
       // If config exists but enabled is not set, default to true
       console.log('🔄 Migrating: Setting financeHubScheduler enabled to true');
       store.set('financeHubScheduler.enabled', true);
       console.log('✅ financeHubScheduler enabled set to true');
+    } else if (!schedulerConfig.cards || !schedulerConfig.banks) {
+      // Migrate old single-time config to new entity-based config
+      console.log('🔄 Migrating: Converting old scheduler config to new entity-based config');
+
+      const newConfig = {
+        ...schedulerConfig,
+        cards: schedulerConfig.cards || {
+          bc: { enabled: true, time: '04:00' },
+          hana: { enabled: true, time: '04:10' },
+          hyundai: { enabled: true, time: '04:20' },
+          kb: { enabled: true, time: '04:30' },
+          lotte: { enabled: true, time: '04:40' },
+          nh: { enabled: true, time: '04:50' },
+          samsung: { enabled: true, time: '05:00' },
+          shinhan: { enabled: true, time: '05:10' },
+        },
+        banks: schedulerConfig.banks || {
+          kookmin: { enabled: true, time: '05:20' },
+          nh: { enabled: true, time: '05:30' },
+          nhBusiness: { enabled: true, time: '05:40' },
+          shinhan: { enabled: true, time: '05:50' },
+        },
+        tax: schedulerConfig.tax || {},
+      };
+
+      // Remove old 'time' and 'includeTaxSync' fields if they exist
+      delete (newConfig as any).time;
+      delete (newConfig as any).includeTaxSync;
+
+      store.set('financeHubScheduler', newConfig);
+      console.log('✅ Scheduler config migrated to new entity-based structure');
+    }
+
+    // Auto-populate tax schedules from saved Hometax certificates
+    const hometaxConfig = store.get('hometax') as any;
+    if (hometaxConfig && hometaxConfig.selectedCertificates) {
+      const currentScheduler = store.get('financeHubScheduler') as any;
+      const taxSchedules = currentScheduler.tax || {};
+      const businessNumbers = Object.keys(hometaxConfig.selectedCertificates);
+
+      let updated = false;
+      businessNumbers.forEach((businessNumber, index) => {
+        if (!taxSchedules[businessNumber]) {
+          // Assign time starting at 6:00am with 10-minute intervals
+          const hour = 6 + Math.floor((index * 10) / 60);
+          const minute = (index * 10) % 60;
+          const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+          taxSchedules[businessNumber] = {
+            enabled: true,
+            time,
+          };
+          updated = true;
+        }
+      });
+
+      if (updated) {
+        currentScheduler.tax = taxSchedules;
+        store.set('financeHubScheduler', currentScheduler);
+        console.log(`✅ Auto-populated tax schedules for ${businessNumbers.length} businesses`);
+      }
     }
   } catch (error) {
     console.error('Error during financeHubScheduler migration:', error);
