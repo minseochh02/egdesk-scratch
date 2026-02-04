@@ -313,9 +313,9 @@ export class ScheduledPostsExecutor {
       // Route to appropriate execution method based on connection type
       const normalizedType = (post.connectionType || '').toLowerCase();
 
-      if (post.connectionType === 'wordpress') {
+      if (normalizedType === 'wordpress') {
         await this.executeWordPressScheduledPost(post);
-      } else if (post.connectionType === 'naver' || post.connectionType === 'Naver Blog') {
+      } else if (normalizedType === 'naver' || normalizedType === 'naver blog') {
         await this.executeNaverScheduledPost(post);
       } else if (normalizedType === 'instagram') {
         await this.executeInstagramScheduledPost(post);
@@ -402,7 +402,12 @@ export class ScheduledPostsExecutor {
 
       // Step 4: Generate blog content with images (WordPress supports images)
       console.log(`\n🤖 Step 4: Generating blog content...`);
-      blogContent = await this.generateBlogContentWithImages(selectedTopic);
+      const wpCredentials = {
+        url: connection.url,
+        username: connection.username,
+        password: connection.password
+      };
+      blogContent = await this.generateBlogContentWithImages(selectedTopic, wpCredentials);
       console.log(`✅ Blog content generated successfully`);
       console.log(`📄 Title: ${blogContent.title}`);
       console.log(`📝 Content length: ${blogContent.content?.length || 0} characters`);
@@ -411,7 +416,7 @@ export class ScheduledPostsExecutor {
       // Step 5: Upload to WordPress with error handling
       console.log(`\n📤 Step 5: Uploading to WordPress...`);
       try {
-        postUrl = await this.uploadToWordPress(blogContent);
+        postUrl = await this.uploadToWordPress(blogContent, wpCredentials);
       console.log(`✅ Successfully uploaded to WordPress`);
       console.log(`🔗 Post URL: ${postUrl}`);
       } catch (uploadError) {
@@ -1509,20 +1514,26 @@ export class ScheduledPostsExecutor {
     try {
       console.log(`🔍 Getting connection: ID=${connectionId}, Name=${connectionName}, Type="${connectionType}"`);
       let connection: any = null;
-      
-      if (connectionType === 'wordpress') {
+
+      // Normalize connection type to lowercase for consistent comparison
+      const normalizedType = (connectionType || '').toLowerCase();
+
+      if (normalizedType === 'wordpress') {
         // Try to get from SQLite first
         const connections = this.sqliteManager.getWordPressConnections();
+        console.log(`🔍 Looking for WordPress connection: ID=${connectionId}, Name=${connectionName}`);
+        console.log(`🔍 Available WordPress connections (SQLite):`, connections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = connections.find(conn => conn.id === connectionId || conn.name === connectionName);
-        
+
         if (!connection) {
           // Fallback to store if not found in SQLite
           const { getStore } = require('../storage');
           const store = getStore();
           const storeConnections = store.get('wordpressConnections', []);
+          console.log(`🔍 Available WordPress connections (Store):`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
           connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
         }
-      } else if (connectionType === 'naver' || connectionType === 'Naver Blog') {
+      } else if (normalizedType === 'naver' || normalizedType === 'naver blog') {
         // Get Naver connections from store
         const { getStore } = require('../storage');
         const store = getStore();
@@ -1530,7 +1541,7 @@ export class ScheduledPostsExecutor {
         console.log(`🔍 Looking for Naver connection: ID=${connectionId}, Name=${connectionName}`);
         console.log(`🔍 Available Naver connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
-      } else if (connectionType === 'instagram') {
+      } else if (normalizedType === 'instagram') {
         // Get Instagram connections from store (stored via instagram-handler)
         const { getStore } = require('../storage');
         const store = getStore();
@@ -1538,7 +1549,7 @@ export class ScheduledPostsExecutor {
         console.log(`🔍 Looking for Instagram connection: ID=${connectionId}, Name=${connectionName}`);
         console.log(`🔍 Available Instagram connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
-      } else if (connectionType === 'facebook' || connectionType === 'fb') {
+      } else if (normalizedType === 'facebook' || normalizedType === 'fb') {
         // Get Facebook connections from store (stored via facebook-handler)
         const { getStore } = require('../storage');
         const store = getStore();
@@ -1546,7 +1557,7 @@ export class ScheduledPostsExecutor {
         console.log(`🔍 Looking for Facebook connection: ID=${connectionId}, Name=${connectionName}`);
         console.log(`🔍 Available Facebook connections:`, storeConnections.map((conn: any) => ({ id: conn.id, name: conn.name })));
         connection = storeConnections.find((conn: any) => conn.id === connectionId || conn.name === connectionName);
-      } else if (connectionType === 'youtube' || connectionType === 'yt') {
+      } else if (normalizedType === 'youtube' || normalizedType === 'yt') {
         // Get YouTube connections from store (stored via youtube-handler)
         const { getStore } = require('../storage');
         const store = getStore();
@@ -1786,14 +1797,14 @@ export class ScheduledPostsExecutor {
   /**
    * Generate blog content with images (for WordPress and Naver)
    */
-  private async generateBlogContentWithImages(topic: string): Promise<any> {
+  private async generateBlogContentWithImages(topic: string, wpCredentials?: { url: string; username: string; password: string }): Promise<any> {
     try {
       console.log(`🤖 Starting AI blog generation with images for topic: ${topic}`);
-      
+
       // Import the blog generation functions
       const generateOutline = require('../ai-blog/generate-outline').default;
       const generateImages = require('../ai-blog/generate-images').default;
-      
+
       // Get API key from environment (set by setupEnvironmentVariables)
       const apiKey = process.env.GEMINI_API_KEY;
       
@@ -1819,8 +1830,8 @@ export class ScheduledPostsExecutor {
       let blogContentWithImages;
       try {
         blogContentWithImages = await Promise.race([
-          generateImages(outline, apiKey),
-          new Promise((_, reject) => 
+          generateImages(outline, apiKey, wpCredentials),
+          new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Image generation timeout after 180 seconds')), 180000)
           )
         ]);
@@ -2036,18 +2047,18 @@ export class ScheduledPostsExecutor {
   /**
    * Upload blog content to WordPress
    */
-  private async uploadToWordPress(blogContent: any): Promise<string> {
+  private async uploadToWordPress(blogContent: any, credentials?: { url: string; username: string; password: string }): Promise<string> {
     try {
       console.log(`📤 Starting WordPress upload...`);
-      
+
       // Import the WordPress upload function - use createPost (named export) not constructBlog (default export)
       // constructBlog expects a topic string and generates content, but we already have the content
       const { createPost } = require('../wordpress/generate-and-upload-blog');
-      
+
       // Wrap upload in timeout handling
       const postUrl = await Promise.race([
-        createPost(blogContent),
-        new Promise<string>((_, reject) => 
+        createPost(blogContent, credentials),
+        new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('WordPress upload timeout after 60 seconds')), 60000)
         )
       ]);

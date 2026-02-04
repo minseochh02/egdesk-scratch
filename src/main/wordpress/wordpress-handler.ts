@@ -1467,9 +1467,10 @@ export class WordPressHandler {
    * Upload media to WordPress using multipart/form-data
    */
   async uploadMediaToWordPress(fileBuffer: Buffer, filename: string, mimeType: string, options: any = {}): Promise<any> {
-    const WORDPRESS_URL = process.env.WORDPRESS_URL;
-    const WORDPRESS_USERNAME = process.env.WORDPRESS_USERNAME;
-    const WORDPRESS_PASSWORD = process.env.WORDPRESS_PASSWORD;
+    // Try to get credentials from options first, fallback to process.env
+    const WORDPRESS_URL = options.wordpressUrl || process.env.WORDPRESS_URL;
+    const WORDPRESS_USERNAME = options.wordpressUsername || process.env.WORDPRESS_USERNAME;
+    const WORDPRESS_PASSWORD = options.wordpressPassword || process.env.WORDPRESS_PASSWORD;
 
     if (!WORDPRESS_URL || !WORDPRESS_USERNAME || !WORDPRESS_PASSWORD) {
       throw new Error('Missing WordPress configuration: WORDPRESS_URL, WORDPRESS_USERNAME, or WORDPRESS_PASSWORD not set');
@@ -1604,16 +1605,16 @@ export class WordPressHandler {
   /**
    * Upload images to WordPress and return media IDs
    */
-  async uploadImagesToWordPress(images: any[]): Promise<any[]> {
+  async uploadImagesToWordPress(images: any[], credentials?: { url: string; username: string; password: string }): Promise<any[]> {
     const uploadedImages: any[] = [];
-    
+
     console.log(`🖼️  Starting upload of ${images.length} image(s) to WordPress...`);
-    
+
     for (let i = 0; i < images.length; i++) {
       const image = images[i];
       try {
         console.log(`📤 Uploading image ${i + 1}/${images.length}: ${image.description || image.fileName}`);
-        
+
         // Convert base64 data to buffer if needed
         let fileBuffer: Buffer;
         if (image.buffer) {
@@ -1623,17 +1624,23 @@ export class WordPressHandler {
         } else {
           throw new Error('No image data available');
         }
-        
+
         const filename = image.fileName || `image-${Date.now()}-${i + 1}.${mime.extension(image.mimeType || 'image/png')}`;
         const mimeType = image.mimeType || 'image/png';
-        
+
         const uploadOptions = {
           altText: image.altText || image.description || '',
           caption: image.caption || '',
           description: image.description || '',
-          title: image.title || `${image.description || 'Generated Image'} ${i + 1}`
+          title: image.title || `${image.description || 'Generated Image'} ${i + 1}`,
+          // Pass credentials if provided
+          ...(credentials && {
+            wordpressUrl: credentials.url,
+            wordpressUsername: credentials.username,
+            wordpressPassword: credentials.password
+          })
         };
-        
+
         const uploadedMedia = await this.uploadMediaToWordPress(
           fileBuffer,
           filename,

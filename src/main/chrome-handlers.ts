@@ -10,6 +10,7 @@ import { codeViewerWindow } from './code-viewer-window';
 import { Browser, BrowserContext, Page } from 'playwright-core';
 import { ChromeExtensionScanner } from './chrome-extension-scanner';
 import { getStore } from './storage';
+import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 
 // ===== Paused Browser Session Management =====
 

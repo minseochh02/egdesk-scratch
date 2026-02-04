@@ -214,8 +214,9 @@ function generateNotes(metadata, transaction) {
     notes.push(`${installment}개월 할부`);
   }
 
-  // Foreign transaction
-  if (metadata.foreignAmountKRW) {
+  // Foreign transaction (only if amount > 0)
+  const foreignAmount = parseFloat(metadata.foreignAmountKRW);
+  if (!isNaN(foreignAmount) && foreignAmount > 0) {
     notes.push('해외결제');
   }
 

@@ -28,6 +28,7 @@ import {
   faWrench,
   faLaptopCode,
   faClock,
+  faChessRook,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -54,6 +55,7 @@ import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
+import RookiePage from './components/Rookie/RookiePage';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -289,7 +291,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.26</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.28</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -586,6 +588,11 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [facebookPassword, setFacebookPassword] = useState('');
   const [facebookImagePath, setFacebookImagePath] = useState('');
   const [facebookText, setFacebookText] = useState('');
+  const [naverUsername, setNaverUsername] = useState('');
+  const [naverPassword, setNaverPassword] = useState('');
+  const [naverTitle, setNaverTitle] = useState('Test Naver Post');
+  const [naverContent, setNaverContent] = useState('This is a test post content');
+  const [naverTags, setNaverTags] = useState('#test #naver');
 
 
   // Define addDebugLog function at the component level
@@ -1813,6 +1820,105 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </button>
           </div>
 
+          {/* Naver Blog Test Section */}
+          <div>
+            <h3 style={{ color: '#03C75A', marginBottom: '10px' }}>Naver Blog Automation Test</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Naver Username"
+                  value={naverUsername}
+                  onChange={(e) => setNaverUsername(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="password"
+                  placeholder="Naver Password"
+                  value={naverPassword}
+                  onChange={(e) => setNaverPassword(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="Blog Post Title"
+                value={naverTitle}
+                onChange={(e) => setNaverTitle(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+              <textarea
+                placeholder="Blog Post Content"
+                value={naverContent}
+                onChange={(e) => setNaverContent(e.target.value)}
+                rows={4}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', resize: 'vertical' }}
+              />
+              <input
+                type="text"
+                placeholder="Tags (e.g., #tag1 #tag2)"
+                value={naverTags}
+                onChange={(e) => setNaverTags(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!naverUsername.trim() || !naverPassword.trim()) {
+                  alert('Please enter Naver username and password');
+                  return;
+                }
+                if (!naverTitle.trim() || !naverContent.trim()) {
+                  alert('Please enter blog title and content');
+                  return;
+                }
+
+                addDebugLog('Starting Naver Blog automation test...');
+
+                try {
+                  addDebugLog('📗 Launching Naver Blog automation (browser will stay open)...');
+
+                  const result = await (window as any).electron.invoke('naver-blog-automation-with-image', {
+                    username: naverUsername.trim(),
+                    password: naverPassword.trim(),
+                    title: naverTitle.trim(),
+                    content: naverContent.trim(),
+                    tags: naverTags.trim(),
+                    includeDogImage: false, // Set to true if you want to test with images
+                  });
+
+                  if (!result?.success) {
+                    addDebugLog(`❌ Naver Blog automation failed: ${result?.error || 'Unknown error'}`);
+                    console.error('Naver Blog automation failed:', result?.error);
+                    alert(`Naver Blog automation failed${result?.error ? `: ${result.error}` : ''}`);
+                  } else {
+                    addDebugLog('✅ Naver Blog automation completed successfully');
+                    if (result.blogUrl) {
+                      addDebugLog(`🔗 Blog URL: ${result.blogUrl}`);
+                    }
+                    console.log('Naver Blog automation result:', result);
+                    alert(`Naver Blog post successful!${result.blogUrl ? `\n\nURL: ${result.blogUrl}` : ''}`);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Naver Blog automation error: ${e?.message || e}`);
+                  console.error('Naver Blog automation error:', e);
+                  alert(`Naver Blog automation error: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#03C75A',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Test Naver Blog Post (Browser Stays Open)
+            </button>
+          </div>
+
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (
             <div>
@@ -1978,6 +2084,15 @@ function NavigationBar({
           >
             <FontAwesomeIcon icon={faHome} />
             {!isNarrow && <span>Home</span>}
+          </Link>
+
+          <Link
+            to="/rookie"
+            className={`nav-link ${location.pathname === '/rookie' ? 'active' : ''}`}
+            title="Rookie"
+          >
+            <FontAwesomeIcon icon={faChessRook} />
+            {!isNarrow && <span>Rookie</span>}
           </Link>
 
           {/* Development Group */}
@@ -2669,6 +2784,7 @@ function AppContent() {
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />
+            <Route path="/rookie" element={<RookiePage />} />
 
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

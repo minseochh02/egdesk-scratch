@@ -1,6 +1,19 @@
 import { getAuthService } from '../../auth/auth-service';
 import { getDriveService } from '../../drive-service';
 
+// Singleton instance
+let sheetsServiceInstance: SheetsService | null = null;
+
+/**
+ * Get or create the SheetsService singleton instance
+ */
+export function getSheetsService(): SheetsService {
+  if (!sheetsServiceInstance) {
+    sheetsServiceInstance = new SheetsService();
+  }
+  return sheetsServiceInstance;
+}
+
 export interface SheetInfo {
   sheetId: number;
   title: string;

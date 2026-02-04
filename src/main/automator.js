@@ -1,8 +1,10 @@
 // automator.js
-const { chromium } = require('playwright-core');
 const { clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// Import shared browser module
+const { browserPoolManager, applyAntiDetectionMeasures } = require('./shared/browser');
 
 function buildProxyOption(proxyUrl) {
   try {
@@ -20,15 +22,18 @@ function buildProxyOption(proxyUrl) {
 
 async function runAutomation(username, password, proxyUrl, title, content, tags) {
   const proxy = buildProxyOption(proxyUrl);
+
+  // Use browser pool for resource efficiency and proper cleanup
+  const { context, page, cleanup } = await browserPoolManager.getContext({
+    profile: 'standard',
+    headless: false,
+    purpose: 'naver-blog-automation',
+    proxy
+  });
+
   try {
-    // Try to use system Chrome first
-  const browser = await chromium.launch({ 
-      headless: false,
-      channel: 'chrome',  // Uses system Chrome
-      proxy
-    });
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    // Apply anti-detection measures
+    await applyAntiDetectionMeasures(page);
     await page.goto('https://nid.naver.com/nidlogin.login');
     try {
       if (username) await page.fill('input#id, input[name="id"]', String(username));
@@ -465,383 +470,16 @@ async function runAutomation(username, password, proxyUrl, title, content, tags)
     // Keep browser open for debugging
     return { success: true };
   } catch (error) {
-    if (error && typeof error.message === 'string' && error.message.includes('channel')) {
-      // Fallback if Chrome isn't installed
-      console.log('Chrome not found, using default Chromium');
-      const browser = await chromium.launch({ 
-        headless: false,
-        proxy
-      });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-      await page.goto('https://nid.naver.com/nidlogin.login');
-      try {
-        if (username) await page.fill('input#id, input[name="id"]', String(username));
-        if (password) await page.fill('input#pw, input[name="pw"]', String(password));
-        const loginButtonSelector = 'button[type="submit"], input[type="submit"], button#log.login';
-        if (username && password) {
-          await page.click(loginButtonSelector).catch(() => {});
-          await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-          // After login attempt, navigate to Naver Blog home
-          const targetUrl = 'https://section.blog.naver.com/BlogHome.naver?directoryNo=0&currentPage=1&groupId=0';
-          await page.goto(targetUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-
-          // Click the Write button which opens a new tab/window
-          const writeSelector = 'a[href="https://blog.naver.com/GoBlogWrite.naver"]';
-          await page.waitForSelector(writeSelector, { timeout: 15000 }).catch(() => {});
-          try {
-            const [newPage] = await Promise.all([
-              context.waitForEvent('page', { timeout: 15000 }),
-              page.click(writeSelector)
-            ]);
-            await newPage.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
-            // Type "hi" using Playwright's keyboard API (fallback)
-            try {
-              console.log('[DEBUG] [fallback] Typing "hi" using Playwright keyboard API');
-              await newPage.bringToFront().catch(() => {});
-              await newPage.click('body').catch(() => {});
-              console.log('[DEBUG] [fallback] Using keyboard.type to input text');
-              await newPage.keyboard.type('hi');
-              console.log('[DEBUG] [fallback] Text typed successfully');
-            } catch (outerErr) {
-              console.warn('[DEBUG] [fallback] Unexpected error while trying to type:', outerErr);
-            }
-
-            // Repeat translated steps for fallback path
-            try {
-              console.log('[DEBUG] [fallback] Switching to mainFrame if present');
-              const hasMainFrame = await newPage.locator('#mainFrame').count();
-              const mainFrameLocator = newPage.frameLocator('#mainFrame');
-              const pageOrFrame = hasMainFrame ? mainFrameLocator : newPage;
-
-              // Draft popup handling - click confirm to continue with existing draft
-              try {
-                console.log('[DEBUG] [fallback] Checking for draft popup...');
-                const confirmBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[2]');
-                const cancelBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[4]/div[2]/div[3]/button[1]');
-                
-                if (await confirmBtn.count() > 0) {
-                  console.log('[DEBUG] [fallback] Draft popup found - clicking confirm to continue with existing draft');
-                  await confirmBtn.click({ timeout: 3000 }).catch(() => {});
-                  await newPage.waitForTimeout(1000);
-                  console.log('[DEBUG] [fallback] Draft popup confirmed - continuing with existing draft');
-                } else if (await cancelBtn.count() > 0) {
-                  console.log('[DEBUG] [fallback] Draft popup found but confirm button not available - clicking cancel');
-                  await cancelBtn.click({ timeout: 3000 }).catch(() => {});
-                  await newPage.waitForTimeout(1000);
-                  console.log('[DEBUG] [fallback] Draft popup cancelled');
-                } else {
-                  console.log('[DEBUG] [fallback] No draft popup found - proceeding normally');
-                }
-              } catch (error) {
-                console.log('[DEBUG] [fallback] Error handling draft popup:', error.message);
-              }
-
-              // Handle Naver Blog confirmation popup with wait (fallback)
-              try {
-                console.log('[DEBUG] [fallback] Waiting for and checking Naver Blog confirmation popup...');
-                
-                // Wait for popup to appear (up to 5 seconds)
-                const confirmPopup = pageOrFrame.locator('.se-popup-alert-confirm, .se-popup-alert');
-                const confirmButton = pageOrFrame.locator('.se-popup-alert-confirm button, .se-popup-alert button');
-                
-                // Wait for popup to appear
-                try {
-                  await confirmPopup.waitFor({ state: 'visible', timeout: 5000 });
-                  console.log('[DEBUG] [fallback] Naver Blog confirmation popup appeared - looking for buttons...');
-                  
-                  // Wait a bit more for buttons to be ready
-                  await newPage.waitForTimeout(500);
-                  
-                  // Try to find and click the confirm/OK button
-                  if (await confirmButton.count() > 0) {
-                    console.log('[DEBUG] [fallback] Clicking confirmation popup button');
-                    await confirmButton.first().click({ timeout: 3000 }).catch(() => {});
-                    await newPage.waitForTimeout(1000);
-                    console.log('[DEBUG] [fallback] Confirmation popup handled');
-                  } else {
-                    // Try pressing Escape key as fallback
-                    console.log('[DEBUG] [fallback] No button found, trying Escape key');
-                    await newPage.keyboard.press('Escape');
-                    await newPage.waitForTimeout(1000);
-                  }
-                } catch (waitError) {
-                  console.log('[DEBUG] [fallback] No confirmation popup appeared within timeout - proceeding normally');
-                }
-              } catch (error) {
-                console.log('[DEBUG] [fallback] Error handling confirmation popup:', error.message);
-              }
-
-              // Right side popup close
-              try {
-                console.log('[DEBUG] [fallback] Attempt to close right-side popup');
-                const rightCloseBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/article/div/header/button');
-                if (await rightCloseBtn.count()) {
-                  await rightCloseBtn.click({ timeout: 3000 }).catch(() => {});
-                }
-              } catch {}
-
-              // Help panel close button (fallback)
-              try {
-                console.log('[DEBUG] [fallback] Attempt to close help panel if present');
-                const helpSelector = 'button.se-help-panel-close-button, .se-help-panel-close-button';
-                let closed = false;
-                const helpBtn = pageOrFrame.locator(helpSelector);
-                if (await helpBtn.count()) {
-                  await helpBtn.first().click({ timeout: 2000 }).catch(() => {});
-                  closed = true;
-                }
-                if (!closed) {
-                  for (const frame of newPage.frames()) {
-                    try {
-                      const frameBtn = await frame.$(helpSelector);
-                      if (frameBtn) {
-                        await frameBtn.click({ timeout: 2000 }).catch(() => {});
-                        closed = true;
-                        break;
-                      }
-                    } catch {}
-                  }
-                }
-              } catch {}
-
-              const title_field_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[1]/div[1]/div/div/p/span[2]';
-              const content_field_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/div[2]/section/article/div[2]/div/div/div/div/p';
-              const text_image_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/header/div[1]/ul/li[17]/button';
-              const image_keyword_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/aside/div/div[1]/input';
-              const first_image_xpath = 'xpath=/html/body/div[1]/div/div[3]/div/div/div[1]/div/div[1]/aside/div/div[3]/div/ul/div/li[1]/div/div[2]';
-              const help_panel_close_xpath = 'xpath=/html/body/div[1]/div[1]/div[3]/div/div/div[1]/div/div[1]/article/div/header/button';
-
-              try { await pageOrFrame.locator(text_image_xpath).click({ timeout: 5000 }); } catch {}
-              try {
-                const keywordField = pageOrFrame.locator(image_keyword_xpath);
-                if (await keywordField.count()) {
-                  await keywordField.click({ timeout: 5000 });
-                  await keywordField.fill('EGDesk Test Title');
-                  await keywordField.press('Enter');
-                  await newPage.waitForTimeout(1000);
-                }
-              } catch {}
-              try {
-                const firstImage = pageOrFrame.locator(first_image_xpath);
-                if (await firstImage.count()) await firstImage.click({ timeout: 5000 }).catch(() => {});
-              } catch {}
-              // Extra attempt to close help panel via explicit XPath in fallback
-              try {
-                const explicitClose = pageOrFrame.locator(help_panel_close_xpath);
-                if (await explicitClose.count()) await explicitClose.click({ timeout: 2000 }).catch(() => {});
-              } catch {}
-              
-              // Publish the blog post (fallback)
-              try {
-                console.log('[DEBUG] [fallback] Clicking publish button');
-                const publishBtn = pageOrFrame.locator('xpath=/html/body/div[1]/div/div[1]/div/div[3]/div[2]/div/div/div/div[8]/div/button');
-                if (await publishBtn.count()) {
-                  console.log('[DEBUG] [fallback] Publish button found, clicking...');
-                  await publishBtn.click({ timeout: 10000 });
-                  await newPage.waitForTimeout(3000);
-                  console.log('[DEBUG] [fallback] Publish button clicked successfully');
-                } else {
-                  console.log('[DEBUG] [fallback] Publish button not found, trying alternative selector');
-                  // Try alternative publish button selector
-                  const altPublishBtn = pageOrFrame.locator(publish_button_xpath);
-                  if (await altPublishBtn.count()) {
-                    await altPublishBtn.click({ timeout: 10000 });
-                    await newPage.waitForTimeout(3000);
-                    console.log('[DEBUG] [fallback] Alternative publish button clicked');
-                  } else {
-                    console.log('[DEBUG] [fallback] No publish button found');
-                  }
-                }
-              } catch (e) {
-                console.warn('[DEBUG] [fallback] Publish click failed:', e);
-              }
-              // Load JSON and inject via SmartEditor API (fallback preferred)
-              try {
-                console.log('[DEBUG] [fallback] Waiting for editor to fully load');
-                
-                // 1. Wait for mainFrame to load
-                await newPage.waitForSelector('#mainFrame', { timeout: 15000 });
-                const frame = newPage.frameLocator('#mainFrame');
-                
-                // 2. Wait for editor content area
-                await frame.locator('.se-content').waitFor({ timeout: 10000 });
-                console.log('[DEBUG] [fallback] Editor loaded successfully');
-                
-                // 3. Read document JSON from disk
-                const docJsonPath = path.resolve('/Users/minseocha/Desktop/projects/Taesung/EGDesk-scratch/egdesk-scratch/complete-naver-se-document-data.json');
-                const raw = fs.readFileSync(docJsonPath, 'utf-8');
-                const parsed = JSON.parse(raw);
-                console.log('[DEBUG] [fallback] Loaded document JSON for injection');
-
-                // 4. Test SmartEditor availability first (fallback via iframe)
-                const smartEditorTest = await newPage.evaluate(() => {
-                  try {
-                    console.log('[DEBUG] [fallback] Testing SmartEditor availability via iframe...');
-                    
-                    // Access the iframe
-                    const iframe = document.querySelector('#mainFrame');
-                    if (!iframe) {
-                      console.log('[DEBUG] [fallback] No iframe found');
-                      return { available: false, reason: 'no_iframe' };
-                    }
-                    
-                    const iframeWindow = iframe.contentWindow;
-                    if (!iframeWindow) {
-                      console.log('[DEBUG] [fallback] Cannot access iframe contentWindow');
-                      return { available: false, reason: 'no_iframe_window' };
-                    }
-                    
-                    console.log('[DEBUG] [fallback] SmartEditor:', iframeWindow.SmartEditor);
-                    console.log('[DEBUG] [fallback] SmartEditor._editors:', iframeWindow.SmartEditor?._editors);
-                    
-                    if (!iframeWindow.SmartEditor || !iframeWindow.SmartEditor._editors) {
-                      return { available: false, reason: 'no_smarteditor' };
-                    }
-                    
-                    // Get the editor instance
-                    const editor = iframeWindow.SmartEditor._editors['blogpc001'];
-                    console.log('[DEBUG] [fallback] Editor:', editor);
-                    
-                    if (!editor) {
-                      console.log('[DEBUG] [fallback] Available editor keys:', Object.keys(iframeWindow.SmartEditor._editors));
-                      return { available: false, reason: 'no_editor' };
-                    }
-                    
-                    // Get document service
-                    const docService = editor._documentService;
-                    console.log('[DEBUG] [fallback] Document Service:', docService);
-                    
-                    if (!docService) {
-                      return { available: false, reason: 'no_docService' };
-                    }
-                    
-                    // Get document data
-                    const documentData = docService.getDocumentData();
-                    console.log('[DEBUG] [fallback] Document Data:', documentData);
-                    
-                    return { 
-                      available: true, 
-                      editor: !!editor, 
-                      docService: !!docService, 
-                      documentData: !!documentData,
-                      editorKeys: Object.keys(iframeWindow.SmartEditor._editors)
-                    };
-                  } catch (err) {
-                    console.error('[DEBUG] [fallback] SmartEditor test error:', err);
-                    return { available: false, reason: err.message };
-                  }
-                });
-                console.log('[DEBUG] [fallback] SmartEditor test result:', smartEditorTest);
-
-                // 5. Inject into SmartEditor via internal API (append components via iframe)
-                const injected = await newPage.evaluate(async (incoming) => {
-                  try {
-                    const waitFor = (ms) => new Promise(r => setTimeout(r, ms));
-                    
-                    // Access the iframe
-                    const iframe = document.querySelector('#mainFrame');
-                    if (!iframe) {
-                      console.warn('[DEBUG] [fallback] No iframe found');
-                      return { ok: false, reason: 'no_iframe' };
-                    }
-                    
-                    const iframeWindow = iframe.contentWindow;
-                    if (!iframeWindow) {
-                      console.warn('[DEBUG] [fallback] Cannot access iframe contentWindow');
-                      return { ok: false, reason: 'no_iframe_window' };
-                    }
-                    
-                    const editors = (iframeWindow.SmartEditor && iframeWindow.SmartEditor._editors) || {};
-                    const editorKey = Object.keys(editors).find(k => k && k.startsWith('blogpc')) || Object.keys(editors)[0];
-                    const editor = editorKey ? editors[editorKey] : null;
-                    if (!editor) {
-                      console.warn('[DEBUG] [fallback] SmartEditor editor not found');
-                      return { ok: false, reason: 'no_editor' };
-                    }
-                    const docService = editor._documentService || editor.documentService;
-                    if (!docService) {
-                      console.warn('[DEBUG] [fallback] SmartEditor documentService not found');
-                      return { ok: false, reason: 'no_doc_service' };
-                    }
-                    const getData = () => {
-                      try { return typeof docService.getDocumentData === 'function' ? docService.getDocumentData() : (docService._documentData || null); } catch { return null; }
-                    };
-                    let current = getData();
-                    if (!current || !current.document) {
-                      let retries = 5;
-                      while (retries-- > 0 && (!current || !current.document)) {
-                        await waitFor(300);
-                        current = getData();
-                      }
-                    }
-                    if (!current || !current.document) {
-                      console.warn('[DEBUG] [fallback] SmartEditor document data not ready');
-                      return { ok: false, reason: 'no_document' };
-                    }
-                    const incomingDoc = incoming && (incoming.document || incoming);
-                    if (!incomingDoc || !Array.isArray(incomingDoc.components)) {
-                      console.warn('[DEBUG] [fallback] Incoming JSON missing document.components');
-                      return { ok: false, reason: 'bad_incoming' };
-                    }
-                    if (!Array.isArray(current.document.components)) current.document.components = [];
-                    current.document.components.push(...incomingDoc.components);
-                    if (typeof docService.setDocumentData === 'function') {
-                      docService.setDocumentData(current);
-                    } else {
-                      docService._documentData = current;
-                    }
-                    if (docService._notifyChanged) docService._notifyChanged();
-                    return { ok: true };
-                  } catch (err) {
-                    console.warn('[DEBUG] [fallback] Error during SmartEditor injection:', err);
-                    return { ok: false, reason: String(err && err.message || err) };
-                  }
-                }, parsed);
-                console.log('[DEBUG] [fallback] SmartEditor document data injected (append mode):', injected);
-                
-              } catch (e) {
-                console.warn('[DEBUG] [fallback] Editor API method failed, trying fallback:', e);
-                
-                // Final fallback: inline HTML insertion
-                try {
-                  const titleToUse = title || 'EGDesk Test Title';
-                  const contentToUse = content || 'EGDesk Test Content';
-                  const tagsToUse = tags || '#egdesk #playwright';
-                  const htmlWithInlineStyles = `
-                    <div style=\"margin: 20px; padding: 10px; background: #f0f0f0;\">
-                      <h2 style=\"color: #333; font-size: 24px; margin-bottom: 15px;\">${titleToUse}</h2>
-                      <p style=\"line-height: 1.6; font-size: 16px; margin-bottom: 10px;\">${contentToUse}</p>
-                      <p style=\"color: #666; font-style: italic;\">${tagsToUse}</p>
-                    </div>
-                  `;
-                  await frame.evaluate((html) => {
-                    const canvas = document.querySelector('.se-canvas') || 
-                                    document.querySelector('[contenteditable="true"]') ||
-                                    document.querySelector('.se-content');
-                    if (canvas) {
-                      canvas.innerHTML += html;
-                      canvas.dispatchEvent(new Event('input', { bubbles: true }));
-                      canvas.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                  }, htmlWithInlineStyles);
-              } catch {}
-              }
-            } catch (scriptErr) {
-              console.warn('[DEBUG] [fallback] Error running translated Playwright steps:', scriptErr);
-            }
-          } catch (clickErr) {
-            console.warn('Write button click/new page open issue:', clickErr);
-          }
-        }
-      } catch (formErr) {
-        console.warn('Login form interaction issue:', formErr);
-      }
-  return { success: true };
-    }
+    console.error('[AUTOMATOR] Error during Naver blog automation:', error);
     return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    // ✅ CRITICAL FIX: Always cleanup browser resources
+    // This was the memory leak - browser/context never closed on error
+    await cleanup();
   }
 }
+
+
 
 async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
   try {

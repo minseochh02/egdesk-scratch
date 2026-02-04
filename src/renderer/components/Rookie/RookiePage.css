@@ -1,0 +1,475 @@
+.rookie-page {
+  padding: 40px;
+  width: 100%;
+  color: #fff;
+  background-color: #121212;
+  min-height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* Header - FinanceHub Style */
+.rookie-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid #333;
+  gap: 30px;
+}
+
+.rookie-header-content {
+  flex: 1;
+}
+
+.rookie-logo {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.rookie-logo-icon {
+  font-size: 40px;
+  color: #2E7D32;
+}
+
+.rookie-logo-text h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: bold;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.rookie-logo-subtitle {
+  font-size: 14px;
+  color: #888;
+  display: block;
+  margin-top: 4px;
+}
+
+/* Header Stats */
+.rookie-header-stats {
+  display: flex;
+  gap: 20px;
+}
+
+.rookie-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(46, 125, 50, 0.1);
+  border: 1px solid rgba(46, 125, 50, 0.3);
+  border-radius: 8px;
+  min-width: 100px;
+}
+
+.rookie-stat-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #2E7D32;
+  line-height: 1;
+}
+
+.rookie-stat-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+.rookie-content {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+
+/* Workflows Header */
+.rookie-workflows-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.rookie-workflows-header h2 {
+  margin: 0;
+  font-size: 28px;
+  color: #fff;
+  font-weight: bold;
+}
+
+.rookie-create-button {
+  padding: 12px 24px;
+  background: #2E7D32;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(46, 125, 50, 0.3);
+}
+
+.rookie-create-button:hover {
+  background: #1B5E20;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
+}
+
+.rookie-create-button:active {
+  transform: translateY(0);
+}
+
+/* Workflows */
+.rookie-workflows {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.rookie-workflow-card {
+  background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
+  border: 1px solid #444;
+  border-radius: 12px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.rookie-workflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 15px;
+}
+
+.rookie-workflow-title {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.rookie-workflow-title h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #fff;
+}
+
+.rookie-workflow-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* 3-Column Layout Body */
+.rookie-workflow-body {
+  display: grid;
+  grid-template-columns: 250px 1fr 200px;
+  gap: 30px;
+  align-items: start;
+}
+
+.rookie-workflow-column h4 {
+  margin: 0 0 15px 0;
+  font-size: 12px;
+  color: #2E7D32;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+/* Left Column: Goal Thumbnail */
+.rookie-goal-column {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  justify-content: center;
+}
+
+.rookie-goal-thumbnail {
+  background: rgba(46, 125, 50, 0.1);
+  border: 2px solid rgba(46, 125, 50, 0.3);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 180px;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+.rookie-goal-thumbnail img {
+  max-height: 384px;
+  object-fit: contain;
+  object-position: top left;
+}
+
+.rookie-goal-icon {
+  font-size: 64px;
+  color: #2E7D32;
+}
+
+.rookie-goal-label {
+  font-size: 14px;
+  font-weight: bold;
+  color: #2E7D32;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rookie-goal-text {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Middle Column: Workflow Steps */
+.rookie-steps-column {
+  flex: 1;
+}
+
+.rookie-workflow-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.rookie-workflow-steps-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rookie-workflow-steps-list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 3px;
+}
+
+.rookie-workflow-steps-list::-webkit-scrollbar-thumb {
+  background: #2E7D32;
+  border-radius: 3px;
+}
+
+.rookie-workflow-steps-list::-webkit-scrollbar-thumb:hover {
+  background: #1B5E20;
+}
+
+.rookie-step-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.rookie-step-item:hover {
+  border-color: #2E7D32;
+}
+
+.rookie-step-number {
+  min-width: 28px;
+  height: 28px;
+  background: #2E7D32;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.rookie-step-text {
+  font-size: 13px;
+  color: #ccc;
+  line-height: 1.6;
+  padding-top: 4px;
+}
+
+/* Right Column: Sites/Apps */
+.rookie-sites-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.rookie-sites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.rookie-sites-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rookie-sites-list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 3px;
+}
+
+.rookie-sites-list::-webkit-scrollbar-thumb {
+  background: #2E7D32;
+  border-radius: 3px;
+}
+
+.rookie-sites-list::-webkit-scrollbar-thumb:hover {
+  background: #1B5E20;
+}
+
+.rookie-site-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #ccc;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.rookie-site-item:hover {
+  border-color: #2E7D32;
+  background: rgba(46, 125, 50, 0.05);
+}
+
+.rookie-site-icon {
+  font-size: 16px;
+  color: #2E7D32;
+}
+
+
+.rookie-workflow-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 15px;
+  border-top: 1px solid #333;
+  margin-top: auto;
+}
+
+.rookie-workflow-last-run {
+  font-size: 12px;
+  color: #888;
+  display: flex;
+  align-items: center;
+}
+
+.rookie-run-button {
+  padding: 10px 20px;
+  background: #2E7D32;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.rookie-run-button:hover {
+  background: #1B5E20;
+}
+
+
+@media (max-width: 1024px) {
+  .rookie-workflow-body {
+    grid-template-columns: 1fr;
+    gap: 25px;
+  }
+
+  .rookie-goal-column {
+    flex-direction: row;
+    gap: 20px;
+  }
+
+  .rookie-goal-thumbnail {
+    min-width: 180px;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 1024px) {
+  .rookie-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rookie-header-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .rookie-stat {
+    flex: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .rookie-page {
+    padding: 20px;
+  }
+
+  .rookie-logo-text h1 {
+    font-size: 28px;
+  }
+
+  .rookie-header-stats {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .rookie-stat {
+    width: 100%;
+  }
+
+  .rookie-workflows {
+    grid-template-columns: 1fr;
+  }
+
+  .rookie-goal-column {
+    flex-direction: column;
+  }
+
+  .rookie-workflows-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .rookie-workflows-header h2 {
+    font-size: 24px;
+  }
+
+  .rookie-create-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

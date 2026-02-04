@@ -300,10 +300,10 @@ function replaceImageMarkersByUuid(content: string, markers: ImageMarker[], imag
 
 
 
-export async function createPost(blogContentWithImages: ParsedContent): Promise<string> {
-    const WORDPRESS_URL = process.env.WORDPRESS_URL;
-    const WORDPRESS_USERNAME = process.env.WORDPRESS_USERNAME;
-    const WORDPRESS_PASSWORD = process.env.WORDPRESS_PASSWORD;
+export async function createPost(blogContentWithImages: ParsedContent, credentials?: { url: string; username: string; password: string }): Promise<string> {
+    const WORDPRESS_URL = credentials?.url || process.env.WORDPRESS_URL;
+    const WORDPRESS_USERNAME = credentials?.username || process.env.WORDPRESS_USERNAME;
+    const WORDPRESS_PASSWORD = credentials?.password || process.env.WORDPRESS_PASSWORD;
 
     if (!WORDPRESS_URL || !WORDPRESS_USERNAME || !WORDPRESS_PASSWORD) {
         throw new Error('Missing WordPress configuration');

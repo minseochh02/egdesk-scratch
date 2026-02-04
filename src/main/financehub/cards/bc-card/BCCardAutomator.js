@@ -253,7 +253,7 @@ class BCCardAutomator extends BaseCardAutomator {
 
   /**
    * Gets all cards for the logged-in user
-   * Navigates to 카드정보조회 > 보유카드조회 and extracts from table
+   * Navigates to 카드정보조회 > 보유카드조회 and downloads Excel file
    * @returns {Promise<Array>} Array of card information
    */
   async getCards() {
@@ -273,62 +273,33 @@ class BCCardAutomator extends BaseCardAutomator {
       // Step 2: Click "보유카드조회" submenu
       this.log('Clicking 보유카드조회 submenu...');
       await this.page.locator('#lnb > div.lnbCon > nav > ul > li.KEY0106.on > ul > li.KEY010601 > a').click();
+      await this.page.waitForTimeout(3000);
 
-      // Wait for canvas table to be rendered (important for Windows)
-      this.log('Waiting for card table to render...');
-      await this.page.waitForSelector('#grid > div:nth-child(2) > canvas > table', {
-        state: 'attached', // Wait for DOM attachment, not visibility (canvas tables may be hidden initially)
-        timeout: this.config.timeouts.elementWait
-      });
-      await this.page.waitForTimeout(3000); // Extra buffer for canvas painting to become visible
-
-      // Step 3: Extract cards from table
-      this.log('Extracting cards from table...');
-      const cards = await this.page.evaluate(() => {
-        const table = document.querySelector('#grid > div:nth-child(2) > canvas > table');
-        if (!table) return [];
-
-        const rows = table.querySelectorAll('tbody tr');
-        const cardList = [];
-
-        for (const row of rows) {
-          const cells = row.querySelectorAll('td');
-          if (cells.length < 11) continue; // Should have 11 columns
-
-          // Extract card information from columns
-          const departmentCode = cells[0]?.textContent.trim() || '';
-          const issuer = cells[1]?.textContent.trim() || '';
-          const cardName = cells[2]?.textContent.trim() || '';
-          const cardNumber = cells[3]?.textContent.trim() || '';
-          const assignee = cells[4]?.textContent.trim() || '';
-          const cardType = cells[5]?.textContent.trim() || '';
-          const paymentDate = cells[6]?.textContent.trim() || '';
-          const paymentBank = cells[7]?.textContent.trim() || '';
-          const paymentAccount = cells[8]?.textContent.trim() || '';
-
-          if (cardNumber) {
-            cardList.push({
-              cardNumber: cardNumber,
-              cardName: cardName || 'BC Card',
-              issuer: issuer,
-              cardCompanyId: 'bc-card',
-              cardType: cardType || 'corporate',
-              assignee: assignee,
-              departmentCode: departmentCode,
-              paymentDate: paymentDate,
-              paymentBank: paymentBank,
-              paymentAccount: paymentAccount,
-            });
-          }
-        }
-
-        return cardList;
+      // Step 3: Download Excel file
+      this.log('Downloading card list Excel...');
+      const downloadPromise = this.page.waitForEvent('download', {
+        timeout: this.config.timeouts.downloadWait
       });
 
-      this.log(`Found ${cards.length} card(s)`);
+      // Click Excel download button
+      await this.page.locator('xpath=/html/body/div[3]/div[2]/div/div/div[2]/div[2]/div[5]/div[4]/a[1]').click();
+
+      // Wait for download
+      const download = await downloadPromise;
+      const originalFilename = download.suggestedFilename();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = `BC카드_보유카드_${timestamp}_${originalFilename}`;
+      const filePath = path.join(this.downloadDir, filename);
+
+      await download.saveAs(filePath);
+      this.log('Card list downloaded:', filePath);
+
+      // Step 4: Parse Excel file
+      const cards = await this.parseCardListExcel(filePath);
+      this.log(`Found ${cards.length} card(s) from Excel`);
 
       if (cards.length === 0) {
-        this.warn('No cards found in table, returning default');
+        this.warn('No cards found in Excel, returning default');
         return [{
           cardNumber: 'default',
           cardName: 'BC Card',
@@ -337,7 +308,7 @@ class BCCardAutomator extends BaseCardAutomator {
         }];
       }
 
-      // Step 4: Navigate back to transaction history page
+      // Step 5: Navigate back to transaction history page
       this.log('Navigating back to transaction history...');
 
       // Hover "카드이용조회" menu to reveal submenu
@@ -366,6 +337,167 @@ class BCCardAutomator extends BaseCardAutomator {
 
     } catch (error) {
       this.error('Failed to get cards:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Parses downloaded card list file (ZIP containing Excel)
+   * @param {string} filePath - Path to downloaded file
+   * @returns {Promise<Array>} Array of card information
+   */
+  async parseCardListExcel(filePath) {
+    this.log('Parsing card list file:', filePath);
+
+    try {
+      const AdmZip = require('adm-zip');
+      const XLSX = require('xlsx');
+
+      let excelPath = filePath;
+      let extractDir = null;
+
+      // Step 1: Handle ZIP file
+      if (filePath.endsWith('.zip')) {
+        this.log('Extracting ZIP file...');
+        const zip = new AdmZip(filePath);
+        const zipEntries = zip.getEntries();
+
+        // Find Excel file in ZIP
+        const excelEntry = zipEntries.find(e =>
+          e.entryName.endsWith('.xlsx') || e.entryName.endsWith('.xls')
+        );
+
+        if (!excelEntry) {
+          throw new Error('No Excel file found in ZIP archive');
+        }
+
+        this.log('Found Excel file in ZIP:', excelEntry.entryName);
+
+        // Extract to temp directory
+        extractDir = path.join(os.tmpdir(), `bc-card-cardlist-extract-${Date.now()}`);
+        fs.mkdirSync(extractDir, { recursive: true });
+
+        zip.extractEntryTo(excelEntry, extractDir, false, true);
+        excelPath = path.join(extractDir, excelEntry.entryName);
+
+        this.log('Extracted to:', excelPath);
+      }
+
+      // Step 2: Read Excel file
+      const fileBuffer = fs.readFileSync(excelPath);
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      this.log(`Excel has ${rows.length} rows`);
+
+      // Find header row
+      // Expected headers: 부서명, 발급사, 카드명, 카드번호, 지정자명, 카드구분, 결제일, 거래은행, 결제계좌
+      let headerRowIndex = -1;
+      const headerKeywords = ['카드번호', '카드명', '지정자명'];
+
+      for (let i = 0; i < Math.min(10, rows.length); i++) {
+        const row = rows[i];
+        const rowText = row.join('');
+
+        if (headerKeywords.every(keyword => rowText.includes(keyword))) {
+          headerRowIndex = i;
+          this.log('Found header row at index:', i);
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        throw new Error('Could not find header row in card list Excel');
+      }
+
+      const headers = rows[headerRowIndex];
+      this.log('Headers:', headers);
+
+      // Parse card rows
+      const cards = [];
+      const dataRows = rows.slice(headerRowIndex + 1);
+
+      for (const row of dataRows) {
+        if (row.length < headers.length) continue;
+
+        // Skip empty rows
+        if (!row.join('').trim()) continue;
+
+        const card = {};
+
+        // Map columns by header
+        headers.forEach((header, index) => {
+          const value = row[index];
+
+          switch (header) {
+            case '부서명':
+              card.departmentName = value;
+              break;
+            case '발급사':
+              card.issuer = value;
+              break;
+            case '카드명':
+              card.cardName = value;
+              break;
+            case '카드번호':
+              card.cardNumber = cleanCardNumber(value);
+              break;
+            case '지정자명':
+              card.assignee = value;
+              break;
+            case '카드구분':
+              card.cardType = value;
+              break;
+            case '결제일':
+              card.paymentDate = value;
+              break;
+            case '거래은행':
+              card.paymentBank = value;
+              break;
+            case '결제계좌':
+              card.paymentAccount = value;
+              break;
+            default:
+              // Store additional columns
+              card[header] = value;
+          }
+        });
+
+        // Only add if has card number
+        if (card.cardNumber) {
+          cards.push({
+            cardNumber: card.cardNumber,
+            cardName: card.cardName || 'BC Card',
+            issuer: card.issuer || '',
+            cardCompanyId: 'bc-card',
+            cardType: card.cardType || 'corporate',
+            assignee: card.assignee || '',
+            departmentName: card.departmentName || '',
+            paymentDate: card.paymentDate || '',
+            paymentBank: card.paymentBank || '',
+            paymentAccount: card.paymentAccount || '',
+          });
+        }
+      }
+
+      this.log(`Parsed ${cards.length} cards from Excel`);
+
+      // Cleanup extracted directory
+      if (extractDir && fs.existsSync(extractDir)) {
+        try {
+          fs.rmSync(extractDir, { recursive: true, force: true });
+          this.log('Cleaned up extraction directory');
+        } catch (e) {
+          this.warn('Failed to cleanup extraction directory:', e.message);
+        }
+      }
+
+      return cards;
+
+    } catch (error) {
+      this.error('Failed to parse card list Excel:', error.message);
       throw error;
     }
   }

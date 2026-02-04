@@ -490,14 +490,15 @@ export class FinanceHubScheduler extends EventEmitter {
 
       // Create card automator
       const { cards } = require('../index');
-      const automator = cards.createCardAutomator(cardId, {
+      const cardCompanyId = `${cardId}-card`; // Convert "nh" to "nh-card", etc.
+      const automator = cards.createCardAutomator(cardCompanyId, {
         headless: true, // Run headless for scheduled sync
         arduinoPort,
         manualPassword: false
       });
 
       // Login
-      console.log(`[FinanceHubScheduler] Logging in to ${cardId}...`);
+      console.log(`[FinanceHubScheduler] Logging in to ${cardCompanyId}...`);
       const loginResult = await automator.login(savedCredentials);
 
       if (!loginResult.success) {
@@ -523,7 +524,7 @@ export class FinanceHubScheduler extends EventEmitter {
       const startDate = formatDate(yesterday);
       const endDate = formatDate(today);
 
-      console.log(`[FinanceHubScheduler] Fetching ${cardId} transactions from ${startDate} to ${endDate}...`);
+      console.log(`[FinanceHubScheduler] Fetching ${cardCompanyId} transactions from ${startDate} to ${endDate}...`);
 
       // Get all cards for this card company
       let cardList = [];
@@ -570,7 +571,7 @@ export class FinanceHubScheduler extends EventEmitter {
           };
 
           const importResult = financeHubDb.importTransactions(
-            cardId,
+            cardCompanyId,
             cardData,
             transactionsData,
             syncMetadata
@@ -586,7 +587,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
       await automator.cleanup();
 
-      console.log(`[FinanceHubScheduler] Card sync complete for ${cardId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
+      console.log(`[FinanceHubScheduler] Card sync complete for ${cardCompanyId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
       return {
         success: true,
         inserted: totalInserted,

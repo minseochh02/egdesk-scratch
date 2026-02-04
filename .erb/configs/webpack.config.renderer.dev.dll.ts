@@ -37,6 +37,12 @@ const configuration: webpack.Configuration = {
     'canvas',
     'pdfjs-dist',
     'tesseract.js',
+    // Native modules for desktop automation
+    '@nut-tree-fork/libnut-darwin',
+    '@nut-tree-fork/libnut-linux',
+    '@nut-tree-fork/libnut-win32',
+    '@nut-tree-fork/node-mac-permissions',
+    '@nut-tree-fork/nut-js',
   ],
 
   /**

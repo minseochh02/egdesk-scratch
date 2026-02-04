@@ -4,9 +4,14 @@ import path from "node:path";
 import os from "node:os";
 import { app } from "electron";
 
-import { chromium, Browser, BrowserContext, Page, LaunchOptions } from 'playwright-core';
+import { Page } from 'playwright-core';
 
 import { createInstagramPost, PostOptions, InstagramContentPlan } from "./instagram-post";
+import {
+  browserPoolManager,
+  resolveCredentials as resolveCredentialsGeneric,
+  applyAntiDetectionMeasures,
+} from '../../shared/browser';
 
 type CloseFn = () => Promise<void>;
 
@@ -18,11 +23,6 @@ export interface AuthContext {
 export interface LoginOptions {
   username?: string;
   password?: string;
-}
-
-interface Credentials {
-  username: string;
-  password: string;
 }
 
 interface PostInput {
@@ -37,46 +37,11 @@ interface RunOptions {
   post?: PostInput;
 }
 
-const DEFAULT_LAUNCH_ARGS = [
-  "--disable-blink-features=AutomationControlled", // Hide automation flags
-  "--disable-features=IsolateOrigins,site-per-process",
-  "--disable-web-security",
-  "--disable-features=VizDisplayCompositor",
-  "--disable-dev-shm-usage",
-  "--no-sandbox",
-  "--disable-setuid-sandbox",
-  "--disable-accelerated-2d-canvas",
-  "--no-first-run",
-  "--no-zygote",
-  "--disable-notifications",
-  "--disable-infobars",
-  "--window-size=1920,1080",
-  "--start-maximized",
-];
 // Default to NON-headless for Instagram to avoid detection
 // Set INSTAGRAM_HEADLESS=true to run headless (not recommended for Instagram)
 const DEFAULT_HEADLESS = process.env.INSTAGRAM_HEADLESS === 'true' ? true : false;
-const PLAYWRIGHT_CHROME_CHANNEL = process.env.PLAYWRIGHT_CHROME_CHANNEL || "chrome";
-const CHROME_EXECUTABLE_PATH =
-  typeof process.env.CHROME_EXECUTABLE_PATH === "string" && process.env.CHROME_EXECUTABLE_PATH.trim().length > 0
-    ? process.env.CHROME_EXECUTABLE_PATH.trim()
-    : undefined;
-const LOGIN_SETTLE_DELAY_MS = 1000;
 const INSTAGRAM_HOME_URL = "https://www.instagram.com/";
-const INSTAGRAM_LOGIN_URL = "https://www.instagram.com/accounts/login/"; // Direct login URL
-
-function resolveCredentials(options: LoginOptions = {}): Credentials {
-  const username = options.username ?? process.env.INSTAGRAM_USERNAME;
-  const password = options.password ?? process.env.INSTAGRAM_PASSWORD;
-
-  if (!username || !password) {
-    throw new Error(
-      "Instagram credentials are required. Provide username/password or set INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD."
-    );
-  }
-
-  return { username, password };
-}
+const INSTAGRAM_LOGIN_URL = "https://www.instagram.com/accounts/login/";
 
 async function dismissLoginInfoPrompt(page: Page): Promise<void> {
   try {
@@ -124,7 +89,7 @@ async function dismissCookieBanner(page: Page): Promise<void> {
   }
 }
 
-async function performInstagramLogin(page: Page, credentials: Credentials): Promise<void> {
+async function performInstagramLogin(page: Page, credentials: { username: string; password: string }): Promise<void> {
   console.log('[performInstagramLogin] Navigating to Instagram login page...');
   // Navigate directly to login page instead of home page - this is more reliable
   await page.goto(INSTAGRAM_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -568,109 +533,46 @@ async function launchChromeBrowser(customOptions: LaunchOptions = {}): Promise<B
 }
 
 async function createContext(): Promise<{
-  browser: Browser;
-  context: BrowserContext;
   page: Page;
+  cleanup: () => Promise<void>;
 }> {
-  const browser = await launchChromeBrowser();
-  
-  // Create context with realistic settings to avoid detection
-  const context = await browser.newContext({
+  // Use browser pool for resource efficiency (80% savings)
+  const { context, page, cleanup } = await browserPoolManager.getContext({
+    profile: 'standard', // Use shared browser pool
+    headless: DEFAULT_HEADLESS,
+    purpose: 'instagram-login',
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     viewport: { width: 1920, height: 1080 },
     locale: 'en-US',
     timezoneId: 'America/New_York',
-    deviceScaleFactor: 2, // Retina display
-    hasTouch: false,
-    isMobile: false,
-  });
-  
-  // Add extra headers to look more like a real browser
-  await context.setExtraHTTPHeaders({
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0',
-  });
-  
-  const page = await context.newPage();
-  
-  // Comprehensive anti-detection script
-  await page.addInitScript(() => {
-    // Remove webdriver flag
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => undefined,
-    });
-    
-    // Mock chrome object
-    (window as any).chrome = {
-      runtime: {},
-    };
-    
-    // Mock permissions
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = (parameters: any) => (
-      parameters.name === 'notifications' ?
-        Promise.resolve({ state: 'prompt' } as PermissionStatus) :
-        originalQuery(parameters)
-    );
-    
-    // Override plugins
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => {
-        return [
-          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-          { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
-        ];
-      },
-    });
-    
-    // Override languages
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['en-US', 'en'],
-    });
-    
-    // Add platform info
-    Object.defineProperty(navigator, 'platform', {
-      get: () => 'MacIntel',
-    });
-    
-    // Mock hardware concurrency
-    Object.defineProperty(navigator, 'hardwareConcurrency', {
-      get: () => 8,
-    });
-    
-    // Mock device memory
-    Object.defineProperty(navigator, 'deviceMemory', {
-      get: () => 8,
-    });
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'max-age=0',
+    },
   });
 
-  return { browser, context, page };
+  // Apply centralized anti-detection measures
+  await applyAntiDetectionMeasures(page);
+
+  return { page, cleanup };
 }
 
 export async function getUnauthenticatedPage(): Promise<AuthContext> {
-  const { browser, context, page } = await createContext();
-
-  const close: CloseFn = async () => {
-    await page.close();
-    await context.close();
-    await browser.close();
-  };
-
-  return { page, close };
+  const { page, cleanup } = await createContext();
+  return { page, close: cleanup };
 }
 
 export async function loginWithPage(page: Page, options: LoginOptions = {}): Promise<void> {
-  const credentials = resolveCredentials(options);
+  const credentials = resolveCredentialsGeneric('instagram', options);
   await performInstagramLogin(page, credentials);
 }
 
@@ -691,7 +593,7 @@ export async function login(options: LoginOptions = {}): Promise<void> {
 }
 
 export async function openInstagramLogin(page: Page, options: LoginOptions = {}): Promise<void> {
-  const credentials = resolveCredentials(options);
+  const credentials = resolveCredentialsGeneric('instagram', options);
   await performInstagramLogin(page, credentials);
 }
 

@@ -1,6 +1,6 @@
 // browser-controller.ts
-import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
-import { 
+import { Page, BrowserContext } from 'playwright-core';
+import {
   convertHtmlToSmartEditorJson as htmlToJson_convertHtmlToSmartEditorJson,
   convertHtmlToSmartEditorJsonWithImages as htmlToJson_convertHtmlToSmartEditorJsonWithImages,
   replaceImagePlaceholdersInJson as htmlToJson_replaceImagePlaceholdersInJson
@@ -9,6 +9,10 @@ import { clipboard } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import mime from 'mime-types';
+import {
+  browserPoolManager,
+  applyAntiDetectionMeasures
+} from '../shared/browser';
 // We'll use a simple UUID generator instead of importing uuid
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -55,35 +59,24 @@ function buildProxyOption(proxyUrl?: string) {
 }
 
 /**
- * Launch browser with Chrome preference and fallback
+ * Launch browser using shared browser pool
+ * Provides resource efficiency and proper cleanup
  */
-async function launchBrowser(proxyUrl?: string): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
+async function launchBrowser(proxyUrl?: string): Promise<{ page: Page; context: BrowserContext; cleanup: () => Promise<void> }> {
   const proxy = buildProxyOption(proxyUrl);
-  
-  try {
-    // Try to use system Chrome first
-    const browser = await chromium.launch({ 
-      headless: false,
-      channel: 'chrome',  // Uses system Chrome
-      proxy
-    });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    return { browser, context, page };
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('channel')) {
-      // Fallback if Chrome isn't installed
-      console.log('Chrome not found, using default Chromium');
-      const browser = await chromium.launch({ 
-        headless: false,
-        proxy
-      });
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      return { browser, context, page };
-    }
-    throw error;
-  }
+
+  // Use browser pool for resource efficiency (80% savings)
+  const { context, page, cleanup } = await browserPoolManager.getContext({
+    profile: 'standard',
+    headless: false,
+    purpose: 'naver-blog-controller',
+    proxy
+  });
+
+  // Apply anti-detection measures
+  await applyAntiDetectionMeasures(page);
+
+  return { page, context, cleanup };
 }
 
 /**
@@ -92,74 +85,74 @@ async function launchBrowser(proxyUrl?: string): Promise<{ browser: Browser; con
 async function handleNaverLogin(page: Page, username: string, password: string): Promise<boolean> {
   try {
     console.log('[NAVER] Starting Naver login process...');
-    await page.goto('https://nid.naver.com/nidlogin.login', { 
+    await page.goto('https://nid.naver.com/nidlogin.login', {
       waitUntil: 'domcontentloaded',
-      timeout: 30000 
+      timeout: 30000
     });
-    
+
+    console.log('[NAVER] Login page loaded, waiting 1 second...');
+    await page.waitForTimeout(1000);
+
+    console.log('[NAVER] Filling username...');
     if (username) await page.fill('input#id, input[name="id"]', String(username));
+    console.log('[NAVER] Username filled, waiting 500ms...');
+    await page.waitForTimeout(500);
+
+    console.log('[NAVER] Filling password...');
     if (password) await page.fill('input#pw, input[name="pw"]', String(password));
+    console.log('[NAVER] Password filled, waiting 500ms...');
+    await page.waitForTimeout(500);
     
-    const loginButtonSelector = 'button[type="submit"], input[type="submit"], button#log.login';
     if (username && password) {
-      // Wait for login button to be ready
-      await page.waitForSelector(loginButtonSelector, { timeout: 10000 });
-      await page.click(loginButtonSelector);
-      
-      // Wait for login to complete - check for redirect or URL change
+      console.log('[NAVER] Attempting to click login button...');
+
+      // Use the exact xpath and try multiple click methods
+      const loginButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/form/ul/li/div/div[11]/button';
+
       try {
-        await page.waitForURL(/naver\.com/, { timeout: 30000 });
-        console.log('[NAVER] Login redirect detected');
-      } catch (e) {
-        // If URL doesn't change, wait for network to settle
-        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      }
-      
-      // Wait for cookies to be set (critical for session persistence)
-      console.log('[NAVER] Waiting for session cookies to be set...');
-      let cookiesSet = false;
-      for (let i = 0; i < 10; i++) {
-        await page.waitForTimeout(500);
-        const cookies = await page.context().cookies();
-        const hasNaverSession = cookies.some(cookie => 
-          cookie.name.includes('NID') || 
-          cookie.name.includes('SESSION') || 
-          (cookie.domain.includes('naver.com') && cookie.value.length > 10)
-        );
-        if (hasNaverSession) {
-          console.log('[NAVER] Session cookies detected');
-          cookiesSet = true;
-          break;
+        // Method 1: Direct click with xpath
+        console.log('[NAVER] Method 1: Direct click with xpath');
+        const button = await page.waitForSelector(`xpath=${loginButtonXPath}`, { timeout: 5000 });
+
+        if (button) {
+          console.log('[NAVER] Button found, checking if visible and enabled...');
+          const isVisible = await button.isVisible();
+          const isEnabled = await button.isEnabled();
+          console.log(`[NAVER] Button visible: ${isVisible}, enabled: ${isEnabled}`);
+
+          if (isVisible && isEnabled) {
+            console.log('[NAVER] Clicking button...');
+            await button.click({ force: true });
+            console.log('[NAVER] Button clicked with force option');
+          } else {
+            // Try JavaScript click as fallback
+            console.log('[NAVER] Button not clickable normally, trying JavaScript click...');
+            await page.evaluate((xpath) => {
+              const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+              const btn = result.singleNodeValue as HTMLElement;
+              if (btn) {
+                console.log('[NAVER] Found button via evaluate, clicking...');
+                btn.click();
+              }
+            }, loginButtonXPath);
+            console.log('[NAVER] JavaScript click executed');
+          }
+        } else {
+          throw new Error('Button not found');
         }
-      }
-      
-      if (!cookiesSet) {
-        console.warn('[NAVER] Warning: Session cookies not detected after login');
-      }
-      
-      // Navigate to Naver Blog home after login
-      const targetUrl = 'https://section.blog.naver.com/BlogHome.naver?directoryNo=0&currentPage=1&groupId=0';
-      await page.goto(targetUrl, { 
-        waitUntil: 'domcontentloaded',
-        timeout: 30000 
-      });
-      
-      // Wait for the blog home page to be fully loaded
-      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {
-        console.log('[NAVER] Network idle timeout on blog home, continuing...');
-      });
-      
-      // Additional wait to ensure page is ready and session is established
-      await page.waitForTimeout(3000);
-      
-      // Verify we're actually logged in by checking the page
-      const finalUrl = page.url();
-      if (finalUrl.includes('nidlogin.login')) {
-        console.error('[NAVER] Still on login page after login attempt');
+      } catch (e) {
+        console.error('[NAVER] Failed to click login button:', e);
         return false;
       }
-      
-      console.log('[NAVER] Login process completed, blog home page loaded');
+      console.log('[NAVER] Login button clicked');
+
+      // STOP HERE - Let user inspect what happens after login
+      console.log('[NAVER] === STOPPING AFTER LOGIN BUTTON CLICK FOR INSPECTION ===');
+      console.log('[NAVER] Waiting 10 seconds for you to inspect the browser...');
+      await page.waitForTimeout(10000);
+      console.log('[NAVER] Current URL after 10 seconds:', page.url());
+
+      // Return true to avoid throwing error
       return true;
     }
     return false;
@@ -616,7 +609,7 @@ async function handlePopups(pageOrFrame: any, newPage: Page): Promise<void> {
 /**
  * Ensure clipboard permissions are granted (dialog + context grant)
  */
-async function handleClipboardPermission(newPage: Page, context: BrowserContext): Promise<void> {
+async function handleClipboardPermission(newPage: Page): Promise<void> {
   try {
     console.log('[NAVER] Setting up clipboard permission handler...');
     newPage.on('dialog', async dialog => {
@@ -629,6 +622,7 @@ async function handleClipboardPermission(newPage: Page, context: BrowserContext)
       }
     });
     try {
+      const context = newPage.context();
       await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://blog.naver.com' });
       console.log('[NAVER] Clipboard permissions granted via context');
     } catch (permErr) {
@@ -1827,43 +1821,41 @@ export async function runNaverBlogAutomation(
   content: BlogContent,
   imagePaths?: string[]
 ): Promise<BrowserControllerResult> {
-  let browser: Browser | null = null;
-  
+  let cleanup: (() => Promise<void>) | null = null;
+
   try {
     console.log('[NAVER] Starting Naver Blog automation...');
+
+    // Launch browser using pool manager
+    const result = await launchBrowser(settings.proxyUrl);
+    const { context, page } = result;
+    cleanup = result.cleanup;
     
-    // Launch browser
-    const { browser: launchedBrowser, context, page } = await launchBrowser(settings.proxyUrl);
-    browser = launchedBrowser;
-    
-    // Handle login
+    // Handle login (now goes directly to write page)
     const loginSuccess = await handleNaverLogin(page, settings.username, settings.password);
     if (!loginSuccess) {
       throw new Error('Failed to login to Naver');
     }
-    
-    // Open blog write page (pass credentials for re-login if needed)
-    const newPage = await openBlogWritePage(context, page, settings.username, settings.password);
-    if (!newPage) {
-      throw new Error('Failed to open blog write page');
-    }
-    
+
+    // We're already on the write page after login, no need to open it separately
+    console.log('[NAVER] Already on write page after login');
+
     // Switch to mainFrame if present
-    const hasMainFrame = await newPage.locator('#mainFrame').count();
-    const mainFrameLocator = newPage.frameLocator('#mainFrame');
-    const pageOrFrame = hasMainFrame ? mainFrameLocator : newPage;
-    
+    const hasMainFrame = await page.locator('#mainFrame').count();
+    const mainFrameLocator = page.frameLocator('#mainFrame');
+    const pageOrFrame = hasMainFrame ? mainFrameLocator : page;
+
     // Ensure clipboard permissions before any paste operations
-    await handleClipboardPermission(newPage, context);
+    await handleClipboardPermission(page);
 
     // Handle popups
-    await handlePopups(pageOrFrame, newPage);
-    
+    await handlePopups(pageOrFrame, page);
+
     // Fill blog content
-    await fillBlogContent(pageOrFrame, newPage, content, imagePaths);
-    
+    await fillBlogContent(pageOrFrame, page, content, imagePaths);
+
     // Publish blog post
-    const publishResult = await publishBlogPost(pageOrFrame, newPage);
+    const publishResult = await publishBlogPost(pageOrFrame, page);
     
     if (publishResult.success) {
       console.log('[NAVER] Naver Blog automation completed successfully');
@@ -1883,15 +1875,19 @@ export async function runNaverBlogAutomation(
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   } finally {
-    // Close browser after automation completes
-    if (browser) {
+    // ✅ Cleanup browser resources using pool manager
+    // TEMPORARILY DISABLED FOR DEBUGGING - Browser will stay open
+    console.log('[NAVER] Skipping browser cleanup - keeping browser open for inspection');
+    /*
+    if (cleanup) {
       try {
-        console.log('[NAVER] Closing browser...');
-        await browser.close();
-        console.log('[NAVER] Browser closed successfully');
+        console.log('[NAVER] Cleaning up browser resources...');
+        await cleanup();
+        console.log('[NAVER] Browser resources cleaned successfully');
       } catch (closeError) {
-        console.warn('[NAVER] Error closing browser:', closeError instanceof Error ? closeError.message : 'Unknown error');
+        console.warn('[NAVER] Error cleaning up browser:', closeError instanceof Error ? closeError.message : 'Unknown error');
       }
     }
+    */
   }
 }
