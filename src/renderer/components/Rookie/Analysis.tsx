@@ -22,6 +22,33 @@ interface Resource {
   icon: string;
 }
 
+interface ExcelTable {
+  id: string;
+  name: string;
+  position: {
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+  };
+  headers: Array<{
+    level: number;
+    text: string;
+    col: number;
+    isMerged?: boolean;
+  }>;
+  dataRowCount: number;
+}
+
+interface AIAnalysisResult {
+  success: boolean;
+  tables: ExcelTable[];
+  totalTables: number;
+  summary: string;
+  suggestions?: string[];
+  error?: string;
+}
+
 // Mock resources for UI development
 const mockResources: Resource[] = [
   { id: 1, name: 'NH Bank', type: 'web', icon: '🌐' },
@@ -38,6 +65,8 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [selectedResources, setSelectedResources] = useState<number[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const resourceSectionRef = useRef<HTMLDivElement>(null);
@@ -51,15 +80,22 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  // Scroll to resource section when file is uploaded
+  // Analyze Excel file with AI when uploaded
   React.useEffect(() => {
-    if (uploadedFile && resourceSectionRef.current) {
+    if (uploadedFile && uploadedFile.name.match(/\.(xlsx|xls)$/i)) {
+      analyzeExcelWithAI(uploadedFile);
+    }
+  }, [uploadedFile]);
+
+  // Scroll to resource section when AI analysis completes
+  React.useEffect(() => {
+    if (aiAnalysis && !isAnalyzing && resourceSectionRef.current) {
       resourceSectionRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
     }
-  }, [uploadedFile]);
+  }, [aiAnalysis, isAnalyzing]);
 
   // Handle file drop
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -138,7 +174,52 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
   const handleCancel = () => {
     setUploadedFile(null);
     setSelectedResources([]);
+    setAiAnalysis(null);
     onBack();
+  };
+
+  // Analyze Excel file with AI
+  const analyzeExcelWithAI = async (file: File) => {
+    try {
+      setIsAnalyzing(true);
+      setAiAnalysis(null);
+      console.log('[Analysis] Starting AI analysis for:', file.name);
+
+      // Read file as ArrayBuffer in renderer
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Array.from(new Uint8Array(arrayBuffer));
+
+      console.log('[Analysis] File buffer read, size:', buffer.length, 'bytes');
+
+      // Send buffer to main process for Excel processing + AI analysis
+      const analysisResult = await (window as any).electron.invoke(
+        'rookie:analyze-excel-from-buffer',
+        {
+          buffer,
+          fileName: file.name,
+        }
+      );
+
+      console.log('[Analysis] AI analysis result:', analysisResult);
+
+      if (!analysisResult.success) {
+        throw new Error(analysisResult.message || 'AI analysis failed');
+      }
+
+      setAiAnalysis(analysisResult);
+    } catch (error: any) {
+      console.error('[Analysis] AI analysis error:', error);
+      setAiAnalysis({
+        success: false,
+        error: error.message,
+        tables: [],
+        totalTables: 0,
+        sheetName: '',
+        summary: '',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   // Handle start recording
@@ -248,6 +329,97 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
             </div>
           )}
         </div>
+
+        {/* AI Analysis Results */}
+        {uploadedFile && uploadedFile.name.match(/\.(xlsx|xls)$/i) && (
+          <div className="rookie-step-section">
+            <h3 className="rookie-step-title">
+              AI Analysis
+              {isAnalyzing && <span style={{ marginLeft: '10px', fontSize: '12px', color: '#888' }}>(Analyzing...)</span>}
+            </h3>
+
+            {isAnalyzing && (
+              <div className="rookie-ai-loading">
+                <div className="rookie-spinner"></div>
+                <p>Claude is analyzing your Excel structure...</p>
+              </div>
+            )}
+
+            {!isAnalyzing && aiAnalysis && aiAnalysis.success && (
+              <div className="rookie-ai-results">
+                {/* Summary */}
+                <div className="rookie-ai-summary">
+                  <h4>Summary</h4>
+                  <p>{aiAnalysis.summary}</p>
+                </div>
+
+                {/* Tables Found */}
+                <div className="rookie-ai-tables">
+                  <h4>Tables Found: {aiAnalysis.totalTables}</h4>
+
+                  {aiAnalysis.tables.map((table, idx) => (
+                    <div key={table.id} className="rookie-ai-table-card">
+                      <div className="rookie-ai-table-header">
+                        <span className="rookie-ai-table-number">Table {idx + 1}</span>
+                        <span className="rookie-ai-table-name">{table.name}</span>
+                      </div>
+
+                      <div className="rookie-ai-table-details">
+                        <div>
+                          <strong>Position:</strong> Row {table.position.startRow} - {table.position.endRow},
+                          Col {table.position.startCol} - {table.position.endCol}
+                        </div>
+                        <div>
+                          <strong>Headers:</strong> {table.headers.length} header(s)
+                        </div>
+                        <div>
+                          <strong>Data Rows:</strong> {table.dataRowCount}
+                        </div>
+                      </div>
+
+                      {table.headers.length > 0 && (
+                        <div className="rookie-ai-headers">
+                          <strong>Header Structure:</strong>
+                          <ul>
+                            {table.headers.map((header, hidx) => (
+                              <li key={hidx}>
+                                Level {header.level}: {header.text}
+                                {header.isMerged && <span className="rookie-merged-tag">Merged</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Suggestions */}
+                {aiAnalysis.suggestions && aiAnalysis.suggestions.length > 0 && (
+                  <div className="rookie-ai-suggestions">
+                    <h4>Automation Suggestions</h4>
+                    <ul>
+                      {aiAnalysis.suggestions.map((suggestion, idx) => (
+                        <li key={idx}>{suggestion}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isAnalyzing && aiAnalysis && !aiAnalysis.success && (
+              <div className="rookie-ai-error">
+                <p>❌ AI Analysis failed: {aiAnalysis.error}</p>
+                {aiAnalysis.error?.includes('NO_API_KEY') && (
+                  <p style={{ marginTop: '10px', fontSize: '12px', color: '#888' }}>
+                    Please configure your Anthropic API key in AI Keys Manager
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Step 2: Select Resources */}
         <div ref={resourceSectionRef} className="rookie-step-section">

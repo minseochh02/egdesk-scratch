@@ -1336,6 +1336,50 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  // Helper function to export invoices for a specific type (without alerts or opening tabs)
+  const exportInvoicesForType = async (businessNumber: string, invoiceType: 'sales' | 'purchase') => {
+    try {
+      // Fetch invoices for this type
+      const invoicesResult = await window.electron.hometax.getInvoices({
+        businessNumber,
+        invoiceType
+      });
+
+      if (!invoicesResult.success || !invoicesResult.data || invoicesResult.data.length === 0) {
+        console.log(`[FinanceHub] No ${invoiceType} invoices to export for ${businessNumber}`);
+        return;
+      }
+
+      // Get existing spreadsheet URL
+      const urlResult = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
+      const existingUrl = urlResult.success && urlResult.url ? urlResult.url : undefined;
+
+      // Export to spreadsheet
+      const exportResult = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
+        invoices: invoicesResult.data,
+        invoiceType,
+        existingSpreadsheetUrl: existingUrl,
+      });
+
+      if (exportResult.success) {
+        // Update the saved spreadsheet URL in state
+        if (invoiceType === 'sales') {
+          setTaxSalesSpreadsheetUrl(exportResult.spreadsheetUrl);
+        } else {
+          setTaxPurchaseSpreadsheetUrl(exportResult.spreadsheetUrl);
+        }
+
+        // Save URL to database
+        await window.electron.hometax.saveSpreadsheetUrl(businessNumber, invoiceType, exportResult.spreadsheetUrl);
+        console.log(`[FinanceHub] ✅ Auto-exported ${invoiceType} invoices to spreadsheet`);
+      } else {
+        console.error(`[FinanceHub] Failed to export ${invoiceType} invoices:`, exportResult.error);
+      }
+    } catch (error) {
+      console.error(`[FinanceHub] Error exporting ${invoiceType} invoices:`, error);
+    }
+  };
+
   const handleCollectTaxInvoices = async (businessNumber: string) => {
     try {
       // Get saved certificate data for this business
@@ -1353,11 +1397,14 @@ const FinanceHub: React.FC = () => {
       );
 
       if (result.success) {
-        const salesMsg = `매출: ${result.salesInserted || 0}건 추가, ${result.salesDuplicate || 0}건 중복`;
-        const purchaseMsg = `매입: ${result.purchaseInserted || 0}건 추가, ${result.purchaseDuplicate || 0}건 중복`;
-        alert(`✅ 전자세금계산서 수집 완료!\n\n${salesMsg}\n${purchaseMsg}`);
+        // Reload data
         await loadConnectedBusinesses();
         await loadTaxInvoices();
+
+        // Auto-export to spreadsheets (both sales and purchase)
+        console.log('[FinanceHub] Auto-exporting to spreadsheets...');
+        await exportInvoicesForType(businessNumber, 'sales');
+        await exportInvoicesForType(businessNumber, 'purchase');
       } else {
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
       }
@@ -1533,6 +1580,26 @@ const FinanceHub: React.FC = () => {
 
   const handleCloseTaxGoogleAuth = () => {
     setShowTaxGoogleAuth(false);
+  };
+
+  const handleDropTaxData = async () => {
+    if (!confirm('⚠️ 모든 세금계산서 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return;
+    }
+
+    try {
+      const result = await window.electron.hometax.dropAllData();
+
+      if (result.success) {
+        alert('✅ 모든 세금계산서 데이터가 삭제되었습니다.');
+        loadTaxInvoices();
+      } else {
+        alert(`❌ 데이터 삭제 실패: ${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('Error dropping tax data:', error);
+      alert(`❌ 데이터 삭제 중 오류 발생: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    }
   };
 
   // Load tax invoices when filters change
@@ -2445,6 +2512,7 @@ const FinanceHub: React.FC = () => {
               onClearSpreadsheet={handleClearTaxSpreadsheet}
               onGoogleSignIn={handleTaxGoogleSignIn}
               onCloseGoogleAuth={handleCloseTaxGoogleAuth}
+              onDropData={handleDropTaxData}
             />
           </div>
         ) : currentView === 'tax-management' ? (

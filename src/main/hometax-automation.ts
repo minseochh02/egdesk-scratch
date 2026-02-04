@@ -726,6 +726,10 @@ export async function connectToHometax(
     }, searchButtonXPath);
     await page.waitForTimeout(3000);
 
+    // Record timestamp before download to detect if a new file is actually downloaded
+    const downloadStartTime = Date.now();
+    console.log('[Hometax] Download start time:', downloadStartTime);
+
     // Click excel download button and handle confirmations automatically
     console.log('[Hometax] Starting download with auto-confirmations...');
     const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
@@ -734,6 +738,39 @@ export async function connectToHometax(
       const element = result.singleNodeValue as HTMLElement;
       element?.click();
     }, excelButtonXPath);
+
+    // Check for "no data" alert before confirmations
+    await page.waitForTimeout(2000);
+    const noDataAlertExists = await page.evaluate(() => {
+      const alerts = document.querySelectorAll('.w2dialog_message');
+      for (const alert of alerts) {
+        if (alert.textContent?.includes('조회된 내역이 없습니다')) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (noDataAlertExists) {
+      console.log('[Hometax] ⚠️  No data found (조회된 내역이 없습니다) - skipping download');
+      // Close the alert
+      await page.evaluate(() => {
+        const closeButtons = document.querySelectorAll('input[value="확인"]');
+        for (const button of closeButtons) {
+          (button as HTMLElement).click();
+        }
+      });
+
+      return {
+        success: true,
+        businessInfo: {
+          businessName: companyName || '사업자명 (조회 실패)',
+          representativeName: selectedCertificate.소유자명 || '대표자명 (조회 실패)',
+          businessType: companyType || '일반 과세자'
+        },
+        downloadedFile: undefined // No file downloaded - no data for this period
+      };
+    }
 
     // Wait for and auto-click first confirmation (skip if doesn't exist - no data case)
     const firstConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[3]/span[2]/input';
@@ -798,18 +835,69 @@ export async function connectToHometax(
     const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
     const files = fs.readdirSync(downloadsPath);
 
-    // Find the most recently downloaded file (매출 or 매입)
+    // Expected filename pattern based on invoice type (매출 = sales, 매입 = purchase)
+    const expectedPattern = invoiceType === 'sales' ? '매출' : '매입';
+    console.log(`[Hometax] Looking for file with pattern: ${expectedPattern}`);
+
+    // Find the most recently downloaded file matching the expected type
+    // IMPORTANT: Only accept files modified AFTER we clicked the download button
     const recentFile = files
-      .filter((f: string) => f.endsWith('.xls') || f.endsWith('.xlsx'))
+      .filter((f: string) => (f.endsWith('.xls') || f.endsWith('.xlsx')) && f.includes(expectedPattern))
       .map((f: string) => ({
         name: f,
         path: path.join(downloadsPath, f),
         time: fs.statSync(path.join(downloadsPath, f)).mtime.getTime()
       }))
+      .filter((f: any) => f.time >= downloadStartTime) // Only files created/modified after download started
       .sort((a: any, b: any) => b.time - a.time)[0];
 
-    const downloadedFile = recentFile?.path;
+    let downloadedFile = recentFile?.path;
     console.log('[Hometax] Downloaded file:', downloadedFile);
+
+    if (!downloadedFile) {
+      console.log(`[Hometax] ⚠️  No new file found matching pattern "${expectedPattern}" - likely no data for this period`);
+
+      return {
+        success: true,
+        businessInfo: {
+          businessName: companyName || '사업자명 (조회 실패)',
+          representativeName: selectedCertificate.소유자명 || '대표자명 (조회 실패)',
+          businessType: companyType || '일반 과세자'
+        },
+        downloadedFile: undefined // No file downloaded - no data for this period
+      };
+    }
+
+    // IMPORTANT: Rename the file immediately to prevent overwriting by subsequent downloads
+    // Add timestamp to make filename unique
+    // CRITICAL: Detect actual type from Hometax's filename, NOT from our request parameter
+    const timestamp = new Date().getTime();
+    const fileExt = path.extname(downloadedFile);
+    const fileBase = path.basename(downloadedFile, fileExt);
+
+    // Detect actual type from the filename that Hometax gave us
+    let actualType: string;
+    if (fileBase.includes('매출')) {
+      actualType = 'sales';
+    } else if (fileBase.includes('매입')) {
+      actualType = 'purchase';
+    } else {
+      // Fallback to requested type if we can't detect
+      actualType = invoiceType;
+      console.warn(`[Hometax] ⚠️  Could not detect actual type from filename, using requested type: ${invoiceType}`);
+    }
+
+    // Verify requested type matches actual type
+    if (actualType !== invoiceType) {
+      console.error(`[Hometax] ⚠️⚠️⚠️  TYPE MISMATCH! Requested ${invoiceType} but Hometax gave us ${actualType}`);
+      console.error(`[Hometax] ⚠️⚠️⚠️  This means the radio button is clicking the WRONG option!`);
+    }
+
+    const newFileName = `${fileBase}_${targetYear}${targetMonth.toString().padStart(2, '0')}_${actualType}_${timestamp}${fileExt}`;
+    const newFilePath = path.join(downloadsPath, newFileName);
+    fs.renameSync(downloadedFile, newFilePath);
+    downloadedFile = newFilePath;
+    console.log('[Hometax] Renamed to prevent overwriting:', downloadedFile);
 
     return {
       success: true,

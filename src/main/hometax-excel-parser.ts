@@ -52,6 +52,7 @@ export interface ParsedExcelResult {
   totalAmount?: number;
   totalSupplyValue?: number;
   totalTax?: number;
+  detectedType?: 'sales' | 'purchase'; // Detected from Excel file name/content
   error?: string;
 }
 
@@ -61,6 +62,19 @@ export interface ParsedExcelResult {
 export function parseHometaxExcel(filePath: string): ParsedExcelResult {
   try {
     console.log('[Hometax Parser] Parsing Excel file:', filePath);
+
+    // Detect invoice type from filename (매출 = sales, 매입 = purchase)
+    const fileName = path.basename(filePath);
+    let detectedType: 'sales' | 'purchase' | undefined;
+    if (fileName.includes('매출')) {
+      detectedType = 'sales';
+      console.log('[Hometax Parser] Detected type from filename: 매출 (sales)');
+    } else if (fileName.includes('매입')) {
+      detectedType = 'purchase';
+      console.log('[Hometax Parser] Detected type from filename: 매입 (purchase)');
+    } else {
+      console.warn('[Hometax Parser] Could not detect type from filename:', fileName);
+    }
 
     // Check if file exists
     if (!fs.existsSync(filePath)) {
@@ -178,7 +192,8 @@ export function parseHometaxExcel(filePath: string): ParsedExcelResult {
       invoices,
       totalAmount,
       totalSupplyValue,
-      totalTax
+      totalTax,
+      detectedType
     };
 
   } catch (error) {

@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -129,6 +129,7 @@
     "electron-log": "^5.3.2",
     "electron-store": "^10.1.0",
     "electron-updater": "^6.3.9",
+    "exceljs": "^4.4.0",
     "google-auth-library": "^10.4.0",
     "googleapis": "^161.0.0",
     "html2canvas": "^1.4.1",

@@ -1628,6 +1628,30 @@ ipcMain.handle('hometax:save-spreadsheet-url', async (event, businessNumber: str
 });
 
 /**
+ * Drop all Hometax data (clear database)
+ */
+ipcMain.handle('hometax:drop-all-data', async () => {
+  try {
+    console.log('[IPC] hometax:drop-all-data called');
+    const db = getFinanceHubDatabase();
+
+    // Delete all tax invoices and sync operations
+    db.prepare('DELETE FROM tax_invoices').run();
+    db.prepare('DELETE FROM hometax_sync_operations').run();
+    db.prepare('VACUUM').run();
+
+    console.log('[IPC] ✅ All Hometax data dropped successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] hometax:drop-all-data error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
  * Collect tax invoices for a business
  */
 ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, certificatePassword: string) => {
@@ -1651,43 +1675,111 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     // Wait a bit for files to be fully written
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Parse sales Excel
-    if (result.salesFile) {
-      console.log('[IPC] Parsing sales Excel:', result.salesFile);
-      const salesParsed = parseHometaxExcel(result.salesFile);
+    // Parse this month sales Excel
+    if (result.thisMonthSalesFile) {
+      console.log('[IPC] Parsing this month sales Excel:', result.thisMonthSalesFile);
+      const salesParsed = parseHometaxExcel(result.thisMonthSalesFile);
 
       if (salesParsed.success && salesParsed.invoices && salesParsed.businessNumber) {
+        // Verify detected type matches expected type
+        if (salesParsed.detectedType && salesParsed.detectedType !== 'sales') {
+          console.error(`[IPC] ⚠️  TYPE MISMATCH! Expected sales but detected ${salesParsed.detectedType} in file: ${result.thisMonthSalesFile}`);
+        }
+
         const importResult = importTaxInvoices(
           db,
           salesParsed.businessNumber,
           'sales',
           salesParsed.invoices,
-          result.salesFile
+          result.thisMonthSalesFile
         );
-        salesInserted = importResult.inserted;
-        salesDuplicate = importResult.duplicate;
+        salesInserted += importResult.inserted;
+        salesDuplicate += importResult.duplicate;
+        console.log(`[IPC] This month sales: ${importResult.inserted} new, ${importResult.duplicate} duplicate`);
       }
+    } else {
+      console.log('[IPC] ⚠️  No this month sales file - skipping (no data for this period)');
     }
 
-    // Parse purchase Excel
-    if (result.purchaseFile) {
-      console.log('[IPC] Parsing purchase Excel:', result.purchaseFile);
-      const purchaseParsed = parseHometaxExcel(result.purchaseFile);
+    // Parse last month sales Excel
+    if (result.lastMonthSalesFile) {
+      console.log('[IPC] Parsing last month sales Excel:', result.lastMonthSalesFile);
+      const salesParsed = parseHometaxExcel(result.lastMonthSalesFile);
+
+      if (salesParsed.success && salesParsed.invoices && salesParsed.businessNumber) {
+        // Verify detected type matches expected type
+        if (salesParsed.detectedType && salesParsed.detectedType !== 'sales') {
+          console.error(`[IPC] ⚠️  TYPE MISMATCH! Expected sales but detected ${salesParsed.detectedType} in file: ${result.lastMonthSalesFile}`);
+        }
+
+        const importResult = importTaxInvoices(
+          db,
+          salesParsed.businessNumber,
+          'sales',
+          salesParsed.invoices,
+          result.lastMonthSalesFile
+        );
+        salesInserted += importResult.inserted;
+        salesDuplicate += importResult.duplicate;
+        console.log(`[IPC] Last month sales: ${importResult.inserted} new, ${importResult.duplicate} duplicate`);
+      }
+    } else {
+      console.log('[IPC] ⚠️  No last month sales file - skipping (no data for this period)');
+    }
+
+    // Parse this month purchase Excel
+    if (result.thisMonthPurchaseFile) {
+      console.log('[IPC] Parsing this month purchase Excel:', result.thisMonthPurchaseFile);
+      const purchaseParsed = parseHometaxExcel(result.thisMonthPurchaseFile);
 
       if (purchaseParsed.success && purchaseParsed.invoices && purchaseParsed.businessNumber) {
+        // Verify detected type matches expected type
+        if (purchaseParsed.detectedType && purchaseParsed.detectedType !== 'purchase') {
+          console.error(`[IPC] ⚠️  TYPE MISMATCH! Expected purchase but detected ${purchaseParsed.detectedType} in file: ${result.thisMonthPurchaseFile}`);
+        }
+
         const importResult = importTaxInvoices(
           db,
           purchaseParsed.businessNumber,
           'purchase',
           purchaseParsed.invoices,
-          result.purchaseFile
+          result.thisMonthPurchaseFile
         );
-        purchaseInserted = importResult.inserted;
-        purchaseDuplicate = importResult.duplicate;
+        purchaseInserted += importResult.inserted;
+        purchaseDuplicate += importResult.duplicate;
+        console.log(`[IPC] This month purchase: ${importResult.inserted} new, ${importResult.duplicate} duplicate`);
       }
+    } else {
+      console.log('[IPC] ⚠️  No this month purchase file - skipping (no data for this period)');
     }
 
-    console.log(`[IPC] Import complete - Sales: ${salesInserted} new, Purchase: ${purchaseInserted} new`);
+    // Parse last month purchase Excel
+    if (result.lastMonthPurchaseFile) {
+      console.log('[IPC] Parsing last month purchase Excel:', result.lastMonthPurchaseFile);
+      const purchaseParsed = parseHometaxExcel(result.lastMonthPurchaseFile);
+
+      if (purchaseParsed.success && purchaseParsed.invoices && purchaseParsed.businessNumber) {
+        // Verify detected type matches expected type
+        if (purchaseParsed.detectedType && purchaseParsed.detectedType !== 'purchase') {
+          console.error(`[IPC] ⚠️  TYPE MISMATCH! Expected purchase but detected ${purchaseParsed.detectedType} in file: ${result.lastMonthPurchaseFile}`);
+        }
+
+        const importResult = importTaxInvoices(
+          db,
+          purchaseParsed.businessNumber,
+          'purchase',
+          purchaseParsed.invoices,
+          result.lastMonthPurchaseFile
+        );
+        purchaseInserted += importResult.inserted;
+        purchaseDuplicate += importResult.duplicate;
+        console.log(`[IPC] Last month purchase: ${importResult.inserted} new, ${importResult.duplicate} duplicate`);
+      }
+    } else {
+      console.log('[IPC] ⚠️  No last month purchase file - skipping (no data for this period)');
+    }
+
+    console.log(`[IPC] Import complete - Sales: ${salesInserted} new (${salesDuplicate} duplicate), Purchase: ${purchaseInserted} new (${purchaseDuplicate} duplicate)`);
 
     return {
       success: true,

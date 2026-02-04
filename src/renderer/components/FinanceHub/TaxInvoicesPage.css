@@ -154,6 +154,19 @@
   font-size: 12px;
 }
 
+.tip-btn--danger {
+  background: var(--tip-error);
+  color: white;
+  border: 1px solid var(--tip-error);
+}
+
+.tip-btn--danger:hover:not(:disabled) {
+  background: #DC2626;
+  border-color: #DC2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
 .tip-google-icon {
   background: white;
   color: #4285f4;
