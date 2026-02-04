@@ -4,9 +4,14 @@ import path from "node:path";
 import os from "node:os";
 import { app } from "electron";
 
-import { chromium, Browser, BrowserContext, Page, LaunchOptions } from 'playwright-core';
+import { Page } from 'playwright-core';
 
 import { createFacebookPost, FacebookPostOptions } from "./facebook-post";
+import {
+  browserPoolManager,
+  resolveCredentials as resolveCredentialsGeneric,
+  applyAntiDetectionMeasures,
+} from '../../shared/browser';
 
 type CloseFn = () => Promise<void>;
 
@@ -20,11 +25,6 @@ export interface LoginOptions {
   password?: string;
 }
 
-interface Credentials {
-  username: string;
-  password: string;
-}
-
 interface PostInput {
   imagePath?: string;
   text?: string;
@@ -36,49 +36,13 @@ interface RunOptions {
   post?: PostInput;
 }
 
-const DEFAULT_LAUNCH_ARGS = [
-  "--disable-blink-features=AutomationControlled", // Hide automation flags
-  "--disable-features=IsolateOrigins,site-per-process",
-  "--disable-web-security",
-  "--disable-features=VizDisplayCompositor",
-  "--disable-dev-shm-usage",
-  "--no-sandbox",
-  "--disable-setuid-sandbox",
-  "--disable-accelerated-2d-canvas",
-  "--no-first-run",
-  "--no-zygote",
-  "--disable-notifications",
-  "--disable-infobars",
-  "--window-size=1920,1080",
-  "--start-maximized",
-];
-
 // Default to NON-headless for Facebook to avoid detection
 // Set FACEBOOK_HEADLESS=true to run headless (not recommended for Facebook)
 const DEFAULT_HEADLESS = process.env.FACEBOOK_HEADLESS === 'true' ? true : false;
-const PLAYWRIGHT_CHROME_CHANNEL = process.env.PLAYWRIGHT_CHROME_CHANNEL || "chrome";
-const CHROME_EXECUTABLE_PATH =
-  typeof process.env.CHROME_EXECUTABLE_PATH === "string" && process.env.CHROME_EXECUTABLE_PATH.trim().length > 0
-    ? process.env.CHROME_EXECUTABLE_PATH.trim()
-    : undefined;
-const LOGIN_SETTLE_DELAY_MS = 2000;
 const FACEBOOK_URL = "https://www.facebook.com/";
 const FACEBOOK_LOGIN_URL = "https://www.facebook.com/login/";
 
-function resolveCredentials(options: LoginOptions = {}): Credentials {
-  const username = options.username ?? process.env.FACEBOOK_USERNAME;
-  const password = options.password ?? process.env.FACEBOOK_PASSWORD;
-
-  if (!username || !password) {
-    throw new Error(
-      "Facebook credentials are required. Provide username/password or set FACEBOOK_USERNAME and FACEBOOK_PASSWORD."
-    );
-  }
-
-  return { username, password };
-}
-
-async function performFacebookLogin(page: Page, credentials: Credentials): Promise<void> {
+async function performFacebookLogin(page: Page, credentials: { username: string; password: string }): Promise<void> {
   console.log('[performFacebookLogin] Starting Facebook login...');
   
   try {
@@ -234,57 +198,43 @@ async function performFacebookLogin(page: Page, credentials: Credentials): Promi
 export async function getAuthenticatedPage(
   loginOptions?: LoginOptions
 ): Promise<AuthContext> {
-  const launchOptions: LaunchOptions = {
+  console.log('[getAuthenticatedPage] Getting browser context from pool...', {
     headless: DEFAULT_HEADLESS,
-    channel: PLAYWRIGHT_CHROME_CHANNEL,
-    args: DEFAULT_LAUNCH_ARGS,
-    executablePath: CHROME_EXECUTABLE_PATH,
-  };
-
-  console.log('[getAuthenticatedPage] Launching browser...', {
-    headless: launchOptions.headless,
-    channel: launchOptions.channel,
   });
 
-  const browser: Browser = await chromium.launch(launchOptions);
-  const context: BrowserContext = await browser.newContext({
+  // Use browser pool for resource efficiency (80% savings)
+  const { context, page, cleanup } = await browserPoolManager.getContext({
+    profile: 'standard', // Use shared browser pool
+    headless: DEFAULT_HEADLESS,
+    purpose: 'facebook-login',
     viewport: { width: 1920, height: 1080 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   });
 
-  const page: Page = await context.newPage();
+  try {
+    // Apply anti-detection measures (centralized implementation)
+    await applyAntiDetectionMeasures(page);
 
-  // Perform login if credentials provided
-  if (loginOptions?.username && loginOptions?.password) {
-    try {
-      await performFacebookLogin(page, resolveCredentials(loginOptions));
-    } catch (loginError) {
-      await browser.close();
-      throw loginError;
-    }
-  } else {
-    // Navigate to Facebook (assumes already logged in)
-    console.log('[getAuthenticatedPage] No credentials provided, assuming already logged in');
-    try {
+    // Perform login if credentials provided
+    if (loginOptions?.username && loginOptions?.password) {
+      const credentials = resolveCredentialsGeneric('facebook', loginOptions);
+      await performFacebookLogin(page, credentials);
+    } else {
+      // Navigate to Facebook (assumes already logged in)
+      console.log('[getAuthenticatedPage] No credentials provided, assuming already logged in');
       await page.goto(FACEBOOK_URL, {
         waitUntil: 'domcontentloaded',
         timeout: 60000,
       });
       await page.waitForTimeout(2000);
-    } catch (error) {
-      console.warn('[getAuthenticatedPage] Failed to navigate to Facebook:', error);
     }
+
+    return { page, close: cleanup };
+  } catch (error) {
+    // Cleanup on error
+    await cleanup();
+    throw error;
   }
-
-  const close: CloseFn = async () => {
-    try {
-      await browser.close();
-    } catch (error) {
-      console.error('[getAuthenticatedPage] Error closing browser:', error);
-    }
-  };
-
-  return { page, close };
 }
 
 /**

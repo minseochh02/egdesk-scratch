@@ -30,6 +30,7 @@ import { FacebookHandler } from './sns/facebook/facebook-handler';
 import { LocalServerManager } from './php/local-server';
 import { PHPDownloadManager } from './php/php-installer';
 import { BrowserController } from './browser-controller';
+import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 import { initializeStore, getStore } from './storage';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
@@ -82,9 +83,11 @@ import { PlaywrightSchedulerService } from './scheduler/playwright-scheduler-ser
 import { setPlaywrightSchedulerService } from './scheduler/playwright-scheduler-instance';
 import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
+import { registerDesktopRecorderHandlers } from './desktop-recorder-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
+import { processExcelFile, wrapHtmlForThumbnail } from './rookie/thumbnail-handler';
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
 import { 
   registerServerName, 
@@ -1022,15 +1025,19 @@ const createWindow = async () => {
 
       ipcMain.handle('launch-chrome', async () => {
         try {
-          const { chromium } = require('playwright-core');
-          const browser = await chromium.launch({ 
+          // Use browser pool for resource efficiency
+          const { page, cleanup } = await browserPoolManager.getContext({
+            profile: 'standard',
             headless: false,
-            channel: 'chrome'
+            purpose: 'launch-chrome-handler'
           });
-          const context = await browser.newContext();
-          const page = await context.newPage();
+
+          await applyAntiDetectionMeasures(page);
           await page.goto('https://blog.naver.com/GoBlogWrite.naver');
           console.log('🌐 Chrome launched and navigated to Naver Blog write page');
+
+          // Note: Browser stays open for user interaction
+          // Cleanup will be handled when user closes the window
           return { success: true };
         } catch (error) {
           console.error('❌ Chrome launch failed:', error);
@@ -1038,28 +1045,22 @@ const createWindow = async () => {
         }
       });
       ipcMain.handle('crawl-website', async (event, { url, proxy, openDevTools }) => {
+        // Build proxy configuration if provided
+        const proxyConfig = proxy ? { server: proxy } : undefined;
+
+        // Use browser pool for resource efficiency
+        const { page, cleanup } = await browserPoolManager.getContext({
+          profile: 'standard',
+          headless: false,
+          purpose: 'crawl-website',
+          proxy: proxyConfig,
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        });
+
         try {
-          const { chromium } = require('playwright-core');
-          const fs = require('fs');
-          const path = require('path');
-          
           console.log('🕷️ Starting website crawler...');
-          
-          // Build proxy configuration if provided
-          const proxyConfig = proxy ? { server: proxy } : undefined;
-          
-          // Launch browser
-          const browser = await chromium.launch({ 
-            headless: false,
-            channel: 'chrome',
-            proxy: proxyConfig
-          });
-          
-          const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          });
-          
-          const page = await context.newPage();
+
+          await applyAntiDetectionMeasures(page);
           
           // Enable DevTools if requested
           if (openDevTools) {
@@ -1197,21 +1198,22 @@ const createWindow = async () => {
           
           console.log(`📊 Crawler completed: ${stats.totalLinks} links found`);
           console.log(`💾 Results saved to: ${filepath}`);
-          
-          await browser.close();
-          
+
           return {
             success: true,
             data: results,
             filepath
           };
-          
+
         } catch (error) {
           console.error('❌ Crawler failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
           };
+        } finally {
+          // ✅ Always cleanup browser resources
+          await cleanup();
         }
       });
 
@@ -1751,16 +1753,16 @@ const createWindow = async () => {
       });
       
       ipcMain.handle('test-paste-component', async () => {
+        // Use browser pool for resource efficiency
+        const { page, cleanup } = await browserPoolManager.getContext({
+          profile: 'standard',
+          headless: false,
+          purpose: 'test-paste-component'
+        });
+
         try {
-          const { chromium } = require('playwright-core');
-          const browser = await chromium.launch({ 
-            headless: false,
-            channel: 'chrome'
-          });
-          const context = await browser.newContext();
-          const page = await context.newPage();
-          
           console.log('🧪 Starting paste component test...');
+          await applyAntiDetectionMeasures(page);
           
           // Navigate to Naver Blog write page
           await page.goto('https://blog.naver.com/GoBlogWrite.naver');
@@ -1916,9 +1918,9 @@ const createWindow = async () => {
           
           // Keep browser open for manual inspection
           console.log('🔍 Browser kept open for manual inspection. Close manually when done.');
-          
-          return { 
-            success: true, 
+
+          return {
+            success: true,
             message: 'Paste component test completed. Check console for detailed results.',
             details: {
               contentAreaCount,
@@ -1928,10 +1930,14 @@ const createWindow = async () => {
           };
         } catch (error) {
           console.error('❌ Paste component test failed:', error);
-          return { 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
           };
+        } finally {
+          // Note: Keeping browser open for manual inspection
+          // User can close manually when done
+          // Uncomment to auto-cleanup: await cleanup();
         }
       });
     } catch (error) {
@@ -3182,7 +3188,10 @@ const createWindow = async () => {
     
     // Register Chrome browser automation handlers
     registerChromeHandlers();
-    
+
+    // Register Desktop recorder handlers
+    registerDesktopRecorderHandlers();
+
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();
     

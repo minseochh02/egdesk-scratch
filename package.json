@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.26",
+  "version": "1.0.28",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -118,6 +118,7 @@
     "@google/genai": "^1.19.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.20.0",
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@supabase/supabase-js": "^2.75.1",
     "@types/ws": "^8.18.1",
     "adm-zip": "^0.5.16",

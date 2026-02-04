@@ -366,6 +366,37 @@ function extractJsonFromText(text: string): string {
   return cleaned;
 }
 
+/**
+ * Try to parse JSON with multiple fallback strategies
+ */
+function parseJsonRobust(text: string): any {
+  // Strategy 1: Try direct parsing
+  try {
+    return JSON.parse(text);
+  } catch (e1) {
+    // Strategy 2: Extract and parse
+    try {
+      const extracted = extractJsonFromText(text);
+      return JSON.parse(extracted);
+    } catch (e2) {
+      // Strategy 3: Try to fix common JSON issues
+      try {
+        let fixed = extractJsonFromText(text);
+        // Remove trailing commas before closing braces/brackets
+        fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+        // Fix unescaped newlines in strings (common in HTML content)
+        fixed = fixed.replace(/: "([^"]*)\n([^"]*)"(?=[,}])/g, (match, p1, p2) => {
+          return `: "${p1}\\n${p2}"`;
+        });
+        return JSON.parse(fixed);
+      } catch (e3) {
+        // Re-throw the original error with context
+        throw e1;
+      }
+    }
+  }
+}
+
 export interface TextGenerationOptions {
   /** User message/prompt */
   prompt: string;
@@ -558,10 +589,8 @@ export async function generateTextWithAI(
     let parsedJson: any = undefined;
     if (parseJson) {
       try {
-        // If structured output was used, JSON should be clean (no markdown)
-        // But we still extract as fallback in case of issues
-        const jsonText = responseSchema ? fullText.trim() : extractJsonFromText(fullText);
-        parsedJson = JSON.parse(jsonText);
+        // Use robust JSON parsing that handles markdown blocks and common JSON errors
+        parsedJson = parseJsonRobust(fullText);
         console.log('[GeminiTextGen] Successfully parsed JSON response');
       } catch (parseError) {
         console.warn('[GeminiTextGen] Failed to parse JSON response:', parseError);
@@ -616,7 +645,7 @@ export async function generateTextWithAI(
   let parsedJson: any = undefined;
   if (parseJson) {
     try {
-      parsedJson = JSON.parse(text);
+      parsedJson = parseJsonRobust(text);
       console.log('[GeminiTextGen] Successfully parsed JSON response');
     } catch (parseError) {
       console.warn('[GeminiTextGen] Failed to parse JSON response:', parseError);

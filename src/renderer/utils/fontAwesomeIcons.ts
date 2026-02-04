@@ -59,6 +59,8 @@ export {
   faFileAlt,
   faFileImage,
   faFileCode,
+  faFileExcel,
+  faFilePdf,
 } from '@fortawesome/free-solid-svg-icons';
 
 // UI icons
@@ -168,6 +170,11 @@ export {
   faHashtag,
   faCoffee,
   faMoon,
+} from '@fortawesome/free-solid-svg-icons';
+
+// Game icons
+export {
+  faChessRook,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Brand icons

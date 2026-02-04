@@ -3,7 +3,7 @@ import { ParsedContent, Image } from './index';
 import { WordPressHandler } from '../wordpress/wordpress-handler';
 import { generateSingleImage } from '../gemini';
 
-export default async function generateImages(parsedContent: ParsedContent, apiKey?: string) {
+export default async function generateImages(parsedContent: ParsedContent, apiKey?: string, wpCredentials?: { url: string; username: string; password: string }) {
   // Validate API key availability if images need to be generated
   if (parsedContent.images && parsedContent.images.length > 0) {
     if (!apiKey) {
@@ -45,7 +45,7 @@ export default async function generateImages(parsedContent: ParsedContent, apiKe
               description: imageRequest.description || '',
               title: imageRequest.description || generatedImage.fileName
             }
-          ]);
+          ], wpCredentials);
           const uploaded = uploadedArr[0] || {};
           // Persist the WordPress IDs onto the original images array
           parsedContent.images[i] = {
