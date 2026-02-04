@@ -87,7 +87,8 @@ import { registerDesktopRecorderHandlers } from './desktop-recorder-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
-import { processExcelFile, wrapHtmlForThumbnail } from './rookie/thumbnail-handler';
+import { processExcelFile, wrapHtmlForThumbnail, trimTrailingEmptyRows, detectTablesByEmptyGaps } from './rookie/thumbnail-handler';
+import { analyzeExcelStructure } from './rookie/ai-excel-analyzer';
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
 import { 
   registerServerName, 
@@ -3191,6 +3192,169 @@ const createWindow = async () => {
 
     // Register Desktop recorder handlers
     registerDesktopRecorderHandlers();
+
+    // Register Rookie AI Excel Analysis handler (from buffer)
+    ipcMain.handle('rookie:analyze-excel-from-buffer', async (_event, { buffer, fileName }) => {
+      try {
+        console.log('[Rookie] Analyzing Excel from buffer:', fileName);
+
+        // Get Anthropic API key from store
+        const store = getStore();
+        const aiKeys = store ? store.get('ai-keys', []) : [];
+        const anthropicKey = aiKeys.find((k: any) => k?.providerId === 'anthropic' && k?.isActive);
+
+        if (!anthropicKey?.fields?.apiKey) {
+          return {
+            success: false,
+            error: 'NO_API_KEY',
+            message: 'Anthropic API key not configured. Please add it in AI Keys Manager.',
+            tables: [],
+            totalTables: 0,
+            sheetName: '',
+            summary: '',
+          };
+        }
+
+        // Convert buffer array back to Buffer
+        const fileBuffer = Buffer.from(buffer);
+
+        // Import XLSX dynamically
+        const XLSX = await import('xlsx');
+
+        // Parse Excel from buffer
+        const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellStyles: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+
+        const originalRange = worksheet['!ref'] || 'A1';
+        console.log('[Rookie] Original range:', originalRange);
+
+        // TEST: Detect tables by empty row/column gaps
+        console.log('[Rookie] 🔍 Detecting tables by empty gaps...');
+        const detectedTables = await detectTablesByEmptyGaps(fileBuffer);
+        console.log('[Rookie] 📊 Detected tables:', detectedTables.length);
+
+        // Trim trailing empty rows (keeps island structure)
+        trimTrailingEmptyRows(worksheet);
+
+        const trimmedRange = worksheet['!ref'] || 'A1';
+        console.log('[Rookie] Trimmed range:', trimmedRange);
+
+        // Convert to HTML (preserves merged cells)
+        const html = XLSX.utils.sheet_to_html(worksheet, {
+          id: `excel-sheet-${sheetName}`,
+          editable: false,
+          header: '',
+          footer: '',
+        });
+
+        console.log('[Rookie] Excel converted to HTML, length:', html.length);
+
+        // Save HTML to output folder for inspection
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'excel-html')
+          : path.join(process.cwd(), 'output', 'excel-html');
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const htmlFileName = `${fileName.replace(/\.(xlsx|xls)$/i, '')}_${timestamp}.html`;
+        const htmlFilePath = path.join(outputDir, htmlFileName);
+
+        // Wrap HTML in full document
+        const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${sheetName} - ${fileName}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .info {
+      background: white;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    table {
+      border-collapse: collapse;
+      background: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    td {
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+    td[colspan] {
+      background: #e8f5e9;
+      font-weight: bold;
+      text-align: center;
+    }
+    /* Highlight empty rows for inspection */
+    tr:has(td:empty):has(td:not([colspan])) {
+      background: #ffebee !important;
+      opacity: 0.3;
+    }
+  </style>
+</head>
+<body>
+  <div class="info">
+    <h1>Sheet: ${sheetName}</h1>
+    <p><strong>File:</strong> ${fileName}</p>
+    <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+    <p><strong>Original Range:</strong> ${originalRange}</p>
+    <p><strong>Trimmed Range:</strong> ${trimmedRange}</p>
+    <p><strong>HTML Size:</strong> ${(html.length / 1024).toFixed(1)} KB</p>
+    <p style="color: #d32f2f;"><em>Empty rows highlighted in red (for inspection)</em></p>
+  </div>
+  ${html}
+</body>
+</html>`;
+
+        fs.writeFileSync(htmlFilePath, fullHtml, 'utf-8');
+        console.log('[Rookie] ✅ HTML saved to:', htmlFilePath);
+        console.log('[Rookie] 📝 Open this file in a browser to inspect the structure');
+
+        // AI analysis DISABLED for inspection
+        // Uncomment below when ready to test AI
+        /*
+        const result = await analyzeExcelStructure({
+          html,
+          sheetName,
+          apiKey: anthropicKey.fields.apiKey,
+        });
+        return result;
+        */
+
+        return {
+          success: true,
+          tables: [],
+          totalTables: 0,
+          sheetName,
+          summary: `HTML saved for inspection. Open the file to see structure:\n${htmlFilePath}`,
+          htmlFilePath,
+          htmlLength: html.length,
+        };
+      } catch (error: any) {
+        console.error('[Rookie] AI analysis error:', error);
+        return {
+          success: false,
+          error: 'ANALYSIS_FAILED',
+          message: error.message,
+          tables: [],
+          totalTables: 0,
+          sheetName: '',
+          summary: '',
+        };
+      }
+    });
 
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();

@@ -9,6 +9,7 @@
  */
 
 import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -30,6 +31,372 @@ export interface ExcelProcessResult {
 export interface ThumbnailOptions {
   saveHtml?: boolean;  // Save HTML files to disk
   outputDir?: string;  // Where to save HTML files
+}
+
+/**
+ * Detect table corners by border + empty neighbor logic
+ *
+ * TOP-LEFT corner:
+ *   - Cell has top border AND left border
+ *   - Cell ABOVE is empty (no value)
+ *   - Cell to LEFT is empty (no value)
+ */
+export async function detectTablesByEmptyGaps(
+  fileBuffer: Buffer
+): Promise<Array<{
+  name: string;
+  range: string;
+  rowStart: number;
+  rowEnd: number;
+  colStart: number;
+  colEnd: number;
+}>> {
+  const tables: Array<any> = [];
+  const corners = {
+    topLeft: [] as Array<{ row: number; col: number; address: string; value: any }>,
+    topRight: [] as Array<{ row: number; col: number; address: string; value: any }>,
+    bottomLeft: [] as Array<{ row: number; col: number; address: string; value: any }>,
+    bottomRight: [] as Array<{ row: number; col: number; address: string; value: any }>,
+  };
+
+  try {
+    console.log('[Corner Detection] Finding table corners (border + empty neighbor)...');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(fileBuffer);
+
+    const worksheet = workbook.worksheets[0];
+    console.log('[Corner Detection] Worksheet:', worksheet.name);
+
+    // IMMEDIATE A3 DEBUG - before any processing
+    console.log('\n========== IMMEDIATE A3 DEBUG ==========');
+    const a3 = worksheet.getCell(3, 1); // Row 3, Col 1 = A3
+    const a2 = worksheet.getCell(2, 1); // A2 (above)
+    const a4 = worksheet.getCell(4, 1); // A4 (below)
+    const b3 = worksheet.getCell(3, 2); // B3 (right)
+
+    console.log('A3:', {
+      address: a3.address,
+      value: a3.value,
+      border: a3.border,
+      isMerged: a3.isMerged,
+    });
+    console.log('A2 (above):', {
+      address: a2.address,
+      value: a2.value,
+      border: a2.border,
+    });
+    console.log('A4 (below):', {
+      address: a4.address,
+      value: a4.value,
+      border: a4.border,
+    });
+    console.log('B3 (right):', {
+      address: b3.address,
+      value: b3.value,
+      border: b3.border,
+    });
+    console.log('========================================\n');
+
+    console.log('[Corner Detection] Starting full sheet scan...');
+    let cellsScanned = 0;
+    let a3Scanned = false;
+
+    // Helper: check if cell has NO borders (data doesn't matter!)
+    const hasNoBorders = (row: number, col: number): boolean => {
+      try {
+        const cell = worksheet.getCell(row, col);
+        const border = cell.border;
+
+        // Cell has no borders if border object doesn't exist OR all sides are 'none'
+        return !border || (
+          (!border.top || border.top.style === 'none') &&
+          (!border.bottom || border.bottom.style === 'none') &&
+          (!border.left || border.left.style === 'none') &&
+          (!border.right || border.right.style === 'none')
+        );
+      } catch {
+        return true; // Out of bounds = no borders
+      }
+    };
+
+    // Helper: get merge range if cell is merged
+    const getMergeRange = (row: number, col: number): { top: number; left: number; bottom: number; right: number } | null => {
+      try {
+        const cell = worksheet.getCell(row, col);
+        if (cell.isMerged) {
+          // Get the master cell
+          const master = cell.master || cell;
+          // ExcelJS merge format: "A1:D1"
+          const mergeAddr = master.address;
+          // Need to check worksheet merges
+          const merges = worksheet.model.merges || [];
+          for (const merge of merges) {
+            // merge format in ExcelJS: "A1:D1" string
+            if (typeof merge === 'string') {
+              const [start, end] = merge.split(':');
+              const startCell = worksheet.getCell(start);
+              const endCell = worksheet.getCell(end);
+
+              // Check if our cell is in this merge
+              if (startCell.row <= row && row <= endCell.row &&
+                  startCell.col <= col && col <= endCell.col) {
+                return {
+                  top: startCell.row,
+                  left: startCell.col,
+                  bottom: endCell.row,
+                  right: endCell.col,
+                };
+              }
+            }
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Helper: check if cell has border on a side (merge-aware)
+    const hasBorder = (row: number, col: number, side: string): boolean => {
+      try {
+        const cell = worksheet.getCell(row, col);
+        const border = cell.border;
+        if (!border || !border[side]) return false;
+        const style = border[side].style;
+        return style && style !== 'none';
+      } catch {
+        return false;
+      }
+    };
+
+    // Scan all cells for corners (merge-aware)
+    worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        cellsScanned++;
+
+        // Track if we scanned A3
+        if (cell.address === 'A3') {
+          a3Scanned = true;
+        }
+
+        // DEBUG: Detailed A3 logging
+        if (cell.address === 'A3') {
+          const cellA2 = worksheet.getCell(2, 1);
+          console.log('\n[DEBUG] === A3 DETAILED CHECK ===');
+          console.log('A3 value:', cell.value);
+          console.log('A3 border:', cell.border);
+          console.log('A3 isMerged:', cell.isMerged);
+          console.log('---');
+          console.log('A2 value:', cellA2.value);
+          console.log('A2 border:', cellA2.border);
+          console.log('A2 hasNoBorders result:', hasNoBorders(2, 1));
+          console.log('---');
+          console.log('Will A3 be skipped? (no border):', !cell.border);
+          console.log('=== END A3 DEBUG ===\n');
+        }
+
+        // Don't skip empty cells - check for borders instead!
+        const border = cell.border;
+        if (!border) return; // Skip cells with NO borders at all
+
+        // Get merge range if this cell is merged
+        const mergeRange = getMergeRange(rowNumber, colNumber);
+
+        // Determine actual boundaries (accounting for merges)
+        const actualTop = mergeRange ? mergeRange.top : rowNumber;
+        const actualBottom = mergeRange ? mergeRange.bottom : rowNumber;
+        const actualLeft = mergeRange ? mergeRange.left : colNumber;
+        const actualRight = mergeRange ? mergeRange.right : colNumber;
+
+        // TOP-LEFT corner: has top+left borders, cells outside have NO borders (data irrelevant)
+        if (rowNumber === actualTop && colNumber === actualLeft) {
+          const aboveHasNoBorders = actualTop === 1 || hasNoBorders(actualTop - 1, actualLeft);  // Row 1 = sheet edge
+          const leftHasNoBorders = actualLeft === 1 || hasNoBorders(actualTop, actualLeft - 1);  // Col 1 = sheet edge
+
+          if (
+            hasBorder(actualTop, actualLeft, 'top') &&
+            hasBorder(actualTop, actualLeft, 'left') &&
+            aboveHasNoBorders &&
+            leftHasNoBorders
+          ) {
+            corners.topLeft.push({
+              row: actualTop,
+              col: actualLeft,
+              address: cell.address,
+              value: cell.value,
+            });
+            console.log(`[Corner Detection] 📍 TOP-LEFT: ${cell.address} = "${cell.value}"${mergeRange ? ' (merged)' : ''}`);
+          }
+        }
+
+        // TOP-RIGHT corner: has top+right borders, cells outside have NO borders (data irrelevant)
+        if (rowNumber === actualTop && colNumber === actualRight) {
+          const aboveHasNoBorders = actualTop === 1 || hasNoBorders(actualTop - 1, actualRight);
+          const rightHasNoBorders = actualRight === worksheet.columnCount || hasNoBorders(actualTop, actualRight + 1);
+
+          if (
+            hasBorder(actualTop, actualRight, 'top') &&
+            hasBorder(actualTop, actualRight, 'right') &&
+            aboveHasNoBorders &&
+            rightHasNoBorders
+          ) {
+            corners.topRight.push({
+              row: actualTop,
+              col: actualRight,
+              address: worksheet.getCell(actualTop, actualRight).address,
+              value: cell.value,
+            });
+            console.log(`[Corner Detection] 📍 TOP-RIGHT: ${worksheet.getCell(actualTop, actualRight).address} = "${cell.value}"${mergeRange ? ' (merged)' : ''}`);
+          }
+        }
+
+        // BOTTOM-LEFT corner: has bottom+left borders, cells outside have NO borders (data irrelevant)
+        if (rowNumber === actualBottom && colNumber === actualLeft) {
+          const belowHasNoBorders = actualBottom === worksheet.rowCount || hasNoBorders(actualBottom + 1, actualLeft);
+          const leftHasNoBorders = actualLeft === 1 || hasNoBorders(actualBottom, actualLeft - 1);
+
+          if (
+            hasBorder(actualBottom, actualLeft, 'bottom') &&
+            hasBorder(actualBottom, actualLeft, 'left') &&
+            belowHasNoBorders &&
+            leftHasNoBorders
+          ) {
+            corners.bottomLeft.push({
+              row: actualBottom,
+              col: actualLeft,
+              address: worksheet.getCell(actualBottom, actualLeft).address,
+              value: cell.value,
+            });
+            console.log(`[Corner Detection] 📍 BOTTOM-LEFT: ${worksheet.getCell(actualBottom, actualLeft).address} = "${cell.value}"${mergeRange ? ' (merged)' : ''}`);
+          }
+        }
+
+        // BOTTOM-RIGHT corner: has bottom+right borders, cells outside have NO borders (data irrelevant)
+        if (rowNumber === actualBottom && colNumber === actualRight) {
+          const belowHasNoBorders = actualBottom === worksheet.rowCount || hasNoBorders(actualBottom + 1, actualRight);
+          const rightHasNoBorders = actualRight === worksheet.columnCount || hasNoBorders(actualBottom, actualRight + 1);
+
+          if (
+            hasBorder(actualBottom, actualRight, 'bottom') &&
+            hasBorder(actualBottom, actualRight, 'right') &&
+            belowHasNoBorders &&
+            rightHasNoBorders
+          ) {
+            corners.bottomRight.push({
+              row: actualBottom,
+              col: actualRight,
+              address: worksheet.getCell(actualBottom, actualRight).address,
+              value: cell.value,
+            });
+            console.log(`[Corner Detection] 📍 BOTTOM-RIGHT: ${worksheet.getCell(actualBottom, actualRight).address} = "${cell.value}"${mergeRange ? ' (merged)' : ''}`);
+          }
+        }
+      });
+    });
+
+    console.log('[Corner Detection] Summary:');
+    console.log(`  - Cells scanned: ${cellsScanned}`);
+    console.log(`  - A3 was scanned: ${a3Scanned}`);
+    console.log(`  - TOP-LEFT corners: ${corners.topLeft.length}`);
+    console.log(`  - TOP-RIGHT corners: ${corners.topRight.length}`);
+    console.log(`  - BOTTOM-LEFT corners: ${corners.bottomLeft.length}`);
+    console.log(`  - BOTTOM-RIGHT corners: ${corners.bottomRight.length}`);
+
+    // Match corners to form complete tables
+    // Each table should have: 1 top-left, 1 top-right, 1 bottom-left, 1 bottom-right
+    for (const topLeft of corners.topLeft) {
+      // Find matching top-right (same row, col > topLeft.col)
+      const topRight = corners.topRight.find(
+        (tr) => tr.row === topLeft.row && tr.col > topLeft.col
+      );
+
+      // Find matching bottom-left (same col, row > topLeft.row)
+      const bottomLeft = corners.bottomLeft.find(
+        (bl) => bl.col === topLeft.col && bl.row > topLeft.row
+      );
+
+      // Find matching bottom-right (row matches bottom-left, col matches top-right)
+      const bottomRight = corners.bottomRight.find(
+        (br) => bottomLeft && topRight && br.row === bottomLeft.row && br.col === topRight.col
+      );
+
+      if (topRight && bottomLeft && bottomRight) {
+        const table = {
+          name: `Table: ${topLeft.value}`,
+          range: `${topLeft.address}:${bottomRight.address}`,
+          rowStart: topLeft.row,
+          rowEnd: bottomRight.row,
+          colStart: topLeft.col,
+          colEnd: bottomRight.col,
+        };
+        tables.push(table);
+        console.log(`[Corner Detection] ✅ Matched table: ${table.name} (${table.range})`);
+      }
+    }
+
+    console.log(`[Corner Detection] ✅ Detected ${tables.length} complete tables`);
+
+  } catch (error: any) {
+    console.error('[Corner Detection] Error:', error);
+  }
+
+  return tables;
+}
+
+/**
+ * Trim trailing empty rows from worksheet
+ * Keeps empty rows in the middle (for island table separation)
+ * Only removes continuous empty rows at the end
+ */
+export function trimTrailingEmptyRows(worksheet: XLSX.WorkSheet): void {
+  if (!worksheet['!ref']) {
+    return;
+  }
+
+  const range = XLSX.utils.decode_range(worksheet['!ref']);
+  let lastDataRow = range.s.r; // Start with first row
+
+  // Scan from bottom up to find last row with any data
+  for (let row = range.e.r; row >= range.s.r; row--) {
+    let hasData = false;
+
+    // Check all columns in this row
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = worksheet[cellAddress];
+
+      // Cell has data if it exists and has a value (not just formatting)
+      if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+        hasData = true;
+        break;
+      }
+    }
+
+    if (hasData) {
+      lastDataRow = row;
+      break;
+    }
+  }
+
+  // Add small margin (2 rows) for safety
+  const newEndRow = Math.min(lastDataRow + 2, range.e.r);
+
+  // Update range if we found trailing empties
+  if (newEndRow < range.e.r) {
+    const originalRows = range.e.r - range.s.r + 1;
+    const newRows = newEndRow - range.s.r + 1;
+    const trimmedRows = originalRows - newRows;
+
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: range.s,
+      e: { r: newEndRow, c: range.e.c },
+    });
+
+    console.log(
+      `[ThumbnailHandler] Trimmed ${trimmedRows} trailing empty rows (${originalRows} → ${newRows} rows)`
+    );
+  }
 }
 
 /**
@@ -73,6 +440,11 @@ export async function processExcelFile(
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
 
+      // Trim trailing empty rows (keeps island structure intact)
+      const originalRange = worksheet['!ref'] || 'A1';
+      trimTrailingEmptyRows(worksheet);
+      const trimmedRange = worksheet['!ref'] || 'A1';
+
       // Convert sheet to HTML (preserves merged cells!)
       const html = XLSX.utils.sheet_to_html(worksheet, {
         id: `excel-sheet-${sheetName.replace(/\s+/g, '-')}`,
@@ -82,7 +454,7 @@ export async function processExcelFile(
       });
 
       // Get sheet metadata
-      const range = worksheet['!ref'] || 'A1';
+      const range = trimmedRange;
       const merges = worksheet['!merges'] || [];
 
       sheets.push({

@@ -45,6 +45,7 @@ interface TaxInvoicesPageProps {
   onClearSpreadsheet?: () => void;
   onGoogleSignIn?: () => void;
   onCloseGoogleAuth?: () => void;
+  onDropData?: () => void;
 }
 
 // ============================================
@@ -73,6 +74,7 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   onClearSpreadsheet,
   onGoogleSignIn,
   onCloseGoogleAuth,
+  onDropData,
 }) => {
   // Local UI State
   const [showFilters, setShowFilters] = useState(false);
@@ -152,6 +154,15 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
           >
             <FontAwesomeIcon icon={faSync} /> 전체 수집
           </button>
+          {onDropData && (
+            <button
+              className="tip-btn tip-btn--danger"
+              onClick={onDropData}
+              title="모든 세금계산서 데이터를 삭제합니다"
+            >
+              🗑️ 데이터 삭제
+            </button>
+          )}
         </div>
       </header>
 
