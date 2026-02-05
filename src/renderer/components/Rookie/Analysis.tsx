@@ -22,52 +22,22 @@ interface Resource {
   icon: string;
 }
 
-interface DataSource {
-  type: 'web' | 'app' | 'api' | 'manual' | 'file' | 'database';
-  name: string;
-  description: string;
-  confidence: 'high' | 'medium' | 'low';
+interface DataNeed {
+  field: string;
+  sources: string[];
 }
 
-interface DataField {
-  fieldName: string;
-  header: string;
-  location: {
-    row: number;
-    col: number;
-  };
-  fieldType: 'input' | 'output' | 'calculated';
-  dataType: string;
-  sampleValue?: string;
-  dataSources: DataSource[];
-  description: string;
-}
-
-interface ExcelTable {
-  id: string;
+interface TableSummary {
   name: string;
-  position: {
-    startRow: number;
-    startCol: number;
-    endRow: number;
-    endCol: number;
-  };
-  headers: Array<{
-    level: number;
-    text: string;
-    col: number;
-    isMerged?: boolean;
-  }>;
-  dataRowCount: number;
-  dataFields?: DataField[];
+  purpose: string;
+  dataNeeds: DataNeed[];
 }
 
 interface AIAnalysisResult {
   success: boolean;
-  tables: ExcelTable[];
+  tables: TableSummary[];
   totalTables: number;
   summary: string;
-  suggestions?: string[];
   error?: string;
   html?: string; // Full HTML for display
   semanticHtml?: string; // Semantic HTML content
@@ -384,93 +354,31 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                   <h4>Tables Found: {aiAnalysis.totalTables}</h4>
 
                   {aiAnalysis.tables.map((table, idx) => (
-                    <div key={table.id} className="rookie-ai-table-card">
+                    <div key={idx} className="rookie-ai-table-card">
                       <div className="rookie-ai-table-header">
                         <span className="rookie-ai-table-number">Table {idx + 1}</span>
                         <span className="rookie-ai-table-name">{table.name}</span>
                       </div>
 
-                      <div className="rookie-ai-table-details">
-                        <div>
-                          <strong>Position:</strong> Row {table.position.startRow} - {table.position.endRow},
-                          Col {table.position.startCol} - {table.position.endCol}
-                        </div>
-                        <div>
-                          <strong>Headers:</strong> {table.headers.length} header(s)
-                        </div>
-                        <div>
-                          <strong>Data Rows:</strong> {table.dataRowCount}
-                        </div>
+                      <div className="rookie-ai-table-purpose">
+                        <strong>Purpose:</strong> {table.purpose}
                       </div>
 
-                      {table.headers.length > 0 && (
-                        <div className="rookie-ai-headers">
-                          <strong>Header Structure:</strong>
-                          <ul>
-                            {table.headers.map((header, hidx) => (
-                              <li key={hidx}>
-                                Level {header.level}: {header.text}
-                                {header.isMerged && <span className="rookie-merged-tag">Merged</span>}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Data Fields Analysis */}
-                      {table.dataFields && table.dataFields.length > 0 && (
-                        <div className="rookie-ai-data-fields">
-                          <strong>Data Fields ({table.dataFields.length}):</strong>
-                          <div className="rookie-data-fields-list">
-                            {table.dataFields.map((field, fidx) => (
-                              <div key={fidx} className="rookie-data-field-card">
-                                <div className="rookie-data-field-header">
-                                  <span className="rookie-field-name">{field.fieldName}</span>
-                                  <span className={`rookie-field-type ${field.fieldType}`}>
-                                    {field.fieldType}
-                                  </span>
+                      {/* Data Needs */}
+                      {table.dataNeeds && table.dataNeeds.length > 0 && (
+                        <div className="rookie-ai-data-needs">
+                          <strong>Data Needs ({table.dataNeeds.length}):</strong>
+                          <div className="rookie-data-needs-list">
+                            {table.dataNeeds.map((need, nidx) => (
+                              <div key={nidx} className="rookie-data-need-item">
+                                <div className="rookie-need-field">{need.field}</div>
+                                <div className="rookie-need-sources">
+                                  {need.sources.map((source, sidx) => (
+                                    <span key={sidx} className="rookie-source-tag">
+                                      {source}
+                                    </span>
+                                  ))}
                                 </div>
-
-                                <div className="rookie-data-field-info">
-                                  <div><strong>Header:</strong> {field.header}</div>
-                                  <div><strong>Location:</strong> Row {field.location.row}, Col {field.location.col}</div>
-                                  <div><strong>Data Type:</strong> {field.dataType}</div>
-                                  {field.sampleValue && (
-                                    <div><strong>Sample:</strong> {field.sampleValue}</div>
-                                  )}
-                                  <div className="rookie-field-description">{field.description}</div>
-                                </div>
-
-                                {field.dataSources && field.dataSources.length > 0 && (
-                                  <div className="rookie-data-sources">
-                                    <strong>Data Sources:</strong>
-                                    {field.dataSources.map((source, sidx) => (
-                                      <div
-                                        key={sidx}
-                                        className={`rookie-data-source confidence-${source.confidence}`}
-                                      >
-                                        <div className="rookie-source-header">
-                                          <span className={`rookie-source-type ${source.type}`}>
-                                            {source.type === 'web' && '🌐'}
-                                            {source.type === 'app' && '🖥️'}
-                                            {source.type === 'api' && '🔌'}
-                                            {source.type === 'manual' && '✍️'}
-                                            {source.type === 'file' && '📁'}
-                                            {source.type === 'database' && '🗄️'}
-                                            {' '}{source.type.toUpperCase()}
-                                          </span>
-                                          <span className="rookie-source-name">{source.name}</span>
-                                          <span className={`rookie-confidence-badge ${source.confidence}`}>
-                                            {source.confidence}
-                                          </span>
-                                        </div>
-                                        <div className="rookie-source-description">
-                                          {source.description}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             ))}
                           </div>
@@ -479,18 +387,6 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                     </div>
                   ))}
                 </div>
-
-                {/* Suggestions */}
-                {aiAnalysis.suggestions && aiAnalysis.suggestions.length > 0 && (
-                  <div className="rookie-ai-suggestions">
-                    <h4>Automation Suggestions</h4>
-                    <ul>
-                      {aiAnalysis.suggestions.map((suggestion, idx) => (
-                        <li key={idx}>{suggestion}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
 

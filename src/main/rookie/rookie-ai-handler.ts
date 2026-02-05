@@ -116,9 +116,9 @@ export async function generateWithRookieAI(options: RookieAIOptions): Promise<Ro
     prompt,
     systemPrompt,
     apiKey: providedApiKey,
-    model = 'gemini-2.0-flash-exp',
+    model = 'gemini-2.5-flash',
     temperature = 0,
-    maxOutputTokens = 8192,
+    maxOutputTokens = 32768, // Keep high for safety
     responseSchema,
   } = options;
 
@@ -175,8 +175,22 @@ export async function generateWithRookieAI(options: RookieAIOptions): Promise<Ro
         console.log('[Rookie AI] Successfully parsed JSON response');
       } catch (parseError) {
         console.error('[Rookie AI] Failed to parse JSON response:', parseError);
-        console.error('[Rookie AI] Raw response (first 500 chars):', text.substring(0, 500));
-        throw new Error(`Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+        console.error('[Rookie AI] Response length:', text.length, 'characters');
+        console.error('[Rookie AI] Raw response (first 1000 chars):', text.substring(0, 1000));
+        console.error('[Rookie AI] Raw response (last 500 chars):', text.substring(Math.max(0, text.length - 500)));
+
+        // Save full response for debugging
+        const fs = await import('fs');
+        const path = await import('path');
+        const debugDir = process.cwd() + '/output/debug';
+        if (!fs.existsSync(debugDir)) {
+          fs.mkdirSync(debugDir, { recursive: true });
+        }
+        const debugFile = path.join(debugDir, `rookie-ai-truncated-${Date.now()}.json`);
+        fs.writeFileSync(debugFile, text, 'utf-8');
+        console.error('[Rookie AI] Full truncated response saved to:', debugFile);
+
+        throw new Error(`Failed to parse JSON response (likely truncated at ${text.length} chars): ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
       }
     }
 
