@@ -1904,6 +1904,34 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
       }
     }
 
+    // Also clean up temporary browser download files (UUID pattern files)
+    try {
+      const path = await import('path');
+      const os = await import('os');
+      const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
+
+      if (fs.existsSync(downloadsPath)) {
+        const files = fs.readdirSync(downloadsPath);
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        for (const file of files) {
+          // Delete files matching UUID pattern (temporary browser files)
+          if (uuidPattern.test(file)) {
+            const filePath = path.join(downloadsPath, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log('[IPC] Deleted temporary browser file:', file);
+            } catch (deleteError) {
+              console.warn('[IPC] Failed to delete temporary file:', file, deleteError);
+            }
+          }
+        }
+      }
+    } catch (cleanupError) {
+      console.warn('[IPC] Failed to clean up temporary files:', cleanupError);
+      // Don't fail the operation if temp file cleanup fails
+    }
+
     console.log('[IPC] Cleanup complete');
 
     return {

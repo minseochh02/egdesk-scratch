@@ -6,62 +6,23 @@
 
 import { generateWithRookieAI } from './rookie-ai-handler';
 
-export interface DataField {
-  fieldName: string; // Name of the data field
-  header: string; // Column header text
-  location: {
-    row: number;
-    col: number;
-  };
-  fieldType: 'input' | 'output' | 'calculated'; // Type of field
-  dataType: string; // Expected data type (text, number, date, currency, etc.)
-  sampleValue?: string; // Sample value if available
-  dataSources: Array<{
-    type: 'web' | 'app' | 'api' | 'manual' | 'file' | 'database';
-    name: string; // Name of the source (e.g., "NH Bank Website", "ERP System")
-    description: string; // How to get this data
-    confidence: 'high' | 'medium' | 'low'; // Confidence in this source
-  }>;
-  description: string; // What this field represents
+export interface DataNeed {
+  field: string; // Simple field name (e.g., "거래일자", "금액", "거래처명")
+  sources: string[]; // Simple list of possible sources (e.g., ["NH Bank", "Woori Bank"])
 }
 
-export interface ExcelTable {
-  id: string;
-  name: string;
-  position: {
-    startRow: number;
-    startCol: number;
-    endRow: number;
-    endCol: number;
-  };
-  headers: Array<{
-    level: number;
-    text: string;
-    col: number;
-    isMerged?: boolean;
-  }>;
-  dataRowCount: number;
-  dataFields: DataField[]; // Detailed breakdown of data fields
-  inputCells?: Array<{
-    row: number;
-    col: number;
-    label: string;
-  }>;
-  outputCells?: Array<{
-    row: number;
-    col: number;
-    label: string;
-    formula?: string;
-  }>;
+export interface TableSummary {
+  name: string; // Table name/title
+  purpose: string; // What this table is for
+  dataNeeds: DataNeed[]; // What data this table needs
 }
 
 export interface ExcelAnalysisResult {
   success: boolean;
-  tables: ExcelTable[];
+  tables: TableSummary[];
   totalTables: number;
   sheetName: string;
   summary: string;
-  suggestions?: string[];
   error?: string;
 }
 
@@ -80,64 +41,38 @@ export async function analyzeExcelStructure(params: {
     console.log('  - HTML length:', params.html.length, 'chars');
     console.log('  - Has screenshot:', !!params.screenshot);
 
-    // Build the prompt text
-    let promptText = `You are an expert at analyzing Korean Excel files and identifying automation opportunities.
-
-This is a Korean Excel file that may contain multiple separate tables on one sheet (called "island tables").
-These tables often have:
-- Merged cells for titles and headers
-- Multi-level headers (headers with sub-headers)
-- Mixed Korean and English text
-- Visual spatial organization (tables separated by empty rows/columns)
+    // Build the prompt text - SIMPLIFIED for faster response
+    let promptText = `You are analyzing a Korean Excel file to identify what data it needs.
 
 HTML structure of the Excel sheet:
 \`\`\`html
 ${params.html}
 \`\`\`
 
-Analyze this Excel file and provide a complete breakdown:
+Provide a SIMPLE analysis:
 
-1. **Identify all separate tables** (if multiple tables exist on this sheet)
-   - Where does each table start and end?
-   - What is the title of each table (usually a merged cell)?
+1. **Identify each table** - What is the table name/title?
+2. **What is the purpose** of each table? (1 sentence)
+3. **What data does it need?** - List the key data fields (like "거래일자", "금액", "거래처명", etc.)
+4. **Where could this data come from?** - For each field, list 1-3 possible sources
 
-2. **For each table, identify ALL DATA FIELDS:**
-   - Field name and header text
-   - Location (row, column)
-   - Field type: input (user fills), output (calculated), or calculated (formula-based)
-   - Data type: text, number, date, currency, percentage, etc.
-   - Sample value if visible in the HTML
+**Keep it concise!** Just identify:
+- Table names
+- Data field names (from headers)
+- Possible sources (simple names like "NH Bank", "Naver", "ERP System")
 
-3. **For each data field, identify WHERE THIS DATA COULD COME FROM:**
-   - **Web sources**: Banking websites, government portals, e-commerce sites, etc.
-   - **App sources**: Desktop applications, ERP systems, accounting software, etc.
-   - **API sources**: REST APIs, web services, third-party integrations
-   - **Manual input**: Data that must be entered by hand
-   - **File sources**: Import from CSV, Excel, PDF, etc.
-   - **Database sources**: SQL databases, cloud databases, etc.
+**Example format:**
+- Table: "월별 매출 현황"
+  - Purpose: "Track monthly sales"
+  - Needs: "날짜" (sources: Manual), "매출액" (sources: POS System, Naver Shopping), "거래처" (sources: ERP)
 
-   For each data source, provide:
-   - Type of source (web/app/api/manual/file/database)
-   - Name of the source (e.g., "NH Bank Website", "Naver", "Company ERP")
-   - Description of how to get this data
-   - Confidence level (high/medium/low) - how confident are you this is the right source
-
-4. **Provide overall summary:**
-   - Purpose of this spreadsheet
-   - How the tables relate to each other (if applicable)
-   - Automation opportunities
-
-**IMPORTANT**: Be specific about data sources. If you see "거래내역" (transaction history), suggest banking websites.
-If you see "매출" (sales), suggest e-commerce platforms or ERP systems. If you see dates, amounts, and descriptions,
-these typically come from financial systems. Think about REAL-WORLD sources where this data actually exists.
-
-Be thorough and detailed. This analysis will be used to automate data collection and entry into this Excel file.`;
+Focus on WHAT data is needed and WHERE it might come from. Keep responses short.`;
 
     if (params.screenshot) {
       promptText = `[Image: Screenshot of Excel file]\n\n${promptText}`;
     }
 
-    // Define response schema for structured JSON output
+    // Define SIMPLIFIED response schema for structured JSON output
     const responseSchema = {
       type: 'object',
       properties: {
@@ -146,111 +81,27 @@ Be thorough and detailed. This analysis will be used to automate data collection
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
               name: { type: 'string' },
-              position: {
-                type: 'object',
-                properties: {
-                  startRow: { type: 'number' },
-                  startCol: { type: 'number' },
-                  endRow: { type: 'number' },
-                  endCol: { type: 'number' },
-                },
-                required: ['startRow', 'startCol', 'endRow', 'endCol'],
-              },
-              headers: {
+              purpose: { type: 'string' },
+              dataNeeds: {
                 type: 'array',
                 items: {
                   type: 'object',
                   properties: {
-                    level: { type: 'number' },
-                    text: { type: 'string' },
-                    col: { type: 'number' },
-                    isMerged: { type: 'boolean' },
-                  },
-                  required: ['level', 'text', 'col'],
-                },
-              },
-              dataRowCount: { type: 'number' },
-              dataFields: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    fieldName: { type: 'string' },
-                    header: { type: 'string' },
-                    location: {
-                      type: 'object',
-                      properties: {
-                        row: { type: 'number' },
-                        col: { type: 'number' },
-                      },
-                      required: ['row', 'col'],
-                    },
-                    fieldType: {
-                      type: 'string',
-                      enum: ['input', 'output', 'calculated'],
-                    },
-                    dataType: { type: 'string' },
-                    sampleValue: { type: 'string' },
-                    dataSources: {
+                    field: { type: 'string' },
+                    sources: {
                       type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          type: {
-                            type: 'string',
-                            enum: ['web', 'app', 'api', 'manual', 'file', 'database'],
-                          },
-                          name: { type: 'string' },
-                          description: { type: 'string' },
-                          confidence: {
-                            type: 'string',
-                            enum: ['high', 'medium', 'low'],
-                          },
-                        },
-                        required: ['type', 'name', 'description', 'confidence'],
-                      },
+                      items: { type: 'string' },
                     },
-                    description: { type: 'string' },
                   },
-                  required: ['fieldName', 'header', 'location', 'fieldType', 'dataType', 'dataSources', 'description'],
-                },
-              },
-              inputCells: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    row: { type: 'number' },
-                    col: { type: 'number' },
-                    label: { type: 'string' },
-                  },
-                  required: ['row', 'col', 'label'],
-                },
-              },
-              outputCells: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    row: { type: 'number' },
-                    col: { type: 'number' },
-                    label: { type: 'string' },
-                    formula: { type: 'string' },
-                  },
-                  required: ['row', 'col', 'label'],
+                  required: ['field', 'sources'],
                 },
               },
             },
-            required: ['id', 'name', 'position', 'headers', 'dataRowCount', 'dataFields'],
+            required: ['name', 'purpose', 'dataNeeds'],
           },
         },
         summary: { type: 'string' },
-        suggestions: {
-          type: 'array',
-          items: { type: 'string' },
-        },
       },
       required: ['tables', 'summary'],
     };
@@ -259,9 +110,9 @@ Be thorough and detailed. This analysis will be used to automate data collection
     const result = await generateWithRookieAI({
       prompt: promptText,
       apiKey: params.apiKey,
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       temperature: 0,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 32768, // Keep high for safety
       responseSchema,
     });
 

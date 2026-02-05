@@ -498,14 +498,29 @@
   font-size: 14px;
 }
 
-/* Data Fields Analysis */
-.rookie-ai-data-fields {
+/* Data Needs - Simplified */
+.rookie-ai-table-purpose {
+  font-size: 13px;
+  color: #aaa;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(46, 125, 50, 0.05);
+  border-left: 2px solid #2E7D32;
+  border-radius: 3px;
+}
+
+.rookie-ai-table-purpose strong {
+  color: #2E7D32;
+  font-weight: 600;
+}
+
+.rookie-ai-data-needs {
   margin-top: 15px;
   padding-top: 15px;
   border-top: 1px solid #333;
 }
 
-.rookie-ai-data-fields > strong {
+.rookie-ai-data-needs > strong {
   color: #2E7D32;
   font-size: 13px;
   font-weight: 600;
@@ -513,197 +528,53 @@
   margin-bottom: 12px;
 }
 
-.rookie-data-fields-list {
+.rookie-data-needs-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
-.rookie-data-field-card {
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.rookie-data-field-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #2a2a2a;
-}
-
-.rookie-field-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.rookie-field-type {
-  padding: 3px 8px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: bold;
-  text-transform: uppercase;
-}
-
-.rookie-field-type.input {
-  background: #2196F3;
-  color: white;
-}
-
-.rookie-field-type.output {
-  background: #FF9800;
-  color: white;
-}
-
-.rookie-field-type.calculated {
-  background: #9C27B0;
-  color: white;
-}
-
-.rookie-data-field-info {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-  color: #aaa;
-  margin-bottom: 10px;
-}
-
-.rookie-data-field-info strong {
-  color: #888;
-  font-weight: 600;
-}
-
-.rookie-field-description {
-  margin-top: 5px;
-  padding: 8px;
-  background: rgba(46, 125, 50, 0.1);
-  border-left: 2px solid #2E7D32;
-  border-radius: 3px;
-  font-size: 12px;
-  color: #ccc;
-  font-style: italic;
-}
-
-.rookie-data-sources {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed #2a2a2a;
-}
-
-.rookie-data-sources > strong {
-  color: #2E7D32;
-  font-size: 12px;
-  font-weight: 600;
-  display: block;
-  margin-bottom: 8px;
-}
-
-.rookie-data-source {
+.rookie-data-need-item {
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 4px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-
-.rookie-data-source.confidence-high {
-  border-left: 3px solid #4CAF50;
-}
-
-.rookie-data-source.confidence-medium {
-  border-left: 3px solid #FF9800;
-}
-
-.rookie-data-source.confidence-low {
-  border-left: 3px solid #F44336;
-}
-
-.rookie-source-header {
+  padding: 10px 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 5px;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.rookie-source-type {
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: bold;
-  background: #333;
-  color: #ccc;
-}
-
-.rookie-source-type.web {
-  background: #2196F3;
-  color: white;
-}
-
-.rookie-source-type.app {
-  background: #9C27B0;
-  color: white;
-}
-
-.rookie-source-type.api {
-  background: #4CAF50;
-  color: white;
-}
-
-.rookie-source-type.manual {
-  background: #FF9800;
-  color: white;
-}
-
-.rookie-source-type.file {
-  background: #795548;
-  color: white;
-}
-
-.rookie-source-type.database {
-  background: #607D8B;
-  color: white;
-}
-
-.rookie-source-name {
-  font-size: 12px;
+.rookie-need-field {
+  font-size: 13px;
   font-weight: 600;
   color: #fff;
-  flex: 1;
+  flex-shrink: 0;
 }
 
-.rookie-confidence-badge {
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: bold;
-  text-transform: uppercase;
+.rookie-need-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
-.rookie-confidence-badge.high {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4CAF50;
-}
-
-.rookie-confidence-badge.medium {
-  background: rgba(255, 152, 0, 0.2);
-  color: #FF9800;
-}
-
-.rookie-confidence-badge.low {
-  background: rgba(244, 67, 54, 0.2);
-  color: #F44336;
-}
-
-.rookie-source-description {
+.rookie-source-tag {
+  padding: 4px 10px;
+  background: #2E7D32;
+  color: white;
+  border-radius: 12px;
   font-size: 11px;
-  color: #888;
-  line-height: 1.4;
-  margin-left: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rookie-source-tag:nth-child(odd) {
+  background: #1B5E20;
+}
+
+.rookie-source-tag:nth-child(3n) {
+  background: #388E3C;
 }
 
 /* Footer */
