@@ -1,10 +1,29 @@
 /**
  * AI Excel Analyzer
  *
- * Uses Claude AI to analyze Korean Excel files with complex "island table" structures
+ * Uses Gemini AI to analyze Korean Excel files with complex "island table" structures
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { generateWithRookieAI } from './rookie-ai-handler';
+
+export interface DataField {
+  fieldName: string; // Name of the data field
+  header: string; // Column header text
+  location: {
+    row: number;
+    col: number;
+  };
+  fieldType: 'input' | 'output' | 'calculated'; // Type of field
+  dataType: string; // Expected data type (text, number, date, currency, etc.)
+  sampleValue?: string; // Sample value if available
+  dataSources: Array<{
+    type: 'web' | 'app' | 'api' | 'manual' | 'file' | 'database';
+    name: string; // Name of the source (e.g., "NH Bank Website", "ERP System")
+    description: string; // How to get this data
+    confidence: 'high' | 'medium' | 'low'; // Confidence in this source
+  }>;
+  description: string; // What this field represents
+}
 
 export interface ExcelTable {
   id: string;
@@ -22,6 +41,7 @@ export interface ExcelTable {
     isMerged?: boolean;
   }>;
   dataRowCount: number;
+  dataFields: DataField[]; // Detailed breakdown of data fields
   inputCells?: Array<{
     row: number;
     col: number;
@@ -46,43 +66,22 @@ export interface ExcelAnalysisResult {
 }
 
 /**
- * Analyze Excel structure using Claude AI
+ * Analyze Excel structure using Gemini AI
  */
 export async function analyzeExcelStructure(params: {
   html: string;
   sheetName: string;
-  apiKey: string;
+  apiKey?: string;
   screenshot?: string; // base64 PNG (optional)
 }): Promise<ExcelAnalysisResult> {
   try {
-    const anthropic = new Anthropic({
-      apiKey: params.apiKey,
-    });
-
     console.log('[AI Excel Analyzer] Analyzing Excel structure...');
     console.log('  - Sheet:', params.sheetName);
     console.log('  - HTML length:', params.html.length, 'chars');
     console.log('  - Has screenshot:', !!params.screenshot);
 
-    // Build the prompt
-    const content: any[] = [];
-
-    // Add screenshot if available (multimodal analysis)
-    if (params.screenshot) {
-      content.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: 'image/png',
-          data: params.screenshot,
-        },
-      });
-    }
-
-    // Add text prompt with HTML
-    content.push({
-      type: 'text',
-      text: `You are an expert at analyzing Korean Excel files with complex layouts.
+    // Build the prompt text
+    let promptText = `You are an expert at analyzing Korean Excel files and identifying automation opportunities.
 
 This is a Korean Excel file that may contain multiple separate tables on one sheet (called "island tables").
 These tables often have:
@@ -102,82 +101,177 @@ Analyze this Excel file and provide a complete breakdown:
    - Where does each table start and end?
    - What is the title of each table (usually a merged cell)?
 
-2. **For each table, identify:**
-   - Headers and sub-headers (hierarchical structure)
-   - Which cells are likely INPUT cells (user fills these)
-   - Which cells are likely OUTPUT cells (formulas, calculations, summaries)
-   - Data row structure
+2. **For each table, identify ALL DATA FIELDS:**
+   - Field name and header text
+   - Location (row, column)
+   - Field type: input (user fills), output (calculated), or calculated (formula-based)
+   - Data type: text, number, date, currency, percentage, etc.
+   - Sample value if visible in the HTML
 
-3. **Provide overall summary:**
+3. **For each data field, identify WHERE THIS DATA COULD COME FROM:**
+   - **Web sources**: Banking websites, government portals, e-commerce sites, etc.
+   - **App sources**: Desktop applications, ERP systems, accounting software, etc.
+   - **API sources**: REST APIs, web services, third-party integrations
+   - **Manual input**: Data that must be entered by hand
+   - **File sources**: Import from CSV, Excel, PDF, etc.
+   - **Database sources**: SQL databases, cloud databases, etc.
+
+   For each data source, provide:
+   - Type of source (web/app/api/manual/file/database)
+   - Name of the source (e.g., "NH Bank Website", "Naver", "Company ERP")
+   - Description of how to get this data
+   - Confidence level (high/medium/low) - how confident are you this is the right source
+
+4. **Provide overall summary:**
    - Purpose of this spreadsheet
    - How the tables relate to each other (if applicable)
-   - Any patterns you notice
+   - Automation opportunities
 
-Return your analysis as a JSON object with this structure:
-\`\`\`json
-{
-  "tables": [
-    {
-      "id": "table_1",
-      "name": "Table title in Korean/English",
-      "position": {
-        "startRow": 1,
-        "startCol": 1,
-        "endRow": 10,
-        "endCol": 5
-      },
-      "headers": [
-        { "level": 1, "text": "Header text", "col": 1, "isMerged": false }
-      ],
-      "dataRowCount": 5,
-      "inputCells": [
-        { "row": 3, "col": 2, "label": "Description of what goes here" }
-      ],
-      "outputCells": [
-        { "row": 10, "col": 5, "label": "Total", "formula": "SUM" }
-      ]
+**IMPORTANT**: Be specific about data sources. If you see "거래내역" (transaction history), suggest banking websites.
+If you see "매출" (sales), suggest e-commerce platforms or ERP systems. If you see dates, amounts, and descriptions,
+these typically come from financial systems. Think about REAL-WORLD sources where this data actually exists.
+
+Be thorough and detailed. This analysis will be used to automate data collection and entry into this Excel file.`;
+
+    if (params.screenshot) {
+      promptText = `[Image: Screenshot of Excel file]\n\n${promptText}`;
     }
-  ],
-  "summary": "Overall description of spreadsheet purpose",
-  "suggestions": ["Optional suggestions for automation"]
-}
-\`\`\`
 
-Be thorough and detailed. This analysis will be used to automate data entry into this Excel file.`,
-    });
-
-    // Call Claude API (using latest model - Sonnet 4.5)
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 4000,
-      temperature: 0,
-      messages: [
-        {
-          role: 'user',
-          content,
+    // Define response schema for structured JSON output
+    const responseSchema = {
+      type: 'object',
+      properties: {
+        tables: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  startRow: { type: 'number' },
+                  startCol: { type: 'number' },
+                  endRow: { type: 'number' },
+                  endCol: { type: 'number' },
+                },
+                required: ['startRow', 'startCol', 'endRow', 'endCol'],
+              },
+              headers: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    level: { type: 'number' },
+                    text: { type: 'string' },
+                    col: { type: 'number' },
+                    isMerged: { type: 'boolean' },
+                  },
+                  required: ['level', 'text', 'col'],
+                },
+              },
+              dataRowCount: { type: 'number' },
+              dataFields: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    fieldName: { type: 'string' },
+                    header: { type: 'string' },
+                    location: {
+                      type: 'object',
+                      properties: {
+                        row: { type: 'number' },
+                        col: { type: 'number' },
+                      },
+                      required: ['row', 'col'],
+                    },
+                    fieldType: {
+                      type: 'string',
+                      enum: ['input', 'output', 'calculated'],
+                    },
+                    dataType: { type: 'string' },
+                    sampleValue: { type: 'string' },
+                    dataSources: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          type: {
+                            type: 'string',
+                            enum: ['web', 'app', 'api', 'manual', 'file', 'database'],
+                          },
+                          name: { type: 'string' },
+                          description: { type: 'string' },
+                          confidence: {
+                            type: 'string',
+                            enum: ['high', 'medium', 'low'],
+                          },
+                        },
+                        required: ['type', 'name', 'description', 'confidence'],
+                      },
+                    },
+                    description: { type: 'string' },
+                  },
+                  required: ['fieldName', 'header', 'location', 'fieldType', 'dataType', 'dataSources', 'description'],
+                },
+              },
+              inputCells: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    row: { type: 'number' },
+                    col: { type: 'number' },
+                    label: { type: 'string' },
+                  },
+                  required: ['row', 'col', 'label'],
+                },
+              },
+              outputCells: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    row: { type: 'number' },
+                    col: { type: 'number' },
+                    label: { type: 'string' },
+                    formula: { type: 'string' },
+                  },
+                  required: ['row', 'col', 'label'],
+                },
+              },
+            },
+            required: ['id', 'name', 'position', 'headers', 'dataRowCount', 'dataFields'],
+          },
         },
-      ],
+        summary: { type: 'string' },
+        suggestions: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+      },
+      required: ['tables', 'summary'],
+    };
+
+    // Call Gemini API using dedicated Rookie AI handler
+    const result = await generateWithRookieAI({
+      prompt: promptText,
+      apiKey: params.apiKey,
+      model: 'gemini-2.0-flash-exp',
+      temperature: 0,
+      maxOutputTokens: 8192,
+      responseSchema,
     });
 
-    console.log('[AI Excel Analyzer] Claude API response received');
+    console.log('[AI Excel Analyzer] Gemini API response received');
 
-    // Extract JSON from response
-    const textContent = response.content.find((block) => block.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from Claude');
+    if (!result.json) {
+      throw new Error('Failed to parse JSON response from Gemini');
     }
 
-    // Parse JSON (may be wrapped in markdown code blocks)
-    let jsonText = textContent.text.trim();
-
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const analysis = JSON.parse(jsonText);
+    const analysis = result.json;
 
     console.log('[AI Excel Analyzer] Analysis complete');
     console.log('  - Tables found:', analysis.tables?.length || 0);

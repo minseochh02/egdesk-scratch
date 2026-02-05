@@ -154,7 +154,7 @@ const FinanceHub: React.FC = () => {
   const [saveHometaxCredentials, setSaveHometaxCredentials] = useState(true);
 
   // Tax invoice list state
-  const [taxInvoiceType, setTaxInvoiceType] = useState<'sales' | 'purchase'>('sales');
+  const [taxInvoiceType, setTaxInvoiceType] = useState<'sales' | 'purchase' | 'cash-receipt'>('sales');
   const [taxInvoices, setTaxInvoices] = useState<any[]>([]);
   const [isLoadingTaxInvoices, setIsLoadingTaxInvoices] = useState(false);
   const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
@@ -162,6 +162,7 @@ const FinanceHub: React.FC = () => {
   const [showTaxFilters, setShowTaxFilters] = useState(false);
   const [taxSalesSpreadsheetUrl, setTaxSalesSpreadsheetUrl] = useState<string | null>(null);
   const [taxPurchaseSpreadsheetUrl, setTaxPurchaseSpreadsheetUrl] = useState<string | null>(null);
+  const [cashReceiptSpreadsheetUrl, setCashReceiptSpreadsheetUrl] = useState<string | null>(null);
   const [taxInvoiceFilters, setTaxInvoiceFilters] = useState<TaxInvoiceFiltersType>({
     businessNumber: 'all',
     searchText: '',
@@ -400,6 +401,9 @@ const FinanceHub: React.FC = () => {
               businessNumber,
               invoiceType: 'purchase'
             });
+            const cashReceiptsResult = await window.electron.hometax.getCashReceipts({
+              businessNumber
+            });
 
             return {
               businessNumber,
@@ -410,6 +414,7 @@ const FinanceHub: React.FC = () => {
               lastSync: certData.savedAt ? new Date(certData.savedAt) : undefined,
               salesCount: salesResult.success ? (salesResult.total || 0) : 0,
               purchaseCount: purchaseResult.success ? (purchaseResult.total || 0) : 0,
+              cashReceiptCount: cashReceiptsResult.success ? (cashReceiptsResult.total || 0) : 0,
               소유자명: certData.소유자명,
               용도: certData.용도,
               발급기관: certData.발급기관,
@@ -1321,13 +1326,48 @@ const FinanceHub: React.FC = () => {
   const loadTaxInvoices = async () => {
     setIsLoadingTaxInvoices(true);
     try {
-      const result = await window.electron.hometax.getInvoices({
-        businessNumber: selectedBusinessFilter === 'all' ? undefined : selectedBusinessFilter,
-        invoiceType: taxInvoiceType
-      });
+      if (taxInvoiceType === 'cash-receipt') {
+        // Load cash receipts
+        const result = await window.electron.hometax.getCashReceipts({
+          businessNumber: selectedBusinessFilter === 'all' ? undefined : selectedBusinessFilter
+        });
 
-      if (result.success) {
-        setTaxInvoices(result.data || []);
+        if (result.success && result.data) {
+          // Transform cash receipts to match display structure
+          const transformedReceipts = result.data.map((receipt: any) => ({
+            ...receipt,
+            _isCashReceipt: true,
+            // Date/ID fields
+            작성일자: receipt.매출일시 ? receipt.매출일시.split(' ')[0] : '',
+            승인번호: receipt.승인번호 || '',
+            // Amount fields
+            공급가액: receipt.공급가액 || 0,
+            세액: receipt.부가세 || 0,
+            합계금액: receipt.총금액 || 0,
+            // Company/Item fields (required by table)
+            공급자상호: '(현금영수증)',
+            공급받는자상호: receipt.용도구분 || receipt.거래구분 || '',
+            품목명: receipt.발행구분 || '현금결제',
+            // Classification
+            전자세금계산서분류: '현금영수증',
+            전자세금계산서종류: receipt.거래구분 || '',
+            발급유형: receipt.발행구분 || '',
+            비고: receipt.비고 || ''
+          }));
+          setTaxInvoices(transformedReceipts);
+        } else {
+          setTaxInvoices([]);
+        }
+      } else {
+        // Load tax invoices (sales or purchase)
+        const result = await window.electron.hometax.getInvoices({
+          businessNumber: selectedBusinessFilter === 'all' ? undefined : selectedBusinessFilter,
+          invoiceType: taxInvoiceType
+        });
+
+        if (result.success) {
+          setTaxInvoices(result.data || []);
+        }
       }
     } catch (error) {
       console.error('[FinanceHub] Error loading tax invoices:', error);
@@ -1354,6 +1394,8 @@ const FinanceHub: React.FC = () => {
       const urlResult = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
       const existingUrl = urlResult.success && urlResult.url ? urlResult.url : undefined;
 
+      console.log(`[FinanceHub] Exporting ${invoicesResult.data.length} ${invoiceType} invoices (existing URL: ${existingUrl ? 'yes' : 'no'})`);
+
       // Export to spreadsheet
       const exportResult = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
         invoices: invoicesResult.data,
@@ -1361,7 +1403,7 @@ const FinanceHub: React.FC = () => {
         existingSpreadsheetUrl: existingUrl,
       });
 
-      if (exportResult.success) {
+      if (exportResult.success && exportResult.spreadsheetUrl) {
         // Update the saved spreadsheet URL in state
         if (invoiceType === 'sales') {
           setTaxSalesSpreadsheetUrl(exportResult.spreadsheetUrl);
@@ -1371,12 +1413,53 @@ const FinanceHub: React.FC = () => {
 
         // Save URL to database
         await window.electron.hometax.saveSpreadsheetUrl(businessNumber, invoiceType, exportResult.spreadsheetUrl);
-        console.log(`[FinanceHub] ✅ Auto-exported ${invoiceType} invoices to spreadsheet`);
+        console.log(`[FinanceHub] ✅ Auto-exported ${invoiceType} invoices to spreadsheet: ${exportResult.spreadsheetUrl}`);
       } else {
         console.error(`[FinanceHub] Failed to export ${invoiceType} invoices:`, exportResult.error);
       }
     } catch (error) {
       console.error(`[FinanceHub] Error exporting ${invoiceType} invoices:`, error);
+    }
+  };
+
+  // Helper function to export cash receipts (without alerts or opening tabs)
+  const exportCashReceiptsForBusiness = async (businessNumber: string) => {
+    try {
+      // Fetch cash receipts
+      const receiptsResult = await window.electron.hometax.getCashReceipts({
+        businessNumber
+      });
+
+      if (!receiptsResult.success || !receiptsResult.data || receiptsResult.data.length === 0) {
+        console.log(`[FinanceHub] No cash receipts to export for ${businessNumber}`);
+        return;
+      }
+
+      // Get existing spreadsheet URL from database (not from state)
+      const urlResult = await window.electron.hometax.getCashReceiptSpreadsheetUrl(businessNumber);
+      const existingUrl = urlResult.success && urlResult.url ? urlResult.url : undefined;
+
+      console.log(`[FinanceHub] Exporting ${receiptsResult.data.length} cash receipts (existing URL: ${existingUrl ? 'yes' : 'no'})`);
+
+      // Export to spreadsheet
+      const exportResult = await window.electron.sheets.exportCashReceiptsToSpreadsheet({
+        receipts: receiptsResult.data,
+        existingSpreadsheetUrl: existingUrl,
+      });
+
+      if (exportResult.success && exportResult.spreadsheetUrl) {
+        // Update the saved spreadsheet URL in state
+        setCashReceiptSpreadsheetUrl(exportResult.spreadsheetUrl);
+
+        // Save URL to database
+        await window.electron.hometax.saveCashReceiptSpreadsheetUrl(businessNumber, exportResult.spreadsheetUrl);
+
+        console.log(`[FinanceHub] ✅ Auto-exported cash receipts to spreadsheet: ${exportResult.spreadsheetUrl}`);
+      } else {
+        console.error(`[FinanceHub] Failed to export cash receipts:`, exportResult.error);
+      }
+    } catch (error) {
+      console.error(`[FinanceHub] Error exporting cash receipts:`, error);
     }
   };
 
@@ -1401,10 +1484,11 @@ const FinanceHub: React.FC = () => {
         await loadConnectedBusinesses();
         await loadTaxInvoices();
 
-        // Auto-export to spreadsheets (both sales and purchase)
+        // Auto-export to spreadsheets (sales, purchase, and cash receipts)
         console.log('[FinanceHub] Auto-exporting to spreadsheets...');
         await exportInvoicesForType(businessNumber, 'sales');
         await exportInvoicesForType(businessNumber, 'purchase');
+        await exportCashReceiptsForBusiness(businessNumber);
       } else {
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
       }
@@ -1476,21 +1560,39 @@ const FinanceHub: React.FC = () => {
   const handleExportTaxInvoices = async () => {
     try {
       // Get the existing spreadsheet URL for this invoice type
-      const existingUrl = taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl : taxPurchaseSpreadsheetUrl;
+      let existingUrl: string | null | undefined;
+      if (taxInvoiceType === 'sales') {
+        existingUrl = taxSalesSpreadsheetUrl;
+      } else if (taxInvoiceType === 'purchase') {
+        existingUrl = taxPurchaseSpreadsheetUrl;
+      } else {
+        existingUrl = cashReceiptSpreadsheetUrl;
+      }
 
-      // Use filtered and sorted invoices for export
-      const result = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
-        invoices: filteredAndSortedTaxInvoices,
-        invoiceType: taxInvoiceType,
-        existingSpreadsheetUrl: existingUrl || undefined,
-      });
+      let result: any;
+
+      // Use different export function for cash receipts
+      if (taxInvoiceType === 'cash-receipt') {
+        result = await window.electron.sheets.exportCashReceiptsToSpreadsheet({
+          receipts: filteredAndSortedTaxInvoices,
+          existingSpreadsheetUrl: existingUrl || undefined,
+        });
+      } else {
+        result = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
+          invoices: filteredAndSortedTaxInvoices,
+          invoiceType: taxInvoiceType,
+          existingSpreadsheetUrl: existingUrl || undefined,
+        });
+      }
 
       if (result.success) {
         // Update the saved spreadsheet URL
         if (taxInvoiceType === 'sales') {
           setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
-        } else {
+        } else if (taxInvoiceType === 'purchase') {
           setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+        } else {
+          setCashReceiptSpreadsheetUrl(result.spreadsheetUrl);
         }
 
         // Open the spreadsheet in a new browser tab
@@ -1527,24 +1629,27 @@ const FinanceHub: React.FC = () => {
   };
 
   const handleClearTaxSpreadsheet = async () => {
-    const typeLabel = taxInvoiceType === 'sales' ? '매출' : '매입';
+    const typeLabel = taxInvoiceType === 'sales' ? '매출' : taxInvoiceType === 'purchase' ? '매입' : '현금영수증';
     if (confirm(`기존 ${typeLabel} 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?`)) {
       if (taxInvoiceType === 'sales') {
         setTaxSalesSpreadsheetUrl(null);
-      } else {
+      } else if (taxInvoiceType === 'purchase') {
         setTaxPurchaseSpreadsheetUrl(null);
+      } else {
+        setCashReceiptSpreadsheetUrl(null);
       }
 
       // Clear from database
       if (filteredAndSortedTaxInvoices.length > 0) {
         const businessNumber = filteredAndSortedTaxInvoices[0].business_number;
-        if (businessNumber) {
+        if (businessNumber && taxInvoiceType !== 'cash-receipt') {
           try {
             await window.electron.hometax.saveSpreadsheetUrl(businessNumber, taxInvoiceType, '');
           } catch (error) {
             console.error('Error clearing tax spreadsheet URL:', error);
           }
         }
+        // TODO: Add saveCashReceiptSpreadsheetUrl to IPC if needed
       }
 
       alert('스프레드시트 연결이 해제되었습니다. 다음번에 새로운 스프레드시트가 생성됩니다.');
@@ -2503,7 +2608,11 @@ const FinanceHub: React.FC = () => {
               sortDirection={taxInvoiceSort.direction}
               showGoogleAuth={showTaxGoogleAuth}
               signingIn={signingInTaxGoogle}
-              savedSpreadsheetUrl={taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl : taxPurchaseSpreadsheetUrl}
+              savedSpreadsheetUrl={
+                taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl :
+                taxInvoiceType === 'purchase' ? taxPurchaseSpreadsheetUrl :
+                cashReceiptSpreadsheetUrl
+              }
               onInvoiceTypeChange={handleTaxInvoiceTabChange}
               onFilterChange={handleTaxInvoiceFilterChange}
               onResetFilters={handleResetTaxInvoiceFilters}

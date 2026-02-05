@@ -29,7 +29,7 @@ export interface TaxInvoice {
 
 interface TaxInvoiceTableProps {
   invoices: TaxInvoice[];
-  invoiceType: 'sales' | 'purchase';
+  invoiceType: 'sales' | 'purchase' | 'cash-receipt';
   onRowClick?: (invoice: TaxInvoice) => void;
   onSort?: (key: string) => void;
   sortKey?: string;
@@ -54,12 +54,16 @@ const TaxInvoiceTable: React.FC<TaxInvoiceTableProps> = ({
   emptyMessage,
   className = '',
 }) => {
-  const defaultEmptyMessage = `수집된 ${invoiceType === 'sales' ? '매출' : '매입'} 세금계산서가 없습니다`;
+  const defaultEmptyMessage = `수집된 ${
+    invoiceType === 'sales' ? '매출 세금계산서' :
+    invoiceType === 'purchase' ? '매입 세금계산서' :
+    '현금영수증'
+  }${invoiceType === 'cash-receipt' ? '이' : '가'} 없습니다`;
 
   const columns: DataTableColumn<TaxInvoice>[] = [
     {
       key: '작성일자',
-      header: '작성일자',
+      header: invoiceType === 'cash-receipt' ? '매출일시' : '작성일자',
       sortable: true,
       width: '110px',
       render: (invoice) => (
@@ -76,12 +80,14 @@ const TaxInvoiceTable: React.FC<TaxInvoiceTableProps> = ({
       ),
     },
     {
-      key: invoiceType === 'sales' ? '공급받는자상호' : '공급자상호',
-      header: invoiceType === 'sales' ? '공급받는자' : '공급자',
+      key: invoiceType === 'sales' ? '공급받는자상호' : invoiceType === 'purchase' ? '공급자상호' : '공급받는자상호',
+      header: invoiceType === 'sales' ? '공급받는자' : invoiceType === 'purchase' ? '공급자' : '용도',
       sortable: true,
       render: (invoice) => (
         <span className="tax-invoice-table__company">
-          {invoiceType === 'sales' ? invoice.공급받는자상호 : invoice.공급자상호}
+          {invoiceType === 'sales' ? invoice.공급받는자상호 :
+           invoiceType === 'purchase' ? invoice.공급자상호 :
+           invoice.공급받는자상호}
         </span>
       ),
     },

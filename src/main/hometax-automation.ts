@@ -726,21 +726,8 @@ export async function connectToHometax(
     }, searchButtonXPath);
     await page.waitForTimeout(3000);
 
-    // Record timestamp before download to detect if a new file is actually downloaded
-    const downloadStartTime = Date.now();
-    console.log('[Hometax] Download start time:', downloadStartTime);
-
-    // Click excel download button and handle confirmations automatically
-    console.log('[Hometax] Starting download with auto-confirmations...');
-    const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
-    await page.evaluate((xpath) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const element = result.singleNodeValue as HTMLElement;
-      element?.click();
-    }, excelButtonXPath);
-
-    // Check for "no data" alert before confirmations
-    await page.waitForTimeout(2000);
+    // Check for "no data" alert immediately after 조회
+    console.log('[Hometax] Checking for no-data alert...');
     const noDataAlertExists = await page.evaluate(() => {
       const alerts = document.querySelectorAll('.w2dialog_message');
       for (const alert of alerts) {
@@ -752,7 +739,7 @@ export async function connectToHometax(
     });
 
     if (noDataAlertExists) {
-      console.log('[Hometax] ⚠️  No data found (조회된 내역이 없습니다) - skipping download');
+      console.log('[Hometax] 🔔 Dialog detected: alert - "조회된 내역이 없습니다." - Skipping download logic');
       // Close the alert
       await page.evaluate(() => {
         const closeButtons = document.querySelectorAll('input[value="확인"]');
@@ -771,6 +758,22 @@ export async function connectToHometax(
         downloadedFile: undefined // No file downloaded - no data for this period
       };
     }
+
+    console.log('[Hometax] No alert detected - proceeding with download logic');
+
+    // Record timestamp before download to detect if a new file is actually downloaded
+    const downloadStartTime = Date.now();
+    console.log('[Hometax] Download start time:', downloadStartTime);
+
+    // Click excel download button and handle confirmations automatically
+    console.log('[Hometax] Starting download with auto-confirmations...');
+    const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, excelButtonXPath);
+    await page.waitForTimeout(2000);
 
     // Wait for and auto-click first confirmation (skip if doesn't exist - no data case)
     const firstConfirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[3]/span[2]/input';
@@ -841,8 +844,20 @@ export async function connectToHometax(
 
     // Find the most recently downloaded file matching the expected type
     // IMPORTANT: Only accept files modified AFTER we clicked the download button
+    // IMPORTANT: Exclude cash receipt files (매출내역) when looking for sales invoices
     const recentFile = files
-      .filter((f: string) => (f.endsWith('.xls') || f.endsWith('.xlsx')) && f.includes(expectedPattern))
+      .filter((f: string) => {
+        // Must be Excel file
+        if (!f.endsWith('.xls') && !f.endsWith('.xlsx')) return false;
+
+        // If looking for sales (매출), exclude cash receipts (매출내역)
+        if (invoiceType === 'sales') {
+          return f.includes(expectedPattern) && !f.includes('매출내역');
+        }
+
+        // For purchases, just check pattern
+        return f.includes(expectedPattern);
+      })
       .map((f: string) => ({
         name: f,
         path: path.join(downloadsPath, f),
@@ -919,6 +934,237 @@ export async function connectToHometax(
 }
 
 /**
+ * Download cash receipts (현금영수증) for current week
+ * Uses the already-open browser from connectToHometax(), or opens new browser if needed
+ */
+export async function downloadCashReceipts(
+  selectedCertificate: any,
+  certificatePassword: string
+): Promise<{ success: boolean; downloadedFile?: string; error?: string }> {
+  try {
+    console.log('[Hometax] Starting cash receipt download...');
+
+    let page = globalPage;
+    let context = globalContext;
+
+    // Check if already logged in
+    const alreadyLoggedIn = page && context && await page.evaluate(() => {
+      const url = window.location.href;
+      return url.includes('hometax.go.kr');
+    }).catch(() => false);
+
+    let companyName = '';
+
+    if (!alreadyLoggedIn || !page || !context) {
+      // Need to login first - reuse login logic from connectToHometax
+      console.log('[Hometax] Not logged in, need to login first...');
+      return {
+        success: false,
+        error: 'Must be logged in first. Call connectToHometax() before downloadCashReceipts()'
+      };
+    }
+
+    // Navigate to 전자세금계산서 menu (same starting point)
+    console.log('[Hometax] Navigating to tax menu...');
+    await page.waitForTimeout(3000);
+    await page.locator('[id="mf_wfHeader_wq_uuid_358"]').click({ timeout: 180000 });
+    await page.waitForTimeout(2891);
+
+    // Expand 가맹점 매출 조회 menu (li[7] instead of li[2])
+    console.log('[Hometax] Expanding 가맹점 매출 조회 menu...');
+    try {
+      await page.evaluate(() => {
+        const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[7]/ul/li[1]/a';
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        if (element) {
+          element.click();
+        } else {
+          throw new Error('가맹점 매출 조회 element not found');
+        }
+      });
+      console.log('[Hometax] 가맹점 매출 조회 menu expanded with XPath');
+    } catch (error) {
+      console.log('[Hometax] XPath failed, trying CSS selector');
+      await page.locator('#grpMenuLi_46_4606010000 > a').click({ timeout: 10000 });
+      console.log('[Hometax] 가맹점 매출 조회 menu expanded with CSS selector');
+    }
+
+    await page.waitForTimeout(1000);
+
+    // Click 현금영수증 매출내역 조회 submenu
+    console.log('[Hometax] Clicking 현금영수증 매출내역 조회...');
+    try {
+      await page.evaluate(() => {
+        const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[7]/ul/li[1]/ul/li[1]/a';
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        if (element) {
+          element.click();
+        } else {
+          throw new Error('현금영수증 매출내역 조회 element not found');
+        }
+      });
+      console.log('[Hometax] 현금영수증 매출내역 조회 clicked with XPath');
+    } catch (error) {
+      console.log('[Hometax] XPath failed, trying ID selector');
+      await page.locator('[id="grpMenuAtag_46_4606010100"]').click({ timeout: 10000 });
+      console.log('[Hometax] 현금영수증 매출내역 조회 clicked with ID selector');
+    }
+
+    await page.waitForTimeout(3000);
+
+    // Click 주별 tab (auto-selects current week)
+    console.log('[Hometax] Clicking 주별 tab...');
+    try {
+      await page.evaluate(() => {
+        const xpath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[2]/div/ul/li[2]/div[1]/a';
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        if (element) {
+          element.click();
+        } else {
+          throw new Error('주별 tab not found');
+        }
+      });
+      console.log('[Hometax] 주별 tab clicked with XPath');
+    } catch (error) {
+      console.log('[Hometax] XPath failed, trying CSS selector');
+      await page.locator('#mf_txppWframe_tabControl1_UTECRCB057_tab_tabs2_tabHTML').click({ timeout: 10000 });
+    }
+    await page.waitForTimeout(2000);
+
+    // Click 조회 button
+    console.log('[Hometax] Clicking 조회 button...');
+    const searchButtonXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[4]/div/div/div/span/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, searchButtonXPath);
+    await page.waitForTimeout(3000);
+
+    // Check for "no data" alert immediately after 조회
+    console.log('[Hometax] Checking for no-data alert...');
+    const noDataAlertExists = await page.evaluate(() => {
+      const alerts = document.querySelectorAll('.w2dialog_message');
+      for (const alert of alerts) {
+        if (alert.textContent?.includes('조회된 내역이 없습니다')) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (noDataAlertExists) {
+      console.log('[Hometax] 🔔 Dialog detected: alert - "조회된 내역이 없습니다." - Skipping download logic');
+      // Close the alert
+      await page.evaluate(() => {
+        const closeButtons = document.querySelectorAll('input[value="확인"]');
+        for (const button of closeButtons) {
+          (button as HTMLElement).click();
+        }
+      });
+
+      return {
+        success: true,
+        downloadedFile: undefined
+      };
+    }
+
+    console.log('[Hometax] No alert detected - proceeding with download logic');
+
+    // Record timestamp before download
+    const downloadStartTime = Date.now();
+    console.log('[Hometax] Download start time:', downloadStartTime);
+
+    // Click 내려받기 button
+    console.log('[Hometax] Clicking 내려받기 button...');
+    const downloadButtonXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[5]/div[2]/span[2]/input';
+    await page.evaluate((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const element = result.singleNodeValue as HTMLElement;
+      element?.click();
+    }, downloadButtonXPath);
+
+    // Wait for confirmation dialog
+    await page.waitForTimeout(2000);
+
+    // Click confirmation dialog
+    const confirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[2]/span[2]/input';
+    const confirmExists = await page.waitForFunction((xpath) => {
+      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      return result.singleNodeValue !== null;
+    }, confirmXPath, { timeout: 5000 }).then(() => true).catch(() => false);
+
+    if (confirmExists) {
+      await page.evaluate((xpath) => {
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const element = result.singleNodeValue as HTMLElement;
+        element?.click();
+      }, confirmXPath);
+      console.log('[Hometax] Confirmation clicked');
+    }
+
+    console.log('[Hometax] Cash receipt download completed');
+
+    // Wait for download to complete
+    await page.waitForTimeout(2000);
+
+    // Get downloaded file from the downloads folder
+    const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
+    const files = fs.readdirSync(downloadsPath);
+
+    // Find the most recently downloaded file matching cash receipt pattern
+    const expectedPattern = '매출내역';
+    console.log(`[Hometax] Looking for file with pattern: ${expectedPattern}`);
+
+    const recentFile = files
+      .filter((f: string) => (f.endsWith('.xls') || f.endsWith('.xlsx')) && f.includes(expectedPattern))
+      .map((f: string) => ({
+        name: f,
+        path: path.join(downloadsPath, f),
+        time: fs.statSync(path.join(downloadsPath, f)).mtime.getTime()
+      }))
+      .filter((f: any) => f.time >= downloadStartTime)
+      .sort((a: any, b: any) => b.time - a.time)[0];
+
+    let downloadedFile = recentFile?.path;
+    console.log('[Hometax] Downloaded file:', downloadedFile);
+
+    if (!downloadedFile) {
+      console.log(`[Hometax] ⚠️  No new file found matching pattern "${expectedPattern}"`);
+      return {
+        success: true,
+        downloadedFile: undefined
+      };
+    }
+
+    // Rename the file to prevent overwriting
+    const timestamp = new Date().getTime();
+    const fileExt = path.extname(downloadedFile);
+    const fileBase = path.basename(downloadedFile, fileExt);
+    const newFileName = `${fileBase}_cash_receipt_${timestamp}${fileExt}`;
+    const newFilePath = path.join(downloadsPath, newFileName);
+    fs.renameSync(downloadedFile, newFilePath);
+    downloadedFile = newFilePath;
+    console.log('[Hometax] Renamed to prevent overwriting:', downloadedFile);
+
+    return {
+      success: true,
+      downloadedFile
+    };
+
+  } catch (error) {
+    console.error('[Hometax] Error downloading cash receipts:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
  * Disconnect from Hometax (close browser)
  */
 export async function disconnectFromHometax(): Promise<void> {
@@ -945,8 +1191,10 @@ export function getHometaxConnectionStatus(): { isConnected: boolean } {
 }
 
 /**
- * Collect tax invoices (매출/매입) for a business
+ * Collect tax invoices (매출/매입) and cash receipts for a business
  * Collects data for both current month and last month, for both sales and purchases (4 downloads total)
+ * Also collects current week cash receipts (1 download)
+ * Total: 5 downloads
  */
 export async function collectTaxInvoices(
   certificateData: any,
@@ -957,6 +1205,7 @@ export async function collectTaxInvoices(
   lastMonthSalesFile?: string;
   thisMonthPurchaseFile?: string;
   lastMonthPurchaseFile?: string;
+  cashReceiptFile?: string;
   error?: string
 }> {
   try {
@@ -975,51 +1224,62 @@ export async function collectTaxInvoices(
     }
 
     console.log(`[Hometax] Target months - This: ${thisYear}-${thisMonth.toString().padStart(2, '0')}, Last: ${lastYear}-${lastMonth.toString().padStart(2, '0')}`);
-    console.log('[Hometax] ==================== Starting 4-part collection ====================');
+    console.log('[Hometax] ==================== Starting 5-part collection ====================');
 
     // 1. Collect this month 매출 (sales)
-    console.log('[Hometax] ▶ (1/4) Collecting this month 매출...');
+    console.log('[Hometax] ▶ (1/5) Collecting this month 매출...');
     const thisMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', thisYear, thisMonth);
     if (!thisMonthSalesResult.success) {
       return { success: false, error: thisMonthSalesResult.error };
     }
     const thisMonthSalesFile = thisMonthSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (1/4) Completed:', thisMonthSalesFile);
+    console.log('[Hometax] ✓ (1/5) Completed:', thisMonthSalesFile);
 
     // 2. Collect last month 매출 (sales)
-    console.log('[Hometax] ▶ (2/4) Collecting last month 매출...');
+    console.log('[Hometax] ▶ (2/5) Collecting last month 매출...');
     const lastMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', lastYear, lastMonth);
     if (!lastMonthSalesResult.success) {
       return { success: false, error: lastMonthSalesResult.error };
     }
     const lastMonthSalesFile = lastMonthSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (2/4) Completed:', lastMonthSalesFile);
+    console.log('[Hometax] ✓ (2/5) Completed:', lastMonthSalesFile);
 
     // 3. Collect this month 매입 (purchases)
-    console.log('[Hometax] ▶ (3/4) Collecting this month 매입...');
+    console.log('[Hometax] ▶ (3/5) Collecting this month 매입...');
     const thisMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', thisYear, thisMonth);
     if (!thisMonthPurchaseResult.success) {
       return { success: false, error: thisMonthPurchaseResult.error };
     }
     const thisMonthPurchaseFile = thisMonthPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (3/4) Completed:', thisMonthPurchaseFile);
+    console.log('[Hometax] ✓ (3/5) Completed:', thisMonthPurchaseFile);
 
     // 4. Collect last month 매입 (purchases)
-    console.log('[Hometax] ▶ (4/4) Collecting last month 매입...');
+    console.log('[Hometax] ▶ (4/5) Collecting last month 매입...');
     const lastMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', lastYear, lastMonth);
     if (!lastMonthPurchaseResult.success) {
       return { success: false, error: lastMonthPurchaseResult.error };
     }
     const lastMonthPurchaseFile = lastMonthPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (4/4) Completed:', lastMonthPurchaseFile);
+    console.log('[Hometax] ✓ (4/5) Completed:', lastMonthPurchaseFile);
 
-    console.log('[Hometax] ==================== ✅ All 4 collections completed! ====================');
+    // 5. Collect current week cash receipts (현금영수증)
+    console.log('[Hometax] ▶ (5/5) Collecting current week 현금영수증...');
+    const cashReceiptResult = await downloadCashReceipts(certificateData, certificatePassword);
+    if (!cashReceiptResult.success) {
+      console.warn('[Hometax] ⚠️  Cash receipt download failed, but continuing:', cashReceiptResult.error);
+      // Don't fail the entire collection if cash receipts fail - they might not have any
+    }
+    const cashReceiptFile = cashReceiptResult.downloadedFile;
+    console.log('[Hometax] ✓ (5/5) Completed:', cashReceiptFile);
+
+    console.log('[Hometax] ==================== ✅ All 5 collections completed! ====================');
     return {
       success: true,
       thisMonthSalesFile,
       lastMonthSalesFile,
       thisMonthPurchaseFile,
-      lastMonthPurchaseFile
+      lastMonthPurchaseFile,
+      cashReceiptFile
     };
 
   } catch (error) {
