@@ -56,6 +56,31 @@ export interface ParsedExcelResult {
   error?: string;
 }
 
+export interface CashReceiptData {
+  발행구분: string;
+  매출일시: string;
+  공급가액: number;
+  부가세: number;
+  봉사료: number;
+  총금액: number;
+  승인번호: string;
+  신분확인뒷4자리: string;
+  거래구분: string;
+  용도구분: string;
+  비고: string;
+}
+
+export interface ParsedCashReceiptResult {
+  success: boolean;
+  businessNumber?: string;
+  businessName?: string;
+  receipts?: CashReceiptData[];
+  totalAmount?: number;
+  totalSupplyValue?: number;
+  totalTax?: number;
+  error?: string;
+}
+
 /**
  * Parse Hometax tax invoice Excel file
  */
@@ -198,6 +223,117 @@ export function parseHometaxExcel(filePath: string): ParsedExcelResult {
 
   } catch (error) {
     console.error('[Hometax Parser] Error parsing Excel:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Parse Hometax cash receipt (현금영수증) Excel file
+ */
+export function parseCashReceiptExcel(filePath: string): ParsedCashReceiptResult {
+  try {
+    console.log('[Hometax Parser] Parsing cash receipt Excel file:', filePath);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error('[Hometax Parser] File does not exist:', filePath);
+      return {
+        success: false,
+        error: 'File not found: ' + filePath
+      };
+    }
+
+    // Check file size
+    const stats = fs.statSync(filePath);
+    console.log('[Hometax Parser] File size:', stats.size, 'bytes');
+
+    if (stats.size === 0) {
+      console.error('[Hometax Parser] File is empty');
+      return {
+        success: false,
+        error: 'File is empty'
+      };
+    }
+
+    // Read file as buffer
+    console.log('[Hometax Parser] Reading file as buffer...');
+    const buffer = fs.readFileSync(filePath);
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    // Convert to array of arrays
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+    console.log('[Hometax Parser] Cash receipt Excel rows:', data.length);
+    console.log('[Hometax Parser] First 3 rows:', data.slice(0, 3));
+
+    // Row 0 (index 0): Headers - 발행구분, 매출일시, 공급가액, 부가세, 봉사료, 총금액, 승인번호, 신분확인뒷4자리, 거래구분, 용도구분, 비고
+    // Row 1+ (index 1+): Data
+
+    const receipts: CashReceiptData[] = [];
+    let totalAmount = 0;
+    let totalSupplyValue = 0;
+    let totalTax = 0;
+
+    // Parse numeric values (remove commas)
+    const parseNumber = (val: any): number => {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/,/g, '');
+        return parseInt(cleaned) || 0;
+      }
+      return 0;
+    };
+
+    // Start from index 1 to skip headers at index 0
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row || row.length < 11) continue; // Skip empty or incomplete rows
+
+      // Skip header row if it somehow appears in data
+      // Check if first column contains the header text itself
+      if (row[0] === '발행구분' || row[1] === '매출일시') {
+        console.log('[Hometax Parser] Skipping header row at index', i);
+        continue;
+      }
+
+      const receipt: CashReceiptData = {
+        발행구분: row[0] || '',
+        매출일시: row[1] || '',
+        공급가액: parseNumber(row[2]),
+        부가세: parseNumber(row[3]),
+        봉사료: parseNumber(row[4]),
+        총금액: parseNumber(row[5]),
+        승인번호: row[6] || '',
+        신분확인뒷4자리: row[7] || '',
+        거래구분: row[8] || '',
+        용도구분: row[9] || '',
+        비고: row[10] || ''
+      };
+
+      receipts.push(receipt);
+
+      totalSupplyValue += receipt.공급가액;
+      totalTax += receipt.부가세;
+      totalAmount += receipt.총금액;
+    }
+
+    console.log(`[Hometax Parser] Parsed ${receipts.length} cash receipts`);
+
+    return {
+      success: true,
+      receipts,
+      totalAmount,
+      totalSupplyValue,
+      totalTax
+    };
+
+  } catch (error) {
+    console.error('[Hometax Parser] Error parsing cash receipt Excel:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

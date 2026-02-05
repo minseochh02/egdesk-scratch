@@ -162,32 +162,8 @@ const RookiePage: React.FC = () => {
   // State for view management
   const [currentView, setCurrentView] = useState<'list' | 'analysis'>('list');
 
-  // Example rook workflows
-  const rooks: RookWorkflow[] = [
-    {
-      id: 'rook-1',
-      name: 'Monthly Financial Report',
-      goal: 'Generate consolidated financial report from multiple bank accounts and ERP system',
-      outputType: 'excel',
-      // outputFilePath removed - no example file included
-      workflow: [
-        'Login to NH Bank and download transactions',
-        'Login to Woori Bank and download transactions',
-        'Open company ERP system',
-        'Extract monthly expense data',
-        'Consolidate all data into Excel report',
-        'Apply formulas and formatting',
-        'Save to shared drive',
-      ],
-      sites: [
-        { name: 'NH Bank', type: 'web' },
-        { name: 'Woori Bank', type: 'web' },
-        { name: 'Company ERP', type: 'app' },
-      ],
-      lastRun: new Date('2024-01-15'),
-      status: 'active',
-    },
-  ];
+  // Rook workflows (empty for now - will be loaded from storage later)
+  const rooks: RookWorkflow[] = [];
 
   const getOutputIcon = (type: string) => {
     if (type === 'excel') return faFileExcel;

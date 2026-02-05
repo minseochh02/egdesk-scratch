@@ -835,6 +835,161 @@ export class SheetsService {
     await this.formatHeaders(spreadsheetId, 'Sheet1');
   }
 
+  /**
+   * Export cash receipts to Google Spreadsheet
+   * Exports all 11 columns from the cash receipts database
+   */
+  async exportCashReceiptsToSpreadsheet(
+    receipts: any[],
+    existingSpreadsheetUrl?: string
+  ): Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; error?: string }> {
+    try {
+      // Extract spreadsheet ID from URL if provided
+      let spreadsheetId: string | undefined;
+      if (existingSpreadsheetUrl) {
+        const match = existingSpreadsheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (match) {
+          spreadsheetId = match[1];
+
+          // Try to update existing spreadsheet
+          try {
+            await this.getSpreadsheet(spreadsheetId);
+            await this.updateCashReceiptsData(spreadsheetId, receipts);
+
+            return {
+              success: true,
+              spreadsheetId,
+              spreadsheetUrl: existingSpreadsheetUrl
+            };
+          } catch (error) {
+            console.warn('Existing spreadsheet not accessible, creating new one:', error);
+            // Fall through to create new spreadsheet
+          }
+        }
+      }
+
+      // Create new spreadsheet
+      const title = `EGDesk 현금영수증 ${new Date().toISOString().slice(0, 10)}`;
+
+      // All 11 columns from the cash receipts database
+      const headers = [
+        '발행구분',
+        '매출일시',
+        '공급가액',
+        '부가세',
+        '봉사료',
+        '총금액',
+        '승인번호',
+        '신분확인뒷4자리',
+        '거래구분',
+        '용도구분',
+        '비고'
+      ];
+
+      // Prepare data rows with all columns
+      const rows = receipts.map(receipt => [
+        receipt.발행구분 || '',
+        receipt.매출일시 || '',
+        receipt.공급가액?.toString() || '0',
+        receipt.부가세?.toString() || '0',
+        receipt.봉사료?.toString() || '0',
+        receipt.총금액?.toString() || '0',
+        receipt.승인번호 || '',
+        receipt.신분확인뒷4자리 || '',
+        receipt.거래구분 || '',
+        receipt.용도구분 || '',
+        receipt.비고 || ''
+      ]);
+
+      // Combine headers and data
+      const data = [headers, ...rows];
+
+      // Create the spreadsheet
+      const result = await this.createSpreadsheet(title, data);
+
+      // Format the headers
+      if (result.spreadsheetId) {
+        await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+      }
+
+      // Move to Tax Invoices folder (or create a separate Cash Receipts folder)
+      try {
+        const driveService = getDriveService();
+        await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
+        console.log('✅ Moved cash receipt spreadsheet to EGDesk/Tax Invoices/');
+      } catch (error) {
+        console.warn('⚠️ Could not organize spreadsheet:', error);
+        // Don't fail the entire operation if folder organization fails
+      }
+
+      return {
+        success: true,
+        ...result
+      };
+    } catch (error) {
+      console.error('[SheetsService] Error exporting cash receipts:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Update existing spreadsheet with new cash receipts data
+   */
+  async updateCashReceiptsData(
+    spreadsheetId: string,
+    receipts: any[]
+  ): Promise<void> {
+    // All 11 columns from the cash receipts database
+    const headers = [
+      '발행구분',
+      '매출일시',
+      '공급가액',
+      '부가세',
+      '봉사료',
+      '총금액',
+      '승인번호',
+      '신분확인뒷4자리',
+      '거래구분',
+      '용도구분',
+      '비고'
+    ];
+
+    // Prepare data rows with all columns
+    const rows = receipts.map(receipt => [
+      receipt.발행구분 || '',
+      receipt.매출일시 || '',
+      receipt.공급가액?.toString() || '0',
+      receipt.부가세?.toString() || '0',
+      receipt.봉사료?.toString() || '0',
+      receipt.총금액?.toString() || '0',
+      receipt.승인번호 || '',
+      receipt.신분확인뒷4자리 || '',
+      receipt.거래구분 || '',
+      receipt.용도구분 || '',
+      receipt.비고 || ''
+    ]);
+
+    // Combine headers and data
+    const data = [headers, ...rows];
+
+    // Clear existing data and add new data
+    try {
+      // Clear the entire sheet
+      await this.clearRange(spreadsheetId, 'Sheet1');
+    } catch (error) {
+      console.warn('Failed to clear existing data, continuing anyway:', error);
+    }
+
+    // Add new data
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+
+    // Format headers
+    await this.formatHeaders(spreadsheetId, 'Sheet1');
+  }
+
   // ============================================
   // Card Transaction Helper Methods
   // ============================================

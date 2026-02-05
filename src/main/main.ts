@@ -88,6 +88,7 @@ import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registra
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
 import { processExcelFile, wrapHtmlForThumbnail, trimTrailingEmptyRows, detectTablesByEmptyGaps } from './rookie/thumbnail-handler';
+import { generateSemanticHTMLWithGrid } from './rookie/excel-to-semantic-html';
 import { analyzeExcelStructure } from './rookie/ai-excel-analyzer';
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
 import { 
@@ -3198,22 +3199,8 @@ const createWindow = async () => {
       try {
         console.log('[Rookie] Analyzing Excel from buffer:', fileName);
 
-        // Get Anthropic API key from store
-        const store = getStore();
-        const aiKeys = store ? store.get('ai-keys', []) : [];
-        const anthropicKey = aiKeys.find((k: any) => k?.providerId === 'anthropic' && k?.isActive);
-
-        if (!anthropicKey?.fields?.apiKey) {
-          return {
-            success: false,
-            error: 'NO_API_KEY',
-            message: 'Anthropic API key not configured. Please add it in AI Keys Manager.',
-            tables: [],
-            totalTables: 0,
-            sheetName: '',
-            summary: '',
-          };
-        }
+        // Note: API key is now handled by centralized Gemini handler
+        // It will automatically get the Google API key from store or env
 
         // Convert buffer array back to Buffer
         const fileBuffer = Buffer.from(buffer);
@@ -3240,15 +3227,22 @@ const createWindow = async () => {
         const trimmedRange = worksheet['!ref'] || 'A1';
         console.log('[Rookie] Trimmed range:', trimmedRange);
 
-        // Convert to HTML (preserves merged cells)
-        const html = XLSX.utils.sheet_to_html(worksheet, {
+        // Generate semantic HTML using detected tables with CSS Grid
+        console.log('[Rookie] 🎨 Generating semantic HTML with exact grid positioning...');
+        const semanticHTML = await generateSemanticHTMLWithGrid(fileBuffer, detectedTables);
+
+        console.log('[Rookie] Semantic HTML generated, length:', semanticHTML.length);
+
+        // Fallback: Also generate standard HTML for comparison
+        const standardHTML = XLSX.utils.sheet_to_html(worksheet, {
           id: `excel-sheet-${sheetName}`,
           editable: false,
           header: '',
           footer: '',
         });
 
-        console.log('[Rookie] Excel converted to HTML, length:', html.length);
+        const html = semanticHTML; // Use semantic HTML
+        console.log('[Rookie] Using semantic HTML for output');
 
         // Save HTML to output folder for inspection
         const outputDir = app.isPackaged
@@ -3282,25 +3276,55 @@ const createWindow = async () => {
       border-radius: 4px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    table {
-      border-collapse: collapse;
+    .excel-grid {
+      /* CSS Grid layout - exact Excel positioning */
       background: white;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-    td {
+    .table-wrapper {
+      /* Wrapper for table positioned in grid */
+      background: #f0f8f0;
+      padding: 15px;
+      border-radius: 6px;
+      border: 2px solid #2E7D32;
+    }
+    .table-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #2E7D32;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #2E7D32;
+    }
+    table.detected-table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+    }
+    table.detected-table td {
       border: 1px solid #ccc;
-      padding: 6px 10px;
+      padding: 8px 12px;
       white-space: nowrap;
+      font-size: 12px;
     }
-    td[colspan] {
+    table.detected-table td[colspan] {
       background: #e8f5e9;
       font-weight: bold;
       text-align: center;
     }
-    /* Highlight empty rows for inspection */
-    tr:has(td:empty):has(td:not([colspan])) {
-      background: #ffebee !important;
-      opacity: 0.3;
+    table.detected-table td[rowspan] {
+      background: #fff3e0;
+      font-weight: 600;
+    }
+    .grid-cell {
+      /* Non-table cells positioned in grid */
+      padding: 6px 10px;
+      font-size: 11px;
+      border: 1px solid #e0e0e0;
+      background: #fffef0;
+      color: #444;
     }
   </style>
 </head>
@@ -3311,8 +3335,9 @@ const createWindow = async () => {
     <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
     <p><strong>Original Range:</strong> ${originalRange}</p>
     <p><strong>Trimmed Range:</strong> ${trimmedRange}</p>
+    <p><strong>Detected Tables:</strong> ${detectedTables.length}</p>
     <p><strong>HTML Size:</strong> ${(html.length / 1024).toFixed(1)} KB</p>
-    <p style="color: #d32f2f;"><em>Empty rows highlighted in red (for inspection)</em></p>
+    <p style="color: #2E7D32;"><em>Semantic HTML: Detected tables as &lt;table&gt; elements</em></p>
   </div>
   ${html}
 </body>
@@ -3322,25 +3347,20 @@ const createWindow = async () => {
         console.log('[Rookie] ✅ HTML saved to:', htmlFilePath);
         console.log('[Rookie] 📝 Open this file in a browser to inspect the structure');
 
-        // AI analysis DISABLED for inspection
-        // Uncomment below when ready to test AI
-        /*
+        // AI analysis with Gemini
+        console.log('[Rookie] 🤖 Starting Gemini AI analysis...');
         const result = await analyzeExcelStructure({
           html,
           sheetName,
-          apiKey: anthropicKey.fields.apiKey,
         });
-        return result;
-        */
 
+        // Add HTML file path and HTML content to result
         return {
-          success: true,
-          tables: [],
-          totalTables: 0,
-          sheetName,
-          summary: `HTML saved for inspection. Open the file to see structure:\n${htmlFilePath}`,
+          ...result,
           htmlFilePath,
           htmlLength: html.length,
+          html: fullHtml, // Return full HTML for UI display
+          semanticHtml: html, // Return semantic HTML (just the content, not wrapped)
         };
       } catch (error: any) {
         console.error('[Rookie] AI analysis error:', error);

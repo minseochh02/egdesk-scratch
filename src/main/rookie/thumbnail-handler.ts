@@ -68,39 +68,40 @@ export async function detectTablesByEmptyGaps(
     const worksheet = workbook.worksheets[0];
     console.log('[Corner Detection] Worksheet:', worksheet.name);
 
-    // IMMEDIATE A3 DEBUG - before any processing
-    console.log('\n========== IMMEDIATE A3 DEBUG ==========');
-    const a3 = worksheet.getCell(3, 1); // Row 3, Col 1 = A3
-    const a2 = worksheet.getCell(2, 1); // A2 (above)
-    const a4 = worksheet.getCell(4, 1); // A4 (below)
-    const b3 = worksheet.getCell(3, 2); // B3 (right)
+    // IMMEDIATE O3 DEBUG - before any processing
+    console.log('\n========== IMMEDIATE O3 DEBUG ==========');
+    const o3 = worksheet.getCell(3, 15); // Row 3, Col 15 = O3
+    const o2 = worksheet.getCell(2, 15); // O2 (above)
+    const o4 = worksheet.getCell(4, 15); // O4 (below)
+    const n3 = worksheet.getCell(3, 14); // N3 (left)
+    const p3 = worksheet.getCell(3, 16); // P3 (right)
 
-    console.log('A3:', {
-      address: a3.address,
-      value: a3.value,
-      border: a3.border,
-      isMerged: a3.isMerged,
+    console.log('O3:', {
+      address: o3.address,
+      value: o3.value,
+      border: o3.border,
+      isMerged: o3.isMerged,
     });
-    console.log('A2 (above):', {
-      address: a2.address,
-      value: a2.value,
-      border: a2.border,
+    console.log('O2 (above):', {
+      address: o2.address,
+      value: o2.value,
+      border: o2.border,
     });
-    console.log('A4 (below):', {
-      address: a4.address,
-      value: a4.value,
-      border: a4.border,
+    console.log('N3 (left):', {
+      address: n3.address,
+      value: n3.value,
+      border: n3.border,
     });
-    console.log('B3 (right):', {
-      address: b3.address,
-      value: b3.value,
-      border: b3.border,
+    console.log('P3 (right):', {
+      address: p3.address,
+      value: p3.value,
+      border: p3.border,
     });
     console.log('========================================\n');
 
     console.log('[Corner Detection] Starting full sheet scan...');
     let cellsScanned = 0;
-    let a3Scanned = false;
+    let o3Scanned = false;
 
     // Helper: check if cell has NO borders (data doesn't matter!)
     const hasNoBorders = (row: number, col: number): boolean => {
@@ -175,25 +176,31 @@ export async function detectTablesByEmptyGaps(
       row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         cellsScanned++;
 
-        // Track if we scanned A3
-        if (cell.address === 'A3') {
-          a3Scanned = true;
-        }
+        // Track if we scanned O3
+        if (cell.address === 'O3') {
+          o3Scanned = true;
 
-        // DEBUG: Detailed A3 logging
-        if (cell.address === 'A3') {
-          const cellA2 = worksheet.getCell(2, 1);
-          console.log('\n[DEBUG] === A3 DETAILED CHECK ===');
-          console.log('A3 value:', cell.value);
-          console.log('A3 border:', cell.border);
-          console.log('A3 isMerged:', cell.isMerged);
-          console.log('---');
-          console.log('A2 value:', cellA2.value);
-          console.log('A2 border:', cellA2.border);
-          console.log('A2 hasNoBorders result:', hasNoBorders(2, 1));
-          console.log('---');
-          console.log('Will A3 be skipped? (no border):', !cell.border);
-          console.log('=== END A3 DEBUG ===\n');
+          const cellO2 = worksheet.getCell(2, 15);
+          const cellN3 = worksheet.getCell(3, 14);
+          const cellP3 = worksheet.getCell(3, 16);
+
+          console.log('\n[DEBUG] === O3 IN-SCAN CHECK ===');
+          console.log('O3 reached in scan!');
+          console.log('O3 value:', cell.value);
+          console.log('O3 border:', cell.border);
+          console.log('O3 isMerged:', cell.isMerged);
+          console.log('Will skip (no border)?:', !cell.border);
+
+          if (cell.border) {
+            console.log('Checking TOP-LEFT conditions:');
+            console.log('  - O3 has top border:', hasBorder(3, 15, 'top'));
+            console.log('  - O3 has left border:', hasBorder(3, 15, 'left'));
+            console.log('  - O2 (above) hasNoBorders:', hasNoBorders(2, 15));
+            console.log('  - N3 (left) hasNoBorders:', hasNoBorders(3, 14));
+            console.log('O2 border:', cellO2.border);
+            console.log('N3 border:', cellN3.border);
+          }
+          console.log('=== END O3 IN-SCAN ===\n');
         }
 
         // Don't skip empty cells - check for borders instead!
@@ -297,7 +304,7 @@ export async function detectTablesByEmptyGaps(
 
     console.log('[Corner Detection] Summary:');
     console.log(`  - Cells scanned: ${cellsScanned}`);
-    console.log(`  - A3 was scanned: ${a3Scanned}`);
+    console.log(`  - O3 was scanned: ${o3Scanned}`);
     console.log(`  - TOP-LEFT corners: ${corners.topLeft.length}`);
     console.log(`  - TOP-RIGHT corners: ${corners.topRight.length}`);
     console.log(`  - BOTTOM-LEFT corners: ${corners.bottomLeft.length}`);
@@ -337,11 +344,395 @@ export async function detectTablesByEmptyGaps(
 
     console.log(`[Corner Detection] ✅ Detected ${tables.length} complete tables`);
 
+    return tables;
   } catch (error: any) {
     console.error('[Corner Detection] Error:', error);
+    return tables;
+  }
+}
+
+/**
+ * Convert column number to Excel-style column letter (A, B, C, ..., Z, AA, AB, ...)
+ */
+function columnNumberToLetter(col: number): string {
+  let letter = '';
+  let temp = col;
+
+  while (temp > 0) {
+    const remainder = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    temp = Math.floor((temp - 1) / 26);
   }
 
-  return tables;
+  return letter;
+}
+
+/**
+ * Generate Excel-style cell address (e.g., "A1", "B5", "AA10")
+ */
+function getCellAddress(row: number, col: number): string {
+  return `${columnNumberToLetter(col)}${row}`;
+}
+
+/**
+ * Extract cell value properly, handling formulas, rich text, and objects
+ * Use cell.text which is the formatted display value (same as console.log shows)
+ */
+function extractCellValue(cell: any): string {
+  try {
+    // ExcelJS cell.text gives the formatted display value
+    // Wrap in try-catch because MergeValue.toString() can throw on null
+    if (cell.text !== undefined && cell.text !== null && cell.text !== '') {
+      return String(cell.text);
+    }
+  } catch (error) {
+    // cell.text failed, fall through to value extraction
+  }
+
+  // Fallback to cell.value if text failed
+  const value = cell.value;
+  if (!value) return '';
+
+  // If value is primitive, return it
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+
+  // Handle object values
+  if ('result' in value && value.result !== null && value.result !== undefined) {
+    return String(value.result);
+  }
+  if ('richText' in value && Array.isArray(value.richText)) {
+    return value.richText.map((rt: any) => rt.text).join('');
+  }
+  if ('text' in value && value.text !== null) {
+    return String(value.text);
+  }
+  if ('hyperlink' in value && value.hyperlink !== null) {
+    return String(value.hyperlink);
+  }
+
+  // Don't show [object Object] for shared formulas or unknown types
+  return '';
+}
+
+/**
+ * Generate semantic HTML using detected table boundaries
+ * Detected tables → <table> elements
+ * Other content → <div> with grid CSS
+ */
+export async function generateSemanticHTML(
+  fileBuffer: Buffer,
+  detectedTables: Array<{
+    name: string;
+    rowStart: number;
+    rowEnd: number;
+    colStart: number;
+    colEnd: number;
+  }>
+): Promise<string> {
+  try {
+    console.log('[Semantic HTML] Generating semantic HTML for', detectedTables.length, 'tables');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(fileBuffer);
+    const worksheet = workbook.worksheets[0];
+
+    // Track which cells belong to detected tables
+    const tableCellMap = new Map<string, number>(); // "row,col" → tableIndex
+
+    for (let tableIdx = 0; tableIdx < detectedTables.length; tableIdx++) {
+      const table = detectedTables[tableIdx];
+      for (let r = table.rowStart; r <= table.rowEnd; r++) {
+        for (let c = table.colStart; c <= table.colEnd; c++) {
+          tableCellMap.set(`${r},${c}`, tableIdx);
+        }
+      }
+    }
+
+    // Get dimensions
+    const dimensions = worksheet.dimensions;
+    if (!dimensions) {
+      throw new Error('No worksheet dimensions');
+    }
+
+    const maxRow = dimensions.bottom;
+    const maxCol = dimensions.right;
+
+    console.log('[Semantic HTML] Using CSS Grid layout to preserve exact positioning...');
+    console.log('[Semantic HTML] Grid size:', maxRow, 'rows x', maxCol, 'columns');
+
+    // Use CSS Grid to position everything at exact coordinates
+    let html = `<div class="excel-document" style="display: grid; grid-template-rows: repeat(${maxRow}, auto); grid-template-columns: repeat(${maxCol}, auto); gap: 0;">\n`;
+
+    // Render each detected table as a grid item
+    for (const table of detectedTables) {
+      const rowSpan = table.rowEnd - table.rowStart + 1;
+      const colSpan = table.colEnd - table.colStart + 1;
+
+      html += `  <div class="table-region" style="grid-row: ${table.rowStart} / span ${rowSpan}; grid-column: ${table.colStart} / span ${colSpan};">\n`;
+
+      if (table.name && !table.name.includes('null') && !table.name.startsWith('Table: Table')) {
+        html += `    <div class="table-title">${table.name}</div>\n`;
+      }
+
+      html += `    <table class="detected-table">\n`;
+
+        // Render table rows
+        const processedCells = new Set<string>();
+
+        for (let r = table.rowStart; r <= table.rowEnd; r++) {
+          html += '      <tr>\n';
+
+          for (let c = table.colStart; c <= table.colEnd; c++) {
+            const cellKey = `${r},${c}`;
+
+            if (processedCells.has(cellKey)) {
+              continue;
+            }
+
+            const cell = worksheet.getCell(r, c);
+            const value = extractCellValue(cell);
+
+            let colspan = 1;
+            let rowspan = 1;
+
+            // Check for merges
+            if (cell.isMerged) {
+              const master = cell.master || cell;
+              const merges = worksheet.model.merges || [];
+
+              for (const merge of merges) {
+                if (typeof merge === 'string') {
+                  const [start, end] = merge.split(':');
+                  const startCell = worksheet.getCell(start);
+                  const endCell = worksheet.getCell(end);
+
+                  if (
+                    startCell.row <= r && r <= endCell.row &&
+                    startCell.col <= c && c <= endCell.col
+                  ) {
+                    if (startCell.row === r && startCell.col === c) {
+                      colspan = endCell.col - startCell.col + 1;
+                      rowspan = endCell.row - startCell.row + 1;
+
+                      for (let mr = startCell.row; mr <= endCell.row; mr++) {
+                        for (let mc = startCell.col; mc <= endCell.col; mc++) {
+                          processedCells.add(`${mr},${mc}`);
+                        }
+                      }
+                    } else {
+                      processedCells.add(cellKey);
+                      continue;
+                    }
+                    break;
+                  }
+                }
+              }
+            } else {
+              processedCells.add(cellKey);
+            }
+
+            let tdAttrs = '';
+            if (colspan > 1) tdAttrs += ` colspan="${colspan}"`;
+            if (rowspan > 1) tdAttrs += ` rowspan="${rowspan}"`;
+
+            // Add cell ID (e.g., "A1", "B5")
+            const cellId = getCellAddress(r, c);
+            tdAttrs += ` id="${cellId}" data-cell="${cellId}"`;
+
+            html += `        <td${tdAttrs}>${value || ''}</td>\n`;
+          }
+
+          html += '      </tr>\n';
+        }
+
+        html += '    </table>\n';
+        html += '  </div>\n\n';
+    }
+
+    html += '</div>';
+
+    console.log('[Semantic HTML] Complete - preserved exact row order');
+
+    return html;
+  } catch (error: any) {
+    console.error('[Semantic HTML] Error:', error);
+    throw error;
+  }
+}
+
+// OLD CODE REMOVED - using row-by-row approach now
+/*
+    // OLD: Generate all tables first, then non-table content
+    for (let tableIdx = 0; tableIdx < detectedTables.length; tableIdx++) {
+      const table = detectedTables[tableIdx];
+
+      html += `  <div class="table-region" data-table-index="${tableIdx}">\n`;
+
+      // Only show title if it's not null/empty/generic
+      if (table.name && !table.name.includes('null') && !table.name.startsWith('Table: Table')) {
+        html += `    <div class="table-title">${table.name}</div>\n`;
+      }
+
+      html += `    <table class="detected-table">\n`;
+
+      // Track processed cells (for merged cell handling)
+      const processedCells = new Set<string>();
+
+      for (let r = table.rowStart; r <= table.rowEnd; r++) {
+        html += '      <tr>\n';
+
+        for (let c = table.colStart; c <= table.colEnd; c++) {
+          const cellKey = `${r},${c}`;
+
+          // Skip if already processed (part of a merge)
+          if (processedCells.has(cellKey)) {
+            continue;
+          }
+
+          const cell = worksheet.getCell(r, c);
+          const value = extractCellValue(cell);
+
+          let colspan = 1;
+          let rowspan = 1;
+
+          // Check if this cell is part of a merge
+          if (cell.isMerged) {
+            const master = cell.master || cell;
+
+            // Find the merge range
+            const merges = worksheet.model.merges || [];
+            for (const merge of merges) {
+              if (typeof merge === 'string') {
+                const [start, end] = merge.split(':');
+                const startCell = worksheet.getCell(start);
+                const endCell = worksheet.getCell(end);
+
+                // Check if our cell is in this merge
+                if (
+                  startCell.row <= r && r <= endCell.row &&
+                  startCell.col <= c && c <= endCell.col
+                ) {
+                  if (startCell.row === r && startCell.col === c) {
+                    // This is the master cell
+                    colspan = endCell.col - startCell.col + 1;
+                    rowspan = endCell.row - startCell.row + 1;
+
+                    // Mark all cells in merge as processed
+                    for (let mr = startCell.row; mr <= endCell.row; mr++) {
+                      for (let mc = startCell.col; mc <= endCell.col; mc++) {
+                        processedCells.add(`${mr},${mc}`);
+                      }
+                    }
+                  } else {
+                    // Not master, skip
+                    processedCells.add(cellKey);
+                    continue;
+                  }
+                  break;
+                }
+              }
+            }
+          } else {
+            processedCells.add(cellKey);
+          }
+
+          // Build td attributes
+          let tdAttrs = '';
+          if (colspan > 1) tdAttrs += ` colspan="${colspan}"`;
+          if (rowspan > 1) tdAttrs += ` rowspan="${rowspan}"`;
+
+          html += `        <td${tdAttrs}>${value || ''}</td>\n`;
+        }
+
+        html += '      </tr>\n';
+      }
+
+      html += '    </table>\n';
+      html += '  </div>\n\n';
+    }
+
+    // Generate non-table content as div grid
+    console.log('[Semantic HTML] Generating non-table content...');
+
+    // Build non-table content row by row
+    const nonTableRows: Array<{ row: number; cells: Array<{ col: number; value: string; hasContent: boolean }> }> = [];
+
+    // Use actual dimensions from worksheet
+    const dimensions = worksheet.dimensions;
+    if (!dimensions) {
+      console.log('[Semantic HTML] No dimensions found, skipping non-table content');
+    } else {
+      const maxRow = dimensions.bottom;
+      const maxCol = dimensions.right;
+
+      console.log('[Semantic HTML] Scanning rows 1-', maxRow, ', cols 1-', maxCol);
+
+      for (let r = 1; r <= maxRow; r++) {
+        const rowCells: Array<{ col: number; value: string; hasContent: boolean }> = [];
+        let rowHasNonTableContent = false;
+
+        for (let c = 1; c <= maxCol; c++) {
+          const cellKey = `${r},${c}`;
+
+          // Skip if this cell belongs to a detected table
+          if (tableCellMap.has(cellKey)) {
+            continue;
+          }
+
+          const cell = worksheet.getCell(r, c);
+          const value = extractCellValue(cell);
+          const hasContent = !!value;
+
+          if (hasContent) {
+            rowHasNonTableContent = true;
+          }
+
+          rowCells.push({ col: c, value, hasContent });
+        }
+
+        // Only add row if it has at least one cell with content
+        if (rowHasNonTableContent) {
+          nonTableRows.push({ row: r, cells: rowCells });
+        }
+      }
+    }
+
+    if (nonTableRows.length > 0) {
+      html += '  <div class="non-table-content">\n';
+      html += '    <div class="section-title">Other Content (Headers, Notes, etc.)</div>\n';
+      html += '    <div class="grid-layout">\n';
+
+      for (const rowData of nonTableRows) {
+        html += `      <div class="grid-row" data-row="${rowData.row}">\n`;
+        for (const cellData of rowData.cells) {
+          const cellClass = cellData.hasContent ? 'grid-cell has-content' : 'grid-cell empty';
+          const displayValue = cellData.value || '';
+          html += `        <div class="${cellClass}" data-col="${cellData.col}">${displayValue}</div>\n`;
+        }
+        html += '      </div>\n';
+      }
+
+      html += '    </div>\n';
+      html += '  </div>\n';
+
+      console.log('[Semantic HTML] Generated', nonTableRows.length, 'rows of non-table content');
+    } else {
+      console.log('[Semantic HTML] No non-table content found');
+    }
+
+    html += '</div>';
+
+    console.log('[Semantic HTML] Complete:');
+    console.log(`  - ${detectedTables.length} table elements`);
+    console.log(`  - ${nonTableRows.length} rows of non-table content`);
+
+    return html;
+  } catch (error: any) {
+    console.error('[Semantic HTML] Error:', error);
+    throw error;
+  }
 }
 
 /**

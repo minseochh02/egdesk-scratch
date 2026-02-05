@@ -1372,8 +1372,8 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 // ============================================
 
 import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
-import { parseHometaxExcel } from './hometax-excel-parser';
-import { importTaxInvoices, recordSyncOperation, getTaxInvoices, getSpreadsheetUrl, saveSpreadsheetUrl } from './sqlite/hometax';
+import { parseHometaxExcel, parseCashReceiptExcel } from './hometax-excel-parser';
+import { importTaxInvoices, recordSyncOperation, getTaxInvoices, getSpreadsheetUrl, saveSpreadsheetUrl, importCashReceipts, getCashReceipts, getCashReceiptSpreadsheetUrl, saveCashReceiptSpreadsheetUrl } from './sqlite/hometax';
 import { getConversationsDatabase, getFinanceHubDatabase } from './sqlite/init';
 
 /**
@@ -1594,6 +1594,23 @@ ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
 });
 
 /**
+ * Get cash receipts from database
+ */
+ipcMain.handle('hometax:get-cash-receipts', async (event, filters: any) => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = getCashReceipts(db, filters);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-cash-receipts error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
  * Get saved spreadsheet URL for a business and invoice type
  */
 ipcMain.handle('hometax:get-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase') => {
@@ -1620,6 +1637,40 @@ ipcMain.handle('hometax:save-spreadsheet-url', async (event, businessNumber: str
     return result;
   } catch (error) {
     console.error('[IPC] hometax:save-spreadsheet-url error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Get saved cash receipt spreadsheet URL for a business
+ */
+ipcMain.handle('hometax:get-cash-receipt-spreadsheet-url', async (event, businessNumber: string) => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = getCashReceiptSpreadsheetUrl(db, businessNumber);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-cash-receipt-spreadsheet-url error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Save cash receipt spreadsheet URL for a business
+ */
+ipcMain.handle('hometax:save-cash-receipt-spreadsheet-url', async (event, businessNumber: string, spreadsheetUrl: string) => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = saveCashReceiptSpreadsheetUrl(db, businessNumber, spreadsheetUrl);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:save-cash-receipt-spreadsheet-url error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -1779,14 +1830,90 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
       console.log('[IPC] ⚠️  No last month purchase file - skipping (no data for this period)');
     }
 
-    console.log(`[IPC] Import complete - Sales: ${salesInserted} new (${salesDuplicate} duplicate), Purchase: ${purchaseInserted} new (${purchaseDuplicate} duplicate)`);
+    // Parse cash receipt Excel
+    let cashReceiptInserted = 0;
+    let cashReceiptDuplicate = 0;
+
+    if (result.cashReceiptFile) {
+      console.log('[IPC] Parsing cash receipt Excel:', result.cashReceiptFile);
+      const cashReceiptParsed = parseCashReceiptExcel(result.cashReceiptFile);
+
+      if (cashReceiptParsed.success && cashReceiptParsed.receipts && cashReceiptParsed.receipts.length > 0) {
+        // Get business number from certificate data or from already-parsed tax invoice files
+        let businessNumber = certificateData.businessNumber || certificateData.사업자등록번호;
+
+        // If not found in certificate data, try to get from parsed sales/purchase files
+        if (!businessNumber) {
+          // Try this month sales first
+          if (result.thisMonthSalesFile) {
+            const parsed = parseHometaxExcel(result.thisMonthSalesFile);
+            if (parsed.success && parsed.businessNumber) {
+              businessNumber = parsed.businessNumber;
+              console.log('[IPC] Got business number from this month sales file:', businessNumber);
+            }
+          }
+        }
+
+        if (!businessNumber && result.thisMonthPurchaseFile) {
+          const parsed = parseHometaxExcel(result.thisMonthPurchaseFile);
+          if (parsed.success && parsed.businessNumber) {
+            businessNumber = parsed.businessNumber;
+            console.log('[IPC] Got business number from this month purchase file:', businessNumber);
+          }
+        }
+
+        if (businessNumber) {
+          const importResult = importCashReceipts(
+            db,
+            businessNumber,
+            cashReceiptParsed.receipts,
+            result.cashReceiptFile
+          );
+          cashReceiptInserted += importResult.inserted;
+          cashReceiptDuplicate += importResult.duplicate;
+          console.log(`[IPC] Cash receipts: ${importResult.inserted} new, ${importResult.duplicate} duplicate`);
+        } else {
+          console.error('[IPC] ⚠️  Could not determine business number for cash receipts');
+        }
+      }
+    } else {
+      console.log('[IPC] ⚠️  No cash receipt file - skipping (no data for this period)');
+    }
+
+    console.log(`[IPC] Import complete - Sales: ${salesInserted} new (${salesDuplicate} duplicate), Purchase: ${purchaseInserted} new (${purchaseDuplicate} duplicate), Cash Receipts: ${cashReceiptInserted} new (${cashReceiptDuplicate} duplicate)`);
+
+    // Clean up downloaded Excel files after successful import
+    console.log('[IPC] Cleaning up downloaded Excel files...');
+    const filesToDelete = [
+      result.thisMonthSalesFile,
+      result.lastMonthSalesFile,
+      result.thisMonthPurchaseFile,
+      result.lastMonthPurchaseFile,
+      result.cashReceiptFile
+    ].filter(Boolean); // Remove undefined/null values
+
+    for (const filePath of filesToDelete) {
+      try {
+        if (filePath && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log('[IPC] Deleted file:', filePath);
+        }
+      } catch (deleteError) {
+        console.warn('[IPC] Failed to delete file:', filePath, deleteError);
+        // Don't fail the entire operation if file deletion fails
+      }
+    }
+
+    console.log('[IPC] Cleanup complete');
 
     return {
       success: true,
       salesInserted,
       salesDuplicate,
       purchaseInserted,
-      purchaseDuplicate
+      purchaseDuplicate,
+      cashReceiptInserted,
+      cashReceiptDuplicate
     };
 
   } catch (error) {

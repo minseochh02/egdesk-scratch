@@ -9,6 +9,7 @@ import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
 import { migrateToUnifiedSchema } from './migrations/001-unified-schema';
 import { createHometaxSchema } from './migrations/002-hometax-schema';
+import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema';
 import { addHometaxSpreadsheetUrlColumns } from './migrations/003-hometax-spreadsheet-urls';
 import { createSyncDatabase } from './sheet-sync-init';
 import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
@@ -178,6 +179,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       initializeShinhanTransactionsSchema(conversationsDb);
       migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema in conversations.db
       createHometaxSchema(conversationsDb);
+      createCashReceiptsSchema(conversationsDb);
       addHometaxSpreadsheetUrlColumns(conversationsDb);
 
       // Now migrate to new database
@@ -194,8 +196,10 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       // Just ensure schema exists in financehub.db
       const { initializeFinanceHubSchema } = await import('./financehub');
       const { createHometaxSchema } = await import('./migrations/002-hometax-schema');
+      const { createCashReceiptsSchema } = await import('./migrations/005-cash-receipts-schema');
       initializeFinanceHubSchema(financeHubDb);
       createHometaxSchema(financeHubDb);
+      createCashReceiptsSchema(financeHubDb);
     }
     
     // Initialize task manager

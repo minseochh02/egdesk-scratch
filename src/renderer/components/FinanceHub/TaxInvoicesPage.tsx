@@ -21,12 +21,13 @@ interface ConnectedBusiness {
   businessName: string;
   salesCount: number;
   purchaseCount: number;
+  cashReceiptCount: number;
 }
 
 interface TaxInvoicesPageProps {
   invoices: TaxInvoice[]; // Filtered and sorted invoices for display
   allInvoices: TaxInvoice[]; // All invoices for building filter options
-  invoiceType: 'sales' | 'purchase';
+  invoiceType: 'sales' | 'purchase' | 'cash-receipt';
   stats: TaxInvoiceStatsData;
   filters: TaxInvoiceFiltersType;
   isLoading: boolean;
@@ -36,7 +37,7 @@ interface TaxInvoicesPageProps {
   showGoogleAuth: boolean;
   signingIn: boolean;
   savedSpreadsheetUrl?: string | null;
-  onInvoiceTypeChange: (type: 'sales' | 'purchase') => void;
+  onInvoiceTypeChange: (type: 'sales' | 'purchase' | 'cash-receipt') => void;
   onFilterChange: (key: keyof TaxInvoiceFiltersType, value: string) => void;
   onResetFilters: () => void;
   onSort: (key: string) => void;
@@ -82,6 +83,7 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   // Calculate total counts
   const totalSalesCount = businesses.reduce((sum, b) => sum + (b.salesCount || 0), 0);
   const totalPurchaseCount = businesses.reduce((sum, b) => sum + (b.purchaseCount || 0), 0);
+  const totalCashReceiptCount = businesses.reduce((sum, b) => sum + (b.cashReceiptCount || 0), 0);
 
   return (
     <div className="tip">
@@ -136,7 +138,7 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
             onClick={onExport}
             disabled={!onExport}
           >
-            📊 {invoiceType === 'sales' ? '매출' : '매입'} 스프레드시트 열기 {savedSpreadsheetUrl && '(기존 시트 업데이트)'}
+            📊 {invoiceType === 'sales' ? '매출' : invoiceType === 'purchase' ? '매입' : '현금영수증'} 스프레드시트 열기 {savedSpreadsheetUrl && '(기존 시트 업데이트)'}
           </button>
           {savedSpreadsheetUrl && onClearSpreadsheet && (
             <button
@@ -199,14 +201,23 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
           <span className="tip-invoice-type-tab__label">매입</span>
           <span className="tip-invoice-type-tab__count">{totalPurchaseCount}건</span>
         </button>
+        <button
+          className={`tip-invoice-type-tab ${invoiceType === 'cash-receipt' ? 'tip-invoice-type-tab--active' : ''}`}
+          onClick={() => onInvoiceTypeChange('cash-receipt')}
+        >
+          <span className="tip-invoice-type-tab__icon">💵</span>
+          <span className="tip-invoice-type-tab__label">현금영수증</span>
+          <span className="tip-invoice-type-tab__count">{totalCashReceiptCount}건</span>
+        </button>
       </div>
 
       {/* Tax Invoice Table */}
       {invoices.length === 0 && !isLoading ? (
         <div className="tip-empty">
-          <div className="tip-empty__icon">🧾</div>
-          <h3>수집된 {invoiceType === 'sales' ? '매출' : '매입'} 세금계산서가 없습니다</h3>
-          <p>세금 관리 탭에서 사업자를 연결하고 수집하면 전자세금계산서 목록이 표시됩니다</p>
+          <div className="tip-empty__icon">{invoiceType === 'cash-receipt' ? '💵' : '🧾'}</div>
+          <h3>수집된 {invoiceType === 'sales' ? '매출 세금계산서' : invoiceType === 'purchase' ? '매입 세금계산서' : '현금영수증'}
+          {invoiceType === 'cash-receipt' ? '이' : '가'} 없습니다</h3>
+          <p>세금 관리 탭에서 사업자를 연결하고 수집하면 {invoiceType === 'cash-receipt' ? '현금영수증' : '전자세금계산서'} 목록이 표시됩니다</p>
         </div>
       ) : (
         <TaxInvoiceTable

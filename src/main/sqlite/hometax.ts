@@ -3,7 +3,7 @@
 // ============================================
 
 import Database from 'better-sqlite3';
-import { TaxInvoiceData } from '../hometax-excel-parser';
+import { TaxInvoiceData, CashReceiptData } from '../hometax-excel-parser';
 
 /**
  * Import tax invoices into database
@@ -318,6 +318,222 @@ export function getSpreadsheetUrl(
     };
   } catch (error) {
     console.error('[Hometax DB] Error getting spreadsheet URL:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Get saved cash receipt spreadsheet URL for a business
+ */
+export function getCashReceiptSpreadsheetUrl(
+  db: Database.Database,
+  businessNumber: string
+): { success: boolean; spreadsheetUrl?: string; error?: string } {
+  try {
+    const stmt = db.prepare(`
+      SELECT cash_receipt_spreadsheet_url as spreadsheet_url
+      FROM hometax_connections
+      WHERE business_number = ?
+    `);
+
+    const result = stmt.get(businessNumber) as { spreadsheet_url: string | null } | undefined;
+
+    return {
+      success: true,
+      spreadsheetUrl: result?.spreadsheet_url || undefined
+    };
+  } catch (error) {
+    console.error('[Hometax DB] Error getting cash receipt spreadsheet URL:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Save cash receipt spreadsheet URL for a business
+ */
+export function saveCashReceiptSpreadsheetUrl(
+  db: Database.Database,
+  businessNumber: string,
+  spreadsheetUrl: string
+): { success: boolean; error?: string } {
+  try {
+    console.log(`[Hometax DB] Saving cash receipt spreadsheet URL for ${businessNumber}`);
+
+    // Update hometax_connections table
+    const stmt = db.prepare(`
+      UPDATE hometax_connections
+      SET cash_receipt_spreadsheet_url = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE business_number = ?
+    `);
+
+    const result = stmt.run(spreadsheetUrl, businessNumber);
+
+    if (result.changes === 0) {
+      console.warn(`[Hometax DB] No connection found for business ${businessNumber}, creating one`);
+
+      // Insert if doesn't exist
+      const insertStmt = db.prepare(`
+        INSERT INTO hometax_connections (business_number, cash_receipt_spreadsheet_url)
+        VALUES (?, ?)
+        ON CONFLICT(business_number) DO UPDATE SET cash_receipt_spreadsheet_url = excluded.cash_receipt_spreadsheet_url, updated_at = CURRENT_TIMESTAMP
+      `);
+
+      insertStmt.run(businessNumber, spreadsheetUrl);
+    }
+
+    console.log(`[Hometax DB] Cash receipt spreadsheet URL saved successfully`);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax DB] Error saving cash receipt spreadsheet URL:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Import cash receipts into database
+ */
+export function importCashReceipts(
+  db: Database.Database,
+  businessNumber: string,
+  receipts: CashReceiptData[],
+  excelFilePath: string
+): { success: boolean; inserted: number; duplicate: number; error?: string } {
+  try {
+    console.log(`[Hometax DB] Importing ${receipts.length} cash receipts for ${businessNumber}`);
+
+    const insertStmt = db.prepare(`
+      INSERT INTO cash_receipts (
+        business_number,
+        발행구분, 매출일시, 공급가액, 부가세, 봉사료, 총금액,
+        승인번호, 신분확인뒷4자리, 거래구분, 용도구분, 비고,
+        excel_file_path
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      )
+      ON CONFLICT(business_number, 승인번호, 매출일시) DO NOTHING
+    `);
+
+    let inserted = 0;
+    let duplicate = 0;
+
+    const transaction = db.transaction((receipts: CashReceiptData[]) => {
+      for (const receipt of receipts) {
+        const result = insertStmt.run(
+          businessNumber,
+          receipt.발행구분,
+          receipt.매출일시,
+          receipt.공급가액,
+          receipt.부가세,
+          receipt.봉사료,
+          receipt.총금액,
+          receipt.승인번호,
+          receipt.신분확인뒷4자리,
+          receipt.거래구분,
+          receipt.용도구분,
+          receipt.비고,
+          excelFilePath
+        );
+
+        if (result.changes > 0) {
+          inserted++;
+        } else {
+          duplicate++;
+        }
+      }
+    });
+
+    transaction(receipts);
+
+    console.log(`[Hometax DB] Import complete: ${inserted} inserted, ${duplicate} duplicates`);
+
+    return {
+      success: true,
+      inserted,
+      duplicate
+    };
+
+  } catch (error) {
+    console.error('[Hometax DB] Error importing cash receipts:', error);
+    return {
+      success: false,
+      inserted: 0,
+      duplicate: 0,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Get cash receipts with filters
+ */
+export function getCashReceipts(
+  db: Database.Database,
+  filters: {
+    businessNumber?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }
+): { success: boolean; data?: any[]; total?: number; error?: string } {
+  try {
+    let query = 'SELECT * FROM cash_receipts WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters.businessNumber) {
+      query += ' AND business_number = ?';
+      params.push(filters.businessNumber);
+    }
+
+    if (filters.startDate) {
+      query += ' AND 매출일시 >= ?';
+      params.push(filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query += ' AND 매출일시 <= ?';
+      params.push(filters.endDate);
+    }
+
+    // Get total count
+    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const countResult = db.prepare(countQuery).get(...params) as { total: number };
+    const total = countResult.total;
+
+    // Add pagination
+    query += ' ORDER BY 매출일시 DESC, 승인번호 DESC';
+
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(filters.limit);
+    }
+
+    if (filters.offset) {
+      query += ' OFFSET ?';
+      params.push(filters.offset);
+    }
+
+    const stmt = db.prepare(query);
+    const results = stmt.all(...params);
+
+    return {
+      success: true,
+      data: results,
+      total
+    };
+
+  } catch (error) {
+    console.error('[Hometax DB] Error getting cash receipts:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

@@ -226,6 +226,26 @@ export function registerSheetsHandlers(): void {
     }
   });
 
+  // Export cash receipts to spreadsheet
+  ipcMain.handle('sheets:export-cash-receipts', async (_, { receipts, existingSpreadsheetUrl }) => {
+    try {
+      // Trigger migration on first sync
+      await ensureMigrationRun();
+
+      const result = await sheetsService.exportCashReceiptsToSpreadsheet(receipts, existingSpreadsheetUrl);
+
+      // TODO: Add saveSpreadsheetUrl for cash receipts if needed
+
+      return result;
+    } catch (error: any) {
+      console.error('Error exporting cash receipts:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to export cash receipts',
+      };
+    }
+  });
+
   // Query imported table data
   ipcMain.handle('sheets:query-imported-table', async (_, { tableName, limit = 100, offset = 0 }) => {
     try {

@@ -22,6 +22,27 @@ interface Resource {
   icon: string;
 }
 
+interface DataSource {
+  type: 'web' | 'app' | 'api' | 'manual' | 'file' | 'database';
+  name: string;
+  description: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+interface DataField {
+  fieldName: string;
+  header: string;
+  location: {
+    row: number;
+    col: number;
+  };
+  fieldType: 'input' | 'output' | 'calculated';
+  dataType: string;
+  sampleValue?: string;
+  dataSources: DataSource[];
+  description: string;
+}
+
 interface ExcelTable {
   id: string;
   name: string;
@@ -38,6 +59,7 @@ interface ExcelTable {
     isMerged?: boolean;
   }>;
   dataRowCount: number;
+  dataFields?: DataField[];
 }
 
 interface AIAnalysisResult {
@@ -47,6 +69,9 @@ interface AIAnalysisResult {
   summary: string;
   suggestions?: string[];
   error?: string;
+  html?: string; // Full HTML for display
+  semanticHtml?: string; // Semantic HTML content
+  htmlFilePath?: string;
 }
 
 // Mock resources for UI development
@@ -202,8 +227,9 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
 
       console.log('[Analysis] AI analysis result:', analysisResult);
 
-      if (!analysisResult.success) {
-        throw new Error(analysisResult.message || 'AI analysis failed');
+      if (!analysisResult || !analysisResult.success) {
+        const errorMsg = analysisResult?.message || analysisResult?.error || 'AI analysis failed';
+        throw new Error(String(errorMsg));
       }
 
       setAiAnalysis(analysisResult);
@@ -341,7 +367,7 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
             {isAnalyzing && (
               <div className="rookie-ai-loading">
                 <div className="rookie-spinner"></div>
-                <p>Claude is analyzing your Excel structure...</p>
+                <p>Gemini is analyzing your Excel structure...</p>
               </div>
             )}
 
@@ -390,6 +416,66 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                           </ul>
                         </div>
                       )}
+
+                      {/* Data Fields Analysis */}
+                      {table.dataFields && table.dataFields.length > 0 && (
+                        <div className="rookie-ai-data-fields">
+                          <strong>Data Fields ({table.dataFields.length}):</strong>
+                          <div className="rookie-data-fields-list">
+                            {table.dataFields.map((field, fidx) => (
+                              <div key={fidx} className="rookie-data-field-card">
+                                <div className="rookie-data-field-header">
+                                  <span className="rookie-field-name">{field.fieldName}</span>
+                                  <span className={`rookie-field-type ${field.fieldType}`}>
+                                    {field.fieldType}
+                                  </span>
+                                </div>
+
+                                <div className="rookie-data-field-info">
+                                  <div><strong>Header:</strong> {field.header}</div>
+                                  <div><strong>Location:</strong> Row {field.location.row}, Col {field.location.col}</div>
+                                  <div><strong>Data Type:</strong> {field.dataType}</div>
+                                  {field.sampleValue && (
+                                    <div><strong>Sample:</strong> {field.sampleValue}</div>
+                                  )}
+                                  <div className="rookie-field-description">{field.description}</div>
+                                </div>
+
+                                {field.dataSources && field.dataSources.length > 0 && (
+                                  <div className="rookie-data-sources">
+                                    <strong>Data Sources:</strong>
+                                    {field.dataSources.map((source, sidx) => (
+                                      <div
+                                        key={sidx}
+                                        className={`rookie-data-source confidence-${source.confidence}`}
+                                      >
+                                        <div className="rookie-source-header">
+                                          <span className={`rookie-source-type ${source.type}`}>
+                                            {source.type === 'web' && '🌐'}
+                                            {source.type === 'app' && '🖥️'}
+                                            {source.type === 'api' && '🔌'}
+                                            {source.type === 'manual' && '✍️'}
+                                            {source.type === 'file' && '📁'}
+                                            {source.type === 'database' && '🗄️'}
+                                            {' '}{source.type.toUpperCase()}
+                                          </span>
+                                          <span className="rookie-source-name">{source.name}</span>
+                                          <span className={`rookie-confidence-badge ${source.confidence}`}>
+                                            {source.confidence}
+                                          </span>
+                                        </div>
+                                        <div className="rookie-source-description">
+                                          {source.description}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -413,11 +499,31 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                 <p>❌ AI Analysis failed: {aiAnalysis.error}</p>
                 {aiAnalysis.error?.includes('NO_API_KEY') && (
                   <p style={{ marginTop: '10px', fontSize: '12px', color: '#888' }}>
-                    Please configure your Anthropic API key in AI Keys Manager
+                    Please configure your Google API key in AI Keys Manager
                   </p>
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Excel HTML Preview */}
+        {!isAnalyzing && aiAnalysis && aiAnalysis.html && (
+          <div className="rookie-step-section">
+            <h3 className="rookie-step-title">Excel Structure Preview</h3>
+            <div className="rookie-html-preview">
+              <div className="rookie-html-preview-controls">
+                <span className="rookie-html-info">
+                  {aiAnalysis.htmlFilePath && (
+                    <>File saved to: {aiAnalysis.htmlFilePath}</>
+                  )}
+                </span>
+              </div>
+              <div
+                className="rookie-html-preview-content"
+                dangerouslySetInnerHTML={{ __html: aiAnalysis.html }}
+              />
+            </div>
           </div>
         )}
 
