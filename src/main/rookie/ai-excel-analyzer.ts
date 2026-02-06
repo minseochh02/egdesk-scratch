@@ -6,23 +6,51 @@
 
 import { generateWithRookieAI } from './rookie-ai-handler';
 
-export interface DataNeed {
-  field: string; // Simple field name (e.g., "거래일자", "금액", "거래처명")
-  sources: string[]; // Simple list of possible sources (e.g., ["NH Bank", "Woori Bank"])
+// DATA-ORIENTED ROOKIE Interfaces
+
+export interface ReportContext {
+  company: string;
+  reportPurpose: string;
+  period: string;
+  dataStory: string;
 }
 
-export interface TableSummary {
-  name: string; // Table name/title
-  purpose: string; // What this table is for
-  dataNeeds: DataNeed[]; // What data this table needs
+export interface Dimension {
+  name: string;
+  values: string[];
+  description: string;
+  unclearTerms?: string[]; // Terms in this dimension that are unclear
+}
+
+export interface Measure {
+  name: string;
+  unit: string;
+  description: string;
+  questions?: string[]; // What's unclear about this measure
+}
+
+export interface Calculation {
+  name: string;
+  logic: string;
+  example?: string;
+  unclear?: string; // What's unclear about this calculation
+}
+
+export interface RawDataNeeds {
+  description: string;
+  fields: string[];
+  sources: string[];
 }
 
 export interface ExcelAnalysisResult {
   success: boolean;
-  tables: TableSummary[];
-  totalTables: number;
   sheetName: string;
-  summary: string;
+  reportContext?: ReportContext;
+  dimensions?: Dimension[];
+  measures?: Measure[];
+  calculations?: Calculation[];
+  rawDataNeeds?: RawDataNeeds;
+  unclearTerms?: string[]; // Overall list of terms that need research
   error?: string;
 }
 
@@ -34,6 +62,7 @@ export async function analyzeExcelStructure(params: {
   sheetName: string;
   apiKey?: string;
   screenshot?: string; // base64 PNG (optional)
+  availableSourceFiles?: string[]; // Names of available source files
 }): Promise<ExcelAnalysisResult> {
   try {
     console.log('[AI Excel Analyzer] Analyzing Excel structure...');
@@ -41,78 +70,169 @@ export async function analyzeExcelStructure(params: {
     console.log('  - HTML length:', params.html.length, 'chars');
     console.log('  - Has screenshot:', !!params.screenshot);
 
-    // Build the prompt text - SIMPLIFIED for faster response
-    let promptText = `You are analyzing a Korean Excel file to identify what data it needs.
+    // Build the prompt text - DATA-ORIENTED ROOKIE
+    const systemPrompt = `You are **Rookie**, a brand new analyst on day 1 at this company.
 
-HTML structure of the Excel sheet:
+You have NEVER seen their systems, reports, or terminology before.
+
+**Your mindset:**
+- You DON'T understand company-specific abbreviations, codes, or terms
+- You DON'T know what their Korean business terminology means
+- You CAN observe patterns (groupings, sums, time periods)
+- You MUST flag every unclear term as something to research
+
+**When you see an unfamiliar term:**
+- Don't assume what it means
+- Don't make up a plausible explanation
+- Just note: "UNCLEAR: [term] - need to research what this means"
+
+Think like a real new hire: observe patterns, copy exact terms, ask questions about what's unclear.`;
+
+
+    let promptText = `You're seeing this company's report for the FIRST TIME. You don't know what their specific terms mean.
+
+Report: "${params.sheetName}"
+
+${params.availableSourceFiles && params.availableSourceFiles.length > 0 ? `
+**AVAILABLE SOURCE FILES:**
+${params.availableSourceFiles.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+
+You can see what source files are available. Use these file names as hints when guessing where data might come from.
+` : ''}
+
 \`\`\`html
 ${params.html}
 \`\`\`
 
-Provide a SIMPLE analysis:
+Analyze as a genuinely NEW person would:
 
-1. **Identify each table** - What is the table name/title?
-2. **What is the purpose** of each table? (1 sentence)
-3. **What data does it need?** - List the key data fields (like "거래일자", "금액", "거래처명", etc.)
-4. **Where could this data come from?** - For each field, list 1-3 possible sources
+**1. BASIC CONTEXT**
+What can you infer without knowing their terminology?
+- Company/business
+- Report purpose (sales? inventory? financial?)
+- Time period visible
+- General data story
 
-**Keep it concise!** Just identify:
-- Table names
-- Data field names (from headers)
-- Possible sources (simple names like "NH Bank", "Naver", "ERP System")
+**2. DATA DIMENSIONS**
+For each way data is broken down:
+- Pattern name: [your hypothesis - geography? time? product?]
+- Values seen: [copy EXACT terms from report]
+- Description: [what you THINK this might be]
+- **Unclear terms**: [list ANY terms/abbreviations you don't understand - don't assume meanings!]
 
-**Example format:**
-- Table: "월별 매출 현황"
-  - Purpose: "Track monthly sales"
-  - Needs: "날짜" (sources: Manual), "매출액" (sources: POS System, Naver Shopping), "거래처" (sources: ERP)
+If you see an abbreviation, code, or Korean term you don't recognize - FLAG IT. Don't guess.
 
-Focus on WHAT data is needed and WHERE it might come from. Keep responses short.`;
+**3. MEASURES**
+For each number tracked:
+- Name: [EXACT term from report]
+- Unit: [if clear, specify. If unclear, say "UNKNOWN"]
+- Description: [what you think it measures - or "UNCLEAR" if you can't tell]
+- **Questions**: [What is confusing about this measure?]
+
+**4. CALCULATIONS**
+Observe patterns in the numbers:
+- Describe what you SEE (row sums, cumulative totals, etc.)
+- Don't explain HOW they work unless obvious
+- Note what's UNCLEAR
+
+**5. RAW DATA NEEDS**
+Based purely on the patterns you observe, what would raw data need?
+- Expected fields
+- Possible sources
+
+**CRITICAL RULE: If you don't understand a term, say "UNCLEAR: [term]" and add it to your questions. Do NOT make up meanings for abbreviations or domain-specific terms.`;
 
     if (params.screenshot) {
       promptText = `[Image: Screenshot of Excel file]\n\n${promptText}`;
     }
 
-    // Define SIMPLIFIED response schema for structured JSON output
+    // Define DATA-ORIENTED response schema
     const responseSchema = {
       type: 'object',
       properties: {
-        tables: {
+        reportContext: {
+          type: 'object',
+          properties: {
+            company: { type: 'string' },
+            reportPurpose: { type: 'string' },
+            period: { type: 'string' },
+            dataStory: { type: 'string' },
+          },
+          required: ['company', 'reportPurpose', 'period', 'dataStory'],
+        },
+        dimensions: {
           type: 'array',
+          description: 'Data dimensions (how data is broken down)',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Your hypothesis for dimension name' },
+              values: { type: 'array', items: { type: 'string' }, description: 'EXACT values from report' },
+              description: { type: 'string', description: 'What you THINK this represents' },
+              unclearTerms: { type: 'array', items: { type: 'string' }, description: 'Terms you dont understand' },
+            },
+            required: ['name', 'values', 'description'],
+          },
+        },
+        measures: {
+          type: 'array',
+          description: 'Numeric data being tracked',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'EXACT term from report' },
+              unit: { type: 'string', description: 'Unit if clear, or UNKNOWN' },
+              description: { type: 'string', description: 'What you think it measures, or UNCLEAR' },
+              questions: { type: 'array', items: { type: 'string' }, description: 'Questions about this measure' },
+            },
+            required: ['name', 'unit', 'description'],
+          },
+        },
+        calculations: {
+          type: 'array',
+          description: 'Calculations observed',
           items: {
             type: 'object',
             properties: {
               name: { type: 'string' },
-              purpose: { type: 'string' },
-              dataNeeds: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    field: { type: 'string' },
-                    sources: {
-                      type: 'array',
-                      items: { type: 'string' },
-                    },
-                  },
-                  required: ['field', 'sources'],
-                },
-              },
+              logic: { type: 'string', description: 'What you observe, not assumed logic' },
+              example: { type: 'string' },
+              unclear: { type: 'string', description: 'What is unclear about this' },
             },
-            required: ['name', 'purpose', 'dataNeeds'],
+            required: ['name', 'logic'],
           },
         },
-        summary: { type: 'string' },
+        unclearTerms: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Overall list of all unclear terms/abbreviations that need research',
+        },
+        rawDataNeeds: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'What raw data would someone need to build this?' },
+            fields: { type: 'array', items: { type: 'string' }, description: 'Field names the raw data should have' },
+            sources: { type: 'array', items: { type: 'string' }, description: 'Where this data might come from' },
+          },
+          required: ['description', 'fields', 'sources'],
+        },
+        unclearTerms: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'All unclear terms/abbreviations/codes that need research',
+        },
       },
-      required: ['tables', 'summary'],
+      required: ['reportContext', 'dimensions', 'measures', 'calculations', 'rawDataNeeds'],
     };
 
     // Call Gemini API using dedicated Rookie AI handler
     const result = await generateWithRookieAI({
       prompt: promptText,
+      systemPrompt,
       apiKey: params.apiKey,
       model: 'gemini-2.5-flash',
       temperature: 0,
-      maxOutputTokens: 32768, // Keep high for safety
+      maxOutputTokens: 32768, // Keep high for comprehensive analysis
       responseSchema,
     });
 
@@ -124,16 +244,21 @@ Focus on WHAT data is needed and WHERE it might come from. Keep responses short.
 
     const analysis = result.json;
 
-    console.log('[AI Excel Analyzer] Analysis complete');
-    console.log('  - Tables found:', analysis.tables?.length || 0);
+    console.log('[AI Excel Analyzer] ROOKIE data-oriented analysis complete');
+    console.log('  - Dimensions found:', analysis.dimensions?.length || 0);
+    console.log('  - Measures found:', analysis.measures?.length || 0);
+    console.log('  - Calculations found:', analysis.calculations?.length || 0);
+    console.log('  - Unclear terms:', analysis.unclearTerms?.length || 0);
 
     return {
       success: true,
-      tables: analysis.tables || [],
-      totalTables: analysis.tables?.length || 0,
       sheetName: params.sheetName,
-      summary: analysis.summary || 'No summary provided',
-      suggestions: analysis.suggestions,
+      reportContext: analysis.reportContext,
+      dimensions: analysis.dimensions,
+      measures: analysis.measures,
+      calculations: analysis.calculations,
+      rawDataNeeds: analysis.rawDataNeeds,
+      unclearTerms: analysis.unclearTerms,
     };
   } catch (error: any) {
     console.error('[AI Excel Analyzer] Error:', error);

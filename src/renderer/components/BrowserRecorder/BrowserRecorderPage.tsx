@@ -1007,7 +1007,7 @@ const BrowserRecorderPage: React.FC = () => {
                         autoFocus
                       />
                       <small style={{ color: '#666', marginTop: '4px', display: 'block' }}>
-                        The file will be renamed to: {renameValue.trim() || 'test'}.spec.ts
+                        The file will be renamed to: {renameValue.trim() || 'test'}.spec.s
                       </small>
                     </div>
                   </div>
