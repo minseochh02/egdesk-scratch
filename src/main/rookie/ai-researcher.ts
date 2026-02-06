@@ -91,7 +91,7 @@ You have browser automation tools:
 - wait(milliseconds) - Wait for page to load (use if snapshot returns 0 elements)
 - goBack() - Browser back button (use if stuck or need to return to previous page)
 - goForward() - Browser forward button
-- snapshot() - Get current page elements as compact refs (@e1, @e2, etc.)
+- snapshot() - Get current page elements as compact refs (@e1, @e2, etc.). Elements show "visited: true/false" to indicate if you've clicked them before.
 - click(elementId, index?) - Click an element by its @e ID from snapshot. Use index if multiple matches.
 - resolveElement(elementId) - See all matching elements when you get "strict mode violation"
 - fill(elementId, value) - Fill an input field (for non-sensitive data only)
@@ -773,12 +773,16 @@ Systematically explore the site and document what it offers:
    - **FOCUS ON: Reports, Data Export, Downloads, Search, Lookup, View, Query, Analytics, Dashboard**
    - **SKIP: Register, Create, Upload, Import, Add New, Edit, Modify, Settings, Help**
    - We're looking for where data CAN BE READ, not where data is created/uploaded
-   - Click every data viewing/reporting menu you see
+   - **Prioritize "visited: false" elements** - snapshot marks elements you've clicked before
+   - Click unvisited data viewing/reporting menus first
+   - If all elements on a page are "visited: true", you've explored it - move on or go back
    - **If one section is restricted, keep exploring others!** Mixed permissions are normal.
    - For each accessible section: check what reports/data can be downloaded or viewed
    - For restricted sections: note "restricted" and move to next menu
 
-**CRITICAL:** "No permission" on ONE section ≠ all sections blocked. Keep exploring!
+**CRITICAL:**
+- "No permission" on ONE section ≠ all sections blocked. Keep exploring!
+- Prefer "visited: false" elements to avoid redundant exploration
 
 4. If a click() fails:
    - Check the error message:

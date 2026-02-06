@@ -104,6 +104,7 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [newSiteNotes, setNewSiteNotes] = useState('');
   const [loginCredentials, setLoginCredentials] = useState<Record<string, string>>({});
+  const [explorationMode, setExplorationMode] = useState<'sequential' | 'parallel'>('sequential');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resourceFileInputRef = useRef<HTMLInputElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -338,14 +339,25 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
     try {
       setIsResearching(true);
       console.log('[Analysis] Resuming research with credentials...');
+      console.log('[Analysis] Mode:', researcherResults.mode || 'sequential');
 
-      const result = await (window as any).electron.invoke(
-        'rookie:resume-research',
-        {
-          loginFields: finding.loginFields,
-          credentialValues: loginCredentials,
-        }
-      );
+      // Use appropriate IPC channel based on mode
+      const ipcChannel = researcherResults.mode === 'parallel'
+        ? 'rookie:resume-exploration'
+        : 'rookie:resume-research';
+
+      const ipcParams = researcherResults.mode === 'parallel'
+        ? {
+            site: { url: finding.site },
+            loginFields: finding.loginFields,
+            credentialValues: loginCredentials,
+          }
+        : {
+            loginFields: finding.loginFields,
+            credentialValues: loginCredentials,
+          };
+
+      const result = await (window as any).electron.invoke(ipcChannel, ipcParams);
 
       console.log('[Analysis] Resume result:', result);
 
@@ -386,11 +398,16 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
       setIsResearching(true);
       setResearcherResults(null);
       console.log('[Analysis] Starting website research...');
+      console.log('[Analysis] Mode:', explorationMode);
       console.log('[Analysis] Sites to explore:', researchSites.length);
 
-      // Call RESEARCHER IPC - AI will map site capabilities
+      // Call RESEARCHER or EXPLORER based on mode
+      const ipcChannel = explorationMode === 'parallel'
+        ? 'rookie:explore-websites-parallel'
+        : 'rookie:research-websites';
+
       const result = await (window as any).electron.invoke(
-        'rookie:research-websites',
+        ipcChannel,
         {
           sites: researchSites,
         }
@@ -410,9 +427,13 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
         setResearcherResults({
           ...result,
           needsCredentialInput: true,
+          mode: explorationMode,
         });
       } else {
-        setResearcherResults(result);
+        setResearcherResults({
+          ...result,
+          mode: explorationMode,
+        });
       }
     } catch (error: any) {
       console.error('[Analysis] Research error:', error);
@@ -1102,8 +1123,30 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
           <div className="rookie-research-sites-section">
             <h4 className="rookie-subsection-title">Research Websites</h4>
             <p className="rookie-subsection-description">
-              Add website URLs where RESEARCHER should look for missing data. AI will automatically discover what login fields are needed and ask you to provide credentials.
+              Add website URLs where AI should look for missing data. AI will automatically discover what login fields are needed and ask you to provide credentials.
             </p>
+
+            {/* Exploration Mode Selector */}
+            <div className="rookie-mode-selector">
+              <label className="rookie-mode-label">
+                <strong>Exploration Mode:</strong>
+              </label>
+              <select
+                value={explorationMode}
+                onChange={(e) => setExplorationMode(e.target.value as 'sequential' | 'parallel')}
+                className="rookie-mode-dropdown"
+              >
+                <option value="sequential">RESEARCHER (Sequential) - Single agent, 50 iterations</option>
+                <option value="parallel">EXPLORER (Parallel) - Multi-agent, ~210 iterations</option>
+              </select>
+              <div className="rookie-mode-description">
+                {explorationMode === 'sequential' ? (
+                  <span>✓ Simple, single AI agent explores sequentially. Good for small sites.</span>
+                ) : (
+                  <span>✓ Multiple AI agents explore in parallel. More thorough, faster execution.</span>
+                )}
+              </div>
+            </div>
 
             {!showAddSiteForm ? (
               <button
@@ -1201,7 +1244,7 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
             <div className="rookie-login-request-section">
               <h4 className="rookie-researcher-title">🔐 Login Credentials Needed</h4>
               <p className="rookie-login-request-note">
-                🔍 RESEARCHER explored the sites and discovered what fields are needed for login.
+                🔍 {researcherResults.mode === 'parallel' ? 'EXPLORER' : 'RESEARCHER'} explored the sites and discovered what fields are needed for login.
                 <br />
                 🔒 Your passwords are encrypted and never exposed to AI.
               </p>
@@ -1249,7 +1292,19 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
           {/* Research Results */}
           {researcherResults && researcherResults.success && !researcherResults.needsCredentialInput && (
             <div className="rookie-researcher-results-section">
-              <h4 className="rookie-researcher-title">🎯 Research Findings</h4>
+              <h4 className="rookie-researcher-title">
+                🎯 Research Findings
+                {researcherResults.mode && (
+                  <span className="rookie-mode-badge">
+                    {researcherResults.mode === 'parallel' ? '⚡ EXPLORER (Parallel)' : '📖 RESEARCHER (Sequential)'}
+                  </span>
+                )}
+              </h4>
+              {researcherResults.savedTo && (
+                <div className="rookie-results-saved-note">
+                  💾 Results saved to: <code>{researcherResults.savedTo}</code>
+                </div>
+              )}
               {researcherResults.findings.map((finding: any, idx: number) => (
                 <div key={idx} className={`rookie-research-finding ${finding.success ? 'success' : 'failed'}`}>
                   <div className="rookie-research-site-header">
@@ -1288,7 +1343,18 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                       )}
 
                       <div className="rookie-research-stats">
-                        Tool calls: {finding.toolCalls || 0} | Screenshots: {finding.screenshots?.length || 0}
+                        {finding.explorationStats ? (
+                          <>
+                            Agents: {finding.explorationStats.totalAgents} |
+                            Tool calls: {finding.explorationStats.totalToolCalls} |
+                            Sections: {finding.explorationStats.sectionsExplored} |
+                            Time: {(finding.explorationStats.executionTimeMs / 1000).toFixed(1)}s
+                          </>
+                        ) : (
+                          <>
+                            Tool calls: {finding.toolCalls || 0} | Screenshots: {finding.screenshots?.length || 0}
+                          </>
+                        )}
                       </div>
                     </>
                   )}
