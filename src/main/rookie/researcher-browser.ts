@@ -38,6 +38,7 @@ export interface ElementRef {
   tag: string;
   interactable: boolean;
   selector?: string;
+  visited?: boolean; // Has this element been clicked before?
 }
 
 export interface PageSnapshot {
@@ -56,6 +57,8 @@ export class ResearcherBrowser {
   private page: Page | null = null;
   private elementMap: Map<string, any> = new Map(); // @e1 -> actual element
   private elementCounter = 0;
+  private visitedElements: Set<string> = new Set(); // Clicked element IDs (@e1, @e2, etc.)
+  private visitedUrls: Set<string> = new Set(); // URLs we've been to
 
   /**
    * Launch browser (uses system Chrome) - ALWAYS VISIBLE for debugging
@@ -101,6 +104,9 @@ export class ResearcherBrowser {
       const title = await this.page.title();
 
       console.log('[ResearcherBrowser] Page loaded:', finalUrl);
+
+      // Track visited URL
+      this.visitedUrls.add(finalUrl);
 
       return { success: true, url: finalUrl, title };
     } catch (error: any) {
@@ -225,12 +231,19 @@ export class ResearcherBrowser {
 
           const elementId = `@e${++this.elementCounter}`;
 
+          // Check if this element was visited before (by matching role + name)
+          const wasVisited = Array.from(this.visitedElements).some(visitedId => {
+            const visitedInfo = this.elementMap.get(visitedId);
+            return visitedInfo && visitedInfo.role === role && visitedInfo.name === name;
+          });
+
           elements.push({
             id: elementId,
             role,
             name: name.substring(0, 100), // Limit length
             tag: selector.split(',')[0],
             interactable: true,
+            visited: wasVisited, // Mark if previously clicked
           });
 
           // Store reference for later interaction
@@ -247,9 +260,12 @@ export class ResearcherBrowser {
     }
 
     const tokenCount = Math.ceil(JSON.stringify(elements).length / 4);
+    const visitedCount = elements.filter(e => e.visited).length;
+    const unvisitedCount = elements.length - visitedCount;
 
     console.log('[ResearcherBrowser] Snapshot created:');
-    console.log(`  - Elements: ${elements.length}`);
+    console.log(`  - Total elements: ${elements.length}`);
+    console.log(`  - Unvisited: ${unvisitedCount} | Visited: ${visitedCount}`);
     console.log(`  - Approximate tokens: ${tokenCount}`);
 
     return {
@@ -296,6 +312,14 @@ export class ResearcherBrowser {
 
       // Wait for any navigation or updates
       await this.page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+
+      // Mark this element as visited
+      this.visitedElements.add(elementId);
+      console.log(`[ResearcherBrowser] Marked ${elementId} as visited`);
+
+      // Track new URL if navigation happened
+      const newUrl = this.page.url();
+      this.visitedUrls.add(newUrl);
 
       return { success: true };
     } catch (error: any) {
@@ -413,6 +437,15 @@ export class ResearcherBrowser {
   }
 
   /**
+   * Reset visited tracking (use when starting new research session)
+   */
+  resetVisitedTracking(): void {
+    this.visitedElements.clear();
+    this.visitedUrls.clear();
+    console.log('[ResearcherBrowser] Visited tracking cleared');
+  }
+
+  /**
    * Close browser
    */
   async close(): Promise<void> {
@@ -421,6 +454,8 @@ export class ResearcherBrowser {
       this.browser = null;
       this.context = null;
       this.page = null;
+      // Clear visited tracking when closing
+      this.resetVisitedTracking();
       console.log('[ResearcherBrowser] Browser closed');
     }
   }

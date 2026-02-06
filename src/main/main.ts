@@ -3602,9 +3602,42 @@ const createWindow = async () => {
 
         console.log('\n[Researcher] All sites explored');
 
+        // Save research results to JSON for study
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'researcher-results')
+          : path.join(process.cwd(), 'output', 'researcher-results');
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const resultFileName = `research_${timestamp}.json`;
+        const resultFilePath = path.join(outputDir, resultFileName);
+
+        const fullResults = {
+          timestamp: new Date().toISOString(),
+          sites: sites.map((s: any) => ({ url: s.url, notes: s.notes })),
+          findings: allFindings,
+          summary: {
+            totalSites: sites.length,
+            successfulSites: allFindings.filter((f: any) => f.success && !f.needsLogin).length,
+            needsLogin: allFindings.filter((f: any) => f.needsLogin).length,
+            failed: allFindings.filter((f: any) => !f.success).length,
+          },
+        };
+
+        try {
+          fs.writeFileSync(resultFilePath, JSON.stringify(fullResults, null, 2), 'utf-8');
+          console.log('[Researcher] ✅ Results saved to:', resultFilePath);
+        } catch (saveError) {
+          console.warn('[Researcher] Failed to save results:', saveError);
+        }
+
         return {
           success: true,
           findings: allFindings,
+          savedTo: resultFilePath,
         };
       } catch (error: any) {
         console.error('[Researcher] Error:', error);
@@ -3629,6 +3662,159 @@ const createWindow = async () => {
         return result;
       } catch (error: any) {
         console.error('[Researcher] Resume error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Register EXPLORER handler (parallel multi-agent website exploration)
+    ipcMain.handle('rookie:explore-websites-parallel', async (_event, { sites }) => {
+      try {
+        console.log('[Explorer] Starting parallel website exploration...');
+        console.log('[Explorer] Sites to explore:', sites.length);
+
+        const { exploreWebsiteParallel, saveExplorationResults } = await import('./rookie/ai-explorer');
+
+        const allFindings: any[] = [];
+
+        for (let idx = 0; idx < sites.length; idx++) {
+          const site = sites[idx];
+
+          console.log(`\n[Explorer] Exploring site ${idx + 1}/${sites.length}: ${site.url}`);
+          if (site.notes) {
+            console.log(`[Explorer] User notes: ${site.notes}`);
+          }
+
+          const result = await exploreWebsiteParallel({
+            url: site.url,
+            credentials: site.credentials,
+            credentialValues: site.credentialValues,
+            loginFields: site.loginFields,
+          });
+
+          if (result.success && result.needsLogin) {
+            // Login page detected - need credentials
+            console.log('[Explorer] 🔐 Login page detected');
+            console.log('  - Login fields discovered:', result.loginFields?.fields?.length || 0);
+
+            allFindings.push({
+              site: site.url,
+              success: true,
+              needsLogin: true,
+              loginFields: result.loginFields,
+            });
+          } else if (result.success) {
+            // Exploration completed successfully
+            console.log('[Explorer] ✓ Exploration successful');
+            console.log('  - Agents used:', result.explorationStats?.totalAgents || 0);
+            console.log('  - Tool calls:', result.explorationStats?.totalToolCalls || 0);
+            console.log('  - Capabilities found:', result.capabilities?.length || 0);
+
+            allFindings.push({
+              site: site.url,
+              success: true,
+              needsLogin: false,
+              siteName: result.siteName,
+              siteType: result.siteType,
+              capabilities: result.capabilities,
+              explorationStats: result.explorationStats,
+            });
+          } else {
+            // Exploration failed
+            console.log('[Explorer] ✗ Exploration failed:', result.error);
+            allFindings.push({
+              site: site.url,
+              success: false,
+              error: result.error,
+            });
+          }
+        }
+
+        console.log('\n[Explorer] All sites explored');
+
+        // Check if any sites need login - if so, return early WITHOUT saving
+        const sitesNeedingLogin = allFindings.filter((f: any) => f.needsLogin);
+        if (sitesNeedingLogin.length > 0) {
+          console.log('[Explorer] Some sites need login credentials - waiting for user input');
+          return {
+            success: true,
+            findings: allFindings,
+            needsCredentialInput: true, // Signal UI to show credential form
+          };
+        }
+
+        // Only save results if exploration actually completed (no login needed)
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'explorer-results')
+          : path.join(process.cwd(), 'output', 'explorer-results');
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const resultFileName = `explore_${timestamp}.json`;
+        const resultFilePath = path.join(outputDir, resultFileName);
+
+        const fullResults = {
+          timestamp: new Date().toISOString(),
+          method: 'EXPLORER (Parallel Multi-Agent)',
+          sites: sites.map((s: any) => ({ url: s.url, notes: s.notes })),
+          findings: allFindings,
+          summary: {
+            totalSites: sites.length,
+            successfulSites: allFindings.filter((f: any) => f.success && !f.needsLogin).length,
+            needsLogin: allFindings.filter((f: any) => f.needsLogin).length,
+            failed: allFindings.filter((f: any) => !f.success).length,
+            totalAgents: allFindings.reduce((sum: number, f: any) => sum + (f.explorationStats?.totalAgents || 0), 0),
+            totalToolCalls: allFindings.reduce((sum: number, f: any) => sum + (f.explorationStats?.totalToolCalls || 0), 0),
+          },
+        };
+
+        try {
+          fs.writeFileSync(resultFilePath, JSON.stringify(fullResults, null, 2), 'utf-8');
+          console.log('[Explorer] ✅ Results saved to:', resultFilePath);
+        } catch (saveError) {
+          console.warn('[Explorer] Failed to save results:', saveError);
+        }
+
+        return {
+          success: true,
+          findings: allFindings,
+          savedTo: resultFilePath,
+        };
+      } catch (error: any) {
+        console.error('[Explorer] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Register EXPLORER resume handler (continue with user-provided credentials)
+    ipcMain.handle('rookie:resume-exploration', async (_event, { site, loginFields, credentialValues }) => {
+      try {
+        console.log('[Explorer] Resuming exploration with user credentials...');
+        console.log('[Explorer] Fields provided:', Object.keys(credentialValues).length);
+
+        const { exploreWebsiteParallel } = await import('./rookie/ai-explorer');
+
+        const result = await exploreWebsiteParallel({
+          url: site.url,
+          credentialValues,
+          loginFields,
+        });
+
+        if (result.success && result.savedTo) {
+          console.log('[Explorer] ✅ Exploration complete, results saved to:', result.savedTo);
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Explorer] Resume error:', error);
         return {
           success: false,
           error: error.message,
