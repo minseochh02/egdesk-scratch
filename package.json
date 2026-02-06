@@ -57,7 +57,8 @@
     "debug:single-image-real": "node scripts/debug/debug-single-image-real.js",
     "debug:production": "node scripts/debug/production-debug.js",
     "cleanup:old-storage": "node scripts/cleanup/cleanup-old-storage.js",
-    "test:tunnel-ping": "node scripts/test/test-tunnel-ping.js"
+    "test:tunnel-ping": "node scripts/test/test-tunnel-ping.js",
+    "test:researcher": "ts-node scripts/test/test-researcher-standalone.ts"
   },
   "browserslist": [
     "extends browserslist-config-erb"

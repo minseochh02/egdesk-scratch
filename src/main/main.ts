@@ -90,6 +90,9 @@ import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
 import { processExcelFile, wrapHtmlForThumbnail, trimTrailingEmptyRows, detectTablesByEmptyGaps } from './rookie/thumbnail-handler';
 import { generateSemanticHTMLWithGrid } from './rookie/excel-to-semantic-html';
 import { analyzeExcelStructure } from './rookie/ai-excel-analyzer';
+import { analyzeSourceMapping } from './rookie/ai-resolver';
+import { ExcelDataStore } from './rookie/excel-query-tool';
+import { researchWebsite, resumeResearchWithCredentials, SecureCredentials } from './rookie/ai-researcher';
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
 import { 
   registerServerName, 
@@ -3195,9 +3198,42 @@ const createWindow = async () => {
     registerDesktopRecorderHandlers();
 
     // Register Rookie AI Excel Analysis handler (from buffer)
-    ipcMain.handle('rookie:analyze-excel-from-buffer', async (_event, { buffer, fileName }) => {
+    ipcMain.handle('rookie:analyze-excel-from-buffer', async (_event, { buffer, fileName, forceRegenerate = false, availableSourceFiles = [] }) => {
       try {
         console.log('[Rookie] Analyzing Excel from buffer:', fileName);
+        console.log('[Rookie] Force regenerate:', forceRegenerate);
+        console.log('[Rookie] Available source files:', availableSourceFiles.length);
+
+        // Create cache directory
+        const cacheDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'rookie-cache')
+          : path.join(process.cwd(), 'output', 'rookie-cache');
+
+        if (!fs.existsSync(cacheDir)) {
+          fs.mkdirSync(cacheDir, { recursive: true });
+        }
+
+        // Generate cache file name (sanitize fileName)
+        const sanitizedName = fileName.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+        const cacheFileName = `${sanitizedName}_analysis.json`;
+        const cacheFilePath = path.join(cacheDir, cacheFileName);
+
+        // Check if cached analysis exists
+        if (!forceRegenerate && fs.existsSync(cacheFilePath)) {
+          try {
+            console.log('[Rookie] Found cached analysis:', cacheFilePath);
+            const cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
+            console.log('[Rookie] Returning cached analysis');
+            return {
+              ...cachedData,
+              fromCache: true,
+              cacheFilePath,
+            };
+          } catch (cacheError) {
+            console.warn('[Rookie] Failed to load cache, regenerating:', cacheError);
+            // Continue to regenerate if cache is corrupted
+          }
+        }
 
         // Note: API key is now handled by centralized Gemini handler
         // It will automatically get the Google API key from store or env
@@ -3352,16 +3388,30 @@ const createWindow = async () => {
         const result = await analyzeExcelStructure({
           html,
           sheetName,
+          availableSourceFiles,
         });
 
-        // Add HTML file path and HTML content to result
-        return {
+        // Prepare response
+        const response = {
           ...result,
           htmlFilePath,
           htmlLength: html.length,
           html: fullHtml, // Return full HTML for UI display
           semanticHtml: html, // Return semantic HTML (just the content, not wrapped)
+          fromCache: false,
         };
+
+        // Save analysis to cache
+        try {
+          fs.writeFileSync(cacheFilePath, JSON.stringify(response, null, 2), 'utf-8');
+          console.log('[Rookie] ✅ Analysis cached to:', cacheFilePath);
+          response.cacheFilePath = cacheFilePath;
+        } catch (saveError) {
+          console.warn('[Rookie] Failed to save cache:', saveError);
+          // Continue without cache
+        }
+
+        return response;
       } catch (error: any) {
         console.error('[Rookie] AI analysis error:', error);
         return {
@@ -3372,6 +3422,216 @@ const createWindow = async () => {
           totalTables: 0,
           sheetName: '',
           summary: '',
+        };
+      }
+    });
+
+    // Register Resolver handler (maps source files to target report)
+    ipcMain.handle('rookie:analyze-source-mapping', async (_event, { rookieAnalysis, targetHtml, sourceFiles, forceRegenerate = false }) => {
+      try {
+        console.log('[Resolver] Analyzing source-to-target mapping...');
+        console.log('[Resolver] Source files:', sourceFiles.length);
+        console.log('[Resolver] Force regenerate:', forceRegenerate);
+
+        // Create cache directory
+        const cacheDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'rookie-cache')
+          : path.join(process.cwd(), 'output', 'rookie-cache');
+
+        if (!fs.existsSync(cacheDir)) {
+          fs.mkdirSync(cacheDir, { recursive: true });
+        }
+
+        // Generate cache key from target sheet + source file names
+        const sourceFileNames = sourceFiles.map((f: any) => f.fileName).sort().join('_');
+        const cacheKey = `${rookieAnalysis.sheetName}_${sourceFileNames}`.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+        const cacheFileName = `resolver_${cacheKey}.json`;
+        const cacheFilePath = path.join(cacheDir, cacheFileName);
+
+        // Check if cached analysis exists
+        if (!forceRegenerate && fs.existsSync(cacheFilePath)) {
+          try {
+            console.log('[Resolver] Found cached analysis:', cacheFilePath);
+            const cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
+            console.log('[Resolver] Returning cached analysis');
+            return {
+              ...cachedData,
+              fromCache: true,
+              cacheFilePath,
+            };
+          } catch (cacheError) {
+            console.warn('[Resolver] Failed to load cache, regenerating:', cacheError);
+            // Continue to regenerate if cache is corrupted
+          }
+        }
+
+        // Create local data store for this analysis session
+        const sourceFilesData = new Map<string, ExcelDataStore>();
+        const sourceFilesSchemas = [];
+        const XLSX = await import('xlsx');
+
+        for (let idx = 0; idx < sourceFiles.length; idx++) {
+          const sourceFile = sourceFiles[idx];
+          const fileBuffer = Buffer.from(sourceFile.buffer);
+          const fileId = `source${idx + 1}`;
+
+          // Parse Excel from buffer
+          const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+
+          // Convert to JSON (array of arrays)
+          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: false, // Get formatted values
+          });
+
+          if (jsonData.length === 0) {
+            console.warn(`[Resolver] Empty sheet: ${sourceFile.fileName}`);
+            continue;
+          }
+
+          // First row is headers
+          const headers = jsonData[0].map((h: any) => String(h || ''));
+          const rows = jsonData.slice(1); // Data rows
+
+          // Store in local Map
+          sourceFilesData.set(fileId, {
+            fileName: sourceFile.fileName,
+            sheetName,
+            headers,
+            rows,
+          });
+
+          // Get sample rows (first 5)
+          const sampleRows = rows.slice(0, 5);
+
+          sourceFilesSchemas.push({
+            fileId,
+            fileName: sourceFile.fileName,
+            sheetName,
+            headers,
+            rowCount: rows.length,
+            sampleRows,
+          });
+
+          console.log(`[Resolver] Loaded ${sourceFile.fileName}: ${rows.length} rows, ${headers.length} columns`);
+        }
+
+        // Run Resolver analysis with tools
+        const result = await analyzeSourceMapping({
+          rookieAnalysis,
+          targetHtml,
+          sourceFilesData, // Pass the Map directly
+          sourceFilesSchemas,
+        });
+
+        // Save to cache
+        try {
+          fs.writeFileSync(cacheFilePath, JSON.stringify({ ...result, fromCache: false }, null, 2), 'utf-8');
+          console.log('[Resolver] ✅ Analysis cached to:', cacheFilePath);
+        } catch (saveError) {
+          console.warn('[Resolver] Failed to save cache:', saveError);
+        }
+
+        return {
+          ...result,
+          fromCache: false,
+          cacheFilePath,
+        };
+      } catch (error: any) {
+        console.error('[Resolver] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Register RESEARCHER handler (website exploration)
+    ipcMain.handle('rookie:research-websites', async (_event, { sites }) => {
+      try {
+        console.log('[Researcher] Starting website research...');
+        console.log('[Researcher] Sites to explore:', sites.length);
+
+        // Research each site (no credentials provided upfront - AI will discover what's needed)
+        const allFindings: any[] = [];
+
+        for (let idx = 0; idx < sites.length; idx++) {
+          const site = sites[idx];
+
+          console.log(`\n[Researcher] Exploring site ${idx + 1}/${sites.length}: ${site.url}`);
+          if (site.notes) {
+            console.log(`[Researcher] User notes: ${site.notes}`);
+          }
+
+          const task = {
+            url: site.url,
+            userNotes: site.notes,
+            // No credentialId - AI will discover what fields are needed and map site capabilities
+          };
+
+          const result = await researchWebsite(task);
+
+          if (result.success) {
+            console.log('[Researcher] ✓ Research successful');
+            console.log('  - Needs login:', result.needsLogin);
+            console.log('  - Tool calls:', result.toolCalls);
+            console.log('  - Data locations found:', result.dataLocations?.length || 0);
+
+            allFindings.push({
+              site: site.url,
+              success: true,
+              needsLogin: result.needsLogin,
+              loginFields: result.loginFields,
+              findings: result.findings,
+              dataLocations: result.dataLocations,
+              screenshots: result.screenshots,
+              toolCalls: result.toolCalls,
+            });
+          } else {
+            console.log('[Researcher] ✗ Research failed:', result.error);
+            allFindings.push({
+              site: site.url,
+              success: false,
+              error: result.error,
+            });
+          }
+        }
+
+        console.log('\n[Researcher] All sites explored');
+
+        return {
+          success: true,
+          findings: allFindings,
+        };
+      } catch (error: any) {
+        console.error('[Researcher] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Register RESEARCHER resume handler (continue with user-provided credentials)
+    ipcMain.handle('rookie:resume-research', async (_event, { loginFields, credentialValues }) => {
+      try {
+        console.log('[Researcher] Resuming research with user credentials...');
+        console.log('[Researcher] Fields provided:', Object.keys(credentialValues).length);
+
+        const result = await resumeResearchWithCredentials({
+          loginFields,
+          credentialValues,
+        });
+
+        return result;
+      } catch (error: any) {
+        console.error('[Researcher] Resume error:', error);
+        return {
+          success: false,
+          error: error.message,
         };
       }
     });

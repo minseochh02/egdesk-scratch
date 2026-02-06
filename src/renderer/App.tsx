@@ -2045,7 +2045,8 @@ function NavigationBar({
   const isDevelopmentActive = [
     '/homepage-editor',
     '/egchatting',
-    '/browser-recorder'
+    '/browser-recorder',
+    '/rookie'
   ].some(path => location.pathname.startsWith(path));
 
   const isMarketingActive = [
@@ -2086,15 +2087,6 @@ function NavigationBar({
             {!isNarrow && <span>Home</span>}
           </Link>
 
-          <Link
-            to="/rookie"
-            className={`nav-link ${location.pathname === '/rookie' ? 'active' : ''}`}
-            title="Rookie"
-          >
-            <FontAwesomeIcon icon={faChessRook} />
-            {!isNarrow && <span>Rookie</span>}
-          </Link>
-
           {/* Development Group */}
           <NavDropdown
             title="Development"
@@ -2122,6 +2114,13 @@ function NavigationBar({
             >
               <FontAwesomeIcon icon={faRobot} fixedWidth />
               <span>Browser Recorder</span>
+            </Link>
+            <Link
+              to="/rookie"
+              className={`nav-dropdown-item ${location.pathname === '/rookie' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faChessRook} fixedWidth />
+              <span>Rookie</span>
             </Link>
           </NavDropdown>
 
@@ -2201,15 +2200,17 @@ function NavigationBar({
           </NavDropdown>
 
           {/* Help & Tools - Kept as icons/buttons */}
-          <button
-            className="nav-link"
-            onClick={() => setShowDebugModal(true)}
-            style={{ cursor: 'pointer' }}
-            title="Open Debug Panel"
-          >
-            <FontAwesomeIcon icon={faRobot} />
-            {!isNarrow && <span>Debug</span>}
-          </button>
+          {(process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true') && (
+            <button
+              className="nav-link"
+              onClick={() => setShowDebugModal(true)}
+              style={{ cursor: 'pointer' }}
+              title="Open Debug Panel"
+            >
+              <FontAwesomeIcon icon={faRobot} />
+              {!isNarrow && <span>Debug</span>}
+            </button>
+          )}
           <button
             className="nav-link"
             onClick={() => setShowSupportModal(true)}

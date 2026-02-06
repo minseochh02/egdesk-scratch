@@ -14,12 +14,16 @@ export interface RookieAIOptions {
   temperature?: number;
   maxOutputTokens?: number;
   responseSchema?: any;
+  tools?: any[]; // Function declarations for tool calling
+  toolExecutor?: (toolName: string, args: any) => Promise<any>; // Function to execute tools
+  maxToolCalls?: number; // Max tool call iterations (default: 10)
 }
 
 export interface RookieAIResult {
   text: string;
   json?: any;
   raw: string;
+  toolCalls?: Array<{ name: string; args: any; result: any }>; // Record of tool calls made
 }
 
 /**
@@ -120,6 +124,9 @@ export async function generateWithRookieAI(options: RookieAIOptions): Promise<Ro
     temperature = 0,
     maxOutputTokens = 32768, // Keep high for safety
     responseSchema,
+    tools,
+    toolExecutor,
+    maxToolCalls = 10,
   } = options;
 
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
@@ -139,6 +146,7 @@ export async function generateWithRookieAI(options: RookieAIOptions): Promise<Ro
   console.log('[Rookie AI] Generating with model:', model);
   console.log('[Rookie AI] Using API key:', keyPreview);
   console.log('[Rookie AI] Structured output:', !!responseSchema);
+  console.log('[Rookie AI] Tools enabled:', !!tools);
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -148,18 +156,160 @@ export async function generateWithRookieAI(options: RookieAIOptions): Promise<Ro
       maxOutputTokens,
     };
 
-    // Add JSON schema for structured output if provided
-    if (responseSchema) {
+    // Add JSON schema for structured output if provided (only when NOT using tools)
+    if (responseSchema && !tools) {
       generationConfig.responseMimeType = 'application/json';
       generationConfig.responseSchema = responseSchema;
     }
 
-    const aiModel = genAI.getGenerativeModel({
+    const modelConfig: any = {
       model,
       generationConfig,
       systemInstruction: systemPrompt,
-    });
+    };
 
+    // Add tools if provided
+    if (tools && tools.length > 0) {
+      modelConfig.tools = tools;
+    }
+
+    const aiModel = genAI.getGenerativeModel(modelConfig);
+
+    // Handle tool calling loop if tools are provided
+    if (tools && toolExecutor) {
+      console.log('[Rookie AI] Starting tool calling loop with periodic summarization...');
+      const chat = aiModel.startChat({
+        history: [],
+      });
+
+      let iteration = 0;
+      const toolCallLog: Array<{ name: string; args: any; result: any }> = [];
+      let cumulativeSummary = ''; // Running summary of what AI has learned
+      const SUMMARIZE_EVERY = 10; // Summarize every 10 tool calls
+
+      // Send initial prompt
+      let result = await chat.sendMessage(prompt.trim());
+      iteration++;
+
+      // Tool calling loop
+      while (iteration < maxToolCalls) {
+        const response = result.response;
+        const functionCalls = response.functionCalls();
+
+        if (!functionCalls || functionCalls.length === 0) {
+          // No more tool calls - we have final answer
+          const text = response.text();
+          console.log(`[Rookie AI] Final response after ${iteration} iterations (${text.length} characters)`);
+          console.log(`[Rookie AI] Total tool calls made: ${toolCallLog.length}`);
+
+          // Parse JSON if needed
+          let parsedJson: any = undefined;
+          if (responseSchema) {
+            try {
+              parsedJson = parseJsonRobust(text);
+              console.log('[Rookie AI] Successfully parsed JSON response');
+            } catch (parseError) {
+              console.error('[Rookie AI] Failed to parse JSON from tool calling result');
+              // Continue without JSON
+            }
+          }
+
+          return {
+            text: text.trim(),
+            json: parsedJson,
+            raw: text,
+            toolCalls: toolCallLog,
+          };
+        }
+
+        // Execute all function calls
+        console.log(`[Rookie AI] Iteration ${iteration}: ${functionCalls.length} tool call(s)`);
+        const functionResponses = await Promise.all(
+          functionCalls.map(async (call) => {
+            console.log(`[Rookie AI] Executing tool: ${call.name}`, call.args);
+            try {
+              const toolResult = await toolExecutor(call.name, call.args);
+              console.log(`[Rookie AI] Tool result:`, toolResult);
+
+              toolCallLog.push({
+                name: call.name,
+                args: call.args,
+                result: toolResult,
+              });
+
+              return {
+                functionResponse: {
+                  name: call.name,
+                  response: toolResult,
+                },
+              };
+            } catch (toolError: any) {
+              console.error(`[Rookie AI] Tool execution error:`, toolError);
+              return {
+                functionResponse: {
+                  name: call.name,
+                  response: {
+                    success: false,
+                    error: toolError.message,
+                  },
+                },
+              };
+            }
+          })
+        );
+
+        // Send function responses back to AI
+        result = await chat.sendMessage(functionResponses);
+        iteration++;
+
+        // Periodic summarization to manage context
+        if (iteration % SUMMARIZE_EVERY === 0 && iteration < maxToolCalls - 5) {
+          console.log(`[Rookie AI] 📝 Checkpoint at iteration ${iteration} - requesting summary...`);
+
+          // Ask AI to summarize what it's learned so far
+          const summaryRequest = await chat.sendMessage([{
+            functionResponse: {
+              name: 'system_message',
+              response: {
+                message: `You've made ${iteration} tool calls so far. Briefly summarize what you've learned about this site (2-3 sentences). Then continue exploring.`,
+              },
+            },
+          }]);
+
+          const summary = summaryRequest.response.text();
+          console.log(`[Rookie AI] Summary: ${summary.substring(0, 200)}...`);
+
+          // Store cumulative summary
+          cumulativeSummary += `\n[After ${iteration} calls]: ${summary}`;
+
+          // Restart chat with summary to clear detailed history
+          console.log('[Rookie AI] Restarting chat with summary to clear context...');
+          const newChat = aiModel.startChat({
+            history: [],
+          });
+
+          // Send condensed context
+          result = await newChat.sendMessage(
+            `${prompt}\n\n**What you've discovered so far:**${cumulativeSummary}\n\nContinue exploring where you left off.`
+          );
+
+          // Replace chat reference
+          Object.assign(chat, newChat);
+          iteration++;
+        }
+      }
+
+      // Max iterations reached
+      console.warn(`[Rookie AI] Max tool call iterations (${maxToolCalls}) reached`);
+      const text = result.response.text();
+      return {
+        text: text.trim(),
+        raw: text,
+        toolCalls: toolCallLog,
+      };
+    }
+
+    // No tools - simple generation
     console.log('[Rookie AI] Sending request to Gemini...');
     const result = await aiModel.generateContent(prompt.trim());
     const response = result.response;
