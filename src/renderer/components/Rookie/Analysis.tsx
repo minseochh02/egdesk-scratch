@@ -101,57 +101,151 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
     onBack();
   };
 
-  // Handle execute navigation plan
+  // Handle execute build plan
   const handleExecutePlan = async (planIndex: number) => {
-    if (!navigationPlans || !navigationPlans.plans || !navigationPlans.plans[planIndex]) {
-      alert('No plan to execute');
+    if (!navigationPlans || !navigationPlans.steps || navigationPlans.steps.length === 0) {
+      alert('No build plan to execute');
+      return;
+    }
+
+    // Check if skillset is selected (required for website automation)
+    const hasWebsiteSteps = navigationPlans.steps.some((s: any) =>
+      s.actionType === 'NAVIGATE_WEBSITE' || s.actionType === 'DOWNLOAD_EXCEL'
+    );
+
+    if (hasWebsiteSteps && !selectedSkillsetId) {
+      alert('⚠️ This plan requires website automation.\n\nPlease select a website from the Skillset library in Step 1 before executing.');
       return;
     }
 
     try {
       setIsExecuting(true);
       setExecutionResults(null);
-      console.log('[Analysis] Executing navigation plan...');
-      console.log('[Analysis] Credentials available:', Object.keys(loginCredentials).length > 0 ? 'Yes' : 'No (AI will discover)');
+      console.log('[Analysis] Executing build plan...');
+      console.log('[Analysis] Build steps:', navigationPlans.steps.length);
+      console.log('[Analysis] Selected skillset:', selectedSkillsetId);
+      console.log('[Analysis] Has website steps:', hasWebsiteSteps);
 
-      const plan = navigationPlans.plans[planIndex];
+      // Get credentials if skillset is selected
+      let credentials = null;
+      if (selectedSkillsetId) {
+        try {
+          credentials = await (window as any).electron.invoke(
+            'skillset:get-credentials',
+            selectedSkillsetId
+          );
+          console.log('[Analysis] Loaded credentials from Skillset:', credentials ? 'Yes' : 'No');
 
-      console.log('[Analysis] Using', explorerCapabilities?.capabilities?.length || 0, 'capabilities for NAVIGATOR');
+          // Check format - new format has credentials array, old format is flat object
+          if (credentials && credentials.credentials && Array.isArray(credentials.credentials)) {
+            console.log('[Analysis] ✓ New format with selectors, fields:', credentials.credentials.length);
+            credentials.credentials.forEach((c: any) => {
+              console.log(`  - ${c.fieldName}: selector ID = ${c.selector.elementId}, has value = ${!!c.value}`);
+            });
+          } else if (credentials && typeof credentials === 'object') {
+            console.log('[Analysis] Old format (no selectors), fields:', Object.keys(credentials));
+          }
+        } catch (error) {
+          console.warn('[Analysis] Failed to load credentials:', error);
+        }
+      } else {
+        console.warn('[Analysis] ⚠️ No skillset selected - cannot load credentials');
+      }
 
-      // Pass credentials if available, otherwise AI will discover them
+      // Prepare credentials - check if they actually have values
+      const finalCredentials =
+        (credentials && Object.keys(credentials).length > 0) ? credentials :
+        (Object.keys(loginCredentials).length > 0) ? loginCredentials :
+        undefined;
+
+      console.log('[Analysis] Final credentials to send:', finalCredentials ? 'Has values' : 'None');
+      console.log('[Analysis] Credential object:', finalCredentials);
+
+      // Execute the build plan
       const result = await (window as any).electron.invoke(
-        'rookie:execute-navigation-plan',
+        'rookie:execute-build-plan',
         {
-          plan,
-          url: 'https://login.ecount.com/',
-          credentialValues: Object.keys(loginCredentials).length > 0 ? loginCredentials : undefined,
-          explorerCapabilities: explorerCapabilities?.capabilities || [], // Pass full sitemap from state
+          buildPlan: navigationPlans,
+          targetReport: aiAnalysis,
+          sourceFiles: resourceFiles.map(f => ({ name: f.name })),
+          websiteSkillsetId: selectedSkillsetId,
+          credentials: finalCredentials,
         }
       );
 
+      console.log('[Analysis] Sent to backend - websiteSkillsetId:', selectedSkillsetId);
+      console.log('[Analysis] Sent to backend - credentials:', finalCredentials ? 'Included' : 'Not included');
+
       console.log('[Analysis] Execution result:', result);
 
-      if (!result || !result.success) {
-        throw new Error(result?.error || 'Plan execution failed');
+      if (!result) {
+        throw new Error('No execution result returned');
       }
 
-      // Check if login credentials are needed
-      if (result.needsLogin && result.loginFields) {
-        console.log('[Analysis] Executor needs login credentials');
-        // Store partial result to show credential form
-        setExecutionResults({
-          ...result,
-          needsCredentialInput: true,
-          planIndex, // Store plan index for resume
-        });
-      } else {
-        setExecutionResults(result);
+      // Display results
+      setExecutionResults({
+        success: result.success,
+        completedSteps: result.completedSteps,
+        totalSteps: result.totalSteps,
+        websiteResults: result.websiteResults,
+        dataProcessingResult: result.dataProcessingResult,
+        outputFile: result.outputFile,
+        error: result.error,
+        message: result.outputFile
+          ? `✅ Report built successfully: ${result.outputFile}`
+          : (result.error || `Completed ${result.completedSteps} of ${result.totalSteps} steps`),
+      });
+
+      if (result.error) {
+        console.warn('[Analysis] Execution completed with note:', result.error);
+      } else if (result.success) {
+        console.log('[Analysis] ✓ Build plan executed successfully');
       }
     } catch (error: any) {
       console.error('[Analysis] Execution error:', error);
       alert(`Failed to execute plan: ${error.message}`);
     } finally {
       setIsExecuting(false);
+    }
+  };
+
+  // Handle load saved build plan
+  const handleLoadSavedBuildPlan = async (fileName?: string) => {
+    try {
+      setIsGeneratingPlan(true);
+      setNavigationPlans(null);
+      setExecutionResults(null);
+      console.log('[Analysis] Loading saved build plan...');
+
+      const result = await (window as any).electron.invoke(
+        'rookie:load-build-plan',
+        { fileName: fileName || null }
+      );
+
+      console.log('[Analysis] Loaded plan:', result);
+
+      if (result.success) {
+        console.log('[Analysis] ✓ Loaded', result.steps?.length || 0, 'steps from file');
+        setNavigationPlans(result);
+
+        // Check if plan needs website and warn user
+        const hasWebsiteSteps = result.steps?.some((s: any) =>
+          s.actionType === 'NAVIGATE_WEBSITE' || s.actionType === 'DOWNLOAD_EXCEL'
+        );
+
+        if (hasWebsiteSteps && !selectedSkillsetId) {
+          setTimeout(() => {
+            alert('📂 Build plan loaded!\n\n⚠️ This plan requires website automation.\nPlease select ECOUNT from the Skillset dropdown in Step 1 before executing.');
+          }, 500);
+        }
+      } else {
+        alert(`Failed to load build plan: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      console.error('[Analysis] Load plan error:', error);
+      alert(`Failed to load build plan: ${error.message}`);
+    } finally {
+      setIsGeneratingPlan(false);
     }
   };
 
@@ -175,22 +269,45 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
       }
 
       // Prepare source files info (extract column names from resolver analysis if available)
-      const sourceFilesInfo = resourceFiles.map(file => {
+      let sourceFilesInfo = resourceFiles.map(file => {
         // Try to find columns from resolver analysis
         const fileInventory = resolverAnalysis?.sourceInventory?.find(
           (inv: any) => inv.file === file.name
         );
 
+        const columns = fileInventory?.columns?.map((col: any) => col.name) || [];
+
+        console.log(`[Analysis] File: ${file.name}, Columns from RESOLVER: ${columns.length}`);
+
         return {
           name: file.name,
-          columns: fileInventory?.columns?.map((col: any) => col.name) || [],
+          columns,
         };
       });
 
+      // If no columns found and we have source files, warn user
+      const hasColumns = sourceFilesInfo.some(f => f.columns.length > 0);
+      if (resourceFiles.length > 0 && !hasColumns) {
+        console.warn('[Analysis] ⚠️ No column information available from RESOLVER');
+        console.warn('[Analysis] Build plan may be less specific without column names');
+
+        // Provide at least file names
+        sourceFilesInfo = resourceFiles.map(file => ({
+          name: file.name,
+          columns: [], // Empty but AI knows files exist
+        }));
+      }
+
       console.log('[Analysis] Calling AI Build Planner...');
       console.log('  - Target:', aiAnalysis.sheetName);
-      console.log('  - Source files:', sourceFilesInfo.length);
-      console.log('  - Website skillset:', selectedSkillsetId || 'None');
+      console.log('  - Source files being sent:', sourceFilesInfo.length);
+      sourceFilesInfo.forEach(f => {
+        console.log(`    • ${f.name}: ${f.columns.length} columns - ${f.columns.join(', ')}`);
+      });
+      console.log('  - Website skillset ID being sent:', selectedSkillsetId || 'None');
+      console.log('  - Full payload:');
+      console.log('    sourceFiles:', JSON.stringify(sourceFilesInfo));
+      console.log('    websiteSkillsetId:', selectedSkillsetId);
 
       const result = await (window as any).electron.invoke(
         'rookie:generate-build-plan',
@@ -201,11 +318,21 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
         }
       );
 
+      console.log('[Analysis] Received result from backend:');
+      console.log('  - Success:', result.success);
+      console.log('  - Steps:', result.steps?.length || 0);
+      console.log('  - Error:', result.error || 'None');
+
       console.log('[Analysis] Build plan result:', result);
+      console.log('[Analysis] Result success:', result.success);
+      console.log('[Analysis] Result steps:', result.steps?.length);
+      console.log('[Analysis] Result strategy:', result.strategy);
 
       if (result.success) {
         console.log('[Analysis] ✓ Generated', result.steps?.length || 0, 'build steps');
+        console.log('[Analysis] Setting navigationPlans state...');
         setNavigationPlans(result);
+        console.log('[Analysis] ✓ navigationPlans state updated');
       } else {
         alert(`Failed to generate build plan: ${result.error || 'Unknown error'}`);
       }
@@ -348,44 +475,170 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
     }
   };
 
+  // Handle re-explore existing skillset
+  const handleReExploreSkillset = async (skillsetId: string) => {
+    try {
+      setIsResearching(true);
+      console.log('[Analysis] Re-exploring skillset:', skillsetId);
+
+      // Get website info
+      const website = await (window as any).electron.invoke('skillset:get-website', skillsetId);
+      if (!website) {
+        alert('Website not found');
+        return;
+      }
+
+      console.log('[Analysis] Re-exploring:', website.siteName, website.url);
+
+      // Get saved credentials
+      const savedCredentials = await (window as any).electron.invoke(
+        'skillset:get-credentials',
+        skillsetId
+      );
+
+      console.log('[Analysis] Saved credentials retrieved:', savedCredentials);
+      console.log('[Analysis] Credential keys:', savedCredentials ? Object.keys(savedCredentials) : 'None');
+      console.log('[Analysis] Has credentials:', !!savedCredentials && Object.keys(savedCredentials).length > 0);
+
+      // Trigger exploration with saved credentials
+      const siteWithCreds = {
+        url: website.url,
+        credentialValues: savedCredentials || undefined,
+      };
+
+      console.log('[Analysis] Sending to EXPLORER:', {
+        url: website.url,
+        hasCredentials: !!savedCredentials,
+        credentialKeys: savedCredentials ? Object.keys(savedCredentials) : [],
+      });
+
+      const result = await (window as any).electron.invoke(
+        'rookie:explore-websites-parallel',
+        {
+          sites: [siteWithCreds],
+        }
+      );
+
+      console.log('[Analysis] EXPLORER returned needsLogin:', result.findings?.[0]?.needsLogin);
+      console.log('[Analysis] Re-exploration result:', result);
+
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Re-exploration failed');
+      }
+
+      // Check if any site needs login credentials
+      const sitesNeedingLogin = result.findings.filter((f: any) => f.needsLogin);
+      console.log('[Analysis] Sites needing login:', sitesNeedingLogin.length);
+      console.log('[Analysis] Findings:', result.findings);
+
+      if (sitesNeedingLogin.length > 0) {
+        console.log('[Analysis] ✓ Re-exploration needs credentials - showing credential form');
+        console.log('[Analysis] Login fields:', sitesNeedingLogin[0].loginFields);
+
+        // Show credential input form
+        setResearcherResults({
+          ...result,
+          needsCredentialInput: true,
+          mode: 'parallel',
+          isReExplore: true, // Flag to indicate this is a re-explore
+          originalSkillsetId: skillsetId, // Store for later
+        });
+
+        console.log('[Analysis] ✓ researcherResults state set, credential form should appear');
+      } else {
+        // Success without needing credentials
+        console.log('[Analysis] Re-exploration completed successfully');
+
+        // Reload skillsets to get updated data
+        const skillsets = await (window as any).electron.invoke('skillset:list-websites');
+        setAvailableSkillsets(skillsets || []);
+
+        // Reload credential status
+        await handleSkillsetSelection(skillsetId);
+
+        alert(`✅ Skillset refreshed successfully!\n\nCapabilities have been updated.\nCredentials preserved.`);
+      }
+    } catch (error: any) {
+      console.error('[Analysis] Re-explore error:', error);
+      alert(`Failed to refresh skillset: ${error.message}`);
+    } finally {
+      setIsResearching(false);
+    }
+  };
+
 
   // Handle resume exploration with credentials
-  const handleResumeResearch = async (siteIndex: number) => {
+  const handleResumeResearch = async (siteIndex: number, credentials?: Record<string, string>) => {
     const finding = researcherResults.findings[siteIndex];
     if (!finding.loginFields) return;
+
+    // Use passed credentials or fall back to state
+    const credsToUse = credentials || loginCredentials;
+
+    console.log('[Analysis] Credentials to use:', Object.keys(credsToUse));
+    console.log('[Analysis] Credential values present:', Object.keys(credsToUse).length);
+
+    if (Object.keys(credsToUse).length === 0) {
+      alert('No credentials entered. Please fill in all fields.');
+      return;
+    }
 
     try {
       setIsResearching(true);
       console.log('[Analysis] Resuming exploration with credentials (EXPLORER mode)...');
+      console.log('[Analysis] Sending IPC with:', {
+        url: finding.site,
+        hasLoginFields: !!finding.loginFields,
+        credentialKeys: Object.keys(credsToUse),
+        credentialValues: credsToUse, // Full object for debugging
+      });
 
       // Always use EXPLORER (parallel mode)
       const result = await (window as any).electron.invoke('rookie:resume-exploration', {
         site: { url: finding.site },
         loginFields: finding.loginFields,
-        credentialValues: loginCredentials,
+        credentialValues: credsToUse,
       });
 
       console.log('[Analysis] Resume result:', result);
 
       if (result.success) {
-        // Success! Reload skillsets to show newly added one
+        // Reload skillsets to get updated data
         const skillsets = await (window as any).electron.invoke('skillset:list-websites');
         setAvailableSkillsets(skillsets || []);
 
-        // Find the newly added skillset by URL
-        const newSkillset = skillsets.find((s: any) => s.url === finding.site);
-        if (newSkillset) {
-          setSelectedSkillsetId(newSkillset.id);
-          await handleSkillsetSelection(newSkillset.id);
+        // Check if this was a re-explore (updating existing) or new explore
+        const isReExplore = researcherResults.isReExplore;
+        const originalSkillsetId = researcherResults.originalSkillsetId;
+
+        if (isReExplore && originalSkillsetId) {
+          // Re-exploration: Keep the same skillset selected
+          console.log('[Analysis] Re-exploration successful, updating existing skillset');
+          setSelectedSkillsetId(originalSkillsetId);
+          await handleSkillsetSelection(originalSkillsetId);
+
+          // Clear the researcher results and form
+          setResearcherResults(null);
+          setLoginCredentials({});
+
+          // Show success message for refresh
+          alert(`✅ Skillset refreshed successfully!\n\nFound ${result.capabilities?.length || 0} capabilities.\nCredentials saved securely.\nSkillset updated.`);
+        } else {
+          // New exploration: Find and select the newly added skillset
+          const newSkillset = skillsets.find((s: any) => s.url === finding.site);
+          if (newSkillset) {
+            setSelectedSkillsetId(newSkillset.id);
+            await handleSkillsetSelection(newSkillset.id);
+          }
+
+          // Clear the researcher results and form
+          setResearcherResults(null);
+          setLoginCredentials({});
+          setNewSiteUrl('');
+
+          // Show success message for new explore
+          alert(`✅ Website explored successfully!\n\nFound ${result.capabilities?.length || 0} capabilities.\nCredentials saved securely.\nAdded to Skillset library.`);
         }
-
-        // Clear the researcher results and form
-        setResearcherResults(null);
-        setLoginCredentials({});
-        setNewSiteUrl('');
-
-        // Show success message
-        alert(`✅ Website explored successfully!\n\nFound ${result.capabilities?.length || 0} capabilities.\nCredentials saved securely.\nAdded to Skillset library.`);
       }
     } catch (error: any) {
       console.error('[Analysis] Resume error:', error);
@@ -593,6 +846,7 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
             isExploring={isResearching && !researcherResults?.needsCredentialInput}
             onSkillsetSelect={handleSkillsetSelection}
             onExploreWebsite={handleExploreWebsite}
+            onReExplore={handleReExploreSkillset}
           />
 
           {/* Exploration Credentials */}
@@ -601,50 +855,39 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
               findings={researcherResults.findings}
               isExploring={isResearching}
               onContinueExploration={async (siteIndex, credentials) => {
-                setLoginCredentials(credentials);
-                await handleResumeResearch(siteIndex);
+                console.log('[Analysis] Credentials from form:', credentials);
+                console.log('[Analysis] Field count:', Object.keys(credentials).length);
+                setLoginCredentials(credentials); // Save to state for later use
+                await handleResumeResearch(siteIndex, credentials); // Pass directly!
               }}
             />
           )}
 
-          {/* Analyze Button - appears when both target and sources are uploaded */}
-          {uploadedFile && resourceFiles.length > 0 && !aiAnalysis && !isAnalyzing && !isResolving && (
+          {/* Analyze Target Button - appears when target file is uploaded */}
+          {uploadedFile && !aiAnalysis && !isAnalyzing && (
             <button
               type="button"
-              className="rookie-analyze-all-button"
+              className="rookie-analyze-target-button"
               onClick={async () => {
-                console.log('[Analysis] 🚀 Start Analysis clicked');
-
-                // First analyze target with ROOKIE
-                console.log('[Analysis] Step 1: Running ROOKIE...');
+                console.log('[Analysis] Analyzing target report...');
                 await analyzeExcelWithAI(uploadedFile);
-
-                console.log('[Analysis] Step 2: Running RESOLVER...');
-                // Then automatically trigger RESOLVER
-                await handleStartRecording(false);
-
-                console.log('[Analysis] ✅ Both analyses complete');
               }}
             >
-              🚀 Start Analysis
+              🤖 Analyze Target Report
             </button>
           )}
 
           {/* Re-analyze Button - appears after analysis is complete */}
-          {uploadedFile && resourceFiles.length > 0 && (aiAnalysis || resolverAnalysis) && !isAnalyzing && !isResolving && (
+          {uploadedFile && aiAnalysis && !isAnalyzing && (
             <button
               type="button"
               className="rookie-reanalyze-button"
               onClick={async () => {
                 setAiAnalysis(null);
-                setResolverAnalysis(null);
-                setConfirmedTerms(new Set());
-                setTermCorrections({});
                 await analyzeExcelWithAI(uploadedFile, true);
-                await handleStartRecording(true);
               }}
             >
-              🔄 Re-analyze All
+              🔄 Re-analyze Target
             </button>
           )}
         </div>
@@ -864,15 +1107,25 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* Always show button */}
+        {/* Always show buttons */}
         {!navigationPlans && !isGeneratingPlan && (
-          <button
-            type="button"
-            className="rookie-start-research-button"
-            onClick={handleGenerateNavigationPlan}
-          >
-            🤖 Generate Build Plan
-          </button>
+          <div className="rookie-build-plan-buttons">
+            <button
+              type="button"
+              className="rookie-start-research-button"
+              onClick={handleGenerateNavigationPlan}
+            >
+              🤖 Generate Build Plan
+            </button>
+            <button
+              type="button"
+              className="rookie-load-plan-button"
+              onClick={() => handleLoadSavedBuildPlan('build_plan_2026-02-08T13-25-31-445Z.json')}
+              title="Load the saved build plan for testing"
+            >
+              📂 Load Last Plan (Test)
+            </button>
+          </div>
         )}
 
           {isGeneratingPlan && (
@@ -882,12 +1135,29 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
             </div>
           )}
 
-          {navigationPlans && navigationPlans.success && (
-            <BuildPlanDisplay
-              plan={navigationPlans}
-              onExecute={() => handleExecutePlan(0)}
-              isExecuting={isExecuting && !executionResults}
-            />
+          {navigationPlans && (
+            <>
+              {/* Debug info */}
+              <div style={{ display: 'none' }}>
+                Success: {String(navigationPlans.success)}
+                Steps: {navigationPlans.steps?.length || 0}
+                Strategy: {navigationPlans.strategy ? 'Yes' : 'No'}
+              </div>
+
+              {navigationPlans.success && (
+                <BuildPlanDisplay
+                  plan={navigationPlans}
+                  onExecute={() => handleExecutePlan(0)}
+                  isExecuting={isExecuting && !executionResults}
+                />
+              )}
+
+              {!navigationPlans.success && (
+                <div className="rookie-build-plan-error">
+                  ❌ Failed to generate build plan: {navigationPlans.error || 'Unknown error'}
+                </div>
+              )}
+            </>
           )}
 
           {/* Execution Login Request */}
@@ -941,46 +1211,82 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
               )}
 
               {/* Execution Results */}
-              {executionResults && executionResults.success && !executionResults.needsCredentialInput && (
+              {executionResults && (
                 <div className="rookie-execution-results">
-                  <h4 className="rookie-execution-title">✅ Execution Complete</h4>
-                  {executionResults.savedTo && (
-                    <div className="rookie-results-saved-note">
-                      💾 Results saved to: <code>{executionResults.savedTo}</code>
+                  <h4 className="rookie-execution-title">
+                    {executionResults.success ? '✅ Execution Complete' : '⚠️ Execution Completed with Notes'}
+                  </h4>
+
+                  <div className="rookie-execution-summary">
+                    <div className="rookie-execution-stat-box">
+                      <strong>Completed Steps:</strong> {executionResults.completedSteps || 0}
                     </div>
-                  )}
-
-                  {executionResults.extractedData && (
-                    <div className="rookie-extracted-data">
-                      <strong>Findings:</strong>
-                      <div className="rookie-findings-text">
-                        {executionResults.extractedData.findings}
-                      </div>
-
-                      {executionResults.extractedData.data && (
-                        <div className="rookie-data-preview">
-                          <strong>Extracted Data:</strong>
-                          <pre>{JSON.stringify(executionResults.extractedData.data, null, 2)}</pre>
-                        </div>
-                      )}
+                    <div className="rookie-execution-stat-box">
+                      <strong>Total Steps:</strong> {executionResults.totalSteps || 0}
                     </div>
-                  )}
-
-                  {executionResults.executionLog && executionResults.executionLog.length > 0 && (
-                    <div className="rookie-execution-log">
-                      <strong>Execution Log:</strong>
-                      <div className="rookie-log-entries">
-                        {executionResults.executionLog.map((log: string, idx: number) => (
-                          <div key={idx} className="rookie-log-entry">{log}</div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="rookie-execution-stats">
-                    Tool calls: {executionResults.toolCalls || 0} |
-                    Screenshots: {executionResults.screenshots?.length || 0}
                   </div>
+
+                  {executionResults.message && (
+                    <div className={executionResults.success ? 'rookie-execution-message' : 'rookie-execution-warning'}>
+                      {executionResults.message}
+                    </div>
+                  )}
+
+                  {executionResults.error && (
+                    <div className="rookie-execution-note">
+                      📝 Note: {executionResults.error}
+                    </div>
+                  )}
+
+                  {/* Website Automation Results */}
+                  {executionResults.websiteResults && executionResults.websiteResults.length > 0 && (
+                    <div className="rookie-execution-phase">
+                      <strong>🌐 Website Automation ({executionResults.websiteResults.length} steps)</strong>
+                      {executionResults.websiteResults.map((stepResult: any, idx: number) => (
+                        <div key={idx} className={`rookie-step-result ${stepResult.success ? 'success' : 'failed'}`}>
+                          <div className="rookie-step-result-header">
+                            <span className="rookie-step-result-number">Step {stepResult.step}</span>
+                            <span className="rookie-step-result-action">{stepResult.action}</span>
+                            <span className={`rookie-step-result-status ${stepResult.success ? 'success' : 'failed'}`}>
+                              {stepResult.success ? '✓' : '✗'}
+                            </span>
+                          </div>
+                          {stepResult.error && (
+                            <div className="rookie-step-result-error">Error: {stepResult.error}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Data Processing Results */}
+                  {executionResults.dataProcessingResult && (
+                    <div className="rookie-execution-phase">
+                      <strong>🔨 Data Processing ({executionResults.dataProcessingResult.stepsCompleted}/{executionResults.dataProcessingResult.totalSteps} steps)</strong>
+                      <div className="rookie-processing-summary">
+                        {executionResults.dataProcessingResult.success ? '✅ Complete' : '⚠️ Partial'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Final Report Output */}
+                  {executionResults.outputFile && (
+                    <div className="rookie-final-output">
+                      <strong>📊 Final Report:</strong>
+                      <div className="rookie-output-file">
+                        {executionResults.outputFile}
+                      </div>
+                      <button
+                        type="button"
+                        className="rookie-open-report-button"
+                        onClick={() => {
+                          (window as any).electron.invoke('shell:open-path', executionResults.outputFile);
+                        }}
+                      >
+                        📂 Open Report
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
       </div>

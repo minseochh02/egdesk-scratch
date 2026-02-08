@@ -76,6 +76,9 @@ export const ExplorationCredentials: React.FC<ExplorationCredentialsProps> = ({
             type="button"
             className="rookie-continue-research-button"
             onClick={() => {
+              console.log('[ExplorationCredentials] Button clicked, credentials:', credentials);
+              console.log('[ExplorationCredentials] Fields:', Object.keys(credentials));
+              console.log('[ExplorationCredentials] Values populated:', Object.values(credentials).every(v => v && v.length > 0));
               onContinueExploration(idx, credentials);
             }}
             disabled={

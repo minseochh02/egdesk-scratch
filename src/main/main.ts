@@ -3697,6 +3697,14 @@ const createWindow = async () => {
             console.log(`[Explorer] User notes: ${site.notes}`);
           }
 
+          console.log('[Explorer] Calling exploreWebsiteParallel with:', {
+            url: site.url,
+            hasCredentials: !!site.credentials,
+            hasCredentialValues: !!site.credentialValues,
+            credentialValuesKeys: site.credentialValues ? Object.keys(site.credentialValues) : [],
+            hasLoginFields: !!site.loginFields,
+          });
+
           const result = await exploreWebsiteParallel({
             url: site.url,
             credentials: site.credentials,
@@ -3847,8 +3855,12 @@ const createWindow = async () => {
         if (websiteSkillsetId) {
           const { getWebsite, getCapabilities } = await import('./rookie/skillset/skillset-manager');
           const website = getWebsite(websiteSkillsetId);
+          console.log('[Build Planner] Loading website:', website?.siteName);
+
           if (website) {
             const capabilities = getCapabilities(websiteSkillsetId);
+            console.log('[Build Planner] Loaded capabilities:', capabilities.length);
+
             websiteCapabilities = {
               siteName: website.siteName,
               siteType: website.siteType,
@@ -3859,8 +3871,17 @@ const createWindow = async () => {
                 path: '', // TODO: Get from navigation paths
               })),
             };
+            console.log('[Build Planner] ✓ Website capabilities prepared:', websiteCapabilities.capabilities.length);
+          } else {
+            console.warn('[Build Planner] ⚠️ Website not found for ID:', websiteSkillsetId);
           }
+        } else {
+          console.log('[Build Planner] No website skillset selected');
         }
+
+        console.log('[Build Planner] Calling generateBuildPlan with:');
+        console.log('  - Source files:', sourceFiles?.length || 0);
+        console.log('  - Website capabilities:', websiteCapabilities?.capabilities?.length || 0);
 
         const result = await generateBuildPlan({
           targetReport,
@@ -3889,6 +3910,50 @@ const createWindow = async () => {
         return result;
       } catch (error: any) {
         console.error('[Navigator] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Load saved build plan from file
+    ipcMain.handle('rookie:load-build-plan', async (_event, { fileName }) => {
+      try {
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'build-plans')
+          : path.join(process.cwd(), 'output', 'build-plans');
+
+        const filePath = fileName
+          ? path.join(outputDir, fileName)
+          : (() => {
+              // If no fileName provided, get the most recent file
+              const files = fs.readdirSync(outputDir).filter(f => f.startsWith('build_plan_'));
+              if (files.length === 0) {
+                throw new Error('No saved build plans found');
+              }
+              files.sort().reverse(); // Most recent first
+              return path.join(outputDir, files[0]);
+            })();
+
+        console.log('[Build Planner] Loading saved plan from:', filePath);
+
+        if (!fs.existsSync(filePath)) {
+          throw new Error('Build plan file not found');
+        }
+
+        const planData = fs.readFileSync(filePath, 'utf-8');
+        const plan = JSON.parse(planData);
+
+        console.log('[Build Planner] ✓ Loaded plan with', plan.steps?.length || 0, 'steps');
+
+        return {
+          ...plan,
+          savedTo: filePath,
+          loadedFromFile: true,
+        };
+      } catch (error: any) {
+        console.error('[Build Planner] Error loading plan:', error);
         return {
           success: false,
           error: error.message,
@@ -3967,6 +4032,107 @@ const createWindow = async () => {
       }
     });
 
+    // Register BUILD PLAN EXECUTOR handler (breaks down into navigation tasks)
+    ipcMain.handle('rookie:execute-build-plan', async (_event, { buildPlan, targetReport, sourceFiles, websiteSkillsetId, credentials }) => {
+      try {
+        console.log('[Build Plan Executor] Executing comprehensive build plan...');
+        console.log('  - Build steps:', buildPlan.steps?.length || 0);
+        console.log('  - Complexity:', buildPlan.estimatedComplexity);
+        console.log('  - Website skillset:', websiteSkillsetId || 'None');
+        console.log('  - Credentials provided:', credentials ? 'Yes' : 'No');
+
+        const { executeBuildPlan } = await import('./rookie/build-plan-executor');
+
+        // Load website capabilities if skillset is selected
+        let websiteCapabilities: any[] = [];
+        let websiteUrl = 'https://login.ecount.com/';
+
+        if (websiteSkillsetId) {
+          const { getWebsite, getCapabilities } = await import('./rookie/skillset/skillset-manager');
+          const website = getWebsite(websiteSkillsetId);
+          if (website) {
+            websiteUrl = website.url;
+            const capabilities = getCapabilities(websiteSkillsetId);
+            websiteCapabilities = capabilities.map(cap => ({
+              section: cap.section,
+              description: cap.description,
+              dataAvailable: cap.dataAvailable,
+              path: '', // TODO: Get from navigation paths
+            }));
+          }
+        }
+
+        // Count automatable vs manual steps
+        const totalSteps = buildPlan.steps?.length || 0;
+        const websiteSteps = buildPlan.steps?.filter((s: any) =>
+          ['NAVIGATE_WEBSITE', 'DOWNLOAD_EXCEL'].includes(s.actionType)
+        ) || [];
+        const excelSteps = buildPlan.steps?.filter((s: any) =>
+          ['LOAD_EXCEL_FILE', 'EXTRACT_COLUMNS', 'JOIN_DATA', 'CALCULATE', 'AGGREGATE', 'CREATE_REPORT', 'FORMAT_CELLS'].includes(s.actionType)
+        ) || [];
+
+        console.log('[Build Plan Executor] Step breakdown:');
+        console.log('  - Total steps:', totalSteps);
+        console.log('  - Website automation steps:', websiteSteps.length);
+        console.log('  - Excel processing steps:', excelSteps.length);
+
+        // Prepare output directory
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'reports')
+          : path.join(process.cwd(), 'output', 'reports');
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const result = await executeBuildPlan({
+          buildPlan,
+          websiteSkillsetId,
+          credentials,
+          websiteCapabilities,
+          outputDir,
+        });
+
+        console.log('[Build Plan Executor] ✓ Execution complete');
+        console.log('  - Completed steps:', result.completedSteps, '/', result.totalSteps);
+        console.log('  - Website automation:', result.websiteResults.length, 'steps');
+        console.log('  - Data processing:', result.dataProcessingResult ? 'Complete' : 'Skipped');
+        console.log('  - Final report:', result.outputFile || 'None');
+
+        // Save execution log
+        const logDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'execution-logs')
+          : path.join(process.cwd(), 'output', 'execution-logs');
+
+        if (!fs.existsSync(logDir)) {
+          fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `execution_log_${timestamp}.json`);
+        fs.writeFileSync(logPath, JSON.stringify(result, null, 2));
+
+        return {
+          success: result.success,
+          completedSteps: result.completedSteps,
+          totalSteps: result.totalSteps,
+          websiteResults: result.websiteResults,
+          dataProcessingResult: result.dataProcessingResult,
+          outputFile: result.outputFile,
+          error: result.error,
+          savedTo: logPath,
+          websiteStepsCount: websiteSteps.length,
+          excelStepsCount: excelSteps.length,
+        };
+      } catch (error: any) {
+        console.error('[Build Plan Executor] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();
     
@@ -4006,6 +4172,17 @@ const createWindow = async () => {
 
     // Register Skillset (Rookie Website Knowledge Base) handlers
     registerSkillsetHandlers();
+
+    // Register shell utility handlers
+    ipcMain.handle('shell:open-path', async (_event, filePath: string) => {
+      try {
+        await shell.openPath(filePath);
+        return { success: true };
+      } catch (error: any) {
+        console.error('[Shell] Error opening path:', error);
+        return { success: false, error: error.message };
+      }
+    });
 
     // Mark handlers as fully registered AFTER all handlers are registered
     handlersRegistered = true;

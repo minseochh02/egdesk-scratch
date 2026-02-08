@@ -482,16 +482,37 @@ Start by taking a snapshot.`;
 
             // Wait for navigation to complete (up to 10 seconds)
             console.log('[Executor] Waiting for login navigation...');
-            await page.waitForURL((url) => url !== currentUrl, { timeout: 10000 }).catch(() => {
-              console.warn('[Executor] URL did not change after login');
-            });
+            let urlChanged = false;
+            await page.waitForURL((url) => url !== currentUrl, { timeout: 10000 })
+              .then(() => { urlChanged = true; })
+              .catch(() => {
+                console.warn('[Executor] ⚠️ URL did not change after login attempt');
+              });
 
             // Additional wait for page to fully load
             await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
             await new Promise(resolve => setTimeout(resolve, 2000));
 
             const newUrl = page.url();
-            console.log('[Executor] ✓ Login complete, now at:', newUrl);
+
+            // Check if login actually succeeded
+            if (!urlChanged && newUrl === currentUrl) {
+              console.error('[Executor] ❌ Login failed - URL unchanged:', currentUrl);
+              executionLog.push('  → Login failed - page did not navigate');
+
+              // Take screenshot to see error
+              const errorScreenshot = await page.screenshot({ fullPage: false });
+              const errorScreenshotBase64 = errorScreenshot.toString('base64');
+
+              return {
+                success: false,
+                error: 'Login failed - credentials may be incorrect or page showed an error. Page remained at login URL.',
+                loginFailed: true,
+                errorScreenshot: errorScreenshotBase64,
+              };
+            }
+
+            console.log('[Executor] ✓ Login successful, now at:', newUrl);
             executionLog.push('  → Logged in successfully');
             return {
               success: true,
@@ -1144,14 +1165,132 @@ ${availableElements}
 /**
  * Simple login handler
  */
+/**
+ * Click submit button using saved selector info
+ */
+async function clickSubmitButton(page: Page, submitButtonInfo?: any): Promise<void> {
+  console.log('[Executor] Clicking submit button...');
+  console.log('[Executor] Submit button info:', submitButtonInfo);
+
+  if (submitButtonInfo && typeof submitButtonInfo === 'object') {
+    // New format with selector
+    if (submitButtonInfo.elementId) {
+      try {
+        const button = await page.locator(`#${submitButtonInfo.elementId}`).first();
+        const isVisible = await button.isVisible().catch(() => false);
+        if (isVisible) {
+          console.log('[Executor] ✓ Found submit button by ID:', submitButtonInfo.elementId);
+          await button.click();
+          return;
+        }
+      } catch (error) {
+        console.warn('[Executor] Failed to click by ID, trying fallback...');
+      }
+    }
+
+    if (submitButtonInfo.name) {
+      try {
+        const button = await page.getByRole('button', { name: submitButtonInfo.name }).first();
+        const isVisible = await button.isVisible().catch(() => false);
+        if (isVisible) {
+          console.log('[Executor] ✓ Found submit button by name:', submitButtonInfo.name);
+          await button.click();
+          return;
+        }
+      } catch (error) {
+        console.warn('[Executor] Failed to click by name, trying fallback...');
+      }
+    }
+  }
+
+  // Fallback: Search for login button by text
+  console.log('[Executor] Using fallback: searching for login button by text...');
+  const buttons = await page.locator('button').all();
+
+  for (const button of buttons) {
+    const text = await button.textContent().catch(() => '');
+    const buttonText = text?.trim() || '';
+
+    if (buttonText && (
+      buttonText.includes('로그인') ||
+      buttonText.includes('Login') ||
+      buttonText.toLowerCase() === 'login' ||
+      buttonText.includes('Sign In') ||
+      buttonText.includes('확인')
+    )) {
+      console.log('[Executor] ✓ Found login button by text:', buttonText);
+      await button.click();
+      return;
+    }
+  }
+
+  console.error('[Executor] ❌ No submit button found!');
+}
+
 async function handleLogin(
   page: Page,
   credentials?: { username: string; password: string },
-  credentialValues?: Record<string, string>
+  credentialValues?: Record<string, string> | any // Can be new format with selectors
 ): Promise<void> {
-  if (credentialValues) {
-    // Multi-field login
-    console.log('[Executor] Filling multi-field login...');
+  // Check if credentialValues is in new format (with selectors)
+  const hasSelectors = credentialValues && credentialValues.credentials && Array.isArray(credentialValues.credentials);
+
+  if (hasSelectors) {
+    // NEW FORMAT: Use selectors to fill specific fields
+    console.log('[Executor] Filling login with SELECTOR-based credentials...');
+    const credList = credentialValues.credentials;
+    console.log('[Executor] Credentials with selectors:', credList.length);
+
+    for (const cred of credList) {
+      console.log(`[Executor] Filling "${cred.fieldName}" using selector...`);
+      console.log(`[Executor]   Element ID: ${cred.selector.elementId || 'N/A'}`);
+      console.log(`[Executor]   Value length: ${cred.value?.length || 0}`);
+
+      if (!cred.value || cred.value.trim() === '') {
+        console.error(`[Executor] ❌ Empty value for field "${cred.fieldName}"!`);
+        continue;
+      }
+
+      try {
+        // Try elementId first (most reliable)
+        if (cred.selector.elementId) {
+          const input = await page.locator(`#${cred.selector.elementId}`).first();
+          const isVisible = await input.isVisible().catch(() => false);
+
+          if (isVisible) {
+            console.log(`[Executor] ✓ Found field by ID: #${cred.selector.elementId}`);
+            await input.fill(cred.value);
+            console.log(`[Executor] ✓ Filled "${cred.fieldName}" successfully`);
+            continue;
+          }
+        }
+
+        // Fallback: Try by role and name
+        if (cred.selector.role && cred.selector.name) {
+          const input = await page.getByRole(cred.selector.role as any, { name: cred.selector.name }).first();
+          const isVisible = await input.isVisible().catch(() => false);
+
+          if (isVisible) {
+            console.log(`[Executor] ✓ Found field by role: ${cred.selector.role} "${cred.selector.name}"`);
+            await input.fill(cred.value);
+            console.log(`[Executor] ✓ Filled "${cred.fieldName}" successfully`);
+            continue;
+          }
+        }
+
+        console.error(`[Executor] ❌ Could not find input for "${cred.fieldName}"`);
+      } catch (error: any) {
+        console.error(`[Executor] ❌ Error filling "${cred.fieldName}":`, error.message);
+      }
+    }
+
+    console.log('[Executor] ✓ All credentials filled using selectors');
+
+    // Now click the submit button
+    await clickSubmitButton(page, credentialValues.submitButton);
+  } else if (credentialValues && typeof credentialValues === 'object' && !Array.isArray(credentialValues)) {
+    // OLD FORMAT: Fill by index (backward compatibility)
+    console.log('[Executor] Filling multi-field login (OLD FORMAT - by index)...');
     const inputs = await page.locator('input[type="text"], input[type="password"], input[type="email"], input:not([type])').all();
     const visibleInputs = [];
     for (const input of inputs) {
@@ -1164,41 +1303,25 @@ async function handleLogin(
     let idx = 0;
     for (const [fieldName, fieldValue] of Object.entries(credentialValues)) {
       if (idx < visibleInputs.length) {
-        console.log(`[Executor] Filling field ${idx + 1}:`, fieldName);
-        await visibleInputs[idx].fill(fieldValue);
+        console.log(`[Executor] Filling field ${idx + 1}: "${fieldName}" = "${fieldValue ? '***' : 'EMPTY!'}"`);
+        console.log(`[Executor] Field value length:`, fieldValue?.length || 0);
+
+        if (!fieldValue || fieldValue.trim() === '') {
+          console.error(`[Executor] ❌ Empty value for field "${fieldName}"!`);
+        }
+
+        await visibleInputs[idx].fill(fieldValue || '');
         idx++;
       }
     }
 
-    // Find submit/login button - avoid language selectors
-    console.log('[Executor] Looking for submit button...');
-    const buttons = await page.locator('button').all();
+    console.log('[Executor] Total fields filled:', idx, '/ Expected:', Object.keys(credentialValues).length);
 
-    for (const button of buttons) {
-      const text = await button.textContent().catch(() => '');
-      const buttonText = text?.trim() || '';
-
-      // Look for login button specifically (not language selector)
-      if (buttonText && (
-        buttonText.includes('로그인') ||
-        buttonText.includes('Login') ||
-        buttonText.toLowerCase() === 'login' ||
-        buttonText.includes('Sign In') ||
-        buttonText.includes('확인')
-      )) {
-        console.log('[Executor] Found login button:', buttonText);
-        await button.click();
-        return;
-      }
-    }
-
-    // Fallback: use last button (but log warning)
-    console.warn('[Executor] No login button found by text, using last button');
-    if (buttons.length > 0) {
-      await buttons[buttons.length - 1].click();
-    }
+    // Click submit button (old format has no submitButton info)
+    await clickSubmitButton(page, null);
   } else if (credentials) {
     // Simple username/password
+    console.log('[Executor] Filling simple username/password login...');
     const inputs = await page.locator('input[type="text"], input[type="email"]').all();
     if (inputs.length > 0) {
       await inputs[0].fill(credentials.username);
@@ -1207,18 +1330,8 @@ async function handleLogin(
     const passwordInput = await page.locator('input[type="password"]').first();
     await passwordInput.fill(credentials.password);
 
-    const buttons = await page.locator('button').all();
-    for (const button of buttons) {
-      const text = await button.textContent().catch(() => '');
-      if (text && text.includes('Login')) {
-        await button.click();
-        return;
-      }
-    }
-
-    if (buttons.length > 0) {
-      await buttons[buttons.length - 1].click();
-    }
+    // Click submit button
+    await clickSubmitButton(page, null);
   }
 
   await new Promise(resolve => setTimeout(resolve, 3000));

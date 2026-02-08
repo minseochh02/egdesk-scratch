@@ -56,67 +56,140 @@ export async function generateBuildPlan(params: {
   try {
     console.log('[Build Planner] Generating comprehensive build plan...');
     console.log('  - Target report:', targetReport.sheetName);
-    console.log('  - Source files:', sourceFiles.length);
+    console.log('  - Source files:', sourceFiles?.length || 0);
     console.log('  - Website capabilities:', websiteCapabilities?.capabilities?.length || 0);
+
+    // Debug: Log what we're working with
+    if (sourceFiles && sourceFiles.length > 0) {
+      sourceFiles.forEach((file: any) => {
+        console.log(`  - Source file: ${file.name}, columns: ${file.columns?.length || 0}`);
+      });
+    }
+
+    if (websiteCapabilities) {
+      console.log(`  - Website: ${websiteCapabilities.siteName}`);
+      console.log(`  - Capabilities: ${websiteCapabilities.capabilities?.length || 0}`);
+    }
 
     // Build context for AI
     const targetContext = buildTargetContext(targetReport);
-    const sourceContext = buildSourceContext(sourceFiles);
+    const sourceContext = buildSourceContext(sourceFiles || []);
     const websiteContext = websiteCapabilities
       ? buildWebsiteContext(websiteCapabilities)
-      : 'No website data available.';
+      : '⚠️ NO WEBSITE SELECTED - You cannot use website automation. Use only source files.';
 
-    const prompt = `You are an expert data analyst and report builder. Your task is to create a comprehensive plan for building a complete report from scratch using available resources.
+    console.log('[Build Planner] Context lengths:');
+    console.log('  - Target:', targetContext.length, 'chars');
+    console.log('  - Source:', sourceContext.length, 'chars');
+    console.log('  - Website:', websiteContext.length, 'chars');
+
+    const prompt = `You are an automation script generator. Create EXECUTABLE automation steps to build a report using browser automation, Excel operations, and data transformations.
 
 ## TARGET REPORT TO BUILD
 
 ${targetContext}
 
-## AVAILABLE RESOURCES
+## AVAILABLE AUTOMATION RESOURCES
 
-### Source Files (Excel)
+### Source Files (Excel) - Available NOW
 ${sourceContext}
 
-### Website Data
+### Website Automation Capabilities - Available NOW
 ${websiteContext}
 
-## YOUR TASK
+## CRITICAL RULES - YOU MUST FOLLOW THESE
 
-Create a **comprehensive, step-by-step plan** to build the entire target report from scratch. This is NOT about filling in blanks - you need to analyze ALL available resources and figure out the complete strategy for constructing this report.
+1. **ONLY generate AUTOMATABLE steps** - No human tasks allowed
+   ❌ NO: "Consult stakeholders", "Interview users", "Review documentation"
+   ✅ YES: "Load Excel", "Navigate to URL", "Click button", "Extract data"
 
-**Your plan should:**
+2. **Use EXACT resources provided above**
+   - Reference EXACT column names from source files
+   - Reference EXACT website sections from capabilities list
+   - Reference EXACT data fields from website capabilities
 
-1. **Analyze the target report structure:**
-   - What type of report is this?
-   - What are the key sections/dimensions?
-   - What metrics/measures are needed?
-   - What calculations are required?
+3. **Generate CONCRETE browser automation actions**
+   - "Navigate to [exact section from capabilities]"
+   - "Click [exact button/link name]"
+   - "Apply filter [exact field]: [value]"
+   - "Download Excel from [exact section]"
+   - "Extract columns: [exact column names]"
 
-2. **Map available resources:**
-   - Which source file columns can be used for each section?
-   - Which website data complements the Excel data?
-   - What transformations are needed?
+4. **Each step MUST be executable by automation**
+   - Browser navigation (Playwright)
+   - Excel file operations (read/write)
+   - Data transformations (formulas, joins, aggregations)
+   - No steps requiring human judgment or input
 
-3. **Create a logical build sequence:**
-   - Phase 1: Data Collection (extract from files + websites)
-   - Phase 2: Data Processing (clean, transform, calculate)
-   - Phase 3: Report Assembly (structure, format, populate)
-   - Phase 4: Validation (check completeness, accuracy)
+5. **Map source → target explicitly**
+   - Which Excel file provides which target section
+   - Which website section provides which data
+   - How data flows from source to target
 
-4. **Be specific and actionable:**
-   - Exact column names from source files
-   - Exact website sections to access
-   - Specific calculations (formulas, aggregations)
-   - Clear input → transformation → output for each step
+## OUTPUT FORMAT - EXECUTABLE AUTOMATION STEPS
 
-**Think holistically:** How would you build this report if you were doing it manually? What's the logical sequence? What data dependencies exist?
+Create 6-12 steps that can be EXECUTED by browser automation + Excel scripts.
 
-Create a complete build plan with 8-15 steps covering the entire process.`;
+**Example Step Format:**
+
+\`\`\`json
+{
+  "step": 1,
+  "phase": "Data Extraction",
+  "actionType": "NAVIGATE_WEBSITE",
+  "action": "Download sales transaction data from ECOUNT",
+  "source": "회계 I - 판매조회",
+  "parameters": {
+    "websiteSection": "회계 I - 판매조회",
+    "filters": [
+      {"field": "거래일자", "value": "2026-02-01 to 2026-02-28"}
+    ],
+    "columns": ["거래일자", "금액", "거래처", "품목"]
+  },
+  "output": "ecount_sales_feb2026.xlsx"
+}
+\`\`\`
+
+**Required Action Types:**
+- NAVIGATE_WEBSITE: Browser navigates to website section, downloads Excel
+- LOAD_EXCEL_FILE: Load Excel file into memory
+- EXTRACT_COLUMNS: Extract specific columns from loaded file
+- JOIN_DATA: Join two datasets on common column
+- CALCULATE: Apply formula/calculation
+- AGGREGATE: Group and sum/average data
+- CREATE_REPORT: Create new Excel with target structure
+- FORMAT_CELLS: Apply number formats, styling
+
+**CRITICAL RULES:**
+1. Use EXACT section names from "Website Automation Capabilities" above
+2. Use EXACT column names from "Source Files" above
+3. NO human tasks (no "consult", "review", "clarify", "interview")
+4. Every step must be executable by:
+   - Playwright browser automation (for website steps)
+   - ExcelJS / xlsx library (for Excel steps)
+   - JavaScript/Python data processing (for transformations)
+
+**Example Full Workflow:**
+
+Step 1 (NAVIGATE_WEBSITE): Navigate to "회계 I - 판매조회", download Excel
+Step 2 (LOAD_EXCEL_FILE): Load "판매현황.xlsx" columns [고객명, 매출액]
+Step 3 (JOIN_DATA): Join on "거래처"
+Step 4 (CALCULATE): SUM(매출액) by 고객명
+Step 5 (CREATE_REPORT): Build final report
+Step 6 (FORMAT_CELLS): Apply formatting
+
+**IMPORTANT CONSTRAINTS:**
+- Generate MAXIMUM 8 steps (keep it focused and concise)
+- Be brief in descriptions (10-15 words max per field)
+- Combine related actions when possible
+- Focus on the most critical steps only
+
+Generate a concise, executable plan using EXACT resources provided above.`;
 
     const buildResult = await generateWithRookieAI({
       prompt,
-      systemPrompt: 'You are an expert report builder. Create comprehensive, logical plans for building complete reports from multiple data sources.',
-      model: 'gemini-2.0-flash-exp',
+      systemPrompt: 'You are an automation script generator. Create concise, executable automation plans with MAXIMUM 8 steps. Use brief descriptions (max 15 words per field).',
+      model: 'gemini-2.5-flash',
       temperature: 0,
       maxOutputTokens: 16384,
       responseSchema: {
@@ -127,12 +200,12 @@ Create a complete build plan with 8-15 steps covering the entire process.`;
             properties: {
               overview: {
                 type: 'string',
-                description: 'High-level overview of the build approach',
+                description: 'Brief overview (max 50 words)',
               },
               phases: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Main phases of the build process',
+                description: 'Main phases (4 max)',
               },
             },
             required: ['overview', 'phases'],
@@ -143,13 +216,59 @@ Create a complete build plan with 8-15 steps covering the entire process.`;
               type: 'object',
               properties: {
                 step: { type: 'number' },
-                phase: { type: 'string', description: 'Which phase this belongs to' },
-                action: { type: 'string', description: 'What to do' },
-                source: { type: 'string', description: 'Which file/website to use' },
-                details: { type: 'string', description: 'Detailed instructions' },
-                output: { type: 'string', description: 'What this step produces' },
+                phase: {
+                  type: 'string',
+                  enum: ['Data Extraction', 'Data Loading', 'Data Transformation', 'Report Assembly'],
+                  description: 'Which automation phase',
+                },
+                actionType: {
+                  type: 'string',
+                  enum: [
+                    'NAVIGATE_WEBSITE',
+                    'DOWNLOAD_EXCEL',
+                    'LOAD_EXCEL_FILE',
+                    'EXTRACT_COLUMNS',
+                    'JOIN_DATA',
+                    'CALCULATE',
+                    'AGGREGATE',
+                    'CREATE_REPORT',
+                    'FORMAT_CELLS',
+                  ],
+                  description: 'Type of automation action',
+                },
+                action: { type: 'string', description: 'Brief description (max 15 words)' },
+                source: {
+                  type: 'string',
+                  description: 'File name OR website section',
+                },
+                parameters: {
+                  type: 'object',
+                  description: 'Executable parameters',
+                  properties: {
+                    websiteSection: { type: 'string', description: 'Exact section name from capabilities' },
+                    columns: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Exact column names to use/extract',
+                    },
+                    filters: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          field: { type: 'string' },
+                          value: { type: 'string' },
+                        },
+                      },
+                      description: 'Filters to apply before download',
+                    },
+                    joinOn: { type: 'string', description: 'Column name to join on' },
+                    formula: { type: 'string', description: 'Excel formula or calculation logic' },
+                  },
+                },
+                output: { type: 'string', description: 'What data/file this produces' },
               },
-              required: ['step', 'phase', 'action', 'source', 'details', 'output'],
+              required: ['step', 'phase', 'actionType', 'action', 'source', 'parameters', 'output'],
             },
           },
           dataFlow: {
@@ -160,9 +279,27 @@ Create a complete build plan with 8-15 steps covering the entire process.`;
                 items: {
                   type: 'object',
                   properties: {
-                    file: { type: 'string' },
-                    columns: { type: 'array', items: { type: 'string' } },
-                    usage: { type: 'string' },
+                    file: { type: 'string', description: 'Exact filename from available resources' },
+                    columns: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Exact column names that will be used',
+                    },
+                    usage: {
+                      type: 'string',
+                      description: 'How this data maps to target report (specific sections/fields)',
+                    },
+                    targetMapping: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          sourceColumn: { type: 'string' },
+                          targetField: { type: 'string' },
+                        },
+                      },
+                      description: 'Explicit source column → target field mappings',
+                    },
                   },
                   required: ['file', 'columns', 'usage'],
                 },
@@ -173,9 +310,27 @@ Create a complete build plan with 8-15 steps covering the entire process.`;
                   type: 'object',
                   properties: {
                     site: { type: 'string' },
-                    section: { type: 'string' },
-                    fields: { type: 'array', items: { type: 'string' } },
-                    usage: { type: 'string' },
+                    section: { type: 'string', description: 'Exact section name from capabilities list' },
+                    fields: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Exact field names to extract from website',
+                    },
+                    usage: {
+                      type: 'string',
+                      description: 'How this website data enriches the report',
+                    },
+                    targetMapping: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          websiteField: { type: 'string' },
+                          targetField: { type: 'string' },
+                        },
+                      },
+                      description: 'Explicit website field → target field mappings',
+                    },
                   },
                   required: ['site', 'section', 'fields', 'usage'],
                 },
@@ -183,7 +338,7 @@ Create a complete build plan with 8-15 steps covering the entire process.`;
             },
             required: ['sourceFiles', 'websiteData'],
           },
-          summary: { type: 'string', description: 'Executive summary of the build plan' },
+          summary: { type: 'string', description: 'Brief summary (max 30 words)' },
           estimatedComplexity: {
             type: 'string',
             enum: ['Simple', 'Moderate', 'Complex'],
@@ -279,38 +434,49 @@ function buildTargetContext(targetReport: any): string {
  */
 function buildSourceContext(sourceFiles: Array<{ name: string; columns: any[] }>): string {
   if (sourceFiles.length === 0) {
-    return 'No source files available.';
+    return '⚠️ NO SOURCE FILES PROVIDED - You must work with website data only.';
   }
 
-  return sourceFiles
-    .map((file) => {
-      const columnList = file.columns
-        .map((col) => {
-          if (typeof col === 'string') return col;
-          return col.name || col.column || String(col);
-        })
-        .filter(Boolean)
-        .join(', ');
+  const sections = ['**Available Excel Files:**\n'];
 
-      return `**${file.name}**\nColumns: ${columnList || 'No columns detected'}`;
-    })
-    .join('\n\n');
+  sourceFiles.forEach((file, idx) => {
+    const columnList = file.columns
+      .map((col) => {
+        if (typeof col === 'string') return col;
+        return col.name || col.column || String(col);
+      })
+      .filter(Boolean);
+
+    sections.push(`${idx + 1}. **File: ${file.name}**`);
+
+    if (columnList.length > 0) {
+      sections.push(`   Available Columns: ${columnList.join(', ')}`);
+      sections.push(`   → Use these EXACT column names in your automation steps`);
+    } else {
+      sections.push(`   ⚠️ No columns detected - file may need to be loaded first`);
+    }
+    sections.push('');
+  });
+
+  return sections.join('\n');
 }
 
 /**
  * Build website context for AI
  */
 function buildWebsiteContext(websiteCapabilities: any): string {
-  const capabilities = websiteCapabilities.capabilities || [];
+  const capabilities = websiteCapabilities?.capabilities || [];
 
   if (capabilities.length === 0) {
-    return 'Website connected but no capabilities mapped yet.';
+    return '⚠️ NO WEBSITE SELECTED - You cannot use website automation. Use only source files.';
   }
 
   const sections = [
     `**Website:** ${websiteCapabilities.siteName || 'Unknown'} (${websiteCapabilities.siteType || 'Unknown Type'})`,
+    `**Auto-Login:** Credentials saved (automation will login automatically)`,
     `**Total Capabilities:** ${capabilities.length}`,
-    '\n**Available Data Sections:**',
+    '\n**BROWSER AUTOMATION CAPABILITIES:**',
+    '\nUse these EXACT section names in your navigation steps:\n',
   ];
 
   // Group by section
@@ -322,18 +488,22 @@ function buildWebsiteContext(websiteCapabilities: any): string {
   });
 
   Object.entries(grouped).forEach(([section, caps]) => {
-    sections.push(`\n**${section}** (${caps.length} capabilities):`);
-    caps.slice(0, 3).forEach((cap: any) => {
-      // Show top 3 per section
-      sections.push(`  - ${cap.description}`);
+    sections.push(`**Section: "${section}"** (${caps.length} options)`);
+
+    caps.forEach((cap: any) => {
+      sections.push(`  ↳ ${cap.description}`);
       if (cap.dataAvailable && cap.dataAvailable.length > 0) {
-        sections.push(`    Fields: ${cap.dataAvailable.slice(0, 5).join(', ')}`);
+        sections.push(`    Available Fields: ${cap.dataAvailable.join(', ')}`);
+        sections.push(`    → Browser Action: Navigate to "${section}", download Excel, extract these fields`);
       }
     });
-    if (caps.length > 3) {
-      sections.push(`  ... and ${caps.length - 3} more`);
-    }
+    sections.push('');
   });
+
+  sections.push('\n**AUTOMATION INSTRUCTIONS:**');
+  sections.push('- Reference exact section names above in quotes');
+  sections.push('- Specify which fields to extract from downloaded Excel');
+  sections.push('- Browser automation will handle login, navigation, download automatically');
 
   return sections.join('\n');
 }

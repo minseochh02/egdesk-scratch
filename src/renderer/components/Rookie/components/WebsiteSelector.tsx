@@ -30,6 +30,7 @@ interface WebsiteSelectorProps {
   isExploring: boolean;
   onSkillsetSelect: (skillsetId: string | null) => void;
   onExploreWebsite: (url: string) => Promise<void>;
+  onReExplore?: (skillsetId: string) => Promise<void>;
 }
 
 export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
@@ -39,6 +40,7 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
   isExploring,
   onSkillsetSelect,
   onExploreWebsite,
+  onReExplore,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newUrl, setNewUrl] = useState('');
@@ -121,6 +123,17 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                   ⚡ No exploration needed - using cached capabilities
                 </div>
               </div>
+              {onReExplore && (
+                <button
+                  type="button"
+                  className="rookie-reexplore-button"
+                  onClick={() => onReExplore(selectedSkillset.id)}
+                  disabled={isExploring}
+                  title="Re-explore this website to refresh capabilities while keeping saved credentials"
+                >
+                  🔄 Refresh Capabilities
+                </button>
+              )}
             </div>
           )}
         </div>
