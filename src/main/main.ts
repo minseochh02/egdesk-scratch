@@ -94,6 +94,8 @@ import { analyzeSourceMapping } from './rookie/ai-resolver';
 import { ExcelDataStore } from './rookie/excel-query-tool';
 import { researchWebsite, resumeResearchWithCredentials, SecureCredentials } from './rookie/ai-researcher';
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
+import { initializeRookieDatabase } from './rookie/skillset/skillset-database';
+import { registerSkillsetHandlers } from './rookie/skillset/skillset-ipc-handlers';
 import { 
   registerServerName, 
   startTunnel, 
@@ -455,7 +457,15 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
-    
+
+    // Initialize Rookie Skillset Database
+    try {
+      initializeRookieDatabase();
+      console.log('✅ Rookie Skillset Database initialized successfully');
+    } catch (dbError) {
+      console.error('❌ Failed to initialize Rookie Skillset Database:', dbError);
+    }
+
     // Migration: Fix port 8081 -> 8080 for connections
     try {
       const config = store.get('mcpConfiguration');
@@ -3822,6 +3832,141 @@ const createWindow = async () => {
       }
     });
 
+    // Register NAVIGATOR handler (Phase 4: Create navigation plans)
+    ipcMain.handle('rookie:generate-build-plan', async (_event, { targetReport, sourceFiles, websiteSkillsetId }) => {
+      try {
+        console.log('[Build Planner] Generating comprehensive build plan...');
+        console.log('  - Target report:', targetReport?.sheetName);
+        console.log('  - Source files:', sourceFiles?.length || 0);
+        console.log('  - Website skillset ID:', websiteSkillsetId);
+
+        const { generateBuildPlan, saveBuildPlan } = await import('./rookie/ai-build-planner');
+
+        // Load website capabilities if skillset is selected
+        let websiteCapabilities = null;
+        if (websiteSkillsetId) {
+          const { getWebsite, getCapabilities } = await import('./rookie/skillset/skillset-manager');
+          const website = getWebsite(websiteSkillsetId);
+          if (website) {
+            const capabilities = getCapabilities(websiteSkillsetId);
+            websiteCapabilities = {
+              siteName: website.siteName,
+              siteType: website.siteType,
+              capabilities: capabilities.map(cap => ({
+                section: cap.section,
+                description: cap.description,
+                dataAvailable: cap.dataAvailable,
+                path: '', // TODO: Get from navigation paths
+              })),
+            };
+          }
+        }
+
+        const result = await generateBuildPlan({
+          targetReport,
+          sourceFiles,
+          websiteCapabilities,
+        });
+
+        if (result.success && result.steps) {
+          console.log('[Build Planner] ✓ Generated', result.steps.length, 'build steps');
+          console.log('[Build Planner] Complexity:', result.estimatedComplexity);
+
+          // Save build plan
+          const outputDir = app.isPackaged
+            ? path.join(app.getPath('userData'), 'output', 'build-plans')
+            : path.join(process.cwd(), 'output', 'build-plans');
+
+          const savedPath = saveBuildPlan(result, outputDir);
+          console.log('[Build Planner] ✅ Plan saved to:', savedPath);
+
+          return {
+            ...result,
+            savedTo: savedPath,
+          };
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Navigator] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
+    // Register helper to load explorer cache
+    ipcMain.handle('rookie:load-explorer-cache', async (_event, { fileName }) => {
+      try {
+        const outputDir = app.isPackaged
+          ? path.join(app.getPath('userData'), 'output', 'explorer-results')
+          : path.join(process.cwd(), 'output', 'explorer-results');
+
+        const filePath = path.join(outputDir, fileName);
+
+        if (!fs.existsSync(filePath)) {
+          console.warn('[Cache] Explorer file not found:', filePath);
+          return { capabilities: [] };
+        }
+
+        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        const data = JSON.parse(fileContent);
+
+        console.log('[Cache] Loaded explorer results:', data.capabilities?.length || 0, 'capabilities');
+
+        return data;
+      } catch (error: any) {
+        console.error('[Cache] Error loading explorer cache:', error);
+        return { capabilities: [] };
+      }
+    });
+
+    // Register EXECUTOR handler (Phase 5: Execute navigation plan)
+    ipcMain.handle('rookie:execute-navigation-plan', async (_event, { plan, url, credentialValues, explorerCapabilities }) => {
+      try {
+        console.log('[Executor] Executing navigation plan...');
+        console.log('  - Goal:', plan.goal);
+        console.log('  - Sitemap capabilities:', explorerCapabilities?.length || 0);
+
+        const { executeNavigationPlan, saveExecutorResults } = await import('./rookie/ai-executor');
+
+        const result = await executeNavigationPlan({
+          plan,
+          url,
+          credentialValues,
+          explorerCapabilities,
+        });
+
+        if (result.success) {
+          console.log('[Executor] ✓ Plan executed successfully');
+          console.log('  - Tool calls:', result.toolCalls);
+          console.log('  - Data extracted:', !!result.extractedData);
+
+          // Save execution results
+          const outputDir = app.isPackaged
+            ? path.join(app.getPath('userData'), 'output', 'execution-results')
+            : path.join(process.cwd(), 'output', 'execution-results');
+
+          const savedPath = saveExecutorResults(result, outputDir);
+          console.log('[Executor] ✅ Results saved to:', savedPath);
+
+          return {
+            ...result,
+            savedTo: savedPath,
+          };
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Executor] Error:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+
     // Register Gmail MCP handlers
     registerGmailMCPHandlers();
     
@@ -3858,6 +4003,9 @@ const createWindow = async () => {
     // Register EGDesk Dev Spreadsheet handlers
     const egdeskDevService = getEGDeskDevSpreadsheetService();
     egdeskDevService.registerIPCHandlers();
+
+    // Register Skillset (Rookie Website Knowledge Base) handlers
+    registerSkillsetHandlers();
 
     // Mark handlers as fully registered AFTER all handlers are registered
     handlersRegistered = true;

@@ -1,0 +1,217 @@
+/**
+ * Skillset Library Styles
+ */
+
+.skillset-library {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.skillset-header {
+  margin-bottom: 30px;
+}
+
+.skillset-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.skillset-subtitle {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+.skillset-loading,
+.skillset-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+.skillset-empty p {
+  margin: 10px 0;
+}
+
+.skillset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.skillset-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.2s;
+}
+
+.skillset-card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.skillset-card-header {
+  margin-bottom: 15px;
+}
+
+.skillset-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.skillset-card-title h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: #333;
+}
+
+.skillset-health-badge {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.skillset-card-url {
+  font-size: 13px;
+  color: #666;
+  font-family: monospace;
+}
+
+.skillset-card-stats {
+  margin-bottom: 15px;
+}
+
+.skillset-stat {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.skillset-stat strong {
+  color: #333;
+  margin-right: 6px;
+}
+
+.skillset-issues {
+  margin-top: 12px;
+  padding: 10px;
+  background: #fff3cd;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+}
+
+.skillset-issue {
+  font-size: 13px;
+  color: #856404;
+  margin-bottom: 4px;
+}
+
+.skillset-issue:last-child {
+  margin-bottom: 0;
+}
+
+.skillset-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.skillset-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.skillset-btn-primary {
+  background: #2196f3;
+  color: white;
+}
+
+.skillset-btn-primary:hover {
+  background: #1976d2;
+}
+
+.skillset-btn-danger {
+  background: #f44336;
+  color: white;
+}
+
+.skillset-btn-danger:hover {
+  background: #d32f2f;
+}
+
+.skillset-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.skillset-modal {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.skillset-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.skillset-modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  color: #333;
+}
+
+.skillset-modal-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.skillset-modal-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.skillset-modal-content {
+  padding: 20px;
+}
