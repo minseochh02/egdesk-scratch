@@ -13,6 +13,7 @@ import { exploreSection } from './ai-section-explorer';
 import { SiteCapability } from './ai-researcher';
 import * as fs from 'fs';
 import * as path from 'path';
+import { saveExplorationResults as saveToSkillset } from './skillset/skillset-manager';
 
 /**
  * Get Chrome executable path for macOS
@@ -249,6 +250,60 @@ export async function exploreWebsiteParallel(params: {
       finalResult.savedTo = filePath;
     } catch (saveError: any) {
       console.warn('[Explorer] Failed to save results:', saveError.message);
+    }
+
+    // Save to Skillset for persistent knowledge base
+    try {
+      console.log('[Explorer] Saving to Skillset database...');
+
+      // Transform login fields if available
+      const loginFields = params.loginFields?.fields.map(field => ({
+        name: field.name,
+        type: field.type as 'text' | 'password',
+        elementSignature: {
+          role: params.loginFields?.elementMap?.[field.elementId]?.role || 'textbox',
+          name: field.name,
+          reliability: 0.5,
+        },
+      })) || [];
+
+      // Transform capabilities to Skillset format
+      const skillsetCapabilities = mergedCapabilities.map(cap => ({
+        section: cap.section || 'Unknown',
+        description: cap.description || cap.capability,
+        path: cap.path || '',
+        dataAvailable: cap.dataAvailable || [],
+        excelDownloadAvailable: cap.excelDownloadAvailable,
+        excelButtonSelector: cap.excelButtonSelector,
+      }));
+
+      const skillsetResult = {
+        siteName: scoutResult.siteName || 'Unknown Site',
+        siteType: scoutResult.siteType || 'Unknown',
+        loginFields,
+        capabilities: skillsetCapabilities,
+        totalToolCalls,
+        executionTimeMs,
+      };
+
+      const savedWebsite = saveToSkillset(params.url, skillsetResult);
+      console.log('[Explorer] ✅ Saved to Skillset:', savedWebsite.siteName);
+
+      // Save credentials if provided
+      if (params.credentials || params.credentialValues) {
+        const { saveCredentials } = require('./skillset/skillset-manager');
+
+        const credentialsToSave = params.credentialValues || {
+          username: params.credentials?.username || '',
+          password: params.credentials?.password || '',
+        };
+
+        saveCredentials(savedWebsite.id, credentialsToSave);
+        console.log('[Explorer] ✅ Saved credentials to Skillset');
+      }
+    } catch (skillsetError: any) {
+      console.warn('[Explorer] Failed to save to Skillset:', skillsetError.message);
+      // Don't fail the entire exploration if Skillset save fails
     }
 
     return finalResult;
