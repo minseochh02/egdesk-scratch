@@ -43,6 +43,33 @@ export interface LoginField {
   elementSignature: ElementSignature;
 }
 
+/**
+ * Stored credential with selector information
+ */
+export interface StoredCredential {
+  fieldName: string;
+  value: string;
+  selector: {
+    elementId?: string;
+    role?: string;
+    name?: string;
+    type: string;
+    xpath?: string;
+  };
+}
+
+/**
+ * Complete credential storage structure
+ */
+export interface CredentialStorage {
+  credentials: StoredCredential[];
+  submitButton?: {
+    elementId?: string;
+    role?: string;
+    name?: string;
+  };
+}
+
 export interface CapabilityRecord {
   id: string;
   websiteId: string;

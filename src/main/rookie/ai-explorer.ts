@@ -72,6 +72,7 @@ export async function exploreWebsiteParallel(params: {
 }): Promise<ExplorerResult> {
   const startTime = Date.now();
   let browser: Browser | null = null;
+  let loginSucceeded = false; // Track if login verification succeeded
 
   try {
     console.log('[Explorer] Starting parallel multi-agent exploration...');
@@ -119,8 +120,49 @@ export async function exploreWebsiteParallel(params: {
     // Handle login if credentials provided
     if (isLoginPage && (params.credentials || params.credentialValues)) {
       console.log('[Explorer] Logging in...');
+      const beforeLoginUrl = mainPage.url();
       await handleLogin(mainPage, params.credentials, params.credentialValues, params.loginFields);
       await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Check if login succeeded by URL change
+      const afterLoginUrl = mainPage.url();
+      loginSucceeded = afterLoginUrl !== beforeLoginUrl;
+
+      console.log('[Explorer] Login status:', loginSucceeded ? '✅ Success' : '❌ Failed');
+      console.log('[Explorer] URL before:', beforeLoginUrl);
+      console.log('[Explorer] URL after:', afterLoginUrl);
+
+      if (loginSucceeded && (params.credentials || params.credentialValues)) {
+        // Save credentials immediately after successful login verification
+        console.log('[Explorer] 💾 Saving verified credentials early (before exploration)...');
+
+        try {
+          const { saveCredentials, getWebsiteByUrl, createWebsite } = require('./skillset/skillset-manager');
+
+          // Get or create website record first
+          let website = getWebsiteByUrl(params.url);
+          if (!website) {
+            console.log('[Explorer] Creating website record for early credential save...');
+            website = createWebsite({
+              url: params.url,
+              siteName: 'Unknown Site', // Will be updated later with SCOUT results
+              siteType: 'Unknown',
+            });
+          }
+
+          const credentialsToSave = params.credentialValues || {
+            username: params.credentials?.username || '',
+            password: params.credentials?.password || '',
+          };
+
+          saveCredentials(website.id, credentialsToSave, params.loginFields);
+          console.log('[Explorer] ✅ Credentials saved immediately after login verification!');
+          console.log('[Explorer] → Credentials are now safe even if exploration fails');
+        } catch (earlyError: any) {
+          console.warn('[Explorer] Failed to save credentials early:', earlyError.message);
+          // Continue exploration anyway
+        }
+      }
     }
 
     // ===== PHASE 1: SCOUT - Discover main menu sections =====
@@ -289,8 +331,9 @@ export async function exploreWebsiteParallel(params: {
       const savedWebsite = saveToSkillset(params.url, skillsetResult);
       console.log('[Explorer] ✅ Saved to Skillset:', savedWebsite.siteName);
 
-      // Save credentials if provided
-      if (params.credentials || params.credentialValues) {
+      // Save credentials if provided AND not already saved early
+      if ((params.credentials || params.credentialValues) && !loginSucceeded) {
+        // This path is for when login wasn't needed or didn't happen
         const { saveCredentials } = require('./skillset/skillset-manager');
 
         const credentialsToSave = params.credentialValues || {
@@ -298,8 +341,11 @@ export async function exploreWebsiteParallel(params: {
           password: params.credentials?.password || '',
         };
 
-        saveCredentials(savedWebsite.id, credentialsToSave);
+        console.log('[Explorer] Saving credentials at end (no early save)...');
+        saveCredentials(savedWebsite.id, credentialsToSave, params.loginFields);
         console.log('[Explorer] ✅ Saved credentials to Skillset');
+      } else if (loginSucceeded) {
+        console.log('[Explorer] ℹ️ Credentials already saved early (right after login), skipping end-save');
       }
     } catch (skillsetError: any) {
       console.warn('[Explorer] Failed to save to Skillset:', skillsetError.message);

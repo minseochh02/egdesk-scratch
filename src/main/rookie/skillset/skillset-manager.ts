@@ -5,6 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute, transaction } from './skillset-database';
+import { encrypt, decrypt } from './crypto-utils';
 import {
   WebsiteSkillset,
   CapabilityRecord,
@@ -656,13 +657,68 @@ import { v4 as uuidv4 } from 'uuid';
 import { encryptCredentials, decryptCredentials } from './crypto-utils';
 
 /**
- * Save credentials for a website
+ * Save credentials for a website WITH selector information
  */
 export function saveCredentials(
   websiteId: string,
-  credentials: Record<string, string>
+  credentialValues: Record<string, string>,
+  loginFields?: any // LoginFieldDiscovery from EXPLORER
 ): void {
-  const encryptedData = encryptCredentials(credentials);
+  // Build credential storage with selectors
+  const credentialStorage: any = {
+    credentials: [],
+    submitButton: null,
+  };
+
+  // Extract submit button selector info from elementMap
+  if (loginFields && loginFields.submitButton && loginFields.elementMap) {
+    const submitInfo = loginFields.elementMap[loginFields.submitButton];
+    if (submitInfo) {
+      credentialStorage.submitButton = {
+        elementId: loginFields.submitButton, // e.g., "@submit"
+        role: submitInfo.role,
+        name: submitInfo.name,
+        type: submitInfo.type,
+      };
+      console.log('[SkillsetManager] Submit button selector:', credentialStorage.submitButton);
+    }
+  }
+
+  // Map credential values to fields with selectors
+  if (loginFields && loginFields.fields) {
+    for (const field of loginFields.fields) {
+      const value = credentialValues[field.name];
+      if (value) {
+        credentialStorage.credentials.push({
+          fieldName: field.name,
+          value: value,
+          selector: {
+            elementId: field.elementId,
+            role: loginFields.elementMap?.[field.elementId]?.role || 'textbox',
+            name: field.name,
+            type: field.type,
+          },
+        });
+      }
+    }
+  } else {
+    // Fallback for old format (no selectors)
+    console.warn('[SkillsetManager] No loginFields provided - storing credentials without selectors');
+    for (const [fieldName, value] of Object.entries(credentialValues)) {
+      credentialStorage.credentials.push({
+        fieldName,
+        value,
+        selector: {
+          name: fieldName,
+          type: fieldName.toLowerCase().includes('password') ? 'password' : 'text',
+        },
+      });
+    }
+  }
+
+  console.log('[SkillsetManager] Storing', credentialStorage.credentials.length, 'credentials with selectors');
+
+  const encryptedData = encrypt(JSON.stringify(credentialStorage));
 
   // Check if credentials already exist
   const existing = queryOne<{ id: string }>(
@@ -696,9 +752,9 @@ export function saveCredentials(
 }
 
 /**
- * Get credentials for a website
+ * Get credentials for a website WITH selector information
  */
-export function getCredentials(websiteId: string): Record<string, string> | null {
+export function getCredentials(websiteId: string): any | null {
   const row = queryOne<{ encrypted_credentials: string; is_valid: number }>(
     `SELECT encrypted_credentials, is_valid
      FROM skillset_credentials
@@ -711,8 +767,9 @@ export function getCredentials(websiteId: string): Record<string, string> | null
   }
 
   try {
-    const credentials = decryptCredentials(row.encrypted_credentials);
-    
+    const decryptedString = decrypt(row.encrypted_credentials);
+    const credentialData = JSON.parse(decryptedString);
+
     // Update last used timestamp
     execute(
       `UPDATE skillset_credentials
@@ -721,7 +778,27 @@ export function getCredentials(websiteId: string): Record<string, string> | null
       [websiteId]
     );
 
-    return credentials;
+    // Check format - new format has 'credentials' array, old format is flat object
+    if (credentialData.credentials && Array.isArray(credentialData.credentials)) {
+      // New format with selectors
+      console.log('[SkillsetManager] Retrieved credentials with selectors:', credentialData.credentials.length);
+      return credentialData;
+    } else {
+      // Old format (backward compatibility) - convert to new format
+      console.warn('[SkillsetManager] Old credential format detected, converting...');
+      const converted = {
+        credentials: Object.entries(credentialData).map(([fieldName, value]) => ({
+          fieldName,
+          value,
+          selector: {
+            name: fieldName,
+            type: fieldName.toLowerCase().includes('password') ? 'password' : 'text',
+          },
+        })),
+        submitButton: null,
+      };
+      return converted;
+    }
   } catch (error) {
     console.error('[SkillsetManager] Failed to decrypt credentials:', error);
     return null;

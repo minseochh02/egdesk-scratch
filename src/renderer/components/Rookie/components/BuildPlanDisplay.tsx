@@ -5,12 +5,64 @@
 
 import React from 'react';
 
+/**
+ * Check if a build step can be automated
+ */
+function isStepAutomatable(step: BuildStep): boolean {
+  if (step.actionType) {
+    // Use actionType if available (new format)
+    const automatableTypes = [
+      'NAVIGATE_WEBSITE',
+      'DOWNLOAD_EXCEL',
+      'LOAD_EXCEL_FILE',
+      'EXTRACT_COLUMNS',
+      'JOIN_DATA',
+      'CALCULATE',
+      'AGGREGATE',
+      'CREATE_REPORT',
+      'FORMAT_CELLS',
+    ];
+    return automatableTypes.includes(step.actionType);
+  }
+
+  // Fallback to old detection method
+  const source = step.source?.toLowerCase() || '';
+  const details = step.details?.toLowerCase() || '';
+
+  const isWebsiteStep =
+    source.includes('ecount') ||
+    source.includes('erp') ||
+    source.includes('website') ||
+    details?.includes('navigate') ||
+    details?.includes('export') ||
+    details?.includes('download');
+
+  const isHumanTask =
+    details?.includes('consult') ||
+    details?.includes('interview') ||
+    details?.includes('stakeholder') ||
+    details?.includes('review') ||
+    details?.includes('sign-off') ||
+    step.action.includes('Clarify') ||
+    step.action.includes('Stakeholder');
+
+  return isWebsiteStep && !isHumanTask;
+}
+
 interface BuildStep {
   step: number;
   phase: string;
+  actionType?: string;
   action: string;
   source: string;
-  details: string;
+  details?: string;
+  parameters?: {
+    websiteSection?: string;
+    columns?: string[];
+    filters?: Array<{ field: string; value: string }>;
+    joinOn?: string;
+    formula?: string;
+  };
   output: string;
 }
 
@@ -50,6 +102,14 @@ export const BuildPlanDisplay: React.FC<BuildPlanDisplayProps> = ({
   onExecute,
   isExecuting,
 }) => {
+  console.log('[BuildPlanDisplay] Rendering with plan:', {
+    success: plan.success,
+    stepsCount: plan.steps?.length || 0,
+    hasStrategy: !!plan.strategy,
+    hasDataFlow: !!plan.dataFlow,
+    isExecuting,
+  });
+
   if (!plan.success) {
     return (
       <div className="rookie-build-plan-error">
@@ -103,15 +163,62 @@ export const BuildPlanDisplay: React.FC<BuildPlanDisplayProps> = ({
                 </div>
               </div>
               <div className="rookie-build-step-body">
+                {step.actionType && (
+                  <div className="rookie-build-step-row">
+                    <strong>🔧 Action Type:</strong>{' '}
+                    <code className="rookie-action-type-badge">{step.actionType}</code>
+                  </div>
+                )}
                 <div className="rookie-build-step-row">
                   <strong>📦 Source:</strong> {step.source}
                 </div>
-                <div className="rookie-build-step-row">
-                  <strong>📝 Details:</strong> {step.details}
-                </div>
+                {step.parameters && Object.keys(step.parameters).length > 0 && (
+                  <div className="rookie-build-step-row">
+                    <strong>⚙️ Parameters:</strong>
+                    <div className="rookie-parameters-box">
+                      {step.parameters.websiteSection && (
+                        <div>• Website Section: <code>{step.parameters.websiteSection}</code></div>
+                      )}
+                      {step.parameters.columns && step.parameters.columns.length > 0 && (
+                        <div>• Columns: <code>{step.parameters.columns.join(', ')}</code></div>
+                      )}
+                      {step.parameters.filters && step.parameters.filters.length > 0 && (
+                        <div>
+                          • Filters:{' '}
+                          {step.parameters.filters.map((f, i) => (
+                            <code key={i}>
+                              {f.field} = {f.value}
+                              {i < step.parameters.filters!.length - 1 ? ', ' : ''}
+                            </code>
+                          ))}
+                        </div>
+                      )}
+                      {step.parameters.joinOn && (
+                        <div>• Join On: <code>{step.parameters.joinOn}</code></div>
+                      )}
+                      {step.parameters.formula && (
+                        <div>• Formula: <code>{step.parameters.formula}</code></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {step.details && (
+                  <div className="rookie-build-step-row">
+                    <strong>📝 Details:</strong> {step.details}
+                  </div>
+                )}
                 <div className="rookie-build-step-row">
                   <strong>📤 Output:</strong> {step.output}
                 </div>
+                {isStepAutomatable(step) ? (
+                  <div className="rookie-step-automation-badge">
+                    🤖 Automatable
+                  </div>
+                ) : (
+                  <div className="rookie-step-manual-badge">
+                    👤 Manual Step
+                  </div>
+                )}
               </div>
             </div>
           ))}
