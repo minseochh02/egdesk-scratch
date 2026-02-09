@@ -13,8 +13,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { clipboard, systemPreferences } from 'electron';
-import { uIOhook, UiohookKey, UiohookMouseButton } from 'uiohook-napi';
+import { uIOhook, UiohookKey } from 'uiohook-napi';
 import activeWin from 'active-win';
+
+// Mouse button constants (uiohook-napi doesn't export these)
+const MouseButton = {
+  Left: 1,
+  Right: 2,
+  Middle: 3,
+} as const;
 import { DesktopAutomationManager } from './utils/desktop-automation-manager';
 
 /**
@@ -468,11 +475,9 @@ export class DesktopRecorder {
       try {
         if (!this.isRecording || this.isPaused) return;
 
-        console.log('[DesktopRecorder] Click event received:', { button: e.button, x: e.x, y: e.y, UiohookMouseButton });
-
         // Map button: 1 = left, 2 = right, 3 = middle
-        const button = e.button === UiohookMouseButton.Left ? 'left' :
-                       e.button === UiohookMouseButton.Right ? 'right' : 'middle';
+        const button = e.button === MouseButton.Left ? 'left' :
+                       e.button === MouseButton.Right ? 'right' : 'middle';
 
         this.recordMouseClick(e.x, e.y, button);
       } catch (error) {
