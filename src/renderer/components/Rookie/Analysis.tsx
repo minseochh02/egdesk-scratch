@@ -16,6 +16,7 @@ import {
   WebsiteSelector,
   ExplorationCredentials,
   BuildPlanDisplay,
+  SourceMappingVisualizer,
 } from './components';
 
 interface AnalysisProps {
@@ -1060,10 +1061,14 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* Excel HTML Preview */}
+        {/* Excel HTML Preview - Plain Structure */}
         {!isAnalyzing && aiAnalysis && aiAnalysis.html && (
           <div className="rookie-step-section">
-            <h3 className="rookie-step-title">Target Report Preview</h3>
+            <h3 className="rookie-step-title">Target Report Structure</h3>
+            <p className="rookie-subsection-description">
+              Visual preview of the target report structure (analyzed by AI).
+              {!resolverAnalysis && ' Run Step 2 to see source-to-target mappings.'}
+            </p>
             <div className="rookie-html-preview">
               <div className="rookie-html-preview-controls">
                 <span className="rookie-html-info">
@@ -1082,9 +1087,186 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
       </div>
 
 
-      {/* Step 2: Build Plan */}
+      {/* Step 2: Analyze Source Mapping (RESOLVER) */}
       <div className="rookie-step-section">
-        <h3 className="rookie-step-title">Step 2: Generate Build Plan</h3>
+        <h3 className="rookie-step-title">Step 2: Analyze Source-to-Target Mapping</h3>
+        <p className="rookie-subsection-description">
+          The Resolver will analyze how your source files map to the target report structure.
+          It will resolve unclear terms, verify formulas, and create a detailed build recipe.
+        </p>
+
+        {/* Prerequisites check */}
+        {(!aiAnalysis || resourceFiles.length === 0) && (
+          <div className="rookie-prerequisites-warning">
+            ⚠️ Prerequisites needed:
+            <ul>
+              {!aiAnalysis && <li>Complete Step 1 (Target Report Analysis)</li>}
+              {resourceFiles.length === 0 && <li>Upload at least one source file in Step 1</li>}
+            </ul>
+          </div>
+        )}
+
+        {/* Resolver button */}
+        {aiAnalysis && resourceFiles.length > 0 && !resolverAnalysis && !isResolving && (
+          <button
+            type="button"
+            className="rookie-start-research-button"
+            onClick={() => handleStartRecording(false)}
+          >
+            🔍 Analyze Source Mapping
+          </button>
+        )}
+
+        {/* Loading state */}
+        {isResolving && (
+          <div className="rookie-ai-loading">
+            <div className="rookie-spinner"></div>
+            <p>Resolver is analyzing source files and mapping them to target report...</p>
+            <p style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
+              This may take 1-2 minutes as the AI explores your data
+            </p>
+          </div>
+        )}
+
+        {/* Resolver results */}
+        {resolverAnalysis && resolverAnalysis.success && (
+          <div className="rookie-resolver-results">
+            <div className="rookie-resolver-success">
+              ✅ Source mapping analysis complete!
+            </div>
+
+            {/* Term Resolutions */}
+            {resolverAnalysis.termResolutions && resolverAnalysis.termResolutions.length > 0 && (
+              <div className="rookie-phase-compact">
+                <h4 className="rookie-phase-title-compact">
+                  ❓ Terms Resolved ({resolverAnalysis.termResolutions.length})
+                </h4>
+                <div className="rookie-term-resolutions">
+                  {resolverAnalysis.termResolutions.map((tr: any, idx: number) => (
+                    <div key={idx} className="rookie-term-resolution">
+                      <strong>"{tr.term}"</strong> → {tr.answer}
+                      <span className={`rookie-confidence-badge ${tr.confidence}`}>
+                        {tr.confidence}
+                      </span>
+                      {tr.foundIn && (
+                        <div className="rookie-term-source">
+                          Found in: {tr.foundIn}
+                          {tr.column && ` (column: ${tr.column})`}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Source Inventory */}
+            {resolverAnalysis.sourceInventory && resolverAnalysis.sourceInventory.length > 0 && (
+              <div className="rookie-phase-compact">
+                <h4 className="rookie-phase-title-compact">
+                  📊 Source Files Inventory ({resolverAnalysis.sourceInventory.length})
+                </h4>
+                <div className="rookie-source-inventory">
+                  {resolverAnalysis.sourceInventory.map((inv: any, idx: number) => (
+                    <div key={idx} className="rookie-inventory-item">
+                      <div className="rookie-inventory-header">
+                        <strong>{inv.file}</strong>
+                        <span className="rookie-row-count">{inv.rowCount} rows</span>
+                      </div>
+                      <div className="rookie-inventory-details">
+                        <div>📁 Origin: {inv.origin}</div>
+                        <div>🎯 Feeds sections: {inv.feedsTargetSections?.join(', ') || 'Unknown'}</div>
+                        <div>📋 Columns: {inv.columns?.length || 0}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Build Recipe Summary */}
+            {resolverAnalysis.buildRecipe && (
+              <div className="rookie-phase-compact">
+                <h4 className="rookie-phase-title-compact">
+                  📋 Build Recipe ({resolverAnalysis.buildRecipe.steps?.length || 0} steps)
+                </h4>
+                <div className="rookie-build-recipe-summary">
+                  Build recipe created with {resolverAnalysis.buildRecipe.steps?.length || 0} executable steps
+                </div>
+              </div>
+            )}
+
+            {/* Source Mapping Visualizer */}
+            {resolverAnalysis.sourceInventory && (
+              <SourceMappingVisualizer
+                resolverData={{
+                  sourceInventory: resolverAnalysis.sourceInventory,
+                  buildRecipe: resolverAnalysis.buildRecipe,
+                }}
+                targetHtml={aiAnalysis?.semanticHtml}
+              />
+            )}
+
+            {/* Enhanced HTML Preview with Mappings */}
+            {resolverAnalysis.buildRecipe?.steps?.length > 0 && (
+              <div className="rookie-enhanced-preview-section">
+                <h4 className="rookie-phase-title-compact">
+                  🔍 Interactive Report Preview
+                </h4>
+                <p className="rookie-preview-hint">
+                  {resolverAnalysis.enhancedHtml
+                    ? 'Hover over cells with 🔗 icon to see source data mappings (file, column, operation, filters)'
+                    : 'HTML preview (mappings visualization coming soon)'}
+                </p>
+                <div className="rookie-html-preview">
+                  <div
+                    className="rookie-html-preview-content"
+                    dangerouslySetInnerHTML={{
+                      __html: resolverAnalysis.enhancedHtml || aiAnalysis?.html || '<p>No preview available</p>'
+                    }}
+                  />
+                </div>
+                {resolverAnalysis.fromCache && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '10px',
+                    background: '#2a2a1a',
+                    border: '1px solid #665500',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    color: '#ffcc00'
+                  }}>
+                    ℹ️ This analysis used cached data. For best results with interactive hover tooltips,
+                    click "🔄 Regenerate Analysis" below to generate fresh mappings with the latest format.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Regenerate button */}
+            <button
+              type="button"
+              className="rookie-regenerate-button"
+              onClick={() => handleStartRecording(true)}
+              style={{ marginTop: '15px' }}
+            >
+              🔄 Regenerate Analysis
+            </button>
+          </div>
+        )}
+
+        {/* Resolver error */}
+        {resolverAnalysis && !resolverAnalysis.success && (
+          <div className="rookie-ai-error">
+            ❌ Resolver analysis failed: {resolverAnalysis.error}
+          </div>
+        )}
+      </div>
+
+
+      {/* Step 3: Build Plan */}
+      <div className="rookie-step-section">
+        <h3 className="rookie-step-title">Step 3: Generate Build Plan</h3>
         <p className="rookie-subsection-description">
           AI will analyze your target report, source files, and website capabilities to create a comprehensive plan for building the entire report from scratch.
         </p>

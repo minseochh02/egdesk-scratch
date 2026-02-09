@@ -8,6 +8,7 @@
 import { generateWithRookieAI } from './rookie-ai-handler';
 import { ExcelAnalysisResult } from './ai-excel-analyzer';
 import { ExcelDataStore, queryExcelData, getDistinctValues } from './excel-query-tool';
+import { enhanceHtmlWithMappings } from './html-mapping-enhancer';
 
 // RESOLVER Output Interfaces
 
@@ -77,14 +78,31 @@ export interface RookieReview {
   newDiscoveries: RookieReviewDiscovery[];
 }
 
+export interface DataMapping {
+  mappingId: string; // Unique ID like "mapping_1"
+  sourceFile: string; // Exact file name (not "source1, source2")
+  sourceColumn: string; // Exact column name
+  operation: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'CONCAT' | 'FIRST' | 'LAST' | 'VLOOKUP' | 'FILTER' | 'DIRECT'; // Specific operation
+  filters?: Array<{
+    column: string;
+    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'IN' | 'CONTAINS';
+    value: string | string[];
+  }>; // Optional filters for aggregation
+  groupBy?: string[]; // Columns to group by (for aggregations)
+  targetSection: string; // HTML table/section name from target
+  targetCell?: string; // Cell reference (e.g., "B5") or field name
+  targetFieldName: string; // Human-readable target field
+  sampleCalculation?: string; // Example: "SUM(공급가액 WHERE 거래처='화성') = 5,200,000"
+  confidence: 'verified' | 'probable' | 'needs_validation';
+}
+
 export interface BuildStep {
   step: number;
   targetSection: string;
   action: string;
-  sourceFile: string;
-  logic: string;
-  fillsCells: string;
-  postCheck: string;
+  mappings: DataMapping[]; // Detailed source-to-target mappings
+  description: string; // Human-readable description
+  validation: string; // How to verify this step worked
   dependsOn?: number;
 }
 
@@ -133,6 +151,7 @@ export interface ResolverResult {
   metricMaps?: MetricMap[];
   rookieReview?: RookieReview;
   buildRecipe?: BuildRecipe;
+  enhancedHtml?: string; // Target HTML with mapping metadata added
   error?: string;
 }
 
@@ -220,21 +239,89 @@ For each unclear term from Rookie:
 - Map target categories → source column names/values
 - Show evidence and confidence for each mapping
 
-**PHASE 3: METRIC MAPPING**
-- For each target numeric field: find source column + aggregation
-- Test across multiple rows with actual numbers
-- Show verification: "SUM(col) = target_value ✓"
+**PHASE 2.5: UNDERSTAND CROSS-TABULATION STRUCTURE** ← CRITICAL
+ROOKIE may have identified this as a cross-tabulation (pivot table). If so:
+
+${params.rookieAnalysis.tableStructure?.isCrossTabulation ? `
+✅ **ROOKIE IDENTIFIED CROSS-TABULATION**
+
+Row Dimension: ${JSON.stringify(params.rookieAnalysis.tableStructure.rowDimension, null, 2)}
+Column Structure: ${JSON.stringify(params.rookieAnalysis.tableStructure.columnStructure, null, 2)}
+Example Cell: ${JSON.stringify(params.rookieAnalysis.tableStructure.exampleCell, null, 2)}
+
+**CRITICAL INSTRUCTIONS FOR CROSS-TABULATION:**
+
+Each cell value = SUM(metric WHERE row_filter AND column_filter)
+
+For example, if cell E7 contains "플래그십 판매 중량" for "화성":
+1. Identify row category: "화성" → Find source filter (e.g., WHERE 거래처그룹1명='화성사업소')
+2. Identify column metric: "플래그십 판매 중량" → Find TWO source filters:
+   - Which column to SUM? (e.g., 중량)
+   - Which product category? (e.g., WHERE 품목그룹3코드='FAL')
+3. Combine filters: SUM(중량 WHERE 거래처그룹1명='화성사업소' AND 품목그룹3코드='FAL')
+
+**You MUST generate ONE mapping per cell** with:
+- targetCell: "E7" (exact cell coordinate from HTML)
+- Multiple filters (row dimension + column dimension)
+- Specific column to aggregate
+
+Use getDistinctValues and queryExcelData to find:
+- How row labels map to source columns/values
+- How column headers map to source columns/values (e.g., "플래그십" → which code?)
+` : `
+⚠️ Not identified as cross-tabulation - proceed with regular mapping
+`}
+
+**PHASE 3: CREATE STRATEGIC EXAMPLE MAPPINGS**
+
+**IMPORTANT: Create 5-10 EXAMPLE mappings that show the PATTERN, not every cell!**
+
+For cross-tabulation tables, create TEMPLATE mappings:
+- Pick 2-3 representative cells from DIFFERENT rows and columns
+- Show the pattern of how row × column filters combine
+- Others can be extrapolated from the pattern
+
+For each example mapping:
+- sourceFile: EXACT filename (not "source1, source2" - pick ONE file per mapping)
+- sourceColumn: EXACT column name from that file
+- operation: EXACT operation (SUM, AVG, COUNT, FIRST, DIRECT, etc.)
+- filters: If aggregating, specify exact filters (e.g., [{"column": "거래처", "operator": "=", "value": "화성사업소"}])
+- groupBy: Columns to group by (if applicable)
+- targetSection: Which HTML table/section from target report
+- targetCell: EXACT cell coordinate (e.g., "E7")
+- targetFieldName: Human-readable name in target
+- sampleCalculation: Show example with actual values
+
+**CRITICAL**: Focus on QUALITY examples that demonstrate the pattern, not exhaustive mapping of every cell.
+
+Example mapping:
+{
+  "mappingId": "map_001",
+  "sourceFile": "매출현황_DB.xlsx",
+  "sourceColumn": "공급가액",
+  "operation": "SUM",
+  "filters": [{"column": "거래처그룹1명", "operator": "=", "value": "화성사업소"}],
+  "targetSection": "Sales Summary Table",
+  "targetFieldName": "화성사업소 Net Sales",
+  "sampleCalculation": "SUM(공급가액 WHERE 거래처그룹1명='화성사업소') = 5,200,000",
+  "confidence": "verified"
+}
 
 **PHASE 4: ROOKIE REVIEW**
 - Verify/correct Rookie's formulas
 - Resolve Rookie's unknowns with source data evidence
 - Note new discoveries from source data
 
-**PHASE 5: BUILD RECIPE**
-- Prerequisites: what files/values are needed
-- Steps: ordered sequence to build the report (with filters, groupings, aggregations)
-- Post-build validation checks
-- Unresolved items that still need manual work
+**PHASE 5: BUILD RECIPE WITH DETAILED MAPPINGS**
+Create build steps, where EACH step contains:
+- step: number
+- targetSection: which target section this builds
+- action: brief description
+- mappings: ARRAY of DataMapping objects (from Phase 3)
+- description: human-readable explanation
+- validation: how to verify correctness
+
+Group related mappings into logical build steps.
 
 Use the query tools extensively to explore and verify mappings. Document your findings in detail.`;
 
@@ -387,18 +474,56 @@ Use the query tools extensively to explore and verify mappings. Document your fi
           properties: {
             steps: {
               type: 'array',
+              description: '3-5 strategic build steps',
+              maxItems: 5,
               items: {
                 type: 'object',
                 properties: {
                   step: { type: 'number' },
-                  targetSection: { type: 'string' },
-                  action: { type: 'string' },
-                  sourceFile: { type: 'string' },
-                  logic: { type: 'string' },
-                  fillsCells: { type: 'string' },
-                  postCheck: { type: 'string' },
+                  targetSection: { type: 'string', description: 'Which target section this builds' },
+                  action: { type: 'string', description: 'Brief description of what this step does' },
+                  mappings: {
+                    type: 'array',
+                    description: '2-3 example mappings showing the pattern (NOT exhaustive)',
+                    maxItems: 5,
+                    items: {
+                      type: 'object',
+                      properties: {
+                        mappingId: { type: 'string', description: 'Unique ID like map_001' },
+                        sourceFile: { type: 'string', description: 'Exact filename (not source1)' },
+                        sourceColumn: { type: 'string', description: 'Exact column name' },
+                        operation: {
+                          type: 'string',
+                          description: 'Operation type',
+                          enum: ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'CONCAT', 'FIRST', 'LAST', 'VLOOKUP', 'FILTER', 'DIRECT']
+                        },
+                        filters: {
+                          type: 'array',
+                          description: 'Optional filters for operation',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              column: { type: 'string' },
+                              operator: { type: 'string', enum: ['=', '!=', '>', '<', '>=', '<=', 'IN', 'CONTAINS'] },
+                              value: { description: 'Filter value (string or array)' }
+                            },
+                            required: ['column', 'operator', 'value']
+                          }
+                        },
+                        groupBy: { type: 'array', items: { type: 'string' }, description: 'Columns to group by' },
+                        targetSection: { type: 'string', description: 'Target HTML section/table name' },
+                        targetCell: { type: 'string', description: 'Cell reference like B5' },
+                        targetFieldName: { type: 'string', description: 'Human-readable target field' },
+                        sampleCalculation: { type: 'string', description: 'Example calculation with values' },
+                        confidence: { type: 'string', enum: ['verified', 'probable', 'needs_validation'] }
+                      },
+                      required: ['mappingId', 'sourceFile', 'sourceColumn', 'operation', 'targetFieldName', 'confidence']
+                    }
+                  },
+                  description: { type: 'string', description: 'Human-readable explanation' },
+                  validation: { type: 'string', description: 'How to verify this step' }
                 },
-                required: ['step', 'targetSection', 'action', 'sourceFile', 'logic', 'fillsCells', 'postCheck'],
+                required: ['step', 'targetSection', 'action', 'mappings', 'description', 'validation'],
               },
             },
             unresolvedItems: {
@@ -439,15 +564,41 @@ Use the query tools extensively to explore and verify mappings. Document your fi
     console.log('[Resolver] Tool calls made:', explorationResult.toolCalls?.length || 0);
     console.log('[Resolver] Findings length:', explorationResult.text?.length || 0);
 
-    // SECOND AI CALL: Convert findings to structured JSON
-    console.log('[Resolver] STEP 2: Converting findings to structured JSON...');
-    const structuredPrompt = `Based on your exploration of the source data, provide a complete RESOLVER analysis in structured JSON format.
+    // STEP 1.5: Summarize exploration findings
+    console.log('[Resolver] STEP 1.5: Summarizing exploration findings...');
+    const summaryPrompt = `Summarize your exploration findings concisely (max 2000 characters).
 
-Your findings from exploration:
+Focus on:
+1. Key columns found in each source file
+2. How row labels (e.g., 화성, 창원) map to source columns/values
+3. How column metrics (e.g., 플래그십 판매 중량) map to source columns/values
+4. Critical discoveries about data structure
+
+Your full exploration:
 ${explorationResult.text}
 
-Tool calls you made:
-${JSON.stringify(explorationResult.toolCalls?.map(tc => ({ tool: tc.name, args: tc.args, result: tc.result })), null, 2)}
+Provide a concise summary focusing ONLY on the mapping insights.`;
+
+    const summaryResult = await generateWithRookieAI({
+      prompt: summaryPrompt,
+      systemPrompt: 'You are a technical summarizer. Extract only the key mapping insights in 2000 characters or less.',
+      apiKey: params.apiKey,
+      model: 'gemini-2.5-flash',
+      temperature: 0,
+      maxOutputTokens: 2048,
+    });
+
+    console.log('[Resolver] Summary complete, length:', summaryResult.text.length);
+
+    // SECOND AI CALL: Generate structured mappings from summary
+    console.log('[Resolver] STEP 2: Generating structured mappings from summary...');
+    const structuredPrompt = `Based on the summary of exploration findings, generate a CONCISE RESOLVER analysis.
+
+**Summary of key findings:**
+${summaryResult.text}
+
+**Tool calls made (for reference):**
+${JSON.stringify(explorationResult.toolCalls?.slice(0, 5).map(tc => ({ tool: tc.name, args: tc.args })), null, 2)}
 
 Now provide the complete analysis in JSON format with these sections:
 
@@ -455,25 +606,85 @@ Now provide the complete analysis in JSON format with these sections:
 - termResolutions: Answers to ROOKIE's unclear terms based on what you found in source data
 
 Then the phases:
-- sourceInventory
-- dimensionMaps (simplified as strings)
-- metricMaps (simplified as strings)
-- rookieReview (simplified as string)
-- buildRecipe (with steps array)
+- sourceInventory (omit sampleValues to save space)
+- dimensionMaps (brief 1-2 sentence summary)
+- metricMaps (brief 1-2 sentence summary)
+- rookieReview (brief 1-2 sentence summary)
+- buildRecipe (with 3-5 strategic steps showing patterns)
 
-Focus on providing concrete term resolutions and actionable build steps.`;
+**CRITICAL FOR buildRecipe.steps:**
+
+**CREATE ONLY 3-5 STEPS WITH 2-3 EXAMPLE MAPPINGS EACH (10-15 total mappings max)**
+
+For cross-tabulation tables:
+- Don't map every single cell
+- Show 2-3 example cells that demonstrate the pattern
+- Focus on cells from different row/column combinations
+
+Each step MUST contain a "mappings" array with detailed DataMapping objects.
+
+Example step structure:
+{
+  "step": 1,
+  "targetSection": "Sales Summary Table",
+  "action": "Calculate total sales by region",
+  "mappings": [
+    {
+      "mappingId": "map_001",
+      "sourceFile": "매출현황_DB.xlsx",  // USE EXACT FILENAME, NOT "source1"
+      "sourceColumn": "공급가액",  // EXACT column name
+      "operation": "SUM",  // One of: SUM, AVG, COUNT, MIN, MAX, CONCAT, FIRST, LAST, VLOOKUP, FILTER, DIRECT
+      "filters": [
+        {"column": "거래처그룹1명", "operator": "=", "value": "화성사업소"}
+      ],
+      "targetSection": "Sales Summary Table",
+      "targetCell": "B5",  // If you can identify the cell
+      "targetFieldName": "화성사업소 Net Sales",  // Human-readable
+      "sampleCalculation": "SUM(공급가액 WHERE 거래처그룹1명='화성사업소') = 5,200,000",
+      "confidence": "verified"
+    }
+  ],
+  "description": "Sum sales amounts for each business unit",
+  "validation": "Verify total matches sum of individual mappings"
+}
+
+**RULES:**
+1. Use EXACT filenames from sourceInventory (not "source1", "source2")
+2. Create ONE mapping per source→target connection
+3. If one target field uses multiple sources, create MULTIPLE mappings
+4. Always specify the operation type explicitly
+5. Include filters when aggregating data
+6. Provide sample calculations with actual values you found
+7. **FOCUS ON QUALITY OVER QUANTITY**: Create 2-5 example mappings per step, NOT every possible mapping
+8. **PRIORITIZE KEY CELLS**: Focus on cells with actual data, skip empty cells and totals unless specifically needed
+9. **BE CONCISE**: Omit sampleValues from columns to reduce JSON size
+
+Focus on providing concrete, executable mappings that can be visualized and automated. Keep JSON response under 50KB.`;
 
     const structuredResult = await generateWithRookieAI({
-      prompt: structuredPrompt,
-      systemPrompt: 'You are converting exploration findings into structured JSON format.',
+      prompt: structuredPrompt + '\n\nReturn valid JSON matching the schema described above. Be concise.',
+      systemPrompt: 'Convert findings to concise structured JSON. CRITICAL: Max 10-15 total mappings (show pattern, not every cell), omit sampleValues, keep summaries brief (1-2 sentences). Target JSON size: under 50KB.',
       apiKey: params.apiKey,
       model: 'gemini-2.5-flash',
       temperature: 0,
       maxOutputTokens: 32768,
-      responseSchema, // Now we can use structured output!
+      // No responseSchema - too complex for Gemini, use plain JSON parsing
     });
 
     console.log('[Resolver] Structured output received');
+
+    // Parse JSON from text response (no schema validation)
+    let analysis: any;
+    try {
+      const jsonText = structuredResult.text.trim();
+      // Remove markdown code blocks if present
+      const cleaned = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+      analysis = JSON.parse(cleaned);
+      console.log('[Resolver] ✓ Successfully parsed JSON from text response');
+    } catch (parseError: any) {
+      console.error('[Resolver] Failed to parse JSON:', parseError);
+      throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+    }
 
     // Save raw response for debugging
     const fs = await import('fs');
@@ -486,15 +697,9 @@ Focus on providing concrete term resolutions and actionable build steps.`;
     fs.writeFileSync(debugFile, JSON.stringify({
       exploration: explorationResult.text,
       toolCalls: explorationResult.toolCalls,
-      structured: structuredResult.json,
+      structured: analysis,
     }, null, 2), 'utf-8');
     console.log('[Resolver] Full response saved to:', debugFile);
-
-    if (!structuredResult.json) {
-      throw new Error('Failed to parse JSON response from second AI call');
-    }
-
-    const analysis = structuredResult.json;
 
     console.log('[Resolver] Structured output received');
 
@@ -516,6 +721,21 @@ Focus on providing concrete term resolutions and actionable build steps.`;
       });
     }
 
+    // Enhance HTML with mapping metadata
+    let enhancedHtml: string | undefined;
+    if (params.targetHtml && analysis.buildRecipe) {
+      console.log('[Resolver] Enhancing HTML with mapping metadata...');
+      try {
+        enhancedHtml = enhanceHtmlWithMappings(params.targetHtml, {
+          buildRecipe: analysis.buildRecipe,
+        });
+        console.log('[Resolver] ✓ HTML enhanced with mappings');
+      } catch (error) {
+        console.error('[Resolver] Failed to enhance HTML:', error);
+        // Continue without enhanced HTML
+      }
+    }
+
     return {
       success: true,
       termResolutions: analysis.termResolutions,
@@ -524,6 +744,7 @@ Focus on providing concrete term resolutions and actionable build steps.`;
       metricMaps: analysis.metricMaps,
       rookieReview: analysis.rookieReview,
       buildRecipe: analysis.buildRecipe,
+      enhancedHtml: enhancedHtml || params.targetHtml, // Fall back to original HTML
     };
   } catch (error: any) {
     console.error('[Resolver] Error:', error);

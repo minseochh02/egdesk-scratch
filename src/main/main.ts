@@ -3464,8 +3464,26 @@ const createWindow = async () => {
             console.log('[Resolver] Found cached analysis:', cacheFilePath);
             const cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
             console.log('[Resolver] Returning cached analysis');
+
+            // Enhance HTML even for cached data (if not already enhanced)
+            const { enhanceHtmlWithMappings } = await import('./rookie/html-mapping-enhancer');
+            let enhancedHtml = cachedData.enhancedHtml;
+
+            if (!enhancedHtml && targetHtml && cachedData.buildRecipe) {
+              console.log('[Resolver] Enhancing cached data HTML...');
+              try {
+                enhancedHtml = enhanceHtmlWithMappings(targetHtml, {
+                  buildRecipe: cachedData.buildRecipe,
+                });
+                console.log('[Resolver] ✓ Cached data HTML enhanced');
+              } catch (enhanceError) {
+                console.error('[Resolver] Failed to enhance cached HTML:', enhanceError);
+              }
+            }
+
             return {
               ...cachedData,
+              enhancedHtml: enhancedHtml || targetHtml,
               fromCache: true,
               cacheFilePath,
             };
@@ -3478,33 +3496,86 @@ const createWindow = async () => {
         // Create local data store for this analysis session
         const sourceFilesData = new Map<string, ExcelDataStore>();
         const sourceFilesSchemas = [];
-        const XLSX = await import('xlsx');
+        const tableBoundariesMap = new Map<string, any>(); // Store boundaries for each file
+        const ExcelJS = await import('exceljs');
+        const { detectTableBoundaries } = await import('./rookie/excel-table-detector');
 
         for (let idx = 0; idx < sourceFiles.length; idx++) {
           const sourceFile = sourceFiles[idx];
           const fileBuffer = Buffer.from(sourceFile.buffer);
           const fileId = `source${idx + 1}`;
 
-          // Parse Excel from buffer
-          const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
+          console.log(`[Resolver] Processing ${sourceFile.fileName}...`);
 
-          // Convert to JSON (array of arrays)
-          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, {
-            header: 1,
-            defval: '',
-            raw: false, // Get formatted values
-          });
+          // Parse Excel with ExcelJS for better boundary detection
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(fileBuffer);
 
-          if (jsonData.length === 0) {
-            console.warn(`[Resolver] Empty sheet: ${sourceFile.fileName}`);
+          const worksheet = workbook.worksheets[0];
+          if (!worksheet) {
+            console.warn(`[Resolver] No worksheets found in ${sourceFile.fileName}`);
             continue;
           }
 
-          // First row is headers
-          const headers = jsonData[0].map((h: any) => String(h || ''));
-          const rows = jsonData.slice(1); // Data rows
+          const sheetName = worksheet.name;
+
+          // Detect table boundaries using AI
+          console.log(`[Resolver] Detecting table boundaries for ${sourceFile.fileName}...`);
+          const boundaries = await detectTableBoundaries(worksheet);
+          tableBoundariesMap.set(fileId, boundaries);
+
+          console.log(`[Resolver] Detected boundaries:`, {
+            headerRow: boundaries.headerRow,
+            dataRange: `${boundaries.dataStartRow}-${boundaries.dataEndRow}`,
+            columns: boundaries.dataColumns.join(', '),
+          });
+
+          // Extract headers from detected header row
+          const headerRow = worksheet.getRow(boundaries.headerRow);
+          const headers: string[] = [];
+
+          for (const colLetter of boundaries.dataColumns) {
+            const colNumber = colLetter.charCodeAt(0) - 64; // A=1, B=2, etc.
+            const cell = headerRow.getCell(colNumber);
+            const headerValue = cell.value?.toString() || colLetter;
+            headers.push(headerValue);
+          }
+
+          // Extract data rows from detected range
+          const rows: any[][] = [];
+          for (let rowNum = boundaries.dataStartRow; rowNum <= boundaries.dataEndRow; rowNum++) {
+            const excelRow = worksheet.getRow(rowNum);
+            const rowData: any[] = [];
+
+            for (const colLetter of boundaries.dataColumns) {
+              const colNumber = colLetter.charCodeAt(0) - 64;
+              const cell = excelRow.getCell(colNumber);
+
+              // Get cell value
+              let cellValue = cell.value;
+
+              // Handle formula results
+              if (cellValue && typeof cellValue === 'object' && 'result' in cellValue) {
+                cellValue = cellValue.result;
+              }
+
+              // Handle rich text
+              if (cellValue && typeof cellValue === 'object' && 'richText' in cellValue) {
+                cellValue = cellValue.richText.map((rt: any) => rt.text).join('');
+              }
+
+              rowData.push(cellValue ?? '');
+            }
+
+            rows.push(rowData);
+          }
+
+          console.log(`[Resolver] Extracted data: ${rows.length} rows × ${headers.length} columns`);
+
+          if (rows.length === 0) {
+            console.warn(`[Resolver] No data rows found in ${sourceFile.fileName}`);
+            continue;
+          }
 
           // Store in local Map
           sourceFilesData.set(fileId, {
@@ -3526,7 +3597,7 @@ const createWindow = async () => {
             sampleRows,
           });
 
-          console.log(`[Resolver] Loaded ${sourceFile.fileName}: ${rows.length} rows, ${headers.length} columns`);
+          console.log(`[Resolver] ✓ Loaded ${sourceFile.fileName}: ${rows.length} data rows (excluding ${boundaries.titleRows.length} title rows, ${boundaries.summaryRows.length} summary rows)`);
         }
 
         // Run Resolver analysis with tools
@@ -3537,16 +3608,23 @@ const createWindow = async () => {
           sourceFilesSchemas,
         });
 
-        // Save to cache
+        // Save to cache with table boundaries
         try {
-          fs.writeFileSync(cacheFilePath, JSON.stringify({ ...result, fromCache: false }, null, 2), 'utf-8');
+          const cacheData = {
+            ...result,
+            tableBoundaries: Object.fromEntries(tableBoundariesMap),
+            fromCache: false,
+          };
+          fs.writeFileSync(cacheFilePath, JSON.stringify(cacheData, null, 2), 'utf-8');
           console.log('[Resolver] ✅ Analysis cached to:', cacheFilePath);
+          console.log('[Resolver] ✅ Saved table boundaries for', tableBoundariesMap.size, 'files');
         } catch (saveError) {
           console.warn('[Resolver] Failed to save cache:', saveError);
         }
 
         return {
           ...result,
+          tableBoundaries: Object.fromEntries(tableBoundariesMap),
           fromCache: false,
           cacheFilePath,
         };

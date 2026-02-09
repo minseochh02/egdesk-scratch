@@ -130,8 +130,12 @@ export class DesktopRecorder {
     this.setupWindowMonitoring();
 
     console.log('[DesktopRecorder] Recording started');
-    console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
-    console.log('[DesktopRecorder] Hotkeys: Cmd+Shift+P to pause, Cmd+Shift+S to stop');
+    if (this.uiohookStarted) {
+      console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
+      console.log('[DesktopRecorder] Hotkeys: Cmd+Shift+P to pause, Cmd+Shift+S to stop');
+    } else {
+      console.log('[DesktopRecorder] Recording clipboard and window changes (keyboard/mouse capture unavailable in dev mode)');
+    }
   }
 
   /**
@@ -440,7 +444,21 @@ export class DesktopRecorder {
       try {
         const status = uIOhook.start();
 
-        // Check status code (0 = success, 64 = UIOHOOK_ERROR_AXAPI_DISABLED)
+        // Check status code (0 = success, 64 = UIOHOOK_ERROR_AXAPI_DISABLED, undefined = failed to load)
+        if (status === undefined) {
+          const errorMsg = 'uiohook failed to load (returned undefined). This usually happens in development mode on macOS with unsigned builds.';
+          console.warn(`[DesktopRecorder] ${errorMsg}`);
+
+          // In development mode, allow the app to continue without uiohook
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[DesktopRecorder] Continuing without keyboard/mouse capture in development mode.');
+            console.warn('[DesktopRecorder] This feature will work in signed production builds.');
+            return; // Exit without throwing
+          }
+
+          throw new Error(errorMsg);
+        }
+
         if (status !== 0) {
           console.error(`[DesktopRecorder] uiohook failed to start with status code: ${status}`);
 
@@ -458,6 +476,13 @@ export class DesktopRecorder {
         console.log('[DesktopRecorder] uiohook started successfully');
       } catch (error) {
         console.error('[DesktopRecorder] Failed to start uiohook:', error);
+
+        // In development mode, allow the app to continue
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[DesktopRecorder] Continuing in development mode without uiohook...');
+          return;
+        }
+
         throw error;
       }
     }

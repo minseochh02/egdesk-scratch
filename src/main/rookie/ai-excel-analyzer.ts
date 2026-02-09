@@ -104,6 +104,23 @@ You can see what source files are available. Use these file names as hints when 
 ${params.html}
 \`\`\`
 
+**IMPORTANT: Business reports are typically CROSS-TABULATION (pivot table) structures.**
+
+A cross-tabulation table has:
+- **Row dimension**: Categories down the left (e.g., regions, products, business units)
+- **Column dimensions**: Categories across the top (e.g., time periods, product types, metrics)
+- **Cell values**: Intersection of row × column (e.g., "Sales for Region A in January")
+
+**Example structure:**
+\`\`\`
+           | Metric 1 | Metric 2 |
+-----------|----------|----------|
+Category A |   100    |   200    |
+Category B |   150    |   250    |
+\`\`\`
+
+Each cell represents: SUM(data WHERE row_category AND column_category)
+
 Analyze as a genuinely NEW person would:
 
 **1. BASIC CONTEXT**
@@ -113,7 +130,67 @@ What can you infer without knowing their terminology?
 - Time period visible
 - General data story
 
-**2. DATA DIMENSIONS**
+**2. TABLE STRUCTURE ANALYSIS** ← ⚠️ MANDATORY - DO THIS BEFORE ANYTHING ELSE
+
+**CRITICAL: You MUST fill out the tableStructure section in your JSON response!**
+
+**Is this a cross-tabulation (pivot table)?**
+
+Cross-tabulation indicators:
+✓ Row labels in leftmost column (regions, branches, products)
+✓ Multiple levels of column headers (categories/metrics across top)
+✓ Cell values = intersection of row × column
+
+**STEP-BY-STEP INSTRUCTIONS:**
+
+**Step A) Set isCrossTabulation: true or false**
+
+**Step B) If cross-tabulation, identify row dimension:**
+Look at the leftmost column (usually column A):
+- What is the header? (e.g., cell A3 = "사업소")
+- Where do the row categories start? (e.g., A6)
+- Where do they end? (e.g., A14)
+- List ALL row values (e.g., ["MB", "화성", "창원", ...])
+
+Example output:
+  rowDimension: {
+    name: "사업소",
+    headerColumn: "A",
+    values: ["MB", "화성", "창원", "남부", "중부", "서부", "동부", "제주", "부산"],
+    cellRange: "A6:A14"
+  }
+
+**Step C) Map column structure:**
+Look at rows 3-5 (the header rows):
+
+For EACH data column (B, C, D, E, F, G):
+1. Find the final header (usually row 5)
+2. Record: column letter, metric name, cell coordinate
+3. Check if there's a parent category header above it
+
+Example output:
+  metricColumns: [
+    {
+      columnLetter: "E",
+      metricName: "플래그십 판매 중량",
+      parentCategory: "모빌제품 매출액 및 중량",
+      cellCoordinate: "E5"
+    }
+  ]
+
+**Step D) Provide example cell:**
+Pick cell E7 and explain what it represents:
+
+Example output:
+  exampleCell: {
+    cellCoordinate: "E7",
+    value: "2387",
+    rowCategory: "화성",
+    columnMetric: "플래그십 판매 중량",
+    interpretation: "플래그십 판매 중량 for 화성 business unit = 2387"
+  }
+
+**3. DATA DIMENSIONS**
 For each way data is broken down:
 - Pattern name: [your hypothesis - geography? time? product?]
 - Values seen: [copy EXACT terms from report]
@@ -122,20 +199,20 @@ For each way data is broken down:
 
 If you see an abbreviation, code, or Korean term you don't recognize - FLAG IT. Don't guess.
 
-**3. MEASURES**
+**4. MEASURES**
 For each number tracked:
 - Name: [EXACT term from report]
 - Unit: [if clear, specify. If unclear, say "UNKNOWN"]
 - Description: [what you think it measures - or "UNCLEAR" if you can't tell]
 - **Questions**: [What is confusing about this measure?]
 
-**4. CALCULATIONS**
+**5. CALCULATIONS**
 Observe patterns in the numbers:
 - Describe what you SEE (row sums, cumulative totals, etc.)
 - Don't explain HOW they work unless obvious
 - Note what's UNCLEAR
 
-**5. RAW DATA NEEDS**
+**6. RAW DATA NEEDS**
 Based purely on the patterns you observe, what would raw data need?
 - Expected fields
 - Possible sources
@@ -159,6 +236,82 @@ Based purely on the patterns you observe, what would raw data need?
             dataStory: { type: 'string' },
           },
           required: ['company', 'reportPurpose', 'period', 'dataStory'],
+        },
+        tableStructure: {
+          type: 'object',
+          description: 'Cross-tabulation / pivot table structure',
+          properties: {
+            isCrossTabulation: { type: 'boolean', description: 'Is this a cross-tabulation table?' },
+            rowDimension: {
+              type: 'object',
+              description: 'The dimension represented by rows',
+              properties: {
+                name: { type: 'string', description: 'What does each row represent?' },
+                headerColumn: { type: 'string', description: 'Which column contains row labels? (e.g., "A")' },
+                values: { type: 'array', items: { type: 'string' }, description: 'EXACT row category values' },
+                cellRange: { type: 'string', description: 'Cell range of row labels (e.g., "A6:A14")' },
+              },
+            },
+            columnStructure: {
+              type: 'object',
+              description: 'The structure of column headers',
+              properties: {
+                hasMultipleLevels: { type: 'boolean', description: 'Are there hierarchical column headers?' },
+                levels: {
+                  type: 'array',
+                  description: 'Each level of column headers',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      levelNumber: { type: 'number', description: '1 = top level, 2 = second level, etc.' },
+                      categories: {
+                        type: 'array',
+                        description: 'Categories at this level',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            label: { type: 'string', description: 'EXACT header text' },
+                            columnRange: { type: 'string', description: 'Columns this spans (e.g., "C:E")' },
+                            cellCoordinate: { type: 'string', description: 'Cell with this header (e.g., "C4")' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                metricColumns: {
+                  type: 'array',
+                  description: 'Final level - actual data columns',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      columnLetter: { type: 'string', description: 'Column letter (e.g., "E")' },
+                      metricName: { type: 'string', description: 'EXACT metric name from header' },
+                      parentCategory: { type: 'string', description: 'Parent category if hierarchical' },
+                      cellCoordinate: { type: 'string', description: 'Header cell (e.g., "E5")' },
+                    },
+                  },
+                },
+              },
+            },
+            cellInterpretation: {
+              type: 'string',
+              description: 'Template for how to interpret any cell, e.g., "Cell [COL][ROW] = [METRIC] for [ROW_CATEGORY]"',
+            },
+            exampleCell: {
+              type: 'object',
+              description: 'Example cell to demonstrate understanding',
+              properties: {
+                cellCoordinate: { type: 'string', description: 'e.g., "E7"' },
+                value: { type: 'string', description: 'Value in that cell' },
+                rowCategory: { type: 'string', description: 'Which row category (e.g., "화성")' },
+                columnMetric: { type: 'string', description: 'Which metric (e.g., "플래그십 판매 중량")' },
+                interpretation: { type: 'string', description: 'What this cell represents in plain language' },
+              },
+              required: ['cellCoordinate', 'value', 'interpretation'],
+            },
+          },
+          required: ['isCrossTabulation', 'cellInterpretation'],
         },
         dimensions: {
           type: 'array',
@@ -202,11 +355,6 @@ Based purely on the patterns you observe, what would raw data need?
             required: ['name', 'logic'],
           },
         },
-        unclearTerms: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Overall list of all unclear terms/abbreviations that need research',
-        },
         rawDataNeeds: {
           type: 'object',
           properties: {
@@ -222,7 +370,7 @@ Based purely on the patterns you observe, what would raw data need?
           description: 'All unclear terms/abbreviations/codes that need research',
         },
       },
-      required: ['reportContext', 'dimensions', 'measures', 'calculations', 'rawDataNeeds'],
+      required: ['reportContext', 'tableStructure', 'dimensions', 'measures', 'calculations', 'rawDataNeeds'],
     };
 
     // Call Gemini API using dedicated Rookie AI handler

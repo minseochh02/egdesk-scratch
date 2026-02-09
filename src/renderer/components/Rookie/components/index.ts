@@ -8,3 +8,4 @@ export { SourceFilesUpload } from './SourceFilesUpload';
 export { WebsiteSelector } from './WebsiteSelector';
 export { ExplorationCredentials } from './ExplorationCredentials';
 export { BuildPlanDisplay } from './BuildPlanDisplay';
+export { SourceMappingVisualizer } from './SourceMappingVisualizer';
