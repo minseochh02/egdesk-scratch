@@ -12,7 +12,26 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { clipboard, systemPreferences } from 'electron';
+import { uIOhook, UiohookKey, UiohookMouseButton } from 'uiohook-napi';
+import activeWin from 'active-win';
 import { DesktopAutomationManager } from './utils/desktop-automation-manager';
+
+/**
+ * Recording file format
+ */
+export interface RecordingFile {
+  version: '1.0';
+  recordedAt: string;
+  duration: number;
+  platform: string;
+  screenSize: { width: number; height: number };
+  actions: DesktopAction[];
+  metadata: {
+    scriptName: string;
+    actionCount: number;
+  };
+}
 
 /**
  * Desktop action types
@@ -60,11 +79,18 @@ export class DesktopRecorder {
   private updateCallback?: (code: string) => void;
 
   // Listeners for recording (Phase 2)
-  private keyboardListener: any = null;
+  private uiohookStarted: boolean = false;
   private clipboardCheckInterval: NodeJS.Timeout | null = null;
   private windowCheckInterval: NodeJS.Timeout | null = null;
   private lastClipboardContent: string = '';
   private lastActiveWindow: string = '';
+  private lastMousePosition: { x: number; y: number } | null = null;
+  private keySequenceBuffer: string[] = [];
+  private keySequenceTimeout: NodeJS.Timeout | null = null;
+  private seenApps: Set<string> = new Set();
+  private windowMonitoringFailed: boolean = false;
+  private windowMonitoringFailCount: number = 0;
+  private pressedKeys: Set<number> = new Set(); // Track currently pressed keys
 
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
@@ -98,12 +124,14 @@ export class DesktopRecorder {
     this.startTime = Date.now();
     this.actions = [];
 
-    // TODO Phase 2: Setup event listeners
-    // this.setupGlobalKeyboardListener();
-    // this.setupClipboardMonitoring();
-    // this.setupWindowMonitoring();
+    // Setup event listeners
+    this.setupGlobalKeyboardListener(); // This now also captures mouse clicks via uiohook
+    this.setupClipboardMonitoring();
+    this.setupWindowMonitoring();
 
     console.log('[DesktopRecorder] Recording started');
+    console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
+    console.log('[DesktopRecorder] Hotkeys: Cmd+Shift+P to pause, Cmd+Shift+S to stop');
   }
 
   /**
@@ -118,8 +146,8 @@ export class DesktopRecorder {
     this.isRecording = false;
     this.isPaused = false;
 
-    // TODO Phase 2: Stop event listeners
-    // this.stopAllListeners();
+    // Stop event listeners
+    this.stopAllListeners();
 
     // Generate code
     const code = this.generateTestCode();
@@ -127,6 +155,24 @@ export class DesktopRecorder {
     // Save to file if output path specified
     if (this.outputFile) {
       await this.saveToFile(code);
+
+      // Also save recording data as JSON
+      const jsonPath = this.outputFile.replace('.js', '.json');
+      const recordingData: RecordingFile = {
+        version: '1.0',
+        recordedAt: new Date().toISOString(),
+        duration: Date.now() - this.startTime,
+        platform: process.platform,
+        screenSize: await this.desktopManager.getScreenSize() || { width: 0, height: 0 },
+        actions: this.actions,
+        metadata: {
+          scriptName: path.basename(this.outputFile, '.js'),
+          actionCount: this.actions.length,
+        },
+      };
+
+      fs.writeFileSync(jsonPath, JSON.stringify(recordingData, null, 2), 'utf-8');
+      console.log(`[DesktopRecorder] Recording data saved to ${jsonPath}`);
     }
 
     console.log(`[DesktopRecorder] Recording stopped. ${this.actions.length} actions recorded.`);
@@ -164,26 +210,62 @@ export class DesktopRecorder {
   /**
    * Replay desktop actions from a saved file
    */
-  async replay(filePath: string): Promise<void> {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Recording file not found: ${filePath}`);
+  async replay(filePath: string, options?: { speed?: number }): Promise<void> {
+    // Check permissions
+    const hasPermissions = await this.desktopManager.checkAccessibilityPermissions();
+    if (!hasPermissions) {
+      throw new Error('Accessibility permissions required for replay');
     }
 
-    // TODO Phase 3: Implement replay
-    // - Read actions from file
-    // - Execute each action with proper timing
-    // - Handle errors gracefully
+    // Load recording (try .json, fallback to .js companion)
+    let recording: RecordingFile;
+    const jsonPath = filePath.endsWith('.json') ? filePath : filePath.replace('.js', '.json');
 
-    console.log('[DesktopRecorder] Replay not yet implemented (Phase 3)');
-    throw new Error('Replay functionality will be implemented in Phase 3');
+    if (!fs.existsSync(jsonPath)) {
+      throw new Error('Recording data (.json) not found');
+    }
+
+    recording = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+
+    console.log(`[DesktopRecorder] Replaying ${recording.actions.length} actions...`);
+
+    // Replay actions with timing
+    const speed = options?.speed || 1.0;
+    let lastTimestamp = 0;
+
+    for (let i = 0; i < recording.actions.length; i++) {
+      const action = recording.actions[i];
+      const delay = (action.timestamp - lastTimestamp) / speed;
+
+      if (delay > 0) {
+        await this.sleep(delay);
+      }
+
+      await this.replayAction(action);
+      lastTimestamp = action.timestamp;
+    }
+
+    console.log('[DesktopRecorder] Replay complete');
+  }
+
+  /**
+   * Sleep helper for replay timing
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
    * Replay a single desktop action
    */
   async replayAction(action: DesktopAction): Promise<void> {
-    // TODO Phase 3: Implement action replay
     switch (action.type) {
+      case 'mouseMove':
+        if (action.coordinates) {
+          await this.desktopManager.moveMouse(action.coordinates.x, action.coordinates.y);
+        }
+        break;
+
       case 'mouseClick':
         if (action.coordinates) {
           await this.desktopManager.clickMouse(action.coordinates.x, action.coordinates.y, action.button);
@@ -214,8 +296,19 @@ export class DesktopRecorder {
         }
         break;
 
+      case 'clipboardCopy':
+      case 'clipboardPaste':
+        // Logged only (actual copy/paste happens via key combos)
+        console.log(`Clipboard action: ${action.clipboardContent?.substring(0, 50)}...`);
+        break;
+
+      case 'appSwitch':
+        console.log(`App switch to: ${action.appName}`);
+        await this.sleep(1000); // Give time for switch
+        break;
+
       default:
-        console.warn(`Action type "${action.type}" not yet supported in replay`);
+        console.warn(`Action type "${action.type}" not supported in replay`);
     }
   }
 
@@ -317,50 +410,450 @@ export class DesktopRecorder {
   // ==================== Event Listeners (Phase 2) ====================
 
   /**
-   * Setup global keyboard listener
-   * TODO Phase 2: Implement keyboard event monitoring
+   * Setup global keyboard and mouse listener using uiohook
    */
   private setupGlobalKeyboardListener(): void {
-    // Phase 2: Use node-global-key-listener or nut.js hooks
-    console.log('[DesktopRecorder] Keyboard listener setup (Phase 2)');
+    // Check accessibility permissions on macOS (skip in dev mode - it's unreliable)
+    if (process.platform === 'darwin' && process.env.NODE_ENV !== 'development') {
+      const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
+
+      if (!isTrusted) {
+        console.error('[DesktopRecorder] Accessibility permissions not granted!');
+        console.error('[DesktopRecorder] This app needs Accessibility permissions to capture mouse and keyboard events.');
+        console.error('[DesktopRecorder] Please:');
+        console.error('[DesktopRecorder]   1. Open System Settings → Privacy & Security → Accessibility');
+        console.error('[DesktopRecorder]   2. Add this application to the list');
+        console.error('[DesktopRecorder]   3. Restart the application completely');
+
+        throw new Error('Accessibility permissions not granted. Please enable in System Settings and restart the app.');
+      }
+    }
+
+    // In development mode, we skip the permission check and let uiohook try to start
+    // If it fails, the error will be more informative
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DesktopRecorder] Development mode: Skipping permission check, attempting to start uiohook...');
+    }
+
+    // Start uiohook if not already started
+    if (!this.uiohookStarted) {
+      try {
+        const status = uIOhook.start();
+
+        // Check status code (0 = success, 64 = UIOHOOK_ERROR_AXAPI_DISABLED)
+        if (status !== 0) {
+          console.error(`[DesktopRecorder] uiohook failed to start with status code: ${status}`);
+
+          if (status === 64) {
+            console.error('[DesktopRecorder] Error: Accessibility API is disabled!');
+            console.error('[DesktopRecorder] This means macOS accessibility permissions are not properly granted.');
+            console.error('[DesktopRecorder] Try running: sudo tccutil reset Accessibility');
+            console.error('[DesktopRecorder] Then restart your Mac and try again.');
+          }
+
+          throw new Error(`uiohook failed to start (status: ${status})`);
+        }
+
+        this.uiohookStarted = true;
+        console.log('[DesktopRecorder] uiohook started successfully');
+      } catch (error) {
+        console.error('[DesktopRecorder] Failed to start uiohook:', error);
+        throw error;
+      }
+    }
+
+    // Setup mouse click listener
+    uIOhook.on('click', (e) => {
+      if (!this.isRecording || this.isPaused) return;
+
+      // Map button: 1 = left, 2 = right, 3 = middle
+      const button = e.button === UiohookMouseButton.Left ? 'left' :
+                     e.button === UiohookMouseButton.Right ? 'right' : 'middle';
+
+      this.recordMouseClick(e.x, e.y, button);
+    });
+
+    // Setup keyboard key down listener
+    uIOhook.on('keydown', (e) => {
+      if (!this.isRecording || this.isPaused) return;
+
+      this.pressedKeys.add(e.keycode);
+
+      // Check if this is a modifier key
+      const isModifier = [
+        UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR,
+        UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR,
+        UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR,
+        UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR,
+      ].includes(e.keycode);
+
+      // Don't record solo modifier presses
+      if (isModifier) return;
+
+      // Check for hotkey combinations
+      const hasShift = this.hasModifier(UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR);
+      const hasCmd = this.hasModifier(UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR);
+      const hasCtrl = this.hasModifier(UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR);
+      const hasAlt = this.hasModifier(UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR);
+
+      // Check for recording hotkeys (Cmd+Shift+key)
+      if (hasCmd && hasShift) {
+        if (e.keycode === UiohookKey.C) {
+          // Cmd+Shift+C is no longer needed - we capture real clicks now
+          return;
+        } else if (e.keycode === UiohookKey.P) {
+          this.handlePauseResumeHotkey();
+          return;
+        } else if (e.keycode === UiohookKey.S) {
+          this.handleStopHotkey();
+          return;
+        }
+      }
+
+      // Record key combinations
+      if (hasCmd || hasCtrl || hasAlt || hasShift) {
+        const keys: string[] = [];
+        if (hasShift) keys.push('Shift');
+        if (hasCmd) keys.push('Meta');
+        if (hasCtrl) keys.push('Ctrl');
+        if (hasAlt) keys.push('Alt');
+        keys.push(this.mapKeycodeToName(e.keycode));
+
+        this.recordKeyCombo(keys);
+      } else {
+        // Regular key press - buffer for typing
+        const char = this.mapKeycodeToCharacter(e.keycode);
+        if (char) {
+          this.bufferKeyPress(char);
+        }
+      }
+    });
+
+    // Setup key up listener to track released keys
+    uIOhook.on('keyup', (e) => {
+      this.pressedKeys.delete(e.keycode);
+    });
+
+    console.log('[DesktopRecorder] Global keyboard and mouse listener setup complete');
+  }
+
+  /**
+   * Check if any of the given modifier keys are pressed
+   */
+  private hasModifier(...keycodes: number[]): boolean {
+    return keycodes.some(code => this.pressedKeys.has(code));
+  }
+
+  /**
+   * Map uiohook keycode to key name
+   */
+  private mapKeycodeToName(keycode: number): string {
+    // Common keys mapping
+    const keyMap: Record<number, string> = {
+      [UiohookKey.A]: 'A', [UiohookKey.B]: 'B', [UiohookKey.C]: 'C',
+      [UiohookKey.D]: 'D', [UiohookKey.E]: 'E', [UiohookKey.F]: 'F',
+      [UiohookKey.G]: 'G', [UiohookKey.H]: 'H', [UiohookKey.I]: 'I',
+      [UiohookKey.J]: 'J', [UiohookKey.K]: 'K', [UiohookKey.L]: 'L',
+      [UiohookKey.M]: 'M', [UiohookKey.N]: 'N', [UiohookKey.O]: 'O',
+      [UiohookKey.P]: 'P', [UiohookKey.Q]: 'Q', [UiohookKey.R]: 'R',
+      [UiohookKey.S]: 'S', [UiohookKey.T]: 'T', [UiohookKey.U]: 'U',
+      [UiohookKey.V]: 'V', [UiohookKey.W]: 'W', [UiohookKey.X]: 'X',
+      [UiohookKey.Y]: 'Y', [UiohookKey.Z]: 'Z',
+      [UiohookKey.Enter]: 'Enter', [UiohookKey.Space]: 'Space',
+      [UiohookKey.Backspace]: 'Backspace', [UiohookKey.Tab]: 'Tab',
+    };
+
+    return keyMap[keycode] || `Key${keycode}`;
+  }
+
+  /**
+   * Map uiohook keycode to character for typing
+   */
+  private mapKeycodeToCharacter(keycode: number): string | null {
+    // A-Z
+    if (keycode >= UiohookKey.A && keycode <= UiohookKey.Z) {
+      const char = String.fromCharCode(65 + (keycode - UiohookKey.A));
+      return this.hasModifier(UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR)
+        ? char.toUpperCase()
+        : char.toLowerCase();
+    }
+
+    // Special keys
+    if (keycode === UiohookKey.Space) return ' ';
+    if (keycode === UiohookKey.Enter) return '\n';
+    if (keycode === UiohookKey.Tab) return '\t';
+
+    // Numbers (simplified - doesn't handle shift for symbols)
+    if (keycode >= UiohookKey.Digit0 && keycode <= UiohookKey.Digit9) {
+      return String.fromCharCode(48 + (keycode - UiohookKey.Digit0));
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle Cmd+Shift+P hotkey - pause/resume recording
+   */
+  private handlePauseResumeHotkey(): void {
+    if (this.isPaused) {
+      this.resumeRecording();
+    } else {
+      this.pauseRecording();
+    }
+  }
+
+  /**
+   * Handle Cmd+Shift+S hotkey - stop recording
+   */
+  private handleStopHotkey(): void {
+    this.stopRecording();
+  }
+
+  /**
+   * Buffer a key press for typing
+   */
+  private bufferKeyPress(char: string): void {
+    this.keySequenceBuffer.push(char);
+
+    // Clear existing timeout
+    if (this.keySequenceTimeout) {
+      clearTimeout(this.keySequenceTimeout);
+    }
+
+    // Set new timeout to flush buffer after 1 second of inactivity
+    this.keySequenceTimeout = setTimeout(() => {
+      this.flushKeyBuffer();
+    }, 1000);
+  }
+
+  /**
+   * Flush key buffer and record typing action
+   */
+  private flushKeyBuffer(): void {
+    if (this.keySequenceBuffer.length === 0) return;
+
+    const text = this.keySequenceBuffer.join('');
+    this.recordTyping(text);
+    this.keySequenceBuffer = [];
+  }
+
+  /**
+   * Record typing action
+   */
+  private recordTyping(text: string): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    const action: DesktopAction = {
+      type: 'keyType',
+      timestamp: Date.now() - this.startTime,
+      text,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
   }
 
   /**
    * Setup clipboard monitoring
-   * TODO Phase 2: Implement clipboard change detection
    */
   private setupClipboardMonitoring(): void {
-    // Phase 2: Poll clipboard every 500ms for changes
-    console.log('[DesktopRecorder] Clipboard monitoring setup (Phase 2)');
+    // Poll clipboard every 500ms for changes
+    this.clipboardCheckInterval = setInterval(() => {
+      if (!this.isRecording || this.isPaused) return;
+
+      const current = clipboard.readText();
+
+      // Only record if content changed and is not empty
+      if (current && current !== this.lastClipboardContent) {
+        this.recordClipboardChange(current);
+        this.lastClipboardContent = current;
+      }
+    }, 500);
+
+    console.log('[DesktopRecorder] Clipboard monitoring setup complete');
   }
 
   /**
    * Setup window/app monitoring
-   * TODO Phase 2: Implement active window tracking
    */
   private setupWindowMonitoring(): void {
-    // Phase 2: Poll active window every 1000ms
-    console.log('[DesktopRecorder] Window monitoring setup (Phase 2)');
+    // Skip window monitoring in development mode - it has permission issues
+    // active-win doesn't work reliably in Electron dev mode on macOS
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DesktopRecorder] Window monitoring disabled in development mode (macOS permission limitations)');
+      console.log('[DesktopRecorder] Window monitoring will work in production builds');
+      return;
+    }
+
+    // Reset failure tracking
+    this.windowMonitoringFailed = false;
+    this.windowMonitoringFailCount = 0;
+
+    // Poll active window every 1000ms
+    this.windowCheckInterval = setInterval(async () => {
+      if (!this.isRecording || this.isPaused) return;
+
+      // Stop trying if we've failed too many times
+      if (this.windowMonitoringFailed) return;
+
+      try {
+        const activeWindow = await activeWin();
+        if (!activeWindow) return;
+
+        const appName = activeWindow.owner.name;
+
+        // Reset fail count on success
+        this.windowMonitoringFailCount = 0;
+
+        // Detect app switches (between already-running apps)
+        if (appName !== this.lastActiveWindow && this.lastActiveWindow !== '') {
+          this.recordAppSwitch(appName);
+        }
+
+        this.lastActiveWindow = appName;
+        this.seenApps.add(appName);
+      } catch (error: any) {
+        this.windowMonitoringFailCount++;
+
+        // Only log the first few errors to avoid spam
+        if (this.windowMonitoringFailCount === 1) {
+          console.warn('[DesktopRecorder] Window monitoring failed - accessibility permissions may be required');
+          console.warn('[DesktopRecorder] After granting permissions, restart the app completely');
+        }
+
+        // Stop trying after 3 failures
+        if (this.windowMonitoringFailCount >= 3) {
+          this.windowMonitoringFailed = true;
+          console.warn('[DesktopRecorder] Window monitoring disabled due to repeated failures');
+
+          // Clear the interval to stop trying
+          if (this.windowCheckInterval) {
+            clearInterval(this.windowCheckInterval);
+            this.windowCheckInterval = null;
+          }
+        }
+      }
+    }, 1000);
+
+    console.log('[DesktopRecorder] Window monitoring setup initiated (requires accessibility permissions)');
+  }
+
+  /**
+   * Setup mouse monitoring (polling-based)
+   */
+  private setupMouseMonitoring(): void {
+    // Reset failure tracking
+    this.mouseMonitoringFailed = false;
+    this.mouseMonitoringFailCount = 0;
+
+    // Poll mouse position every 500ms
+    this.mouseCheckInterval = setInterval(async () => {
+      if (!this.isRecording || this.isPaused) return;
+
+      // Stop trying if we've failed too many times
+      if (this.mouseMonitoringFailed) return;
+
+      try {
+        const currentPosition = await this.desktopManager.getMousePosition();
+        if (!currentPosition) return;
+
+        // Reset fail count on success
+        this.mouseMonitoringFailCount = 0;
+
+        if (this.lastMousePosition) {
+          // Calculate distance moved
+          const dx = currentPosition.x - this.lastMousePosition.x;
+          const dy = currentPosition.y - this.lastMousePosition.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          // Only record significant moves (>50 pixels)
+          if (distance > 50) {
+            this.recordMouseMove(currentPosition.x, currentPosition.y);
+          }
+        }
+
+        this.lastMousePosition = currentPosition;
+      } catch (error: any) {
+        this.mouseMonitoringFailCount++;
+
+        // Only log the first error to avoid spam
+        if (this.mouseMonitoringFailCount === 1) {
+          console.warn('[DesktopRecorder] Mouse monitoring failed - accessibility permissions may be required');
+        }
+
+        // Stop trying after 3 failures
+        if (this.mouseMonitoringFailCount >= 3) {
+          this.mouseMonitoringFailed = true;
+          console.warn('[DesktopRecorder] Mouse monitoring disabled due to repeated failures (use Cmd+Shift+C hotkey to mark clicks)');
+
+          // Clear the interval to stop trying
+          if (this.mouseCheckInterval) {
+            clearInterval(this.mouseCheckInterval);
+            this.mouseCheckInterval = null;
+          }
+        }
+      }
+    }, 500);
+
+    console.log('[DesktopRecorder] Mouse monitoring setup initiated (requires accessibility permissions)');
+  }
+
+  /**
+   * Record a mouse move action
+   */
+  private recordMouseMove(x: number, y: number): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    const action: DesktopAction = {
+      type: 'mouseMove',
+      timestamp: Date.now() - this.startTime,
+      coordinates: { x, y },
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
   }
 
   /**
    * Stop all event listeners
    */
   private stopAllListeners(): void {
-    if (this.keyboardListener) {
-      // TODO Phase 2: Stop keyboard listener
-      this.keyboardListener = null;
+    // Stop uiohook
+    if (this.uiohookStarted) {
+      try {
+        uIOhook.stop();
+        this.uiohookStarted = false;
+        console.log('[DesktopRecorder] uiohook stopped');
+      } catch (error) {
+        console.error('[DesktopRecorder] Error stopping uiohook:', error);
+      }
     }
 
+    // Clear key sequence timeout
+    if (this.keySequenceTimeout) {
+      clearTimeout(this.keySequenceTimeout);
+      this.keySequenceTimeout = null;
+    }
+
+    // Flush any remaining buffered keys
+    this.flushKeyBuffer();
+
+    // Stop clipboard monitoring
     if (this.clipboardCheckInterval) {
       clearInterval(this.clipboardCheckInterval);
       this.clipboardCheckInterval = null;
     }
 
+    // Stop window monitoring
     if (this.windowCheckInterval) {
       clearInterval(this.windowCheckInterval);
       this.windowCheckInterval = null;
     }
+
+    // Clear pressed keys tracking
+    this.pressedKeys.clear();
+
+    console.log('[DesktopRecorder] All listeners stopped');
   }
 
   // ==================== Recording Helpers (Phase 2) ====================

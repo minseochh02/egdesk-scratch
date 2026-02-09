@@ -2701,6 +2701,17 @@ auth: {
    * Generic invoke method for any IPC channel
    */
   invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+
+  // ========================================================================
+  // DESKTOP RECORDER
+  // ========================================================================
+  desktopRecorder: {
+    onUpdate: (callback: (data: { filePath: string; code: string; timestamp: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('desktop-recorder:update', subscription);
+      return () => ipcRenderer.removeListener('desktop-recorder:update', subscription);
+    },
+  },
 };
 
 // ============================================================================

@@ -267,9 +267,9 @@ export function registerDesktopRecorderHandlers(): void {
 
   // ==================== Replay Recording ====================
 
-  ipcMain.handle('desktop-recorder:replay', async (event, { filePath }) => {
+  ipcMain.handle('desktop-recorder:replay', async (event, { filePath, speed }) => {
     try {
-      console.log(`[DesktopRecorder] Replaying recording from ${filePath}`);
+      console.log(`[DesktopRecorder] Replaying recording from ${filePath} at ${speed || 1.0}x speed`);
 
       if (!fs.existsSync(filePath)) {
         return {
@@ -281,7 +281,7 @@ export function registerDesktopRecorderHandlers(): void {
 
       // Create new recorder for playback
       const recorder = new DesktopRecorder();
-      await recorder.replay(filePath);
+      await recorder.replay(filePath, { speed: speed || 1.0 });
 
       console.log('[DesktopRecorder] Replay completed successfully');
       return { success: true };
@@ -324,12 +324,25 @@ export function registerDesktopRecorderHandlers(): void {
           const filePath = path.join(outputDir, file);
           const stats = fs.statSync(filePath);
 
+          // Try to read JSON file to get action count
+          let actionCount = 0;
+          const jsonPath = filePath.replace('.js', '.json');
+          if (fs.existsSync(jsonPath)) {
+            try {
+              const jsonData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+              actionCount = jsonData.metadata?.actionCount || jsonData.actions?.length || 0;
+            } catch (err) {
+              console.warn(`Failed to read action count from ${jsonPath}`);
+            }
+          }
+
           return {
             name: file,
             path: filePath,
             size: stats.size,
-            created: stats.birthtime,
+            createdAt: stats.birthtime,
             modified: stats.mtime,
+            actionCount,
           };
         })
         .sort((a, b) => b.modified.getTime() - a.modified.getTime()); // Most recent first

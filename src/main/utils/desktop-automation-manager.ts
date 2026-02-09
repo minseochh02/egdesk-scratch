@@ -66,13 +66,30 @@ export class DesktopAutomationManager {
    */
   async initialize(): Promise<boolean> {
     try {
-      // Test if we can access screen (requires Accessibility permissions on macOS)
-      const screenSize = await screen.width();
-      if (screenSize > 0) {
-        this.isInitialized = true;
-        return true;
+      // Redirect stderr temporarily to suppress nut.js warnings
+      const originalStderr = process.stderr.write;
+
+      process.stderr.write = (chunk: any) => {
+        const message = chunk.toString();
+        // Suppress nut.js accessibility warnings
+        if (message.includes('WARNING!') || message.includes('nut-tree/nut.js')) {
+          return true;
+        }
+        return originalStderr.call(process.stderr, chunk);
+      };
+
+      try {
+        // Test if we can access screen (requires Accessibility permissions on macOS)
+        const screenSize = await screen.width();
+        if (screenSize > 0) {
+          this.isInitialized = true;
+          return true;
+        }
+        return false;
+      } finally {
+        // Restore stderr
+        process.stderr.write = originalStderr;
       }
-      return false;
     } catch (error: any) {
       console.error('Desktop automation initialization failed:', error.message);
       if (process.platform === 'darwin') {
@@ -84,6 +101,7 @@ export class DesktopAutomationManager {
 
   /**
    * Check if macOS Accessibility permissions are granted
+   * Note: This will print nut.js warnings if permissions are not granted
    */
   async checkAccessibilityPermissions(): Promise<boolean> {
     if (process.platform !== 'darwin') {
@@ -91,8 +109,27 @@ export class DesktopAutomationManager {
     }
 
     try {
-      await screen.width();
-      return true;
+      // Redirect stderr temporarily to suppress nut.js warnings
+      const originalStderr = process.stderr.write;
+      const suppressedMessages: string[] = [];
+
+      process.stderr.write = (chunk: any) => {
+        const message = chunk.toString();
+        // Suppress nut.js accessibility warnings
+        if (message.includes('WARNING!') || message.includes('nut-tree/nut.js')) {
+          suppressedMessages.push(message);
+          return true;
+        }
+        return originalStderr.call(process.stderr, chunk);
+      };
+
+      try {
+        await screen.width();
+        return true;
+      } finally {
+        // Restore stderr
+        process.stderr.write = originalStderr;
+      }
     } catch {
       return false;
     }
@@ -519,12 +556,27 @@ export class DesktopAutomationManager {
    * Get current mouse position
    */
   async getMousePosition(): Promise<{ x: number; y: number } | null> {
+    // Redirect stderr temporarily to suppress nut.js warnings
+    const originalStderr = process.stderr.write;
+
+    process.stderr.write = (chunk: any) => {
+      const message = chunk.toString();
+      // Suppress nut.js accessibility warnings
+      if (message.includes('WARNING!') || message.includes('nut-tree/nut.js')) {
+        return true;
+      }
+      return originalStderr.call(process.stderr, chunk);
+    };
+
     try {
       const position = await mouse.getPosition();
       return { x: position.x, y: position.y };
     } catch (error: any) {
       console.error('Failed to get mouse position:', error.message);
       return null;
+    } finally {
+      // Restore stderr
+      process.stderr.write = originalStderr;
     }
   }
 
@@ -532,6 +584,18 @@ export class DesktopAutomationManager {
    * Get screen size
    */
   async getScreenSize(): Promise<{ width: number; height: number } | null> {
+    // Redirect stderr temporarily to suppress nut.js warnings
+    const originalStderr = process.stderr.write;
+
+    process.stderr.write = (chunk: any) => {
+      const message = chunk.toString();
+      // Suppress nut.js accessibility warnings
+      if (message.includes('WARNING!') || message.includes('nut-tree/nut.js')) {
+        return true;
+      }
+      return originalStderr.call(process.stderr, chunk);
+    };
+
     try {
       const width = await screen.width();
       const height = await screen.height();
@@ -539,6 +603,9 @@ export class DesktopAutomationManager {
     } catch (error: any) {
       console.error('Failed to get screen size:', error.message);
       return null;
+    } finally {
+      // Restore stderr
+      process.stderr.write = originalStderr;
     }
   }
 
