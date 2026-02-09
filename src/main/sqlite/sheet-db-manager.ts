@@ -639,7 +639,7 @@ export interface GeminiConfig {
 }
 
 export function createGeminiProvider(config: GeminiConfig): AIProvider {
-  const model = config.model || 'gemini-2.0-flash-lite';
+  const model = config.model || 'gemini-2.5-flash';
   const temperature = config.temperature ?? 0.1;
 
   return {
