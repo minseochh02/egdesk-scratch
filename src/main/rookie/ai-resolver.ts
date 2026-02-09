@@ -521,29 +521,27 @@ For cross-tabulation tables:
 
 Each step MUST contain a "mappings" array with detailed DataMapping objects.
 
-Example step structure:
+Example step:
 {
   "step": 1,
   "targetSection": "Sales Summary Table",
-  "action": "Calculate total sales by region",
+  "action": "Calculate sales by region",
   "mappings": [
     {
       "mappingId": "map_001",
-      "sourceFile": "매출현황_DB.xlsx",  // USE EXACT FILENAME, NOT "source1"
-      "sourceColumn": "공급가액",  // EXACT column name
-      "operation": "SUM",  // One of: SUM, AVG, COUNT, MIN, MAX, CONCAT, FIRST, LAST, VLOOKUP, FILTER, DIRECT
+      "sourceFile": "매출현황_DB.xlsx",
+      "sourceColumn": "공급가액",
+      "operation": "SUM",
       "filters": [
         {"column": "거래처그룹1명", "operator": "=", "value": "화성사업소"}
       ],
-      "targetSection": "Sales Summary Table",
-      "targetCell": "B5",  // If you can identify the cell
-      "targetFieldName": "화성사업소 Net Sales",  // Human-readable
-      "sampleCalculation": "SUM(공급가액 WHERE 거래처그룹1명='화성사업소') = 5,200,000",
-      "confidence": "verified"
+      "targetCell": "E7",
+      "targetFieldName": "화성사업소 Net Sales",
+      "sampleCalculation": "SUM(공급가액 WHERE 거래처='화성') = 5200000"
     }
   ],
-  "description": "Sum sales amounts for each business unit",
-  "validation": "Verify total matches sum of individual mappings"
+  "description": "Aggregate sales by business unit",
+  "validation": "Verify totals match"
 }
 
 **RULES:**
@@ -560,13 +558,12 @@ Example step structure:
 Focus on providing concrete, executable mappings that can be visualized and automated. Keep JSON response under 50KB.`;
 
     const structuredResult = await generateWithRookieAI({
-      prompt: structuredPrompt + '\n\nReturn valid JSON matching the schema described above. Be concise.',
-      systemPrompt: 'Convert findings to concise structured JSON. CRITICAL: Max 10-15 total mappings (show pattern, not every cell), omit sampleValues, keep summaries brief (1-2 sentences). Target JSON size: under 50KB.',
+      prompt: structuredPrompt + '\n\nReturn a valid JSON object with the sections described. Keep it concise.',
+      systemPrompt: 'Generate concise JSON. Max 10-15 mappings total, brief summaries only.',
       apiKey: params.apiKey,
       model: 'gemini-2.5-flash',
       temperature: 0,
       maxOutputTokens: 32768,
-      // No responseSchema - too complex for Gemini, use plain JSON parsing
     });
 
     console.log('[Resolver] Structured output received');

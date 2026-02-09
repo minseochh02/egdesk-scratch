@@ -449,10 +449,10 @@ export class DesktopRecorder {
           const errorMsg = 'uiohook failed to load (returned undefined). This usually happens in development mode on macOS with unsigned builds.';
           console.warn(`[DesktopRecorder] ${errorMsg}`);
 
-          // In development mode, allow the app to continue without uiohook
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('[DesktopRecorder] Continuing without keyboard/mouse capture in development mode.');
-            console.warn('[DesktopRecorder] This feature will work in signed production builds.');
+          // On macOS in development mode, allow the app to continue without uiohook
+          if (process.platform === 'darwin' && process.env.NODE_ENV === 'development') {
+            console.warn('[DesktopRecorder] Continuing without keyboard/mouse capture in macOS development mode.');
+            console.warn('[DesktopRecorder] This feature will work in signed production builds or on Windows.');
             return; // Exit without throwing
           }
 
@@ -477,9 +477,9 @@ export class DesktopRecorder {
       } catch (error) {
         console.error('[DesktopRecorder] Failed to start uiohook:', error);
 
-        // In development mode, allow the app to continue
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[DesktopRecorder] Continuing in development mode without uiohook...');
+        // On macOS in development mode, allow the app to continue
+        if (process.platform === 'darwin' && process.env.NODE_ENV === 'development') {
+          console.warn('[DesktopRecorder] Continuing in macOS development mode without uiohook...');
           return;
         }
 
@@ -559,7 +559,8 @@ export class DesktopRecorder {
       this.pressedKeys.delete(e.keycode);
     });
 
-    console.log('[DesktopRecorder] Global keyboard and mouse listener setup complete');
+    console.log('[DesktopRecorder] ✅ Global keyboard and mouse listener setup complete');
+    console.log('[DesktopRecorder] ✅ Click event listener is active - clicks will be captured');
   }
 
   /**
@@ -888,6 +889,8 @@ export class DesktopRecorder {
    */
   private recordMouseClick(x: number, y: number, button: 'left' | 'right' | 'middle'): void {
     if (!this.isRecording || this.isPaused) return;
+
+    console.log(`[DesktopRecorder] 🖱️  Recorded ${button} click at (${x}, ${y})`);
 
     const action: DesktopAction = {
       type: button === 'left' ? 'mouseClick' : 'mouseRightClick',

@@ -245,20 +245,25 @@ Return a JSON object with these exact fields:
   };
 
   const result = await generateWithRookieAI({
-    prompt,
+    prompt: prompt + '\n\nReturn valid JSON with the exact fields described above.',
     apiKey,
     model: 'gemini-2.5-flash',
     temperature: 0,
     maxOutputTokens: 4096,
-    responseSchema,
+    // No responseSchema - using plain JSON parsing
   });
 
-  if (!result.json) {
+  // Parse JSON manually (no schema used)
+  let boundaries: TableBoundaries;
+  try {
+    const jsonText = result.text.trim();
+    const cleaned = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+    boundaries = JSON.parse(cleaned) as TableBoundaries;
+  } catch (parseError: any) {
+    console.error('[TableDetector] Failed to parse JSON:', parseError);
     console.error('[TableDetector] AI response:', result.text);
-    throw new Error('Failed to get structured JSON response from AI');
+    throw new Error(`Failed to parse table boundaries: ${parseError.message}`);
   }
-
-  const boundaries = result.json as TableBoundaries;
 
   // Ensure arrays exist
   boundaries.titleRows = boundaries.titleRows || [];
