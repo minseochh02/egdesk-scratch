@@ -442,35 +442,10 @@ export class DesktopRecorder {
     // Start uiohook if not already started
     if (!this.uiohookStarted) {
       try {
-        const status = uIOhook.start();
-
-        // Check status code (0 = success, 64 = UIOHOOK_ERROR_AXAPI_DISABLED, undefined = failed to load)
-        if (status === undefined) {
-          const errorMsg = 'uiohook failed to load (returned undefined). This usually happens in development mode on macOS with unsigned builds.';
-          console.warn(`[DesktopRecorder] ${errorMsg}`);
-
-          // On macOS in development mode, allow the app to continue without uiohook
-          if (process.platform === 'darwin' && process.env.NODE_ENV === 'development') {
-            console.warn('[DesktopRecorder] Continuing without keyboard/mouse capture in macOS development mode.');
-            console.warn('[DesktopRecorder] This feature will work in signed production builds or on Windows.');
-            return; // Exit without throwing
-          }
-
-          throw new Error(errorMsg);
-        }
-
-        if (status !== 0) {
-          console.error(`[DesktopRecorder] uiohook failed to start with status code: ${status}`);
-
-          if (status === 64) {
-            console.error('[DesktopRecorder] Error: Accessibility API is disabled!');
-            console.error('[DesktopRecorder] This means macOS accessibility permissions are not properly granted.');
-            console.error('[DesktopRecorder] Try running: sudo tccutil reset Accessibility');
-            console.error('[DesktopRecorder] Then restart your Mac and try again.');
-          }
-
-          throw new Error(`uiohook failed to start (status: ${status})`);
-        }
+        // Note: uIOhook.start() doesn't return a status code due to a wrapper bug
+        // The underlying native lib.start() returns a status, but the wrapper doesn't return it
+        // Instead, we rely on exception handling - if start() throws, it failed
+        uIOhook.start();
 
         this.uiohookStarted = true;
         console.log('[DesktopRecorder] uiohook started successfully');
@@ -480,6 +455,7 @@ export class DesktopRecorder {
         // On macOS in development mode, allow the app to continue
         if (process.platform === 'darwin' && process.env.NODE_ENV === 'development') {
           console.warn('[DesktopRecorder] Continuing in macOS development mode without uiohook...');
+          console.warn('[DesktopRecorder] Mouse/keyboard capture unavailable in unsigned dev builds.');
           return;
         }
 
