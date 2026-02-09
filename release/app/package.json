@@ -20,7 +20,7 @@
   "dependencies": {
     "@google/genai": "^1.19.0",
     "@nut-tree-fork/nut-js": "^4.2.6",
-    "active-win": "^8.0.0",
+    "active-win": "^8.2.1",
     "better-sqlite3": "^12.4.1",
     "dockerode": "^4.0.9",
     "jimp": "^0.22.12",

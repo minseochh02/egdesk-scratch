@@ -223,7 +223,7 @@ Based purely on the patterns you observe, what would raw data need?
       promptText = `[Image: Screenshot of Excel file]\n\n${promptText}`;
     }
 
-    // Define DATA-ORIENTED response schema
+    // Define SIMPLIFIED response schema - focus on relationships
     const responseSchema = {
       type: 'object',
       properties: {
@@ -239,79 +239,47 @@ Based purely on the patterns you observe, what would raw data need?
         },
         tableStructure: {
           type: 'object',
-          description: 'Cross-tabulation / pivot table structure',
+          description: 'How this table is structured - what shows what per what',
           properties: {
-            isCrossTabulation: { type: 'boolean', description: 'Is this a cross-tabulation table?' },
-            rowDimension: {
-              type: 'object',
-              description: 'The dimension represented by rows',
-              properties: {
-                name: { type: 'string', description: 'What does each row represent?' },
-                headerColumn: { type: 'string', description: 'Which column contains row labels? (e.g., "A")' },
-                values: { type: 'array', items: { type: 'string' }, description: 'EXACT row category values' },
-                cellRange: { type: 'string', description: 'Cell range of row labels (e.g., "A6:A14")' },
-              },
-            },
-            columnStructure: {
-              type: 'object',
-              description: 'The structure of column headers',
-              properties: {
-                hasMultipleLevels: { type: 'boolean', description: 'Are there hierarchical column headers?' },
-                levels: {
-                  type: 'array',
-                  description: 'Each level of column headers',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      levelNumber: { type: 'number', description: '1 = top level, 2 = second level, etc.' },
-                      categories: {
-                        type: 'array',
-                        description: 'Categories at this level',
-                        items: {
-                          type: 'object',
-                          properties: {
-                            label: { type: 'string', description: 'EXACT header text' },
-                            columnRange: { type: 'string', description: 'Columns this spans (e.g., "C:E")' },
-                            cellCoordinate: { type: 'string', description: 'Cell with this header (e.g., "C4")' },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-                metricColumns: {
-                  type: 'array',
-                  description: 'Final level - actual data columns',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      columnLetter: { type: 'string', description: 'Column letter (e.g., "E")' },
-                      metricName: { type: 'string', description: 'EXACT metric name from header' },
-                      parentCategory: { type: 'string', description: 'Parent category if hierarchical' },
-                      cellCoordinate: { type: 'string', description: 'Header cell (e.g., "E5")' },
-                    },
-                  },
-                },
-              },
-            },
-            cellInterpretation: {
+            tableDescription: {
               type: 'string',
-              description: 'Template for how to interpret any cell, e.g., "Cell [COL][ROW] = [METRIC] for [ROW_CATEGORY]"',
+              description: 'Plain language: what does this table show? (e.g., "Shows sales metrics per business unit")'
             },
-            exampleCell: {
-              type: 'object',
-              description: 'Example cell to demonstrate understanding',
-              properties: {
-                cellCoordinate: { type: 'string', description: 'e.g., "E7"' },
-                value: { type: 'string', description: 'Value in that cell' },
-                rowCategory: { type: 'string', description: 'Which row category (e.g., "화성")' },
-                columnMetric: { type: 'string', description: 'Which metric (e.g., "플래그십 판매 중량")' },
-                interpretation: { type: 'string', description: 'What this cell represents in plain language' },
+            isCrossTabulation: {
+              type: 'boolean',
+              description: 'Is this a breakdown/pivot table where rows and columns intersect?'
+            },
+            rowsRepresent: {
+              type: 'string',
+              description: 'What do rows represent? (e.g., "Different business units: 화성, 창원, etc.")'
+            },
+            columnsRepresent: {
+              type: 'string',
+              description: 'What do columns represent? (e.g., "Different metrics: 총매출액, 모빌 매출액, etc.")'
+            },
+            cellMeaning: {
+              type: 'string',
+              description: 'How to read a cell (e.g., "Each cell shows [column metric] for [row category]")'
+            },
+            exampleCellE7: {
+              type: 'string',
+              description: 'What does cell E7 (value: 2387) represent? Be specific about row and column.'
+            },
+            metricColumns: {
+              type: 'array',
+              description: 'List each column with its metric name and coordinate',
+              items: {
+                type: 'object',
+                properties: {
+                  column: { type: 'string', description: 'Column letter like "E"' },
+                  header: { type: 'string', description: 'Exact header text' },
+                  headerCell: { type: 'string', description: 'Cell coordinate like "E5"' },
+                },
+                required: ['column', 'header', 'headerCell'],
               },
-              required: ['cellCoordinate', 'value', 'interpretation'],
             },
           },
-          required: ['isCrossTabulation', 'cellInterpretation'],
+          required: ['tableDescription', 'isCrossTabulation', 'rowsRepresent', 'columnsRepresent', 'cellMeaning', 'exampleCellE7'],
         },
         dimensions: {
           type: 'array',
@@ -393,6 +361,8 @@ Based purely on the patterns you observe, what would raw data need?
     const analysis = result.json;
 
     console.log('[AI Excel Analyzer] ROOKIE data-oriented analysis complete');
+    console.log('  - Table structure:', analysis.tableStructure ? 'YES ✓' : 'NO ✗');
+    console.log('  - Is cross-tabulation:', analysis.tableStructure?.isCrossTabulation);
     console.log('  - Dimensions found:', analysis.dimensions?.length || 0);
     console.log('  - Measures found:', analysis.measures?.length || 0);
     console.log('  - Calculations found:', analysis.calculations?.length || 0);
@@ -402,6 +372,7 @@ Based purely on the patterns you observe, what would raw data need?
       success: true,
       sheetName: params.sheetName,
       reportContext: analysis.reportContext,
+      tableStructure: analysis.tableStructure, // ← ADD THIS!
       dimensions: analysis.dimensions,
       measures: analysis.measures,
       calculations: analysis.calculations,
