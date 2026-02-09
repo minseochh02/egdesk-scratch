@@ -392,9 +392,26 @@ export class FinanceHubScheduler extends EventEmitter {
 
       // Check if retries are enabled and if we're in production
       const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-      const shouldRetry = !success && retryCount < this.settings.retryCount && isProduction;
 
-      if (shouldRetry) {
+      // Check if error is permanent (no point retrying)
+      const isPermanentError = error && (
+        error.includes('No saved credentials') ||
+        error.includes('Certificate not found') ||
+        error.includes('Certificate password not saved') ||
+        error.includes('No accounts found')
+      );
+
+      const shouldRetry = !success && retryCount < this.settings.retryCount && isProduction && !isPermanentError;
+
+      if (isPermanentError) {
+        console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${error}`);
+        // Mark as skipped instead of failed to prevent recovery retries
+        try {
+          await recoveryService.markIntentSkipped('financehub', entityKey, today, `permanent_error: ${error}`);
+        } catch (err) {
+          console.error(`[FinanceHubScheduler] Failed to mark intent as skipped:`, err);
+        }
+      } else if (shouldRetry) {
         console.log(`[FinanceHubScheduler] ${entityKey} failed (attempt ${retryCount + 1}/${this.settings.retryCount}), retrying in ${this.settings.retryDelayMinutes} minutes...`);
 
         // Schedule retry
@@ -457,11 +474,32 @@ export class FinanceHubScheduler extends EventEmitter {
     } catch (error) {
       console.error(`[FinanceHubScheduler] ${entityKey} sync error:`, error);
 
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       // Check if retries are enabled and if we're in production
       const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-      const shouldRetry = retryCount < this.settings.retryCount && isProduction;
 
-      if (shouldRetry) {
+      // Check if error is permanent (no point retrying)
+      const isPermanentError = errorMessage && (
+        errorMessage.includes('No saved credentials') ||
+        errorMessage.includes('Certificate not found') ||
+        errorMessage.includes('Certificate password not saved') ||
+        errorMessage.includes('No accounts found')
+      );
+
+      const shouldRetry = retryCount < this.settings.retryCount && isProduction && !isPermanentError;
+
+      if (isPermanentError) {
+        console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${errorMessage}`);
+        // Mark as skipped instead of failed to prevent recovery retries
+        try {
+          await recoveryService.markIntentSkipped('financehub', entityKey, today, `permanent_error: ${errorMessage}`);
+        } catch (err) {
+          console.error(`[FinanceHubScheduler] Failed to mark intent as skipped:`, err);
+        }
+        this.updateSyncStatus('failed');
+        this.emit('entity-sync-failed', { entityType, entityId, error });
+      } else if (shouldRetry) {
         console.log(`[FinanceHubScheduler] Retrying ${entityKey} (attempt ${retryCount + 1}/${this.settings.retryCount}) in ${this.settings.retryDelayMinutes} minutes...`);
         const retryTimer = setTimeout(() => {
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
