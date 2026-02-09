@@ -629,4 +629,314 @@ export class DesktopAutomationManager {
   updateConfig(config: Partial<SafetyConfig>): void {
     this.config = { ...this.config, ...config };
   }
+
+  // ==================== Virtual Desktop Control (Windows) ====================
+
+  /**
+   * Create a new virtual desktop
+   * Windows: Win+Ctrl+D
+   * macOS: Ctrl+Up → Click + button
+   */
+  async createVirtualDesktop(): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.D);
+        await keyboard.releaseKey(Key.D, Key.LeftControl, Key.LeftWin);
+        console.log('[DesktopAutomation] Created new virtual desktop (Windows)');
+        return true;
+      } else if (process.platform === 'darwin') {
+        console.log('[DesktopAutomation] Creating new Space via Mission Control...');
+
+        // Step 1: Open Mission Control (Ctrl + Up)
+        await keyboard.pressKey(Key.LeftControl, Key.Up);
+        await keyboard.releaseKey(Key.Up, Key.LeftControl);
+
+        // Wait for Mission Control to open
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // Step 2: Get screen dimensions
+        const screenSize = await screen.width().then(async (width) => {
+          const height = await screen.height();
+          return { width, height };
+        });
+
+        // Step 3: Move mouse to top-right corner where + button appears
+        // The + button is usually at about 95% of screen width, 5% of screen height
+        const plusButtonX = Math.floor(screenSize.width * 0.95);
+        const plusButtonY = Math.floor(screenSize.height * 0.05);
+
+        console.log(`[DesktopAutomation] Moving mouse to + button at (${plusButtonX}, ${plusButtonY})`);
+        await mouse.setPosition(new Point(plusButtonX, plusButtonY));
+
+        // Wait a moment for button to appear
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Step 4: Click the + button
+        await mouse.click(Button.LEFT);
+
+        // Wait for new Space to be created and switched to
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        console.log('[DesktopAutomation] Created new Space (macOS)');
+        return true;
+      } else {
+        console.warn('Virtual desktop creation only supported on Windows and macOS');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Failed to create virtual desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Switch to next virtual desktop
+   * Windows: Win+Ctrl+Right
+   * macOS: Ctrl+Right
+   */
+  async switchToNextDesktop(): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.Right);
+        await keyboard.releaseKey(Key.Right, Key.LeftControl, Key.LeftWin);
+        console.log('[DesktopAutomation] Switched to next virtual desktop (Windows)');
+        return true;
+      } else if (process.platform === 'darwin') {
+        await keyboard.pressKey(Key.LeftControl, Key.Right);
+        await keyboard.releaseKey(Key.Right, Key.LeftControl);
+        console.log('[DesktopAutomation] Switched to next virtual desktop (macOS)');
+        return true;
+      } else {
+        console.warn('Virtual desktop switching not supported on this platform');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Failed to switch to next desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Switch to previous virtual desktop
+   * Windows: Win+Ctrl+Left
+   * macOS: Ctrl+Left
+   */
+  async switchToPreviousDesktop(): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.Left);
+        await keyboard.releaseKey(Key.Left, Key.LeftControl, Key.LeftWin);
+        console.log('[DesktopAutomation] Switched to previous virtual desktop (Windows)');
+        return true;
+      } else if (process.platform === 'darwin') {
+        await keyboard.pressKey(Key.LeftControl, Key.Left);
+        await keyboard.releaseKey(Key.Left, Key.LeftControl);
+        console.log('[DesktopAutomation] Switched to previous virtual desktop (macOS)');
+        return true;
+      } else {
+        console.warn('Virtual desktop switching not supported on this platform');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Failed to switch to previous desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Close current virtual desktop
+   * Windows: Win+Ctrl+F4
+   * macOS: Mission Control → Hover → Click X
+   */
+  async closeCurrentDesktop(): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.F4);
+        await keyboard.releaseKey(Key.F4, Key.LeftControl, Key.LeftWin);
+        console.log('[DesktopAutomation] Closed current virtual desktop (Windows)');
+        return true;
+      } else if (process.platform === 'darwin') {
+        console.log('[DesktopAutomation] Closing current Space via Mission Control...');
+
+        // Step 1: Open Mission Control (Ctrl + Up)
+        await keyboard.pressKey(Key.LeftControl, Key.Up);
+        await keyboard.releaseKey(Key.Up, Key.LeftControl);
+
+        // Wait for Mission Control to open
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // Step 2: Get screen dimensions
+        const screenSize = await screen.width().then(async (width) => {
+          const height = await screen.height();
+          return { width, height };
+        });
+
+        // Step 3: The current Space is typically highlighted in the center top area
+        // Hover over it to make the X button appear
+        // Spaces are shown in a row at the top, current one is usually centered
+        const centerX = Math.floor(screenSize.width * 0.5);
+        const spacesY = Math.floor(screenSize.height * 0.1); // Top 10% of screen
+
+        console.log(`[DesktopAutomation] Hovering over current Space at (${centerX}, ${spacesY})`);
+        await mouse.setPosition(new Point(centerX, spacesY));
+
+        // Wait for X button to appear
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Step 4: The X button appears in the top-left corner of the hovered space
+        // Usually about 20-30px to the left and slightly up from center
+        const xButtonX = centerX - 80; // X is to the left of the space thumbnail
+        const xButtonY = spacesY - 20; // X is above the space thumbnail
+
+        console.log(`[DesktopAutomation] Clicking X button at (${xButtonX}, ${xButtonY})`);
+        await mouse.setPosition(new Point(xButtonX, xButtonY));
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await mouse.click(Button.LEFT);
+
+        // Wait for Space to close
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        console.log('[DesktopAutomation] Closed current Space (macOS)');
+        return true;
+      } else {
+        console.warn('Virtual desktop closing not supported on this platform');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Failed to close current desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Open Task View to see all virtual desktops (Windows: Win+Tab)
+   */
+  async openTaskView(): Promise<boolean> {
+    try {
+      if (process.platform !== 'win32') {
+        console.warn('Task View only supported on Windows');
+        return false;
+      }
+
+      await keyboard.pressKey(Key.LeftWin, Key.Tab);
+      await keyboard.releaseKey(Key.Tab, Key.LeftWin);
+      console.log('[DesktopAutomation] Opened Task View');
+      return true;
+    } catch (error: any) {
+      console.error('Failed to open Task View:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Move a window to a virtual desktop using PowerShell COM API (Windows only)
+   * Note: This uses undocumented Windows APIs and may break in future Windows versions
+   */
+  async moveWindowToDesktop(windowTitle: string, desktopNumber: number): Promise<boolean> {
+    try {
+      if (process.platform !== 'win32') {
+        console.warn('Moving windows between desktops only supported on Windows');
+        return false;
+      }
+
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      // PowerShell script using IVirtualDesktopManager COM interface
+      const psScript = `
+        Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class VirtualDesktopHelper {
+            [DllImport("user32.dll")]
+            public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+            [ComImport, Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b")]
+            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IVirtualDesktopManager {
+              bool IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow);
+              Guid GetWindowDesktopId(IntPtr topLevelWindow);
+              void MoveWindowToDesktop(IntPtr topLevelWindow, ref Guid desktopId);
+            }
+          }
+"@
+
+        # This is a simplified version - full implementation would require desktop enumeration
+        Write-Host "Note: Full window movement requires additional COM interfaces not exposed here"
+        Write-Host "Consider using the 'spawn on new desktop' approach instead"
+      `;
+
+      await execAsync(`powershell -Command "${psScript.replace(/"/g, '\\"')}"`);
+
+      console.log('[DesktopAutomation] Note: Direct window movement not fully supported');
+      console.log('[DesktopAutomation] Recommendation: Create windows after switching to target desktop');
+      return false;
+    } catch (error: any) {
+      console.error('Failed to move window to desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Helper: Create new desktop and switch to it, ready for spawning windows
+   */
+  async createAndSwitchToNewDesktop(): Promise<boolean> {
+    try {
+      // Use the createVirtualDesktop method which now supports both platforms
+      const success = await this.createVirtualDesktop();
+
+      if (success) {
+        console.log('[DesktopAutomation] New windows will spawn on this desktop');
+      }
+
+      return success;
+    } catch (error: any) {
+      console.error('Failed to create and switch to new desktop:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Helper: Switch back to original desktop and close the recording desktop
+   * This prevents accumulation of unused virtual desktops
+   */
+  async switchBackAndCleanup(): Promise<boolean> {
+    try {
+      console.log('[DesktopAutomation] Switching back to original desktop and cleaning up');
+
+      // Step 1: Switch back to previous desktop
+      await this.switchToPreviousDesktop();
+
+      // Wait for switch animation
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 2: Close the recording desktop
+      if (process.platform === 'win32') {
+        // Switch to next (recording) desktop temporarily
+        await this.switchToNextDesktop();
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Close it
+        await this.closeCurrentDesktop();
+
+        console.log('[DesktopAutomation] Cleaned up recording desktop (Windows)');
+      } else if (process.platform === 'darwin') {
+        // Switch to next (recording) Space temporarily
+        await this.switchToNextDesktop();
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Close it using Mission Control
+        await this.closeCurrentDesktop();
+
+        console.log('[DesktopAutomation] Cleaned up recording Space (macOS)');
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error('Failed to switch back and cleanup:', error.message);
+      return false;
+    }
+  }
 }

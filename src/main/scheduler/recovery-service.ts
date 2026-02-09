@@ -313,10 +313,11 @@ export class SchedulerRecoveryService {
     cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
-    // Get pending intents where execution window has passed
+    // Get pending AND failed intents where execution window has passed
+    // CRITICAL FIX: Include 'failed' status so failed tasks can be retried on restart
     let query = `
       SELECT * FROM scheduler_execution_intents
-      WHERE status = 'pending'
+      WHERE status IN ('pending', 'failed')
         AND intended_date >= ?
         AND execution_window_end < ?
       ORDER BY intended_date ASC, intended_time ASC
@@ -341,6 +342,14 @@ export class SchedulerRecoveryService {
       const windowEnd = new Date(intent.execution_window_end);
       const now = new Date();
       const daysMissed = Math.floor((now.getTime() - windowEnd.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Log failed tasks separately for visibility
+      if (intent.status === 'failed') {
+        console.log(`[RecoveryService] Found failed task to retry: ${intent.task_name} (${intent.intended_date})`);
+        if (intent.error_message) {
+          console.log(`[RecoveryService]   Previous error: ${intent.error_message}`);
+        }
+      }
 
       return {
         intentId: intent.id,
@@ -385,7 +394,7 @@ export class SchedulerRecoveryService {
     // Detect missed executions
     const missedExecutions = await this.detectMissedExecutions(opts);
 
-    console.log(`[RecoveryService] Found ${missedExecutions.length} missed executions`);
+    console.log(`[RecoveryService] Found ${missedExecutions.length} missed execution(s) (includes pending and failed tasks)`);
 
     if (missedExecutions.length === 0) {
       return {
@@ -525,8 +534,26 @@ export class SchedulerRecoveryService {
     const { getFinanceHubScheduler } = await import('../financehub/scheduler/FinanceHubScheduler');
     const scheduler = getFinanceHubScheduler();
 
-    // Trigger manual sync
-    await scheduler.syncNow();
+    // Parse taskId to extract entity type and ID
+    // Format: "card:nh", "bank:shinhan", "tax:123-45-67890"
+    const [entityType, ...entityIdParts] = missed.taskId.split(':');
+    const entityId = entityIdParts.join(':'); // Rejoin in case tax ID has colons
+
+    if (!entityType || !entityId) {
+      console.error(`[RecoveryService] Invalid taskId format: ${missed.taskId}`);
+      throw new Error(`Invalid taskId format: ${missed.taskId}`);
+    }
+
+    // Validate entity type
+    if (entityType !== 'card' && entityType !== 'bank' && entityType !== 'tax') {
+      console.error(`[RecoveryService] Invalid entity type: ${entityType}`);
+      throw new Error(`Invalid entity type: ${entityType}`);
+    }
+
+    console.log(`[RecoveryService] Syncing specific entity: ${entityType}:${entityId}`);
+
+    // Sync specific entity instead of all entities
+    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
   }
 
   /**
