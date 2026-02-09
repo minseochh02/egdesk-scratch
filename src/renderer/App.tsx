@@ -54,6 +54,7 @@ import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
+import DesktopRecorderPage from './components/DesktopRecorder/DesktopRecorderPage';
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 
@@ -2046,6 +2047,7 @@ function NavigationBar({
     '/homepage-editor',
     '/egchatting',
     '/browser-recorder',
+    '/desktop-recorder',
     '/rookie'
   ].some(path => location.pathname.startsWith(path));
 
@@ -2114,6 +2116,13 @@ function NavigationBar({
             >
               <FontAwesomeIcon icon={faRobot} fixedWidth />
               <span>Browser Recorder</span>
+            </Link>
+            <Link
+              to="/desktop-recorder"
+              className={`nav-dropdown-item ${location.pathname === '/desktop-recorder' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faDesktop} fixedWidth />
+              <span>Desktop Recorder</span>
             </Link>
             <Link
               to="/rookie"
@@ -2785,6 +2794,7 @@ function AppContent() {
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />
+            <Route path="/desktop-recorder" element={<DesktopRecorderPage />} />
             <Route path="/rookie" element={<RookiePage />} />
 
             {/* Fallback to home for unknown routes */}

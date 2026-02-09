@@ -15,6 +15,10 @@ const configuration: webpack.Configuration = {
     'playwright-core',
     'lighthouse',
     'playwright-lighthouse',
+    // Native modules for desktop recorder
+    'active-win',
+    'node-global-key-listener',
+    'uiohook-napi',
   ],
 
   stats: 'errors-only',
