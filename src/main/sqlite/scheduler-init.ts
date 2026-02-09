@@ -58,5 +58,21 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
     END
   `);
 
+  // =============================================
+  // Migration: Add retry_count column
+  // =============================================
+  // Add retry_count column if it doesn't exist (for infinite loop prevention)
+  try {
+    db.exec(`
+      ALTER TABLE scheduler_execution_intents ADD COLUMN retry_count INTEGER DEFAULT 0;
+    `);
+    console.log('✅ Added retry_count column to scheduler_execution_intents');
+  } catch (error: any) {
+    // Column already exists (duplicate column name error is OK)
+    if (!error.message.includes('duplicate column')) {
+      console.error('Failed to add retry_count column:', error);
+    }
+  }
+
   console.log('✅ Scheduler database schema initialized');
 }

@@ -223,11 +223,13 @@ export class SchedulerRecoveryService {
     const db = this.getDb();
     const errorMessage = error instanceof Error ? error.message : String(error);
 
+    // Increment retry count
     db.prepare(`
       UPDATE scheduler_execution_intents
       SET status = 'failed',
           error_message = ?,
           skip_reason = ?,
+          retry_count = COALESCE(retry_count, 0) + 1,
           updated_at = datetime('now')
       WHERE scheduler_type = ?
         AND task_id = ?
@@ -315,11 +317,14 @@ export class SchedulerRecoveryService {
 
     // Get pending AND failed intents where execution window has passed
     // CRITICAL FIX: Include 'failed' status so failed tasks can be retried on restart
+    // SAFETY: Exclude tasks that have been retried too many times (max 5 total attempts)
+    // SAFETY: Exclude 'skipped' tasks (permanent errors like missing credentials)
     let query = `
       SELECT * FROM scheduler_execution_intents
       WHERE status IN ('pending', 'failed')
         AND intended_date >= ?
         AND execution_window_end < ?
+        AND COALESCE(retry_count, 0) < 5
       ORDER BY intended_date ASC, intended_time ASC
     `;
 
@@ -345,7 +350,9 @@ export class SchedulerRecoveryService {
 
       // Log failed tasks separately for visibility
       if (intent.status === 'failed') {
+        const retryCount = intent.retry_count || 0;
         console.log(`[RecoveryService] Found failed task to retry: ${intent.task_name} (${intent.intended_date})`);
+        console.log(`[RecoveryService]   Retry count: ${retryCount}/5`);
         if (intent.error_message) {
           console.log(`[RecoveryService]   Previous error: ${intent.error_message}`);
         }
