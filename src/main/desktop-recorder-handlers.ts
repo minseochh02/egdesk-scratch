@@ -9,10 +9,13 @@ import { ipcMain, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { DesktopRecorder } from './desktop-recorder';
+import { RecorderControlWindow } from './recorder-control-window';
 import { readExcelPreview, generateExcelHTML, getExcelFileInfo } from './rookie/thumbnail-handler';
 
 // Module-level active recorder (similar to chrome-handlers.ts pattern)
 let activeDesktopRecorder: DesktopRecorder | null = null;
+let recorderControlWindow: RecorderControlWindow | null = null;
+let createdVirtualDesktop: boolean = false; // Track if we created a new virtual desktop
 
 /**
  * Get output directory for desktop recordings
@@ -121,6 +124,28 @@ export function registerDesktopRecorderHandlers(): void {
       const status = activeDesktopRecorder.getStatus();
 
       console.log(`[DesktopRecorder] Recording stopped. ${status.actionCount} actions recorded.`);
+
+      // If we created a virtual desktop for this recording, switch back and clean up
+      if (createdVirtualDesktop) {
+        console.log('[DesktopRecorder] Cleaning up virtual desktop...');
+        try {
+          await activeDesktopRecorder['desktopManager'].switchBackAndCleanup();
+          createdVirtualDesktop = false;
+        } catch (error: any) {
+          console.warn('[DesktopRecorder] Failed to clean up virtual desktop:', error.message);
+          // Don't fail the stop operation if cleanup fails
+        }
+      }
+
+      // Close control window if exists
+      if (recorderControlWindow) {
+        try {
+          recorderControlWindow.close();
+          recorderControlWindow = null;
+        } catch (error: any) {
+          console.warn('[DesktopRecorder] Failed to close control window:', error.message);
+        }
+      }
 
       return {
         success: true,
@@ -481,6 +506,193 @@ export function registerDesktopRecorderHandlers(): void {
     }
   });
 
+  // ==================== Virtual Desktop Control (Windows) ====================
+
+  ipcMain.handle('desktop-recorder:create-virtual-desktop', async () => {
+    try {
+      if (!activeDesktopRecorder) {
+        return {
+          success: false,
+          error: 'NO_ACTIVE_RECORDER',
+          message: 'No active desktop recorder',
+        };
+      }
+
+      const success = await activeDesktopRecorder['desktopManager'].createVirtualDesktop();
+      return { success };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to create virtual desktop:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle('desktop-recorder:switch-virtual-desktop', async (event, { direction }) => {
+    try {
+      if (!activeDesktopRecorder) {
+        return {
+          success: false,
+          error: 'NO_ACTIVE_RECORDER',
+          message: 'No active desktop recorder',
+        };
+      }
+
+      const success = direction === 'next'
+        ? await activeDesktopRecorder['desktopManager'].switchToNextDesktop()
+        : await activeDesktopRecorder['desktopManager'].switchToPreviousDesktop();
+
+      return { success };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to switch virtual desktop:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle('desktop-recorder:close-virtual-desktop', async () => {
+    try {
+      if (!activeDesktopRecorder) {
+        return {
+          success: false,
+          error: 'NO_ACTIVE_RECORDER',
+          message: 'No active desktop recorder',
+        };
+      }
+
+      const success = await activeDesktopRecorder['desktopManager'].closeCurrentDesktop();
+      return { success };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to close virtual desktop:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle('desktop-recorder:open-task-view', async () => {
+    try {
+      if (!activeDesktopRecorder) {
+        return {
+          success: false,
+          error: 'NO_ACTIVE_RECORDER',
+          message: 'No active desktop recorder',
+        };
+      }
+
+      const success = await activeDesktopRecorder['desktopManager'].openTaskView();
+      return { success };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to open task view:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  // ==================== Recorder Control Window ====================
+
+  ipcMain.handle('desktop-recorder:start-with-control-window', async (event) => {
+    try {
+      console.log('[DesktopRecorder] Starting recording with control window on new virtual desktop');
+
+      // Step 1: Clean up existing recorder if any
+      if (activeDesktopRecorder) {
+        console.log('[DesktopRecorder] Stopping previous recorder');
+        try {
+          await activeDesktopRecorder.stopRecording();
+        } catch (err) {
+          console.error('[DesktopRecorder] Error stopping previous recorder:', err);
+        }
+      }
+
+      // Step 2: Create a temporary recorder to use its desktopManager for virtual desktop operations
+      const tempRecorder = new DesktopRecorder();
+      const success = await tempRecorder['desktopManager'].createAndSwitchToNewDesktop();
+
+      if (success) {
+        createdVirtualDesktop = true; // Mark that we created a virtual desktop
+        console.log('[DesktopRecorder] Switched to new virtual desktop');
+      } else {
+        console.warn('[DesktopRecorder] Failed to create virtual desktop, continuing anyway...');
+      }
+
+      // Step 3: Create the control window (will appear on the new desktop)
+      if (!recorderControlWindow) {
+        recorderControlWindow = new RecorderControlWindow();
+      }
+      await recorderControlWindow.create();
+
+      // Generate output file path
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const scriptName = `desktop-recording-${timestamp}`;
+      const outputFile = path.join(getDesktopRecordingOutputDir(), `${scriptName}.js`);
+
+      // Create new recorder
+      activeDesktopRecorder = new DesktopRecorder();
+      activeDesktopRecorder.setOutputFile(outputFile);
+
+      // Set up real-time updates to control window
+      activeDesktopRecorder.setUpdateCallback((code) => {
+        // Send to main window
+        event.sender.send('desktop-recorder:update', {
+          filePath: outputFile,
+          code: code,
+          timestamp,
+        });
+
+        // Send to control window
+        if (recorderControlWindow && recorderControlWindow.exists()) {
+          recorderControlWindow.send('recorder-control:update', {
+            filePath: outputFile,
+            code: code,
+            timestamp,
+            actionCount: activeDesktopRecorder?.getActions().length || 0,
+            status: activeDesktopRecorder?.getStatus(),
+          });
+        }
+      });
+
+      // Start recording
+      await activeDesktopRecorder.startRecording();
+
+      console.log('[DesktopRecorder] Recording started with control window');
+      return {
+        success: true,
+        outputFile,
+        scriptName,
+        controlWindowCreated: true,
+      };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to start recording with control window:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle('desktop-recorder:close-control-window', async () => {
+    try {
+      if (recorderControlWindow) {
+        recorderControlWindow.close();
+        recorderControlWindow = null;
+      }
+      return { success: true };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to close control window:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
   console.log('[DesktopRecorder] IPC handlers registered successfully');
 }
 
@@ -495,6 +707,16 @@ export async function cleanupDesktopRecorder(): Promise<void> {
       activeDesktopRecorder = null;
     } catch (error) {
       console.error('[DesktopRecorder] Error during cleanup:', error);
+    }
+  }
+
+  if (recorderControlWindow) {
+    try {
+      console.log('[DesktopRecorder] Closing control window');
+      recorderControlWindow.close();
+      recorderControlWindow = null;
+    } catch (error) {
+      console.error('[DesktopRecorder] Error closing control window:', error);
     }
   }
 }

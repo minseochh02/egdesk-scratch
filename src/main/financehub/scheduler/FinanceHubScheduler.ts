@@ -70,10 +70,11 @@ export class FinanceHubScheduler extends EventEmitter {
   private syncTimers: Map<string, NodeJS.Timeout> = new Map(); // entityKey -> retry timer
   private keepAwakeInterval: any = null;
   private syncingEntities: Set<string> = new Set(); // Track which entities are currently syncing
+  private activeBrowsers: Map<string, any> = new Map(); // Track active browser instances by entityKey
   private settings: ScheduleSettings;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
-    retryCount: 3,
+    retryCount: process.env.NODE_ENV === 'production' ? 3 : 0, // No retries in dev
     retryDelayMinutes: 5,
     spreadsheetSyncEnabled: true,
 
@@ -149,7 +150,7 @@ export class FinanceHubScheduler extends EventEmitter {
     return { ...this.settings };
   }
 
-  public updateSettings(newSettings: Partial<ScheduleSettings>): void {
+  public async updateSettings(newSettings: Partial<ScheduleSettings>): Promise<void> {
     // Deep merge for nested objects
     this.settings = {
       ...this.settings,
@@ -171,9 +172,9 @@ export class FinanceHubScheduler extends EventEmitter {
 
     // Restart scheduler if enabled state or any entity schedules changed
     if ('enabled' in newSettings || 'cards' in newSettings || 'banks' in newSettings || 'tax' in newSettings) {
-      this.stop();
+      await this.stop();
       if (this.settings.enabled) {
-        this.start();
+        await this.start();
       }
     }
 
@@ -184,21 +185,21 @@ export class FinanceHubScheduler extends EventEmitter {
   // Scheduler Control
   // ============================================
 
-  public start(): void {
+  public async start(): Promise<void> {
     if (!this.settings.enabled) {
       console.log('[FinanceHubScheduler] Scheduler is disabled');
       return;
     }
 
-    this.stop(); // Clear any existing timers
+    await this.stop(); // Clear any existing timers and browsers
     this.scheduleNextSync();
     this.startKeepAwake();
-    
+
     console.log(`[FinanceHubScheduler] Started - Next sync at ${this.settings.time}`);
     this.emit('scheduler-started');
   }
 
-  public stop(): void {
+  public async stop(): Promise<void> {
     // Clear all schedule timers
     for (const [entityKey, timer] of this.scheduleTimers) {
       clearTimeout(timer);
@@ -212,6 +213,9 @@ export class FinanceHubScheduler extends EventEmitter {
     this.syncTimers.clear();
 
     this.stopKeepAwake();
+
+    // Kill all active browsers
+    await this.killAllBrowsers();
 
     console.log('[FinanceHubScheduler] Stopped');
     this.emit('scheduler-stopped');
@@ -386,8 +390,12 @@ export class FinanceHubScheduler extends EventEmitter {
         result = taxResult;
       }
 
-      if (!success && retryCount < this.settings.retryCount) {
-        console.log(`[FinanceHubScheduler] ${entityKey} failed, retrying in ${this.settings.retryDelayMinutes} minutes...`);
+      // Check if retries are enabled and if we're in production
+      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+      const shouldRetry = !success && retryCount < this.settings.retryCount && isProduction;
+
+      if (shouldRetry) {
+        console.log(`[FinanceHubScheduler] ${entityKey} failed (attempt ${retryCount + 1}/${this.settings.retryCount}), retrying in ${this.settings.retryDelayMinutes} minutes...`);
 
         // Schedule retry
         const retryTimer = setTimeout(() => {
@@ -396,6 +404,12 @@ export class FinanceHubScheduler extends EventEmitter {
 
         this.syncTimers.set(entityKey, retryTimer);
       } else {
+        // Log reason for not retrying
+        if (!success && !isProduction) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
+        } else if (!success && retryCount >= this.settings.retryCount) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
+        }
         // Sync completed (with or without success)
         const status = success ? 'success' : 'failed';
         this.updateSyncStatus(status);
@@ -443,14 +457,24 @@ export class FinanceHubScheduler extends EventEmitter {
     } catch (error) {
       console.error(`[FinanceHubScheduler] ${entityKey} sync error:`, error);
 
-      if (retryCount < this.settings.retryCount) {
-        console.log(`[FinanceHubScheduler] Retrying ${entityKey} in ${this.settings.retryDelayMinutes} minutes...`);
+      // Check if retries are enabled and if we're in production
+      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+      const shouldRetry = retryCount < this.settings.retryCount && isProduction;
+
+      if (shouldRetry) {
+        console.log(`[FinanceHubScheduler] Retrying ${entityKey} (attempt ${retryCount + 1}/${this.settings.retryCount}) in ${this.settings.retryDelayMinutes} minutes...`);
         const retryTimer = setTimeout(() => {
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
         }, this.settings.retryDelayMinutes * 60 * 1000);
 
         this.syncTimers.set(entityKey, retryTimer);
       } else {
+        // Log reason for not retrying
+        if (!isProduction) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
+        } else if (retryCount >= this.settings.retryCount) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
+        }
         this.updateSyncStatus('failed');
         this.emit('entity-sync-failed', { entityType, entityId, error });
 
@@ -467,11 +491,76 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   // ============================================
+  // Browser Management & Timeout Protection
+  // ============================================
+
+  /**
+   * Safely cleanup browser with timeout protection
+   * Prevents hung cleanup operations from blocking the scheduler
+   */
+  private async safeCleanupBrowser(automator: any, entityKey: string, timeoutMs = 30000): Promise<void> {
+    if (!automator) return;
+
+    try {
+      console.log(`[FinanceHubScheduler] Starting safe cleanup for ${entityKey}...`);
+
+      // Create a timeout promise
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        setTimeout(() => reject(new Error('Cleanup timeout')), timeoutMs);
+      });
+
+      // Race between cleanup and timeout
+      await Promise.race([
+        automator.cleanup(false), // Force close
+        timeoutPromise
+      ]);
+
+      console.log(`[FinanceHubScheduler] ✓ Browser cleaned up successfully for ${entityKey}`);
+    } catch (cleanupError: any) {
+      console.error(`[FinanceHubScheduler] Cleanup failed for ${entityKey}:`, cleanupError.message);
+
+      // Fallback: Try to force kill browser process
+      try {
+        console.log(`[FinanceHubScheduler] Attempting force kill for ${entityKey}...`);
+        if (automator.browser) {
+          await automator.browser.close();
+        }
+      } catch (forceError) {
+        console.error(`[FinanceHubScheduler] Force kill failed for ${entityKey}:`, forceError);
+      }
+    } finally {
+      // Remove from active browsers tracking
+      this.activeBrowsers.delete(entityKey);
+    }
+  }
+
+  /**
+   * Kill all hung browsers on scheduler stop
+   * Prevents zombie browser processes
+   */
+  private async killAllBrowsers(): Promise<void> {
+    console.log(`[FinanceHubScheduler] Killing ${this.activeBrowsers.size} active browser(s)...`);
+
+    const killPromises = Array.from(this.activeBrowsers.entries()).map(async ([entityKey, automator]) => {
+      try {
+        await this.safeCleanupBrowser(automator, entityKey, 10000); // 10s timeout for shutdown
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Failed to kill browser for ${entityKey}:`, error);
+      }
+    });
+
+    await Promise.all(killPromises);
+    this.activeBrowsers.clear();
+  }
+
+  // ============================================
   // Individual Entity Sync Methods
   // ============================================
 
   private async syncCard(cardId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
     console.log(`[FinanceHubScheduler] Syncing card: ${cardId}`);
+
+    let automator: any = null;
 
     try {
       const store = getStore();
@@ -491,18 +580,21 @@ export class FinanceHubScheduler extends EventEmitter {
       // Create card automator
       const { cards } = require('../index');
       const cardCompanyId = `${cardId}-card`; // Convert "nh" to "nh-card", etc.
-      const automator = cards.createCardAutomator(cardCompanyId, {
+      automator = cards.createCardAutomator(cardCompanyId, {
         headless: true, // Run headless for scheduled sync
         arduinoPort,
         manualPassword: false
       });
+
+      // Track active browser
+      const entityKey = `card:${cardId}`;
+      this.activeBrowsers.set(entityKey, automator);
 
       // Login
       console.log(`[FinanceHubScheduler] Logging in to ${cardCompanyId}...`);
       const loginResult = await automator.login(savedCredentials);
 
       if (!loginResult.success) {
-        await automator.cleanup();
         return {
           success: false,
           error: `Login failed: ${loginResult.error || 'Unknown error'}`
@@ -585,8 +677,6 @@ export class FinanceHubScheduler extends EventEmitter {
         }
       }
 
-      await automator.cleanup();
-
       console.log(`[FinanceHubScheduler] Card sync complete for ${cardCompanyId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
       return {
         success: true,
@@ -600,11 +690,19 @@ export class FinanceHubScheduler extends EventEmitter {
         success: false,
         error: error instanceof Error ? error.message : String(error)
       };
+    } finally {
+      // CRITICAL: Always cleanup browser, even on errors
+      if (automator) {
+        const entityKey = `card:${cardId}`;
+        await this.safeCleanupBrowser(automator, entityKey);
+      }
     }
   }
 
   private async syncBank(bankId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
     console.log(`[FinanceHubScheduler] Syncing bank: ${bankId}`);
+
+    let automator: any = null;
 
     try {
       const store = getStore();
@@ -620,16 +718,19 @@ export class FinanceHubScheduler extends EventEmitter {
 
       // Create bank automator
       const { createAutomator } = require('../index');
-      const automator = createAutomator(bankId, {
+      automator = createAutomator(bankId, {
         headless: true // Run headless for scheduled sync
       });
+
+      // Track active browser
+      const entityKey = `bank:${bankId}`;
+      this.activeBrowsers.set(entityKey, automator);
 
       // Login
       console.log(`[FinanceHubScheduler] Logging in to ${bankId}...`);
       const loginResult = await automator.login(savedCredentials);
 
       if (!loginResult.success) {
-        await automator.cleanup();
         return {
           success: false,
           error: `Login failed: ${loginResult.error || 'Unknown error'}`
@@ -643,7 +744,6 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       if (accounts.length === 0) {
-        await automator.cleanup();
         return {
           success: false,
           error: 'No accounts found'
@@ -735,8 +835,6 @@ export class FinanceHubScheduler extends EventEmitter {
         }
       }
 
-      await automator.cleanup();
-
       console.log(`[FinanceHubScheduler] Bank sync complete for ${bankId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
       return {
         success: true,
@@ -750,6 +848,12 @@ export class FinanceHubScheduler extends EventEmitter {
         success: false,
         error: error instanceof Error ? error.message : String(error)
       };
+    } finally {
+      // CRITICAL: Always cleanup browser, even on errors
+      if (automator) {
+        const entityKey = `bank:${bankId}`;
+        await this.safeCleanupBrowser(automator, entityKey);
+      }
     }
   }
 
@@ -1065,8 +1169,8 @@ export class FinanceHubScheduler extends EventEmitter {
   // Cleanup
   // ============================================
 
-  public destroy(): void {
-    this.stop();
+  public async destroy(): Promise<void> {
+    await this.stop();
     this.removeAllListeners();
     FinanceHubScheduler.instance = null;
   }

@@ -22,7 +22,7 @@ export function registerFinanceHubSchedulerHandlers(): void {
   // Update scheduler settings
   ipcMain.handle('finance-hub:scheduler:update-settings', async (event, settings) => {
     try {
-      scheduler.updateSettings(settings);
+      await scheduler.updateSettings(settings);
       return {
         success: true,
         settings: scheduler.getSettings(),
@@ -38,7 +38,7 @@ export function registerFinanceHubSchedulerHandlers(): void {
   // Start scheduler
   ipcMain.handle('finance-hub:scheduler:start', async () => {
     try {
-      scheduler.start();
+      await scheduler.start();
       return { success: true };
     } catch (error) {
       return {
@@ -51,7 +51,7 @@ export function registerFinanceHubSchedulerHandlers(): void {
   // Stop scheduler
   ipcMain.handle('finance-hub:scheduler:stop', async () => {
     try {
-      scheduler.stop();
+      await scheduler.stop();
       return { success: true };
     } catch (error) {
       return {
