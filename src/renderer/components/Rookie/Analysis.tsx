@@ -1005,6 +1005,54 @@ const Analysis: React.FC<AnalysisProps> = ({ onBack }) => {
                   </div>
                 )}
 
+                {/* Table Structure - How ROOKIE understands the table */}
+                {aiAnalysis.tableStructure && (
+                  <div className="rookie-phase-compact">
+                    <h4 className="rookie-phase-title-compact">
+                      🏗️ Table Structure Understanding
+                      {aiAnalysis.tableStructure.isCrossTabulation && (
+                        <span className="rookie-cross-tab-badge">Cross-Tabulation ✓</span>
+                      )}
+                    </h4>
+                    <div className="rookie-table-structure">
+                      <div className="structure-item">
+                        <strong>What this table shows:</strong>
+                        <p>{aiAnalysis.tableStructure.tableDescription}</p>
+                      </div>
+                      <div className="structure-item">
+                        <strong>Rows represent:</strong>
+                        <p>{aiAnalysis.tableStructure.rowsRepresent}</p>
+                      </div>
+                      <div className="structure-item">
+                        <strong>Columns represent:</strong>
+                        <p>{aiAnalysis.tableStructure.columnsRepresent}</p>
+                      </div>
+                      <div className="structure-item">
+                        <strong>How to read a cell:</strong>
+                        <p>{aiAnalysis.tableStructure.cellMeaning}</p>
+                      </div>
+                      <div className="structure-example">
+                        <strong>Example - Cell E7:</strong>
+                        <p>{aiAnalysis.tableStructure.exampleCellE7}</p>
+                      </div>
+                      {aiAnalysis.tableStructure.metricColumns && (
+                        <div className="structure-item">
+                          <strong>Metric Columns ({aiAnalysis.tableStructure.metricColumns.length}):</strong>
+                          <div className="metric-columns-grid">
+                            {aiAnalysis.tableStructure.metricColumns.map((col: any, idx: number) => (
+                              <div key={idx} className="metric-column-card">
+                                <span className="column-letter">{col.column}</span>
+                                <span className="column-header">{col.header}</span>
+                                <span className="column-cell">{col.headerCell}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Raw Data Needs */}
                 {aiAnalysis.rawDataNeeds && (
                   <div className="rookie-phase-compact">

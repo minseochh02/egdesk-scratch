@@ -240,34 +240,64 @@ For each unclear term from Rookie:
 - Show evidence and confidence for each mapping
 
 **PHASE 2.5: UNDERSTAND CROSS-TABULATION STRUCTURE** ← CRITICAL
-ROOKIE may have identified this as a cross-tabulation (pivot table). If so:
+ROOKIE has analyzed the table structure:
 
 ${params.rookieAnalysis.tableStructure?.isCrossTabulation ? `
-✅ **ROOKIE IDENTIFIED CROSS-TABULATION**
+✅ **ROOKIE IDENTIFIED THIS AS CROSS-TABULATION (PIVOT TABLE)**
 
-Row Dimension: ${JSON.stringify(params.rookieAnalysis.tableStructure.rowDimension, null, 2)}
-Column Structure: ${JSON.stringify(params.rookieAnalysis.tableStructure.columnStructure, null, 2)}
-Example Cell: ${JSON.stringify(params.rookieAnalysis.tableStructure.exampleCell, null, 2)}
+**Table Description:**
+${params.rookieAnalysis.tableStructure.tableDescription}
+
+**Rows represent:**
+${params.rookieAnalysis.tableStructure.rowsRepresent}
+
+**Columns represent:**
+${params.rookieAnalysis.tableStructure.columnsRepresent}
+
+**How to read cells:**
+${params.rookieAnalysis.tableStructure.cellMeaning}
+
+**Example - ${params.rookieAnalysis.tableStructure.exampleCellE7}**
+
+**Metric Columns:**
+${params.rookieAnalysis.tableStructure.metricColumns?.map((col: any) =>
+  `- Column ${col.column} (${col.headerCell}): "${col.header}"`
+).join('\n')}
 
 **CRITICAL INSTRUCTIONS FOR CROSS-TABULATION:**
 
-Each cell value = SUM(metric WHERE row_filter AND column_filter)
+Each cell in a cross-tab = SUM(base_metric WHERE row_filter AND column_filters)
 
-For example, if cell E7 contains "플래그십 판매 중량" for "화성":
-1. Identify row category: "화성" → Find source filter (e.g., WHERE 거래처그룹1명='화성사업소')
-2. Identify column metric: "플래그십 판매 중량" → Find TWO source filters:
-   - Which column to SUM? (e.g., 중량)
-   - Which product category? (e.g., WHERE 품목그룹3코드='FAL')
-3. Combine filters: SUM(중량 WHERE 거래처그룹1명='화성사업소' AND 품목그룹3코드='FAL')
+Your job is to DECOMPOSE each column header into:
+1. **Base metric**: What are we measuring? (e.g., 중량, 금액)
+2. **Column filters**: What conditions apply? (e.g., product type, transaction type)
+3. **Row filter**: Which row category? (from leftmost column)
 
-**You MUST generate ONE mapping per cell** with:
-- targetCell: "E7" (exact cell coordinate from HTML)
-- Multiple filters (row dimension + column dimension)
-- Specific column to aggregate
+**Example for cell E7 (플래그십 판매 중량 for 화성):**
 
-Use getDistinctValues and queryExcelData to find:
-- How row labels map to source columns/values
-- How column headers map to source columns/values (e.g., "플래그십" → which code?)
+Step 1: Decompose column header "플래그십 판매 중량":
+- Base metric: 중량 (weight)
+- Product filter: 플래그십 → Use getDistinctValues to find which source column/value (e.g., 품목그룹3코드='FAL')
+- Transaction type: 판매 (sales)
+
+Step 2: Identify row filter "화성":
+- Use getDistinctValues to find how "화성" appears in source (e.g., 거래처그룹1명='화성사업소')
+
+Step 3: Combine into mapping:
+{
+  "targetCell": "E7",
+  "sourceColumn": "중량",
+  "operation": "SUM",
+  "filters": [
+    {"column": "거래처그룹1명", "operator": "=", "value": "화성사업소"},
+    {"column": "품목그룹3코드", "operator": "=", "value": "FAL"}
+  ]
+}
+
+**You MUST use query tools to discover:**
+- Which source columns contain row labels (화성, 창원, etc.)
+- Which source columns/values represent column categories (모빌, 플래그십, etc.)
+- Which source column contains the base metric (중량, 금액)
 ` : `
 ⚠️ Not identified as cross-tabulation - proceed with regular mapping
 `}
@@ -410,140 +440,8 @@ Use the query tools extensively to explore and verify mappings. Document your fi
       }
     };
 
-    // Response schema for final structured output (after tool calls complete)
-    const responseSchema = {
-      type: 'object',
-      properties: {
-        termResolutions: {
-          type: 'array',
-          description: 'Answers to ROOKIEs unclear terms',
-          items: {
-            type: 'object',
-            properties: {
-              term: { type: 'string', description: 'The unclear term from ROOKIE' },
-              answer: { type: 'string', description: 'What this term means based on source data' },
-              foundIn: { type: 'string', description: 'Which file(s) contain this' },
-              column: { type: 'string', description: 'Column name if applicable' },
-              exampleValues: { type: 'array', items: { type: 'string' }, description: 'Sample values' },
-              confidence: { type: 'string', description: 'confirmed, likely, or not_found' },
-            },
-            required: ['term', 'answer', 'foundIn', 'confidence'],
-          },
-        },
-        sourceInventory: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              file: { type: 'string' },
-              origin: { type: 'string' },
-              rowCount: { type: 'number' },
-              dateRange: { type: 'string' },
-              columns: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    type: { type: 'string' },
-                    role: { type: 'string' },
-                    sampleValues: { type: 'array', items: { type: 'string' } },
-                  },
-                  required: ['name', 'type', 'role'],
-                },
-              },
-              feedsTargetSections: { type: 'array', items: { type: 'string' } },
-            },
-            required: ['file', 'origin', 'rowCount', 'columns', 'feedsTargetSections'],
-          },
-        },
-        dimensionMaps: {
-          type: 'string',
-          description: 'Detailed description of dimension mappings (regions, time periods, categories)',
-        },
-        metricMaps: {
-          type: 'string',
-          description: 'Detailed description of metric mappings with verification results',
-        },
-        rookieReview: {
-          type: 'string',
-          description: 'Review of Rookies analysis - what was confirmed, corrected, or newly discovered',
-        },
-        buildRecipe: {
-          type: 'object',
-          properties: {
-            steps: {
-              type: 'array',
-              description: '3-5 strategic build steps',
-              maxItems: 5,
-              items: {
-                type: 'object',
-                properties: {
-                  step: { type: 'number' },
-                  targetSection: { type: 'string', description: 'Which target section this builds' },
-                  action: { type: 'string', description: 'Brief description of what this step does' },
-                  mappings: {
-                    type: 'array',
-                    description: '2-3 example mappings showing the pattern (NOT exhaustive)',
-                    maxItems: 5,
-                    items: {
-                      type: 'object',
-                      properties: {
-                        mappingId: { type: 'string', description: 'Unique ID like map_001' },
-                        sourceFile: { type: 'string', description: 'Exact filename (not source1)' },
-                        sourceColumn: { type: 'string', description: 'Exact column name' },
-                        operation: {
-                          type: 'string',
-                          description: 'Operation type',
-                          enum: ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'CONCAT', 'FIRST', 'LAST', 'VLOOKUP', 'FILTER', 'DIRECT']
-                        },
-                        filters: {
-                          type: 'array',
-                          description: 'Optional filters for operation',
-                          items: {
-                            type: 'object',
-                            properties: {
-                              column: { type: 'string' },
-                              operator: { type: 'string', enum: ['=', '!=', '>', '<', '>=', '<=', 'IN', 'CONTAINS'] },
-                              value: { description: 'Filter value (string or array)' }
-                            },
-                            required: ['column', 'operator', 'value']
-                          }
-                        },
-                        groupBy: { type: 'array', items: { type: 'string' }, description: 'Columns to group by' },
-                        targetSection: { type: 'string', description: 'Target HTML section/table name' },
-                        targetCell: { type: 'string', description: 'Cell reference like B5' },
-                        targetFieldName: { type: 'string', description: 'Human-readable target field' },
-                        sampleCalculation: { type: 'string', description: 'Example calculation with values' },
-                        confidence: { type: 'string', enum: ['verified', 'probable', 'needs_validation'] }
-                      },
-                      required: ['mappingId', 'sourceFile', 'sourceColumn', 'operation', 'targetFieldName', 'confidence']
-                    }
-                  },
-                  description: { type: 'string', description: 'Human-readable explanation' },
-                  validation: { type: 'string', description: 'How to verify this step' }
-                },
-                required: ['step', 'targetSection', 'action', 'mappings', 'description', 'validation'],
-              },
-            },
-            unresolvedItems: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  item: { type: 'string' },
-                  reason: { type: 'string' },
-                  workaround: { type: 'string' },
-                },
-                required: ['item', 'reason', 'workaround'],
-              },
-            },
-          },
-          required: ['steps'],
-        },
-      },
-      required: ['sourceInventory'],
-    };
+    // NOTE: No responseSchema - Gemini structured output rejects complex schemas
+    // We'll use plain text JSON generation and parse manually
 
     // FIRST AI CALL: Use tools to explore data
     console.log('[Resolver] STEP 1: Exploring data with tools...');
