@@ -465,20 +465,27 @@ export class DesktopRecorder {
 
     // Setup mouse click listener
     uIOhook.on('click', (e) => {
-      if (!this.isRecording || this.isPaused) return;
+      try {
+        if (!this.isRecording || this.isPaused) return;
 
-      // Map button: 1 = left, 2 = right, 3 = middle
-      const button = e.button === UiohookMouseButton.Left ? 'left' :
-                     e.button === UiohookMouseButton.Right ? 'right' : 'middle';
+        console.log('[DesktopRecorder] Click event received:', { button: e.button, x: e.x, y: e.y, UiohookMouseButton });
 
-      this.recordMouseClick(e.x, e.y, button);
+        // Map button: 1 = left, 2 = right, 3 = middle
+        const button = e.button === UiohookMouseButton.Left ? 'left' :
+                       e.button === UiohookMouseButton.Right ? 'right' : 'middle';
+
+        this.recordMouseClick(e.x, e.y, button);
+      } catch (error) {
+        console.error('[DesktopRecorder] Error in click handler:', error);
+      }
     });
 
     // Setup keyboard key down listener
     uIOhook.on('keydown', (e) => {
-      if (!this.isRecording || this.isPaused) return;
+      try {
+        if (!this.isRecording || this.isPaused) return;
 
-      this.pressedKeys.add(e.keycode);
+        this.pressedKeys.add(e.keycode);
 
       // Check if this is a modifier key
       const isModifier = [
@@ -528,11 +535,18 @@ export class DesktopRecorder {
           this.bufferKeyPress(char);
         }
       }
+      } catch (error) {
+        console.error('[DesktopRecorder] Error in keydown handler:', error);
+      }
     });
 
     // Setup key up listener to track released keys
     uIOhook.on('keyup', (e) => {
-      this.pressedKeys.delete(e.keycode);
+      try {
+        this.pressedKeys.delete(e.keycode);
+      } catch (error) {
+        console.error('[DesktopRecorder] Error in keyup handler:', error);
+      }
     });
 
     console.log('[DesktopRecorder] ✅ Global keyboard and mouse listener setup complete');
