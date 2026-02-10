@@ -80,5 +80,85 @@ export function registerSchedulerRecoveryHandlers(): void {
     }
   });
 
+  // Get diagnostic information
+  ipcMain.handle('scheduler-recovery-diagnostics', async () => {
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+      const db = recoveryService['getDb']();
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+
+      // Get today's tasks
+      const todayTasks = db.prepare(`
+        SELECT
+          task_id,
+          intended_date,
+          intended_time,
+          status,
+          execution_window_start,
+          execution_window_end,
+          retry_count,
+          error_message,
+          actual_started_at,
+          actual_completed_at
+        FROM scheduler_execution_intents
+        WHERE intended_date = ?
+        ORDER BY intended_time
+      `).all(today);
+
+      // Get missed tasks eligible for recovery
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 3);
+      const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+      const missedTasks = db.prepare(`
+        SELECT
+          task_id,
+          intended_date,
+          intended_time,
+          status,
+          execution_window_end,
+          retry_count,
+          error_message
+        FROM scheduler_execution_intents
+        WHERE status IN ('pending', 'failed')
+          AND intended_date >= ?
+          AND execution_window_end < ?
+          AND COALESCE(retry_count, 0) < 5
+        ORDER BY intended_date ASC, intended_time ASC
+      `).all(cutoffDateStr, now.toISOString());
+
+      // Get stuck running tasks
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const stuckTasks = db.prepare(`
+        SELECT
+          task_id,
+          intended_date,
+          actual_started_at,
+          error_message
+        FROM scheduler_execution_intents
+        WHERE status = 'running'
+          AND actual_started_at < ?
+      `).all(oneHourAgo);
+
+      return {
+        success: true,
+        data: {
+          currentTime: now.toISOString(),
+          today: today,
+          todayTasks: todayTasks,
+          missedTasks: missedTasks,
+          stuckTasks: stuckTasks,
+          totalIntentsInDb: db.prepare('SELECT COUNT(*) as count FROM scheduler_execution_intents').get(),
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   console.log('✅ Scheduler recovery IPC handlers registered');
 }

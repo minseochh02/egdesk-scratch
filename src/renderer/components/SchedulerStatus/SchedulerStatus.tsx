@@ -66,6 +66,8 @@ const SchedulerStatus: React.FC = () => {
   const [isCleaningTests, setIsCleaningTests] = useState(false);
   const [oldestRecord, setOldestRecord] = useState<string>('');
   const [newestRecord, setNewestRecord] = useState<string>('');
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
 
   // Load data
   const loadSchedulerData = async () => {
@@ -307,6 +309,21 @@ const SchedulerStatus: React.FC = () => {
     } catch (error) {
       console.error('Error cancelling task:', error);
       alert('Cancel failed');
+    }
+  };
+
+  const loadDiagnostics = async () => {
+    try {
+      const result = await window.electron.invoke('scheduler-recovery-diagnostics');
+      if (result.success) {
+        setDiagnostics(result.data);
+        console.log('Diagnostics loaded:', result.data);
+      } else {
+        alert(`Failed to load diagnostics: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error loading diagnostics:', error);
+      alert('Failed to load diagnostics');
     }
   };
 
@@ -814,6 +831,165 @@ const SchedulerStatus: React.FC = () => {
             Removes schedules for Playwright test files that have been deleted. Cancels any pending/failed executions.
           </div>
         </div>
+      </section>
+
+      {/* Diagnostics Panel */}
+      <section className="scheduler-status__section">
+        <div className="scheduler-status__section-header">
+          <h2>🔍 Diagnostics</h2>
+          <button
+            className="scheduler-status__btn scheduler-status__btn--secondary"
+            onClick={() => {
+              setShowDiagnostics(!showDiagnostics);
+              if (!showDiagnostics) {
+                loadDiagnostics();
+              }
+            }}
+          >
+            {showDiagnostics ? 'Hide' : 'Show'} Diagnostics
+          </button>
+        </div>
+
+        {showDiagnostics && diagnostics && (
+          <div className="scheduler-status__diagnostics">
+            <div className="scheduler-status__diagnostic-section">
+              <h3>⏰ Current Time</h3>
+              <div className="scheduler-status__diagnostic-value">
+                {new Date(diagnostics.currentTime).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="scheduler-status__diagnostic-section">
+              <h3>📅 Today's Tasks ({diagnostics.todayTasks?.length || 0})</h3>
+              {diagnostics.todayTasks && diagnostics.todayTasks.length > 0 ? (
+                <div className="scheduler-status__table-scroll" style={{ maxHeight: '300px' }}>
+                  <table className="scheduler-status__table">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Window End</th>
+                        <th>Window Passed?</th>
+                        <th>Retry Count</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnostics.todayTasks.map((task: any, idx: number) => {
+                        const windowPassed = new Date(task.execution_window_end) < new Date(diagnostics.currentTime);
+                        return (
+                          <tr key={idx}>
+                            <td>{task.task_id}</td>
+                            <td>{task.intended_time}</td>
+                            <td>
+                              <span className={`scheduler-status__badge scheduler-status__badge--${task.status === 'completed' ? 'success' : task.status === 'running' ? 'warning' : task.status === 'failed' ? 'danger' : 'info'}`}>
+                                {task.status}
+                              </span>
+                            </td>
+                            <td>{new Date(task.execution_window_end).toLocaleTimeString()}</td>
+                            <td style={{ color: windowPassed ? '#10B981' : '#F59E0B' }}>
+                              {windowPassed ? '✓ Yes' : '✗ No'}
+                            </td>
+                            <td>{task.retry_count || 0}</td>
+                            <td style={{ color: '#EF4444', fontSize: '11px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {task.error_message || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="scheduler-status__empty">No tasks scheduled for today</div>
+              )}
+            </div>
+
+            <div className="scheduler-status__diagnostic-section">
+              <h3>🔄 Tasks Eligible for Recovery ({diagnostics.missedTasks?.length || 0})</h3>
+              <p style={{ fontSize: '13px', color: '#9CA3AF', marginBottom: '12px' }}>
+                Tasks where execution window has passed and status is 'pending' or 'failed' (retry_count &lt; 5)
+              </p>
+              {diagnostics.missedTasks && diagnostics.missedTasks.length > 0 ? (
+                <div className="scheduler-status__table-scroll" style={{ maxHeight: '300px' }}>
+                  <table className="scheduler-status__table">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Retry Count</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnostics.missedTasks.map((task: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{task.task_id}</td>
+                          <td>{task.intended_date}</td>
+                          <td>{task.intended_time}</td>
+                          <td>
+                            <span className={`scheduler-status__badge scheduler-status__badge--${task.status === 'failed' ? 'danger' : 'info'}`}>
+                              {task.status}
+                            </span>
+                          </td>
+                          <td>{task.retry_count || 0}/5</td>
+                          <td style={{ color: '#EF4444', fontSize: '11px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {task.error_message || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="scheduler-status__empty" style={{ color: '#10B981' }}>
+                  ✓ No missed tasks - everything is up to date!
+                </div>
+              )}
+            </div>
+
+            {diagnostics.stuckTasks && diagnostics.stuckTasks.length > 0 && (
+              <div className="scheduler-status__diagnostic-section">
+                <h3>⚠️ Stuck Tasks ({diagnostics.stuckTasks.length})</h3>
+                <p style={{ fontSize: '13px', color: '#EF4444', marginBottom: '12px' }}>
+                  Tasks stuck in 'running' state for &gt; 1 hour (will be reset to 'failed' on next recovery)
+                </p>
+                <div className="scheduler-status__table-scroll" style={{ maxHeight: '200px' }}>
+                  <table className="scheduler-status__table">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Date</th>
+                        <th>Started At</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnostics.stuckTasks.map((task: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{task.task_id}</td>
+                          <td>{task.intended_date}</td>
+                          <td>{new Date(task.actual_started_at).toLocaleString()}</td>
+                          <td style={{ color: '#EF4444', fontSize: '11px' }}>{task.error_message || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="scheduler-status__diagnostic-section">
+              <h3>💾 Database Info</h3>
+              <div style={{ fontSize: '14px', color: '#D1D5DB' }}>
+                Total intents in database: <strong>{diagnostics.totalIntentsInDb?.count || 0}</strong>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Settings Info */}
