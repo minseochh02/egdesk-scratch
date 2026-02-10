@@ -152,13 +152,51 @@ class KBCardAutomator extends BaseBankAutomator {
       await idField.fill('');
       await this.page.waitForTimeout(200);
 
-      // Type user ID via Arduino with natural timing
-      await this.typeViaArduinoWithNaturalTiming(userId, {
-        minDelay: 150,
-        maxDelay: 400
-      });
-      this.log('User ID typed via Arduino HID');
-      await this.page.waitForTimeout(500);
+      // Type user ID via Arduino with natural timing (with retry logic for security program)
+      let idTypingSuccess = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (!idTypingSuccess && retryCount < maxRetries) {
+        if (retryCount > 0) {
+          this.log(`Retrying ID input (attempt ${retryCount + 1}/${maxRetries})...`);
+          await this.page.waitForTimeout(3000); // Wait for security program to finish loading
+          await idField.click();
+          await this.page.waitForTimeout(1000);
+          await idField.fill(''); // Clear again
+          await this.page.waitForTimeout(200);
+        }
+
+        // Type user ID
+        await this.typeViaArduinoWithNaturalTiming(userId, {
+          minDelay: 150,
+          maxDelay: 400
+        });
+        await this.page.waitForTimeout(500);
+
+        // Verify ID was actually typed by checking field value length
+        try {
+          const actualValue = await idField.inputValue();
+          const actualLength = actualValue.length;
+          this.log(`ID verification: expected ${userId.length} chars, got ${actualLength} chars`);
+
+          if (actualLength >= userId.length) {
+            idTypingSuccess = true;
+            this.log('User ID typed successfully via Arduino HID');
+          } else {
+            this.warn(`ID input incomplete (${actualLength}/${userId.length}) - security program may be blocking input`);
+            retryCount++;
+          }
+        } catch (verifyError) {
+          this.warn('Could not verify ID input:', verifyError.message);
+          // Assume success if we can't verify
+          idTypingSuccess = true;
+        }
+      }
+
+      if (!idTypingSuccess) {
+        throw new Error('Failed to type user ID after multiple attempts - security program may be blocking input');
+      }
 
       // Step 5: Enter password (Arduino HID with Natural Timing or Manual)
       if (this.manualPassword) {

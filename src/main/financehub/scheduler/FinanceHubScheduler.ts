@@ -908,7 +908,7 @@ export class FinanceHubScheduler extends EventEmitter {
         // Import to database
         const { getSQLiteManager } = await import('../../sqlite/manager');
         const sqliteManager = getSQLiteManager();
-        const financeHubDb = sqliteManager.getFinanceHubDatabase();
+        const financeHubDb = sqliteManager.getFinanceHubManager();
 
         const transactionsData = result.transactions[0]?.extractedData?.transactions || [];
 
@@ -1083,7 +1083,7 @@ export class FinanceHubScheduler extends EventEmitter {
           const transactionsData = (result.transactions || []).map((tx: any) => ({
             date: tx.date ? tx.date.replace(/[-.]/g, '') : '',
             time: tx.time || '',
-            datetime: tx.datetime || (tx.date && tx.time ? tx.date.replace(/[-.]/g, '/') + ' ' + tx.time : ''),
+            transaction_datetime: tx.transaction_datetime || (tx.date && tx.time ? tx.date.replace(/[-.]/g, '/') + ' ' + tx.time : ''),
             type: tx.type || '',
             withdrawal: tx.withdrawal || 0,
             deposit: tx.deposit || 0,

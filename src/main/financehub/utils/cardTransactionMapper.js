@@ -35,18 +35,18 @@ function cleanCardNumber(cardNumber) {
 }
 
 /**
- * Parse card dateTime to separate date and time, and combined datetime
+ * Parse card dateTime to separate date and time, and combined transaction_datetime
  * @param {string} dateTime - '2026/01/19 14:46:51'
- * @returns {{date: string, time: string, datetime: string}}
+ * @returns {{date: string, time: string, transaction_datetime: string}}
  */
 function parseCardDateTime(dateTime) {
-  if (!dateTime) return { date: '', time: null, datetime: '' };
+  if (!dateTime) return { date: '', time: null, transaction_datetime: '' };
 
   const [datePart, timePart] = dateTime.split(' ');
   const date = datePart.replace(/\//g, '-'); // 2026/01/19 → 2026-01-19
   const time = timePart || null;
-  const datetime = dateTime; // Keep original format: YYYY/MM/DD HH:MM:SS
-  return { date, time, datetime };
+  const transaction_datetime = dateTime; // Keep original format: YYYY/MM/DD HH:MM:SS
+  return { date, time, transaction_datetime };
 }
 
 /**
@@ -179,18 +179,18 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
 
   const merchantName = cardTx.merchantName || cardTx['가맹점명'] || cardTx.representativeName || cardTx['대표자성명'] || '';
 
-  // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
-  let datetime = '';
+  // Combine date and time into transaction_datetime format: YYYY/MM/DD HH:MM:SS
+  let transactionDatetime = '';
   if (date && time) {
-    datetime = date.replace(/-/g, '/') + ' ' + time;
+    transactionDatetime = date.replace(/-/g, '/') + ' ' + time;
   } else if (date) {
-    datetime = date.replace(/-/g, '/');
+    transactionDatetime = date.replace(/-/g, '/');
   }
 
   return {
     date: date || '',
     time: time,
-    datetime: datetime,
+    transaction_datetime: transactionDatetime,
     type: type,
     withdrawal: withdrawal,
     deposit: deposit,

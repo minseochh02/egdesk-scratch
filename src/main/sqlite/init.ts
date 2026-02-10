@@ -192,51 +192,13 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeSchedulerDatabaseSchema(schedulerDb); // Dedicated database for scheduler recovery system
 
     // =============================================
-    // MIGRATION: Fix datetime column conflict (AFTER schema init)
+    // NOTE: transaction_datetime migration handled by migration 006
     // =============================================
-    // The "datetime" column name conflicts with SQLite's datetime() function in indexes
-    // This migration ONLY drops and recreates indexes - NO DATA IS LOST
-    try {
-      console.log('🔄 Checking for datetime index migration...');
-
-      // Check if transactions table exists first
-      const tables = financeHubDb.pragma('table_list');
-      const transactionsTableExists = tables.some((t: any) => t.name === 'transactions');
-
-      if (transactionsTableExists) {
-        // Drop potentially problematic indexes (they may or may not exist)
-        try {
-          financeHubDb.exec(`
-            DROP INDEX IF EXISTS idx_transactions_datetime;
-            DROP INDEX IF EXISTS idx_transactions_account_datetime;
-            DROP INDEX IF EXISTS idx_transactions_bank_datetime;
-            DROP INDEX IF EXISTS idx_transactions_dedup;
-          `);
-          console.log('  ℹ️ Dropped old datetime indexes (if they existed)');
-        } catch (dropError) {
-          console.log('  ℹ️ No old indexes to drop');
-        }
-
-        // Recreate with properly escaped "datetime" column name
-        try {
-          financeHubDb.exec(`
-            CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions("datetime");
-            CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, "datetime");
-            CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, "datetime");
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
-              ON transactions(account_id, "datetime", withdrawal, deposit, balance);
-          `);
-          console.log('✅ FinanceHub datetime indexes created with proper escaping');
-        } catch (createError) {
-          console.warn('⚠️ Could not create datetime indexes:', createError);
-        }
-      } else {
-        console.log('  ℹ️ Transactions table does not exist yet, skipping datetime migration');
-      }
-    } catch (migrationError: any) {
-      console.error('⚠️ Datetime index migration error:', migrationError.message);
-      // Don't fail initialization
-    }
+    // Migration 006 (006-combine-datetime.ts) handles:
+    // - Adding transaction_datetime column
+    // - Migrating data from date+time to transaction_datetime
+    // - Creating UNIQUE index for deduplication
+    // See lines 271-281 above where migrate006CombineDateTime() is called
 
     // ========================================
     // FinanceHub Database Separation
@@ -268,9 +230,17 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       const { initializeFinanceHubSchema } = await import('./financehub');
       const { createHometaxSchema } = await import('./migrations/002-hometax-schema');
       const { createCashReceiptsSchema } = await import('./migrations/005-cash-receipts-schema');
+      const { migrate006CombineDateTime } = await import('./migrations/006-combine-datetime');
       initializeFinanceHubSchema(financeHubDb);
       createHometaxSchema(financeHubDb);
       createCashReceiptsSchema(financeHubDb);
+
+      // Run datetime migration
+      try {
+        migrate006CombineDateTime(financeHubDb);
+      } catch (migrationError: any) {
+        console.error('⚠️ Migration 006 error:', migrationError.message);
+      }
     }
     
     // Initialize task manager

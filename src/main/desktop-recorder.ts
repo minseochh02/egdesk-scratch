@@ -1082,7 +1082,8 @@ export class DesktopRecorder {
   private recordAppLaunch(appName: string, windowTitle?: string): void {
     if (!this.isRecording || this.isPaused) return;
 
-    console.log(`[DesktopRecorder] 🚀 App launched: ${appName} - ${windowTitle || 'untitled'}`);
+    console.log(`[DesktopRecorder] 🚀 App launched: "${appName}" - ${windowTitle || 'untitled'}`);
+    console.log(`[DesktopRecorder]    Recorded app name: "${appName}" (will be used during replay)`);
 
     const action: DesktopAction = {
       type: 'appLaunch',
@@ -1258,27 +1259,36 @@ export class DesktopRecorder {
    * Get Windows command for launching an app
    */
   private getWindowsAppCommand(appName: string): string {
+    // Normalize app name for case-insensitive matching
+    const normalized = appName.toLowerCase().replace('.exe', '');
+
     const appCommands: Record<string, string> = {
-      'Notepad': 'notepad',
-      'Calculator': 'calc',
-      'Excel': 'excel',
-      'EXCEL': 'excel',
-      'Word': 'winword',
-      'WINWORD': 'winword',
-      'PowerPoint': 'powerpnt',
-      'POWERPNT': 'powerpnt',
-      'Chrome': 'chrome',
-      'Edge': 'msedge',
-      'MicrosoftEdge': 'msedge',
-      'Explorer': 'explorer',
+      'notepad': 'notepad',
+      'calculator': 'calc',
+      'calc': 'calc',
+      'excel': 'excel',
+      'word': 'winword',
+      'powerpoint': 'powerpnt',
+      'chrome': 'chrome',
+      'google chrome': 'chrome',
+      'edge': 'msedge',
+      'microsoftedge': 'msedge',
+      'explorer': 'explorer',
+      'file explorer': 'explorer',
       'cmd': 'cmd',
-      'PowerShell': 'powershell',
-      'WindowsTerminal': 'wt',
-      'Paint': 'mspaint',
-      'Snipping Tool': 'SnippingTool',
+      'powershell': 'powershell',
+      'windows terminal': 'wt',
+      'windowsterminal': 'wt',
+      'paint': 'mspaint',
+      'snipping tool': 'snippingtool',
+      'firefox': 'firefox',
+      'brave': 'brave',
+      'opera': 'opera',
     };
 
-    return appCommands[appName] || appName.toLowerCase();
+    const command = appCommands[normalized] || normalized;
+    console.log(`[DesktopRecorder] App name "${appName}" → command "${command}"`);
+    return command;
   }
 
   /**
@@ -1286,38 +1296,41 @@ export class DesktopRecorder {
    */
   private async launchApp(appName: string, windowTitle?: string): Promise<void> {
     try {
-      console.log(`[DesktopRecorder] Launching app: ${appName}`);
+      console.log(`[DesktopRecorder] Launching app: ${appName}${windowTitle ? ` (${windowTitle})` : ''}`);
 
       // Platform-specific app launching
       if (process.platform === 'win32') {
-        // Windows app name mapping
-        const appCommands: Record<string, string> = {
-          'Notepad': 'notepad',
-          'Calculator': 'calc',
-          'Excel': 'excel',
-          'Word': 'winword',
-          'PowerPoint': 'powerpnt',
-          'Chrome': 'chrome',
-          'Edge': 'msedge',
-          'Explorer': 'explorer',
-          'cmd': 'cmd',
-          'PowerShell': 'powershell',
-        };
+        const command = this.getWindowsAppCommand(appName);
 
-        const command = appCommands[appName] || appName.toLowerCase();
-        await execAsync(`start ${command}`);
+        console.log(`[DesktopRecorder] Executing: start ${command}`);
+        const result = await execAsync(`start ${command}`);
+
+        if (result.stderr) {
+          console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+        }
+        if (result.stdout) {
+          console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+        }
 
       } else if (process.platform === 'darwin') {
         // macOS - use 'open -a' command
-        await execAsync(`open -a "${appName}"`);
+        console.log(`[DesktopRecorder] Executing: open -a "${appName}"`);
+        const result = await execAsync(`open -a "${appName}"`);
+
+        if (result.stderr) {
+          console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+        }
 
       } else {
         console.warn(`[DesktopRecorder] App launching not supported on ${process.platform}`);
+        return;
       }
 
       console.log(`[DesktopRecorder] ✅ App launched: ${appName}`);
     } catch (error: any) {
-      console.error(`[DesktopRecorder] Failed to launch app ${appName}:`, error.message);
+      console.error(`[DesktopRecorder] ❌ Failed to launch app "${appName}":`, error.message);
+      console.error(`[DesktopRecorder] Error details:`, error);
+      console.warn(`[DesktopRecorder] Continuing replay despite launch failure...`);
       // Don't throw - continue with replay
     }
   }
