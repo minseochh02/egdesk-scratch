@@ -3173,9 +3173,9 @@ const createWindow = async () => {
         const recoveryService = getSchedulerRecoveryService();
 
         const report = await recoveryService.recoverMissedExecutions({
-          lookbackDays: 3,         // 3-day lookback window (user preference)
-          autoExecute: true,       // Auto-execute missed tasks
-          maxCatchUpExecutions: 3, // Max 3 catch-up executions
+          lookbackDays: 3,          // 3-day lookback window (user preference)
+          autoExecute: true,        // Auto-execute missed tasks
+          maxCatchUpExecutions: 20, // Max 20 catch-up executions (covers all entities + future growth)
           priorityOrder: 'oldest_first',
         });
 
