@@ -1094,8 +1094,11 @@ export class FinanceHubDbManager {
     skipped: number;
   } {
     // 1. Transform card transactions if needed
+    // Auto-detect cards by bankId (bc-card, nh-card, kb-card, etc.)
+    const isCardTransaction = isCard || bankId.includes('-card');
+
     let transformedTransactions = transactions;
-    if (isCard) {
+    if (isCardTransaction) {
       const { transformCardTransaction } = require('../financehub/utils/cardTransactionMapper');
       transformedTransactions = transactions.map(tx =>
         transformCardTransaction(tx, null, bankId) // accountId handled by bulkInsertTransactions
