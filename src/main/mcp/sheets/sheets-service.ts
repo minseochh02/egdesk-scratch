@@ -428,7 +428,7 @@ export class SheetsService {
 
     if (isCardTransactions) {
       // Card transaction format (16 columns)
-      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일시/(승인일시)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
 
       rows = transactions.map(tx => {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
@@ -517,7 +517,7 @@ export class SheetsService {
 
     if (isCardTransactions) {
       // Card transaction format (16 columns)
-      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일시/(승인일시)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
 
       rows = transactions.map(tx => {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
