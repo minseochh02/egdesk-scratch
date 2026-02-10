@@ -276,18 +276,26 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     -- Transaction indexes (critical for performance)
     CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON transactions(account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_bank_id ON transactions(bank_id);
-    CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(datetime);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
-    CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, datetime);
-    CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, datetime);
 
     -- Legacy date index for backward compatibility
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+  `);
 
-    -- Composite index for deduplication check using datetime
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
-      ON transactions(account_id, datetime, withdrawal, deposit, balance);
+  // Create datetime-related indexes separately with proper escaping
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(\\"datetime\\");
+      CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, \\"datetime\\");
+      CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, \\"datetime\\");
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
+        ON transactions(account_id, \\"datetime\\", withdrawal, deposit, balance);
+    `);
+  } catch (datetimeIndexError) {
+    console.warn('⚠️ Failed to create datetime indexes (will be handled by migration):', datetimeIndexError);
+  }
 
+  db.exec(`
     -- Sync operation indexes
     CREATE INDEX IF NOT EXISTS idx_sync_operations_account_id ON sync_operations(account_id);
     CREATE INDEX IF NOT EXISTS idx_sync_operations_bank_id ON sync_operations(bank_id);

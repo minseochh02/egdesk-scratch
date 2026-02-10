@@ -17,6 +17,7 @@ import { promisify } from 'util';
 import { clipboard, systemPreferences } from 'electron';
 import { uIOhook, UiohookKey } from 'uiohook-napi';
 import activeWin from 'active-win';
+import { ReplayOverlayWindow } from './replay-overlay-window';
 
 const execAsync = promisify(exec);
 
@@ -263,23 +264,42 @@ export class DesktopRecorder {
 
     console.log(`[DesktopRecorder] Replaying ${recording.actions.length} actions...`);
 
-    // Replay actions with timing
-    const speed = options?.speed || 1.0;
-    let lastTimestamp = 0;
+    // Create overlay window for visual feedback
+    const overlay = new ReplayOverlayWindow();
+    await overlay.create();
 
-    for (let i = 0; i < recording.actions.length; i++) {
-      const action = recording.actions[i];
-      const delay = (action.timestamp - lastTimestamp) / speed;
+    try {
+      // Replay actions with timing and visual feedback
+      const speed = options?.speed || 1.0;
+      let lastTimestamp = 0;
 
-      if (delay > 0) {
-        await this.sleep(delay);
+      for (let i = 0; i < recording.actions.length; i++) {
+        const action = recording.actions[i];
+        const delay = (action.timestamp - lastTimestamp) / speed;
+
+        if (delay > 0) {
+          await this.sleep(delay);
+        }
+
+        // Update overlay with current action
+        const actionDescription = this.getActionDescription(action);
+        overlay.updateProgress(i + 1, recording.actions.length, actionDescription);
+
+        // Show mouse indicator for click actions
+        if (action.coordinates && (action.type === 'mouseClick' || action.type === 'mouseDoubleClick' || action.type === 'mouseRightClick')) {
+          overlay.showMouseIndicator(action.coordinates.x, action.coordinates.y);
+        }
+
+        await this.replayAction(action);
+        lastTimestamp = action.timestamp;
       }
 
-      await this.replayAction(action);
-      lastTimestamp = action.timestamp;
+      console.log('[DesktopRecorder] Replay complete');
+    } finally {
+      // Always close overlay, even if replay fails
+      await this.sleep(1000); // Show completion for 1 second
+      overlay.close();
     }
-
-    console.log('[DesktopRecorder] Replay complete');
   }
 
   /**
@@ -287,6 +307,37 @@ export class DesktopRecorder {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Get human-readable description of an action for overlay display
+   */
+  private getActionDescription(action: DesktopAction): string {
+    switch (action.type) {
+      case 'mouseClick':
+        return `🖱️ Click at (${action.coordinates?.x}, ${action.coordinates?.y})`;
+      case 'mouseDoubleClick':
+        return `🖱️ Double-click at (${action.coordinates?.x}, ${action.coordinates?.y})`;
+      case 'mouseRightClick':
+        return `🖱️ Right-click at (${action.coordinates?.x}, ${action.coordinates?.y})`;
+      case 'keyCombo':
+        return `⌨️ Press ${action.keys?.join('+')}`;
+      case 'keyType':
+        const preview = action.text ? action.text.substring(0, 30) : '';
+        return `⌨️ Type: ${preview}${action.text && action.text.length > 30 ? '...' : ''}`;
+      case 'appLaunch':
+        return `🚀 Launch ${action.appName}`;
+      case 'appSwitch':
+        return `↔️ Switch to ${action.appName}`;
+      case 'browserInteractionStart':
+        return `🌐 Open ${action.appName || 'Browser'}`;
+      case 'browserInteractionEnd':
+        return `🌐 Close Browser`;
+      case 'clipboardCopy':
+        return `📋 Copy to clipboard`;
+      default:
+        return `${action.type}`;
+    }
   }
 
   /**

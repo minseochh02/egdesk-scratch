@@ -259,9 +259,9 @@ export class SQLiteManager {
    * Ensure SQLite is initialized before operations
    */
   private ensureInitialized(): void {
-    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb || !this.activityDb) {
+    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb || !this.activityDb || !this.schedulerDb) {
       throw new Error(
-        this.initializationError || 
+        this.initializationError ||
         'SQLite Manager is not initialized. Please call initialize() first.'
       );
     }

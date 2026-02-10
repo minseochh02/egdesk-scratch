@@ -3165,7 +3165,16 @@ const createWindow = async () => {
     console.log('✅ All components initialized successfully');
 
     // Initialize Scheduler Recovery Service (5 seconds after startup)
+    // ONLY in production - skip in dev mode for faster testing
     setTimeout(async () => {
+      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+
+      if (!isProduction) {
+        console.log('ℹ️ Development mode detected - skipping scheduler recovery');
+        console.log('ℹ️ To test recovery, set NODE_ENV=production or package the app');
+        return;
+      }
+
       try {
         console.log('🔄 Checking for missed scheduler executions...');
 

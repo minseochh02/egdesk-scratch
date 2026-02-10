@@ -1062,6 +1062,9 @@ export class SheetsService {
     if (cardCompanyId === 'kb-card') {
       return metadata?.approvalType || ''; // KB Card's 승인구분
     }
+    if (cardCompanyId === 'nh-card') {
+      return metadata?.domesticForeign || ''; // NH Card's 국내외구분
+    }
     if (cardCompanyId === 'shinhan-card') {
       return metadata?.transactionType || '';
     }
@@ -1071,6 +1074,12 @@ export class SheetsService {
   private extractSalesType(metadata: any, cardCompanyId: string): string {
     if (cardCompanyId === 'kb-card') {
       return metadata?.transactionMethod || '일반매출'; // KB Card's 결제방법 → 매출종류
+    }
+    if (cardCompanyId === 'nh-card') {
+      return metadata?.salesType || '일반매출'; // NH Card's 매출종류
+    }
+    if (cardCompanyId === 'shinhan-card') {
+      return metadata?.transactionType || '일반매출'; // Shinhan Card's 이용구분
     }
     return metadata?.salesType || '일반매출';
   }
