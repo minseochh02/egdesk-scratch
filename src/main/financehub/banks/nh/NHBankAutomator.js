@@ -590,13 +590,13 @@ class NHBankAutomator extends BaseBankAutomator {
             const date = dateTimeParts[0] || '';
             const time = dateTimeParts[1] || '';
 
-            // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
-            const datetime = (date && time) ? date.replace(/-/g, '/') + ' ' + time : date;
+            // Combine date and time into transaction_datetime format: YYYY/MM/DD HH:MM:SS
+            const transactionDatetime = (date && time) ? date.replace(/-/g, '/') + ' ' + time : date;
 
             const transaction = {
               date: date,
               time: time,
-              datetime: datetime,
+              transaction_datetime: transactionDatetime,
               type: cells[5]?.textContent.trim() || '',  // 거래내용 -> 적요
               withdrawal: cells[2]?.textContent.replace(/[^0-9]/g, '') || '0',
               deposit: cells[3]?.textContent.replace(/[^0-9]/g, '') || '0',

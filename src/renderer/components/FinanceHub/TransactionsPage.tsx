@@ -77,6 +77,8 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [showGoogleAuth, setShowGoogleAuth] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [hasPersistentSpreadsheet, setHasPersistentSpreadsheet] = useState(false);
+  const [showCardImport, setShowCardImport] = useState(false);
+  const [selectedCardCompany, setSelectedCardCompany] = useState('bc-card');
 
   // Check persistent spreadsheet status on mount and when transaction type changes
   useEffect(() => {
@@ -194,11 +196,11 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   const handleGoogleSignIn = async () => {
     setSigningIn(true);
-    
+
     try {
       // Use the same Google OAuth flow as MCP servers with proper scopes
       const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING);
-      
+
       if (result.success && result.session) {
         console.log('Google sign-in successful:', result.session.user.email);
         setShowGoogleAuth(false);
@@ -216,6 +218,42 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
       // Keep the Google login UI visible so they can try again
     } finally {
       setSigningIn(false);
+    }
+  };
+
+  const handleImportCardExcel = async () => {
+    try {
+      // Use Electron's dialog API to get file path
+      const result = await (window as any).electron.dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          { name: 'Excel Files', extensions: ['xlsx', 'xls'] }
+        ],
+        title: '카드 거래내역 Excel 파일 선택'
+      });
+
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return;
+      }
+
+      const filePath = result.filePaths[0];
+      console.log(`Importing card Excel: ${filePath} for ${selectedCardCompany}`);
+
+      const importResult = await (window as any).electron.financeHub.card.importExcel(
+        filePath,
+        selectedCardCompany
+      );
+
+      if (importResult.success) {
+        alert(`✅ ${importResult.inserted}개 거래내역 가져오기 완료! (중복 ${importResult.skipped}개 건너뜀)`);
+        setShowCardImport(false);
+        loadTransactions(); // Reload to show new transactions
+      } else {
+        alert(`❌ 가져오기 실패: ${importResult.error}`);
+      }
+    } catch (error) {
+      console.error('Error importing card Excel:', error);
+      alert(`❌ 오류 발생: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
     }
   };
 
@@ -348,9 +386,42 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
               </button>
             </div>
           )}
+          {showCardImport && (
+            <div className="txp-google-auth-container">
+              <span className="txp-google-auth-message">카드사를 선택하고 파일을 선택하세요</span>
+              <select
+                value={selectedCardCompany}
+                onChange={(e) => setSelectedCardCompany(e.target.value)}
+                style={{ padding: '8px', marginRight: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="bc-card">BC카드</option>
+                <option value="kb-card">KB국민카드</option>
+                <option value="nh-card">NH농협카드</option>
+                <option value="shinhan-card">신한카드</option>
+              </select>
+              <button
+                className="txp-btn txp-btn--primary"
+                onClick={handleImportCardExcel}
+                style={{ marginRight: '8px' }}
+              >
+                📁 파일 선택
+              </button>
+              <button
+                className="txp-btn txp-btn--outline txp-btn--small"
+                onClick={() => setShowCardImport(false)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <button className="txp-btn txp-btn--outline" onClick={() => setShowFilters(!showFilters)}>
             🔍 {showFilters ? '필터 숨기기' : '필터 보기'}
           </button>
+          {transactionType === 'card' && (
+            <button className="txp-btn txp-btn--outline" onClick={() => setShowCardImport(true)} title="카드 Excel 파일 가져오기">
+              📄 Excel 가져오기
+            </button>
+          )}
           <button className="txp-btn txp-btn--outline" onClick={handleOpenInSpreadsheet}>
             📊 스프레드시트에서 열기 {hasPersistentSpreadsheet && '(기존 시트 업데이트)'}
           </button>

@@ -434,8 +434,8 @@ export class SheetsService {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
         const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
 
-        // Use combined datetime (YYYY/MM/DD HH:MM:SS) instead of date only
-        const datetime = tx.datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
+        // Use combined transaction_datetime (YYYY/MM/DD HH:MM:SS) instead of date only
+        const transactionDatetime = tx.transaction_datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
 
         return [
           this.extractCardCompany(cardCompanyId),
@@ -447,7 +447,7 @@ export class SheetsService {
           this.extractTransactionBank(metadata, cardCompanyId),
           this.extractUsageType(metadata, cardCompanyId),
           this.extractSalesType(metadata, cardCompanyId),
-          datetime,
+          transactionDatetime,
           this.extractBillingDate(metadata, cardCompanyId),
           metadata?.approvalNumber || '',
           tx.description || tx.counterparty || '',
@@ -523,8 +523,8 @@ export class SheetsService {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
         const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
 
-        // Use combined datetime (YYYY/MM/DD HH:MM:SS) instead of date only
-        const datetime = tx.datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
+        // Use combined transaction_datetime (YYYY/MM/DD HH:MM:SS) instead of date only
+        const transactionDatetime = tx.transaction_datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
 
         return [
           this.extractCardCompany(cardCompanyId),
@@ -536,7 +536,7 @@ export class SheetsService {
           this.extractTransactionBank(metadata, cardCompanyId),
           this.extractUsageType(metadata, cardCompanyId),
           this.extractSalesType(metadata, cardCompanyId),
-          datetime,
+          transactionDatetime,
           this.extractBillingDate(metadata, cardCompanyId),
           metadata?.approvalNumber || '',
           tx.description || tx.counterparty || '',

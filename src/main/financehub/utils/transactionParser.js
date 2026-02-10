@@ -307,9 +307,9 @@ async function extractTransactionsFromPage(ctx) {
               break;
             case 1:
               transaction.time = value;
-              // Combine date and time into datetime field: YYYY/MM/DD HH:MM:SS
+              // Combine date and time into transaction_datetime field: YYYY/MM/DD HH:MM:SS
               if (transaction.date && value) {
-                transaction.datetime = transaction.date.replace(/-/g, '/') + ' ' + value;
+                transaction.transaction_datetime = transaction.date.replace(/-/g, '/') + ' ' + value;
               }
               break;
             case 2:
@@ -417,12 +417,12 @@ async function createExcelFromData(ctx, data) {
   // Transaction rows
   if (data.transactions && data.transactions.length > 0) {
     data.transactions.forEach(tx => {
-      // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
-      const datetime = tx.datetime ||
+      // Combine date and time into transaction_datetime format: YYYY/MM/DD HH:MM:SS
+      const transactionDatetime = tx.transaction_datetime ||
                       (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date || '');
 
       sheetData.push([
-        datetime,
+        transactionDatetime,
         tx.type || '',
         tx.withdrawal || '',
         tx.deposit || '',

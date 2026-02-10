@@ -1413,11 +1413,20 @@ const electronHandler = {
   platform: process.platform,
   arch: process.arch,
   isPackaged: process.env.NODE_ENV === 'production',
-  
+
+  // ========================================================================
+  // DIALOG API
+  // ========================================================================
+
+  dialog: {
+    showOpenDialog: (options: any) =>
+      ipcRenderer.invoke('dialog:show-open-dialog', options),
+  },
+
   // ========================================================================
   // FILE SYSTEM OPERATIONS
   // ========================================================================
-  
+
   /**
    * File system management API
    */
@@ -2183,6 +2192,8 @@ const electronHandler = {
         ipcRenderer.invoke('finance-hub:card:get-transactions', { cardCompanyId, cardNumber, startDate, endDate }),
       disconnect: (cardCompanyId: string) =>
         ipcRenderer.invoke('finance-hub:card:disconnect', cardCompanyId),
+      importExcel: (filePath: string, cardCompanyId: string, cardNumber?: string) =>
+        ipcRenderer.invoke('finance-hub:card:import-excel', { filePath, cardCompanyId, cardNumber }),
     },
     // Manual password mode
     manualPassword: {

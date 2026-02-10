@@ -34,7 +34,7 @@ export interface Transaction {
   bankId: string;              // Denormalized for faster queries
   date: string;                // YYYY-MM-DD format (deprecated, use datetime)
   time: string | null;         // HH:MM:SS format (deprecated, use datetime)
-  datetime: string;            // YYYY/MM/DD HH:MM:SS format (combined date and time)
+  transaction_datetime: string; // YYYY/MM/DD HH:MM:SS format (combined date and time)
   type: string;                // Bank-specific transaction type
   category: string | null;     // AI-classified category
   withdrawal: number;
@@ -176,7 +176,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
       bank_id TEXT NOT NULL,
       date TEXT NOT NULL,
       time TEXT,
-      datetime TEXT,
+      transaction_datetime TEXT,
       type TEXT,
       category TEXT,
       withdrawal INTEGER DEFAULT 0,
@@ -282,18 +282,8 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
   `);
 
-  // Create datetime-related indexes separately with proper escaping
-  try {
-    db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(\\"datetime\\");
-      CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, \\"datetime\\");
-      CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, \\"datetime\\");
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
-        ON transactions(account_id, \\"datetime\\", withdrawal, deposit, balance);
-    `);
-  } catch (datetimeIndexError) {
-    console.warn('⚠️ Failed to create datetime indexes (will be handled by migration):', datetimeIndexError);
-  }
+  // Create transaction_datetime-related indexes separately (handled by migration 006)
+  // These are created in the migration to avoid issues with column not existing yet
 
   db.exec(`
     -- Sync operation indexes
@@ -545,7 +535,7 @@ export class FinanceHubDbManager {
     transactions: Array<{
       date: string;
       time?: string;
-      datetime?: string;
+      transaction_datetime?: string;
       type?: string;
       category?: string;
       withdrawal?: number;
@@ -563,7 +553,7 @@ export class FinanceHubDbManager {
     
     const insertStmt = this.db.prepare(`
       INSERT OR IGNORE INTO transactions (
-        id, account_id, bank_id, date, time, datetime, type, category,
+        id, account_id, bank_id, date, time, transaction_datetime, type, category,
         withdrawal, deposit, description, memo, balance,
         branch, counterparty, transaction_id, created_at, metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -579,8 +569,8 @@ export class FinanceHubDbManager {
         const deposit = Number(tx.deposit) || 0;
         const balance = Number(tx.balance) || 0;
 
-        // Generate datetime if not provided
-        const datetime = tx.datetime ||
+        // Generate transaction_datetime if not provided
+        const transactionDatetime = tx.transaction_datetime ||
           (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date.replace(/-/g, '/'));
 
         const result = insertStmt.run(
@@ -589,7 +579,7 @@ export class FinanceHubDbManager {
           bankId,
           tx.date,
           tx.time || null,
-          datetime || null,
+          transactionDatetime || null,
           tx.type || null,
           tx.category || null,
           withdrawal,
@@ -608,6 +598,10 @@ export class FinanceHubDbManager {
           inserted++;
         } else {
           skipped++;
+          // Log first few duplicates for debugging
+          if (skipped <= 3) {
+            console.log(`[FinanceHub] Duplicate detected: account=${accountId}, datetime=${transactionDatetime}, withdrawal=${withdrawal}, deposit=${deposit}, balance=${balance}`);
+          }
         }
       }
     });
@@ -1069,7 +1063,7 @@ export class FinanceHubDbManager {
     transactions: Array<{
       date?: string;
       time?: string;
-      datetime?: string;
+      transaction_datetime?: string;
       type?: string;
       withdrawal?: number;
       deposit?: number;
@@ -1209,7 +1203,7 @@ export class FinanceHubDbManager {
       bankId: row.bank_id,
       date: row.date,
       time: row.time,
-      datetime: row.datetime || (row.date && row.time ? row.date.replace(/-/g, '/') + ' ' + row.time : row.date),
+      transaction_datetime: row.transaction_datetime || (row.date && row.time ? row.date.replace(/-/g, '/') + ' ' + row.time : row.date),
       type: row.type,
       category: row.category,
       withdrawal: row.withdrawal,

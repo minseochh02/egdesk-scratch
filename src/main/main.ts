@@ -882,6 +882,118 @@ const createWindow = async () => {
         }
       });
 
+      // Dialog API for file picker
+      ipcMain.handle('dialog:show-open-dialog', async (_event, options) => {
+        try {
+          const result = mainWindow
+            ? await dialog.showOpenDialog(mainWindow, options)
+            : await dialog.showOpenDialog(options);
+
+          return {
+            canceled: result.canceled,
+            filePaths: result.filePaths
+          };
+        } catch (error) {
+          console.error('[Dialog] showOpenDialog error:', error);
+          return {
+            canceled: true,
+            filePaths: []
+          };
+        }
+      });
+
+      ipcMain.handle('finance-hub:card:import-excel', async (_event, { filePath, cardCompanyId, cardNumber }) => {
+        try {
+          console.log(`[FINANCE-HUB] Importing card Excel: ${filePath} for ${cardCompanyId}`);
+
+          const { cards } = require('./financehub');
+          const path = require('path');
+
+          // Create temporary automator just for parsing (no browser)
+          const tempOutputDir = path.join(process.cwd(), 'output', 'temp-card-import');
+          const automator = cards.createCardAutomator(cardCompanyId, {
+            headless: true,
+            outputDir: tempOutputDir
+          });
+
+          // Call appropriate parser based on card company
+          let extractedData;
+          if (cardCompanyId === 'bc-card') {
+            extractedData = await automator.parseDownloadedExcel(filePath);
+          } else if (cardCompanyId === 'kb-card') {
+            extractedData = await automator.parseKBCardExcel(filePath);
+          } else if (cardCompanyId === 'nh-card') {
+            extractedData = automator.parseNHCardExcel(filePath);
+          } else if (cardCompanyId === 'shinhan-card') {
+            extractedData = await automator.parseDownloadedExcel(filePath);
+          } else {
+            throw new Error(`Unsupported card company: ${cardCompanyId}`);
+          }
+
+          // Import to database
+          const { getSQLiteManager } = await import('./sqlite/manager');
+          const financeHubDb = getSQLiteManager().getFinanceHubManager();
+
+          const transactionsData = extractedData.transactions || [];
+
+          if (transactionsData.length === 0) {
+            return {
+              success: false,
+              error: 'No transactions found in Excel file'
+            };
+          }
+
+          // Use provided card number or extract from first transaction
+          const accountNumber = cardNumber || transactionsData[0]?.cardNumber || transactionsData[0]?.['카드번호'] || 'MANUAL-IMPORT';
+
+          const cardData = {
+            accountNumber: accountNumber,
+            accountName: extractedData.metadata?.cardName || '수동 업로드 카드',
+            customerName: extractedData.metadata?.customerName || '',
+            balance: 0,
+            availableBalance: 0,
+            openDate: ''
+          };
+
+          // Determine date range from transactions
+          const dates = transactionsData
+            .map(tx => tx.approvalDate || tx['승인일'] || tx['이용일시']?.split(' ')[0] || '')
+            .filter(d => d);
+          const queryPeriodStart = dates.length > 0 ? Math.min(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
+          const queryPeriodEnd = dates.length > 0 ? Math.max(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
+
+          const syncMetadata = {
+            queryPeriodStart: String(queryPeriodStart),
+            queryPeriodEnd: String(queryPeriodEnd),
+            filePath: filePath
+          };
+
+          const importResult = financeHubDb.importTransactions(
+            cardCompanyId,
+            cardData,
+            transactionsData,
+            syncMetadata
+            // isCard auto-detected by bankId.includes('-card')
+          );
+
+          console.log(`[FINANCE-HUB] Card Excel import complete: ${importResult.inserted} inserted, ${importResult.skipped} skipped`);
+
+          return {
+            success: true,
+            inserted: importResult.inserted,
+            skipped: importResult.skipped,
+            total: transactionsData.length,
+            accountNumber: accountNumber
+          };
+        } catch (error) {
+          console.error('[FINANCE-HUB] Card Excel import error:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      });
+
       // ========================================================================
       // KEEPAWAKE FUNCTIONALITY
       // ========================================================================
