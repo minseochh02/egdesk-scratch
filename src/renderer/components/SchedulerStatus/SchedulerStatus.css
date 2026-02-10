@@ -703,3 +703,31 @@
   background: rgba(239, 68, 68, 0.2);
   border-color: #EF4444;
 }
+
+.scheduler-status__diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.scheduler-status__diagnostic-section {
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.scheduler-status__diagnostic-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #F9FAFB;
+}
+
+.scheduler-status__diagnostic-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0046FF;
+  font-family: monospace;
+}
