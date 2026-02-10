@@ -35,17 +35,18 @@ function cleanCardNumber(cardNumber) {
 }
 
 /**
- * Parse card dateTime to separate date and time
+ * Parse card dateTime to separate date and time, and combined datetime
  * @param {string} dateTime - '2026/01/19 14:46:51'
- * @returns {{date: string, time: string}}
+ * @returns {{date: string, time: string, datetime: string}}
  */
 function parseCardDateTime(dateTime) {
-  if (!dateTime) return { date: '', time: null };
+  if (!dateTime) return { date: '', time: null, datetime: '' };
 
   const [datePart, timePart] = dateTime.split(' ');
   const date = datePart.replace(/\//g, '-'); // 2026/01/19 → 2026-01-19
   const time = timePart || null;
-  return { date, time };
+  const datetime = dateTime; // Keep original format: YYYY/MM/DD HH:MM:SS
+  return { date, time, datetime };
 }
 
 /**
@@ -177,9 +178,18 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
 
   const merchantName = cardTx.merchantName || cardTx['가맹점명'] || cardTx.representativeName || cardTx['대표자성명'] || '';
 
+  // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
+  let datetime = '';
+  if (date && time) {
+    datetime = date.replace(/-/g, '/') + ' ' + time;
+  } else if (date) {
+    datetime = date.replace(/-/g, '/');
+  }
+
   return {
     date: date || '',
     time: time,
+    datetime: datetime,
     type: type,
     withdrawal: withdrawal,
     deposit: deposit,

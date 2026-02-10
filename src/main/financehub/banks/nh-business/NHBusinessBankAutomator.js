@@ -1043,9 +1043,13 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
             // Get memo (이체메모) - last column
             const memo = cells[8]?.textContent.trim() || '';
 
+            // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
+            const datetime = (date && time) ? date + ' ' + time : date;
+
             const transaction = {
               date: date.replace(/\//g, '-'), // Convert to YYYY-MM-DD
               time: time,
+              datetime: datetime,
               type: type,
               withdrawal: withdrawal,
               deposit: deposit,

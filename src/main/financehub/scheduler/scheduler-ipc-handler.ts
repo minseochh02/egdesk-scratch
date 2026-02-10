@@ -117,5 +117,44 @@ export function registerFinanceHubSchedulerHandlers(): void {
     });
   });
 
+  // Get debug log
+  ipcMain.handle('finance-hub:scheduler:get-debug-log', async () => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const { app } = require('electron');
+
+      const logDir = app.isPackaged
+        ? path.join(app.getPath('userData'), 'logs')
+        : path.join(process.cwd(), 'logs');
+
+      const logPath = path.join(logDir, 'scheduler-debug.log');
+
+      if (!fs.existsSync(logPath)) {
+        return {
+          success: true,
+          log: 'No debug log found (scheduler not started yet)',
+          path: logPath,
+        };
+      }
+
+      // Read last 500 lines
+      const log = fs.readFileSync(logPath, 'utf-8');
+      const lines = log.split('\n');
+      const last500 = lines.slice(-500).join('\n');
+
+      return {
+        success: true,
+        log: last500,
+        path: logPath,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get debug log',
+      };
+    }
+  });
+
   console.log('✅ Finance Hub scheduler IPC handlers registered');
 }

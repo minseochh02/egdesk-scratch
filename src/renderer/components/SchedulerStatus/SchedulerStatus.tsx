@@ -68,6 +68,8 @@ const SchedulerStatus: React.FC = () => {
   const [newestRecord, setNewestRecord] = useState<string>('');
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [debugLog, setDebugLog] = useState<string>('');
+  const [showDebugLog, setShowDebugLog] = useState(false);
 
   // Load data
   const loadSchedulerData = async () => {
@@ -327,6 +329,21 @@ const SchedulerStatus: React.FC = () => {
     }
   };
 
+  const loadDebugLog = async () => {
+    try {
+      const result = await window.electron.invoke('finance-hub:scheduler:get-debug-log');
+      if (result.success) {
+        setDebugLog(result.log);
+        setShowDebugLog(true);
+      } else {
+        alert(`Failed to load debug log: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error loading debug log:', error);
+      alert('Failed to load debug log');
+    }
+  };
+
   const handleCleanupDeletedTests = async () => {
     if (!confirm('Clean up schedules for deleted Playwright test files?\n\nThis will remove schedules and cancel pending executions for test files that no longer exist.')) {
       return;
@@ -420,8 +437,62 @@ const SchedulerStatus: React.FC = () => {
           <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={loadSchedulerData}>
             <FontAwesomeIcon icon={faRedo} /> Refresh
           </button>
+          <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={loadDebugLog}>
+            📋 View Debug Log
+          </button>
         </div>
       </div>
+
+      {/* Debug Log Modal */}
+      {showDebugLog && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#111827',
+            border: '1px solid #1F2937',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '90%',
+            maxHeight: '90%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, color: '#F9FAFB' }}>📋 Scheduler Debug Log (Last 500 lines)</h2>
+              <button
+                className="scheduler-status__btn scheduler-status__btn--danger"
+                onClick={() => setShowDebugLog(false)}
+              >
+                Close
+              </button>
+            </div>
+            <pre style={{
+              background: '#0A0E1A',
+              color: '#F9FAFB',
+              padding: '16px',
+              borderRadius: '8px',
+              overflow: 'auto',
+              flex: 1,
+              fontSize: '12px',
+              fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap',
+            }}>
+              {debugLog}
+            </pre>
+          </div>
+        </div>
+      )}
 
       {/* Status Overview */}
       <div className="scheduler-status__overview">

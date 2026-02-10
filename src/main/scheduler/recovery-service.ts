@@ -287,6 +287,8 @@ export class SchedulerRecoveryService {
 
   /**
    * Check if task already ran today
+   * CRITICAL: Only checks for 'completed' status
+   * Does NOT check for 'running' or 'failed' to allow retries
    */
   public async hasRunToday(schedulerType: string, taskId: string): Promise<boolean> {
     const db = this.getDb();
@@ -297,7 +299,7 @@ export class SchedulerRecoveryService {
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
-        AND status IN ('completed', 'running')
+        AND status = 'completed'
     `).get(schedulerType, taskId, today);
 
     return !!intent;
@@ -622,6 +624,8 @@ export class SchedulerRecoveryService {
    * Execute FinanceHub sync task
    */
   private async executeFinanceHubTask(missed: MissedExecution): Promise<void> {
+    console.log(`[RecoveryService] ►►► executeFinanceHubTask() called for: ${missed.taskId}`);
+
     const { getFinanceHubScheduler } = await import('../financehub/scheduler/FinanceHubScheduler');
     const scheduler = getFinanceHubScheduler();
 
@@ -629,6 +633,8 @@ export class SchedulerRecoveryService {
     // Format: "card:nh", "bank:shinhan", "tax:123-45-67890"
     const [entityType, ...entityIdParts] = missed.taskId.split(':');
     const entityId = entityIdParts.join(':'); // Rejoin in case tax ID has colons
+
+    console.log(`[RecoveryService] Parsed taskId: entityType="${entityType}", entityId="${entityId}"`);
 
     if (!entityType || !entityId) {
       console.error(`[RecoveryService] Invalid taskId format: ${missed.taskId}`);
@@ -641,10 +647,12 @@ export class SchedulerRecoveryService {
       throw new Error(`Invalid entity type: ${entityType}`);
     }
 
-    console.log(`[RecoveryService] Syncing specific entity: ${entityType}:${entityId}`);
+    console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
 
     // Sync specific entity instead of all entities
     await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
+
+    console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
   }
 
   /**

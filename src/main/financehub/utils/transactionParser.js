@@ -307,6 +307,10 @@ async function extractTransactionsFromPage(ctx) {
               break;
             case 1:
               transaction.time = value;
+              // Combine date and time into datetime field: YYYY/MM/DD HH:MM:SS
+              if (transaction.date && value) {
+                transaction.datetime = transaction.date.replace(/-/g, '/') + ' ' + value;
+              }
               break;
             case 2:
               transaction.type = value;
@@ -406,16 +410,19 @@ async function createExcelFromData(ctx, data) {
   ]);
   sheetData.push([]);  // Empty row
 
-  // Headers
-  const headers = ['거래일자', '거래시간', '적요', '출금(원)', '입금(원)', '내용', '잔액(원)', '거래점'];
+  // Headers - updated to use combined datetime
+  const headers = ['거래일시', '적요', '출금(원)', '입금(원)', '내용', '잔액(원)', '거래점'];
   sheetData.push(headers);
 
   // Transaction rows
   if (data.transactions && data.transactions.length > 0) {
     data.transactions.forEach(tx => {
+      // Combine date and time into datetime format: YYYY/MM/DD HH:MM:SS
+      const datetime = tx.datetime ||
+                      (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date || '');
+
       sheetData.push([
-        tx.date || '',
-        tx.time || '',
+        datetime,
         tx.type || '',
         tx.withdrawal || '',
         tx.deposit || '',
@@ -431,8 +438,7 @@ async function createExcelFromData(ctx, data) {
 
   // Set column widths
   worksheet['!cols'] = [
-    { wch: 12 },  // 거래일자
-    { wch: 10 },  // 거래시간
+    { wch: 18 },  // 거래일시 (combined datetime)
     { wch: 15 },  // 적요
     { wch: 12 },  // 출금
     { wch: 12 },  // 입금
