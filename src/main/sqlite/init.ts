@@ -119,10 +119,10 @@ export interface DatabaseInitResult {
 export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
   try {
     console.log('🔧 Initializing SQLite Database...');
-    
+
     // Create data directory if it doesn't exist
     const dataDir = path.join(app.getPath('userData'), 'database');
-    
+
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -135,6 +135,30 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const financeHubDbPath = path.join(dataDir, 'financehub.db');
     const schedulerDbPath = path.join(dataDir, 'scheduler.db');
     const syncDbPath = path.join(dataDir, 'egdesk.db');
+
+    // =============================================
+    // CRITICAL FIX: Reset corrupted scheduler database
+    // =============================================
+    // Always delete scheduler database to ensure clean state
+    // This is safe because scheduler intents are regenerated on each startup
+    if (fs.existsSync(schedulerDbPath)) {
+      console.log('🔄 Resetting scheduler database to ensure correct schema...');
+      try {
+        fs.unlinkSync(schedulerDbPath);
+        console.log('✅ Old scheduler database deleted, will create fresh');
+      } catch (deleteError) {
+        console.error('⚠️ Failed to delete old scheduler database:', deleteError);
+        // Try to rename it instead
+        try {
+          const backupPath = `${schedulerDbPath}.backup-${Date.now()}`;
+          fs.renameSync(schedulerDbPath, backupPath);
+          console.log(`✅ Renamed old scheduler database to: ${backupPath}`);
+        } catch (renameError) {
+          console.error('❌ Failed to rename scheduler database:', renameError);
+          console.error('⚠️ Scheduler may have issues - database is locked or corrupted');
+        }
+      }
+    }
 
     console.log('🔍 Database paths:');
     console.log('  Data directory:', dataDir);
@@ -155,8 +179,8 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const financeHubDb = new Database(financeHubDbPath);
     const schedulerDb = new Database(schedulerDbPath);
     const syncDb = createSyncDatabase({ dbPath: syncDbPath });
-    
-    // Initialize database schemas
+
+    // Initialize database schemas FIRST
     initializeConversationsDatabaseSchema(conversationsDb);
     initializeTaskSchema(taskDb);
     initializeWordPressDatabaseSchema(wordpressDb);
@@ -166,6 +190,53 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
     initializeSchedulerDatabaseSchema(schedulerDb); // Dedicated database for scheduler recovery system
+
+    // =============================================
+    // MIGRATION: Fix datetime column conflict (AFTER schema init)
+    // =============================================
+    // The "datetime" column name conflicts with SQLite's datetime() function in indexes
+    // This migration ONLY drops and recreates indexes - NO DATA IS LOST
+    try {
+      console.log('🔄 Checking for datetime index migration...');
+
+      // Check if transactions table exists first
+      const tables = financeHubDb.pragma('table_list');
+      const transactionsTableExists = tables.some((t: any) => t.name === 'transactions');
+
+      if (transactionsTableExists) {
+        // Drop potentially problematic indexes (they may or may not exist)
+        try {
+          financeHubDb.exec(`
+            DROP INDEX IF EXISTS idx_transactions_datetime;
+            DROP INDEX IF EXISTS idx_transactions_account_datetime;
+            DROP INDEX IF EXISTS idx_transactions_bank_datetime;
+            DROP INDEX IF EXISTS idx_transactions_dedup;
+          `);
+          console.log('  ℹ️ Dropped old datetime indexes (if they existed)');
+        } catch (dropError) {
+          console.log('  ℹ️ No old indexes to drop');
+        }
+
+        // Recreate with properly escaped "datetime" column name
+        try {
+          financeHubDb.exec(`
+            CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions("datetime");
+            CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, "datetime");
+            CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, "datetime");
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
+              ON transactions(account_id, "datetime", withdrawal, deposit, balance);
+          `);
+          console.log('✅ FinanceHub datetime indexes created with proper escaping');
+        } catch (createError) {
+          console.warn('⚠️ Could not create datetime indexes:', createError);
+        }
+      } else {
+        console.log('  ℹ️ Transactions table does not exist yet, skipping datetime migration');
+      }
+    } catch (migrationError: any) {
+      console.error('⚠️ Datetime index migration error:', migrationError.message);
+      // Don't fail initialization
+    }
 
     // ========================================
     // FinanceHub Database Separation

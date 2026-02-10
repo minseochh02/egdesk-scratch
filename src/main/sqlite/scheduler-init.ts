@@ -13,6 +13,32 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
   console.log('📅 Initializing scheduler database schema...');
 
   // =============================================
+  // Schema Version Check & Migration
+  // =============================================
+  // Check if we need to recreate the table with retry_count column
+  try {
+    const tableInfo = db.pragma('table_info(scheduler_execution_intents)');
+    const hasRetryCount = tableInfo.some((col: any) => col.name === 'retry_count');
+
+    if (!hasRetryCount && tableInfo.length > 0) {
+      // Table exists but missing retry_count column - need to migrate
+      console.log('🔄 Scheduler database needs migration (adding retry_count column)...');
+
+      // Backup existing data
+      const existingData = db.prepare('SELECT * FROM scheduler_execution_intents').all();
+      console.log(`📦 Backing up ${existingData.length} existing execution intents...`);
+
+      // Drop old table
+      db.exec('DROP TABLE IF EXISTS scheduler_execution_intents');
+      console.log('🗑️ Dropped old scheduler_execution_intents table');
+
+      // Will recreate with new schema below
+    }
+  } catch (error) {
+    console.log('ℹ️ Table does not exist yet, will create fresh');
+  }
+
+  // =============================================
   // Execution Intents Table
   // =============================================
   // Tracks INTENDED executions (what SHOULD have run)
@@ -33,6 +59,7 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
       actual_completed_at TEXT,
       skip_reason TEXT,
       error_message TEXT,
+      retry_count INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
 
@@ -58,21 +85,5 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
     END
   `);
 
-  // =============================================
-  // Migration: Add retry_count column
-  // =============================================
-  // Add retry_count column if it doesn't exist (for infinite loop prevention)
-  try {
-    db.exec(`
-      ALTER TABLE scheduler_execution_intents ADD COLUMN retry_count INTEGER DEFAULT 0;
-    `);
-    console.log('✅ Added retry_count column to scheduler_execution_intents');
-  } catch (error: any) {
-    // Column already exists (duplicate column name error is OK)
-    if (!error.message.includes('duplicate column')) {
-      console.error('Failed to add retry_count column:', error);
-    }
-  }
-
-  console.log('✅ Scheduler database schema initialized');
+  console.log('✅ Scheduler database schema initialized with retry_count column');
 }

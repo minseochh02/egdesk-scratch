@@ -335,7 +335,13 @@ export class FinanceHubScheduler extends EventEmitter {
 
     // CRITICAL: Backfill missing intents for past 3 days
     // This ensures recovery can detect missed executions even if PC was off
-    await this.backfillMissingIntents(3);
+    // ONLY in production - skip in dev for faster startup
+    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+    if (isProduction) {
+      await this.backfillMissingIntents(3);
+    } else {
+      console.log('[FinanceHubScheduler] Dev mode: Skipping backfill of historical intents');
+    }
 
     this.scheduleNextSync();
     this.startKeepAwake();
@@ -499,19 +505,26 @@ export class FinanceHubScheduler extends EventEmitter {
     const executionId = randomUUID();
     const recoveryService = getSchedulerRecoveryService();
 
-    // Deduplication: Check if already ran today
-    try {
-      const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
-      this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
-      console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
-      if (hasRun) {
-        this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-        console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-        return;
+    // Deduplication: Check if already ran today (skip in dev mode for testing)
+    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+
+    if (isProduction) {
+      try {
+        const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
+        this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
+        console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
+        if (hasRun) {
+          this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+          console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+          return;
+        }
+      } catch (error) {
+        this.debugLog(`Failed to check hasRunToday: ${error}`);
+        console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
       }
-    } catch (error) {
-      this.debugLog(`Failed to check hasRunToday: ${error}`);
-      console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
+    } else {
+      this.debugLog(`ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
+      console.log(`[FinanceHubScheduler] ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
     }
 
     this.debugLog(`✓ Passed all checks, starting sync for ${entityKey}...`);

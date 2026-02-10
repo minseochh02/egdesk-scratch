@@ -135,8 +135,8 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     approvalNumber: cardTx.approvalNumber || cardTx['승인번호'],
     transactionMethod: cardTx.transactionMethod || cardTx.usageType || cardTx.transactionType || cardTx.paymentMethod || cardTx['결제방법'],
     installmentPeriod: cardTx.installmentPeriod || cardTx.installmentMonths || cardTx['할부개월수'],
-    cancellationStatus: cardTx.cancellationStatus,
-    salesType: cardTx.salesType,
+    cancellationStatus: cardTx.cancellationStatus || cardTx['취소여부'],
+    salesType: cardTx.salesType || cardTx['매출종류'],
     isCancelled: isCancelled,
     detailLink: cardTx.detailLink,
     xmlData: cardTx.xmlData,
@@ -148,7 +148,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     exchangeRate: cardTx.exchangeRate,
     foreignAmountKRW: cardTx.foreignAmountKRW,
     // Shinhan Card specific fields
-    userName: cardTx.userName || cardTx['이용자명'],
+    userName: cardTx.userName || cardTx['이용자명'] || cardTx['사용자명'],  // NH Card uses '사용자명'
     userNumber: cardTx.userNumber || cardTx['이용자번호'],
     virtualCardNumber: cardTx.virtualCardNumber || cardTx['가상카드번호'],
     cancellationDate: cardTx.cancellationDate || cardTx['취소일자'],
@@ -157,6 +157,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     // NH Card specific fields
     receiptDate: cardTx.receiptDate || cardTx['접수년월일'],
     billingDate: cardTx.billingDate || cardTx['결제일'],
+    domesticForeign: cardTx.domesticForeign || cardTx['국내외구분'],
     // KB Card specific fields
     departmentNumber: cardTx.departmentNumber || cardTx['부서번호'],
     departmentName: cardTx.departmentName || cardTx['부서명'],
