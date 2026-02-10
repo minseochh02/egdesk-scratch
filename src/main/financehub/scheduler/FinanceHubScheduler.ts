@@ -182,6 +182,115 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   // ============================================
+  // Historical Intent Backfill
+  // ============================================
+
+  /**
+   * Backfill missing execution intents for past days
+   * This allows recovery to detect missed executions even if PC was completely off
+   */
+  private async backfillMissingIntents(lookbackDays: number): Promise<void> {
+    console.log(`[FinanceHubScheduler] Backfilling missing intents for last ${lookbackDays} days...`);
+
+    const recoveryService = getSchedulerRecoveryService();
+    const intentsToCreate: Array<Omit<any, 'id' | 'createdAt' | 'updatedAt'>> = [];
+
+    // Generate intents for each past day
+    for (let daysAgo = 1; daysAgo <= lookbackDays; daysAgo++) {
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - daysAgo);
+      const dateStr = pastDate.toISOString().split('T')[0];
+
+      // Cards
+      for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
+        if (schedule && schedule.enabled) {
+          const entityKey = `card:${cardKey}`;
+
+          // Check if intent already exists for this date
+          const exists = await this.intentExistsForDate(entityKey, dateStr);
+          if (!exists) {
+            intentsToCreate.push(this.createHistoricalIntent('card', cardKey, schedule.time, dateStr));
+          }
+        }
+      }
+
+      // Banks
+      for (const [bankKey, schedule] of Object.entries(this.settings.banks)) {
+        if (schedule && schedule.enabled) {
+          const entityKey = `bank:${bankKey}`;
+
+          const exists = await this.intentExistsForDate(entityKey, dateStr);
+          if (!exists) {
+            intentsToCreate.push(this.createHistoricalIntent('bank', bankKey, schedule.time, dateStr));
+          }
+        }
+      }
+
+      // Tax
+      for (const [businessNumber, schedule] of Object.entries(this.settings.tax)) {
+        if (schedule && schedule.enabled) {
+          const entityKey = `tax:${businessNumber}`;
+
+          const exists = await this.intentExistsForDate(entityKey, dateStr);
+          if (!exists) {
+            intentsToCreate.push(this.createHistoricalIntent('tax', businessNumber, schedule.time, dateStr));
+          }
+        }
+      }
+    }
+
+    // Bulk create all missing intents
+    if (intentsToCreate.length > 0) {
+      try {
+        await recoveryService.bulkCreateIntents(intentsToCreate);
+        console.log(`[FinanceHubScheduler] ✅ Backfilled ${intentsToCreate.length} missing intent(s)`);
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Failed to backfill intents:`, error);
+      }
+    } else {
+      console.log(`[FinanceHubScheduler] No missing intents to backfill`);
+    }
+  }
+
+  /**
+   * Check if intent exists for a specific date
+   */
+  private async intentExistsForDate(entityKey: string, dateStr: string): Promise<boolean> {
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+      return await recoveryService.intentExistsForDate('financehub', entityKey, dateStr);
+    } catch (error) {
+      console.error(`[FinanceHubScheduler] Failed to check intent for ${entityKey} on ${dateStr}:`, error);
+      return false; // Assume doesn't exist on error
+    }
+  }
+
+  /**
+   * Create a historical intent for a past date
+   */
+  private createHistoricalIntent(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, dateStr: string): any {
+    const [targetHour, targetMinute] = timeStr.split(':').map(Number);
+    const entityKey = `${entityType}:${entityId}`;
+
+    // Create date at the scheduled time
+    const scheduledTime = new Date(dateStr);
+    scheduledTime.setHours(targetHour, targetMinute, 0, 0);
+
+    const windowEnd = new Date(scheduledTime.getTime() + 30 * 60 * 1000); // 30-minute window
+
+    return {
+      schedulerType: 'financehub',
+      taskId: entityKey,
+      taskName: `${entityType} sync: ${entityId}`,
+      intendedDate: dateStr,
+      intendedTime: timeStr,
+      executionWindowStart: scheduledTime.toISOString(),
+      executionWindowEnd: windowEnd.toISOString(),
+      status: 'pending', // Mark as pending so recovery will find it
+    };
+  }
+
+  // ============================================
   // Scheduler Control
   // ============================================
 
@@ -192,6 +301,11 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     await this.stop(); // Clear any existing timers and browsers
+
+    // CRITICAL: Backfill missing intents for past 3 days
+    // This ensures recovery can detect missed executions even if PC was off
+    await this.backfillMissingIntents(3);
+
     this.scheduleNextSync();
     this.startKeepAwake();
 

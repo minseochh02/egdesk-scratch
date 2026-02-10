@@ -304,6 +304,22 @@ export class SchedulerRecoveryService {
   }
 
   /**
+   * Check if intent exists for a specific date
+   */
+  public async intentExistsForDate(schedulerType: string, taskId: string, dateStr: string): Promise<boolean> {
+    const db = this.getDb();
+
+    const intent = db.prepare(`
+      SELECT id FROM scheduler_execution_intents
+      WHERE scheduler_type = ?
+        AND task_id = ?
+        AND intended_date = ?
+    `).get(schedulerType, taskId, dateStr);
+
+    return !!intent;
+  }
+
+  /**
    * Detect missed executions within lookback window
    */
   public async detectMissedExecutions(options: Partial<RecoveryOptions> = {}): Promise<MissedExecution[]> {
@@ -314,6 +330,22 @@ export class SchedulerRecoveryService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+    // CRITICAL FIX: Reset stuck 'running' tasks
+    // If a task has been in 'running' state for > 1 hour, it's stuck (app crashed mid-execution)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const stuckRunning = db.prepare(`
+      UPDATE scheduler_execution_intents
+      SET status = 'failed',
+          error_message = 'Task stuck in running state (app crashed mid-execution)',
+          updated_at = datetime('now')
+      WHERE status = 'running'
+        AND actual_started_at < ?
+    `).run(oneHourAgo);
+
+    if (stuckRunning.changes > 0) {
+      console.log(`[RecoveryService] ⚠️ Reset ${stuckRunning.changes} stuck 'running' task(s) to 'failed'`);
+    }
 
     // Get pending AND failed intents where execution window has passed
     // CRITICAL FIX: Include 'failed' status so failed tasks can be retried on restart
@@ -414,8 +446,15 @@ export class SchedulerRecoveryService {
       };
     }
 
+    // CRITICAL FIX: Deduplicate by entity - only keep LATEST attempt per entity
+    // This prevents data loss when multiple days are backed up
+    const deduplicatedByEntity = this.deduplicateByEntity(missedExecutions);
+
+    console.log(`[RecoveryService] Found ${missedExecutions.length} total missed tasks`);
+    console.log(`[RecoveryService] Deduplicated to ${deduplicatedByEntity.length} unique entities`);
+
     // Sort by priority
-    const sorted = this.prioritizeTasks(missedExecutions, opts.priorityOrder);
+    const sorted = this.prioritizeTasks(deduplicatedByEntity, opts.priorityOrder);
 
     // Limit executions
     const toExecute = sorted.slice(0, opts.maxCatchUpExecutions);
@@ -480,6 +519,51 @@ export class SchedulerRecoveryService {
     console.log('[RecoveryService] ✅ Recovery complete:', report);
 
     return report;
+  }
+
+  /**
+   * Deduplicate missed executions by entity
+   * When the same entity (e.g., "card:nh") has multiple failed executions across days,
+   * only keep the LATEST one to prevent duplicate syncs
+   */
+  private deduplicateByEntity(tasks: MissedExecution[]): MissedExecution[] {
+    const entityMap = new Map<string, MissedExecution>();
+
+    for (const task of tasks) {
+      const existingTask = entityMap.get(task.taskId);
+
+      if (!existingTask) {
+        // First time seeing this entity
+        entityMap.set(task.taskId, task);
+      } else {
+        // We've seen this entity before - keep the LATEST one
+        // Latest = most recent intended date
+        if (task.intendedDate > existingTask.intendedDate) {
+          console.log(`[RecoveryService] Deduplicating ${task.taskId}: Keeping ${task.intendedDate}, skipping ${existingTask.intendedDate}`);
+          entityMap.set(task.taskId, task);
+
+          // Mark the older duplicate as skipped
+          this.markIntentSkipped(
+            existingTask.schedulerType,
+            existingTask.taskId,
+            existingTask.intendedDate,
+            'superseded_by_newer_attempt'
+          ).catch(err => console.error('Failed to mark superseded task as skipped:', err));
+        } else {
+          console.log(`[RecoveryService] Deduplicating ${task.taskId}: Keeping ${existingTask.intendedDate}, skipping ${task.intendedDate}`);
+
+          // Mark this older duplicate as skipped
+          this.markIntentSkipped(
+            task.schedulerType,
+            task.taskId,
+            task.intendedDate,
+            'superseded_by_newer_attempt'
+          ).catch(err => console.error('Failed to mark superseded task as skipped:', err));
+        }
+      }
+    }
+
+    return Array.from(entityMap.values());
   }
 
   /**

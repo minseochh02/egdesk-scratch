@@ -313,6 +313,12 @@ export class DesktopRecorder {
         console.log(`Clipboard action: ${action.clipboardContent?.substring(0, 50)}...`);
         break;
 
+      case 'appLaunch':
+        console.log(`App launch: ${action.appName}${action.windowTitle ? ` - ${action.windowTitle}` : ''}`);
+        // TODO: Implement app launching via AppleScript (macOS) or shell commands (Windows)
+        await this.sleep(2000); // Give time for app to launch
+        break;
+
       case 'appSwitch':
         console.log(`App switch to: ${action.appName}`);
         await this.sleep(1000); // Give time for switch
@@ -405,9 +411,21 @@ export class DesktopRecorder {
         code += `  // Clipboard copy detected\n`;
         break;
 
+      case 'appLaunch':
+        if (action.appName) {
+          code += `  // App launched: ${action.appName}`;
+          if (action.windowTitle) {
+            code += ` - ${action.windowTitle}`;
+          }
+          code += '\n';
+          code += `  // TODO: Implement app launching logic\n`;
+        }
+        break;
+
       case 'appSwitch':
         if (action.appName) {
           code += `  // App switch: ${action.appName}\n`;
+          code += `  // TODO: Focus the app window\n`;
         }
         break;
 
@@ -698,11 +716,11 @@ export class DesktopRecorder {
    * Setup window/app monitoring
    */
   private setupWindowMonitoring(): void {
-    // Skip window monitoring in development mode - it has permission issues
+    // Skip window monitoring in development mode on macOS only - it has permission issues
     // active-win doesn't work reliably in Electron dev mode on macOS
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DesktopRecorder] Window monitoring disabled in development mode (macOS permission limitations)');
-      console.log('[DesktopRecorder] Window monitoring will work in production builds');
+    if (process.env.NODE_ENV === 'development' && process.platform === 'darwin') {
+      console.log('[DesktopRecorder] Window monitoring disabled in macOS development mode (permission limitations)');
+      console.log('[DesktopRecorder] Window monitoring will work in production builds or on Windows');
       return;
     }
 
@@ -726,13 +744,19 @@ export class DesktopRecorder {
         // Reset fail count on success
         this.windowMonitoringFailCount = 0;
 
-        // Detect app switches (between already-running apps)
-        if (appName !== this.lastActiveWindow && this.lastActiveWindow !== '') {
-          this.recordAppSwitch(appName);
+        // Detect app launches vs switches
+        if (appName !== this.lastActiveWindow) {
+          if (!this.seenApps.has(appName)) {
+            // First time seeing this app - it's a launch
+            this.recordAppLaunch(appName, activeWindow.title);
+            this.seenApps.add(appName);
+          } else if (this.lastActiveWindow !== '') {
+            // Already seen this app - it's a switch
+            this.recordAppSwitch(appName);
+          }
         }
 
         this.lastActiveWindow = appName;
-        this.seenApps.add(appName);
       } catch (error: any) {
         this.windowMonitoringFailCount++;
 
@@ -915,10 +939,31 @@ export class DesktopRecorder {
   }
 
   /**
+   * Record app launch
+   */
+  private recordAppLaunch(appName: string, windowTitle?: string): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    console.log(`[DesktopRecorder] 🚀 App launched: ${appName} - ${windowTitle || 'untitled'}`);
+
+    const action: DesktopAction = {
+      type: 'appLaunch',
+      timestamp: Date.now() - this.startTime,
+      appName,
+      windowTitle,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
+  }
+
+  /**
    * Record app switch
    */
   private recordAppSwitch(appName: string): void {
     if (!this.isRecording || this.isPaused) return;
+
+    console.log(`[DesktopRecorder] ↔️  Switched to: ${appName}`);
 
     const action: DesktopAction = {
       type: 'appSwitch',
