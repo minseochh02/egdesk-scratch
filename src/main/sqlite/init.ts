@@ -137,25 +137,36 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const syncDbPath = path.join(dataDir, 'egdesk.db');
 
     // =============================================
-    // CRITICAL FIX: Reset corrupted scheduler database
+    // MIGRATION: Fix scheduler database schema if needed
     // =============================================
-    // Always delete scheduler database to ensure clean state
-    // This is safe because scheduler intents are regenerated on each startup
+    // Only delete if there's a schema corruption - preserve execution history!
     if (fs.existsSync(schedulerDbPath)) {
-      console.log('🔄 Resetting scheduler database to ensure correct schema...');
       try {
-        fs.unlinkSync(schedulerDbPath);
-        console.log('✅ Old scheduler database deleted, will create fresh');
-      } catch (deleteError) {
-        console.error('⚠️ Failed to delete old scheduler database:', deleteError);
-        // Try to rename it instead
+        const testDb = new Database(schedulerDbPath);
+
+        // Check if table exists and has correct schema
+        const tableInfo = testDb.pragma('table_info(scheduler_execution_intents)');
+        const hasRetryCount = tableInfo.some((col: any) => col.name === 'retry_count');
+
+        testDb.close();
+
+        if (tableInfo.length > 0 && !hasRetryCount) {
+          // Schema is missing retry_count - needs migration
+          console.log('🔄 Scheduler database missing retry_count column - resetting...');
+          fs.unlinkSync(schedulerDbPath);
+          console.log('✅ Old scheduler database reset (missing retry_count column)');
+        } else {
+          console.log('ℹ️ Scheduler database schema is correct - preserving execution history');
+        }
+      } catch (dbError: any) {
+        // Database is corrupted or can't be opened
+        console.error('⚠️ Scheduler database appears corrupted:', dbError.message);
+        console.log('🗑️ Deleting corrupted scheduler database...');
         try {
-          const backupPath = `${schedulerDbPath}.backup-${Date.now()}`;
-          fs.renameSync(schedulerDbPath, backupPath);
-          console.log(`✅ Renamed old scheduler database to: ${backupPath}`);
-        } catch (renameError) {
-          console.error('❌ Failed to rename scheduler database:', renameError);
-          console.error('⚠️ Scheduler may have issues - database is locked or corrupted');
+          fs.unlinkSync(schedulerDbPath);
+          console.log('✅ Corrupted scheduler database deleted');
+        } catch (deleteError) {
+          console.error('❌ Failed to delete scheduler database:', deleteError);
         }
       }
     }
