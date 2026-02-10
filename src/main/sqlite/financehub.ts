@@ -32,8 +32,9 @@ export interface Transaction {
   id: string;
   accountId: string;
   bankId: string;              // Denormalized for faster queries
-  date: string;                // YYYY-MM-DD format
-  time: string | null;         // HH:MM:SS format
+  date: string;                // YYYY-MM-DD format (deprecated, use datetime)
+  time: string | null;         // HH:MM:SS format (deprecated, use datetime)
+  datetime: string;            // YYYY/MM/DD HH:MM:SS format (combined date and time)
   type: string;                // Bank-specific transaction type
   category: string | null;     // AI-classified category
   withdrawal: number;
@@ -175,6 +176,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
       bank_id TEXT NOT NULL,
       date TEXT NOT NULL,
       time TEXT,
+      datetime TEXT,
       type TEXT,
       category TEXT,
       withdrawal INTEGER DEFAULT 0,
@@ -187,7 +189,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
       transaction_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       metadata TEXT,
-      
+
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
       FOREIGN KEY (bank_id) REFERENCES banks(id)
     )
@@ -270,19 +272,22 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_accounts_bank_id ON accounts(bank_id);
     CREATE INDEX IF NOT EXISTS idx_accounts_account_number ON accounts(account_number);
     CREATE INDEX IF NOT EXISTS idx_accounts_bank_account ON accounts(bank_id, account_number);
-    
+
     -- Transaction indexes (critical for performance)
     CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON transactions(account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_bank_id ON transactions(bank_id);
-    CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+    CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(datetime);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
-    CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date);
-    CREATE INDEX IF NOT EXISTS idx_transactions_bank_date ON transactions(bank_id, date);
-    
-    -- Composite index for deduplication check
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup 
-      ON transactions(account_id, date, time, withdrawal, deposit, balance);
-    
+    CREATE INDEX IF NOT EXISTS idx_transactions_account_datetime ON transactions(account_id, datetime);
+    CREATE INDEX IF NOT EXISTS idx_transactions_bank_datetime ON transactions(bank_id, datetime);
+
+    -- Legacy date index for backward compatibility
+    CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+
+    -- Composite index for deduplication check using datetime
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup
+      ON transactions(account_id, datetime, withdrawal, deposit, balance);
+
     -- Sync operation indexes
     CREATE INDEX IF NOT EXISTS idx_sync_operations_account_id ON sync_operations(account_id);
     CREATE INDEX IF NOT EXISTS idx_sync_operations_bank_id ON sync_operations(bank_id);
@@ -532,6 +537,7 @@ export class FinanceHubDbManager {
     transactions: Array<{
       date: string;
       time?: string;
+      datetime?: string;
       type?: string;
       category?: string;
       withdrawal?: number;
@@ -549,10 +555,10 @@ export class FinanceHubDbManager {
     
     const insertStmt = this.db.prepare(`
       INSERT OR IGNORE INTO transactions (
-        id, account_id, bank_id, date, time, type, category,
+        id, account_id, bank_id, date, time, datetime, type, category,
         withdrawal, deposit, description, memo, balance,
         branch, counterparty, transaction_id, created_at, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     let inserted = 0;
@@ -565,12 +571,17 @@ export class FinanceHubDbManager {
         const deposit = Number(tx.deposit) || 0;
         const balance = Number(tx.balance) || 0;
 
+        // Generate datetime if not provided
+        const datetime = tx.datetime ||
+          (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date.replace(/-/g, '/'));
+
         const result = insertStmt.run(
           randomUUID(),
           accountId,
           bankId,
           tx.date,
           tx.time || null,
+          datetime || null,
           tx.type || null,
           tx.category || null,
           withdrawal,
@@ -1050,6 +1061,7 @@ export class FinanceHubDbManager {
     transactions: Array<{
       date?: string;
       time?: string;
+      datetime?: string;
       type?: string;
       withdrawal?: number;
       deposit?: number;
@@ -1186,6 +1198,7 @@ export class FinanceHubDbManager {
       bankId: row.bank_id,
       date: row.date,
       time: row.time,
+      datetime: row.datetime || (row.date && row.time ? row.date.replace(/-/g, '/') + ' ' + row.time : row.date),
       type: row.type,
       category: row.category,
       withdrawal: row.withdrawal,

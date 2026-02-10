@@ -7,6 +7,8 @@ import { collectTaxInvoices } from '../../hometax-automation';
 import { parseHometaxExcel } from '../../hometax-excel-parser';
 import { importTaxInvoices } from '../../sqlite/hometax';
 import { getSchedulerRecoveryService } from '../../scheduler/recovery-service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface EntitySchedule {
   enabled: boolean;
@@ -72,6 +74,7 @@ export class FinanceHubScheduler extends EventEmitter {
   private syncingEntities: Set<string> = new Set(); // Track which entities are currently syncing
   private activeBrowsers: Map<string, any> = new Map(); // Track active browser instances by entityKey
   private settings: ScheduleSettings;
+  private debugLogPath: string;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
     retryCount: process.env.NODE_ENV === 'production' ? 3 : 0, // No retries in dev
@@ -105,6 +108,34 @@ export class FinanceHubScheduler extends EventEmitter {
   private constructor() {
     super();
     this.settings = this.loadSettings();
+
+    // Create debug log file path
+    const logDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'logs')
+      : path.join(process.cwd(), 'logs');
+
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    this.debugLogPath = path.join(logDir, 'scheduler-debug.log');
+    this.debugLog('='.repeat(80));
+    this.debugLog(`Scheduler initialized at ${new Date().toISOString()}`);
+    this.debugLog('='.repeat(80));
+  }
+
+  /**
+   * Write debug log to file (visible in production)
+   */
+  private debugLog(message: string): void {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+
+    try {
+      fs.appendFileSync(this.debugLogPath, logMessage);
+    } catch (error) {
+      console.error('Failed to write debug log:', error);
+    }
   }
 
   public static getInstance(): FinanceHubScheduler {
@@ -450,10 +481,19 @@ export class FinanceHubScheduler extends EventEmitter {
   private async executeEntitySync(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, retryCount = 0): Promise<void> {
     const entityKey = `${entityType}:${entityId}`;
 
+    this.debugLog(`═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
+    console.log(`[FinanceHubScheduler] ═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
+
     if (this.syncingEntities.has(entityKey)) {
-      console.log(`[FinanceHubScheduler] ${entityKey} sync already in progress`);
+      this.debugLog(`❌ EXIT POINT 2: ${entityKey} sync already in progress (syncingEntities has it)`);
+      this.debugLog(`Current syncingEntities: ${Array.from(this.syncingEntities).join(', ')}`);
+      console.log(`[FinanceHubScheduler] ❌ EXIT POINT 2: ${entityKey} sync already in progress (syncingEntities has it)`);
+      console.log(`[FinanceHubScheduler] Current syncingEntities:`, Array.from(this.syncingEntities));
       return;
     }
+
+    this.debugLog(`✓ Not currently syncing, proceeding...`);
+    console.log(`[FinanceHubScheduler] ✓ Not currently syncing, proceeding...`);
 
     const today = new Date().toISOString().split('T')[0];
     const executionId = randomUUID();
@@ -462,13 +502,20 @@ export class FinanceHubScheduler extends EventEmitter {
     // Deduplication: Check if already ran today
     try {
       const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
+      this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
+      console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
       if (hasRun) {
-        console.log(`[FinanceHubScheduler] ${entityKey} already synced today - skipping duplicate execution`);
+        this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+        console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
         return;
       }
     } catch (error) {
+      this.debugLog(`Failed to check hasRunToday: ${error}`);
       console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
     }
+
+    this.debugLog(`✓ Passed all checks, starting sync for ${entityKey}...`);
+    console.log(`[FinanceHubScheduler] ✓ Passed all checks, starting sync for ${entityKey}...`);
 
     this.syncingEntities.add(entityKey);
     this.updateSyncStatus('running');
@@ -527,6 +574,25 @@ export class FinanceHubScheduler extends EventEmitter {
         }
       } else if (shouldRetry) {
         console.log(`[FinanceHubScheduler] ${entityKey} failed (attempt ${retryCount + 1}/${this.settings.retryCount}), retrying in ${this.settings.retryDelayMinutes} minutes...`);
+
+        // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
+        // This prevents the task from getting stuck in 'running' state if app shuts down before retry
+        try {
+          await recoveryService.markIntentFailed('financehub', entityKey, today, new Error(error || 'Unknown error'));
+        } catch (err) {
+          console.error(`[FinanceHubScheduler] Failed to mark intent as failed during retry:`, err);
+        }
+
+        // CRITICAL FIX: Kill any hung browser from previous attempt
+        if (this.activeBrowsers.has(entityKey)) {
+          console.log(`[FinanceHubScheduler] Killing hung browser from previous attempt: ${entityKey}`);
+          const oldAutomator = this.activeBrowsers.get(entityKey);
+          await this.safeCleanupBrowser(oldAutomator, entityKey);
+        }
+
+        // CRITICAL FIX: Remove from syncingEntities so retry can proceed
+        // Without this, retry will see "already in progress" and exit early
+        this.syncingEntities.delete(entityKey);
 
         // Schedule retry
         const retryTimer = setTimeout(() => {
@@ -615,6 +681,26 @@ export class FinanceHubScheduler extends EventEmitter {
         this.emit('entity-sync-failed', { entityType, entityId, error });
       } else if (shouldRetry) {
         console.log(`[FinanceHubScheduler] Retrying ${entityKey} (attempt ${retryCount + 1}/${this.settings.retryCount}) in ${this.settings.retryDelayMinutes} minutes...`);
+
+        // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
+        // This prevents the task from getting stuck in 'running' state if app shuts down before retry
+        try {
+          await recoveryService.markIntentFailed('financehub', entityKey, today, error as Error);
+        } catch (err) {
+          console.error(`[FinanceHubScheduler] Failed to mark intent as failed during retry:`, err);
+        }
+
+        // CRITICAL FIX: Kill any hung browser from previous attempt
+        if (this.activeBrowsers.has(entityKey)) {
+          console.log(`[FinanceHubScheduler] Killing hung browser from previous attempt: ${entityKey}`);
+          const oldAutomator = this.activeBrowsers.get(entityKey);
+          await this.safeCleanupBrowser(oldAutomator, entityKey);
+        }
+
+        // CRITICAL FIX: Remove from syncingEntities so retry can proceed
+        // Without this, retry will see "already in progress" and exit early
+        this.syncingEntities.delete(entityKey);
+
         const retryTimer = setTimeout(() => {
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
         }, this.settings.retryDelayMinutes * 60 * 1000);
@@ -710,21 +796,31 @@ export class FinanceHubScheduler extends EventEmitter {
   // ============================================
 
   private async syncCard(cardId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
+    this.debugLog(`→→→ syncCard() called for: ${cardId}`);
     console.log(`[FinanceHubScheduler] Syncing card: ${cardId}`);
 
     let automator: any = null;
 
-    try {
+    // CRITICAL: Add timeout to entire sync operation (10 minutes max)
+    const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
+      setTimeout(() => reject(new Error('Card sync timeout - operation took longer than 10 minutes')), 10 * 60 * 1000);
+    });
+
+    const syncPromise = (async () => {
+      try {
       const store = getStore();
       const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
       const savedCredentials = financeHub.savedCredentials?.[cardId];
 
       if (!savedCredentials) {
+        this.debugLog(`❌ No saved credentials for card:${cardId}`);
         return {
           success: false,
           error: 'No saved credentials found for this card'
         };
       }
+
+      this.debugLog(`✓ Credentials found, creating automator...`);
 
       // Get Arduino port
       const arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
@@ -732,11 +828,16 @@ export class FinanceHubScheduler extends EventEmitter {
       // Create card automator
       const { cards } = require('../index');
       const cardCompanyId = `${cardId}-card`; // Convert "nh" to "nh-card", etc.
+
+      this.debugLog(`Creating automator for ${cardCompanyId} (headless: true)...`);
+
       automator = cards.createCardAutomator(cardCompanyId, {
         headless: true, // Run headless for scheduled sync
         arduinoPort,
         manualPassword: false
       });
+
+      this.debugLog(`✓ Automator created! Browser should be launching...`);
 
       // Track active browser
       const entityKey = `card:${cardId}`;
@@ -836,18 +937,37 @@ export class FinanceHubScheduler extends EventEmitter {
         skipped: totalSkipped
       };
 
-    } catch (error) {
-      console.error(`[FinanceHubScheduler] Card sync error for ${cardId}:`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    } finally {
-      // CRITICAL: Always cleanup browser, even on errors
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Card sync error for ${cardId}:`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      } finally {
+        // CRITICAL: Always cleanup browser, even on errors
+        if (automator) {
+          const entityKey = `card:${cardId}`;
+          await this.safeCleanupBrowser(automator, entityKey);
+        }
+      }
+    })();
+
+    // Race between sync operation and timeout
+    try {
+      return await Promise.race([syncPromise, timeoutPromise]);
+    } catch (timeoutError: any) {
+      console.error(`[FinanceHubScheduler] Card sync timeout for ${cardId}:`, timeoutError);
+
+      // Cleanup browser on timeout
       if (automator) {
         const entityKey = `card:${cardId}`;
         await this.safeCleanupBrowser(automator, entityKey);
       }
+
+      return {
+        success: false,
+        error: timeoutError.message || 'Card sync timeout'
+      };
     }
   }
 
@@ -856,7 +976,13 @@ export class FinanceHubScheduler extends EventEmitter {
 
     let automator: any = null;
 
-    try {
+    // CRITICAL: Add timeout to entire sync operation (10 minutes max)
+    const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
+      setTimeout(() => reject(new Error('Bank sync timeout - operation took longer than 10 minutes')), 10 * 60 * 1000);
+    });
+
+    const syncPromise = (async () => {
+      try {
       const store = getStore();
       const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
       const savedCredentials = financeHub.savedCredentials?.[bankId];
@@ -944,6 +1070,7 @@ export class FinanceHubScheduler extends EventEmitter {
           const transactionsData = (result.transactions || []).map((tx: any) => ({
             date: tx.date ? tx.date.replace(/[-.]/g, '') : '',
             time: tx.time || '',
+            datetime: tx.datetime || (tx.date && tx.time ? tx.date.replace(/[-.]/g, '/') + ' ' + tx.time : ''),
             type: tx.type || '',
             withdrawal: tx.withdrawal || 0,
             deposit: tx.deposit || 0,
@@ -994,25 +1121,50 @@ export class FinanceHubScheduler extends EventEmitter {
         skipped: totalSkipped
       };
 
-    } catch (error) {
-      console.error(`[FinanceHubScheduler] Bank sync error for ${bankId}:`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    } finally {
-      // CRITICAL: Always cleanup browser, even on errors
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Bank sync error for ${bankId}:`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      } finally {
+        // CRITICAL: Always cleanup browser, even on errors
+        if (automator) {
+          const entityKey = `bank:${bankId}`;
+          await this.safeCleanupBrowser(automator, entityKey);
+        }
+      }
+    })();
+
+    // Race between sync operation and timeout
+    try {
+      return await Promise.race([syncPromise, timeoutPromise]);
+    } catch (timeoutError: any) {
+      console.error(`[FinanceHubScheduler] Bank sync timeout for ${bankId}:`, timeoutError);
+
+      // Cleanup browser on timeout
       if (automator) {
         const entityKey = `bank:${bankId}`;
         await this.safeCleanupBrowser(automator, entityKey);
       }
+
+      return {
+        success: false,
+        error: timeoutError.message || 'Bank sync timeout'
+      };
     }
   }
 
   private async syncTax(businessNumber: string): Promise<{ success: boolean; error?: string; salesInserted?: number; purchaseInserted?: number }> {
     console.log(`[FinanceHubScheduler] Syncing tax invoices for business: ${businessNumber}`);
 
-    try {
+    // CRITICAL: Add timeout to entire sync operation (15 minutes max for tax - it's slower)
+    const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
+      setTimeout(() => reject(new Error('Tax sync timeout - operation took longer than 15 minutes')), 15 * 60 * 1000);
+    });
+
+    const syncPromise = (async () => {
+      try {
       const store = getStore();
       const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
       const savedCertificates = hometaxConfig.selectedCertificates || {};
@@ -1095,11 +1247,24 @@ export class FinanceHubScheduler extends EventEmitter {
         purchaseInserted
       };
 
-    } catch (error) {
-      console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessNumber}:`, error);
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessNumber}:`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    })();
+
+    // Race between sync operation and timeout
+    try {
+      return await Promise.race([syncPromise, timeoutPromise]);
+    } catch (timeoutError: any) {
+      console.error(`[FinanceHubScheduler] Tax sync timeout for ${businessNumber}:`, timeoutError);
+
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: timeoutError.message || 'Tax sync timeout'
       };
     }
   }
@@ -1276,7 +1441,8 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   public async syncEntity(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<void> {
-    console.log(`[FinanceHubScheduler] Manual sync triggered for ${entityType}:${entityId}`);
+    this.debugLog(`═══ syncEntity() called: ${entityType}:${entityId} ═══`);
+    console.log(`[FinanceHubScheduler] ═══ syncEntity() called: ${entityType}:${entityId} ═══`);
 
     const schedule =
       entityType === 'card'
@@ -1285,10 +1451,17 @@ export class FinanceHubScheduler extends EventEmitter {
         ? this.settings.banks[entityId as keyof typeof this.settings.banks]
         : this.settings.tax[entityId];
 
+    this.debugLog(`Schedule found: ${schedule ? `Yes (time: ${schedule.time}, enabled: ${schedule.enabled})` : 'NO - WILL THROW ERROR'}`);
+    console.log(`[FinanceHubScheduler] Schedule found:`, schedule ? `Yes (time: ${schedule.time}, enabled: ${schedule.enabled})` : 'NO - WILL THROW ERROR');
+
     if (!schedule) {
+      this.debugLog(`❌ EXIT POINT 1: No schedule found for ${entityType}:${entityId}`);
+      console.error(`[FinanceHubScheduler] ❌ EXIT POINT 1: No schedule found for ${entityType}:${entityId}`);
       throw new Error(`No schedule found for ${entityType}:${entityId}`);
     }
 
+    this.debugLog(`✓ Calling executeEntitySync for ${entityType}:${entityId}...`);
+    console.log(`[FinanceHubScheduler] ✓ Calling executeEntitySync for ${entityType}:${entityId}...`);
     return this.executeEntitySync(entityType, entityId, schedule.time);
   }
 

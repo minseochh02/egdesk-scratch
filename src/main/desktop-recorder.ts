@@ -12,9 +12,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { clipboard, systemPreferences } from 'electron';
 import { uIOhook, UiohookKey } from 'uiohook-napi';
 import activeWin from 'active-win';
+
+const execAsync = promisify(exec);
 
 // Mouse button constants (uiohook-napi doesn't export these)
 const MouseButton = {
@@ -22,6 +26,20 @@ const MouseButton = {
   Right: 2,
   Middle: 3,
 } as const;
+
+// Browser app names (for detecting browser clicks)
+const BROWSER_APPS = new Set([
+  'Chrome',
+  'Google Chrome',
+  'firefox',
+  'Firefox',
+  'Safari',
+  'Edge',
+  'MicrosoftEdge',
+  'msedge',
+  'Brave',
+  'Opera',
+]);
 import { DesktopAutomationManager } from './utils/desktop-automation-manager';
 
 /**
@@ -47,7 +65,8 @@ export interface DesktopAction {
   type: 'mouseMove' | 'mouseClick' | 'mouseDoubleClick' | 'mouseRightClick' | 'mouseDrag' |
         'keyPress' | 'keyType' | 'keyCombo' |
         'clipboardCopy' | 'clipboardPaste' | 'clipboardRead' |
-        'appSwitch' | 'appLaunch' | 'windowFocus' | 'windowResize';
+        'appSwitch' | 'appLaunch' | 'windowFocus' | 'windowResize' |
+        'browserInteractionStart' | 'browserInteractionEnd';
 
   timestamp: number;
 
@@ -98,6 +117,7 @@ export class DesktopRecorder {
   private windowMonitoringFailed: boolean = false;
   private windowMonitoringFailCount: number = 0;
   private pressedKeys: Set<number> = new Set(); // Track currently pressed keys
+  private currentlyInBrowser: boolean = false; // Track if user is currently in a browser
 
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
@@ -159,6 +179,9 @@ export class DesktopRecorder {
 
     // Stop event listeners
     this.stopAllListeners();
+
+    // Post-process actions to correlate clicks with app launches
+    this.correlateAppLaunchClicks();
 
     // Generate code
     const code = this.generateTestCode();
@@ -278,6 +301,12 @@ export class DesktopRecorder {
         break;
 
       case 'mouseClick':
+        // Skip clicks that triggered app launches (we use launch commands instead)
+        if ((action as any).isAppLaunchClick) {
+          console.log(`Skipping app launch click for: ${(action as any).launchedApp}`);
+          break;
+        }
+
         if (action.coordinates) {
           await this.desktopManager.clickMouse(action.coordinates.x, action.coordinates.y, action.button);
         }
@@ -315,13 +344,24 @@ export class DesktopRecorder {
 
       case 'appLaunch':
         console.log(`App launch: ${action.appName}${action.windowTitle ? ` - ${action.windowTitle}` : ''}`);
-        // TODO: Implement app launching via AppleScript (macOS) or shell commands (Windows)
+        await this.launchApp(action.appName, action.windowTitle);
         await this.sleep(2000); // Give time for app to launch
         break;
 
       case 'appSwitch':
         console.log(`App switch to: ${action.appName}`);
+        await this.focusApp(action.appName);
         await this.sleep(1000); // Give time for switch
+        break;
+
+      case 'browserInteractionStart':
+        console.log(`Browser interaction start: ${action.appName || 'Unknown browser'}`);
+        console.log('⚠️  WARNING: Browser interactions should be recorded with BrowserRecorder');
+        console.log('   BrowserRecorder captures CSS selectors, not coordinates, for reliable replay');
+        break;
+
+      case 'browserInteractionEnd':
+        console.log('Browser interaction end');
         break;
 
       default:
@@ -373,6 +413,12 @@ export class DesktopRecorder {
 
     switch (action.type) {
       case 'mouseClick':
+        // Skip clicks that triggered app launches (we use launch commands instead)
+        if ((action as any).isAppLaunchClick) {
+          code += `  // Skipping click that launched: ${(action as any).launchedApp}\n`;
+          break;
+        }
+
         if (action.coordinates) {
           code += `  await mouse.setPosition({ x: ${action.coordinates.x}, y: ${action.coordinates.y} });\n`;
           code += `  await mouse.click();\n`;
@@ -418,15 +464,42 @@ export class DesktopRecorder {
             code += ` - ${action.windowTitle}`;
           }
           code += '\n';
-          code += `  // TODO: Implement app launching logic\n`;
+
+          // Generate platform-specific launch code
+          const appCmd = this.getWindowsAppCommand(action.appName);
+          code += `  // Launch ${action.appName}\n`;
+          code += `  require('child_process').execSync('${process.platform === 'win32' ? 'start ' + appCmd : 'open -a "' + action.appName + '"'}');\n`;
+          code += `  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for app to launch\n`;
         }
         break;
 
       case 'appSwitch':
         if (action.appName) {
           code += `  // App switch: ${action.appName}\n`;
-          code += `  // TODO: Focus the app window\n`;
+
+          // Generate platform-specific focus code
+          if (process.platform === 'win32') {
+            code += `  // Focus app using PowerShell\n`;
+            code += `  await require('child_process').execSync('powershell -Command "(New-Object -ComObject WScript.Shell).AppActivate(\\"${action.appName}\\")"');\n`;
+          } else if (process.platform === 'darwin') {
+            code += `  // Focus app using AppleScript\n`;
+            code += `  await require('child_process').execSync('osascript -e \\'tell application "${action.appName}" to activate\\'');\n`;
+          }
+          code += `  await new Promise(resolve => setTimeout(resolve, 1000));\n`;
         }
+        break;
+
+      case 'browserInteractionStart':
+        code += `\n  // ========================================\n`;
+        code += `  // 🌐 Browser: ${action.appName || 'Browser'}\n`;
+        code += `  // Note: Browser clicks use coordinates (may break if layout changes)\n`;
+        code += `  // ========================================\n`;
+        break;
+
+      case 'browserInteractionEnd':
+        code += `  // ========================================\n`;
+        code += `  // End of browser interaction\n`;
+        code += `  // ========================================\n\n`;
         break;
 
       default:
@@ -744,8 +817,22 @@ export class DesktopRecorder {
         // Reset fail count on success
         this.windowMonitoringFailCount = 0;
 
+        // Check if this is a browser app
+        const isBrowser = BROWSER_APPS.has(appName);
+
         // Detect app launches vs switches
         if (appName !== this.lastActiveWindow) {
+          // Track browser interaction state changes
+          if (isBrowser && !this.currentlyInBrowser) {
+            // Switched TO a browser
+            this.recordBrowserInteractionStart(appName, activeWindow.title);
+            this.currentlyInBrowser = true;
+          } else if (!isBrowser && this.currentlyInBrowser) {
+            // Switched FROM a browser to non-browser app
+            this.recordBrowserInteractionEnd();
+            this.currentlyInBrowser = false;
+          }
+
           if (!this.seenApps.has(appName)) {
             // First time seeing this app - it's a launch
             this.recordAppLaunch(appName, activeWindow.title);
@@ -991,6 +1078,42 @@ export class DesktopRecorder {
     this.notifyUpdate();
   }
 
+  /**
+   * Record when user switches to a browser
+   */
+  private recordBrowserInteractionStart(browserName: string, url?: string): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    console.log(`[DesktopRecorder] 🌐 Browser interaction START: ${browserName}${url ? ` - ${url}` : ''}`);
+
+    const action: DesktopAction = {
+      type: 'browserInteractionStart',
+      timestamp: Date.now() - this.startTime,
+      appName: browserName,
+      windowTitle: url,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
+  }
+
+  /**
+   * Record when user switches away from a browser
+   */
+  private recordBrowserInteractionEnd(): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    console.log(`[DesktopRecorder] 🌐 Browser interaction END`);
+
+    const action: DesktopAction = {
+      type: 'browserInteractionEnd',
+      timestamp: Date.now() - this.startTime,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
+  }
+
   // ==================== Utilities ====================
 
   /**
@@ -1042,6 +1165,137 @@ export class DesktopRecorder {
     if (this.updateCallback) {
       const code = this.generateTestCode();
       this.updateCallback(code);
+    }
+  }
+
+  /**
+   * Correlate clicks with app launches
+   * Marks clicks that triggered app launches so they can be skipped during replay
+   */
+  private correlateAppLaunchClicks(): void {
+    console.log('[DesktopRecorder] Correlating app launch clicks...');
+
+    for (let i = 0; i < this.actions.length; i++) {
+      const action = this.actions[i];
+
+      // Look for appLaunch actions
+      if (action.type === 'appLaunch') {
+        // Look backwards up to 3 seconds for a click that might have triggered it
+        for (let j = i - 1; j >= 0; j--) {
+          const prevAction = this.actions[j];
+
+          // Stop searching if we go back more than 3 seconds
+          if (action.timestamp - prevAction.timestamp > 3000) {
+            break;
+          }
+
+          // If we find a mouse click within 3 seconds before the launch
+          if (prevAction.type === 'mouseClick') {
+            console.log(`[DesktopRecorder] Correlated click at (${prevAction.coordinates?.x}, ${prevAction.coordinates?.y}) with launch of ${action.appName}`);
+
+            // Mark this click as a launch trigger
+            (prevAction as any).isAppLaunchClick = true;
+            (prevAction as any).launchedApp = action.appName;
+            break; // Found the triggering click, stop looking
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Get Windows command for launching an app
+   */
+  private getWindowsAppCommand(appName: string): string {
+    const appCommands: Record<string, string> = {
+      'Notepad': 'notepad',
+      'Calculator': 'calc',
+      'Excel': 'excel',
+      'EXCEL': 'excel',
+      'Word': 'winword',
+      'WINWORD': 'winword',
+      'PowerPoint': 'powerpnt',
+      'POWERPNT': 'powerpnt',
+      'Chrome': 'chrome',
+      'Edge': 'msedge',
+      'MicrosoftEdge': 'msedge',
+      'Explorer': 'explorer',
+      'cmd': 'cmd',
+      'PowerShell': 'powershell',
+      'WindowsTerminal': 'wt',
+      'Paint': 'mspaint',
+      'Snipping Tool': 'SnippingTool',
+    };
+
+    return appCommands[appName] || appName.toLowerCase();
+  }
+
+  /**
+   * Launch an application
+   */
+  private async launchApp(appName: string, windowTitle?: string): Promise<void> {
+    try {
+      console.log(`[DesktopRecorder] Launching app: ${appName}`);
+
+      // Platform-specific app launching
+      if (process.platform === 'win32') {
+        // Windows app name mapping
+        const appCommands: Record<string, string> = {
+          'Notepad': 'notepad',
+          'Calculator': 'calc',
+          'Excel': 'excel',
+          'Word': 'winword',
+          'PowerPoint': 'powerpnt',
+          'Chrome': 'chrome',
+          'Edge': 'msedge',
+          'Explorer': 'explorer',
+          'cmd': 'cmd',
+          'PowerShell': 'powershell',
+        };
+
+        const command = appCommands[appName] || appName.toLowerCase();
+        await execAsync(`start ${command}`);
+
+      } else if (process.platform === 'darwin') {
+        // macOS - use 'open -a' command
+        await execAsync(`open -a "${appName}"`);
+
+      } else {
+        console.warn(`[DesktopRecorder] App launching not supported on ${process.platform}`);
+      }
+
+      console.log(`[DesktopRecorder] ✅ App launched: ${appName}`);
+    } catch (error: any) {
+      console.error(`[DesktopRecorder] Failed to launch app ${appName}:`, error.message);
+      // Don't throw - continue with replay
+    }
+  }
+
+  /**
+   * Focus/switch to an application
+   */
+  private async focusApp(appName: string): Promise<void> {
+    try {
+      console.log(`[DesktopRecorder] Focusing app: ${appName}`);
+
+      if (process.platform === 'win32') {
+        // Windows - use PowerShell to activate window
+        const psCommand = `(New-Object -ComObject WScript.Shell).AppActivate("${appName}")`;
+        await execAsync(`powershell -Command "${psCommand}"`);
+
+      } else if (process.platform === 'darwin') {
+        // macOS - use AppleScript to activate app
+        const script = `tell application "${appName}" to activate`;
+        await execAsync(`osascript -e '${script}'`);
+
+      } else {
+        console.warn(`[DesktopRecorder] App focusing not supported on ${process.platform}`);
+      }
+
+      console.log(`[DesktopRecorder] ✅ App focused: ${appName}`);
+    } catch (error: any) {
+      console.error(`[DesktopRecorder] Failed to focus app ${appName}:`, error.message);
+      // Don't throw - continue with replay
     }
   }
 
