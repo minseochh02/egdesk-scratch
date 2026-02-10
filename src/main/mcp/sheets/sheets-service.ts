@@ -428,11 +428,14 @@ export class SheetsService {
 
     if (isCardTransactions) {
       // Card transaction format (16 columns)
-      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일시/(승인일시)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
 
       rows = transactions.map(tx => {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
         const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
+
+        // Use combined datetime (YYYY/MM/DD HH:MM:SS) instead of date only
+        const datetime = tx.datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
 
         return [
           this.extractCardCompany(cardCompanyId),
@@ -443,8 +446,8 @@ export class SheetsService {
           this.extractCardholder(metadata, cardCompanyId),
           this.extractTransactionBank(metadata, cardCompanyId),
           this.extractUsageType(metadata, cardCompanyId),
-          metadata?.salesType || '일반매출',
-          this.formatDateForExport(tx.date),
+          this.extractSalesType(metadata, cardCompanyId),
+          datetime,
           this.extractBillingDate(metadata, cardCompanyId),
           metadata?.approvalNumber || '',
           tx.description || tx.counterparty || '',
@@ -454,7 +457,7 @@ export class SheetsService {
         ];
       });
     } else {
-      // Bank transaction format (10 columns)
+      // Bank transaction format (10 columns - keep separate date/time for spreadsheet)
       headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
 
       rows = transactions.map(tx => {
@@ -514,11 +517,14 @@ export class SheetsService {
 
     if (isCardTransactions) {
       // Card transaction format (16 columns)
-      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일자/(승인일자)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
+      headers = ['카드사', '본부명', '부서명', '카드번호', '카드구분', '카드소지자', '거래은행', '사용구분', '매출종류', '접수일시/(승인일시)', '청구일자', '승인번호', '가맹점명/국가명(도시명)', '이용금액', '(US $)', '비고'];
 
       rows = transactions.map(tx => {
         const metadata = typeof tx.metadata === 'string' ? JSON.parse(tx.metadata) : tx.metadata;
         const cardCompanyId = metadata?.cardCompanyId || tx.bankId;
+
+        // Use combined datetime (YYYY/MM/DD HH:MM:SS) instead of date only
+        const datetime = tx.datetime || (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : this.formatDateForExport(tx.date));
 
         return [
           this.extractCardCompany(cardCompanyId),
@@ -529,8 +535,8 @@ export class SheetsService {
           this.extractCardholder(metadata, cardCompanyId),
           this.extractTransactionBank(metadata, cardCompanyId),
           this.extractUsageType(metadata, cardCompanyId),
-          metadata?.salesType || '일반매출',
-          this.formatDateForExport(tx.date),
+          this.extractSalesType(metadata, cardCompanyId),
+          datetime,
           this.extractBillingDate(metadata, cardCompanyId),
           metadata?.approvalNumber || '',
           tx.description || tx.counterparty || '',
@@ -540,7 +546,7 @@ export class SheetsService {
         ];
       });
     } else {
-      // Bank transaction format (10 columns)
+      // Bank transaction format (10 columns - keep separate date/time for spreadsheet)
       headers = ['날짜', '시간', '은행', '계좌', '적요', '내용', '출금', '입금', '잔액', '지점'];
 
       rows = transactions.map(tx => {
@@ -1013,8 +1019,17 @@ export class SheetsService {
   }
 
   private extractDepartment(metadata: any, cardCompanyId: string): string {
-    if (cardCompanyId === 'bc-card' || cardCompanyId === 'kb-card') {
+    if (cardCompanyId === 'bc-card') {
       return metadata?.departmentName || '';
+    }
+    if (cardCompanyId === 'kb-card') {
+      // Combine 부서번호 + 부서명
+      const deptNum = metadata?.departmentNumber || '';
+      const deptName = metadata?.departmentName || '';
+      if (deptNum && deptName) {
+        return `${deptNum} ${deptName}`;
+      }
+      return deptNum || deptName;
     }
     return '';
   }
@@ -1031,7 +1046,7 @@ export class SheetsService {
       return metadata?.cardHolder || '';
     }
     if (cardCompanyId === 'kb-card') {
-      return metadata?.representativeName || '';
+      return metadata?.userName || ''; // KB Card's 이용자명
     }
     return metadata?.userName || '';
   }
@@ -1042,15 +1057,22 @@ export class SheetsService {
 
   private extractUsageType(metadata: any, cardCompanyId: string): string {
     if (cardCompanyId === 'bc-card') {
-      return metadata?.usageType || '';
+      return metadata?.transactionMethod || ''; // BC Card's usageType is stored as transactionMethod
     }
     if (cardCompanyId === 'kb-card') {
-      return metadata?.approvalType || '';
+      return metadata?.approvalType || ''; // KB Card's 승인구분
     }
     if (cardCompanyId === 'shinhan-card') {
       return metadata?.transactionType || '';
     }
     return metadata?.transactionMethod || '';
+  }
+
+  private extractSalesType(metadata: any, cardCompanyId: string): string {
+    if (cardCompanyId === 'kb-card') {
+      return metadata?.transactionMethod || '일반매출'; // KB Card's 결제방법 → 매출종류
+    }
+    return metadata?.salesType || '일반매출';
   }
 
   private extractBillingDate(metadata: any, cardCompanyId: string): string {
@@ -1084,14 +1106,19 @@ export class SheetsService {
 
     const installment = metadata?.installmentPeriod;
     if (installment && installment !== '00' && installment !== '0') {
-      notes.push(`${installment}개월 할부`);
+      notes.push(`할부: ${installment}개월`);
     }
 
+    // BC Card foreign transaction details
     if (metadata?.foreignAmountKRW) {
-      notes.push('해외결제');
+      notes.push(`해외승인원화금액: ${metadata.foreignAmountKRW}`);
     }
 
-    return notes.join(', ');
+    if (metadata?.exchangeRate) {
+      notes.push(`환율: ${metadata.exchangeRate}`);
+    }
+
+    return notes.join(' | ');
   }
 
   private formatAmount(withdrawal: number, deposit: number): string {

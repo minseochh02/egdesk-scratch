@@ -829,10 +829,10 @@ export class FinanceHubScheduler extends EventEmitter {
       const { cards } = require('../index');
       const cardCompanyId = `${cardId}-card`; // Convert "nh" to "nh-card", etc.
 
-      this.debugLog(`Creating automator for ${cardCompanyId} (headless: true)...`);
+      this.debugLog(`Creating automator for ${cardCompanyId} (headless: false - visible browser)...`);
 
       automator = cards.createCardAutomator(cardCompanyId, {
-        headless: true, // Run headless for scheduled sync
+        headless: false, // CRITICAL FIX: Use visible browser like manual UI (headless causes hangs/failures)
         arduinoPort,
         manualPassword: false
       });
@@ -997,7 +997,7 @@ export class FinanceHubScheduler extends EventEmitter {
       // Create bank automator
       const { createAutomator } = require('../index');
       automator = createAutomator(bankId, {
-        headless: true // Run headless for scheduled sync
+        headless: false // CRITICAL FIX: Use visible browser like manual UI (headless causes hangs/failures)
       });
 
       // Track active browser
