@@ -662,22 +662,6 @@ export class SchedulerRecoveryService {
 
     console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
   }
-      throw new Error(`Invalid taskId format: ${missed.taskId}`);
-    }
-
-    // Validate entity type
-    if (entityType !== 'card' && entityType !== 'bank' && entityType !== 'tax') {
-      console.error(`[RecoveryService] Invalid entity type: ${entityType}`);
-      throw new Error(`Invalid entity type: ${entityType}`);
-    }
-
-    console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
-
-    // Sync specific entity instead of all entities
-    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
-
-    console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
-  }
 
   /**
    * Execute Docker task
