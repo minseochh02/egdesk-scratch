@@ -641,6 +641,30 @@ export class SchedulerRecoveryService {
       throw new Error(`Invalid taskId format: ${missed.taskId}`);
     }
 
+    // CRITICAL: Check if scheduler is already syncing this entity or has retry scheduled
+    const syncingEntities = scheduler.getSyncingEntities();
+    const hasRetry = scheduler.hasRetryScheduled(missed.taskId);
+    
+    if (syncingEntities.includes(missed.taskId)) {
+      console.log(`[RecoveryService] ⚠️  ${missed.taskId} is already syncing - skipping recovery to prevent duplicate`);
+      return;
+    }
+    
+    if (hasRetry) {
+      console.log(`[RecoveryService] ⚠️  ${missed.taskId} already has a retry scheduled - skipping recovery to prevent duplicate`);
+      return;
+    }
+
+    console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
+
+    // Sync specific entity instead of all entities
+    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
+
+    console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
+  }
+      throw new Error(`Invalid taskId format: ${missed.taskId}`);
+    }
+
     // Validate entity type
     if (entityType !== 'card' && entityType !== 'bank' && entityType !== 'tax') {
       console.error(`[RecoveryService] Invalid entity type: ${entityType}`);

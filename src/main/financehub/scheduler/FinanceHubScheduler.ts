@@ -490,11 +490,26 @@ export class FinanceHubScheduler extends EventEmitter {
     this.debugLog(`═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
     console.log(`[FinanceHubScheduler] ═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
 
+    // CRITICAL: Clear retry timer if this is a retry execution
+    // The timer already fired, so remove it from tracking
+    if (retryCount > 0 && this.syncTimers.has(entityKey)) {
+      this.debugLog(`Clearing fired retry timer for ${entityKey}`);
+      this.syncTimers.delete(entityKey);
+    }
+
+    // CRITICAL: Check if already syncing
     if (this.syncingEntities.has(entityKey)) {
       this.debugLog(`❌ EXIT POINT 2: ${entityKey} sync already in progress (syncingEntities has it)`);
       this.debugLog(`Current syncingEntities: ${Array.from(this.syncingEntities).join(', ')}`);
       console.log(`[FinanceHubScheduler] ❌ EXIT POINT 2: ${entityKey} sync already in progress (syncingEntities has it)`);
       console.log(`[FinanceHubScheduler] Current syncingEntities:`, Array.from(this.syncingEntities));
+      return;
+    }
+
+    // CRITICAL: Check if retry timer already scheduled (prevents duplicate retries)
+    if (this.syncTimers.has(entityKey)) {
+      this.debugLog(`❌ EXIT POINT 1.5: ${entityKey} already has a retry timer scheduled`);
+      console.log(`[FinanceHubScheduler] ❌ EXIT POINT 1.5: ${entityKey} already has a retry timer scheduled - skipping to prevent duplicate`);
       return;
     }
 
@@ -835,8 +850,54 @@ export class FinanceHubScheduler extends EventEmitter {
 
       this.debugLog(`✓ Credentials found, creating automator...`);
 
-      // Get Arduino port
-      const arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
+      // CRITICAL: Auto-detect Arduino port (like manual UI does)
+      let arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
+      
+      // Try to auto-detect Arduino if not already set or if it's the default Windows port on Mac
+      const isMac = process.platform === 'darwin';
+      const isDefaultWindowsPort = arduinoPort === 'COM3' || arduinoPort?.startsWith('COM');
+      
+      if (isMac && isDefaultWindowsPort) {
+        this.debugLog(`⚠️  Detected macOS with Windows port (${arduinoPort}), attempting auto-detection...`);
+        console.log(`[FinanceHubScheduler] ⚠️  Detected macOS with Windows port (${arduinoPort}), attempting auto-detection...`);
+        
+        try {
+          const { SerialPort } = require('serialport');
+          const ports = await SerialPort.list();
+          
+          // Look for Arduino by checking vendor IDs and path patterns
+          const arduinoPortFound = ports.find((port: any) => {
+            return (
+              port.vendorId === '2341' || // Arduino official
+              port.vendorId === '0403' || // FTDI
+              port.vendorId === '1a86' || // CH340
+              port.vendorId === '10c4' || // CP210x
+              port.path?.includes('usbserial') ||
+              port.path?.includes('usbmodem') ||
+              port.manufacturer?.toLowerCase().includes('arduino')
+            );
+          });
+          
+          if (arduinoPortFound) {
+            arduinoPort = arduinoPortFound.path;
+            store.set('financeHub.arduinoPort', arduinoPort);
+            this.debugLog(`✅ Auto-detected Arduino on port: ${arduinoPort}`);
+            console.log(`[FinanceHubScheduler] ✅ Auto-detected Arduino on port: ${arduinoPort}`);
+          } else {
+            const warningMsg = `⚠️  No Arduino detected. Available ports: ${ports.map((p: any) => p.path).join(', ')}`;
+            this.debugLog(warningMsg);
+            console.warn(`[FinanceHubScheduler] ${warningMsg}`);
+            
+            // Card automation will likely fail without Arduino, but continue anyway
+          }
+        } catch (error) {
+          this.debugLog(`⚠️  Failed to auto-detect Arduino: ${error}`);
+          console.error(`[FinanceHubScheduler] Failed to auto-detect Arduino:`, error);
+        }
+      } else {
+        this.debugLog(`Using configured Arduino port: ${arduinoPort}`);
+        console.log(`[FinanceHubScheduler] Using configured Arduino port: ${arduinoPort}`);
+      }
 
       // Create card automator
       const { cards } = require('../index');
@@ -1501,6 +1562,14 @@ export class FinanceHubScheduler extends EventEmitter {
 
   public getSyncingEntities(): string[] {
     return Array.from(this.syncingEntities);
+  }
+
+  public hasRetryScheduled(entityKey: string): boolean {
+    return this.syncTimers.has(entityKey);
+  }
+
+  public getScheduledRetries(): string[] {
+    return Array.from(this.syncTimers.keys());
   }
 
   // ============================================
