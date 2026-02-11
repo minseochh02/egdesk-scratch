@@ -318,22 +318,22 @@ function migrateFinanceHubScheduler() {
       console.log('✅ Scheduler config migrated to new entity-based structure');
     }
 
-    // Auto-populate tax schedules from saved Hometax certificates
+    // Auto-populate tax schedules from saved Hometax certificates (using businessName as key)
     const hometaxConfig = store.get('hometax') as any;
     if (hometaxConfig && hometaxConfig.selectedCertificates) {
       const currentScheduler = store.get('financeHubScheduler') as any;
       const taxSchedules = currentScheduler.tax || {};
-      const businessNumbers = Object.keys(hometaxConfig.selectedCertificates);
+      const businessNames = Object.keys(hometaxConfig.selectedCertificates);
 
       let updated = false;
-      businessNumbers.forEach((businessNumber, index) => {
-        if (!taxSchedules[businessNumber]) {
+      businessNames.forEach((businessName, index) => {
+        if (!taxSchedules[businessName]) {
           // Assign time starting at 6:00am with 10-minute intervals
           const hour = 6 + Math.floor((index * 10) / 60);
           const minute = (index * 10) % 60;
           const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
-          taxSchedules[businessNumber] = {
+          taxSchedules[businessName] = {
             enabled: true,
             time,
           };
@@ -344,7 +344,7 @@ function migrateFinanceHubScheduler() {
       if (updated) {
         currentScheduler.tax = taxSchedules;
         store.set('financeHubScheduler', currentScheduler);
-        console.log(`✅ Auto-populated tax schedules for ${businessNumbers.length} businesses`);
+        console.log(`✅ Auto-populated tax schedules for ${businessNames.length} businesses`);
       }
     }
   } catch (error) {
@@ -1239,10 +1239,46 @@ ipcMain.handle('photo-remove-from-project', async (event, absoluteFilePath: stri
  */
 ipcMain.handle('finance-hub:save-credentials', async (event, { bankId, credentials }) => {
   try {
+    // NEW: Save to database (encrypted)
+    const { getSQLiteManager } = require('./sqlite/manager');
+    const manager = getSQLiteManager();
+    
+    // Extract userId and password from credentials
+    let userId, password, metadata;
+    
+    if (credentials.userId && credentials.password) {
+      // Standard bank format
+      userId = credentials.userId;
+      password = credentials.password;
+      metadata = { ...credentials };
+      delete metadata.userId;
+      delete metadata.password;
+    } else if (credentials.cardCompanyId) {
+      // Card format
+      userId = credentials.userId || credentials.id || '';
+      password = credentials.password;
+      metadata = {
+        cardCompanyId: credentials.cardCompanyId,
+        accountType: credentials.accountType
+      };
+    } else {
+      console.warn('[FinanceHub] Unknown credential format:', Object.keys(credentials));
+      userId = credentials.userId || credentials.id || '';
+      password = credentials.password;
+      metadata = credentials;
+    }
+    
+    // Save to database
+    manager.getFinanceHubManager().saveCredentials(bankId, userId, password, metadata);
+    console.log(`[FinanceHub] Saved credentials to DATABASE for ${bankId}`);
+    
+    // LEGACY: Also save to Electron Store (temporary, for backward compatibility during migration)
     const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
     if (!fhConfig.savedCredentials) fhConfig.savedCredentials = {};
     fhConfig.savedCredentials[bankId] = credentials;
     store.set('financeHub', fhConfig);
+    console.log(`[FinanceHub] Also saved to Electron Store (legacy backup)`);
+    
     return { success: true };
   } catch (error) {
     console.error('Error saving bank credentials:', error);
@@ -1255,8 +1291,33 @@ ipcMain.handle('finance-hub:save-credentials', async (event, { bankId, credentia
  */
 ipcMain.handle('finance-hub:get-saved-credentials', async (event, bankId) => {
   try {
+    // NEW: Try database first
+    const { getSQLiteManager } = require('./sqlite/manager');
+    const manager = getSQLiteManager();
+    const dbCredentials = manager.getFinanceHubManager().getCredentials(bankId);
+    
+    if (dbCredentials) {
+      console.log(`[FinanceHub] Retrieved credentials from DATABASE for ${bankId}`);
+      
+      // Reconstruct credentials object based on metadata
+      const credentials = {
+        userId: dbCredentials.userId,
+        password: dbCredentials.password,
+        ...dbCredentials.metadata
+      };
+      
+      return { success: true, credentials };
+    }
+    
+    // FALLBACK: Check Electron Store (for migration period)
+    console.log(`[FinanceHub] No DB credentials for ${bankId}, checking Electron Store...`);
     const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
     const credentials = (fhConfig.savedCredentials && fhConfig.savedCredentials[bankId]) || null;
+    
+    if (credentials) {
+      console.log(`[FinanceHub] Found credentials in Electron Store (legacy) for ${bankId}`);
+    }
+    
     return { success: true, credentials };
   } catch (error) {
     console.error('Error getting bank credentials:', error);
@@ -1269,11 +1330,20 @@ ipcMain.handle('finance-hub:get-saved-credentials', async (event, bankId) => {
  */
 ipcMain.handle('finance-hub:remove-credentials', async (event, bankId) => {
   try {
+    // NEW: Remove from database
+    const { getSQLiteManager } = require('./sqlite/manager');
+    const manager = getSQLiteManager();
+    manager.getFinanceHubManager().removeCredentials(bankId);
+    console.log(`[FinanceHub] Removed credentials from DATABASE for ${bankId}`);
+    
+    // LEGACY: Also remove from Electron Store
     const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
     if (fhConfig.savedCredentials) {
       delete fhConfig.savedCredentials[bankId];
       store.set('financeHub', fhConfig);
+      console.log(`[FinanceHub] Also removed from Electron Store (legacy cleanup)`);
     }
+    
     return { success: true };
   } catch (error) {
     console.error('Error removing bank credentials:', error);
@@ -1521,6 +1591,7 @@ ipcMain.handle('hometax:get-connected-businesses', async () => {
 
 /**
  * Save selected certificate information for a business
+ * @param businessNumber - Actually the business name (not the registration number), used as identifier
  */
 ipcMain.handle('hometax:save-selected-certificate', async (event, businessNumber: string, certificateData: any) => {
   try {
@@ -1528,6 +1599,7 @@ ipcMain.handle('hometax:save-selected-certificate', async (event, businessNumber
     if (!hometaxConfig.selectedCertificates) {
       hometaxConfig.selectedCertificates = {};
     }
+    // Note: businessNumber param is actually businessName, used as key for tax entities
     hometaxConfig.selectedCertificates[businessNumber] = {
       xpath: certificateData.xpath,
       소유자명: certificateData.소유자명,

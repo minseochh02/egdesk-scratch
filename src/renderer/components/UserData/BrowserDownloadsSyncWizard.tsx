@@ -9,8 +9,18 @@ interface BrowserDownloadsSyncWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'file-selection' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
+
+interface BrowserDownloadFolder {
+  scriptName: string; // Human-readable script name
+  folderName: string; // Actual folder name
+  path: string;
+  fileCount: number;
+  excelFileCount: number;
+  lastModified: Date;
+  size: number;
+}
 
 interface BrowserDownloadFile {
   name: string;
@@ -23,8 +33,10 @@ interface BrowserDownloadFile {
 export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProps> = ({ onClose, onComplete }) => {
   const { tables, parseExcel, importExcel, validateTableName, syncToExistingTable } = useUserData();
 
-  const [currentStep, setCurrentStep] = useState<WizardStep>('file-selection');
+  const [currentStep, setCurrentStep] = useState<WizardStep>('folder-selection');
+  const [downloadFolders, setDownloadFolders] = useState<BrowserDownloadFolder[]>([]);
   const [downloadFiles, setDownloadFiles] = useState<BrowserDownloadFile[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<BrowserDownloadFolder | null>(null);
   const [selectedFile, setSelectedFile] = useState<BrowserDownloadFile | null>(null);
   const [importMode, setImportMode] = useState<ImportMode>(null);
   const [parsedData, setParsedData] = useState<any>(null);
@@ -46,13 +58,30 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [loadingFiles, setLoadingFiles] = useState(true);
 
   useEffect(() => {
-    loadBrowserDownloads();
+    loadBrowserDownloadFolders();
   }, []);
 
-  const loadBrowserDownloads = async () => {
+  const loadBrowserDownloadFolders = async () => {
     try {
       setLoadingFiles(true);
-      const result = await (window as any).electron.debug.getPlaywrightDownloads();
+      const result = await (window as any).electron.debug.getBrowserDownloadFolders();
+      
+      if (result.success) {
+        setDownloadFolders(result.folders || []);
+      } else {
+        setError(result.error || 'Failed to load browser download folders');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load browser download folders');
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const loadFolderFiles = async (folder: BrowserDownloadFolder) => {
+    try {
+      setLoadingFiles(true);
+      const result = await (window as any).electron.debug.getFolderFiles(folder.path);
       
       if (result.success) {
         // Filter only Excel files
@@ -61,12 +90,23 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         );
         setDownloadFiles(excelFiles);
       } else {
-        setError(result.error || 'Failed to load browser downloads');
+        setError(result.error || 'Failed to load folder files');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load browser downloads');
+      setError(err instanceof Error ? err.message : 'Failed to load folder files');
     } finally {
       setLoadingFiles(false);
+    }
+  };
+
+  const handleFolderSelect = async (folder: BrowserDownloadFolder) => {
+    try {
+      setError(null);
+      setSelectedFolder(folder);
+      await loadFolderFiles(folder);
+      setCurrentStep('file-selection');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load folder files');
     }
   };
 
@@ -117,7 +157,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   };
 
   const handleBack = () => {
-    if (currentStep === 'import-mode') {
+    if (currentStep === 'file-selection') {
+      setCurrentStep('folder-selection');
+      setSelectedFolder(null);
+      setDownloadFiles([]);
+    } else if (currentStep === 'import-mode') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
       setParsedData(null);
@@ -209,6 +253,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
   const renderStepIndicator = () => {
     const steps = [
+      { id: 'folder-selection', label: 'Select Script' },
       { id: 'file-selection', label: 'Select File' },
       { id: 'import-mode', label: 'Import Mode' },
       { id: 'mapping', label: 'Map Columns' },
@@ -218,12 +263,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     ];
 
     const getCurrentStepIndex = () => {
-      if (currentStep === 'file-selection') return 0;
-      if (currentStep === 'import-mode') return 1;
-      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 2;
-      if (currentStep === 'preview') return 3;
-      if (currentStep === 'importing') return 4;
-      if (currentStep === 'complete') return 5;
+      if (currentStep === 'folder-selection') return 0;
+      if (currentStep === 'file-selection') return 1;
+      if (currentStep === 'import-mode') return 2;
+      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 3;
+      if (currentStep === 'preview') return 4;
+      if (currentStep === 'importing') return 5;
+      if (currentStep === 'complete') return 6;
       return 0;
     };
 
@@ -248,12 +294,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     );
   };
 
-  const renderFileSelection = () => {
+  const renderFolderSelection = () => {
     if (loadingFiles) {
       return (
         <div className="progress-section">
           <div className="progress-spinner"></div>
-          <p className="progress-message">Loading browser downloads...</p>
+          <p className="progress-message">Loading browser automation folders...</p>
         </div>
       );
     }
@@ -261,23 +307,84 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     return (
       <div>
         <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>📥 Browser Recorder Downloads</h3>
+          <div>
+            <h3 style={{ margin: '0 0 4px 0' }}>🤖 Browser Automation Scripts</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+              Select a browser automation to import its downloaded Excel files
+            </p>
+          </div>
           <button
-            onClick={loadBrowserDownloads}
+            onClick={loadBrowserDownloadFolders}
             className="btn btn-sm btn-secondary"
           >
             🔄 Refresh
           </button>
         </div>
 
+        {downloadFolders.length === 0 ? (
+          <div className="file-selection-zone" style={{ cursor: 'default' }}>
+            <div className="file-selection-icon">📭</div>
+            <h3>No browser automations found</h3>
+            <p>Browser Recorder hasn't downloaded any files yet</p>
+            <p style={{ fontSize: '13px', color: '#999' }}>
+              Run a browser automation that downloads files to get started
+            </p>
+          </div>
+        ) : (
+          <div className="browser-downloads-list">
+            {downloadFolders.map((folder, idx) => (
+              <div
+                key={idx}
+                className="browser-download-folder-card"
+                onClick={() => handleFolderSelect(folder)}
+              >
+                <div className="browser-download-folder-icon">🤖</div>
+                <div className="browser-download-folder-info">
+                  <div className="browser-download-folder-name">{folder.scriptName}</div>
+                  <div className="browser-download-folder-meta">
+                    {folder.excelFileCount} Excel file{folder.excelFileCount !== 1 ? 's' : ''} • 
+                    {folder.fileCount} total file{folder.fileCount !== 1 ? 's' : ''} • 
+                    {formatFileSize(folder.size)}
+                  </div>
+                  <div className="browser-download-folder-timestamp">
+                    Last modified: {new Date(folder.lastModified).toLocaleString()}
+                  </div>
+                </div>
+                <div className="browser-download-folder-action">Connect →</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderFileSelection = () => {
+    if (loadingFiles) {
+      return (
+        <div className="progress-section">
+          <div className="progress-spinner"></div>
+          <p className="progress-message">Loading folder files...</p>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>🤖 {selectedFolder?.scriptName}</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            Select an Excel file from this automation's downloads
+          </p>
+        </div>
+
         {downloadFiles.length === 0 ? (
           <div className="file-selection-zone" style={{ cursor: 'default' }}>
             <div className="file-selection-icon">📭</div>
-            <h3>No Excel files found</h3>
-            <p>Browser Recorder hasn't downloaded any Excel files yet</p>
-            <p style={{ fontSize: '13px', color: '#999' }}>
-              Files are stored in ~/Downloads/EGDesk-Browser/
-            </p>
+            <h3>No Excel files in this folder</h3>
+            <p>This folder doesn't contain any Excel files yet</p>
           </div>
         ) : (
           <div className="browser-downloads-list">
@@ -291,7 +398,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 <div className="browser-download-file-info">
                   <div className="browser-download-file-name">{file.name}</div>
                   <div className="browser-download-file-meta">
-                    📁 {file.scriptFolder} • {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
+                    {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
                   </div>
                 </div>
                 <div className="browser-download-file-action">Select →</div>
@@ -619,6 +726,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
   const renderStepContent = () => {
     switch (currentStep) {
+      case 'folder-selection':
+        return renderFolderSelection();
       case 'file-selection':
         return renderFileSelection();
       case 'import-mode':
@@ -666,7 +775,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>

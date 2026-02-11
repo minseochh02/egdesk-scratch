@@ -41,7 +41,7 @@ interface ScheduleSettings {
   };
 
   tax: {
-    [businessNumber: string]: EntitySchedule;
+    [businessName: string]: EntitySchedule;  // Key is business name, not number
   };
 
   lastSyncTime?: string;
@@ -153,6 +153,18 @@ export class FinanceHubScheduler extends EventEmitter {
     const store = getStore();
     const saved = store.get('financeHubScheduler', {}) as Partial<ScheduleSettings>;
 
+    // CRITICAL: Clean up invalid tax entries (empty or undefined business names)
+    const cleanedTax: { [businessName: string]: EntitySchedule } = {};
+    if (saved.tax) {
+      for (const [businessName, schedule] of Object.entries(saved.tax)) {
+        if (businessName && businessName.trim() !== '') {
+          cleanedTax[businessName] = schedule as EntitySchedule;
+        } else {
+          console.warn(`[FinanceHubScheduler] Removed invalid tax entry with empty business name from settings`);
+        }
+      }
+    }
+
     // Deep merge for nested objects (cards, banks, tax)
     return {
       ...this.DEFAULT_SETTINGS,
@@ -167,7 +179,7 @@ export class FinanceHubScheduler extends EventEmitter {
       },
       tax: {
         ...this.DEFAULT_SETTINGS.tax,
-        ...(saved.tax || {}),
+        ...cleanedTax,
       },
     };
   }
@@ -258,13 +270,19 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       // Tax
-      for (const [businessNumber, schedule] of Object.entries(this.settings.tax)) {
+      for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
+        // CRITICAL: Validate business name before processing
+        if (!businessName || businessName.trim() === '') {
+          console.warn(`[FinanceHubScheduler] Skipping invalid tax entry with empty business name`);
+          continue;
+        }
+        
         if (schedule && schedule.enabled) {
-          const entityKey = `tax:${businessNumber}`;
+          const entityKey = `tax:${businessName}`;
 
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
-            intentsToCreate.push(this.createHistoricalIntent('tax', businessNumber, schedule.time, dateStr));
+            intentsToCreate.push(this.createHistoricalIntent('tax', businessName, schedule.time, dateStr));
           }
         }
       }
@@ -375,17 +393,31 @@ export class FinanceHubScheduler extends EventEmitter {
   private async scheduleNextSync(): Promise<void> {
     const now = new Date();
     const store = getStore();
-    const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
-    const savedCredentials = financeHub.savedCredentials || {};
+    
+    // NEW: Get credentials from DATABASE
+    const { getSQLiteManager } = await import('../../sqlite/manager');
+    const sqliteManager = getSQLiteManager();
+    const financeHubDb = sqliteManager.getFinanceHubManager();
+    const banksWithCredentials = financeHubDb.getBanksWithCredentials();
+
+    console.log(`[FinanceHubScheduler] ═══ SCHEDULING DEBUG ═══`);
+    console.log(`[FinanceHubScheduler] Found ${banksWithCredentials.length} banks with credentials (DATABASE):`, banksWithCredentials);
+    console.log(`[FinanceHubScheduler] Card schedules:`, Object.keys(this.settings.cards).length, 'cards');
+    console.log(`[FinanceHubScheduler] Bank schedules:`, Object.keys(this.settings.banks).length, 'banks');
+    console.log(`[FinanceHubScheduler] Tax schedules:`, Object.keys(this.settings.tax).length, 'businesses');
 
     // Schedule cards
     for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
       if (schedule && schedule.enabled) {
-        // CRITICAL: Only schedule if credentials exist
-        if (savedCredentials[cardKey]) {
+        // CRITICAL: Card credentials are saved with "-card" suffix (e.g., "bc-card")
+        // but scheduler settings use short keys (e.g., "bc")
+        const credentialKey = `${cardKey}-card`;
+        
+        // NEW: Check database instead of store
+        if (banksWithCredentials.includes(credentialKey)) {
           this.scheduleEntity('card', cardKey, schedule.time, now);
         } else {
-          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${cardKey} card - no credentials configured`);
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${cardKey} card - no credentials in DATABASE`);
         }
       }
     }
@@ -393,26 +425,44 @@ export class FinanceHubScheduler extends EventEmitter {
     // Schedule banks
     for (const [bankKey, schedule] of Object.entries(this.settings.banks)) {
       if (schedule && schedule.enabled) {
-        // CRITICAL: Only schedule if credentials exist
-        if (savedCredentials[bankKey]) {
+        // NEW: Check database instead of store
+        if (banksWithCredentials.includes(bankKey)) {
           this.scheduleEntity('bank', bankKey, schedule.time, now);
         } else {
-          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${bankKey} bank - no credentials configured`);
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${bankKey} bank - no credentials in DATABASE`);
         }
       }
     }
 
     // Schedule tax businesses
-    for (const [businessNumber, schedule] of Object.entries(this.settings.tax)) {
+    const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
+    const taxCertKeys = Object.keys(hometaxConfig.selectedCertificates || {});
+    console.log(`[FinanceHubScheduler] Found ${taxCertKeys.length} tax certificates:`, taxCertKeys);
+    
+    // DEBUG: Show certificate details to understand why business name is empty
+    for (const certKey of taxCertKeys) {
+      const cert = hometaxConfig.selectedCertificates[certKey];
+      console.log(`[FinanceHubScheduler]   - Certificate key: "${certKey}"`);
+      console.log(`[FinanceHubScheduler]     businessName: "${cert?.businessName}"`);
+      console.log(`[FinanceHubScheduler]     소유자명: "${cert?.소유자명}"`);
+      console.log(`[FinanceHubScheduler]     has password: ${!!cert?.certificatePassword}`);
+    }
+    
+    for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
+      // CRITICAL: Validate business name before processing
+      if (!businessName || businessName.trim() === '') {
+        console.warn(`[FinanceHubScheduler] Skipping invalid tax entry with empty business name`);
+        continue;
+      }
+      
       if (schedule && schedule.enabled) {
-        // Tax credentials check (certificate-based)
-        const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
-        const certData = hometaxConfig.selectedCertificates?.[businessNumber];
+        // Tax credentials check (certificate-based) - use businessName as key
+        const certData = hometaxConfig.selectedCertificates?.[businessName];
         
         if (certData && certData.certificatePassword) {
-          this.scheduleEntity('tax', businessNumber, schedule.time, now);
+          this.scheduleEntity('tax', businessName, schedule.time, now);
         } else {
-          console.log(`[FinanceHubScheduler] ⚠️  Skipping tax ${businessNumber} - no certificate configured`);
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping tax ${businessName} - no certificate configured (checked key: "${businessName}")`);
         }
       }
     }
@@ -864,18 +914,34 @@ export class FinanceHubScheduler extends EventEmitter {
     const syncPromise = (async () => {
       try {
       const store = getStore();
-      const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
-      const savedCredentials = financeHub.savedCredentials?.[cardId];
+      
+      // NEW: Get credentials from DATABASE
+      const { getSQLiteManager } = await import('../../sqlite/manager');
+      const sqliteManager = getSQLiteManager();
+      const financeHubDb = sqliteManager.getFinanceHubManager();
+      
+      // CRITICAL: Card credentials are saved with "-card" suffix (e.g., "bc-card")
+      const credentialKey = `${cardId}-card`;
+      const dbCredentials = financeHubDb.getCredentials(credentialKey);
 
-      if (!savedCredentials) {
-        this.debugLog(`❌ No saved credentials for card:${cardId}`);
+      if (!dbCredentials) {
+        this.debugLog(`❌ No saved credentials for card:${cardId} (checked DATABASE key: ${credentialKey})`);
+        console.log(`[FinanceHubScheduler] ❌ No credentials in DATABASE for ${credentialKey}`);
         return {
           success: false,
-          error: 'No saved credentials found for this card'
+          error: 'No saved credentials found in database for this card'
         };
       }
 
-      this.debugLog(`✓ Credentials found, creating automator...`);
+      // Reconstruct credentials object from database
+      const savedCredentials = {
+        userId: dbCredentials.userId,
+        password: dbCredentials.password,
+        ...dbCredentials.metadata
+      };
+
+      this.debugLog(`✓ Credentials found in DATABASE, creating automator...`);
+      console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${credentialKey}`);
 
       // CRITICAL: Auto-detect Arduino port (like manual UI does)
       let arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
@@ -972,62 +1038,68 @@ export class FinanceHubScheduler extends EventEmitter {
 
       console.log(`[FinanceHubScheduler] Fetching ${cardCompanyId} transactions from ${startDate} to ${endDate} (7 days)...`);
 
-      // Get all cards for this card company
-      let cardList = [];
-      if (typeof automator.getCards === 'function') {
-        cardList = await automator.getCards();
+      // CRITICAL: BC Card and similar sites return ALL transactions for ALL cards at once
+      // Card numbers are masked in the download, so just import everything under one account
+      const result = await automator.getTransactions(null, startDate, endDate, { parse: true });
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: `Failed to get transactions: ${result.error || 'Unknown error'}`
+        };
       }
+
+      // Import to database (reuse sqliteManager from above)
 
       let totalInserted = 0;
       let totalSkipped = 0;
 
-      // Fetch transactions for each card
-      for (const card of cardList) {
-        const cardNumber = card.cardNumber;
-        console.log(`[FinanceHubScheduler] Fetching transactions for card ${cardNumber}...`);
+      // Collect all transactions from all accounts (card numbers are masked, so combine them)
+      const allTransactions: any[] = [];
+      let excelFilePath = '';
 
-        const result = await automator.getTransactions(cardNumber, startDate, endDate);
-
-        if (!result.success || !result.transactions) {
-          console.warn(`[FinanceHubScheduler] Failed to get transactions for card ${cardNumber}`);
-          continue;
-        }
-
-        // Import to database
-        const { getSQLiteManager } = await import('../../sqlite/manager');
-        const sqliteManager = getSQLiteManager();
-        const financeHubDb = sqliteManager.getFinanceHubManager();
-
-        const transactionsData = result.transactions[0]?.extractedData?.transactions || [];
-
-        if (transactionsData.length > 0) {
-          const cardData = {
-            accountNumber: cardNumber,
-            accountName: card.cardName || '카드',
-            customerName: card.cardholderName || '',
-            balance: 0,
-            availableBalance: 0,
-            openDate: card.issueDate || '',
-          };
-
-          const syncMetadata = {
-            queryPeriodStart: startDate,
-            queryPeriodEnd: endDate,
-            excelFilePath: result.transactions[0]?.path || ''
-          };
-
-          const importResult = financeHubDb.importTransactions(
-            cardCompanyId,
-            cardData,
-            transactionsData,
-            syncMetadata
-          );
-
-          if (importResult.success) {
-            totalInserted += importResult.inserted;
-            totalSkipped += importResult.skipped;
-            console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions for card ${cardNumber}`);
+      if (result.accounts && Array.isArray(result.accounts)) {
+        for (const account of result.accounts) {
+          const transactions = account.extractedData?.transactions || [];
+          allTransactions.push(...transactions);
+          
+          // Use the first Excel file path we find
+          if (!excelFilePath && account.path) {
+            excelFilePath = account.path;
           }
+        }
+      }
+
+      // Import all transactions under a single account (since card numbers are masked)
+      if (allTransactions.length > 0) {
+        const cardData = {
+          accountNumber: cardCompanyId, // Use company ID as account number
+          accountName: cardCompanyId === 'bc-card' ? 'BC카드 (전체)' : 
+                       cardCompanyId === 'shinhan-card' ? '신한카드 (전체)' :
+                       `${cardCompanyId} (전체)`,
+          customerName: '',
+          balance: 0,
+          availableBalance: 0,
+          openDate: '',
+        };
+
+        const syncMetadata = {
+          queryPeriodStart: startDate,
+          queryPeriodEnd: endDate,
+          excelFilePath
+        };
+
+        const importResult = financeHubDb.importTransactions(
+          cardCompanyId,
+          cardData,
+          allTransactions,
+          syncMetadata
+        );
+
+        if (importResult.success) {
+          totalInserted = importResult.inserted;
+          totalSkipped = importResult.skipped;
+          console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions (all cards combined)`);
         }
       }
 
@@ -1085,15 +1157,29 @@ export class FinanceHubScheduler extends EventEmitter {
     const syncPromise = (async () => {
       try {
       const store = getStore();
-      const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
-      const savedCredentials = financeHub.savedCredentials?.[bankId];
+      
+      // NEW: Get credentials from DATABASE
+      const { getSQLiteManager } = await import('../../sqlite/manager');
+      const sqliteManager = getSQLiteManager();
+      const financeHubDb = sqliteManager.getFinanceHubManager();
+      const dbCredentials = financeHubDb.getCredentials(bankId);
 
-      if (!savedCredentials) {
+      if (!dbCredentials) {
+        console.log(`[FinanceHubScheduler] ❌ No credentials in DATABASE for ${bankId}`);
         return {
           success: false,
-          error: 'No saved credentials found for this bank'
+          error: 'No saved credentials found in database for this bank'
         };
       }
+
+      // Reconstruct credentials object from database
+      const savedCredentials = {
+        userId: dbCredentials.userId,
+        password: dbCredentials.password,
+        ...dbCredentials.metadata
+      };
+
+      console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${bankId}`);
 
       // Create bank automator
       const { createAutomator } = require('../index');
@@ -1149,10 +1235,8 @@ export class FinanceHubScheduler extends EventEmitter {
       let totalInserted = 0;
       let totalSkipped = 0;
 
-      // Get database
-      const { getSQLiteManager } = await import('../../sqlite/manager');
-      const sqliteManager = getSQLiteManager();
-      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+      // Get database reference (reuse sqliteManager from above)
+      const financeHubDbTransactions = sqliteManager.getFinanceHubDatabase();
 
       // Fetch transactions for each account
       for (const account of accounts) {
@@ -1196,7 +1280,7 @@ export class FinanceHubScheduler extends EventEmitter {
               excelFilePath: result.file || result.filename || ''
             };
 
-            const importResult = financeHubDb.importTransactions(
+            const importResult = financeHubDbTransactions.importTransactions(
               bankId,
               accountData,
               transactionsData,
@@ -1256,8 +1340,8 @@ export class FinanceHubScheduler extends EventEmitter {
     }
   }
 
-  private async syncTax(businessNumber: string): Promise<{ success: boolean; error?: string; salesInserted?: number; purchaseInserted?: number }> {
-    console.log(`[FinanceHubScheduler] Syncing tax invoices for business: ${businessNumber}`);
+  private async syncTax(businessName: string): Promise<{ success: boolean; error?: string; salesInserted?: number; purchaseInserted?: number }> {
+    console.log(`[FinanceHubScheduler] Syncing tax invoices for business: ${businessName}`);
 
     // CRITICAL: Add timeout to entire sync operation (15 minutes max for tax - it's slower)
     const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
@@ -1270,7 +1354,7 @@ export class FinanceHubScheduler extends EventEmitter {
       const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
       const savedCertificates = hometaxConfig.selectedCertificates || {};
 
-      const certData = savedCertificates[businessNumber];
+      const certData = savedCertificates[businessName];  // Use businessName as key
 
       if (!certData) {
         return {
@@ -1349,7 +1433,7 @@ export class FinanceHubScheduler extends EventEmitter {
       };
 
       } catch (error) {
-        console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessNumber}:`, error);
+        console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessName}:`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : String(error)
@@ -1361,7 +1445,7 @@ export class FinanceHubScheduler extends EventEmitter {
     try {
       return await Promise.race([syncPromise, timeoutPromise]);
     } catch (timeoutError: any) {
-      console.error(`[FinanceHubScheduler] Tax sync timeout for ${businessNumber}:`, timeoutError);
+      console.error(`[FinanceHubScheduler] Tax sync timeout for ${businessName}:`, timeoutError);
 
       return {
         success: false,
@@ -1532,9 +1616,15 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     // Sync all enabled tax businesses
-    for (const [businessNumber, schedule] of Object.entries(this.settings.tax)) {
+    for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
+      // CRITICAL: Validate business name before processing
+      if (!businessName || businessName.trim() === '') {
+        console.warn(`[FinanceHubScheduler] Skipping invalid tax entry with empty business name in syncNow`);
+        continue;
+      }
+      
       if (schedule && schedule.enabled) {
-        syncPromises.push(this.executeEntitySync('tax', businessNumber, schedule.time));
+        syncPromises.push(this.executeEntitySync('tax', businessName, schedule.time));
       }
     }
 

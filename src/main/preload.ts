@@ -2103,6 +2103,8 @@ const electronHandler = {
     getPlaywrightDownloads: () => ipcRenderer.invoke('get-playwright-downloads'),
     openPlaywrightDownload: (filePath: string) => ipcRenderer.invoke('open-playwright-download', filePath),
     openPlaywrightDownloadsFolder: () => ipcRenderer.invoke('open-playwright-downloads-folder'),
+    getBrowserDownloadFolders: () => ipcRenderer.invoke('get-browser-download-folders'),
+    getFolderFiles: (folderPath: string) => ipcRenderer.invoke('get-folder-files', folderPath),
     // Playwright Scheduler API
     getPlaywrightSchedules: () => ipcRenderer.invoke('sqlite-playwright-scheduler-get-all'),
     getPlaywrightScheduleById: (id: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-get', id),
@@ -2312,6 +2314,17 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-financehub-update-account-status', accountNumber, isActive),
     deleteAccount: (accountNumber: string) => 
       ipcRenderer.invoke('sqlite-financehub-delete-account', accountNumber),
+    // Credential operations (database)
+    saveCredentials: (bankId: string, userId: string, password: string, metadata?: any) =>
+      ipcRenderer.invoke('sqlite-financehub-save-credentials', bankId, userId, password, metadata),
+    getCredentials: (bankId: string) =>
+      ipcRenderer.invoke('sqlite-financehub-get-credentials', bankId),
+    removeCredentials: (bankId: string) =>
+      ipcRenderer.invoke('sqlite-financehub-remove-credentials', bankId),
+    getBanksWithCredentials: () =>
+      ipcRenderer.invoke('sqlite-financehub-get-banks-with-credentials'),
+    hasCredentials: (bankId: string) =>
+      ipcRenderer.invoke('sqlite-financehub-has-credentials', bankId),
   },
   /**
    * Finance Hub Scheduler API

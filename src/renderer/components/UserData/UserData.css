@@ -924,6 +924,64 @@
   flex-shrink: 0;
 }
 
+/* Browser Download Folder Cards */
+.browser-download-folder-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.browser-download-folder-card:hover {
+  border-color: #2196F3;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+  transform: translateX(4px);
+}
+
+.browser-download-folder-icon {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+
+.browser-download-folder-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-download-folder-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 6px;
+  word-break: break-word;
+  font-family: 'Courier New', monospace;
+}
+
+.browser-download-folder-meta {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.browser-download-folder-timestamp {
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+}
+
+.browser-download-folder-action {
+  color: #2196F3;
+  font-weight: 500;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 /* Import Mode Selection */
 .import-mode-selection {
   display: grid;

@@ -236,6 +236,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
       user_id_encrypted TEXT NOT NULL,
       password_encrypted TEXT NOT NULL,
       encryption_iv TEXT NOT NULL,
+      metadata TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
@@ -315,6 +316,14 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     END;
   `);
 
+  // Migration: Add metadata column to saved_credentials if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE saved_credentials ADD COLUMN metadata TEXT`);
+    console.log('✅ Added metadata column to saved_credentials table');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   // Migration: Ensure BC Card exists in existing databases
   const ensureBCCard = db.prepare(`
     INSERT OR IGNORE INTO banks (id, name, name_ko, color, icon, supports_automation, login_url)
@@ -377,6 +386,127 @@ export class FinanceHubDbManager {
       icon: row.icon,
       supportsAutomation: !!row.supports_automation,
     };
+  }
+
+  // ========================================
+  // Credential Operations (Encrypted)
+  // ========================================
+
+  /**
+   * Save encrypted credentials for a bank/card
+   */
+  saveCredentials(bankId: string, userId: string, password: string, metadata?: Record<string, any>): void {
+    const crypto = require('crypto');
+    
+    // Generate a unique IV for this credential
+    const iv = crypto.randomBytes(16);
+    
+    // Get or generate encryption key
+    const ENCRYPTION_KEY = this.getEncryptionKey();
+    
+    // Encrypt userId and password
+    const userIdCipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    const userIdEncrypted = userIdCipher.update(userId, 'utf8', 'hex') + userIdCipher.final('hex');
+    
+    const passwordCipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    const passwordEncrypted = passwordCipher.update(password, 'utf8', 'hex') + passwordCipher.final('hex');
+    
+    const id = `cred_${bankId}_${Date.now()}`;
+    const ivHex = iv.toString('hex');
+    const metadataJson = metadata ? JSON.stringify(metadata) : null;
+    
+    // Upsert into saved_credentials table
+    const stmt = this.db.prepare(`
+      INSERT INTO saved_credentials (id, bank_id, user_id_encrypted, password_encrypted, encryption_iv, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(bank_id) DO UPDATE SET
+        user_id_encrypted = excluded.user_id_encrypted,
+        password_encrypted = excluded.password_encrypted,
+        encryption_iv = excluded.encryption_iv,
+        metadata = excluded.metadata,
+        updated_at = datetime('now')
+    `);
+    
+    stmt.run(id, bankId, userIdEncrypted, passwordEncrypted, ivHex, metadataJson);
+    console.log(`[FinanceHubDb] Saved encrypted credentials for ${bankId}`);
+  }
+
+  /**
+   * Get decrypted credentials for a bank/card
+   */
+  getCredentials(bankId: string): { userId: string; password: string; metadata?: Record<string, any> } | null {
+    const stmt = this.db.prepare(`
+      SELECT user_id_encrypted, password_encrypted, encryption_iv, metadata
+      FROM saved_credentials
+      WHERE bank_id = ?
+    `);
+    
+    const row = stmt.get(bankId) as any;
+    if (!row) return null;
+    
+    try {
+      const crypto = require('crypto');
+      const ENCRYPTION_KEY = this.getEncryptionKey();
+      const iv = Buffer.from(row.encryption_iv, 'hex');
+      
+      // Decrypt userId
+      const userIdDecipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+      const userId = userIdDecipher.update(row.user_id_encrypted, 'hex', 'utf8') + userIdDecipher.final('utf8');
+      
+      // Decrypt password
+      const passwordDecipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+      const password = passwordDecipher.update(row.password_encrypted, 'hex', 'utf8') + passwordDecipher.final('utf8');
+      
+      const metadata = row.metadata ? JSON.parse(row.metadata) : undefined;
+      
+      return { userId, password, metadata };
+    } catch (error) {
+      console.error(`[FinanceHubDb] Failed to decrypt credentials for ${bankId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Remove credentials for a bank/card
+   */
+  removeCredentials(bankId: string): boolean {
+    const stmt = this.db.prepare(`DELETE FROM saved_credentials WHERE bank_id = ?`);
+    const result = stmt.run(bankId);
+    console.log(`[FinanceHubDb] Removed credentials for ${bankId}`);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get all bank IDs that have saved credentials
+   */
+  getBanksWithCredentials(): string[] {
+    const stmt = this.db.prepare(`SELECT bank_id FROM saved_credentials ORDER BY bank_id`);
+    return stmt.all().map((row: any) => row.bank_id);
+  }
+
+  /**
+   * Check if credentials exist for a bank/card
+   */
+  hasCredentials(bankId: string): boolean {
+    const stmt = this.db.prepare(`SELECT 1 FROM saved_credentials WHERE bank_id = ? LIMIT 1`);
+    return !!stmt.get(bankId);
+  }
+
+  /**
+   * Get or create encryption key for credentials
+   * Uses environment variable or generates a persistent key
+   */
+  private getEncryptionKey(): Buffer {
+    const crypto = require('crypto');
+    
+    // Try to get from environment first
+    if (process.env.CREDENTIAL_ENCRYPTION_KEY) {
+      return crypto.scryptSync(process.env.CREDENTIAL_ENCRYPTION_KEY, 'egdesk-salt', 32);
+    }
+    
+    // Generate from a default secret (should be replaced with proper key management)
+    const defaultSecret = 'egdesk-credential-secret-v1-change-in-production';
+    return crypto.scryptSync(defaultSecret, 'egdesk-salt', 32);
   }
 
   // ========================================

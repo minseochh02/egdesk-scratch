@@ -483,6 +483,15 @@ export class SchedulerRecoveryService {
           console.log(`[RecoveryService] Executing missed task: ${missed.taskName} (${missed.intendedDate})`);
           await this.executeTaskByType(missed);
 
+          // CRITICAL: Mark intent as completed so it doesn't get recovered again
+          await this.markIntentCompleted(
+            missed.schedulerType,
+            missed.taskId,
+            missed.intendedDate,
+            missed.intentId // Use intentId as execution ID
+          );
+          console.log(`[RecoveryService] ✅ Marked ${missed.taskId} (${missed.intendedDate}) as completed`);
+
           executionResults.push({
             intentId: missed.intentId,
             taskName: missed.taskName,
@@ -630,15 +639,18 @@ export class SchedulerRecoveryService {
     const scheduler = getFinanceHubScheduler();
 
     // Parse taskId to extract entity type and ID
-    // Format: "card:nh", "bank:shinhan", "tax:123-45-67890"
+    // Format: "card:nh", "bank:shinhan", "tax:CompanyName"
     const [entityType, ...entityIdParts] = missed.taskId.split(':');
-    const entityId = entityIdParts.join(':'); // Rejoin in case tax ID has colons
+    const entityId = entityIdParts.join(':'); // Rejoin in case entity ID has colons
 
     console.log(`[RecoveryService] Parsed taskId: entityType="${entityType}", entityId="${entityId}"`);
 
-    if (!entityType || !entityId) {
-      console.error(`[RecoveryService] Invalid taskId format: ${missed.taskId}`);
-      throw new Error(`Invalid taskId format: ${missed.taskId}`);
+    if (!entityType || !entityId || entityId.trim() === '') {
+      console.error(`[RecoveryService] Invalid taskId format: "${missed.taskId}" - entityType="${entityType}", entityId="${entityId}"`);
+      console.error(`[RecoveryService] This usually means the scheduler has an entry with empty/undefined ID`);
+      console.error(`[RecoveryService] Check your financeHubScheduler settings for entries with empty keys`);
+      console.error(`[RecoveryService] For tax entities, the ID should be the business name, not number`);
+      throw new Error(`Invalid taskId format: "${missed.taskId}" (entityType="${entityType}", entityId="${entityId}")`);
     }
 
     // CRITICAL: Check if scheduler is already syncing this entity or has retry scheduled
