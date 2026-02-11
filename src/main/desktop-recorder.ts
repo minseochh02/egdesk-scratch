@@ -41,6 +41,14 @@ const BROWSER_APPS = new Set([
   'Brave',
   'Opera',
 ]);
+
+// Apps to ignore during recording (don't record interactions with the recorder itself)
+const IGNORED_APPS = new Set([
+  'EGDesk',
+  'egdesk',
+  'Electron',
+  'electron',
+]);
 import { DesktopAutomationManager } from './utils/desktop-automation-manager';
 
 /**
@@ -613,9 +621,16 @@ export class DesktopRecorder {
     }
 
     // Setup mouse click listener
-    uIOhook.on('click', (e) => {
+    uIOhook.on('click', async (e) => {
       try {
         if (!this.isRecording || this.isPaused) return;
+
+        // Check if click is in EGDesk (skip recording our own app)
+        const activeWindow = await activeWin();
+        if (activeWindow && IGNORED_APPS.has(activeWindow.owner.name)) {
+          // Skip clicks in EGDesk - we don't want to record the recorder UI
+          return;
+        }
 
         // Map button: 1 = left, 2 = right, 3 = middle
         const button = e.button === MouseButton.Left ? 'left' :
@@ -634,39 +649,44 @@ export class DesktopRecorder {
 
         this.pressedKeys.add(e.keycode);
 
-      // Check if this is a modifier key
-      const isModifier = [
-        UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR,
-        UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR,
-        UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR,
-        UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR,
-      ].includes(e.keycode);
+        // Check if this is a modifier key
+        const isModifier = [
+          UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR,
+          UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR,
+          UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR,
+          UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR,
+        ].includes(e.keycode);
 
-      // Don't record solo modifier presses
-      if (isModifier) return;
+        // Don't record solo modifier presses
+        if (isModifier) return;
 
-      // Check for hotkey combinations
-      const hasShift = this.hasModifier(UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR);
-      const hasCmd = this.hasModifier(UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR);
-      const hasCtrl = this.hasModifier(UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR);
-      const hasAlt = this.hasModifier(UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR);
+        // Check for hotkey combinations
+        const hasShift = this.hasModifier(UiohookKey.Shift, UiohookKey.ShiftL, UiohookKey.ShiftR);
+        const hasCmd = this.hasModifier(UiohookKey.Meta, UiohookKey.MetaL, UiohookKey.MetaR);
+        const hasCtrl = this.hasModifier(UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR);
+        const hasAlt = this.hasModifier(UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR);
 
-      // Check for recording hotkeys (Cmd+Shift+key)
-      if (hasCmd && hasShift) {
-        if (e.keycode === UiohookKey.C) {
-          // Cmd+Shift+C is no longer needed - we capture real clicks now
-          return;
-        } else if (e.keycode === UiohookKey.P) {
-          this.handlePauseResumeHotkey();
-          return;
-        } else if (e.keycode === UiohookKey.S) {
-          this.handleStopHotkey();
+        // Check for recording hotkeys (Cmd+Shift+key) - these work regardless of active app
+        if (hasCmd && hasShift) {
+          if (e.keycode === UiohookKey.C) {
+            // Cmd+Shift+C is no longer needed - we capture real clicks now
+            return;
+          } else if (e.keycode === UiohookKey.P) {
+            this.handlePauseResumeHotkey();
+            return;
+          } else if (e.keycode === UiohookKey.S) {
+            this.handleStopHotkey();
+            return;
+          }
+        }
+
+        // Skip recording keyboard events in EGDesk (after checking hotkeys)
+        if (this.lastActiveWindow && IGNORED_APPS.has(this.lastActiveWindow)) {
           return;
         }
-      }
 
-      // Record key combinations
-      if (hasCmd || hasCtrl || hasAlt || hasShift) {
+        // Record key combinations
+        if (hasCmd || hasCtrl || hasAlt || hasShift) {
         const keys: string[] = [];
         if (hasShift) keys.push('Shift');
         if (hasCmd) keys.push('Meta');
@@ -867,6 +887,12 @@ export class DesktopRecorder {
 
         // Reset fail count on success
         this.windowMonitoringFailCount = 0;
+
+        // Skip recording interactions with EGDesk itself
+        if (IGNORED_APPS.has(appName)) {
+          this.lastActiveWindow = appName;
+          return;
+        }
 
         // Check if this is a browser app
         const isBrowser = BROWSER_APPS.has(appName);
