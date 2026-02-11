@@ -163,4 +163,7 @@ export interface ExcelImportConfig {
   columnMappings?: Record<string, string>; // originalName: newName
   columnTypes?: Record<string, ColumnType>; // columnName: type
   mergeConfig?: Record<string, { sources: string[]; separator: string }>; // dbColumnName: { sources, separator }
+  headerRow?: number; // Which row contains headers (1-based)
+  skipRows?: number; // How many rows to skip at the top
+  skipBottomRows?: number; // How many rows to skip at the bottom (totals)
 }

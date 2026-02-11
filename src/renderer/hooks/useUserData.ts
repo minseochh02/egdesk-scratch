@@ -156,9 +156,13 @@ export function useUserData() {
   /**
    * Parse Excel file
    */
-  const parseExcel = useCallback(async (filePath: string) => {
+  const parseExcel = useCallback(async (filePath: string, options?: {
+    headerRow?: number;
+    skipRows?: number;
+    skipBottomRows?: number;
+  }) => {
     try {
-      const result = await window.electron.invoke('user-data:parse-excel', filePath);
+      const result = await window.electron.invoke('user-data:parse-excel', filePath, options);
 
       if (result.success) {
         return result.data;
@@ -183,6 +187,9 @@ export function useUserData() {
       columnMappings?: Record<string, string>;
       columnTypes?: Record<string, string>;
       mergeConfig?: Record<string, { sources: string[]; separator: string }>;
+      headerRow?: number;
+      skipRows?: number;
+      skipBottomRows?: number;
     }) => {
       try {
         const result = await window.electron.invoke('user-data:import-excel', config);
@@ -270,6 +277,9 @@ export function useUserData() {
       sheetIndex: number;
       tableId: string;
       columnMappings: Record<string, string>;
+      headerRow?: number;
+      skipRows?: number;
+      skipBottomRows?: number;
     }) => {
       try {
         const result = await window.electron.invoke('user-data:sync-to-existing-table', config);

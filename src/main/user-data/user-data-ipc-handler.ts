@@ -22,7 +22,11 @@ export function registerUserDataIPCHandlers(): void {
   /**
    * Parse Excel file and return preview data
    */
-  ipcMain.handle('user-data:parse-excel', async (event, filePath: string) => {
+  ipcMain.handle('user-data:parse-excel', async (event, filePath: string, options?: {
+    headerRow?: number;
+    skipRows?: number;
+    skipBottomRows?: number;
+  }) => {
     try {
       // Validate file
       const validation = validateExcelFile(filePath);
@@ -33,8 +37,8 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Parse Excel file
-      const parsedData = await parseExcelFile(filePath);
+      // Parse Excel file with options
+      const parsedData = await parseExcelFile(filePath, options);
 
       return {
         success: true,
@@ -57,8 +61,12 @@ export function registerUserDataIPCHandlers(): void {
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
 
-      // Parse Excel file again to get the data
-      const parsedData = await parseExcelFile(config.filePath);
+      // Parse Excel file again to get the data (with any parsing options)
+      const parsedData = await parseExcelFile(config.filePath, {
+        headerRow: config.headerRow,
+        skipRows: config.skipRows,
+        skipBottomRows: config.skipBottomRows,
+      });
 
       if (config.sheetIndex < 0 || config.sheetIndex >= parsedData.sheets.length) {
         return {
@@ -385,8 +393,12 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Parse Excel file
-      const parsedData = await parseExcelFile(config.filePath);
+      // Parse Excel file (with any parsing options)
+      const parsedData = await parseExcelFile(config.filePath, {
+        headerRow: config.headerRow,
+        skipRows: config.skipRows,
+        skipBottomRows: config.skipBottomRows,
+      });
 
       if (config.sheetIndex < 0 || config.sheetIndex >= parsedData.sheets.length) {
         return {

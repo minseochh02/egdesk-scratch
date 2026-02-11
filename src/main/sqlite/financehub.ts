@@ -1225,9 +1225,16 @@ export class FinanceHubDbManager {
     inserted: number;
     skipped: number;
   } {
+    console.log(`[FinanceHubDb] 🔍 importTransactions called:`);
+    console.log(`[FinanceHubDb]    bankId: ${bankId}`);
+    console.log(`[FinanceHubDb]    accountNumber: ${accountData.accountNumber}`);
+    console.log(`[FinanceHubDb]    transactions count: ${transactions.length}`);
+    console.log(`[FinanceHubDb]    isCard param: ${isCard}`);
+    
     // 1. Transform card transactions if needed
     // Auto-detect cards by bankId (bc-card, nh-card, kb-card, etc.)
     const isCardTransaction = isCard || bankId.includes('-card');
+    console.log(`[FinanceHubDb]    isCardTransaction: ${isCardTransaction}`);
 
     let transformedTransactions = transactions;
     if (isCardTransaction) {
@@ -1238,26 +1245,32 @@ export class FinanceHubDbManager {
     }
 
     // 2. Upsert account
+    console.log(`[FinanceHubDb] 📝 Upserting account...`);
     const account = this.upsertAccount({
       bankId,
       ...accountData,
     });
+    console.log(`[FinanceHubDb]    ✅ Account upserted: ${account.id}`);
 
     // 3. Create sync operation
+    console.log(`[FinanceHubDb] 📝 Creating sync operation...`);
     const syncOp = this.createSyncOperation({
       accountId: account.id,
       bankId,
       queryPeriodStart: syncMetadata.queryPeriodStart,
       queryPeriodEnd: syncMetadata.queryPeriodEnd,
     });
+    console.log(`[FinanceHubDb]    ✅ Sync operation created: ${syncOp.id}`);
 
     try {
       // 4. Bulk insert transactions (with dedup via UNIQUE index)
+      console.log(`[FinanceHubDb] 💾 Bulk inserting ${transformedTransactions.length} transactions...`);
       const { inserted, skipped } = this.bulkInsertTransactions(
         account.id,
         bankId,
         transformedTransactions
       );
+      console.log(`[FinanceHubDb]    ✅ Bulk insert complete: ${inserted} inserted, ${skipped} skipped`);
 
       // 4. Calculate totals (ensure numbers to prevent string concatenation)
       let totalDeposits = 0, depositCount = 0;
@@ -1278,6 +1291,7 @@ export class FinanceHubDbManager {
       }
 
       // 5. Complete sync
+      console.log(`[FinanceHubDb] 📝 Completing sync operation...`);
       const completedSync = this.completeSyncOperation(syncOp.id, {
         totalCount: transactions.length,
         newCount: inserted,
@@ -1288,7 +1302,9 @@ export class FinanceHubDbManager {
         withdrawalCount,
         filePath: syncMetadata.filePath,
       });
+      console.log(`[FinanceHubDb]    ✅ Sync operation completed`);
 
+      console.log(`[FinanceHubDb] 🎉 importTransactions SUCCESS: ${inserted} inserted, ${skipped} skipped`);
       return {
         account,
         syncOperation: completedSync,
@@ -1297,6 +1313,7 @@ export class FinanceHubDbManager {
       };
     } catch (error) {
       // Fail sync on error
+      console.error(`[FinanceHubDb] ❌ importTransactions FAILED:`, error);
       this.failSyncOperation(syncOp.id, (error as Error).message);
       throw error;
     }
