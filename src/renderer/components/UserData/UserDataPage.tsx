@@ -1,0 +1,84 @@
+import React, { useState } from 'react';
+import { useUserData, UserTable } from '../../hooks/useUserData';
+import { TableList } from './TableList';
+import { TableViewer } from './TableViewer';
+import { ImportWizard } from './ImportWizard';
+import './UserData.css';
+
+export const UserDataPage: React.FC = () => {
+  const { tables, loading, error, fetchTables, deleteTable } = useUserData();
+  const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
+  const [showImportWizard, setShowImportWizard] = useState(false);
+
+  const handleSelectTable = (table: UserTable) => {
+    setSelectedTable(table);
+  };
+
+  const handleBackToList = () => {
+    setSelectedTable(null);
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    try {
+      await deleteTable(tableId);
+
+      // If the deleted table was selected, go back to list
+      if (selectedTable && selectedTable.id === tableId) {
+        setSelectedTable(null);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete table');
+    }
+  };
+
+  const handleImportComplete = () => {
+    fetchTables();
+  };
+
+  if (loading && tables.length === 0) {
+    return (
+      <div className="user-data-page">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="user-data-page">
+      <div className="user-data-header">
+        <h1>📊 User Database</h1>
+        <div className="user-data-header-actions">
+          {!selectedTable && (
+            <button className="btn btn-primary" onClick={() => setShowImportWizard(true)}>
+              📥 Import Excel
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <div className="user-data-content">
+        {selectedTable ? (
+          <TableViewer table={selectedTable} onBack={handleBackToList} />
+        ) : (
+          <TableList
+            tables={tables}
+            onSelectTable={handleSelectTable}
+            onDeleteTable={handleDeleteTable}
+            onImportClick={() => setShowImportWizard(true)}
+          />
+        )}
+      </div>
+
+      {showImportWizard && (
+        <ImportWizard
+          onClose={() => setShowImportWizard(false)}
+          onComplete={handleImportComplete}
+        />
+      )}
+    </div>
+  );
+};

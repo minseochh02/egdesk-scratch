@@ -867,10 +867,10 @@ export class FinanceHubScheduler extends EventEmitter {
         };
       }
 
-      // Get date range for yesterday (1 day)
+      // Get date range for last 7 days
       const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(today.getDate() - 7);
 
       const formatDate = (date: Date) => {
         const year = date.getFullYear();
@@ -879,10 +879,10 @@ export class FinanceHubScheduler extends EventEmitter {
         return `${year}${month}${day}`;
       };
 
-      const startDate = formatDate(yesterday);
+      const startDate = formatDate(oneWeekAgo);
       const endDate = formatDate(today);
 
-      console.log(`[FinanceHubScheduler] Fetching ${cardCompanyId} transactions from ${startDate} to ${endDate}...`);
+      console.log(`[FinanceHubScheduler] Fetching ${cardCompanyId} transactions from ${startDate} to ${endDate} (7 days)...`);
 
       // Get all cards for this card company
       let cardList = [];
@@ -1041,10 +1041,10 @@ export class FinanceHubScheduler extends EventEmitter {
         };
       }
 
-      // Get date range for yesterday (1 day)
+      // Get date range for last 7 days
       const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(today.getDate() - 7);
 
       const formatDate = (date: Date) => {
         const year = date.getFullYear();
@@ -1053,10 +1053,10 @@ export class FinanceHubScheduler extends EventEmitter {
         return `${year}${month}${day}`;
       };
 
-      const startDate = formatDate(yesterday);
+      const startDate = formatDate(oneWeekAgo);
       const endDate = formatDate(today);
 
-      console.log(`[FinanceHubScheduler] Fetching ${bankId} transactions from ${startDate} to ${endDate}...`);
+      console.log(`[FinanceHubScheduler] Fetching ${bankId} transactions from ${startDate} to ${endDate} (7 days)...`);
 
       let totalInserted = 0;
       let totalSkipped = 0;

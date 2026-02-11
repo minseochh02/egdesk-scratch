@@ -185,8 +185,18 @@ export async function analyzeSourceMapping(params: {
 Your job: figure out exactly how flat source data gets transformed into the structured target report.
 
 **You have access to query tools** to explore the source data:
-- Use queryExcelData to filter, group, and aggregate data (like SQL SELECT, WHERE, GROUP BY, SUM)
-- Use getDistinctValues to see unique values in columns (helps with dimension mapping)
+
+**queryExcelData**: Filter, group, and aggregate data
+- fileId: file ID to query
+- select: comma-separated columns/aggregations (e.g., "col1, SUM(col2), AVG(col3)")
+- whereJson: JSON string of filters (e.g., '[{"column":"거래처","operator":"=","value":"화성"}]')
+- groupBy: comma-separated columns (e.g., "region, product")
+- limit: max rows
+
+**getDistinctValues**: Get unique values from a column
+- fileId: file ID
+- column: column name
+- limit: max values
 
 **Operating Principles:**
 1. Value-back matching is your primary weapon - use queryExcelData to reproduce target numbers
@@ -355,69 +365,34 @@ Group related mappings into logical build steps.
 
 Use the query tools extensively to explore and verify mappings. Document your findings in detail.`;
 
-    // Define tools for AI to query Excel data
+    // SIMPLIFIED tools - avoid "too many states" error by using simple string types
     const tools = [
       {
         functionDeclarations: [
           {
             name: 'queryExcelData',
-            description: 'Query Excel data with filters, grouping, and aggregation (like SQL SELECT)',
+            description: 'Query Excel data',
             parameters: {
               type: 'object',
               properties: {
-                fileId: {
-                  type: 'string',
-                  description: 'The file ID to query',
-                },
-                select: {
-                  type: 'array',
-                  description: 'Columns to select, or aggregations like "SUM(amount)", "AVG(price)"',
-                  items: { type: 'string' },
-                },
-                where: {
-                  type: 'array',
-                  description: 'Filter conditions',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      column: { type: 'string', description: 'Column name' },
-                      operator: { type: 'string', description: 'Operator: =, !=, >, >=, <, <=, in, contains, between' },
-                      value: { description: 'Value or array of values for "in" and "between"' },
-                    },
-                    required: ['column', 'operator', 'value'],
-                  },
-                },
-                groupBy: {
-                  type: 'array',
-                  description: 'Columns to group by',
-                  items: { type: 'string' },
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of rows to return',
-                },
+                fileId: { type: 'string' },
+                select: { type: 'string' }, // Comma-separated: "col1, SUM(col2)"
+                whereJson: { type: 'string' }, // JSON string: '[{"column":"x","operator":"=","value":"y"}]'
+                groupBy: { type: 'string' }, // Comma-separated: "col1, col2"
+                limit: { type: 'number' },
               },
               required: ['fileId', 'select'],
             },
           },
           {
             name: 'getDistinctValues',
-            description: 'Get distinct/unique values from a column (useful for dimension mapping)',
+            description: 'Get distinct values from column',
             parameters: {
               type: 'object',
               properties: {
-                fileId: {
-                  type: 'string',
-                  description: 'The file ID to query',
-                },
-                column: {
-                  type: 'string',
-                  description: 'Column name to get distinct values from',
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of distinct values to return (default: 100)',
-                },
+                fileId: { type: 'string' },
+                column: { type: 'string' },
+                limit: { type: 'number' },
               },
               required: ['fileId', 'column'],
             },
@@ -426,13 +401,47 @@ Use the query tools extensively to explore and verify mappings. Document your fi
       },
     ];
 
-    // Tool executor function (closes over sourceFilesData)
+    // Tool executor - parse simplified string formats back to expected types
     const toolExecutor = async (toolName: string, args: any) => {
       console.log(`[Resolver] Executing tool: ${toolName}`, args);
 
       switch (toolName) {
-        case 'queryExcelData':
-          return queryExcelData(params.sourceFilesData, args);
+        case 'queryExcelData': {
+          const queryArgs: any = {
+            fileId: args.fileId,
+            select: [],
+            where: undefined,
+            groupBy: undefined,
+            limit: args.limit,
+          };
+
+          // Parse select (comma-separated string to array)
+          if (typeof args.select === 'string') {
+            queryArgs.select = args.select.split(',').map((s: string) => s.trim());
+          } else if (Array.isArray(args.select)) {
+            queryArgs.select = args.select;
+          }
+
+          // Parse whereJson (JSON string to array)
+          if (args.whereJson && typeof args.whereJson === 'string') {
+            try {
+              queryArgs.where = JSON.parse(args.whereJson);
+            } catch (e) {
+              console.warn(`[Resolver] Failed to parse whereJson:`, args.whereJson);
+            }
+          } else if (args.where) {
+            queryArgs.where = args.where;
+          }
+
+          // Parse groupBy (comma-separated string to array)
+          if (typeof args.groupBy === 'string') {
+            queryArgs.groupBy = args.groupBy.split(',').map((s: string) => s.trim());
+          } else if (Array.isArray(args.groupBy)) {
+            queryArgs.groupBy = args.groupBy;
+          }
+
+          return queryExcelData(params.sourceFilesData, queryArgs);
+        }
         case 'getDistinctValues':
           return getDistinctValues(params.sourceFilesData, args.fileId, args.column, args.limit);
         default:

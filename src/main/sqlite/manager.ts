@@ -22,6 +22,7 @@ import {
 } from './playwright-scheduler';
 import { SQLiteCompanyResearchManager } from './company-research';
 import { FinanceHubDbManager } from './financehub';
+import { UserDataDbManager } from './user-data';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { restartPlaywrightScheduler } from '../scheduler/playwright-scheduler-instance';
@@ -48,6 +49,7 @@ export class SQLiteManager {
   private cloudmcpDb: Database.Database | null = null;
   private financeHubDb: Database.Database | null = null;
   private schedulerDb: Database.Database | null = null;
+  private userDataDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -64,6 +66,7 @@ export class SQLiteManager {
   private playwrightSchedulerManager: SQLitePlaywrightSchedulerManager | null = null;
   private companyResearchManager: SQLiteCompanyResearchManager | null = null;
   private financeHubManager: FinanceHubDbManager | null = null;
+  private userDataManager: UserDataDbManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -99,6 +102,7 @@ export class SQLiteManager {
       this.cloudmcpDb = result.cloudmcpDatabase!;
       this.financeHubDb = result.financeHubDatabase!;
       this.schedulerDb = result.schedulerDatabase!;
+      this.userDataDb = result.userDataDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
@@ -109,6 +113,7 @@ export class SQLiteManager {
       this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
+      this.userDataManager = new UserDataDbManager(this.userDataDb);
       this.isInitialized = true;
 
       // Run cleanup migration for deleted Playwright tests
@@ -137,7 +142,7 @@ export class SQLiteManager {
    * Check if SQLite is available and initialized
    */
   public isAvailable(): boolean {
-    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null && this.activityDb !== null && this.cloudmcpDb !== null;
+    return this.isInitialized && this.conversationsDb !== null && this.taskDb !== null && this.wordpressDb !== null && this.activityDb !== null && this.cloudmcpDb !== null && this.userDataDb !== null;
   }
 
   /**
@@ -209,6 +214,14 @@ export class SQLiteManager {
   }
 
   /**
+   * Get User Data database size in MB
+   */
+  public getUserDataDatabaseSize(): number {
+    if (!this.userDataDb) return 0;
+    return getDatabaseSize(this.userDataDb.name);
+  }
+
+  /**
    * Clean up database connections
    */
   public cleanup(): void {
@@ -237,7 +250,12 @@ export class SQLiteManager {
         this.schedulerDb.close();
         this.schedulerDb = null;
       }
-      
+
+      if (this.userDataDb) {
+        this.userDataDb.close();
+        this.userDataDb = null;
+      }
+
       this.isInitialized = false;
       this.initializationError = null;
       this.taskManager = null;
@@ -248,6 +266,7 @@ export class SQLiteManager {
       this.dockerSchedulerManager = null;
       this.playwrightSchedulerManager = null;
       this.financeHubManager = null;
+      this.userDataManager = null;
       
       console.log('🧹 SQLite Manager cleaned up');
     } catch (error) {
@@ -259,7 +278,7 @@ export class SQLiteManager {
    * Ensure SQLite is initialized before operations
    */
   private ensureInitialized(): void {
-    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb || !this.activityDb || !this.schedulerDb) {
+    if (!this.isInitialized || !this.conversationsDb || !this.taskDb || !this.wordpressDb || !this.activityDb || !this.schedulerDb || !this.userDataDb) {
       throw new Error(
         this.initializationError ||
         'SQLite Manager is not initialized. Please call initialize() first.'
@@ -322,6 +341,15 @@ export class SQLiteManager {
     return this.schedulerDb!;
   }
 
+  /**
+   * Get the User Data database instance (for user-created tables)
+   * Contains: user_tables metadata, import_operations, user data tables
+   */
+  public getUserDataDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.userDataDb!;
+  }
+
   public getActivityManager(): SQLiteActivityManager {
     this.ensureInitialized();
     if (!this.activityManager) {
@@ -368,6 +396,14 @@ export class SQLiteManager {
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb!);
     }
     return this.financeHubManager;
+  }
+
+  public getUserDataManager(): UserDataDbManager {
+    this.ensureInitialized();
+    if (!this.userDataManager) {
+      this.userDataManager = new UserDataDbManager(this.userDataDb!);
+    }
+    return this.userDataManager;
   }
 
   /**
@@ -636,6 +672,7 @@ export class SQLiteManager {
     this.registerPlaywrightSchedulerHandlers();
     this.registerCompanyResearchHandlers();
     this.registerFinanceHubHandlers();
+    this.registerUserDataHandlers();
     
     // Register Finance Hub scheduler handlers
     try {
@@ -2249,6 +2286,154 @@ export class SQLiteManager {
       try {
         const latest = this.getCompanyResearchManager().getLatestCompletedResearch(domain);
         return { success: true, data: latest };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register User Data IPC handlers
+   */
+  private registerUserDataHandlers(): void {
+    // Get all user tables
+    ipcMain.handle('user-data:get-tables', async () => {
+      try {
+        const tables = this.getUserDataManager().getAllTables();
+        return { success: true, data: tables };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get table by ID
+    ipcMain.handle('user-data:get-table', async (event, tableId: string) => {
+      try {
+        const table = this.getUserDataManager().getTable(tableId);
+        return { success: true, data: table };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get table by name
+    ipcMain.handle('user-data:get-table-by-name', async (event, tableName: string) => {
+      try {
+        const table = this.getUserDataManager().getTableByName(tableName);
+        return { success: true, data: table };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete table
+    ipcMain.handle('user-data:delete-table', async (event, tableId: string) => {
+      try {
+        const success = this.getUserDataManager().deleteTable(tableId);
+        return { success, data: { deleted: success } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Query table data
+    ipcMain.handle('user-data:query-table', async (event, tableId: string, options: any) => {
+      try {
+        const result = this.getUserDataManager().queryData(tableId, options);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Search table data
+    ipcMain.handle('user-data:search-table', async (event, tableId: string, searchQuery: string, limit?: number) => {
+      try {
+        const result = this.getUserDataManager().searchData(tableId, searchQuery, limit);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Aggregate table data
+    ipcMain.handle('user-data:aggregate', async (event, tableId: string, options: any) => {
+      try {
+        const result = this.getUserDataManager().aggregate(tableId, options);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Execute raw SQL query
+    ipcMain.handle('user-data:execute-query', async (event, sql: string) => {
+      try {
+        const result = this.getUserDataManager().executeRawQuery(sql);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get export preview
+    ipcMain.handle('user-data:get-export-preview', async (event, tableId: string, limit?: number) => {
+      try {
+        const rows = this.getUserDataManager().getExportPreview(tableId, limit);
+        return { success: true, data: rows };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get import operations
+    ipcMain.handle('user-data:get-import-operations', async (event, tableId: string, limit?: number) => {
+      try {
+        const operations = this.getUserDataManager().getImportOperations(tableId, limit);
+        return { success: true, data: operations };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get recent import operations
+    ipcMain.handle('user-data:get-recent-imports', async (event, limit?: number) => {
+      try {
+        const operations = this.getUserDataManager().getRecentImportOperations(limit);
+        return { success: true, data: operations };
       } catch (error) {
         return {
           success: false,

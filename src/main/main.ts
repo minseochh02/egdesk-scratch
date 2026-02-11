@@ -96,13 +96,14 @@ import { researchWebsite, resumeResearchWithCredentials, SecureCredentials } fro
 import { getLocalServerManager } from './mcp/server-creator/local-server-manager';
 import { initializeRookieDatabase } from './rookie/skillset/skillset-database';
 import { registerSkillsetHandlers } from './rookie/skillset/skillset-ipc-handlers';
-import { 
-  registerServerName, 
-  startTunnel, 
-  stopTunnel, 
-  getTunnelStatus, 
-  getTunnelInfo, 
-  getActiveTunnels, 
+import { registerUserDataIPCHandlers } from './user-data/user-data-ipc-handler';
+import {
+  registerServerName,
+  startTunnel,
+  stopTunnel,
+  getTunnelStatus,
+  getTunnelInfo,
+  getActiveTunnels,
   stopAllTunnels,
   addPermissions,
   getPermissions,
@@ -4371,6 +4372,9 @@ const createWindow = async () => {
 
     // Register Skillset (Rookie Website Knowledge Base) handlers
     registerSkillsetHandlers();
+
+    // Register User Data handlers
+    registerUserDataIPCHandlers();
 
     // Register shell utility handlers
     ipcMain.handle('shell:open-path', async (_event, filePath: string) => {

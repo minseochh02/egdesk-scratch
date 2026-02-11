@@ -1288,5 +1288,14 @@ export async function collectTaxInvoices(
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     };
+  } finally {
+    // CRITICAL FIX: Always close browser after collecting tax invoices
+    try {
+      console.log('[Hometax] Closing browser...');
+      await disconnectFromHometax();
+      console.log('[Hometax] ✅ Browser closed successfully');
+    } catch (cleanupError) {
+      console.error('[Hometax] Failed to close browser:', cleanupError);
+    }
   }
 }

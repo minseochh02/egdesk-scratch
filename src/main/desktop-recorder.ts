@@ -127,6 +127,7 @@ export class DesktopRecorder {
   private windowMonitoringFailCount: number = 0;
   private pressedKeys: Set<number> = new Set(); // Track currently pressed keys
   private currentlyInBrowser: boolean = false; // Track if user is currently in a browser
+  private controlWindow: any = null; // Reference to control window (if using one)
 
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
@@ -188,7 +189,7 @@ export class DesktopRecorder {
   /**
    * Start recording desktop actions
    */
-  async startRecording(): Promise<void> {
+  async startRecording(options?: { createVirtualDesktop?: boolean }): Promise<void> {
     if (this.isRecording) {
       console.warn('Desktop recording already in progress');
       return;
@@ -206,13 +207,16 @@ export class DesktopRecorder {
       throw new Error('Failed to initialize desktop automation');
     }
 
-    // Create and switch to new virtual desktop for clean recording environment
-    console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
-    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
-    if (desktopCreated) {
-      console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
-    } else {
-      console.log('[DesktopRecorder] ⚠️  Could not create virtual desktop, recording on current desktop');
+    // Create and switch to new virtual desktop if requested (default: true)
+    const shouldCreateDesktop = options?.createVirtualDesktop !== false;
+    if (shouldCreateDesktop) {
+      console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
+      const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
+      if (desktopCreated) {
+        console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
+      } else {
+        console.log('[DesktopRecorder] ⚠️  Could not create virtual desktop, recording on current desktop');
+      }
     }
 
     this.isRecording = true;
@@ -235,6 +239,28 @@ export class DesktopRecorder {
     } else {
       console.log('[DesktopRecorder] Recording clipboard and window changes (keyboard/mouse capture unavailable in dev mode)');
     }
+  }
+
+  /**
+   * Start recording with a control window (for external use)
+   */
+  async startRecordingWithControlWindow(): Promise<void> {
+    // Create and switch to new virtual desktop first
+    console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
+    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
+    if (desktopCreated) {
+      console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
+    }
+
+    // Import and create control window on the new desktop
+    const { RecorderControlWindow } = await import('./recorder-control-window');
+    this.controlWindow = new RecorderControlWindow();
+    await this.controlWindow.create();
+
+    // Start recording (skip virtual desktop creation since we already did it)
+    await this.startRecording({ createVirtualDesktop: false });
+
+    console.log('[DesktopRecorder] Control window created on recording desktop');
   }
 
   /**
@@ -282,6 +308,13 @@ export class DesktopRecorder {
     }
 
     console.log(`[DesktopRecorder] Recording stopped. ${this.actions.length} actions recorded.`);
+
+    // Close control window if it exists
+    if (this.controlWindow && this.controlWindow.exists && this.controlWindow.exists()) {
+      console.log('[DesktopRecorder] Closing control window...');
+      this.controlWindow.close();
+      this.controlWindow = null;
+    }
 
     // Switch back to original desktop and clean up
     console.log('[DesktopRecorder] Switching back to original desktop...');
