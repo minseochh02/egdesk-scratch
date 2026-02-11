@@ -135,6 +135,57 @@ export class DesktopRecorder {
   // ==================== Recording Methods ====================
 
   /**
+   * Initialize the list of currently running apps before recording starts
+   * This prevents false "app launch" detections for apps already running
+   */
+  private async initializeRunningApps(): Promise<void> {
+    try {
+      console.log('[DesktopRecorder] Scanning for already-running apps...');
+
+      if (process.platform === 'win32') {
+        // Windows: Use tasklist to get running processes
+        const { stdout } = await execAsync('tasklist /FO CSV /NH');
+        const lines = stdout.split('\n');
+
+        for (const line of lines) {
+          const match = line.match(/"([^"]+)\.exe"/);
+          if (match) {
+            const appName = match[1];
+            // Add common app names (without .exe)
+            if (appName && !appName.startsWith('svchost')) {
+              this.seenApps.add(appName);
+            }
+          }
+        }
+      } else if (process.platform === 'darwin') {
+        // macOS: Use ps to get running apps
+        const { stdout } = await execAsync('ps -ax -o comm=');
+        const lines = stdout.split('\n');
+
+        for (const line of lines) {
+          const appName = path.basename(line.trim()).replace('.app', '');
+          if (appName && !appName.startsWith('.')) {
+            this.seenApps.add(appName);
+          }
+        }
+      }
+
+      // Also get the current active window specifically
+      const activeWindow = await activeWin();
+      if (activeWindow) {
+        this.seenApps.add(activeWindow.owner.name);
+        this.lastActiveWindow = activeWindow.owner.name;
+        console.log(`[DesktopRecorder] Currently active app: ${activeWindow.owner.name}`);
+      }
+
+      console.log(`[DesktopRecorder] Found ${this.seenApps.size} pre-existing apps (won't record as launches)`);
+    } catch (error: any) {
+      console.warn('[DesktopRecorder] Failed to scan running apps:', error.message);
+      console.log('[DesktopRecorder] Continuing anyway - may record some false launches');
+    }
+  }
+
+  /**
    * Start recording desktop actions
    */
   async startRecording(): Promise<void> {
@@ -155,10 +206,22 @@ export class DesktopRecorder {
       throw new Error('Failed to initialize desktop automation');
     }
 
+    // Create and switch to new virtual desktop for clean recording environment
+    console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
+    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
+    if (desktopCreated) {
+      console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
+    } else {
+      console.log('[DesktopRecorder] ⚠️  Could not create virtual desktop, recording on current desktop');
+    }
+
     this.isRecording = true;
     this.isPaused = false;
     this.startTime = Date.now();
     this.actions = [];
+
+    // Initialize seenApps with currently running apps to avoid false "launches"
+    await this.initializeRunningApps();
 
     // Setup event listeners
     this.setupGlobalKeyboardListener(); // This now also captures mouse clicks via uiohook
@@ -219,6 +282,24 @@ export class DesktopRecorder {
     }
 
     console.log(`[DesktopRecorder] Recording stopped. ${this.actions.length} actions recorded.`);
+
+    // Switch back to original desktop and clean up
+    console.log('[DesktopRecorder] Switching back to original desktop...');
+    try {
+      await this.desktopManager.switchBackAndCleanup();
+      console.log('[DesktopRecorder] ✅ Returned to original desktop');
+    } catch (error: any) {
+      console.warn('[DesktopRecorder] Failed to switch back:', error.message);
+      console.log('[DesktopRecorder] You can manually switch back using:');
+      if (process.platform === 'win32') {
+        console.log('[DesktopRecorder]   Win+Ctrl+Left (switch back)');
+        console.log('[DesktopRecorder]   Win+Ctrl+F4 (close recording desktop)');
+      } else if (process.platform === 'darwin') {
+        console.log('[DesktopRecorder]   Ctrl+Left (switch back)');
+        console.log('[DesktopRecorder]   Mission Control → hover → click X (close space)');
+      }
+    }
+
     return this.outputFile;
   }
 
@@ -272,6 +353,19 @@ export class DesktopRecorder {
 
     console.log(`[DesktopRecorder] Replaying ${recording.actions.length} actions...`);
 
+    // Create and switch to new virtual desktop for isolated replay
+    console.log('[DesktopRecorder] Creating new virtual desktop for replay...');
+    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
+    if (desktopCreated) {
+      console.log('[DesktopRecorder] ✅ Switched to replay desktop');
+      console.log('[DesktopRecorder] You can switch back to EGDesk using:');
+      if (process.platform === 'win32') {
+        console.log('[DesktopRecorder]   Win+Ctrl+Left');
+      } else if (process.platform === 'darwin') {
+        console.log('[DesktopRecorder]   Ctrl+Left');
+      }
+    }
+
     // Create overlay window for visual feedback
     const overlay = new ReplayOverlayWindow();
     await overlay.create();
@@ -307,6 +401,16 @@ export class DesktopRecorder {
       // Always close overlay, even if replay fails
       await this.sleep(1000); // Show completion for 1 second
       overlay.close();
+
+      // Switch back to original desktop and clean up
+      console.log('[DesktopRecorder] Switching back to original desktop...');
+      try {
+        await this.desktopManager.switchBackAndCleanup();
+        console.log('[DesktopRecorder] ✅ Returned to original desktop');
+      } catch (error: any) {
+        console.warn('[DesktopRecorder] Failed to auto-switch back:', error.message);
+        console.log('[DesktopRecorder] Please manually switch back to EGDesk desktop');
+      }
     }
   }
 
