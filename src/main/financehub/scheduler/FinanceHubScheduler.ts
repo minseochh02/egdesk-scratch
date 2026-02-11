@@ -1042,10 +1042,37 @@ export class FinanceHubScheduler extends EventEmitter {
       // Card numbers are masked in the download, so just import everything under one account
       const result = await automator.getTransactions(null, startDate, endDate, { parse: true });
 
-      if (!result.success) {
+      console.log(`[FinanceHubScheduler] 🔍 RAW getTransactions result:`, result);
+      console.log(`[FinanceHubScheduler] 🔍 Result type:`, typeof result);
+      console.log(`[FinanceHubScheduler] 🔍 Is array:`, Array.isArray(result));
+      
+      if (Array.isArray(result)) {
+        console.log(`[FinanceHubScheduler] 🔍 Array length:`, result.length);
+        console.log(`[FinanceHubScheduler] 🔍 First element:`, result[0]);
+      } else if (typeof result === 'object') {
+        console.log(`[FinanceHubScheduler] 🔍 Object keys:`, Object.keys(result));
+      }
+
+      // BC Card returns an ARRAY, not an object with .success
+      // Handle both formats for compatibility
+      let actualResult;
+      if (Array.isArray(result)) {
+        console.log(`[FinanceHubScheduler] ✅ Detected array result (BC Card format)`);
+        // Wrap array in expected format
+        actualResult = {
+          success: result.length > 0,
+          accounts: result,
+          error: result.length === 0 ? 'No data returned' : undefined
+        };
+      } else {
+        console.log(`[FinanceHubScheduler] ✅ Detected object result (standard format)`);
+        actualResult = result;
+      }
+
+      if (!actualResult.success) {
         return {
           success: false,
-          error: `Failed to get transactions: ${result.error || 'Unknown error'}`
+          error: `Failed to get transactions: ${actualResult.error || 'Unknown error'}`
         };
       }
 
@@ -1058,9 +1085,12 @@ export class FinanceHubScheduler extends EventEmitter {
       const allTransactions: any[] = [];
       let excelFilePath = '';
 
-      if (result.accounts && Array.isArray(result.accounts)) {
-        for (const account of result.accounts) {
+      // CRITICAL: Check both possible result structures
+      if (actualResult.accounts && Array.isArray(actualResult.accounts)) {
+        console.log(`[FinanceHubScheduler] 📋 Processing ${actualResult.accounts.length} accounts from actualResult.accounts`);
+        for (const account of actualResult.accounts) {
           const transactions = account.extractedData?.transactions || [];
+          console.log(`[FinanceHubScheduler]    Account has ${transactions.length} transactions`);
           allTransactions.push(...transactions);
           
           // Use the first Excel file path we find
@@ -1068,7 +1098,17 @@ export class FinanceHubScheduler extends EventEmitter {
             excelFilePath = account.path;
           }
         }
+      } else if (actualResult.transactions && Array.isArray(actualResult.transactions)) {
+        // Alternative structure: transactions directly in actualResult
+        console.log(`[FinanceHubScheduler] 📋 Processing ${actualResult.transactions.length} transactions from actualResult.transactions`);
+        allTransactions.push(...actualResult.transactions);
+        excelFilePath = actualResult.filePath || actualResult.file || '';
+      } else {
+        console.warn(`[FinanceHubScheduler] ⚠️  Unknown result structure - no transactions found`);
+        console.warn(`[FinanceHubScheduler] actualResult:`, actualResult);
       }
+      
+      console.log(`[FinanceHubScheduler] 📊 Total collected transactions: ${allTransactions.length}`);
 
       // Import all transactions under a single account (since card numbers are masked)
       if (allTransactions.length > 0) {
@@ -1093,14 +1133,14 @@ export class FinanceHubScheduler extends EventEmitter {
           cardCompanyId,
           cardData,
           allTransactions,
-          syncMetadata
+          syncMetadata,
+          true // isCard = true for proper card transaction transformation
         );
 
-        if (importResult.success) {
-          totalInserted = importResult.inserted;
-          totalSkipped = importResult.skipped;
-          console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions (all cards combined)`);
-        }
+        // importTransactions always succeeds or throws, no .success field
+        totalInserted = importResult.inserted;
+        totalSkipped = importResult.skipped;
+        console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions (all cards combined)`);
       }
 
       console.log(`[FinanceHubScheduler] Card sync complete for ${cardCompanyId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
@@ -1284,14 +1324,14 @@ export class FinanceHubScheduler extends EventEmitter {
               bankId,
               accountData,
               transactionsData,
-              syncMetadata
+              syncMetadata,
+              false // isCard = false for bank transactions
             );
 
-            if (importResult.success) {
-              totalInserted += importResult.inserted;
-              totalSkipped += importResult.skipped;
-              console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions for account ${accountNumber}`);
-            }
+            // importTransactions always succeeds or throws, no .success field
+            totalInserted += importResult.inserted;
+            totalSkipped += importResult.skipped;
+            console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions for account ${accountNumber}`);
           }
         } catch (accountError) {
           console.error(`[FinanceHubScheduler] Error syncing account ${accountNumber}:`, accountError);

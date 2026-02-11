@@ -113,52 +113,81 @@ export function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] 
 /**
  * Parse Excel file and extract data with schema detection
  */
-export async function parseExcelFile(filePath: string): Promise<ParsedExcelData> {
+export async function parseExcelFile(
+  filePath: string,
+  options?: {
+    headerRow?: number; // Which row contains headers (1-based, default: 1)
+    skipRows?: number; // How many rows to skip at the top (default: 0)
+    skipBottomRows?: number; // How many rows to skip at the bottom (default: 0)
+  }
+): Promise<ParsedExcelData> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
+
+  const headerRow = options?.headerRow || 1;
+  const skipRows = options?.skipRows || 0;
+  const skipBottomRows = options?.skipBottomRows || 0;
 
   const sheets: ParsedExcelData['sheets'] = [];
 
   workbook.eachSheet((worksheet, sheetId) => {
-    const rows: any[] = [];
+    const allRows: any[][] = [];
     let headers: string[] = [];
+    let totalRows = 0;
 
+    // First pass: collect all rows
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) {
-        // First row is headers
-        headers = row.values as any[];
-        // ExcelJS includes a null at index 0, so we need to filter it
-        headers = headers.slice(1).map((h, idx) => {
-          const headerValue = h !== null && h !== undefined ? String(h).trim() : `Column${idx + 1}`;
-          return sanitizeColumnName(headerValue);
-        });
-      } else {
-        // Data rows
-        const rowData: any = {};
-        const values = row.values as any[];
-        // Skip the first null value
-        const actualValues = values.slice(1);
+      const values = row.values as any[];
+      // ExcelJS includes a null at index 0, so we slice it
+      allRows.push(values.slice(1));
+      totalRows = rowNumber;
+    });
 
-        headers.forEach((header, idx) => {
-          const cellValue = actualValues[idx];
+    // Calculate which rows to use
+    const headerRowIndex = headerRow - 1; // Convert to 0-based
+    const dataStartIndex = headerRowIndex + 1;
+    const dataEndIndex = totalRows - skipBottomRows;
 
-          // Handle different cell value types
-          if (cellValue === null || cellValue === undefined) {
-            rowData[header] = null;
-          } else if (cellValue instanceof Date) {
-            // Convert dates to ISO string
-            rowData[header] = cellValue.toISOString();
-          } else if (typeof cellValue === 'object' && 'result' in cellValue) {
-            // Handle formula cells
-            rowData[header] = cellValue.result;
-          } else {
-            rowData[header] = cellValue;
-          }
-        });
+    // Extract headers from specified row
+    if (headerRowIndex < allRows.length) {
+      const headerValues = allRows[headerRowIndex];
+      headers = headerValues.map((h, idx) => {
+        const headerValue = h !== null && h !== undefined ? String(h).trim() : `Column${idx + 1}`;
+        return sanitizeColumnName(headerValue);
+      });
+    }
 
+    // Extract data rows (skip top rows and bottom rows)
+    const rows: any[] = [];
+    for (let i = dataStartIndex; i < dataEndIndex && i < allRows.length; i++) {
+      const rowData: any = {};
+      const values = allRows[i];
+
+      headers.forEach((header, idx) => {
+        const cellValue = values[idx];
+
+        // Handle different cell value types
+        if (cellValue === null || cellValue === undefined) {
+          rowData[header] = null;
+        } else if (cellValue instanceof Date) {
+          // Convert dates to ISO string
+          rowData[header] = cellValue.toISOString();
+        } else if (typeof cellValue === 'object' && 'result' in cellValue) {
+          // Handle formula cells
+          rowData[header] = cellValue.result;
+        } else {
+          rowData[header] = cellValue;
+        }
+      });
+
+      // Only include rows that have at least one non-null value
+      const hasData = Object.values(rowData).some(
+        (v) => v !== null && v !== undefined && v !== ''
+      );
+      if (hasData) {
         rows.push(rowData);
       }
-    });
+    }
 
     if (headers.length > 0 && rows.length > 0) {
       const detectedTypes = detectColumnTypes(rows, headers);

@@ -9,7 +9,7 @@ interface BrowserDownloadsSyncWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'folder-selection' | 'file-selection' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
 
 interface BrowserDownloadFolder {
@@ -38,6 +38,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [downloadFiles, setDownloadFiles] = useState<BrowserDownloadFile[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<BrowserDownloadFolder | null>(null);
   const [selectedFile, setSelectedFile] = useState<BrowserDownloadFile | null>(null);
+  const [headerRow, setHeaderRow] = useState<number>(1);
+  const [skipBottomRows, setSkipBottomRows] = useState<number>(0);
   const [importMode, setImportMode] = useState<ImportMode>(null);
   const [parsedData, setParsedData] = useState<any>(null);
   const [selectedSheet, setSelectedSheet] = useState(0);
@@ -114,9 +116,23 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     try {
       setError(null);
       setSelectedFile(file);
+      setCurrentStep('parse-config');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to select file');
+    }
+  };
 
-      // Parse the Excel file
-      const parsed = await parseExcel(file.path);
+  const handleParseConfigComplete = async () => {
+    try {
+      setError(null);
+      setLoadingFiles(true);
+
+      // Parse the Excel file with configured options
+      const parsed = await parseExcel(selectedFile!.path, {
+        headerRow,
+        skipBottomRows,
+      });
+      
       setParsedData(parsed);
       setTableName(parsed.suggestedTableName);
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
@@ -125,6 +141,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setCurrentStep('import-mode');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse Excel file');
+    } finally {
+      setLoadingFiles(false);
     }
   };
 
@@ -161,9 +179,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setCurrentStep('folder-selection');
       setSelectedFolder(null);
       setDownloadFiles([]);
-    } else if (currentStep === 'import-mode') {
+    } else if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
+    } else if (currentStep === 'import-mode') {
+      setCurrentStep('parse-config');
       setParsedData(null);
       setImportMode(null);
     } else if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') {
@@ -205,6 +225,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             description: description.trim() || undefined,
             columnMappings: columnMappings || undefined,
             mergeConfig: mergeConfig || undefined,
+            headerRow,
+            skipBottomRows,
           });
 
           setImportProgress({
@@ -222,6 +244,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             sheetIndex: selectedSheet,
             tableId: selectedTableId,
             columnMappings: existingTableColumnMappings,
+            headerRow,
+            skipBottomRows,
           });
 
           setImportProgress({
@@ -255,6 +279,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     const steps = [
       { id: 'folder-selection', label: 'Select Script' },
       { id: 'file-selection', label: 'Select File' },
+      { id: 'parse-config', label: 'Configure' },
       { id: 'import-mode', label: 'Import Mode' },
       { id: 'mapping', label: 'Map Columns' },
       { id: 'preview', label: 'Preview' },
@@ -265,11 +290,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     const getCurrentStepIndex = () => {
       if (currentStep === 'folder-selection') return 0;
       if (currentStep === 'file-selection') return 1;
-      if (currentStep === 'import-mode') return 2;
-      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 3;
-      if (currentStep === 'preview') return 4;
-      if (currentStep === 'importing') return 5;
-      if (currentStep === 'complete') return 6;
+      if (currentStep === 'parse-config') return 2;
+      if (currentStep === 'import-mode') return 3;
+      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 4;
+      if (currentStep === 'preview') return 5;
+      if (currentStep === 'importing') return 6;
+      if (currentStep === 'complete') return 7;
       return 0;
     };
 
@@ -406,6 +432,86 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             ))}
           </div>
         )}
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderParseConfig = () => {
+    return (
+      <div>
+        <div style={{ background: '#fff3e0', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>📋 {selectedFile?.name}</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            Configure how to read this Excel file
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Excel Parsing Options</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Excel files can have different structures. Configure where your data actually starts and ends.
+        </p>
+
+        <div className="form-group">
+          <label>
+            <strong>Header Row Number</strong>
+            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#666' }}>
+              Which row contains the column headers?
+            </span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="20"
+            value={headerRow}
+            onChange={(e) => setHeaderRow(parseInt(e.target.value) || 1)}
+            placeholder="1"
+            style={{ maxWidth: '120px' }}
+          />
+          <div style={{ marginTop: '8px', fontSize: '13px', color: '#999' }}>
+            <strong>Examples:</strong>
+            <ul style={{ marginTop: '4px', paddingLeft: '20px' }}>
+              <li>Row 1 = Headers in first row (default)</li>
+              <li>Row 2 = Skip title, headers in second row</li>
+              <li>Row 3 = Skip title and blank row, headers in third row</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>
+            <strong>Skip Bottom Rows</strong>
+            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#666' }}>
+              How many rows at the bottom to skip (totals, footers)?
+            </span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={skipBottomRows}
+            onChange={(e) => setSkipBottomRows(parseInt(e.target.value) || 0)}
+            placeholder="0"
+            style={{ maxWidth: '120px' }}
+          />
+          <div style={{ marginTop: '8px', fontSize: '13px', color: '#999' }}>
+            <strong>Examples:</strong>
+            <ul style={{ marginTop: '4px', paddingLeft: '20px' }}>
+              <li>0 = Include all rows (default)</li>
+              <li>1 = Skip last row (e.g., "Total: 1,234")</li>
+              <li>2 = Skip last 2 rows (e.g., subtotals + grand total)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginTop: '24px' }}>
+          <h4 style={{ margin: '0 0 8px 0' }}>📊 Preview Configuration</h4>
+          <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.6' }}>
+            <strong>Reading from:</strong> Row {headerRow} (headers) → Row {headerRow + 1} (data starts)<br />
+            <strong>Excluding:</strong> {skipBottomRows === 0 ? 'No rows' : `Last ${skipBottomRows} row${skipBottomRows > 1 ? 's' : ''}`}
+          </div>
+        </div>
 
         {error && <div className="error-message">{error}</div>}
       </div>
@@ -730,6 +836,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         return renderFolderSelection();
       case 'file-selection':
         return renderFileSelection();
+      case 'parse-config':
+        return renderParseConfig();
       case 'import-mode':
         return renderImportMode();
       case 'column-mapping':
@@ -775,7 +883,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'file-selection' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -786,6 +894,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             {currentStep === 'complete' ? (
               <button className="btn btn-primary" onClick={handleFinish}>
                 ✅ Finish
+              </button>
+            ) : currentStep === 'parse-config' ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleParseConfigComplete}
+                disabled={loadingFiles}
+              >
+                {loadingFiles ? 'Parsing...' : 'Next: Parse Excel →'}
               </button>
             ) : currentStep === 'preview' ? (
               <button

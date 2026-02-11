@@ -383,10 +383,43 @@ export class UserDataDbManager {
           try {
             const values = dataColumns.map((col) => {
               const value = row[col.name];
-              // Handle type conversions
-              if (value === undefined || value === null) return null;
-              if (col.type === 'INTEGER') return parseInt(String(value), 10);
-              if (col.type === 'REAL') return parseFloat(String(value));
+              
+              // Handle null/undefined/empty
+              if (value === undefined || value === null || value === '') {
+                // Allow null unless column is NOT NULL
+                if (col.notNull) {
+                  throw new Error(`Column "${col.name}" cannot be null`);
+                }
+                return null;
+              }
+              
+              // Type conversions with validation
+              if (col.type === 'INTEGER') {
+                // Handle numeric strings with commas: "1,234" → 1234
+                const cleanValue = String(value).replace(/,/g, '');
+                const num = parseInt(cleanValue, 10);
+                if (isNaN(num)) {
+                  throw new Error(`Cannot convert "${value}" to INTEGER for column "${col.name}"`);
+                }
+                return num;
+              }
+              
+              if (col.type === 'REAL') {
+                // Handle numeric strings with commas: "1,234.56" → 1234.56
+                const cleanValue = String(value).replace(/,/g, '');
+                const num = parseFloat(cleanValue);
+                if (isNaN(num)) {
+                  throw new Error(`Cannot convert "${value}" to REAL for column "${col.name}"`);
+                }
+                return num;
+              }
+              
+              // TEXT: convert everything to string
+              // Handle dates by converting to ISO string if it's a Date object
+              if (value instanceof Date) {
+                return value.toISOString();
+              }
+              
               return String(value);
             });
 
