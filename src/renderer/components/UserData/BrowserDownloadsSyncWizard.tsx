@@ -1,0 +1,695 @@
+import React, { useState, useEffect } from 'react';
+import { useUserData } from '../../hooks/useUserData';
+import { DataTable } from './shared/DataTable';
+import { VisualColumnMapper } from './VisualColumnMapper';
+import { ExistingTableMapper } from './ExistingTableMapper';
+
+interface BrowserDownloadsSyncWizardProps {
+  onClose: () => void;
+  onComplete: () => void;
+}
+
+type WizardStep = 'file-selection' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
+type ImportMode = 'create-new' | 'sync-existing' | null;
+
+interface BrowserDownloadFile {
+  name: string;
+  path: string;
+  scriptFolder: string;
+  size: number;
+  modified: Date;
+}
+
+export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProps> = ({ onClose, onComplete }) => {
+  const { tables, parseExcel, importExcel, validateTableName, syncToExistingTable } = useUserData();
+
+  const [currentStep, setCurrentStep] = useState<WizardStep>('file-selection');
+  const [downloadFiles, setDownloadFiles] = useState<BrowserDownloadFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState<BrowserDownloadFile | null>(null);
+  const [importMode, setImportMode] = useState<ImportMode>(null);
+  const [parsedData, setParsedData] = useState<any>(null);
+  const [selectedSheet, setSelectedSheet] = useState(0);
+  const [tableName, setTableName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
+  const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
+  const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [existingTableColumnMappings, setExistingTableColumnMappings] = useState<Record<string, string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<{
+    rowsImported: number;
+    rowsSkipped: number;
+  } | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+
+  useEffect(() => {
+    loadBrowserDownloads();
+  }, []);
+
+  const loadBrowserDownloads = async () => {
+    try {
+      setLoadingFiles(true);
+      const result = await (window as any).electron.debug.getPlaywrightDownloads();
+      
+      if (result.success) {
+        // Filter only Excel files
+        const excelFiles = result.files.filter((file: BrowserDownloadFile) => 
+          /\.(xlsx?|xlsm|xls)$/i.test(file.name)
+        );
+        setDownloadFiles(excelFiles);
+      } else {
+        setError(result.error || 'Failed to load browser downloads');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load browser downloads');
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const handleFileSelect = async (file: BrowserDownloadFile) => {
+    try {
+      setError(null);
+      setSelectedFile(file);
+
+      // Parse the Excel file
+      const parsed = await parseExcel(file.path);
+      setParsedData(parsed);
+      setTableName(parsed.suggestedTableName);
+      setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
+      setSelectedSheet(0);
+
+      setCurrentStep('import-mode');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse Excel file');
+    }
+  };
+
+  const handleImportModeSelect = (mode: ImportMode) => {
+    setImportMode(mode);
+    
+    if (mode === 'create-new') {
+      setCurrentStep('column-mapping');
+    } else if (mode === 'sync-existing') {
+      setCurrentStep('existing-table-mapping');
+    }
+  };
+
+  const handleColumnMappingComplete = (
+    mappings: Record<string, string>,
+    mergeConfiguration: Record<string, { sources: string[]; separator: string }>
+  ) => {
+    setColumnMappings(mappings);
+    setMergeConfig(mergeConfiguration);
+    setCurrentStep('preview');
+  };
+
+  const handleExistingTableMappingComplete = (
+    tableId: string,
+    mappings: Record<string, string>
+  ) => {
+    setSelectedTableId(tableId);
+    setExistingTableColumnMappings(mappings);
+    setCurrentStep('preview');
+  };
+
+  const handleBack = () => {
+    if (currentStep === 'import-mode') {
+      setCurrentStep('file-selection');
+      setSelectedFile(null);
+      setParsedData(null);
+      setImportMode(null);
+    } else if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') {
+      setCurrentStep('import-mode');
+      setColumnMappings(null);
+      setExistingTableColumnMappings(null);
+    } else if (currentStep === 'preview') {
+      if (importMode === 'create-new') {
+        setCurrentStep('column-mapping');
+      } else {
+        setCurrentStep('existing-table-mapping');
+      }
+    }
+  };
+
+  const handleNext = async () => {
+    if (currentStep === 'preview') {
+      try {
+        setCurrentStep('importing');
+        setIsImporting(true);
+        setImportError(null);
+
+        if (importMode === 'create-new') {
+          // Validate inputs
+          if (!tableName.trim() || !displayName.trim()) {
+            throw new Error('Please enter table name and display name');
+          }
+
+          const validation = await validateTableName(tableName);
+          if (!validation.available) {
+            throw new Error(`Table name "${validation.sanitizedName}" is already in use.`);
+          }
+
+          const result = await importExcel({
+            filePath: selectedFile!.path,
+            sheetIndex: selectedSheet,
+            tableName,
+            displayName,
+            description: description.trim() || undefined,
+            columnMappings: columnMappings || undefined,
+            mergeConfig: mergeConfig || undefined,
+          });
+
+          setImportProgress({
+            rowsImported: result.importOperation.rowsImported,
+            rowsSkipped: result.importOperation.rowsSkipped,
+          });
+        } else if (importMode === 'sync-existing') {
+          // Sync to existing table
+          if (!selectedTableId || !existingTableColumnMappings) {
+            throw new Error('Please select a table and map columns');
+          }
+
+          const result = await syncToExistingTable({
+            filePath: selectedFile!.path,
+            sheetIndex: selectedSheet,
+            tableId: selectedTableId,
+            columnMappings: existingTableColumnMappings,
+          });
+
+          setImportProgress({
+            rowsImported: result.rowsImported,
+            rowsSkipped: result.rowsSkipped,
+          });
+        }
+
+        setCurrentStep('complete');
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : 'Import failed');
+        setCurrentStep('complete');
+      } finally {
+        setIsImporting(false);
+      }
+    }
+  };
+
+  const handleFinish = () => {
+    onComplete();
+    onClose();
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const renderStepIndicator = () => {
+    const steps = [
+      { id: 'file-selection', label: 'Select File' },
+      { id: 'import-mode', label: 'Import Mode' },
+      { id: 'mapping', label: 'Map Columns' },
+      { id: 'preview', label: 'Preview' },
+      { id: 'importing', label: 'Importing' },
+      { id: 'complete', label: 'Complete' },
+    ];
+
+    const getCurrentStepIndex = () => {
+      if (currentStep === 'file-selection') return 0;
+      if (currentStep === 'import-mode') return 1;
+      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 2;
+      if (currentStep === 'preview') return 3;
+      if (currentStep === 'importing') return 4;
+      if (currentStep === 'complete') return 5;
+      return 0;
+    };
+
+    const currentIndex = getCurrentStepIndex();
+
+    return (
+      <div className="import-wizard-steps">
+        {steps.map((step, index) => (
+          <React.Fragment key={step.id}>
+            <div
+              className={`import-wizard-step ${
+                index <= currentIndex ? (index === currentIndex ? 'active' : 'completed') : ''
+              }`}
+            >
+              <div className="import-wizard-step-number">{index + 1}</div>
+              <div className="import-wizard-step-label">{step.label}</div>
+            </div>
+            {index < steps.length - 1 && <div className="import-wizard-step-separator" />}
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  };
+
+  const renderFileSelection = () => {
+    if (loadingFiles) {
+      return (
+        <div className="progress-section">
+          <div className="progress-spinner"></div>
+          <p className="progress-message">Loading browser downloads...</p>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>📥 Browser Recorder Downloads</h3>
+          <button
+            onClick={loadBrowserDownloads}
+            className="btn btn-sm btn-secondary"
+          >
+            🔄 Refresh
+          </button>
+        </div>
+
+        {downloadFiles.length === 0 ? (
+          <div className="file-selection-zone" style={{ cursor: 'default' }}>
+            <div className="file-selection-icon">📭</div>
+            <h3>No Excel files found</h3>
+            <p>Browser Recorder hasn't downloaded any Excel files yet</p>
+            <p style={{ fontSize: '13px', color: '#999' }}>
+              Files are stored in ~/Downloads/EGDesk-Browser/
+            </p>
+          </div>
+        ) : (
+          <div className="browser-downloads-list">
+            {downloadFiles.map((file, idx) => (
+              <div
+                key={idx}
+                className="browser-download-file-card"
+                onClick={() => handleFileSelect(file)}
+              >
+                <div className="browser-download-file-icon">📄</div>
+                <div className="browser-download-file-info">
+                  <div className="browser-download-file-name">{file.name}</div>
+                  <div className="browser-download-file-meta">
+                    📁 {file.scriptFolder} • {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
+                  </div>
+                </div>
+                <div className="browser-download-file-action">Select →</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderImportMode = () => {
+    return (
+      <div>
+        <h3 style={{ marginTop: 0 }}>Choose Import Mode</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Selected file: <strong>{selectedFile?.name}</strong>
+        </p>
+
+        <div className="import-mode-selection">
+          <div
+            className="import-mode-card"
+            onClick={() => handleImportModeSelect('create-new')}
+          >
+            <div className="import-mode-icon">✨</div>
+            <h4>Create New Table</h4>
+            <p>Create a new database table from this Excel file</p>
+            <ul style={{ textAlign: 'left', fontSize: '13px', color: '#666', paddingLeft: '20px' }}>
+              <li>Map Excel columns to new table columns</li>
+              <li>Merge multiple columns if needed</li>
+              <li>Auto-detect data types</li>
+            </ul>
+          </div>
+
+          <div
+            className="import-mode-card"
+            onClick={() => handleImportModeSelect('sync-existing')}
+          >
+            <div className="import-mode-icon">🔄</div>
+            <h4>Sync to Existing Table</h4>
+            <p>Append this data to an existing database table</p>
+            <ul style={{ textAlign: 'left', fontSize: '13px', color: '#666', paddingLeft: '20px' }}>
+              <li>Select an existing table</li>
+              <li>Map Excel columns to table columns</li>
+              <li>Data will be appended to the table</li>
+            </ul>
+          </div>
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderColumnMapping = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+
+    return (
+      <div>
+        {parsedData.sheets.length > 1 && (
+          <div className="form-group" style={{ marginBottom: '24px', maxWidth: '400px' }}>
+            <label>Select Sheet</label>
+            <select
+              value={selectedSheet}
+              onChange={(e) => {
+                const newIndex = parseInt(e.target.value, 10);
+                setSelectedSheet(newIndex);
+                setColumnMappings(null);
+                setMergeConfig(null);
+              }}
+            >
+              {parsedData.sheets.map((sheet: any, index: number) => (
+                <option key={index} value={index}>
+                  {sheet.name} ({sheet.rows.length} rows)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <VisualColumnMapper
+          excelColumns={currentSheet.headers.map((header: string, idx: number) => ({
+            name: header,
+            type: currentSheet.detectedTypes[idx],
+          }))}
+          sampleRows={currentSheet.rows.slice(0, 3)}
+          onMappingComplete={handleColumnMappingComplete}
+          onBack={handleBack}
+        />
+      </div>
+    );
+  };
+
+  const renderExistingTableMapping = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+
+    return (
+      <div>
+        <ExistingTableMapper
+          excelColumns={currentSheet.headers}
+          excelTypes={currentSheet.detectedTypes}
+          sampleRows={currentSheet.rows.slice(0, 3)}
+          availableTables={tables}
+          onMappingComplete={handleExistingTableMappingComplete}
+          onBack={handleBack}
+        />
+      </div>
+    );
+  };
+
+  const renderPreview = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+
+    if (importMode === 'create-new') {
+      if (!columnMappings) return null;
+
+      const previewRows = currentSheet.rows.slice(0, 10);
+      const uniqueDbColumns = Array.from(new Set(Object.values(columnMappings)));
+
+      const mappedPreviewRows = previewRows.map((row: any) => {
+        const mappedRow: any = {};
+
+        uniqueDbColumns.forEach((dbColumnName) => {
+          const mergeInfo = mergeConfig?.[dbColumnName];
+
+          if (mergeInfo && mergeInfo.sources.length > 1) {
+            const values = mergeInfo.sources
+              .map((sourceName) => {
+                const value = row[sourceName];
+                return value !== null && value !== undefined ? String(value).trim() : '';
+              })
+              .filter((v) => v !== '');
+
+            mappedRow[dbColumnName] = values.join(mergeInfo.separator);
+          } else {
+            const sourceExcelColumn = Object.entries(columnMappings).find(
+              ([_, sqlName]) => sqlName === dbColumnName
+            );
+
+            if (sourceExcelColumn) {
+              const [originalName] = sourceExcelColumn;
+              mappedRow[dbColumnName] = row[originalName];
+            }
+          }
+        });
+
+        return mappedRow;
+      });
+
+      const mappedColumns = uniqueDbColumns.map((dbColumnName) => {
+        const sourceExcelColumn = Object.entries(columnMappings).find(
+          ([_, sqlName]) => sqlName === dbColumnName
+        );
+
+        if (sourceExcelColumn) {
+          const [originalName] = sourceExcelColumn;
+          const originalIndex = currentSheet.headers.indexOf(originalName);
+          return {
+            name: dbColumnName,
+            type: currentSheet.detectedTypes[originalIndex],
+          };
+        }
+
+        return { name: dbColumnName, type: 'TEXT' };
+      });
+
+      return (
+        <div className="preview-section">
+          <div className="preview-config">
+            <h3 style={{ marginTop: 0 }}>Table Configuration</h3>
+
+            <div className="form-group">
+              <label>Table Name *</label>
+              <input
+                type="text"
+                value={tableName}
+                onChange={(e) => {
+                  let value = e.target.value;
+                  value = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                  if (/^\d/.test(value)) {
+                    value = 'table_' + value;
+                  }
+                  setTableName(value);
+                }}
+                placeholder="e.g., sales_data"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Display Name *</label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g., Sales Data 2024"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Description (optional)</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add a description for this table..."
+                rows={3}
+              />
+            </div>
+          </div>
+
+          {error && <div className="error-message">{error}</div>}
+
+          <div>
+            <h3>Data Preview (First 10 rows)</h3>
+            <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
+              {currentSheet.rows.length} total rows • {uniqueDbColumns.length} database columns
+            </p>
+            <DataTable
+              columns={mappedColumns}
+              rows={mappedPreviewRows}
+              maxHeight="400px"
+            />
+          </div>
+        </div>
+      );
+    } else if (importMode === 'sync-existing') {
+      if (!selectedTableId || !existingTableColumnMappings) return null;
+
+      const selectedTable = tables.find(t => t.id === selectedTableId);
+      if (!selectedTable) return null;
+
+      const previewRows = currentSheet.rows.slice(0, 10);
+      const mappedPreviewRows = previewRows.map((row: any) => {
+        const mappedRow: any = {};
+        Object.entries(existingTableColumnMappings).forEach(([excelCol, tableCol]) => {
+          mappedRow[tableCol] = row[excelCol];
+        });
+        return mappedRow;
+      });
+
+      return (
+        <div className="preview-section">
+          <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 8px 0' }}>📊 Syncing to: {selectedTable.displayName}</h4>
+            <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
+              Current rows: {selectedTable.rowCount} • Adding: {currentSheet.rows.length} rows
+            </p>
+          </div>
+
+          <h3>Data Preview (First 10 rows to be added)</h3>
+          <DataTable
+            columns={selectedTable.schema.filter(col => col.name !== 'id')}
+            rows={mappedPreviewRows}
+            maxHeight="400px"
+          />
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderImporting = () => {
+    return (
+      <div className="progress-section">
+        <div className="progress-spinner"></div>
+        <p className="progress-message">
+          {importMode === 'create-new' ? 'Creating table and importing data...' : 'Syncing data to existing table...'}
+        </p>
+      </div>
+    );
+  };
+
+  const renderComplete = () => {
+    const isSuccess = !importError;
+
+    return (
+      <div className="completion-section">
+        <div className={`completion-icon ${isSuccess ? 'success' : 'error'}`}>
+          {isSuccess ? '✅' : '❌'}
+        </div>
+        <h2 className="completion-title">
+          {isSuccess ? 'Import Complete!' : 'Import Failed'}
+        </h2>
+        <p className="completion-message">
+          {isSuccess
+            ? importMode === 'create-new'
+              ? 'New table created and data imported successfully'
+              : 'Data synced to existing table successfully'
+            : importError || 'An error occurred during import'}
+        </p>
+
+        {isSuccess && importProgress && (
+          <div className="completion-stats">
+            <div>
+              <div className="progress-stat-value">{importProgress.rowsImported.toLocaleString()}</div>
+              <div className="progress-stat-label">Rows Imported</div>
+            </div>
+            {importProgress.rowsSkipped > 0 && (
+              <div>
+                <div className="progress-stat-value" style={{ color: '#ff9800' }}>
+                  {importProgress.rowsSkipped.toLocaleString()}
+                </div>
+                <div className="progress-stat-label">Rows Skipped</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isSuccess && (
+          <button className="btn btn-secondary" onClick={() => setCurrentStep('preview')}>
+            ⬅️ Go Back
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 'file-selection':
+        return renderFileSelection();
+      case 'import-mode':
+        return renderImportMode();
+      case 'column-mapping':
+        return renderColumnMapping();
+      case 'existing-table-mapping':
+        return renderExistingTableMapping();
+      case 'preview':
+        return renderPreview();
+      case 'importing':
+        return renderImporting();
+      case 'complete':
+        return renderComplete();
+      default:
+        return null;
+    }
+  };
+
+  const canProceed = () => {
+    if (currentStep === 'preview') {
+      if (importMode === 'create-new') {
+        return tableName.trim() && displayName.trim() && columnMappings !== null;
+      } else if (importMode === 'sync-existing') {
+        return selectedTableId !== null && existingTableColumnMappings !== null;
+      }
+    }
+    return false;
+  };
+
+  return (
+    <div className="import-wizard">
+      <div className="import-wizard-dialog">
+        <div className="import-wizard-header">
+          <h2>🔄 Sync Browser Downloads to SQL</h2>
+          <button className="btn-icon" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div className="import-wizard-body">
+          {renderStepIndicator()}
+          {renderStepContent()}
+        </div>
+
+        <div className="import-wizard-footer">
+          <div>
+            {(currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
+              <button className="btn btn-secondary" onClick={handleBack}>
+                ⬅️ Back
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            {currentStep === 'complete' ? (
+              <button className="btn btn-primary" onClick={handleFinish}>
+                ✅ Finish
+              </button>
+            ) : currentStep === 'preview' ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleNext}
+                disabled={!canProceed() || isImporting}
+              >
+                📥 {importMode === 'create-new' ? 'Create & Import' : 'Sync Data'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

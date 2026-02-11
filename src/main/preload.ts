@@ -2323,6 +2323,7 @@ const electronHandler = {
     stop: () => ipcRenderer.invoke('finance-hub:scheduler:stop'),
     syncNow: () => ipcRenderer.invoke('finance-hub:scheduler:sync-now'),
     getLastSyncInfo: () => ipcRenderer.invoke('finance-hub:scheduler:last-sync-info'),
+    clearRetries: () => ipcRenderer.invoke('finance-hub:scheduler:clear-retries'),
     // Event listeners
     onSyncStarted: (callback: () => void) => {
       ipcRenderer.on('finance-hub:scheduler:sync-started', callback);

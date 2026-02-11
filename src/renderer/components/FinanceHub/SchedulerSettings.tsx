@@ -234,6 +234,28 @@ export const SchedulerSettings: React.FC = () => {
     }
   };
 
+  const handleClearRetries = async () => {
+    if (!confirm('모든 재시도 타이머를 초기화하시겠습니까?\n\n진행 중인 재시도가 모두 취소되고, 막힌 상태가 해제됩니다.')) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const result = await window.electron.financeHubScheduler.clearRetries();
+      if (result.success) {
+        console.log('Cleared retries:', result);
+        alert(`✅ 재시도 초기화 완료\n\n${result.cleared}개의 재시도 타이머가 제거되었습니다.${result.entities.length > 0 ? '\n\n제거된 항목:\n' + result.entities.join('\n') : ''}`);
+      } else {
+        alert(`❌ 재시도 초기화 실패: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to clear retries:', error);
+      alert('재시도 초기화 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="scheduler-settings scheduler-settings--loading">
@@ -410,6 +432,14 @@ export const SchedulerSettings: React.FC = () => {
           >
             <FontAwesomeIcon icon={faSync} spin={syncing} />
             {syncing ? '동기화 중...' : '지금 전체 동기화'}
+          </button>
+          <button
+            className="scheduler-settings__clear-retries"
+            onClick={handleClearRetries}
+            disabled={syncing || saving}
+            title="막힌 재시도 타이머를 모두 제거하고 스케줄러 상태를 초기화합니다"
+          >
+            🧹 재시도 초기화
           </button>
         </div>
 

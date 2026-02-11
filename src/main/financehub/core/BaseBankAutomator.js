@@ -827,6 +827,16 @@ class BaseBankAutomator {
   async cleanup(keepOpen = true) {
     this.stopSessionKeepAlive();
 
+    // CRITICAL: Always disconnect Arduino (even if keeping browser open)
+    // Arduino connections must be closed to free the serial port
+    if (this.arduino) {
+      try {
+        await this.disconnectArduino();
+      } catch (error) {
+        this.warn('Failed to disconnect Arduino:', error.message);
+      }
+    }
+
     if (keepOpen) {
       this.log('Keeping browser open for debugging...');
       return;
@@ -838,6 +848,41 @@ class BaseBankAutomator {
         this.log('Browser closed');
       } catch (error) {
         this.warn('Failed to close browser:', error.message);
+      }
+    }
+  }
+
+  async disconnectArduino() {
+    if (this.arduino) {
+      try {
+        // Check if port is open before attempting to close
+        if (this.arduino.isOpen) {
+          return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              this.warn('Arduino disconnect timeout - forcing cleanup');
+              this.arduino = null;
+              resolve();
+            }, 5000); // 5 second timeout
+
+            this.arduino.close((err) => {
+              clearTimeout(timeout);
+              if (err) {
+                this.warn(`Arduino disconnect error: ${err.message}`);
+              } else {
+                this.log('Arduino disconnected');
+              }
+              this.arduino = null;
+              resolve();
+            });
+          });
+        } else {
+          // Port exists but not open - just clear reference
+          this.log('Arduino port not open, clearing reference');
+          this.arduino = null;
+        }
+      } catch (error) {
+        this.warn(`Arduino disconnect exception: ${error.message}`);
+        this.arduino = null; // Force cleanup
       }
     }
   }

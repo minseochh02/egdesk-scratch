@@ -685,6 +685,28 @@ const createWindow = async () => {
             console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${bankId}`);
           }
 
+          // CRITICAL: Remove saved credentials so scheduler doesn't try to sync
+          const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+          if (fhConfig.savedCredentials) {
+            delete fhConfig.savedCredentials[bankId];
+            store.set('financeHub', fhConfig);
+            console.log(`[FINANCE-HUB] Removed saved credentials for ${bankId}`);
+          }
+
+          // CRITICAL: Restart scheduler to clear any scheduled syncs for this entity
+          try {
+            const { getFinanceHubScheduler } = await import('./financehub/scheduler/FinanceHubScheduler');
+            const scheduler = getFinanceHubScheduler();
+            if (scheduler.getSettings().enabled) {
+              await scheduler.stop();
+              await scheduler.start();
+              console.log(`[FINANCE-HUB] Scheduler restarted after removing ${bankId}`);
+            }
+          } catch (schedulerError) {
+            console.warn(`[FINANCE-HUB] Failed to restart scheduler:`, schedulerError);
+            // Non-fatal - scheduler will self-correct on next app restart
+          }
+
           return { success: true };
         } catch (error) {
           console.error(`[FINANCE-HUB] Disconnect failed for ${bankId}:`, error);
@@ -874,6 +896,30 @@ const createWindow = async () => {
           for (const account of accounts) {
             financeHubManager.deleteAccount(account.accountNumber);
             console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${cardCompanyId}`);
+          }
+
+          // CRITICAL: Remove saved credentials so scheduler doesn't try to sync
+          // Card credentials are stored by cardId (e.g., "nh") not full cardCompanyId (e.g., "nh-card")
+          const cardId = cardCompanyId.replace('-card', '');
+          const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
+          if (fhConfig.savedCredentials) {
+            delete fhConfig.savedCredentials[cardId];
+            store.set('financeHub', fhConfig);
+            console.log(`[FINANCE-HUB] Removed saved credentials for ${cardId}`);
+          }
+
+          // CRITICAL: Restart scheduler to clear any scheduled syncs for this entity
+          try {
+            const { getFinanceHubScheduler } = await import('./financehub/scheduler/FinanceHubScheduler');
+            const scheduler = getFinanceHubScheduler();
+            if (scheduler.getSettings().enabled) {
+              await scheduler.stop();
+              await scheduler.start();
+              console.log(`[FINANCE-HUB] Scheduler restarted after removing ${cardId}`);
+            }
+          } catch (schedulerError) {
+            console.warn(`[FINANCE-HUB] Failed to restart scheduler:`, schedulerError);
+            // Non-fatal - scheduler will self-correct on next app restart
           }
 
           return { success: true };

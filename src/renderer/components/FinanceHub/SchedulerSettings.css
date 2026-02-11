@@ -262,6 +262,36 @@
   border-top: 1px solid var(--fh-border);
   display: flex;
   justify-content: center;
+  gap: 12px;
+}
+
+.scheduler-settings__clear-retries {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--fh-bg-card);
+  color: var(--fh-text-primary);
+  border: 1px solid var(--fh-border);
+  border-radius: var(--fh-radius-md);
+  font-family: var(--fh-font-body);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--fh-transition);
+}
+
+.scheduler-settings__clear-retries:hover:not(:disabled) {
+  background: var(--fh-bg-card-hover);
+  border-color: var(--fh-primary);
+  color: var(--fh-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--fh-shadow-sm);
+}
+
+.scheduler-settings__clear-retries:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Info */
