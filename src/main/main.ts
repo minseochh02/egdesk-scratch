@@ -4792,6 +4792,56 @@ app
     // Pass a function that returns the current main window
     authService.setupDeepLinkHandler(() => mainWindow);
 
+    // Auto-detect Arduino port on startup (especially important on macOS)
+    setTimeout(async () => {
+      try {
+        console.log('🔌 Auto-detecting Arduino port...');
+        const { SerialPort } = require('serialport');
+        const ports = await SerialPort.list();
+        
+        console.log('Available serial ports:', ports.map((p: any) => ({
+          path: p.path,
+          manufacturer: p.manufacturer,
+          vendorId: p.vendorId,
+        })));
+        
+        // Look for Arduino by checking vendor IDs and path patterns
+        const arduinoPort = ports.find((port: any) => {
+          return (
+            port.vendorId === '2341' || // Arduino official
+            port.vendorId === '0403' || // FTDI
+            port.vendorId === '1a86' || // CH340
+            port.vendorId === '10c4' || // CP210x
+            port.path?.includes('usbserial') ||
+            port.path?.includes('usbmodem') ||
+            port.manufacturer?.toLowerCase().includes('arduino')
+          );
+        });
+        
+        if (arduinoPort) {
+          const detectedPath = arduinoPort.path;
+          const store = getStore();
+          const currentPort = store.get('financeHub.arduinoPort');
+          
+          // Only update if different from current setting
+          if (currentPort !== detectedPath) {
+            store.set('financeHub.arduinoPort', detectedPath);
+            console.log(`✅ Auto-detected and saved Arduino on port: ${detectedPath}`);
+            console.log(`   Previous setting was: ${currentPort || 'not set'}`);
+          } else {
+            console.log(`✅ Arduino confirmed on port: ${detectedPath}`);
+          }
+        } else {
+          console.log('⚠️  No Arduino detected on startup');
+          if (ports.length > 0) {
+            console.log('   Available ports:', ports.map((p: any) => p.path).join(', '));
+          }
+        }
+      } catch (error) {
+        console.error('❌ Failed to auto-detect Arduino on startup:', error);
+      }
+    }, 2000); // Wait 2 seconds after app startup to let USB devices initialize
+
     // Run token migration to Supabase (Phase 3: Supabase Only)
     // This runs in the background after app startup
     setTimeout(async () => {
