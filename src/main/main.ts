@@ -685,12 +685,16 @@ const createWindow = async () => {
             console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${bankId}`);
           }
 
-          // CRITICAL: Remove saved credentials so scheduler doesn't try to sync
+          // CRITICAL: Remove saved credentials from DATABASE so scheduler doesn't try to sync
+          financeHubManager.removeCredentials(bankId);
+          console.log(`[FINANCE-HUB] Removed credentials from DATABASE for ${bankId}`);
+          
+          // LEGACY: Also remove from Electron Store (temporary, during migration)
           const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
           if (fhConfig.savedCredentials) {
             delete fhConfig.savedCredentials[bankId];
             store.set('financeHub', fhConfig);
-            console.log(`[FINANCE-HUB] Removed saved credentials for ${bankId}`);
+            console.log(`[FINANCE-HUB] Also removed from Electron Store (legacy cleanup)`);
           }
 
           // CRITICAL: Restart scheduler to clear any scheduled syncs for this entity
@@ -898,14 +902,17 @@ const createWindow = async () => {
             console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${cardCompanyId}`);
           }
 
-          // CRITICAL: Remove saved credentials so scheduler doesn't try to sync
-          // Card credentials are stored by cardId (e.g., "nh") not full cardCompanyId (e.g., "nh-card")
-          const cardId = cardCompanyId.replace('-card', '');
+          // CRITICAL: Remove saved credentials from DATABASE so scheduler doesn't try to sync
+          // Card credentials are stored with full cardCompanyId (e.g., "bc-card", "nh-card")
+          financeHubManager.removeCredentials(cardCompanyId);
+          console.log(`[FINANCE-HUB] Removed credentials from DATABASE for ${cardCompanyId}`);
+          
+          // LEGACY: Also remove from Electron Store (temporary, during migration)
           const fhConfig = store.get('financeHub') || { savedCredentials: {}, connectedBanks: [] };
           if (fhConfig.savedCredentials) {
-            delete fhConfig.savedCredentials[cardId];
+            delete fhConfig.savedCredentials[cardCompanyId];
             store.set('financeHub', fhConfig);
-            console.log(`[FINANCE-HUB] Removed saved credentials for ${cardId}`);
+            console.log(`[FINANCE-HUB] Also removed from Electron Store (legacy cleanup)`);
           }
 
           // CRITICAL: Restart scheduler to clear any scheduled syncs for this entity
@@ -915,7 +922,7 @@ const createWindow = async () => {
             if (scheduler.getSettings().enabled) {
               await scheduler.stop();
               await scheduler.start();
-              console.log(`[FINANCE-HUB] Scheduler restarted after removing ${cardId}`);
+              console.log(`[FINANCE-HUB] Scheduler restarted after removing ${cardCompanyId}`);
             }
           } catch (schedulerError) {
             console.warn(`[FINANCE-HUB] Failed to restart scheduler:`, schedulerError);
@@ -3324,16 +3331,7 @@ const createWindow = async () => {
     console.log('✅ All components initialized successfully');
 
     // Initialize Scheduler Recovery Service (5 seconds after startup)
-    // ONLY in production - skip in dev mode for faster testing
     setTimeout(async () => {
-      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-
-      if (!isProduction) {
-        console.log('ℹ️ Development mode detected - skipping scheduler recovery');
-        console.log('ℹ️ To test recovery, set NODE_ENV=production or package the app');
-        return;
-      }
-
       try {
         console.log('🔄 Checking for missed scheduler executions...');
 
@@ -4837,6 +4835,50 @@ app
     // Set up deep link handler for OAuth callbacks (for production and non-Windows dev)
     // Pass a function that returns the current main window
     authService.setupDeepLinkHandler(() => mainWindow);
+
+    // CRITICAL: Migrate credentials from Electron Store to Database (automatic for all users)
+    // Runs once on first startup after this update
+    setTimeout(async () => {
+      try {
+        console.log('🔄 Starting automatic credential migration...');
+        const { migrateCredentialsToDatabase } = await import('./migrations/credential-migration');
+        const result = await migrateCredentialsToDatabase();
+        
+        if (result.migrated > 0) {
+          console.log(`✅ Successfully migrated ${result.migrated} credential(s) to database`);
+        }
+        if (result.skipped > 0) {
+          console.log(`ℹ️  Skipped ${result.skipped} credential(s) (already in database or invalid)`);
+        }
+        if (result.errors.length > 0) {
+          console.error(`⚠️  Failed to migrate ${result.errors.length} credential(s)`);
+        }
+      } catch (error) {
+        console.error('❌ Credential migration failed:', error);
+      }
+    }, 1000); // Run early (1 second after startup)
+
+    // CRITICAL: Fix tax certificates with empty keys (automatic for all users)
+    // Runs once on first startup after this update
+    setTimeout(async () => {
+      try {
+        console.log('🔄 Starting automatic tax certificate migration...');
+        const { migrateTaxCertificateKeys } = await import('./migrations/tax-certificate-migration');
+        const result = await migrateTaxCertificateKeys();
+        
+        if (result.fixed > 0) {
+          console.log(`✅ Fixed ${result.fixed} tax certificate(s) with empty keys`);
+        }
+        if (result.skipped > 0) {
+          console.log(`ℹ️  Skipped ${result.skipped} certificate(s) (already valid or no businessName)`);
+        }
+        if (result.errors.length > 0) {
+          console.error(`⚠️  Failed to fix ${result.errors.length} certificate(s)`);
+        }
+      } catch (error) {
+        console.error('❌ Tax certificate migration failed:', error);
+      }
+    }, 1500); // Run after credential migration (1.5 seconds after startup)
 
     // Auto-detect Arduino port on startup (especially important on macOS)
     setTimeout(async () => {

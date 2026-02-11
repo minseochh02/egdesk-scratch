@@ -2865,6 +2865,20 @@ const { chromium } = require('playwright-core');
         console.log('✅ Deleted run file');
       }
 
+      // Delete the corresponding download folder if it exists
+      const browserDownloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
+      const downloadFolder = path.join(browserDownloadsPath, deleteBasename);
+
+      if (fs.existsSync(downloadFolder)) {
+        try {
+          fs.rmSync(downloadFolder, { recursive: true, force: true });
+          console.log('✅ Deleted download folder:', deleteBasename);
+        } catch (folderErr) {
+          console.warn('⚠️ Could not delete download folder:', folderErr);
+          // Don't fail the whole operation if folder deletion fails
+        }
+      }
+
       return {
         success: true,
         message: 'Test deleted successfully'
@@ -3257,6 +3271,156 @@ const { chromium } = require('playwright-core');
       return {
         success: false,
         error: error?.message || 'Failed to open folder'
+      };
+    }
+  });
+
+  // Get browser automation folders (script folders)
+  ipcMain.handle('get-browser-download-folders', async () => {
+    try {
+      const browserDownloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
+
+      // Check if directory exists
+      if (!fs.existsSync(browserDownloadsPath)) {
+        return {
+          success: true,
+          folders: []
+        };
+      }
+
+      // Scan all script subfolders
+      const folderList: any[] = [];
+      const scriptFolders = fs.readdirSync(browserDownloadsPath, { withFileTypes: true });
+
+      for (const folder of scriptFolders) {
+        if (folder.isDirectory()) {
+          const scriptFolderPath = path.join(browserDownloadsPath, folder.name);
+          try {
+            const files = fs.readdirSync(scriptFolderPath);
+            const stats = fs.statSync(scriptFolderPath);
+            
+            // Count Excel files
+            let excelFileCount = 0;
+            let totalSize = 0;
+            let latestModified = stats.mtime;
+
+            for (const filename of files) {
+              const filePath = path.join(scriptFolderPath, filename);
+              try {
+                const fileStats = fs.statSync(filePath);
+                if (fileStats.isFile()) {
+                  totalSize += fileStats.size;
+                  if (fileStats.mtime > latestModified) {
+                    latestModified = fileStats.mtime;
+                  }
+                  if (/\.(xlsx?|xlsm|xls)$/i.test(filename)) {
+                    excelFileCount++;
+                  }
+                }
+              } catch (fileErr) {
+                // Skip files that can't be read
+              }
+            }
+
+            // Parse script name from folder name
+            // Folder format: "ScriptName-2026-01-26T06-35-19-003Z" or just "ScriptName"
+            let scriptName = folder.name;
+            
+            // Try to extract human-readable name before timestamp
+            const timestampMatch = folder.name.match(/^(.+?)-\d{4}-\d{2}-\d{2}T/);
+            if (timestampMatch) {
+              scriptName = timestampMatch[1];
+            }
+            
+            // Convert kebab-case to Title Case
+            scriptName = scriptName
+              .split('-')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+
+            // Only include folders that have at least one Excel file
+            if (excelFileCount > 0) {
+              folderList.push({
+                scriptName: scriptName,
+                folderName: folder.name,
+                path: scriptFolderPath,
+                fileCount: files.length,
+                excelFileCount: excelFileCount,
+                size: totalSize,
+                lastModified: latestModified,
+              });
+            }
+          } catch (folderErr) {
+            console.warn(`Could not read script folder ${folder.name}:`, folderErr);
+          }
+        }
+      }
+
+      // Sort by last modified date (newest first)
+      folderList.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+      return {
+        success: true,
+        folders: folderList
+      };
+    } catch (error: any) {
+      console.error('Error getting browser download folders:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to get folders',
+        folders: []
+      };
+    }
+  });
+
+  // Get files in a specific folder
+  ipcMain.handle('get-folder-files', async (event, folderPath: string) => {
+    try {
+      if (!fs.existsSync(folderPath)) {
+        return {
+          success: false,
+          error: 'Folder not found',
+          files: []
+        };
+      }
+
+      const fileList: any[] = [];
+      const files = fs.readdirSync(folderPath);
+
+      for (const filename of files) {
+        const filePath = path.join(folderPath, filename);
+        try {
+          const stats = fs.statSync(filePath);
+
+          // Only include files, not directories
+          if (stats.isFile()) {
+            fileList.push({
+              name: filename,
+              path: filePath,
+              scriptFolder: path.basename(folderPath),
+              size: stats.size,
+              created: stats.birthtime,
+              modified: stats.mtime
+            });
+          }
+        } catch (fileErr) {
+          console.warn(`Could not read file ${filename}:`, fileErr);
+        }
+      }
+
+      // Sort by modified date (newest first)
+      fileList.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+
+      return {
+        success: true,
+        files: fileList
+      };
+    } catch (error: any) {
+      console.error('Error getting folder files:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to get files',
+        files: []
       };
     }
   });

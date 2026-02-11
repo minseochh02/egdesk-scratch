@@ -831,6 +831,60 @@ export class SQLiteManager {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });
+
+    // ========================================
+    // Credential Operations (Database)
+    // ========================================
+
+    // Save encrypted credentials
+    ipcMain.handle('sqlite-financehub-save-credentials', async (event, bankId, userId, password, metadata) => {
+      try {
+        this.getFinanceHubManager().saveCredentials(bankId, userId, password, metadata);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Get decrypted credentials
+    ipcMain.handle('sqlite-financehub-get-credentials', async (event, bankId) => {
+      try {
+        const credentials = this.getFinanceHubManager().getCredentials(bankId);
+        return { success: true, credentials };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Remove credentials
+    ipcMain.handle('sqlite-financehub-remove-credentials', async (event, bankId) => {
+      try {
+        const result = this.getFinanceHubManager().removeCredentials(bankId);
+        return { success: true, data: result };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Get banks with saved credentials
+    ipcMain.handle('sqlite-financehub-get-banks-with-credentials', async (event) => {
+      try {
+        const banks = this.getFinanceHubManager().getBanksWithCredentials();
+        return { success: true, data: banks };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Check if credentials exist
+    ipcMain.handle('sqlite-financehub-has-credentials', async (event, bankId) => {
+      try {
+        const hasCredentials = this.getFinanceHubManager().hasCredentials(bankId);
+        return { success: true, data: hasCredentials };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
   }
 
   /**

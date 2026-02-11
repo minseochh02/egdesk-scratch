@@ -1747,12 +1747,13 @@ const FinanceHub: React.FC = () => {
       if (result.success) {
         setHometaxConnectionProgress('사업자 정보를 가져왔습니다!');
 
-        const businessNumber = result.businessInfo?.businessNumber || hometaxCredentials.businessNumber;
+        // CRITICAL: Use businessName as the identifier, not businessNumber
+        const businessName = result.businessInfo?.businessName || '알 수 없는 사업자';
 
         // Save credentials if requested
         if (saveHometaxCredentials) {
           await window.electron.hometax.saveCredentials(
-            businessNumber,
+            businessName,  // Use businessName as key
             hometaxAuthMethod === 'certificate'
               ? { certificatePassword: hometaxCredentials.certificatePassword }
               : { userId: hometaxCredentials.userId, password: hometaxCredentials.password }
@@ -1772,12 +1773,11 @@ const FinanceHub: React.FC = () => {
             businessType: result.businessInfo?.businessType,
             certificatePassword: saveHometaxCredentials ? hometaxCredentials.certificatePassword : undefined
           };
-          await window.electron.hometax.saveSelectedCertificate(businessNumber, certDataToSave);
-          console.log('[FinanceHub] Saved certificate info and password for business:', businessNumber);
+          await window.electron.hometax.saveSelectedCertificate(businessName, certDataToSave);
+          console.log('[FinanceHub] Saved certificate info and password for business:', businessName);
         }
 
         // Show success message with business info
-        const businessName = result.businessInfo?.businessName || businessNumber;
         const repName = result.businessInfo?.representativeName || '-';
         alert(`✅ 홈택스 연결 성공!\n\n사업자: ${businessName}\n대표자: ${repName}`);
 
