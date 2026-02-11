@@ -362,4 +362,105 @@ export function registerUserDataIPCHandlers(): void {
       };
     }
   });
+
+  /**
+   * Sync Excel data to existing table
+   */
+  ipcMain.handle('user-data:sync-to-existing-table', async (event, config: {
+    filePath: string;
+    sheetIndex: number;
+    tableId: string;
+    columnMappings: Record<string, string>;
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+
+      // Get the existing table
+      const table = userDataManager.getTable(config.tableId);
+      if (!table) {
+        return {
+          success: false,
+          error: 'Table not found',
+        };
+      }
+
+      // Parse Excel file
+      const parsedData = await parseExcelFile(config.filePath);
+
+      if (config.sheetIndex < 0 || config.sheetIndex >= parsedData.sheets.length) {
+        return {
+          success: false,
+          error: 'Invalid sheet index',
+        };
+      }
+
+      const selectedSheet = parsedData.sheets[config.sheetIndex];
+      const fileName = path.basename(config.filePath);
+
+      // Create import operation
+      const importOperation = userDataManager.createImportOperation({
+        tableId: config.tableId,
+        fileName,
+      });
+
+      try {
+        // Map Excel rows to table columns
+        const rowsToInsert = selectedSheet.rows.map((row) => {
+          const mappedRow: any = {};
+
+          Object.entries(config.columnMappings).forEach(([excelCol, tableCol]) => {
+            mappedRow[tableCol] = row[excelCol];
+          });
+
+          return mappedRow;
+        });
+
+        // Insert rows
+        const insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+
+        // Complete import operation
+        userDataManager.completeImportOperation(importOperation.id, {
+          rowsImported: insertResult.inserted,
+          rowsSkipped: insertResult.skipped,
+          errorMessage:
+            insertResult.errors.length > 0
+              ? insertResult.errors.slice(0, 5).join('; ')
+              : undefined,
+        });
+
+        return {
+          success: true,
+          data: {
+            rowsImported: insertResult.inserted,
+            rowsSkipped: insertResult.skipped,
+            tableId: config.tableId,
+          },
+        };
+      } catch (error) {
+        console.error('Sync failed:', error);
+
+        // Complete import operation with error
+        if (importOperation) {
+          try {
+            userDataManager.completeImportOperation(importOperation.id, {
+              rowsImported: 0,
+              rowsSkipped: 0,
+              errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            });
+          } catch (completeError) {
+            console.error('Error completing failed sync operation:', completeError);
+          }
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error syncing to existing table:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to sync data',
+      };
+    }
+  });
 }

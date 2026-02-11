@@ -374,29 +374,50 @@ export class FinanceHubScheduler extends EventEmitter {
 
   private async scheduleNextSync(): Promise<void> {
     const now = new Date();
+    const store = getStore();
+    const financeHub = store.get('financeHub') as any || { savedCredentials: {} };
+    const savedCredentials = financeHub.savedCredentials || {};
 
     // Schedule cards
     for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
       if (schedule && schedule.enabled) {
-        this.scheduleEntity('card', cardKey, schedule.time, now);
+        // CRITICAL: Only schedule if credentials exist
+        if (savedCredentials[cardKey]) {
+          this.scheduleEntity('card', cardKey, schedule.time, now);
+        } else {
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${cardKey} card - no credentials configured`);
+        }
       }
     }
 
     // Schedule banks
     for (const [bankKey, schedule] of Object.entries(this.settings.banks)) {
       if (schedule && schedule.enabled) {
-        this.scheduleEntity('bank', bankKey, schedule.time, now);
+        // CRITICAL: Only schedule if credentials exist
+        if (savedCredentials[bankKey]) {
+          this.scheduleEntity('bank', bankKey, schedule.time, now);
+        } else {
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping ${bankKey} bank - no credentials configured`);
+        }
       }
     }
 
     // Schedule tax businesses
     for (const [businessNumber, schedule] of Object.entries(this.settings.tax)) {
       if (schedule && schedule.enabled) {
-        this.scheduleEntity('tax', businessNumber, schedule.time, now);
+        // Tax credentials check (certificate-based)
+        const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
+        const certData = hometaxConfig.selectedCertificates?.[businessNumber];
+        
+        if (certData && certData.certificatePassword) {
+          this.scheduleEntity('tax', businessNumber, schedule.time, now);
+        } else {
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping tax ${businessNumber} - no certificate configured`);
+        }
       }
     }
 
-    console.log(`[FinanceHubScheduler] Scheduled ${this.scheduleTimers.size} entities`);
+    console.log(`[FinanceHubScheduler] Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
   }
 
   private async scheduleEntity(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, now: Date): Promise<void> {
@@ -623,7 +644,13 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncingEntities.delete(entityKey);
 
         // Schedule retry
-        const retryTimer = setTimeout(() => {
+        const retryTimer = setTimeout(async () => {
+          // CRITICAL: Add small delay before retry to ensure Arduino port is fully released
+          // Serial ports sometimes need a moment to fully disconnect at OS level
+          if (entityType === 'card') {
+            console.log(`[FinanceHubScheduler] Waiting 2s before retry to ensure Arduino port is released...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
         }, this.settings.retryDelayMinutes * 60 * 1000);
 
@@ -1570,6 +1597,44 @@ export class FinanceHubScheduler extends EventEmitter {
 
   public getScheduledRetries(): string[] {
     return Array.from(this.syncTimers.keys());
+  }
+
+  /**
+   * Clear all retry timers and reset sync state
+   * Useful for cleaning up stuck retries or resetting after errors
+   */
+  public async clearRetries(): Promise<{ cleared: number; entities: string[] }> {
+    console.log('[FinanceHubScheduler] 🧹 Clearing all retry timers and sync state...');
+    
+    const clearedEntities: string[] = [];
+    
+    // 1. Clear all retry timers
+    for (const [entityKey, timer] of this.syncTimers) {
+      clearTimeout(timer);
+      clearedEntities.push(entityKey);
+      console.log(`[FinanceHubScheduler] Cleared retry timer for: ${entityKey}`);
+    }
+    this.syncTimers.clear();
+    
+    // 2. Clear syncingEntities set (things marked as in-progress)
+    const syncingList = Array.from(this.syncingEntities);
+    if (syncingList.length > 0) {
+      console.log(`[FinanceHubScheduler] Clearing ${syncingList.length} entities marked as in-progress:`, syncingList);
+      this.syncingEntities.clear();
+    }
+    
+    // 3. Kill all active browsers (if any)
+    if (this.activeBrowsers.size > 0) {
+      console.log(`[FinanceHubScheduler] Killing ${this.activeBrowsers.size} active browsers...`);
+      await this.killAllBrowsers();
+    }
+    
+    console.log(`[FinanceHubScheduler] ✅ Cleanup complete: Cleared ${clearedEntities.length} retry timer(s)`);
+    
+    return {
+      cleared: clearedEntities.length,
+      entities: clearedEntities,
+    };
   }
 
   // ============================================

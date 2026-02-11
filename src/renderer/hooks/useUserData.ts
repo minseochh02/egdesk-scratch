@@ -261,6 +261,33 @@ export function useUserData() {
     }
   }, []);
 
+  /**
+   * Sync Excel data to existing table
+   */
+  const syncToExistingTable = useCallback(
+    async (config: {
+      filePath: string;
+      sheetIndex: number;
+      tableId: string;
+      columnMappings: Record<string, string>;
+    }) => {
+      try {
+        const result = await window.electron.invoke('user-data:sync-to-existing-table', config);
+
+        if (result.success) {
+          // Refresh tables list
+          await fetchTables();
+          return result.data;
+        } else {
+          throw new Error(result.error || 'Failed to sync to existing table');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    [fetchTables]
+  );
+
   // Fetch tables on mount
   useEffect(() => {
     fetchTables();
@@ -280,5 +307,6 @@ export function useUserData() {
     selectExcelFile,
     validateTableName,
     getImportOperations,
+    syncToExistingTable,
   };
 }

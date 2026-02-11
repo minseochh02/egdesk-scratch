@@ -90,6 +90,22 @@ export function registerFinanceHubSchedulerHandlers(): void {
     }
   });
 
+  // Clear all retry timers
+  ipcMain.handle('finance-hub:scheduler:clear-retries', async () => {
+    try {
+      const result = await scheduler.clearRetries();
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to clear retries',
+      };
+    }
+  });
+
   // Set up event forwarding to all renderer windows
   const { BrowserWindow } = require('electron');
   

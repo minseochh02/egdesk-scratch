@@ -250,6 +250,9 @@ export class DesktopRecorder {
     const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
     if (desktopCreated) {
       console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
+      // Wait for desktop switch to fully complete before creating window
+      console.log('[DesktopRecorder] Waiting for desktop switch to complete...');
+      await this.sleep(2000); // 2 second delay to ensure switch is complete
     }
 
     // Import and create control window on the new desktop

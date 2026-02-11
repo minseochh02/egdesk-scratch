@@ -3,12 +3,14 @@ import { useUserData, UserTable } from '../../hooks/useUserData';
 import { TableList } from './TableList';
 import { TableViewer } from './TableViewer';
 import { ImportWizard } from './ImportWizard';
+import { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
 import './UserData.css';
 
 export const UserDataPage: React.FC = () => {
   const { tables, loading, error, fetchTables, deleteTable } = useUserData();
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
+  const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
 
   const handleSelectTable = (table: UserTable) => {
     setSelectedTable(table);
@@ -51,9 +53,14 @@ export const UserDataPage: React.FC = () => {
         <h1>📊 User Database</h1>
         <div className="user-data-header-actions">
           {!selectedTable && (
-            <button className="btn btn-primary" onClick={() => setShowImportWizard(true)}>
-              📥 Import Excel
-            </button>
+            <>
+              <button className="btn btn-primary" onClick={() => setShowImportWizard(true)}>
+                📥 Import Excel
+              </button>
+              <button className="btn btn-secondary" onClick={() => setShowBrowserSyncWizard(true)}>
+                🔄 Sync Browser Downloads
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -76,6 +83,13 @@ export const UserDataPage: React.FC = () => {
       {showImportWizard && (
         <ImportWizard
           onClose={() => setShowImportWizard(false)}
+          onComplete={handleImportComplete}
+        />
+      )}
+
+      {showBrowserSyncWizard && (
+        <BrowserDownloadsSyncWizard
+          onClose={() => setShowBrowserSyncWizard(false)}
           onComplete={handleImportComplete}
         />
       )}

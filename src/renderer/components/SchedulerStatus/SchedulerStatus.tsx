@@ -249,6 +249,26 @@ const SchedulerStatus: React.FC = () => {
     }
   };
 
+  const handleClearRetries = async () => {
+    if (!confirm('Clear all retry timers?\n\nThis will cancel any pending retries and reset stuck sync states.')) {
+      return;
+    }
+
+    try {
+      const result = await window.electron.financeHubScheduler.clearRetries();
+      if (result.success) {
+        console.log('Cleared retries:', result);
+        alert(`✅ Retries Cleared\n\n${result.cleared} retry timer(s) removed${result.entities.length > 0 ? '\n\nCleared:\n' + result.entities.join('\n') : ''}`);
+        loadSchedulerData(); // Reload data
+      } else {
+        alert(`❌ Failed to clear retries: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to clear retries:', error);
+      alert('Failed to clear retries');
+    }
+  };
+
   const loadMoreIntents = async () => {
     setIsLoadingMore(true);
     try {
@@ -433,6 +453,13 @@ const SchedulerStatus: React.FC = () => {
                 <FontAwesomeIcon icon={faSync} /> Sync Now
               </>
             )}
+          </button>
+          <button
+            className="scheduler-status__btn scheduler-status__btn--warning"
+            onClick={handleClearRetries}
+            title="Clear all retry timers and reset stuck sync states"
+          >
+            🧹 Clear Retries
           </button>
           <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={loadSchedulerData}>
             <FontAwesomeIcon icon={faRedo} /> Refresh
