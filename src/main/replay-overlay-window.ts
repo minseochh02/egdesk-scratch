@@ -22,15 +22,16 @@ export class ReplayOverlayWindow {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-    // Overlay window at top center
-    const windowWidth = 400;
+    // Overlay window at bottom-right corner (out of the way)
+    const windowWidth = 350;
     const windowHeight = 120;
+    const margin = 20;
 
     this.window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
-      x: Math.floor((screenWidth - windowWidth) / 2),
-      y: 20,
+      x: screenWidth - windowWidth - margin,
+      y: screenHeight - windowHeight - margin,
       title: 'Replay Progress',
       frame: false,
       transparent: true,

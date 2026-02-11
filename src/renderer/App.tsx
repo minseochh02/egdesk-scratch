@@ -29,6 +29,7 @@ import {
   faLaptopCode,
   faClock,
   faChessRook,
+  faDatabase,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -51,6 +52,7 @@ import EGChatting from './components/EGChatting';
 import EGBusinessIdentity from './components/EGBusinessIdentity';
 import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
 import FinanceHub from './components/FinanceHub/FinanceHub';
+import { UserDataPage } from './components/UserData';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
@@ -292,7 +294,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.38</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.39</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2048,7 +2050,8 @@ function NavigationBar({
     '/egchatting',
     '/browser-recorder',
     '/desktop-recorder',
-    '/rookie'
+    '/rookie',
+    '/user-data'
   ].some(path => location.pathname.startsWith(path));
 
   const isMarketingActive = [
@@ -2130,6 +2133,13 @@ function NavigationBar({
             >
               <FontAwesomeIcon icon={faChessRook} fixedWidth />
               <span>Rookie</span>
+            </Link>
+            <Link
+              to="/user-data"
+              className={`nav-dropdown-item ${location.pathname.startsWith('/user-data') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faDatabase} fixedWidth />
+              <span>User Database</span>
             </Link>
           </NavDropdown>
 
@@ -2791,6 +2801,7 @@ function AppContent() {
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
+            <Route path="/user-data" element={<UserDataPage />} />
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />

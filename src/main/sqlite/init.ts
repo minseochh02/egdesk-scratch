@@ -14,10 +14,11 @@ import { addHometaxSpreadsheetUrlColumns } from './migrations/003-hometax-spread
 import { createSyncDatabase } from './sheet-sync-init';
 import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 import { initializeSchedulerDatabaseSchema } from './scheduler-init';
+import { initializeUserDataDatabaseSchema } from './user-data-init';
 
 /**
  * SQLite Database Initialization
- * 
+ *
  * This module handles the initialization of the SQLite database,
  * including schema creation, indexes, and triggers.
  */
@@ -91,6 +92,15 @@ export function getDatabaseSize(dbPath: string): number {
     return new Database(schedulerDbPath);
   }
 
+  export function getUserDataDatabasePath(): string {
+    return path.join(app.getPath('userData'), 'database', 'user_data.db');
+  }
+
+  export function getUserDataDatabase(): Database.Database {
+    const userDataDbPath = getUserDataDatabasePath();
+    return new Database(userDataDbPath);
+  }
+
 export interface DatabaseInitResult {
   success: boolean;
   error?: string;
@@ -101,6 +111,7 @@ export interface DatabaseInitResult {
   cloudmcpDatabase?: Database.Database;
   financeHubDatabase?: Database.Database;
   schedulerDatabase?: Database.Database;
+  userDataDatabase?: Database.Database;
   taskManager?: SQLiteTaskManager;
   conversationsDbPath?: string;
   taskDbPath?: string;
@@ -109,6 +120,7 @@ export interface DatabaseInitResult {
   cloudmcpDbPath?: string;
   financeHubDbPath?: string;
   schedulerDbPath?: string;
+  userDataDbPath?: string;
   syncDatabase?: Database.Database;
   syncDbPath?: string;
 }
@@ -134,6 +146,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const cloudmcpDbPath = path.join(dataDir, 'cloudmcp.db');
     const financeHubDbPath = path.join(dataDir, 'financehub.db');
     const schedulerDbPath = path.join(dataDir, 'scheduler.db');
+    const userDataDbPath = path.join(dataDir, 'user_data.db');
     const syncDbPath = path.join(dataDir, 'egdesk.db');
 
     // =============================================
@@ -180,6 +193,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     console.log('  CloudMCP DB:', cloudmcpDbPath);
     console.log('  FinanceHub DB:', financeHubDbPath);
     console.log('  Scheduler DB:', schedulerDbPath);
+    console.log('  User Data DB:', userDataDbPath);
     console.log('  Sync DB:', syncDbPath);
 
     const conversationsDb = new Database(conversationsDbPath);
@@ -189,6 +203,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const cloudmcpDb = new Database(cloudmcpDbPath);
     const financeHubDb = new Database(financeHubDbPath);
     const schedulerDb = new Database(schedulerDbPath);
+    const userDataDb = new Database(userDataDbPath);
     const syncDb = createSyncDatabase({ dbPath: syncDbPath });
 
     // Initialize database schemas FIRST
@@ -201,6 +216,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeTemplateCopiesDatabaseSchema(cloudmcpDb); // Use cloudmcp DB for template copies
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
     initializeSchedulerDatabaseSchema(schedulerDb); // Dedicated database for scheduler recovery system
+    initializeUserDataDatabaseSchema(userDataDb); // Dedicated database for user data tables
 
     // =============================================
     // NOTE: transaction_datetime migration handled by migration 006
@@ -268,6 +284,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       cloudmcpDatabase: cloudmcpDb,
       financeHubDatabase: financeHubDb,
       schedulerDatabase: schedulerDb,
+      userDataDatabase: userDataDb,
       taskManager,
       conversationsDbPath,
       taskDbPath,
@@ -276,6 +293,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       cloudmcpDbPath,
       financeHubDbPath,
       schedulerDbPath,
+      userDataDbPath,
       syncDatabase: syncDb,
       syncDbPath
     };

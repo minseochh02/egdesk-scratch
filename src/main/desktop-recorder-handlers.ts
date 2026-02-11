@@ -601,7 +601,7 @@ export function registerDesktopRecorderHandlers(): void {
     try {
       console.log('[DesktopRecorder] Starting recording with control window on new virtual desktop');
 
-      // Step 1: Clean up existing recorder if any
+      // Clean up existing recorder if any
       if (activeDesktopRecorder) {
         console.log('[DesktopRecorder] Stopping previous recorder');
         try {
@@ -610,23 +610,6 @@ export function registerDesktopRecorderHandlers(): void {
           console.error('[DesktopRecorder] Error stopping previous recorder:', err);
         }
       }
-
-      // Step 2: Create a temporary recorder to use its desktopManager for virtual desktop operations
-      const tempRecorder = new DesktopRecorder();
-      const success = await tempRecorder['desktopManager'].createAndSwitchToNewDesktop();
-
-      if (success) {
-        createdVirtualDesktop = true; // Mark that we created a virtual desktop
-        console.log('[DesktopRecorder] Switched to new virtual desktop');
-      } else {
-        console.warn('[DesktopRecorder] Failed to create virtual desktop, continuing anyway...');
-      }
-
-      // Step 3: Create the control window (will appear on the new desktop)
-      if (!recorderControlWindow) {
-        recorderControlWindow = new RecorderControlWindow();
-      }
-      await recorderControlWindow.create();
 
       // Generate output file path
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -637,29 +620,19 @@ export function registerDesktopRecorderHandlers(): void {
       activeDesktopRecorder = new DesktopRecorder();
       activeDesktopRecorder.setOutputFile(outputFile);
 
-      // Set up real-time updates to control window
+      // Set up real-time updates
       activeDesktopRecorder.setUpdateCallback((code) => {
-        // Send to main window
         event.sender.send('desktop-recorder:update', {
           filePath: outputFile,
           code: code,
           timestamp,
         });
-
-        // Send to control window
-        if (recorderControlWindow && recorderControlWindow.exists()) {
-          recorderControlWindow.send('recorder-control:update', {
-            filePath: outputFile,
-            code: code,
-            timestamp,
-            actionCount: activeDesktopRecorder?.getActions().length || 0,
-            status: activeDesktopRecorder?.getStatus(),
-          });
-        }
       });
 
-      // Start recording
-      await activeDesktopRecorder.startRecording();
+      // Start recording with control window (creates desktop, shows control window, starts recording)
+      await activeDesktopRecorder.startRecordingWithControlWindow();
+
+      createdVirtualDesktop = true; // Mark that we created a virtual desktop
 
       console.log('[DesktopRecorder] Recording started with control window');
       return {
