@@ -4,6 +4,8 @@ export { TableViewer } from './TableViewer';
 export { ImportWizard } from './ImportWizard';
 export { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
 export { ExistingTableMapper } from './ExistingTableMapper';
+export { SyncConfigurationsManager } from './SyncConfigurationsManager';
+export { DuplicateDetectionSettings } from './DuplicateDetectionSettings';
 export { ColumnMapper } from './ColumnMapper';
 export { VisualColumnMapper } from './VisualColumnMapper';
 export { DataTable } from './shared/DataTable';

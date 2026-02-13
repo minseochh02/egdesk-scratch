@@ -15,6 +15,8 @@ import { createSyncDatabase } from './sheet-sync-init';
 import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 import { initializeSchedulerDatabaseSchema } from './scheduler-init';
 import { initializeUserDataDatabaseSchema } from './user-data-init';
+import { initializeSyncConfigurationSchema } from './sync-config-init';
+import { initializeEGChattingSchema } from './egchatting-init';
 
 /**
  * SQLite Database Initialization
@@ -217,6 +219,7 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeCompanyResearchSchema(conversationsDb); // Use conversations DB for company research
     initializeSchedulerDatabaseSchema(schedulerDb); // Dedicated database for scheduler recovery system
     initializeUserDataDatabaseSchema(userDataDb); // Dedicated database for user data tables
+    initializeSyncConfigurationSchema(userDataDb); // Browser automation sync configurations
 
     // =============================================
     // NOTE: transaction_datetime migration handled by migration 006

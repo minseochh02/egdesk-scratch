@@ -259,100 +259,41 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       setTokenNeedsRefresh(false); // Reset on each check
       console.log('[MCPServer:checkOAuthToken] 🔍 Starting OAuth token check...');
       
-      // First, check Supabase session
-      const sessionResult = await window.electron.auth.getSession();
+      // Use the new scoped token validation method
+      const tokenResponse = await window.electron.auth.getGoogleWorkspaceTokenWithScopes(REQUIRED_OAUTH_SCOPES);
       
-      // Check if user is signed in with Google via Supabase
-      if (sessionResult.success && sessionResult.session && sessionResult.user) {
-        const user = sessionResult.user;
-        const isGoogleAuth = 
-          user.app_metadata?.provider === 'google' ||
-          user.identities?.some((id: any) => id.provider === 'google');
+      if (!tokenResponse.success) {
+        console.log('[MCPServer:checkOAuthToken] Failed to get token response');
+        setHasValidOAuthToken(false);
+        return;
+      }
+      
+      const token = tokenResponse.token;
+      
+      if (token && token.access_token) {
+        // Check expiry (current time in seconds vs expires_at)
+        const currentTime = Math.floor(Date.now() / 1000);
+        const isExpired = token.expires_at && currentTime >= token.expires_at;
         
-        if (isGoogleAuth) {
-          console.log('[MCPServer:checkOAuthToken] User authenticated with Google via Supabase');
-          // Check if we also have the token in electron-store with scopes
-          const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
-          
-          if (tokenResult.success && tokenResult.token) {
-            const token = tokenResult.token;
-            console.log('[MCPServer:checkOAuthToken] Google Workspace token found in store');
-            
-            // First check if token has access_token (required for Google API calls)
-            if (!token.access_token) {
-              console.log('[MCPServer:checkOAuthToken] ⚠️ Token exists but no access_token - cannot use for API calls');
-              setTokenNeedsRefresh(true); // User has token but it's expired/invalid
-              setHasValidOAuthToken(false);
-              return;
-            }
-            
-            // If token has scopes, verify they match
-            if (token.scopes) {
-              let tokenScopes: string[] = [];
-              
-              if (Array.isArray(token.scopes)) {
-                tokenScopes = token.scopes;
-              } else               if (typeof token.scopes === 'string') {
-                tokenScopes = (token.scopes as string).split(' ');
-              }
-              
-              console.log('[MCPServer:checkOAuthToken] Current token scopes:', tokenScopes);
-              
-              // Check if all required scopes are present
-              const hasAllScopes = REQUIRED_OAUTH_SCOPES.every(scope => 
-                tokenScopes.includes(scope)
-              );
-              
-              if (hasAllScopes) {
-                console.log('[MCPServer:checkOAuthToken] ✅ All required scopes are present');
-                setHasValidOAuthToken(true);
-                return;
-              } else {
-                const missingScopes = REQUIRED_OAUTH_SCOPES.filter(scope => !tokenScopes.includes(scope));
-                console.log('[MCPServer:checkOAuthToken] ⚠️ Missing some required scopes:', missingScopes);
-                // Still allow access since user has access_token, but log warning
-                setHasValidOAuthToken(true);
-                return;
-              }
-            } else {
-              // Token exists with access_token but no scopes - allow access
-              console.log('[MCPServer:checkOAuthToken] Token found with access_token but no scopes information');
-              setHasValidOAuthToken(true);
-              return;
-            }
-          } else {
-            console.log('[MCPServer:checkOAuthToken] No token found in electron-store for Supabase user');
-            // No token in store, but user is authenticated via Supabase
-            setHasValidOAuthToken(false);
-            return;
-          }
-        } else {
-          console.log('[MCPServer:checkOAuthToken] User authenticated with Supabase but not using Google provider');
+        if (isExpired) {
+          console.log('[MCPServer:checkOAuthToken] Token is expired');
+          setTokenNeedsRefresh(true);
+          setHasValidOAuthToken(false);
+          return;
         }
+        
+        console.log('[MCPServer:checkOAuthToken] ✅ Valid token with required scopes found');
+        setHasValidOAuthToken(true);
+        setTokenNeedsRefresh(false);
       } else {
-        console.log('[MCPServer:checkOAuthToken] No active Supabase session found');
+        console.log('[MCPServer:checkOAuthToken] No valid token with required scopes found');
+        setHasValidOAuthToken(false);
+        setTokenNeedsRefresh(false);
       }
-      
-      // Fallback: Check electron-store token directly
-      console.log('[MCPServer:checkOAuthToken] Falling back to direct electron-store check');
-      const tokenResult = await window.electron.auth.getGoogleWorkspaceToken();
-      
-      if (tokenResult.success && tokenResult.token) {
-        const token = tokenResult.token;
-        
-        // Check if token has access_token (required for Google API calls)
-        if (token.access_token) {
-          console.log('✅ MCPServer: Google OAuth token found in electron-store (fallback)');
-            setHasValidOAuthToken(true);
-            return;
-        }
-      }
-      
-      console.log('[MCPServer:checkOAuthToken] No valid Google OAuth token found');
-      setHasValidOAuthToken(false);
     } catch (err) {
       console.error('[MCPServer:checkOAuthToken] Error checking OAuth token:', err);
       setHasValidOAuthToken(false);
+      setTokenNeedsRefresh(false);
     } finally {
       setCheckingOAuthToken(false);
     }
@@ -1941,11 +1882,45 @@ const MCPServer: React.FC<MCPServerProps> = () => {
 
   const handleConfigureClaudeDesktop = async (server: RunningMCPServer) => {
     try {
+      // Show confirmation with service list
+      const servicesList = [
+        '• User Data - Query imported tables (Excel, CSV)',
+        '• Gmail - Email operations and search',
+        '• Sheets - Google Sheets sync and management',
+        '• Apps Script - Google Apps Script tools',
+        '• File Conversion - Convert between file formats'
+      ].join('\n');
+
+      const confirmed = confirm(
+        `Install EGDesk MCP Services to Claude Desktop?\n\n` +
+        `This will add 5 services:\n${servicesList}\n\n` +
+        `After installation:\n` +
+        `1. Restart Claude Desktop (Cmd+Q then reopen)\n` +
+        `2. Look for the 🔨 icon in Claude Desktop\n` +
+        `3. All EGDesk services will be available\n\n` +
+        `Continue?`
+      );
+
+      if (!confirmed) return;
+
       // Call the automatic Claude Desktop configuration
       const result = await window.electron.mcpServer.configureClaude();
       
       if (result.success) {
-        alert('Successfully configured Claude Desktop! The MCP server is now available in Claude Desktop.');
+        alert(
+          '✅ Successfully configured Claude Desktop!\n\n' +
+          'All 5 EGDesk MCP services have been installed:\n' +
+          '✓ User Data\n' +
+          '✓ Gmail\n' +
+          '✓ Sheets\n' +
+          '✓ Apps Script\n' +
+          '✓ File Conversion\n\n' +
+          'Next steps:\n' +
+          '1. Quit Claude Desktop completely (Cmd+Q)\n' +
+          '2. Reopen Claude Desktop\n' +
+          '3. Look for the 🔨 icon to access services\n\n' +
+          'Make sure EGDesk is running for Claude to access the services.'
+        );
         // Refresh status after successful configuration
         await checkClaudeDesktopStatus();
       } else {
@@ -1959,11 +1934,30 @@ const MCPServer: React.FC<MCPServerProps> = () => {
 
   const handleUnconfigureClaudeDesktop = async (server: RunningMCPServer) => {
     try {
+      // Confirm removal
+      const confirmed = confirm(
+        'Remove all EGDesk MCP services from Claude Desktop?\n\n' +
+        'This will remove:\n' +
+        '• User Data\n' +
+        '• Gmail\n' +
+        '• Sheets\n' +
+        '• Apps Script\n' +
+        '• File Conversion\n\n' +
+        'You can reinstall them anytime by clicking "Add to Claude Desktop".\n\n' +
+        'Continue?'
+      );
+
+      if (!confirmed) return;
+
       // Call the automatic Claude Desktop unconfiguration
       const result = await window.electron.mcpServer.unconfigureClaude();
       
       if (result.success) {
-        alert('Successfully removed from Claude Desktop! The MCP server is no longer available in Claude Desktop.');
+        alert(
+          '✅ Successfully removed from Claude Desktop!\n\n' +
+          'All EGDesk MCP services have been removed.\n\n' +
+          'Restart Claude Desktop for changes to take effect.'
+        );
         // Refresh status after successful unconfiguration
         await checkClaudeDesktopStatus();
       } else {

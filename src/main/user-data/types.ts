@@ -10,7 +10,7 @@
 /**
  * Column data types supported
  */
-export type ColumnType = 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB';
+export type ColumnType = 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB' | 'DATE';
 
 /**
  * Column schema definition
@@ -20,6 +20,7 @@ export interface ColumnSchema {
   type: ColumnType;
   notNull?: boolean;
   defaultValue?: string | number | null;
+  isUniqueKey?: boolean; // Mark if this column is part of the unique key
 }
 
 /**
@@ -36,6 +37,8 @@ export interface UserTable {
   createdAt: string;
   updatedAt: string;
   schemaJson: string; // JSON array of ColumnSchema
+  uniqueKeyColumns?: string; // JSON array of column names that form unique key
+  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
 }
 
 /**
@@ -88,6 +91,7 @@ export interface ImportResults {
 export interface InsertResult {
   inserted: number;
   skipped: number;
+  duplicates: number; // Number of duplicates skipped/updated
   errors: string[];
 }
 
@@ -166,4 +170,6 @@ export interface ExcelImportConfig {
   headerRow?: number; // Which row contains headers (1-based)
   skipRows?: number; // How many rows to skip at the top
   skipBottomRows?: number; // How many rows to skip at the bottom (totals)
+  uniqueKeyColumns?: string[]; // Columns that form the unique key
+  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
 }

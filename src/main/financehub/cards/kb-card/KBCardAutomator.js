@@ -158,12 +158,22 @@ class KBCardAutomator extends BaseBankAutomator {
       const maxRetries = 3;
 
       while (!idTypingSuccess && retryCount < maxRetries) {
-        if (retryCount > 0) {
-          this.log(`Retrying ID input (attempt ${retryCount + 1}/${maxRetries})...`);
-          await this.page.waitForTimeout(3000); // Wait for security program to finish loading
-          await idField.click();
-          await this.page.waitForTimeout(1000);
-          await idField.fill(''); // Clear again
+        // Always clear the field before attempting input (not just on retries)
+        this.log(`${retryCount > 0 ? `Retrying ID input (attempt ${retryCount + 1}/${maxRetries})` : 'Attempting ID input'}...`);
+        await this.page.waitForTimeout(retryCount > 0 ? 3000 : 1000); // Wait longer on retries for security program
+        await idField.click();
+        await this.page.waitForTimeout(1000);
+        
+        // Clear field before each attempt to ensure clean state
+        await idField.fill(''); 
+        await this.page.waitForTimeout(200);
+        
+        // Verify field is actually cleared
+        const clearedValue = await idField.inputValue();
+        if (clearedValue.length > 0) {
+          this.warn(`Field not fully cleared (${clearedValue.length} chars remaining), trying to clear again...`);
+          await idField.selectText();
+          await this.page.keyboard.press('Delete');
           await this.page.waitForTimeout(200);
         }
 
@@ -174,23 +184,28 @@ class KBCardAutomator extends BaseBankAutomator {
         });
         await this.page.waitForTimeout(500);
 
-        // Verify ID was actually typed by checking field value length
+        // Verify ID was actually typed correctly by checking both length AND content
         try {
           const actualValue = await idField.inputValue();
           const actualLength = actualValue.length;
-          this.log(`ID verification: expected ${userId.length} chars, got ${actualLength} chars`);
+          this.log(`ID verification: expected "${userId}" (${userId.length} chars), got "${actualValue}" (${actualLength} chars)`);
 
-          if (actualLength >= userId.length) {
+          // Check both length and content match
+          if (actualLength >= userId.length && actualValue.includes(userId)) {
             idTypingSuccess = true;
             this.log('User ID typed successfully via Arduino HID');
           } else {
-            this.warn(`ID input incomplete (${actualLength}/${userId.length}) - security program may be blocking input`);
+            this.warn(`ID input verification failed - expected: "${userId}", actual: "${actualValue}"`);
             retryCount++;
           }
         } catch (verifyError) {
           this.warn('Could not verify ID input:', verifyError.message);
-          // Assume success if we can't verify
-          idTypingSuccess = true;
+          // On verification error, retry instead of assuming success
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            this.warn('Max retries reached, proceeding with unverified input');
+            idTypingSuccess = true;
+          }
         }
       }
 
@@ -206,6 +221,10 @@ class KBCardAutomator extends BaseBankAutomator {
         await passwordField.click();
         await this.page.waitForTimeout(1000);
 
+        // Clear password field before manual entry to ensure clean state
+        await passwordField.fill('');
+        await this.page.waitForTimeout(200);
+
         this.log('Waiting for manual password entry...');
         await this.waitForManualPasswordEntry();
         this.log('Manual password entry completed');
@@ -216,6 +235,10 @@ class KBCardAutomator extends BaseBankAutomator {
           const passwordField = this.page.locator(this.config.xpaths.passwordInput.css);
           await passwordField.click();
           await this.page.waitForTimeout(1000);
+
+          // Clear password field before entry to ensure clean state
+          await passwordField.fill('');
+          await this.page.waitForTimeout(200);
 
           // Type character-by-character with variable delays controlled by app
           await this.typeViaArduinoWithNaturalTiming(password, {

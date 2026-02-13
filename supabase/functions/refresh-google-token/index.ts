@@ -176,6 +176,15 @@ serve(async (req) => {
     const refreshData = await refreshResponse.json();
     const newExpiresAt = new Date(Date.now() + refreshData.expires_in * 1000);
 
+    // Parse scopes from refresh response - Google returns space-separated string
+    let updatedScopes = tokenRecord.scopes; // Default to existing scopes
+    if (refreshData.scope) {
+      updatedScopes = refreshData.scope.split(' ').filter((s: string) => s.trim().length > 0);
+      console.log("[Refresh] Updated scopes from refresh response:", updatedScopes);
+    } else {
+      console.log("[Refresh] No scopes in refresh response, keeping existing:", updatedScopes);
+    }
+
     console.log("[Refresh] Token refreshed successfully, new expiry:", newExpiresAt.toISOString());
 
     // ========================================================================
@@ -188,6 +197,8 @@ serve(async (req) => {
         // Google may return a new refresh token - if not, keep existing one
         refresh_token: refreshData.refresh_token || tokenRecord.refresh_token,
         expires_at: newExpiresAt.toISOString(),
+        // Update scopes from refresh response or preserve existing ones
+        scopes: updatedScopes,
         last_refreshed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

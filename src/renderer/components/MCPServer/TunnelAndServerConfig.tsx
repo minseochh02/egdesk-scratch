@@ -250,6 +250,85 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
               </button>
             </div>
 
+            {/* Claude Desktop Installation */}
+            <div style={{ 
+              marginTop: '16px', 
+              paddingTop: '16px', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)' 
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', opacity: 0.9 }}>
+                <FontAwesomeIcon icon={faServer} style={{ marginRight: '8px' }} />
+                Claude Desktop Integration
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '12px', lineHeight: '1.5' }}>
+                Install all 5 EGDesk MCP services to Claude Desktop:<br/>
+                • User Data • Gmail • Sheets • Apps Script • File Conversion
+              </div>
+              <button
+                onClick={async () => {
+                  const confirmed = confirm(
+                    'Install EGDesk MCP Services to Claude Desktop?\n\n' +
+                    'This will add 5 services:\n' +
+                    '• User Data - Query imported tables (Excel, CSV)\n' +
+                    '• Gmail - Email operations and search\n' +
+                    '• Sheets - Google Sheets sync and management\n' +
+                    '• Apps Script - Google Apps Script tools\n' +
+                    '• File Conversion - Convert between file formats\n\n' +
+                    'After installation:\n' +
+                    '1. Restart Claude Desktop (Cmd+Q then reopen)\n' +
+                    '2. Look for the 🔨 icon in Claude Desktop\n' +
+                    '3. All EGDesk services will be available\n\n' +
+                    'Continue?'
+                  );
+                  
+                  if (!confirmed) return;
+                  
+                  try {
+                    const result = await (window as any).electron.mcpServer.configureClaude();
+                    
+                    if (result.success) {
+                      alert(
+                        '✅ Successfully configured Claude Desktop!\n\n' +
+                        'All 5 EGDesk MCP services have been installed:\n' +
+                        '✓ User Data\n' +
+                        '✓ Gmail\n' +
+                        '✓ Sheets\n' +
+                        '✓ Apps Script\n' +
+                        '✓ File Conversion\n\n' +
+                        'Next steps:\n' +
+                        '1. Quit Claude Desktop completely (Cmd+Q)\n' +
+                        '2. Reopen Claude Desktop\n' +
+                        '3. Look for the 🔨 icon to access services\n\n' +
+                        'Make sure EGDesk is running for Claude to access the services.'
+                      );
+                    } else {
+                      alert(`Failed to configure Claude Desktop: ${result.error || 'Unknown error'}`);
+                    }
+                  } catch (err) {
+                    console.error('Error configuring Claude Desktop:', err);
+                    alert(`Error configuring Claude Desktop: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                  }
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 20px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  justifyContent: 'center',
+                  fontWeight: '600'
+                }}
+              >
+                <FontAwesomeIcon icon={faServer} />
+                Install to Claude Desktop
+              </button>
+            </div>
+
             {/* Auto-start Settings */}
             <div style={{ 
               marginTop: '16px', 

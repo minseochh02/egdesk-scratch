@@ -1,5 +1,7 @@
 import { getAuthService } from '../../auth/auth-service';
 import { getDriveService } from '../../drive-service';
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 
 // Singleton instance
 let sheetsServiceInstance: SheetsService | null = null;
@@ -55,11 +57,66 @@ function formatDate(dateStr: string | null | undefined): string {
  */
 export class SheetsService {
   private baseUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
+  private serviceAccountEmail = 'spreadsheetsync@egdesk-474603.iam.gserviceaccount.com';
 
   /**
-   * Get OAuth access token from AuthService
+   * Get service account OAuth token from Supabase edge function
    */
-  private async getAccessToken(): Promise<string> {
+  private async getServiceAccountToken(scopes?: string[]): Promise<{
+    access_token: string;
+    expires_at: string;
+    expires_in: number;
+  } | null> {
+    try {
+      const authService = getAuthService();
+      
+      // Get current user session for authentication
+      const { session } = await authService.getSession();
+      if (!session?.access_token) {
+        console.error('No active session for service account token request');
+        return null;
+      }
+
+      const supabaseUrl = process.env.SUPABASE_URL || 'https://cbptgzaubhcclkmvkiua.supabase.co';
+      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/get-service-account-token`;
+
+      console.log('🔑 Requesting service account token from edge function...');
+
+      const requestBody = scopes ? { scopes } : {};
+      
+      const response = await fetch(edgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Service account token request failed:', response.status, errorData);
+        return null;
+      }
+
+      const data = await response.json();
+      console.log('✅ Service account token obtained, expires:', data.expires_at);
+
+      return {
+        access_token: data.access_token,
+        expires_at: data.expires_at,
+        expires_in: data.expires_in
+      };
+    } catch (error) {
+      console.error('❌ Failed to get service account token:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get personal OAuth access token from AuthService
+   */
+  private async getPersonalOAuthToken(): Promise<string> {
     const authService = getAuthService();
     const token = await authService.getGoogleWorkspaceToken();
     
@@ -71,10 +128,97 @@ export class SheetsService {
   }
 
   /**
+   * Get OAuth access token - tries service account first, falls back to personal OAuth
+   */
+  private async getAccessToken(preferServiceAccount: boolean = false): Promise<string> {
+    if (preferServiceAccount) {
+      try {
+        const serviceAccountToken = await this.getServiceAccountToken([
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/drive.metadata.readonly'
+        ]);
+        
+        if (serviceAccountToken) {
+          console.log('✅ Using service account token for spreadsheet operations');
+          return serviceAccountToken.access_token;
+        }
+      } catch (error) {
+        console.log('⚠️ Service account token failed, falling back to personal OAuth:', error);
+      }
+    }
+    
+    // Fallback to personal OAuth
+    console.log('📋 Using personal OAuth token for spreadsheet operations');
+    return await this.getPersonalOAuthToken();
+  }
+
+  /**
+   * Ensure service account has access to spreadsheet
+   * Creates and shares spreadsheet if needed using personal OAuth, then enables service account access
+   */
+  private async ensureServiceAccountAccess(spreadsheetId: string): Promise<boolean> {
+    try {
+      // First, test if service account can already access the spreadsheet
+      const serviceAccountToken = await this.getServiceAccountToken([
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file'
+      ]);
+
+      if (serviceAccountToken) {
+        try {
+          // Test access with service account token
+          const testResponse = await fetch(`${this.baseUrl}/${spreadsheetId}`, {
+            headers: {
+              'Authorization': `Bearer ${serviceAccountToken.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (testResponse.ok) {
+            console.log(`✅ Service account already has access to spreadsheet ${spreadsheetId}`);
+            return true;
+          }
+        } catch (error) {
+          console.log('⚠️ Service account cannot access spreadsheet, attempting to share...');
+        }
+      }
+
+      // Service account doesn't have access, use personal OAuth to share it
+      console.log(`🔗 Sharing spreadsheet ${spreadsheetId} with service account...`);
+      
+      const personalToken = await this.getPersonalOAuthToken();
+      const oauth2Client = new OAuth2Client();
+      oauth2Client.setCredentials({ access_token: personalToken });
+      const driveApi = google.drive({ version: 'v3', auth: oauth2Client });
+
+      await driveApi.permissions.create({
+        fileId: spreadsheetId,
+        requestBody: {
+          role: 'writer',
+          type: 'user',
+          emailAddress: this.serviceAccountEmail
+        },
+        sendNotificationEmail: false
+      });
+
+      console.log(`✅ Shared spreadsheet ${spreadsheetId} with service account`);
+      
+      // Brief wait for permission propagation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to ensure service account access:', error);
+      return false;
+    }
+  }
+
+  /**
    * Make authenticated request to Google Sheets API
    */
-  private async fetchSheets<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const accessToken = await this.getAccessToken();
+  private async fetchSheets<T>(endpoint: string, options: RequestInit = {}, preferServiceAccount: boolean = false): Promise<T> {
+    const accessToken = await this.getAccessToken(preferServiceAccount);
     
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'GET',
@@ -258,7 +402,7 @@ export class SheetsService {
   /**
    * Update values in a range
    */
-  async updateRange(spreadsheetId: string, range: string, values: string[][]): Promise<void> {
+  async updateRange(spreadsheetId: string, range: string, values: string[][], preferServiceAccount: boolean = false): Promise<void> {
     const encodedRange = encodeURIComponent(range);
     const endpoint = `/${spreadsheetId}/values/${encodedRange}?valueInputOption=RAW`;
 
@@ -272,7 +416,7 @@ export class SheetsService {
       headers: {
         'Content-Type': 'application/json',
       },
-    });
+    }, preferServiceAccount);
   }
 
   /**
@@ -299,7 +443,7 @@ export class SheetsService {
   /**
    * Clear values in a range
    */
-  async clearRange(spreadsheetId: string, range: string): Promise<void> {
+  async clearRange(spreadsheetId: string, range: string, preferServiceAccount: boolean = false): Promise<void> {
     const encodedRange = encodeURIComponent(range);
     const endpoint = `/${spreadsheetId}/values/${encodedRange}:clear`;
     
@@ -309,13 +453,13 @@ export class SheetsService {
       headers: {
         'Content-Type': 'application/json',
       },
-    });
+    }, preferServiceAccount);
   }
 
   /**
    * Format sheet with headers
    */
-  async formatHeaders(spreadsheetId: string, sheetName: string = 'Sheet1'): Promise<void> {
+  async formatHeaders(spreadsheetId: string, sheetName: string = 'Sheet1', preferServiceAccount: boolean = false): Promise<void> {
     try {
       // Get the spreadsheet metadata to find the correct sheet ID
       const metadata = await this.getSpreadsheet(spreadsheetId);
@@ -351,7 +495,7 @@ export class SheetsService {
       await this.fetchSheets<any>(`/${spreadsheetId}:batchUpdate`, {
         method: 'POST',
         body: JSON.stringify({ requests }),
-      });
+      }, preferServiceAccount);
     } catch (error) {
       console.warn('Failed to format headers:', error);
       // Don't throw error - formatting is not critical
@@ -368,42 +512,54 @@ export class SheetsService {
     persistentSpreadsheetId?: string,
     customTitle?: string
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string; wasCreated: boolean }> {
-    // Try to use existing spreadsheet if provided
-    if (persistentSpreadsheetId) {
+    console.log('🔄 Starting unified spreadsheet sync flow...');
+    
+    // Step 1: Check if spreadsheet exists
+    let spreadsheetId = persistentSpreadsheetId;
+    let wasCreated = false;
+    
+    if (spreadsheetId) {
       try {
-        // Check if spreadsheet still exists and is accessible
-        await this.getSpreadsheet(persistentSpreadsheetId);
-
-        // Update with new data
-        await this.updateTransactionsData(persistentSpreadsheetId, transactions, banks, accounts);
-
-        return {
-          spreadsheetId: persistentSpreadsheetId,
-          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${persistentSpreadsheetId}/edit`,
-          wasCreated: false
-        };
+        // Verify spreadsheet still exists and is accessible (using personal OAuth)
+        console.log('📋 Checking existing spreadsheet accessibility...');
+        await this.getSpreadsheet(spreadsheetId);
+        console.log('✅ Existing spreadsheet is accessible');
       } catch (error) {
-        console.warn('Persistent spreadsheet not accessible, creating new one:', error);
-        // Fall through to create new spreadsheet
+        console.warn('⚠️ Persistent spreadsheet not accessible, will create new one:', error);
+        spreadsheetId = null;
       }
     }
 
-    // Generate title
-    let title: string;
-
-    if (customTitle) {
-      // Use provided custom title (no date timestamp)
-      title = customTitle;
-    } else {
-      // Default title for merged transactions (cards + banks combined)
-      title = 'EGDesk 거래내역';
+    // Step 2: Create new spreadsheet if needed (using personal OAuth)
+    if (!spreadsheetId) {
+      console.log('📝 Creating new spreadsheet with personal OAuth...');
+      
+      const title = customTitle || 'EGDesk 거래내역';
+      const result = await this.createTransactionsSpreadsheet(title, [], banks, accounts);
+      
+      spreadsheetId = result.spreadsheetId;
+      wasCreated = true;
+      console.log(`✅ Created new spreadsheet: ${spreadsheetId}`);
     }
 
-    const result = await this.createTransactionsSpreadsheet(title, transactions, banks, accounts);
+    // Step 3: Ensure service account has access to spreadsheet
+    console.log('🔗 Ensuring service account access...');
+    const hasServiceAccess = await this.ensureServiceAccountAccess(spreadsheetId);
+    
+    if (!hasServiceAccess) {
+      console.warn('⚠️ Could not ensure service account access, continuing with personal OAuth');
+    }
 
+    // Step 4: Update data using service account token (with fallback to personal OAuth)
+    console.log('📊 Updating spreadsheet data...');
+    await this.updateTransactionsData(spreadsheetId, transactions, banks, accounts, hasServiceAccess);
+
+    console.log('✅ Unified spreadsheet sync completed');
+    
     return {
-      ...result,
-      wasCreated: true
+      spreadsheetId,
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      wasCreated
     };
   }
 
@@ -414,7 +570,8 @@ export class SheetsService {
     spreadsheetId: string,
     transactions: any[],
     banks: Record<string, any>,
-    accounts: any[]
+    accounts: any[],
+    preferServiceAccount: boolean = false
   ): Promise<void> {
     // Check if these are card transactions
     const isCardTransactions = transactions.length > 0 &&

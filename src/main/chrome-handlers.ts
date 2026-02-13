@@ -3425,6 +3425,79 @@ const { chromium } = require('playwright-core');
     }
   });
 
+  // Delete a file
+  ipcMain.handle('delete-file', async (event, filePath: string) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return {
+          success: false,
+          error: 'File not found'
+        };
+      }
+
+      fs.unlinkSync(filePath);
+      console.log('File deleted:', filePath);
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      console.error('Error deleting file:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to delete file'
+      };
+    }
+  });
+
+  // Archive/move a file to processed folder
+  ipcMain.handle('archive-file', async (event, filePath: string) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return {
+          success: false,
+          error: 'File not found'
+        };
+      }
+
+      // Get the script folder (parent directory)
+      const scriptFolder = path.dirname(filePath);
+      const fileName = path.basename(filePath);
+
+      // Create "processed" subfolder if it doesn't exist
+      const processedFolder = path.join(scriptFolder, 'processed');
+      if (!fs.existsSync(processedFolder)) {
+        fs.mkdirSync(processedFolder, { recursive: true });
+      }
+
+      // Move file to processed folder
+      const newPath = path.join(processedFolder, fileName);
+      
+      // If file already exists in processed, add timestamp
+      let finalPath = newPath;
+      if (fs.existsSync(newPath)) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const ext = path.extname(fileName);
+        const nameWithoutExt = path.basename(fileName, ext);
+        finalPath = path.join(processedFolder, `${nameWithoutExt}_${timestamp}${ext}`);
+      }
+
+      fs.renameSync(filePath, finalPath);
+      console.log('File archived:', filePath, '→', finalPath);
+
+      return {
+        success: true,
+        newPath: finalPath
+      };
+    } catch (error: any) {
+      console.error('Error archiving file:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to archive file'
+      };
+    }
+  });
+
   // Resume recording from a paused session
   ipcMain.handle('resume-recording-from-pause', async (event, { sessionId }) => {
     try {

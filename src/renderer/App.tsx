@@ -59,6 +59,7 @@ import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPag
 import DesktopRecorderPage from './components/DesktopRecorder/DesktopRecorderPage';
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
+import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
 
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
@@ -294,7 +295,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.43</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.45</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2598,6 +2599,7 @@ function AppContent() {
   return (
     <>
       <RouteWindowBoundsManager />
+      <ReauthRequiredNotification />
       <div className="app-container">
         <NavigationBar 
           showDebugModal={showDebugModal} 

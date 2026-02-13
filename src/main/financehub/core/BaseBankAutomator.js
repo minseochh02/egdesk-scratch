@@ -74,6 +74,30 @@ class BaseBankAutomator {
   }
 
   /**
+   * Get a safe temp directory that avoids Windows permission issues
+   * @returns {string} Safe temp directory path
+   */
+  getSafeTempDir() {
+    try {
+      // Try app userData directory first
+      const { app } = require('electron');
+      const baseDir = path.join(app.getPath('userData'), 'temp');
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    } catch (error) {
+      // Fallback to user home directory
+      const userHome = os.homedir();
+      const baseDir = path.join(userHome, '.egdesk-temp');
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    }
+  }
+
+  /**
    * Generates timestamp string for filenames
    * @returns {string}
    */
@@ -153,7 +177,24 @@ class BaseBankAutomator {
 
     if (!persistentProfileDir) {
       try {
-        const tempPrefix = path.join(os.tmpdir(), `egdesk-chrome-${this.config.bank.id}-`);
+        // Use app userData directory instead of system temp directory to avoid permission issues
+        let baseDir;
+        try {
+          const { app } = require('electron');
+          baseDir = path.join(app.getPath('userData'), 'chrome-profiles');
+          if (!fs.existsSync(baseDir)) {
+            fs.mkdirSync(baseDir, { recursive: true });
+          }
+        } catch (error) {
+          // Fallback to user temp directory (not system temp)
+          const userHome = os.homedir();
+          baseDir = path.join(userHome, '.egdesk-chrome-profiles');
+          if (!fs.existsSync(baseDir)) {
+            fs.mkdirSync(baseDir, { recursive: true });
+          }
+        }
+        
+        const tempPrefix = path.join(baseDir, `egdesk-chrome-${this.config.bank.id}-`);
         persistentProfileDir = fs.mkdtempSync(tempPrefix);
         this.log('Using temporary Chrome profile directory:', persistentProfileDir);
       } catch (e) {

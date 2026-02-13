@@ -415,9 +415,10 @@ export class AuthService {
     }
 
     try {
-      // Check if we have a valid refresh token for Google
-      // If not, we need to force consent to get one
+      // Check if we have a valid refresh token and required scopes for Google
+      // If either is missing, we need to force consent to get them
       let needsRefreshToken = false;
+      let needsScopeUpgrade = false;
       if (provider === 'google') {
         // Phase 3: Check Supabase for existing token (not electron-store)
         const { session } = await this.getSession();
@@ -427,18 +428,38 @@ export class AuthService {
           try {
             const existingToken = await this.tokenStorage.getGoogleToken(userId);
             needsRefreshToken = !existingToken?.refresh_token;
+            
+            // Check if we need to upgrade scopes
+            if (scopes && scopes.length > 0) {
+              const requestedScopes = scopes.split(' ');
+              const existingScopes = existingToken?.scopes || [];
+              
+              // Check if all requested scopes are present in existing token
+              needsScopeUpgrade = !requestedScopes.every(scope => 
+                existingScopes.includes(scope)
+              );
+              
+              if (needsScopeUpgrade) {
+                const missingScopes = requestedScopes.filter(scope => !existingScopes.includes(scope));
+                console.log('🔄 Missing required OAuth scopes:', missingScopes);
+              }
+            }
           } catch (error) {
             console.warn('Could not check for existing token:', error);
             needsRefreshToken = true; // Assume we need one if we can't check
+            needsScopeUpgrade = true; // Also assume we need scopes
           }
         } else {
           needsRefreshToken = true; // No session, definitely need a refresh token
+          needsScopeUpgrade = scopes && scopes.length > 0; // Need scopes if requested
         }
 
         if (needsRefreshToken) {
           console.log('🔄 No Google refresh token found, will request consent to obtain one');
+        } else if (needsScopeUpgrade) {
+          console.log('🔄 OAuth scope upgrade needed, will request consent for additional permissions');
         } else {
-          console.log('✅ Found existing refresh token, using select_account prompt');
+          console.log('✅ Found existing refresh token with sufficient scopes, using select_account prompt');
         }
       }
 
@@ -454,10 +475,9 @@ export class AuthService {
         skipBrowserRedirect: false,
         redirectTo: redirectUri,
         queryParams: {
-          // Use 'consent' if we need a refresh token (Google only returns it on consent)
-          // and we are requesting specific scopes.
-          // Otherwise use 'select_account' for better UX (just account picker)
-          prompt: (provider === 'google' && needsRefreshToken && scopes) ? 'consent' : 'select_account',
+          // Use 'consent' if we need a refresh token OR scope upgrade (Google only returns refresh token on consent
+          // and scope changes require consent). Otherwise use 'select_account' for better UX (just account picker)
+          prompt: (provider === 'google' && (needsRefreshToken || needsScopeUpgrade)) ? 'consent' : 'select_account',
           access_type: 'offline', // Request refresh token to keep session alive
         },
       };
@@ -740,7 +760,7 @@ export class AuthService {
               access_token: providerToken || accessToken,
               refresh_token: providerRefreshToken,
               expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
-              scopes: [],
+              scopes: this.requestedScopes.length > 0 ? this.requestedScopes : [],
               saved_at: Date.now(),
             };
             this.store.set('google_workspace_token', googleToken);
@@ -828,6 +848,9 @@ export class AuthService {
               access_token: providerToken || existingGoogleToken.access_token,
               refresh_token: providerRefreshToken || existingGoogleToken.refresh_token,
               expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+              scopes: this.requestedScopes.length > 0 
+                ? this.requestedScopes 
+                : (existingGoogleToken?.scopes || []),
               saved_at: Date.now(),
             };
             this.store.set('google_workspace_token', googleToken);
@@ -908,6 +931,11 @@ export class AuthService {
     access_token: string;
     refresh_token?: string;
     expires_in: number;
+  } | {
+    error: true;
+    code: string;
+    message: string;
+    requiresReauth: boolean;
   } | null> {
     try {
       const supabaseUrl = process.env.SUPABASE_URL || 'https://cbptgzaubhcclkmvkiua.supabase.co';
@@ -933,11 +961,31 @@ export class AuthService {
         const errorData = await response.json().catch(() => ({}));
         console.error('❌ Edge Function token refresh failed:', response.status, errorData);
 
-        // Handle specific errors
-        if (errorData.code === 'INVALID_GRANT') {
-          console.error('❌ Refresh token is invalid/expired - user needs to re-authenticate');
-        } else if (errorData.code === 'NO_REFRESH_TOKEN') {
-          console.error('❌ No refresh token found in database');
+        // Handle specific errors that require re-authentication
+        if (errorData.code === 'INVALID_GRANT' || errorData.code === 'NO_REFRESH_TOKEN') {
+          console.error('❌ Refresh token issue - cleaning up and requiring re-authentication:', errorData.code);
+          
+          // Clean up invalid token locally to force fresh login
+          try {
+            const { session } = await this.getSession();
+            const userId = session?.user?.id;
+            
+            if (userId) {
+              await this.tokenStorage.deleteGoogleToken(userId);
+              this.store.delete('google_workspace_token');
+              console.log('🧹 Cleaned up invalid Google token locally');
+            }
+          } catch (cleanupError) {
+            console.warn('Failed to clean up invalid token:', cleanupError);
+          }
+          
+          // Return specific error to let UI handle re-authentication flow
+          return { 
+            error: true, 
+            code: errorData.code,
+            message: errorData.details || 'Re-authentication required',
+            requiresReauth: true 
+          };
         }
 
         return null;
@@ -965,6 +1013,7 @@ export class AuthService {
     access_token: string;
     refresh_token?: string;
     expires_in: number;
+    scope?: string;
   } | null> {
     const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
     const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -1004,9 +1053,157 @@ export class AuthService {
         access_token: data.access_token,
         refresh_token: data.refresh_token, // Google may or may not return a new refresh token
         expires_in: data.expires_in || 3600, // Default to 1 hour if not provided
+        scope: data.scope, // Include scope from Google's response for proper tracking
       };
     } catch (error) {
       console.error('❌ Exception during Google token refresh:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Validate Google token and clean up if it has empty scopes when scopes are required
+   * @param token The token to validate
+   * @param userId The user ID for cleanup
+   * @param requiredScopes Optional array of required scopes
+   * @returns true if token is valid, false if it was cleaned up
+   */
+  private async validateGoogleTokenScopes(
+    token: GoogleWorkspaceToken | null, 
+    userId: string, 
+    requiredScopes?: string[]
+  ): Promise<boolean> {
+    if (!token) return false;
+
+    // If we have required scopes but token has empty or missing scopes, clean it up
+    if (requiredScopes && requiredScopes.length > 0) {
+      const tokenScopes = token.scopes || [];
+      if (tokenScopes.length === 0) {
+        console.log('🧹 Cleaning up Google token with empty scopes - re-auth required for scoped access');
+        try {
+          await this.tokenStorage.deleteGoogleToken(userId);
+          // Also clear from electron-store for consistency
+          this.store.delete('google_workspace_token');
+        } catch (error) {
+          console.warn('Failed to clean up token with empty scopes:', error);
+        }
+        return false;
+      }
+
+      // Check if all required scopes are present
+      const missingScopes = requiredScopes.filter(scope => !tokenScopes.includes(scope));
+      if (missingScopes.length > 0) {
+        console.log('🧹 Cleaning up Google token with insufficient scopes:', missingScopes);
+        try {
+          await this.tokenStorage.deleteGoogleToken(userId);
+          this.store.delete('google_workspace_token');
+        } catch (error) {
+          console.warn('Failed to clean up token with insufficient scopes:', error);
+        }
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Handle re-authentication required scenario
+   * This notifies the user and provides guidance for re-authentication
+   */
+  private async handleReauthRequired(): Promise<void> {
+    try {
+      console.log('🔐 Handling re-authentication required scenario');
+      
+      // Clean up any existing invalid tokens
+      const { session } = await this.getSession();
+      const userId = session?.user?.id;
+      
+      if (userId) {
+        try {
+          await this.tokenStorage.deleteGoogleToken(userId);
+          this.store.delete('google_workspace_token');
+          console.log('🧹 Cleaned up invalid tokens for re-authentication');
+        } catch (error) {
+          console.warn('Failed to clean up tokens:', error);
+        }
+      }
+
+      // Notify UI components that re-authentication is required
+      const { BrowserWindow } = require('electron');
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:reauth-required', {
+          reason: 'refresh_token_invalid',
+          message: 'Your Google authentication has expired. Please sign in again to continue using Google services.',
+          action: 'Please click "Sign in with Google" to re-authenticate.'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to handle re-authentication required:', error);
+    }
+  }
+
+  /**
+   * Clean up tokens with empty scopes that may exist from previous versions
+   * This helps resolve issues where users have tokens without proper OAuth scopes
+   */
+  private async cleanupEmptyScopeTokens(): Promise<void> {
+    try {
+      const { session } = await this.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        return; // No user session, nothing to clean
+      }
+
+      const token = await this.tokenStorage.getGoogleToken(userId);
+      
+      if (token && (!token.scopes || token.scopes.length === 0)) {
+        console.log('🧹 Found token with empty scopes - cleaning up to force proper re-authentication');
+        try {
+          await this.tokenStorage.deleteGoogleToken(userId);
+          this.store.delete('google_workspace_token');
+          console.log('✅ Cleaned up empty scope token');
+        } catch (error) {
+          console.warn('Failed to clean up empty scope token:', error);
+        }
+      }
+    } catch (error) {
+      // Don't fail initialization if cleanup fails
+      console.warn('Token cleanup failed:', error);
+    }
+  }
+
+  /**
+   * Get Google Workspace OAuth token with scope validation
+   * @param requiredScopes Array of required OAuth scopes
+   * @returns Token if valid and has required scopes, null otherwise
+   */
+  async getGoogleWorkspaceTokenWithScopes(requiredScopes: string[]): Promise<GoogleWorkspaceToken | null> {
+    const { session } = await this.getSession();
+    const userId = session?.user?.id;
+
+    if (!userId || !session) {
+      console.log('❌ No active session - cannot get Google token');
+      return null;
+    }
+
+    try {
+      const token = await this.tokenStorage.getGoogleToken(userId);
+      
+      // Validate token has required scopes
+      const isValid = await this.validateGoogleTokenScopes(token, userId, requiredScopes);
+      
+      if (!isValid) {
+        console.log('❌ Token validation failed - re-authentication required');
+        return null;
+      }
+
+      return token;
+    } catch (error) {
+      console.error('❌ Error fetching token with scope validation:', error);
       return null;
     }
   }
@@ -1038,6 +1235,15 @@ export class AuthService {
     let token: GoogleWorkspaceToken | null = null;
     try {
       token = await this.tokenStorage.getGoogleToken(userId);
+      
+      // Validate token scopes and clean up if invalid
+      // Note: We don't pass required scopes here as this is a general token getter
+      // Specific components should validate scopes when they need them
+      if (token && token.scopes && token.scopes.length === 0) {
+        console.log('🧹 Found token with empty scopes - this indicates an authentication issue');
+        // We don't auto-delete here as some callers might still want to use it for basic access
+        // But we'll log it for debugging
+      }
     } catch (error) {
       console.error('❌ Error fetching token from storage:', error);
       // Don't return null yet - we might be able to get refresh_token from session
@@ -1096,21 +1302,38 @@ export class AuthService {
     console.log('🔄 Attempting token refresh via Supabase Edge Function...');
     let refreshedToken = await this.refreshGoogleTokenViaEdgeFunction();
 
+    // Handle re-authentication errors from Edge Function
+    if (refreshedToken && 'error' in refreshedToken && refreshedToken.requiresReauth) {
+      console.log('🔐 Re-authentication required due to invalid/missing refresh token');
+      
+      // Trigger re-authentication handling
+      this.handleReauthRequired();
+      
+      return null; // Caller should handle by prompting user to sign in again
+    }
+
     // Fallback: Direct refresh if Edge Function fails (development/debugging)
     if (!refreshedToken) {
       console.warn('⚠️ Edge Function refresh failed, trying direct refresh as fallback...');
       refreshedToken = await this.refreshGoogleTokenDirectly(refreshToken);
     }
 
-    if (refreshedToken) {
+    if (refreshedToken && !('error' in refreshedToken)) {
       // Calculate new expiry time (current time + expires_in)
       const newExpiresAt = Math.floor(Date.now() / 1000) + refreshedToken.expires_in;
+
+      // Update scopes from refresh response if available, otherwise keep existing
+      let updatedScopes = token?.scopes || [];
+      if (refreshedToken.scope) {
+        updatedScopes = refreshedToken.scope.split(' ').filter(s => s.trim().length > 0);
+        console.log('🔄 Updated scopes from direct refresh response:', updatedScopes);
+      }
 
       const updatedToken: GoogleWorkspaceToken = {
         access_token: refreshedToken.access_token,
         refresh_token: refreshedToken.refresh_token || refreshToken, // Keep old refresh token if not returned
         expires_at: newExpiresAt,
-        scopes: token?.scopes || [],
+        scopes: updatedScopes,
         saved_at: Date.now(),
       };
 
@@ -1175,6 +1398,13 @@ export class AuthService {
    * Register IPC handlers for authentication
    */
   registerHandlers(): void {
+    // Clean up any tokens with empty scopes from previous app versions
+    this.cleanupEmptyScopeTokens();
+    
+    // Handle re-authentication events
+    ipcMain.on('auth:handle-reauth-required', () => {
+      this.handleReauthRequired();
+    });
     // Get current session
     ipcMain.handle('auth:get-session', async () => {
       try {
@@ -1251,6 +1481,15 @@ export class AuthService {
       };
     });
 
+    // Get Google Workspace token with scope validation
+    ipcMain.handle('auth:get-google-workspace-token-with-scopes', async (event, requiredScopes: string[]) => {
+      const token = await this.getGoogleWorkspaceTokenWithScopes(requiredScopes);
+      return {
+        success: true,
+        token,
+      };
+    });
+
     // DEBUG: Force refresh Google Workspace token
     ipcMain.handle('auth:debug-force-refresh-token', async () => {
       try {
@@ -1288,6 +1527,16 @@ export class AuthService {
         // Force refresh via Edge Function
         let refreshedToken = await this.refreshGoogleTokenViaEdgeFunction();
 
+        // Handle re-authentication errors from Edge Function
+        if (refreshedToken && 'error' in refreshedToken && refreshedToken.requiresReauth) {
+          console.log('🐛 DEBUG: Re-authentication required due to invalid/missing refresh token');
+          
+          // Trigger re-authentication handling
+          this.handleReauthRequired();
+          
+          return { success: false, error: 'Re-authentication required', code: refreshedToken.code };
+        }
+
         // Fallback to direct refresh if Edge Function fails
         if (!refreshedToken && token.refresh_token) {
           console.warn('🐛 DEBUG: Edge Function failed, trying direct refresh...');
@@ -1298,13 +1547,25 @@ export class AuthService {
           return { success: false, error: 'Refresh failed (both Edge Function and direct refresh)' };
         }
 
-        // Save refreshed token
+        // Save refreshed token (we know it's not an error at this point)
+        if ('error' in refreshedToken) {
+          return { success: false, error: 'Unexpected error state' };
+        }
+        
         const newExpiresAt = Math.floor(Date.now() / 1000) + refreshedToken.expires_in;
+        
+        // Update scopes from refresh response if available, otherwise keep existing
+        let updatedScopes = token.scopes;
+        if (refreshedToken.scope) {
+          updatedScopes = refreshedToken.scope.split(' ').filter(s => s.trim().length > 0);
+          console.log('🐛 DEBUG: Updated scopes from direct refresh response:', updatedScopes);
+        }
+        
         const updatedToken: GoogleWorkspaceToken = {
           access_token: refreshedToken.access_token,
           refresh_token: refreshedToken.refresh_token || token.refresh_token,
           expires_at: newExpiresAt,
-          scopes: token.scopes,
+          scopes: updatedScopes,
           saved_at: Date.now(),
         };
 

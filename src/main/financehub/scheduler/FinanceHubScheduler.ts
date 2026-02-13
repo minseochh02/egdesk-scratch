@@ -77,7 +77,7 @@ export class FinanceHubScheduler extends EventEmitter {
   private debugLogPath: string;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
-    retryCount: process.env.NODE_ENV === 'production' ? 3 : 0, // No retries in dev
+    retryCount: 3, // Enable retries in all environments
     retryDelayMinutes: 5,
     spreadsheetSyncEnabled: true,
 
@@ -353,13 +353,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
     // CRITICAL: Backfill missing intents for past 3 days
     // This ensures recovery can detect missed executions even if PC was off
-    // ONLY in production - skip in dev for faster startup
-    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-    if (isProduction) {
-      await this.backfillMissingIntents(3);
-    } else {
-      console.log('[FinanceHubScheduler] Dev mode: Skipping backfill of historical intents');
-    }
+    await this.backfillMissingIntents(3);
 
     this.scheduleNextSync();
     this.startKeepAwake();
@@ -591,26 +585,19 @@ export class FinanceHubScheduler extends EventEmitter {
     const executionId = randomUUID();
     const recoveryService = getSchedulerRecoveryService();
 
-    // Deduplication: Check if already ran today (skip in dev mode for testing)
-    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-
-    if (isProduction) {
-      try {
-        const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
-        this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
-        console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
-        if (hasRun) {
-          this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-          console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-          return;
-        }
-      } catch (error) {
-        this.debugLog(`Failed to check hasRunToday: ${error}`);
-        console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
+    // Deduplication: Check if already ran today (enabled in all environments)
+    try {
+      const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
+      this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
+      console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
+      if (hasRun) {
+        this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+        console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+        return;
       }
-    } else {
-      this.debugLog(`ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
-      console.log(`[FinanceHubScheduler] ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
+    } catch (error) {
+      this.debugLog(`Failed to check hasRunToday: ${error}`);
+      console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
     }
 
     this.debugLog(`✓ Passed all checks, starting sync for ${entityKey}...`);
@@ -650,9 +637,6 @@ export class FinanceHubScheduler extends EventEmitter {
         result = taxResult;
       }
 
-      // Check if retries are enabled and if we're in production
-      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-
       // Check if error is permanent (no point retrying)
       const isPermanentError = error && (
         error.includes('No saved credentials') ||
@@ -661,7 +645,7 @@ export class FinanceHubScheduler extends EventEmitter {
         error.includes('No accounts found')
       );
 
-      const shouldRetry = !success && retryCount < this.settings.retryCount && isProduction && !isPermanentError;
+      const shouldRetry = !success && retryCount < this.settings.retryCount && !isPermanentError;
 
       if (isPermanentError) {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${error}`);
@@ -707,9 +691,7 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncTimers.set(entityKey, retryTimer);
       } else {
         // Log reason for not retrying
-        if (!success && !isProduction) {
-          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
-        } else if (!success && retryCount >= this.settings.retryCount) {
+        if (!success && retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
         }
         // Sync completed (with or without success)
@@ -761,9 +743,6 @@ export class FinanceHubScheduler extends EventEmitter {
 
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // Check if retries are enabled and if we're in production
-      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
-
       // Check if error is permanent (no point retrying)
       const isPermanentError = errorMessage && (
         errorMessage.includes('No saved credentials') ||
@@ -772,7 +751,7 @@ export class FinanceHubScheduler extends EventEmitter {
         errorMessage.includes('No accounts found')
       );
 
-      const shouldRetry = retryCount < this.settings.retryCount && isProduction && !isPermanentError;
+      const shouldRetry = retryCount < this.settings.retryCount && !isPermanentError;
 
       if (isPermanentError) {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${errorMessage}`);
@@ -813,9 +792,7 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncTimers.set(entityKey, retryTimer);
       } else {
         // Log reason for not retrying
-        if (!isProduction) {
-          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
-        } else if (retryCount >= this.settings.retryCount) {
+        if (retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
         }
         this.updateSyncStatus('failed');
@@ -1569,7 +1546,92 @@ export class FinanceHubScheduler extends EventEmitter {
    */
   private async exportToSpreadsheet(): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
     try {
-      console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet...');
+      console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet via Service Account...');
+
+      const { getSheetsService } = await import('../../mcp/sheets/sheets-service');
+      const { getSQLiteManager } = await import('../../sqlite/manager');
+
+      const sheetsService = getSheetsService();
+      const sqliteManager = getSQLiteManager();
+      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+
+      // Export all recent data to spreadsheet
+      const transactions = financeHubDb.prepare(`
+        SELECT * FROM transactions
+        ORDER BY date DESC, time DESC
+        LIMIT 1000
+      `).all();
+
+      const banks = financeHubDb.prepare('SELECT * FROM banks').all();
+      const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
+
+      // Build banks map for lookups
+      const banksMap: any = {};
+      for (const bank of banks as any[]) {
+        banksMap[bank.id] = bank;
+      }
+
+      const store = getStore();
+      const financeHub = store.get('financeHub') as any || {};
+      if (!financeHub.syncSpreadsheets) {
+        financeHub.syncSpreadsheets = {};
+      }
+
+      // Use unified spreadsheet service with automatic service account setup
+      const transactionsResult = await sheetsService.getOrCreateTransactionsSpreadsheet(
+        transactions,
+        banksMap,
+        accounts,
+        financeHub.syncSpreadsheets?.['scheduler-sync']?.spreadsheetId,
+        'EGDesk FinanceHub Sync' // Custom title for scheduler
+      );
+
+      // Update stored metadata
+      if (!financeHub.syncSpreadsheets) {
+        financeHub.syncSpreadsheets = {};
+      }
+      
+      financeHub.syncSpreadsheets['scheduler-sync'] = {
+        spreadsheetId: transactionsResult.spreadsheetId,
+        spreadsheetUrl: transactionsResult.spreadsheetUrl,
+        title: 'EGDesk FinanceHub Sync',
+        lastUpdated: new Date().toISOString(),
+        recordCount: transactions.length,
+        wasCreated: transactionsResult.wasCreated,
+      };
+      store.set('financeHub', financeHub);
+
+      const spreadsheetUrl = transactionsResult.spreadsheetUrl;
+      console.log('[FinanceHubScheduler] ✅ Service account spreadsheet export complete:', spreadsheetUrl);
+
+      return {
+        success: true,
+        spreadsheetUrl
+      };
+
+    } catch (error) {
+      console.error('[FinanceHubScheduler] ❌ Service account spreadsheet export failed:', error);
+      
+      // Fallback to OAuth if service account fails
+      console.log('[FinanceHubScheduler] Attempting OAuth fallback for spreadsheet export...');
+      try {
+        return await this.exportToSpreadsheetOAuth();
+      } catch (fallbackError) {
+        console.error('[FinanceHubScheduler] ❌ OAuth fallback also failed:', fallbackError);
+        return {
+          success: false,
+          error: `Service account failed: ${error instanceof Error ? error.message : 'Unknown error'}. OAuth fallback failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`
+        };
+      }
+    }
+  }
+
+  /**
+   * OAuth-based spreadsheet export (fallback method)
+   */
+  private async exportToSpreadsheetOAuth(): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
+    try {
+      console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet via OAuth (fallback)...');
 
       const { getSheetsService } = await import('../../mcp/sheets/sheets-service');
       const { getSQLiteManager } = await import('../../sqlite/manager');
@@ -1605,18 +1667,18 @@ export class FinanceHubScheduler extends EventEmitter {
         banksMap,
         accounts,
         persistentSpreadsheetId,
-        'EGDesk 거래내역' // Custom title without date timestamp
+        'EGDesk 거래내역 (OAuth)' // Mark as OAuth version
       );
 
       financeHub.persistentSpreadsheets['scheduler-sync'] = {
         spreadsheetId: transactionsResult.spreadsheetId,
         spreadsheetUrl: transactionsResult.spreadsheetUrl,
-        title: 'EGDesk 거래내역',
+        title: 'EGDesk 거래내역 (OAuth)',
         lastUpdated: new Date().toISOString(),
       };
       store.set('financeHub', financeHub);
 
-      console.log('[FinanceHubScheduler] ✅ Spreadsheet export complete:', transactionsResult.spreadsheetUrl);
+      console.log('[FinanceHubScheduler] ✅ OAuth fallback spreadsheet export complete:', transactionsResult.spreadsheetUrl);
 
       return {
         success: true,
@@ -1624,7 +1686,7 @@ export class FinanceHubScheduler extends EventEmitter {
       };
 
     } catch (error) {
-      console.error('[FinanceHubScheduler] ❌ Spreadsheet export failed:', error);
+      console.error('[FinanceHubScheduler] ❌ OAuth fallback spreadsheet export failed:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

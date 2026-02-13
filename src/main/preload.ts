@@ -2105,6 +2105,17 @@ const electronHandler = {
     openPlaywrightDownloadsFolder: () => ipcRenderer.invoke('open-playwright-downloads-folder'),
     getBrowserDownloadFolders: () => ipcRenderer.invoke('get-browser-download-folders'),
     getFolderFiles: (folderPath: string) => ipcRenderer.invoke('get-folder-files', folderPath),
+    deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
+    archiveFile: (filePath: string) => ipcRenderer.invoke('archive-file', filePath),
+    
+    // File Watcher Service
+    fileWatcher: {
+      initialize: () => ipcRenderer.invoke('file-watcher:initialize'),
+      start: (configId: string) => ipcRenderer.invoke('file-watcher:start', configId),
+      stop: (configId: string) => ipcRenderer.invoke('file-watcher:stop', configId),
+      getStatus: () => ipcRenderer.invoke('file-watcher:get-status'),
+      stopAll: () => ipcRenderer.invoke('file-watcher:stop-all'),
+    },
     // Playwright Scheduler API
     getPlaywrightSchedules: () => ipcRenderer.invoke('sqlite-playwright-scheduler-get-all'),
     getPlaywrightScheduleById: (id: string) => ipcRenderer.invoke('sqlite-playwright-scheduler-get', id),
@@ -2520,6 +2531,7 @@ auth: {
   switchAccount: (userId: string) => ipcRenderer.invoke('auth:switch-account', userId),
   handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
     getGoogleWorkspaceToken: () => ipcRenderer.invoke('auth:get-google-workspace-token'),
+    getGoogleWorkspaceTokenWithScopes: (requiredScopes: string[]) => ipcRenderer.invoke('auth:get-google-workspace-token-with-scopes', requiredScopes),
   debugForceRefreshToken: () => ipcRenderer.invoke('auth:debug-force-refresh-token'),
   saveSession: (session: any) => ipcRenderer.invoke('auth:save-session', session),
   callEdgeFunction: (options: { url: string; method?: string; body?: any; headers?: Record<string, string> }) =>
@@ -2678,6 +2690,8 @@ auth: {
     checkForUpdates: () => ipcRenderer.invoke('app-updater-check'),
     downloadUpdate: () => ipcRenderer.invoke('app-updater-download'),
     quitAndInstall: () => ipcRenderer.invoke('app-updater-quit-and-install'),
+    getAutoUpdateSetting: () => ipcRenderer.invoke('auto-update-get-setting'),
+    setAutoUpdateSetting: (autoUpdate: boolean) => ipcRenderer.invoke('auto-update-set-setting', autoUpdate),
     onUpdateAvailable: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => {
       const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
       ipcRenderer.on('update-available', subscription);

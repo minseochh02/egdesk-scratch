@@ -18,7 +18,7 @@ export interface UserTable {
   updatedAt: string;
   schema: Array<{
     name: string;
-    type: 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB';
+    type: 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB' | 'DATE';
     notNull?: boolean;
     defaultValue?: string | number | null;
   }>;
@@ -190,6 +190,8 @@ export function useUserData() {
       headerRow?: number;
       skipRows?: number;
       skipBottomRows?: number;
+      uniqueKeyColumns?: string[];
+      duplicateAction?: 'skip' | 'update' | 'allow';
     }) => {
       try {
         const result = await window.electron.invoke('user-data:import-excel', config);

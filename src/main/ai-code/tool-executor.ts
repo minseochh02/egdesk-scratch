@@ -31,7 +31,11 @@ import {
   AppsScriptPushToDevTool,
   AppsScriptPullFromDevTool,
   AppsScriptPushDevToProdTool,
-  AppsScriptPullProdToDevTool
+  AppsScriptPullProdToDevTool,
+  UserDataListTablesTool,
+  UserDataQueryTool,
+  UserDataSearchTool,
+  UserDataAggregateTool
 } from './tools';
 
 
@@ -333,6 +337,93 @@ export class ToolRegistry {
           required: []
         };
       
+      case 'user_data_list_tables':
+        return {
+          type: 'object',
+          properties: {},
+          required: []
+        };
+      
+      case 'user_data_query':
+        return {
+          type: 'object',
+          properties: {
+            table_name: {
+              type: 'string',
+              description: 'The name of the user-imported table to query'
+            },
+            filters: {
+              type: 'object',
+              description: 'Optional: Filter conditions as key-value pairs (e.g., {"status": "active", "age": ">30"}). Supports operators: =, >, <, >=, <=, !='
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional: Maximum number of rows to return (default: 100, max: 1000)'
+            },
+            offset: {
+              type: 'number',
+              description: 'Optional: Number of rows to skip for pagination (default: 0)'
+            },
+            order_by: {
+              type: 'string',
+              description: 'Optional: Column name to sort by'
+            },
+            order_direction: {
+              type: 'string',
+              description: 'Optional: Sort direction (ASC or DESC, default: ASC)'
+            }
+          },
+          required: ['table_name']
+        };
+      
+      case 'user_data_search':
+        return {
+          type: 'object',
+          properties: {
+            table_name: {
+              type: 'string',
+              description: 'The name of the user-imported table to search'
+            },
+            search_query: {
+              type: 'string',
+              description: 'The text to search for across all columns in the table'
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional: Maximum number of results to return (default: 100, max: 1000)'
+            }
+          },
+          required: ['table_name', 'search_query']
+        };
+      
+      case 'user_data_aggregate':
+        return {
+          type: 'object',
+          properties: {
+            table_name: {
+              type: 'string',
+              description: 'The name of the user-imported table'
+            },
+            column: {
+              type: 'string',
+              description: 'The column name to aggregate'
+            },
+            function: {
+              type: 'string',
+              description: 'The aggregation function: SUM, AVG, COUNT, MIN, or MAX'
+            },
+            filters: {
+              type: 'object',
+              description: 'Optional: Filter conditions to apply before aggregation'
+            },
+            group_by: {
+              type: 'string',
+              description: 'Optional: Column name to group results by'
+            }
+          },
+          required: ['table_name', 'column', 'function']
+        };
+      
       default:
         return {
           type: 'object',
@@ -432,7 +523,12 @@ export class ToolRegistry {
       'old_string': 'oldString',
       'new_string': 'newString',
       'expected_replacements': 'expectedReplacements',
-      'flexible_matching': 'flexibleMatching'
+      'flexible_matching': 'flexibleMatching',
+      'table_name': 'tableName',
+      'search_query': 'searchQuery',
+      'order_by': 'orderBy',
+      'order_direction': 'orderDirection',
+      'group_by': 'groupBy'
     };
     
     for (const [key, value] of Object.entries(params)) {
@@ -487,6 +583,12 @@ export class ToolRegistry {
     this.registerTool(new AppsScriptPullFromDevTool());
     this.registerTool(new AppsScriptPushDevToProdTool());
     this.registerTool(new AppsScriptPullProdToDevTool());
+    
+    // User Data Tools
+    this.registerTool(new UserDataListTablesTool());
+    this.registerTool(new UserDataQueryTool());
+    this.registerTool(new UserDataSearchTool());
+    this.registerTool(new UserDataAggregateTool());
   }
 }
 
@@ -531,14 +633,28 @@ export function getAppsScriptTools(): ToolExecutor[] {
 }
 
 /**
+ * Get User Data tools for querying imported tables
+ */
+export function getUserDataTools(): ToolExecutor[] {
+  return [
+    new UserDataListTablesTool(),
+    new UserDataQueryTool(),
+    new UserDataSearchTool(),
+    new UserDataAggregateTool(),
+  ];
+}
+
+/**
  * Get tool names for a specific context
  */
-export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'all'): string[] {
+export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'user-data' | 'all'): string[] {
   switch (context) {
     case 'filesystem':
       return getFilesystemTools().map(t => t.name);
     case 'apps-script':
       return getAppsScriptTools().map(t => t.name);
+    case 'user-data':
+      return getUserDataTools().map(t => t.name);
     case 'all':
     default:
       return Array.from(toolRegistry['tools'].keys());
