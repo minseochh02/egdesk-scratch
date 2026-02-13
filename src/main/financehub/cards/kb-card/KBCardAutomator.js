@@ -515,14 +515,23 @@ class KBCardAutomator extends BaseBankAutomator {
       // Step 5: Parse Excel file
       const extractedData = await this.parseKBCardExcel(downloadPath);
 
-      // Step 6: Return result
-      const excelPath = downloadPath;
+      // Step 6: Validate parsing results
+      const hasParsingError = extractedData.metadata?.error;
+      const transactionCount = extractedData.transactions?.length || 0;
+      
+      this.log(`Excel parsing completed: ${transactionCount} transactions found`);
+      if (hasParsingError) {
+        this.log(`Parsing error: ${hasParsingError}`, 'warn');
+      }
 
+      // Step 7: Return result with proper status
       return [{
-        status: 'downloaded',
-        filename: path.basename(excelPath),
-        path: excelPath,
-        extractedData: extractedData
+        status: hasParsingError ? 'parsing_error' : 'downloaded',
+        filename: path.basename(downloadPath),
+        path: downloadPath,
+        extractedData: extractedData,
+        transactionCount: transactionCount,
+        parsingError: hasParsingError || undefined
       }];
 
     } catch (error) {
@@ -543,12 +552,53 @@ class KBCardAutomator extends BaseBankAutomator {
   async parseKBCardExcel(filePath) {
     this.log(`Parsing KB Card Excel: ${filePath}`);
 
-    const XLSX = require('xlsx');
-    const fileBuffer = fs.readFileSync(filePath);
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    try {
+      // Verify file exists
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`Excel file not found: ${filePath}`);
+      }
+
+      const XLSX = require('xlsx');
+      const fileBuffer = fs.readFileSync(filePath);
+      
+      if (fileBuffer.length === 0) {
+        throw new Error(`Excel file is empty: ${filePath}`);
+      }
+
+      this.log(`File size: ${fileBuffer.length} bytes`);
+
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+      
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        throw new Error(`No sheets found in Excel file: ${filePath}`);
+      }
+
+      const sheetName = workbook.SheetNames[0];
+      this.log(`Using sheet: ${sheetName}`);
+      
+      const worksheet = workbook.Sheets[sheetName];
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      this.log(`Raw data rows: ${rawData.length}`);
+      
+      if (rawData.length === 0) {
+        this.log('Excel file contains no data rows', 'warn');
+        return {
+          metadata: {
+            bankName: 'KB국민카드',
+            downloadDate: new Date().toISOString(),
+            sourceFile: path.basename(filePath),
+            sheetName: sheetName,
+            error: 'No data found in Excel file'
+          },
+          summary: {
+            totalCount: 0,
+            totalAmount: 0,
+          },
+          headers: [],
+          transactions: [],
+        };
+      }
 
     // Column mapping for KB Card
     const columnMapping = {
@@ -602,14 +652,34 @@ class KBCardAutomator extends BaseBankAutomator {
     // Parse transactions
     const transactions = [];
     let totalAmount = 0;
+    let skippedRows = 0;
+    let emptyRows = 0;
+
+    this.log(`Parsing transactions from row ${headerRowIndex + 1} to ${rawData.length - 1}...`);
 
     for (let i = headerRowIndex + 1; i < rawData.length; i++) {
       const row = rawData[i];
-      if (!row || row.length === 0) continue;
+      if (!row || row.length === 0) {
+        emptyRows++;
+        continue;
+      }
 
       // Skip total rows
       const firstCell = String(row[0] || '').trim();
-      if (firstCell.includes('합계') || firstCell.includes('총')) continue;
+      if (firstCell.includes('합계') || firstCell.includes('총')) {
+        this.log(`Skipping total row ${i}: ${firstCell}`);
+        skippedRows++;
+        continue;
+      }
+
+      // Skip completely empty data rows
+      const hasData = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+      if (!hasData) {
+        emptyRows++;
+        continue;
+      }
+
+      this.log(`Processing row ${i}: ${row.slice(0, 3).join(' | ')}...`);
 
       // Map to object with both Korean and English names
       const transaction = {};
@@ -630,23 +700,51 @@ class KBCardAutomator extends BaseBankAutomator {
       totalAmount += amount;
     }
 
-    this.log(`Parsed ${transactions.length} transactions, total: ${totalAmount}`);
+      this.log(`Parsing complete: ${transactions.length} transactions, ${skippedRows} skipped total rows, ${emptyRows} empty rows`);
 
-    return {
-      metadata: {
-        bankName: 'KB국민카드',
-        downloadDate: new Date().toISOString(),
-        sourceFile: path.basename(filePath),
-        sheetName: sheetName,
-        columnMapping: columnMapping,
-      },
-      summary: {
-        totalCount: transactions.length,
-        totalAmount: totalAmount,
-      },
-      headers: headers,
-      transactions: transactions,
-    };
+      // Final validation
+      if (transactions.length === 0) {
+        this.log('WARNING: No transactions were parsed from the Excel file. This could mean:', 'warn');
+        this.log('1. The date range has no transactions (normal)', 'warn');
+        this.log('2. The Excel format has changed and needs parser updates', 'warn');
+        this.log('3. The file download was incomplete or corrupted', 'warn');
+      }
+
+      return {
+        metadata: {
+          bankName: 'KB국민카드',
+          downloadDate: new Date().toISOString(),
+          sourceFile: path.basename(filePath),
+          sheetName: sheetName,
+          columnMapping: columnMapping,
+        },
+        summary: {
+          totalCount: transactions.length,
+          totalAmount: totalAmount,
+        },
+        headers: headers,
+        transactions: transactions,
+      };
+
+    } catch (error) {
+      this.log(`Error parsing KB Card Excel: ${error.message}`, 'error');
+      
+      // Return empty result with error info
+      return {
+        metadata: {
+          bankName: 'KB국민카드',
+          downloadDate: new Date().toISOString(),
+          sourceFile: path.basename(filePath),
+          error: error.message
+        },
+        summary: {
+          totalCount: 0,
+          totalAmount: 0,
+        },
+        headers: [],
+        transactions: [],
+      };
+    }
   }
 
   // ============================================================================

@@ -806,7 +806,19 @@ export class FinanceHubScheduler extends EventEmitter {
         }
       }
     } finally {
+      // CRITICAL: Always cleanup browser and remove from tracking, even on errors
       this.syncingEntities.delete(entityKey);
+      
+      // Clean up any browser that might be left in activeBrowsers
+      if (this.activeBrowsers.has(entityKey)) {
+        console.log(`[FinanceHubScheduler] Cleaning up browser in finally block for: ${entityKey}`);
+        const automator = this.activeBrowsers.get(entityKey);
+        try {
+          await this.safeCleanupBrowser(automator, entityKey);
+        } catch (cleanupError) {
+          console.error(`[FinanceHubScheduler] Error during finally cleanup for ${entityKey}:`, cleanupError);
+        }
+      }
     }
   }
 
@@ -1087,6 +1099,29 @@ export class FinanceHubScheduler extends EventEmitter {
       
       console.log(`[FinanceHubScheduler] 📊 Total collected transactions: ${allTransactions.length}`);
 
+      // Check if we successfully downloaded and processed files, even if no transactions found
+      const hasValidDownloads = actualResult.accounts && actualResult.accounts.some(account => 
+        (account.status === 'downloaded' || account.status === 'parsing_error') && 
+        account.path && account.extractedData
+      );
+
+      // Check for parsing errors
+      const hasParsingErrors = actualResult.accounts && actualResult.accounts.some(account =>
+        account.status === 'parsing_error' || 
+        account.parsingError ||
+        account.extractedData?.metadata?.error
+      );
+
+      console.log(`[FinanceHubScheduler] 📊 Has valid downloads: ${hasValidDownloads}`);
+      console.log(`[FinanceHubScheduler] 📊 Has parsing errors: ${hasParsingErrors}`);
+      
+      // Debug: Log account details
+      if (actualResult.accounts) {
+        actualResult.accounts.forEach((account, index) => {
+          console.log(`[FinanceHubScheduler] 🔍 Account ${index}: status=${account.status}, transactionCount=${account.transactionCount || 'unknown'}, parsingError=${account.parsingError || 'none'}`);
+        });
+      }
+
       // Import all transactions under a single account (since card numbers are masked)
       if (allTransactions.length > 0) {
         const cardData = {
@@ -1120,11 +1155,27 @@ export class FinanceHubScheduler extends EventEmitter {
         console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions (all cards combined)`);
       }
 
-      console.log(`[FinanceHubScheduler] Card sync complete for ${cardCompanyId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
+      // Determine final success status
+      let finalSuccess = true;
+      let finalMessage = `${totalInserted} inserted, ${totalSkipped} skipped`;
+
+      if (hasParsingErrors) {
+        finalSuccess = false;
+        finalMessage = 'Excel parsing failed - file may be corrupted or format changed';
+      } else if (allTransactions.length === 0 && !hasValidDownloads) {
+        finalSuccess = false;
+        finalMessage = 'No data returned - download may have failed';
+      } else if (allTransactions.length === 0 && hasValidDownloads) {
+        finalSuccess = true;
+        finalMessage = 'No transactions found in date range (download successful)';
+      }
+
+      console.log(`[FinanceHubScheduler] Card sync complete for ${cardCompanyId}: ${finalMessage}`);
       return {
-        success: true,
+        success: finalSuccess,
         inserted: totalInserted,
-        skipped: totalSkipped
+        skipped: totalSkipped,
+        message: finalMessage
       };
 
       } catch (error) {
