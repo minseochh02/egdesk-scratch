@@ -410,6 +410,11 @@ export function registerUserDataIPCHandlers(): void {
     sheetIndex: number;
     tableId: string;
     columnMappings: Record<string, string>;
+    uniqueKeyColumns?: string[];
+    duplicateAction?: 'skip' | 'update' | 'allow';
+    headerRow?: number;
+    skipRows?: number;
+    skipBottomRows?: number;
   }) => {
     try {
       const manager = getSQLiteManager();
@@ -422,6 +427,14 @@ export function registerUserDataIPCHandlers(): void {
           success: false,
           error: 'Table not found',
         };
+      }
+
+      // Update table's duplicate detection settings if provided
+      if (config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0) {
+        userDataManager.updateTableDuplicateSettings(config.tableId, {
+          uniqueKeyColumns: config.uniqueKeyColumns,
+          duplicateAction: config.duplicateAction || 'skip',
+        });
       }
 
       // Parse Excel file (with any parsing options)

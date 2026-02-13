@@ -96,7 +96,7 @@ const DesktopRecorderPage: React.FC = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:start');
+      const result = await (window as any).electron.invoke('desktop-recorder:start-with-control-window');
       if (result.success) {
         setStatus({
           isRecording: true,

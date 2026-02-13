@@ -128,11 +128,55 @@ export function detectColumnType(values: any[]): ColumnType {
 }
 
 /**
+ * Check if a row is likely a summary/total row
+ */
+function isSummaryRow(rowData: any): boolean {
+  const summaryKeywords = ['total', 'grand total', 'sum', 'average', '합계', '총합계', '소계', '평균'];
+  
+  // Check values in the row
+  const values = Object.values(rowData);
+  
+  // Check first few columns usually containing the label
+  // Also check if multiple columns have the same summary value (like "총합계" in the error report)
+  let summaryKeywordCount = 0;
+
+  for (const val of values) {
+    if (typeof val === 'string') {
+      const lowerVal = val.toLowerCase().trim();
+      // Exact match or starts with keyword (e.g. "Total Sales")
+      if (summaryKeywords.some(k => lowerVal === k || lowerVal.startsWith(k))) {
+        summaryKeywordCount++;
+      }
+    }
+  }
+
+  // If we found keywords, it's likely a summary row
+  // The user reported "총합계" in multiple columns, so checking for count > 0 is probably safe enough for the first column
+  // But let's be slightly more specific: usually the summary label is in the first few non-null columns
+  
+  const firstNonNull = values.find(v => v !== null && v !== undefined && v !== '');
+  if (typeof firstNonNull === 'string') {
+     const lowerVal = firstNonNull.toLowerCase().trim();
+     if (summaryKeywords.some(k => lowerVal === k || lowerVal.startsWith(k))) {
+       return true;
+     }
+  }
+
+  // Also catch the specific case where "총합계" appears (user reported it in '일자' column which might not be the first)
+  if (values.some(v => typeof v === 'string' && (v === '총합계' || v === '합계'))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Detect column types from rows
  */
 export function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] {
-  const sampleSize = Math.min(rows.length, 100);
-  const sampleRows = rows.slice(0, sampleSize);
+  // Check all rows for accurate detection to avoid type mismatches
+  // Performance impact is negligible compared to Excel parsing time
+  const sampleRows = rows;
 
   return headers.map((header) => {
     const values = sampleRows.map((row) => row[header]);
@@ -214,8 +258,12 @@ export async function parseExcelFile(
       const hasData = Object.values(rowData).some(
         (v) => v !== null && v !== undefined && v !== ''
       );
+      
       if (hasData) {
-        rows.push(rowData);
+        // Skip summary rows (totals, etc.)
+        if (!isSummaryRow(rowData)) {
+          rows.push(rowData);
+        }
       }
     }
 
