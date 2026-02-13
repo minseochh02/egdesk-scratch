@@ -7,6 +7,7 @@ import {
   Link,
   useLocation,
   Navigate,
+  useNavigate,
 } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -2033,6 +2034,7 @@ function NavigationBar({
   setShowSupportModal: (show: boolean) => void;
 }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isNarrow, setIsNarrow] = useState(false);
   const { user } = useAuth();
 
@@ -2213,10 +2215,14 @@ function NavigationBar({
               <FontAwesomeIcon icon={faChartBar} fixedWidth />
               <span>Finance Hub</span>
             </Link>
-            <Link to="/scheduler-status" className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}>
+            <div
+              className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
+              onClick={() => navigate('/scheduler-status')}
+              style={{ cursor: 'pointer' }}
+            >
               <FontAwesomeIcon icon={faClock} fixedWidth />
               <span>Scheduler Status</span>
-            </Link>
+            </div>
           </NavDropdown>
 
           {/* Help & Tools - Kept as icons/buttons */}
