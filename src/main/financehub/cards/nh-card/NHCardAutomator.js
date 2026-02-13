@@ -23,7 +23,7 @@ class NHCardAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'nh-card');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('nh-card');
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;

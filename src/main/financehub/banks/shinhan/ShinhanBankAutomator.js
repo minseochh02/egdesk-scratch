@@ -32,7 +32,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'shinhan');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('shinhan');
   }
 
   // ============================================================================

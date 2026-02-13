@@ -31,7 +31,7 @@ class ShinhanCardAutomator extends BaseCardAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'shinhan-card');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('shinhan-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
     this.arduinoPort = options.arduinoPort || null; // e.g. 'COM6'
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;

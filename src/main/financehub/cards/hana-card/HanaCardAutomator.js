@@ -20,7 +20,7 @@ class HanaCardAutomator extends BaseCardAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'hana-card');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('hana-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;

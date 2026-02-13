@@ -31,7 +31,7 @@ class BaseBankAutomator {
     this.browser = null;
     this.context = null;
     this.page = null;
-    this.outputDir = path.join(process.cwd(), 'output', config.bank.id);
+    this.outputDir = this.getSafeOutputDir(config.bank.id);
     this.sessionKeepAliveInterval = null;
   }
 
@@ -90,6 +90,31 @@ class BaseBankAutomator {
       // Fallback to user home directory
       const userHome = os.homedir();
       const baseDir = path.join(userHome, '.egdesk-temp');
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    }
+  }
+
+  /**
+   * Get a safe output directory that avoids Windows permission issues
+   * @param {string} bankOrCardType - Bank/card type identifier (e.g., 'bc-card', 'kb-bank')
+   * @returns {string} Safe output directory path
+   */
+  getSafeOutputDir(bankOrCardType) {
+    try {
+      // Try app userData directory first
+      const { app } = require('electron');
+      const baseDir = path.join(app.getPath('userData'), 'output', bankOrCardType);
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    } catch (error) {
+      // Fallback to user home directory
+      const userHome = os.homedir();
+      const baseDir = path.join(userHome, '.egdesk-output', bankOrCardType);
       if (!fs.existsSync(baseDir)) {
         fs.mkdirSync(baseDir, { recursive: true });
       }
