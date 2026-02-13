@@ -77,7 +77,7 @@ export class FinanceHubScheduler extends EventEmitter {
   private debugLogPath: string;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
-    retryCount: 3, // Enable retries in all environments
+    retryCount: process.env.NODE_ENV === 'production' ? 3 : 0,
     retryDelayMinutes: 5,
     spreadsheetSyncEnabled: true,
 
@@ -353,7 +353,12 @@ export class FinanceHubScheduler extends EventEmitter {
 
     // CRITICAL: Backfill missing intents for past 3 days
     // This ensures recovery can detect missed executions even if PC was off
-    await this.backfillMissingIntents(3);
+    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+    if (isProduction) {
+      await this.backfillMissingIntents(3);
+    } else {
+      console.log('[FinanceHubScheduler] Dev mode: Skipping backfill of historical intents');
+    }
 
     this.scheduleNextSync();
     this.startKeepAwake();
@@ -585,19 +590,26 @@ export class FinanceHubScheduler extends EventEmitter {
     const executionId = randomUUID();
     const recoveryService = getSchedulerRecoveryService();
 
-    // Deduplication: Check if already ran today (enabled in all environments)
-    try {
-      const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
-      this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
-      console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
-      if (hasRun) {
-        this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-        console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-        return;
+    // Deduplication: Check if already ran today
+    const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+
+    if (isProduction) {
+      try {
+        const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
+        this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
+        console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
+        if (hasRun) {
+          this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+          console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+          return;
+        }
+      } catch (error) {
+        this.debugLog(`Failed to check hasRunToday: ${error}`);
+        console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
       }
-    } catch (error) {
-      this.debugLog(`Failed to check hasRunToday: ${error}`);
-      console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
+    } else {
+      this.debugLog(`ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
+      console.log(`[FinanceHubScheduler] ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
     }
 
     this.debugLog(`✓ Passed all checks, starting sync for ${entityKey}...`);
@@ -645,7 +657,8 @@ export class FinanceHubScheduler extends EventEmitter {
         error.includes('No accounts found')
       );
 
-      const shouldRetry = !success && retryCount < this.settings.retryCount && !isPermanentError;
+      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+      const shouldRetry = !success && retryCount < this.settings.retryCount && isProduction && !isPermanentError;
 
       if (isPermanentError) {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${error}`);
@@ -691,7 +704,10 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncTimers.set(entityKey, retryTimer);
       } else {
         // Log reason for not retrying
-        if (!success && retryCount >= this.settings.retryCount) {
+        const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+        if (!success && !isProduction) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
+        } else if (!success && retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
         }
         // Sync completed (with or without success)
@@ -751,7 +767,8 @@ export class FinanceHubScheduler extends EventEmitter {
         errorMessage.includes('No accounts found')
       );
 
-      const shouldRetry = retryCount < this.settings.retryCount && !isPermanentError;
+      const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+      const shouldRetry = retryCount < this.settings.retryCount && isProduction && !isPermanentError;
 
       if (isPermanentError) {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${errorMessage}`);
@@ -792,7 +809,10 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncTimers.set(entityKey, retryTimer);
       } else {
         // Log reason for not retrying
-        if (retryCount >= this.settings.retryCount) {
+        const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
+        if (!isProduction) {
+          console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
+        } else if (retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
         }
         this.updateSyncStatus('failed');

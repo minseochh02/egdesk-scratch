@@ -252,7 +252,11 @@ export class DesktopRecorder {
       console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
       // Wait for desktop switch to fully complete before creating window
       console.log('[DesktopRecorder] Waiting for desktop switch to complete...');
-      await this.sleep(2000); // 2 second delay to ensure switch is complete
+      await this.sleep(3000); // Increased to 3 seconds for better stability
+      
+      // Additional verification: try to trigger a focus event to ensure we're on the new desktop
+      console.log('[DesktopRecorder] Verifying desktop switch...');
+      await this.verifyDesktopSwitch();
     }
 
     // Import and create control window on the new desktop
