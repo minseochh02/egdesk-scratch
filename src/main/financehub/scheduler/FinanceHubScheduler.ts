@@ -847,22 +847,26 @@ export class FinanceHubScheduler extends EventEmitter {
         timeoutPromise
       ]);
 
-      console.log(`[FinanceHubScheduler] ✓ Browser cleaned up successfully for ${entityKey}`);
+      console.log(`[FinanceHubScheduler] ✅ Browser cleaned up successfully for ${entityKey}`);
     } catch (cleanupError: any) {
-      console.error(`[FinanceHubScheduler] Cleanup failed for ${entityKey}:`, cleanupError.message);
+      console.error(`[FinanceHubScheduler] ❌ Cleanup failed for ${entityKey}:`, cleanupError.message);
+      console.error(`[FinanceHubScheduler] This could cause the next scheduled execution to fail due to browser conflicts`);
 
       // Fallback: Try to force kill browser process
       try {
-        console.log(`[FinanceHubScheduler] Attempting force kill for ${entityKey}...`);
+        console.log(`[FinanceHubScheduler] 🔨 Attempting force kill for ${entityKey}...`);
         if (automator.browser) {
           await automator.browser.close();
+          console.log(`[FinanceHubScheduler] ✅ Force kill successful for ${entityKey}`);
         }
       } catch (forceError) {
-        console.error(`[FinanceHubScheduler] Force kill failed for ${entityKey}:`, forceError);
+        console.error(`[FinanceHubScheduler] ❌ Force kill failed for ${entityKey}:`, forceError);
+        console.error(`[FinanceHubScheduler] WARNING: Browser may still be running - next execution might fail`);
       }
     } finally {
       // Remove from active browsers tracking
       this.activeBrowsers.delete(entityKey);
+      console.log(`[FinanceHubScheduler] 🗑️ Removed ${entityKey} from active browsers tracking`);
     }
   }
 
@@ -871,7 +875,7 @@ export class FinanceHubScheduler extends EventEmitter {
    * Prevents zombie browser processes
    */
   private async killAllBrowsers(): Promise<void> {
-    console.log(`[FinanceHubScheduler] Killing ${this.activeBrowsers.size} active browser(s)...`);
+    console.log(`[FinanceHubScheduler] 🔥 Killing ${this.activeBrowsers.size} active browser(s)...`);
 
     const killPromises = Array.from(this.activeBrowsers.entries()).map(async ([entityKey, automator]) => {
       try {
@@ -883,6 +887,34 @@ export class FinanceHubScheduler extends EventEmitter {
 
     await Promise.all(killPromises);
     this.activeBrowsers.clear();
+    console.log(`[FinanceHubScheduler] ✅ All browsers killed and tracking cleared`);
+  }
+
+  /**
+   * Debug method to log current browser state
+   * Useful for troubleshooting browser cleanup issues
+   */
+  public logBrowserState(): void {
+    console.log(`[FinanceHubScheduler] 🔍 Active browsers: ${this.activeBrowsers.size}`);
+    if (this.activeBrowsers.size > 0) {
+      const browserKeys = Array.from(this.activeBrowsers.keys());
+      console.log(`[FinanceHubScheduler] 🔍 Browser entities:`, browserKeys);
+      
+      // Check if browsers are still alive
+      browserKeys.forEach(async (entityKey) => {
+        const automator = this.activeBrowsers.get(entityKey);
+        if (automator && automator.page) {
+          try {
+            const isClosed = automator.page.isClosed();
+            console.log(`[FinanceHubScheduler] 🔍 ${entityKey}: page.isClosed() = ${isClosed}`);
+          } catch (error) {
+            console.log(`[FinanceHubScheduler] 🔍 ${entityKey}: Error checking page status - likely closed`);
+          }
+        } else {
+          console.log(`[FinanceHubScheduler] 🔍 ${entityKey}: No page object found`);
+        }
+      });
+    }
   }
 
   // ============================================
@@ -892,6 +924,9 @@ export class FinanceHubScheduler extends EventEmitter {
   private async syncCard(cardId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
     this.debugLog(`→→→ syncCard() called for: ${cardId}`);
     console.log(`[FinanceHubScheduler] Syncing card: ${cardId}`);
+
+    // Log current browser state for debugging
+    this.logBrowserState();
 
     let automator: any = null;
 
@@ -987,6 +1022,19 @@ export class FinanceHubScheduler extends EventEmitter {
 
       this.debugLog(`Creating automator for ${cardCompanyId} (headless: false - visible browser)...`);
 
+      // CRITICAL FIX: Check for and cleanup any existing browser before creating new one
+      const entityKey = `card:${cardId}`;
+      if (this.activeBrowsers.has(entityKey)) {
+        console.log(`[FinanceHubScheduler] Found existing browser for ${entityKey}, cleaning up before creating new one...`);
+        const oldAutomator = this.activeBrowsers.get(entityKey);
+        try {
+          await this.safeCleanupBrowser(oldAutomator, entityKey, 10000); // 10s timeout
+        } catch (cleanupError) {
+          console.error(`[FinanceHubScheduler] Failed to cleanup existing browser for ${entityKey}:`, cleanupError);
+          // Continue anyway - the old browser might be hung but we need to proceed
+        }
+      }
+
       automator = cards.createCardAutomator(cardCompanyId, {
         headless: false, // CRITICAL FIX: Use visible browser like manual UI (headless causes hangs/failures)
         arduinoPort,
@@ -996,7 +1044,6 @@ export class FinanceHubScheduler extends EventEmitter {
       this.debugLog(`✓ Automator created! Browser should be launching...`);
 
       // Track active browser
-      const entityKey = `card:${cardId}`;
       this.activeBrowsers.set(entityKey, automator);
 
       // Login
@@ -1215,6 +1262,9 @@ export class FinanceHubScheduler extends EventEmitter {
   private async syncBank(bankId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
     console.log(`[FinanceHubScheduler] Syncing bank: ${bankId}`);
 
+    // Log current browser state for debugging
+    this.logBrowserState();
+
     let automator: any = null;
 
     // CRITICAL: Add timeout to entire sync operation (10 minutes max)
@@ -1249,6 +1299,19 @@ export class FinanceHubScheduler extends EventEmitter {
 
       console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${bankId}`);
 
+      // CRITICAL FIX: Check for and cleanup any existing browser before creating new one
+      const entityKey = `bank:${bankId}`;
+      if (this.activeBrowsers.has(entityKey)) {
+        console.log(`[FinanceHubScheduler] Found existing browser for ${entityKey}, cleaning up before creating new one...`);
+        const oldAutomator = this.activeBrowsers.get(entityKey);
+        try {
+          await this.safeCleanupBrowser(oldAutomator, entityKey, 10000); // 10s timeout
+        } catch (cleanupError) {
+          console.error(`[FinanceHubScheduler] Failed to cleanup existing browser for ${entityKey}:`, cleanupError);
+          // Continue anyway - the old browser might be hung but we need to proceed
+        }
+      }
+
       // Create bank automator
       const { createAutomator } = require('../index');
       automator = createAutomator(bankId, {
@@ -1256,7 +1319,6 @@ export class FinanceHubScheduler extends EventEmitter {
       });
 
       // Track active browser
-      const entityKey = `bank:${bankId}`;
       this.activeBrowsers.set(entityKey, automator);
 
       // Login
