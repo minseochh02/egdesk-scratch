@@ -30,7 +30,7 @@ class KBCardAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'kb-card');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('kb-card');
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;

@@ -28,7 +28,7 @@ class KookminBankAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'kookmin');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('kookmin');
   }
 
   // ============================================================================

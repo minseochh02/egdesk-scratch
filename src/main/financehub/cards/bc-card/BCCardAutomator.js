@@ -58,7 +58,7 @@ class BCCardAutomator extends BaseCardAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'bc-card');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('bc-card');
     this.downloadDir = path.join(this.outputDir, 'downloads');
 
     // Ensure output directories exist
@@ -93,6 +93,7 @@ class BCCardAutomator extends BaseCardAutomator {
       return baseDir;
     }
   }
+
 
   // ============================================================================
   // MAIN LOGIN METHOD

@@ -27,7 +27,7 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'nh-business');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('nh-business');
     this.sessionKeepAliveInterval = null;
   }
 

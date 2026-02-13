@@ -1699,25 +1699,39 @@ export class FinanceHubScheduler extends EventEmitter {
   // ============================================
 
   public async syncNow(): Promise<void> {
-    console.log('[FinanceHubScheduler] Manual sync triggered - syncing all enabled entities');
+    console.log('[FinanceHubScheduler] Manual sync triggered - syncing all enabled entities SEQUENTIALLY');
 
-    const syncPromises: Promise<void>[] = [];
+    // CRITICAL FIX: Clear all retry timers before manual sync to prevent duplicate execution
+    // This ensures that manual sync doesn't compete with scheduled retries
+    const clearedRetries: string[] = [];
+    for (const [entityKey, timer] of this.syncTimers.entries()) {
+      clearTimeout(timer);
+      this.syncTimers.delete(entityKey);
+      clearedRetries.push(entityKey);
+    }
+    
+    if (clearedRetries.length > 0) {
+      console.log(`[FinanceHubScheduler] Cleared ${clearedRetries.length} pending retry timer(s) before manual sync:`, clearedRetries);
+    }
 
-    // Sync all enabled cards
+    // Build list of entities to sync
+    const entitiesToSync: Array<{type: 'card' | 'bank' | 'tax', id: string, time: string}> = [];
+
+    // Add enabled cards
     for (const [cardId, schedule] of Object.entries(this.settings.cards)) {
       if (schedule && schedule.enabled) {
-        syncPromises.push(this.executeEntitySync('card', cardId, schedule.time));
+        entitiesToSync.push({ type: 'card', id: cardId, time: schedule.time });
       }
     }
 
-    // Sync all enabled banks
+    // Add enabled banks
     for (const [bankId, schedule] of Object.entries(this.settings.banks)) {
       if (schedule && schedule.enabled) {
-        syncPromises.push(this.executeEntitySync('bank', bankId, schedule.time));
+        entitiesToSync.push({ type: 'bank', id: bankId, time: schedule.time });
       }
     }
 
-    // Sync all enabled tax businesses
+    // Add enabled tax businesses
     for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
       // CRITICAL: Validate business name before processing
       if (!businessName || businessName.trim() === '') {
@@ -1726,11 +1740,33 @@ export class FinanceHubScheduler extends EventEmitter {
       }
       
       if (schedule && schedule.enabled) {
-        syncPromises.push(this.executeEntitySync('tax', businessName, schedule.time));
+        entitiesToSync.push({ type: 'tax', id: businessName, time: schedule.time });
       }
     }
 
-    await Promise.all(syncPromises);
+    console.log(`[FinanceHubScheduler] Found ${entitiesToSync.length} entities to sync sequentially`);
+
+    // Sync entities ONE BY ONE (sequentially)
+    for (let i = 0; i < entitiesToSync.length; i++) {
+      const entity = entitiesToSync[i];
+      console.log(`[FinanceHubScheduler] 🔄 Syncing entity ${i + 1}/${entitiesToSync.length}: ${entity.type}:${entity.id}`);
+      
+      try {
+        await this.executeEntitySync(entity.type, entity.id, entity.time);
+        console.log(`[FinanceHubScheduler] ✅ Completed entity ${i + 1}/${entitiesToSync.length}: ${entity.type}:${entity.id}`);
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] ❌ Failed entity ${i + 1}/${entitiesToSync.length}: ${entity.type}:${entity.id}`, error);
+        // Continue with next entity even if this one fails
+      }
+      
+      // Brief pause between entities to prevent overwhelming the system
+      if (i < entitiesToSync.length - 1) {
+        console.log(`[FinanceHubScheduler] Waiting 2 seconds before next entity...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    console.log(`[FinanceHubScheduler] ✅ Manual sync completed - processed ${entitiesToSync.length} entities`);
   }
 
   public async syncEntity(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<void> {

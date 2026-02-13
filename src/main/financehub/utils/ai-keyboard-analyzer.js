@@ -82,6 +82,31 @@ function getGeminiApiKey() {
   return null;
 }
 
+/**
+ * Get a safe debug directory that avoids Windows permission issues
+ * @returns {string} Safe debug directory path
+ */
+function getSafeDebugDir() {
+  try {
+    // Try app userData directory first
+    const { app } = require('electron');
+    const baseDir = path.join(app.getPath('userData'), 'debug');
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
+    }
+    return baseDir;
+  } catch (error) {
+    // Fallback to user home directory
+    const os = require('os');
+    const userHome = os.homedir();
+    const baseDir = path.join(userHome, '.egdesk-debug');
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
+    }
+    return baseDir;
+  }
+}
+
 // ============================================================================
 // GEMINI 3 VISION ANALYSIS
 // ============================================================================
@@ -176,7 +201,7 @@ Important:
     
     // Save raw response for debugging
     try {
-      const debugDir = path.join(process.cwd(), 'output', 'debug');
+      const debugDir = this.getSafeDebugDir();
       if (!fs.existsSync(debugDir)) {
         fs.mkdirSync(debugDir, { recursive: true });
       }
@@ -256,7 +281,7 @@ Important:
     // Save parsed segmentations for debugging
     if (segmentations.length > 0) {
       try {
-        const debugDir = path.join(process.cwd(), 'output', 'debug');
+        const debugDir = this.getSafeDebugDir();
         const timestamp = Date.now();
         const parsedPath = path.join(debugDir, `gemini3-parsed-segmentations-${timestamp}.json`);
         fs.writeFileSync(parsedPath, JSON.stringify(segmentations, null, 2));
@@ -272,7 +297,7 @@ Important:
     
     // Save error details for debugging
     try {
-      const debugDir = path.join(process.cwd(), 'output', 'debug');
+      const debugDir = this.getSafeDebugDir();
       if (!fs.existsSync(debugDir)) {
         fs.mkdirSync(debugDir, { recursive: true });
       }
@@ -661,7 +686,7 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
           try {
             // Take a screenshot before clicking for debugging
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const screenshotPath = path.join(process.cwd(), 'output', `key-${char}-${i + 1}-before-${timestamp}.png`);
+            const screenshotPath = path.join(getSafeDebugDir(), `key-${char}-${i + 1}-before-${timestamp}.png`);
             
             // Take screenshot of the key bounds before clicking
             await page.screenshot({
@@ -686,7 +711,7 @@ async function typeTextWithKeyboard(keyboardKeys, text, page = null) {
             console.log(`[AI-KEYBOARD] Successfully clicked '${char}' at (${keyData.position.x}, ${keyData.position.y})`);
             
             // Take a screenshot after clicking to see the result
-            const afterScreenshotPath = path.join(process.cwd(), 'output', `key-${char}-${i + 1}-after-${timestamp}.png`);
+            const afterScreenshotPath = path.join(getSafeDebugDir(), `key-${char}-${i + 1}-after-${timestamp}.png`);
             await page.screenshot({
               path: afterScreenshotPath,
               clip: {

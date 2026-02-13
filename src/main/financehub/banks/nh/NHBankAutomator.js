@@ -27,7 +27,7 @@ class NHBankAutomator extends BaseBankAutomator {
     };
     super(config);
 
-    this.outputDir = options.outputDir || path.join(process.cwd(), 'output', 'nh');
+    this.outputDir = options.outputDir || this.getSafeOutputDir('nh');
   }
 
   // ============================================================================
