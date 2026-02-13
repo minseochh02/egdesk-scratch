@@ -23,16 +23,16 @@ export class RecorderControlWindow {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-    // Small floating window in top-right corner
-    const windowWidth = 320;
-    const windowHeight = 200;
+    // Small floating window in bottom-right corner (matching replay overlay)
+    const windowWidth = 350;
+    const windowHeight = 120;
     const margin = 20;
 
     this.window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
       x: screenWidth - windowWidth - margin,
-      y: margin,
+      y: screenHeight - windowHeight - margin,
       title: 'Recording Control',
       frame: false, // Frameless for clean look
       transparent: true,
@@ -66,7 +66,7 @@ export class RecorderControlWindow {
 
     console.log('[RecorderControl] Control window created at:', {
       x: screenWidth - windowWidth - margin,
-      y: margin,
+      y: screenHeight - windowHeight - margin,
       width: windowWidth,
       height: windowHeight,
     });
@@ -202,16 +202,19 @@ export class RecorderControlWindow {
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: 16px;
-      gap: 16px;
+      padding: 12px;
+      gap: 8px;
     }
 
     .action-count {
       text-align: center;
-      padding: 16px;
+      padding: 8px 12px;
       background: rgba(255, 255, 255, 0.05);
       border-radius: 8px;
       border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     .count-label {
@@ -219,11 +222,10 @@ export class RecorderControlWindow {
       color: rgba(255, 255, 255, 0.6);
       text-transform: uppercase;
       letter-spacing: 1px;
-      margin-bottom: 4px;
     }
 
     .count-value {
-      font-size: 32px;
+      font-size: 24px;
       font-weight: 600;
       color: #4CAF50;
     }
@@ -235,12 +237,12 @@ export class RecorderControlWindow {
 
     .control-btn {
       flex: 1;
-      padding: 12px;
+      padding: 8px;
       background: rgba(255, 255, 255, 0.1);
       border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 8px;
       color: white;
-      font-size: 20px;
+      font-size: 16px;
       cursor: pointer;
       transition: all 0.2s;
     }
@@ -256,10 +258,9 @@ export class RecorderControlWindow {
     }
 
     .hotkeys {
-      margin-top: auto;
-      padding-top: 8px;
+      padding-top: 4px;
       border-top: 1px solid rgba(255, 255, 255, 0.1);
-      font-size: 11px;
+      font-size: 10px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -289,8 +290,8 @@ export class RecorderControlWindow {
 
     <div class="control-body">
       <div class="action-count">
-        <div class="count-label">Actions</div>
-        <div class="count-value" id="actionCount">0</div>
+        <span class="count-label">Actions</span>
+        <span class="count-value" id="actionCount">0</span>
       </div>
 
       <div class="control-buttons">
