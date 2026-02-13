@@ -553,6 +553,48 @@ export class DesktopAutomationManager {
   }
 
   /**
+   * Safely execute key combinations with proper press/release sequencing
+   * This prevents keys from getting stuck
+   */
+  private async safeKeyCombo(keys: any[]): Promise<void> {
+    try {
+      // Press all keys in sequence
+      for (const key of keys) {
+        await keyboard.pressKey(key);
+        await this.sleep(10); // Small delay between key presses
+      }
+      
+      // Small delay while keys are held
+      await this.sleep(50);
+      
+      // Release all keys in reverse order
+      for (let i = keys.length - 1; i >= 0; i--) {
+        await keyboard.releaseKey(keys[i]);
+        await this.sleep(10); // Small delay between key releases
+      }
+      
+      // Additional safety delay to ensure all keys are released
+      await this.sleep(100);
+      
+    } catch (error: any) {
+      console.error('[DesktopAutomation] Error in safeKeyCombo, attempting emergency key release:', error.message);
+      
+      // Emergency release - try to release all common modifier keys
+      try {
+        await keyboard.releaseKey(Key.LeftWin);
+        await keyboard.releaseKey(Key.LeftControl);
+        await keyboard.releaseKey(Key.LeftAlt);
+        await keyboard.releaseKey(Key.LeftShift);
+        await this.sleep(100);
+      } catch (releaseError: any) {
+        console.error('[DesktopAutomation] Emergency key release failed:', releaseError.message);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
    * Get current mouse position
    */
   async getMousePosition(): Promise<{ x: number; y: number } | null> {
@@ -640,16 +682,15 @@ export class DesktopAutomationManager {
   async createVirtualDesktop(): Promise<boolean> {
     try {
       if (process.platform === 'win32') {
-        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.D);
-        await keyboard.releaseKey(Key.D, Key.LeftControl, Key.LeftWin);
+        // Use safer key combo approach with explicit delays
+        await this.safeKeyCombo([Key.LeftWin, Key.LeftControl, Key.D]);
         console.log('[DesktopAutomation] Created new virtual desktop (Windows)');
         return true;
       } else if (process.platform === 'darwin') {
         console.log('[DesktopAutomation] Creating new Space via Mission Control...');
 
         // Step 1: Open Mission Control (Ctrl + Up)
-        await keyboard.pressKey(Key.LeftControl, Key.Up);
-        await keyboard.releaseKey(Key.Up, Key.LeftControl);
+        await this.safeKeyCombo([Key.LeftControl, Key.Up]);
 
         // Wait for Mission Control to open
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -697,13 +738,11 @@ export class DesktopAutomationManager {
   async switchToNextDesktop(): Promise<boolean> {
     try {
       if (process.platform === 'win32') {
-        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.Right);
-        await keyboard.releaseKey(Key.Right, Key.LeftControl, Key.LeftWin);
+        await this.safeKeyCombo([Key.LeftWin, Key.LeftControl, Key.Right]);
         console.log('[DesktopAutomation] Switched to next virtual desktop (Windows)');
         return true;
       } else if (process.platform === 'darwin') {
-        await keyboard.pressKey(Key.LeftControl, Key.Right);
-        await keyboard.releaseKey(Key.Right, Key.LeftControl);
+        await this.safeKeyCombo([Key.LeftControl, Key.Right]);
         console.log('[DesktopAutomation] Switched to next virtual desktop (macOS)');
         return true;
       } else {
@@ -724,13 +763,11 @@ export class DesktopAutomationManager {
   async switchToPreviousDesktop(): Promise<boolean> {
     try {
       if (process.platform === 'win32') {
-        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.Left);
-        await keyboard.releaseKey(Key.Left, Key.LeftControl, Key.LeftWin);
+        await this.safeKeyCombo([Key.LeftWin, Key.LeftControl, Key.Left]);
         console.log('[DesktopAutomation] Switched to previous virtual desktop (Windows)');
         return true;
       } else if (process.platform === 'darwin') {
-        await keyboard.pressKey(Key.LeftControl, Key.Left);
-        await keyboard.releaseKey(Key.Left, Key.LeftControl);
+        await this.safeKeyCombo([Key.LeftControl, Key.Left]);
         console.log('[DesktopAutomation] Switched to previous virtual desktop (macOS)');
         return true;
       } else {
@@ -751,16 +788,14 @@ export class DesktopAutomationManager {
   async closeCurrentDesktop(): Promise<boolean> {
     try {
       if (process.platform === 'win32') {
-        await keyboard.pressKey(Key.LeftWin, Key.LeftControl, Key.F4);
-        await keyboard.releaseKey(Key.F4, Key.LeftControl, Key.LeftWin);
+        await this.safeKeyCombo([Key.LeftWin, Key.LeftControl, Key.F4]);
         console.log('[DesktopAutomation] Closed current virtual desktop (Windows)');
         return true;
       } else if (process.platform === 'darwin') {
         console.log('[DesktopAutomation] Closing current Space via Mission Control...');
 
         // Step 1: Open Mission Control (Ctrl + Up)
-        await keyboard.pressKey(Key.LeftControl, Key.Up);
-        await keyboard.releaseKey(Key.Up, Key.LeftControl);
+        await this.safeKeyCombo([Key.LeftControl, Key.Up]);
 
         // Wait for Mission Control to open
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -819,8 +854,7 @@ export class DesktopAutomationManager {
         return false;
       }
 
-      await keyboard.pressKey(Key.LeftWin, Key.Tab);
-      await keyboard.releaseKey(Key.Tab, Key.LeftWin);
+      await this.safeKeyCombo([Key.LeftWin, Key.Tab]);
       console.log('[DesktopAutomation] Opened Task View');
       return true;
     } catch (error: any) {

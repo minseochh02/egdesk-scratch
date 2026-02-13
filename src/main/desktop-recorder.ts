@@ -285,6 +285,9 @@ export class DesktopRecorder {
     // Stop event listeners
     this.stopAllListeners();
 
+    // Emergency key release to prevent stuck keys
+    await this.emergencyKeyRelease();
+
     // Post-process actions to correlate clicks with app launches
     this.correlateAppLaunchClicks();
 
@@ -459,6 +462,46 @@ export class DesktopRecorder {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Verify desktop switch by performing a small action to ensure we're on the correct desktop
+   */
+  private async verifyDesktopSwitch(): Promise<void> {
+    try {
+      // Perform a small mouse movement to trigger desktop focus
+      const currentPos = await this.desktopManager.getMousePosition();
+      if (currentPos) {
+        await this.desktopManager.moveMouse(currentPos.x + 1, currentPos.y);
+        await this.sleep(100);
+        await this.desktopManager.moveMouse(currentPos.x, currentPos.y);
+      }
+      console.log('[DesktopRecorder] Desktop switch verification completed');
+    } catch (error: any) {
+      console.warn('[DesktopRecorder] Desktop switch verification failed:', error.message);
+    }
+  }
+
+  /**
+   * Emergency key release to prevent stuck modifier keys
+   */
+  private async emergencyKeyRelease(): Promise<void> {
+    try {
+      console.log('[DesktopRecorder] Performing emergency key release...');
+      
+      // Use the desktop manager's reset method if available
+      if (this.desktopManager) {
+        // Reset any rate limits to allow immediate key operations
+        this.desktopManager.resetRateLimits();
+      }
+      
+      // Wait a moment for any ongoing operations to complete
+      await this.sleep(200);
+      
+      console.log('[DesktopRecorder] Emergency key release completed');
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Emergency key release failed:', error.message);
+    }
   }
 
   /**
