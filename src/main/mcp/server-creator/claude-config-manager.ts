@@ -26,6 +26,7 @@ export interface ClaudeConfig {
 export class ClaudeConfigManager {
   private claudeConfigPath: string;
   private serverName: string = 'gmail-sqlite';
+  private stdioProxyPath: string;
 
   constructor() {
     // Claude Desktop config path varies by platform
@@ -42,11 +43,16 @@ export class ClaudeConfigManager {
       this.claudeConfigPath = path.join(homeDir, '.config', 'Claude', 'claude_desktop_config.json');
     }
     
+    // Path to stdio proxy (will be installed to app resources)
+    const appPath = app.getAppPath();
+    this.stdioProxyPath = path.join(appPath, 'mcp-stdio-proxy.js');
+    
     console.log(`📁 Claude config path (${process.platform}):`, this.claudeConfigPath);
+    console.log(`📁 Stdio proxy path:`, this.stdioProxyPath);
   }
 
   /**
-   * Check if Claude Desktop is configured with our MCP server
+   * Check if Claude Desktop is configured with any EGDesk MCP servers
    */
   public async isConfigured(): Promise<boolean> {
     try {
@@ -57,7 +63,17 @@ export class ClaudeConfigManager {
       const configContent = fs.readFileSync(this.claudeConfigPath, 'utf-8');
       const config = JSON.parse(configContent);
 
-      return config.mcpServers?.[this.serverName] !== undefined;
+      // Check for any EGDesk service
+      const egdeskServices = [
+        'egdesk-user-data',
+        'egdesk-gmail',
+        'egdesk-sheets',
+        'egdesk-apps-script',
+        'egdesk-file-conversion',
+        this.serverName // Legacy
+      ];
+
+      return egdeskServices.some(service => config.mcpServers?.[service] !== undefined);
     } catch (error) {
       console.warn('Failed to check Claude configuration:', error);
       return false;
@@ -65,11 +81,34 @@ export class ClaudeConfigManager {
   }
 
   /**
-   * Configure Claude Desktop to use our MCP server
+   * Ensure stdio proxy exists and is up-to-date
+   */
+  private async ensureStdioProxy(): Promise<void> {
+    // Copy stdio proxy from resources if it doesn't exist or is outdated
+    const resourcesPath = process.resourcesPath || path.join(app.getAppPath(), '..');
+    const sourceProxyPath = path.join(resourcesPath, 'mcp-stdio-proxy.js');
+    
+    // If proxy doesn't exist in app resources, copy from source
+    if (!fs.existsSync(this.stdioProxyPath) && fs.existsSync(sourceProxyPath)) {
+      console.log('📋 Copying stdio proxy to app resources...');
+      fs.copyFileSync(sourceProxyPath, this.stdioProxyPath);
+    }
+    
+    // Make sure it's executable
+    if (fs.existsSync(this.stdioProxyPath)) {
+      fs.chmodSync(this.stdioProxyPath, 0o755);
+    }
+  }
+
+  /**
+   * Configure Claude Desktop to use our MCP server with all available services
    */
   public async configure(serverPath: string): Promise<ClaudeConfigResult> {
     try {
-      console.log('⚙️ Configuring Claude Desktop...');
+      console.log('⚙️ Configuring Claude Desktop with stdio proxy...');
+
+      // Ensure stdio proxy exists
+      await this.ensureStdioProxy();
 
       // Create Claude config directory if it doesn't exist
       const configDir = path.dirname(this.claudeConfigPath);
@@ -92,16 +131,27 @@ export class ClaudeConfigManager {
         }
       }
 
-      // Add our MCP server configuration
-      config.mcpServers[this.serverName] = {
-        command: 'node',
-        args: [serverPath],
-      };
+      // Add all MCP services via stdio proxy
+      const services = [
+        { name: 'egdesk-user-data', service: 'user-data', description: 'User imported data (Excel, CSV)' },
+        { name: 'egdesk-gmail', service: 'gmail', description: 'Gmail operations' },
+        { name: 'egdesk-sheets', service: 'sheets', description: 'Google Sheets sync' },
+        { name: 'egdesk-apps-script', service: 'apps-script', description: 'Google Apps Script' },
+        { name: 'egdesk-file-conversion', service: 'file-conversion', description: 'File format conversion' },
+      ];
+
+      for (const { name, service } of services) {
+        config.mcpServers[name] = {
+          command: 'node',
+          args: [this.stdioProxyPath, service],
+        };
+        console.log(`  ✓ Added ${name}`);
+      }
 
       // Write the updated config
       fs.writeFileSync(this.claudeConfigPath, JSON.stringify(config, null, 2), 'utf-8');
 
-      console.log('✅ Claude Desktop configured successfully');
+      console.log('✅ Claude Desktop configured with all EGDesk MCP services');
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -111,7 +161,7 @@ export class ClaudeConfigManager {
   }
 
   /**
-   * Remove our MCP server from Claude Desktop configuration
+   * Remove all EGDesk MCP servers from Claude Desktop configuration
    */
   public async unconfigure(): Promise<ClaudeConfigResult> {
     try {
@@ -122,10 +172,28 @@ export class ClaudeConfigManager {
       const configContent = fs.readFileSync(this.claudeConfigPath, 'utf-8');
       const config = JSON.parse(configContent);
 
-      if (config.mcpServers?.[this.serverName]) {
-        delete config.mcpServers[this.serverName];
+      // Remove all EGDesk services
+      const egdeskServices = [
+        'egdesk-user-data',
+        'egdesk-gmail', 
+        'egdesk-sheets',
+        'egdesk-apps-script',
+        'egdesk-file-conversion',
+        this.serverName // Legacy name
+      ];
+
+      let removedCount = 0;
+      for (const serviceName of egdeskServices) {
+        if (config.mcpServers?.[serviceName]) {
+          delete config.mcpServers[serviceName];
+          removedCount++;
+          console.log(`  ✓ Removed ${serviceName}`);
+        }
+      }
+
+      if (removedCount > 0) {
         fs.writeFileSync(this.claudeConfigPath, JSON.stringify(config, null, 2), 'utf-8');
-        console.log('✅ Removed from Claude Desktop configuration');
+        console.log(`✅ Removed ${removedCount} EGDesk MCP service(s) from Claude Desktop`);
       }
 
       return { success: true };
@@ -176,14 +244,24 @@ To manually configure Claude Desktop, add this to your config:
 
 {
   "mcpServers": {
-    "${this.serverName}": {
+    "egdesk-user-data": {
       "command": "node",
-      "args": ["${serverPath}"]
+      "args": ["${this.stdioProxyPath}", "user-data"]
+    },
+    "egdesk-gmail": {
+      "command": "node",
+      "args": ["${this.stdioProxyPath}", "gmail"]
+    },
+    "egdesk-sheets": {
+      "command": "node",
+      "args": ["${this.stdioProxyPath}", "sheets"]
     }
   }
 }
 
 Config file location: ${this.claudeConfigPath}
+
+The stdio proxy connects to your local HTTP MCP server at localhost:3100.
     `.trim();
   }
 }

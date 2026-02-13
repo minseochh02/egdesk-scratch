@@ -56,5 +56,20 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
     END
   `);
 
+  // Add duplicate detection columns (migration-safe with IF NOT EXISTS checks)
+  // Check if columns exist before adding
+  const tableInfo = db.prepare("PRAGMA table_info(user_tables)").all() as Array<{ name: string }>;
+  const columnNames = tableInfo.map(col => col.name);
+
+  if (!columnNames.includes('unique_key_columns')) {
+    db.exec(`ALTER TABLE user_tables ADD COLUMN unique_key_columns TEXT`);
+    console.log('✅ Added unique_key_columns column to user_tables');
+  }
+
+  if (!columnNames.includes('duplicate_action')) {
+    db.exec(`ALTER TABLE user_tables ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow'))`);
+    console.log('✅ Added duplicate_action column to user_tables');
+  }
+
   console.log('✅ User Data database schema initialized');
 }

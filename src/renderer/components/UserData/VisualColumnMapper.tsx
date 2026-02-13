@@ -254,6 +254,7 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
                       <option value="TEXT">TEXT</option>
                       <option value="INTEGER">INTEGER</option>
                       <option value="REAL">REAL</option>
+                      <option value="DATE">DATE</option>
                     </select>
                   ) : (
                     <span style={{ fontSize: '11px', color: '#999' }}>—</span>

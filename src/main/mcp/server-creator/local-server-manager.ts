@@ -23,6 +23,7 @@ import { FileConversionMCPService } from '../file-conversion/file-conversion-mcp
 import { AppsScriptMCPService } from '../apps-script/apps-script-mcp-service';
 import { ConversationsMCPService } from '../conversations/conversations-mcp-service';
 import { SheetsMCPService } from '../sheets/sheets-mcp-service';
+import { UserDataMCPService } from '../user-data/user-data-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 
@@ -42,6 +43,15 @@ function getCloudMCPDatabasePath(): string {
   }
   // Fallback for standalone mode
   return process.env.CLOUDMCP_DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/cloudmcp.db';
+}
+
+// User Data Database path helper
+function getUserDataDatabasePath(): string {
+  if (app) {
+    return path.join(app.getPath('userData'), 'database', 'user_data.db');
+  }
+  // Fallback for standalone mode
+  return process.env.USERDATA_DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/user_data.db';
 }
 
 export interface HTTPServerOptions {
@@ -99,6 +109,7 @@ export class LocalServerManager {
   private appsScriptMCPService: AppsScriptMCPService | null = null;
   private conversationsMCPService: ConversationsMCPService | null = null;
   private sheetsMCPService: SheetsMCPService | null = null;
+  private userDataMCPService: UserDataMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -426,6 +437,12 @@ export class LocalServerManager {
       return;
     }
 
+    // User Data MCP Server endpoints (REST API)
+    if (url.startsWith('/user-data')) {
+      await this.handleUserDataEndpoint(req, res, url);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -460,6 +477,8 @@ export class LocalServerManager {
         '/conversations/tools/call - Call a Conversations tool',
         '/sheets/tools - List Sheets tools',
         '/sheets/tools/call - Call a Sheets tool',
+        '/user-data/tools - List User Data tools',
+        '/user-data/tools/call - Call a User Data tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -555,6 +574,19 @@ export class LocalServerManager {
       this.sheetsMCPService = new SheetsMCPService();
     }
     return this.sheetsMCPService;
+  }
+
+  /**
+   * Get or create User Data MCP Service instance
+   */
+  private getUserDataMCPService(): UserDataMCPService {
+    if (!this.userDataMCPService) {
+      const dbPath = getUserDataDatabasePath();
+      const Database = require('better-sqlite3');
+      const database = new Database(dbPath);
+      this.userDataMCPService = new UserDataMCPService(database);
+    }
+    return this.userDataMCPService;
   }
 
   /**
@@ -1271,6 +1303,97 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle User Data MCP endpoints
+   */
+  private async handleUserDataEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // Check if user-data server is enabled
+    if (!this.isMCPServerEnabled('user-data')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'User Data MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        hint: 'Use: ipcRenderer.invoke("mcp-server-enable", "user-data")'
+      }));
+      return;
+    }
+
+    // List User Data tools
+    if (url === '/user-data/tools' && req.method === 'GET') {
+      this.handleUserDataToolsList(res);
+      return;
+    }
+
+    // Call a User Data tool
+    if (url === '/user-data/tools/call' && req.method === 'POST') {
+      await this.handleUserDataToolCall(req, res);
+      return;
+    }
+
+    // Unknown User Data endpoint
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'User Data MCP endpoint not found',
+      availableEndpoints: [
+        '/user-data/tools - List available tools',
+        '/user-data/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  /**
+   * Handle User Data tools list
+   */
+  private handleUserDataToolsList(res: http.ServerResponse): void {
+    const service = this.getUserDataMCPService();
+    const tools = service.listTools();
+    
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle User Data tool call
+   */
+  private async handleUserDataToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      // Parse request body
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`🗄️ Calling User Data tool: ${tool}`);
+
+      // Get User Data service
+      const service = this.getUserDataMCPService();
+
+      // Execute the tool
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling User Data tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle FileSystem tools list
    */
   private handleFilesystemToolsList(res: http.ServerResponse): void {
@@ -1887,6 +2010,11 @@ export class LocalServerManager {
         name: 'sheets',
         enabled: true, // Enabled by default for spreadsheet data access
         description: 'Google Sheets MCP Server - Read spreadsheet data (headers, ranges, metadata)'
+      },
+      {
+        name: 'user-data',
+        enabled: true, // Enabled by default
+        description: 'User Data MCP Server - Query and analyze user-imported database tables (Excel, CSV)'
       }
     ];
   }

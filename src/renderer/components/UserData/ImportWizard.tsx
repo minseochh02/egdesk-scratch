@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useUserData } from '../../hooks/useUserData';
 import { DataTable } from './shared/DataTable';
 import { VisualColumnMapper } from './VisualColumnMapper';
+import { DuplicateDetectionSettings } from './DuplicateDetectionSettings';
 
 interface ImportWizardProps {
   onClose: () => void;
   onComplete: () => void;
 }
 
-type WizardStep = 'file-selection' | 'column-mapping' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'file-selection' | 'parse-config' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete }) => {
   const { parseExcel, importExcel, selectExcelFile, validateTableName } = useUserData();
@@ -17,18 +18,32 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<any>(null);
   const [selectedSheet, setSelectedSheet] = useState(0);
+  const [headerRow, setHeaderRow] = useState<number>(1);
+  const [skipBottomRows, setSkipBottomRows] = useState<number>(0);
   const [tableName, setTableName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
+  const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
+    uniqueKeyColumns: string[];
+    duplicateAction: 'skip' | 'update' | 'allow';
+  }>({
+    uniqueKeyColumns: [],
+    duplicateAction: 'skip',
+  });
   const [error, setError] = useState<string | null>(null);
   const [importProgress, setImportProgress] = useState<{
     rowsImported: number;
     rowsSkipped: number;
+    duplicatesSkipped?: number;
+    duplicateDetails?: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }>;
+    errorDetails?: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }>;
   } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
 
   const handleFileSelect = async () => {
     try {
@@ -38,9 +53,22 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
       if (!filePath) return;
 
       setSelectedFile(filePath);
+      setCurrentStep('parse-config');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to select file');
+    }
+  };
 
-      // Parse the Excel file
-      const parsed = await parseExcel(filePath);
+  const handleParseConfigComplete = async () => {
+    try {
+      setError(null);
+      
+      // Parse the Excel file with configured options
+      const parsed = await parseExcel(selectedFile!, {
+        headerRow,
+        skipBottomRows,
+      });
+      
       setParsedData(parsed);
       setTableName(parsed.suggestedTableName);
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
@@ -58,21 +86,31 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   ) => {
     setColumnMappings(mappings);
     setMergeConfig(mergeConfiguration);
-    setCurrentStep('preview');
+    setCurrentStep('duplicate-detection');
   };
 
   const handleBack = () => {
-    if (currentStep === 'column-mapping') {
+    if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
+    } else if (currentStep === 'column-mapping') {
+      setCurrentStep('parse-config');
       setParsedData(null);
       setColumnMappings(null);
-    } else if (currentStep === 'preview') {
+    } else if (currentStep === 'duplicate-detection') {
       setCurrentStep('column-mapping');
+    } else if (currentStep === 'preview') {
+      setCurrentStep('duplicate-detection');
     }
   };
 
   const handleNext = async () => {
+    if (currentStep === 'duplicate-detection') {
+      // Move to preview step
+      setCurrentStep('preview');
+      return;
+    }
+
     if (currentStep === 'preview') {
       // Validate inputs
       if (!tableName.trim()) {
@@ -107,11 +145,22 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           description: description.trim() || undefined,
           columnMappings: columnMappings || undefined,
           mergeConfig: mergeConfig || undefined,
+          headerRow,
+          skipBottomRows,
+          uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+            ? duplicateDetectionSettings.uniqueKeyColumns 
+            : undefined,
+          duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+            ? duplicateDetectionSettings.duplicateAction 
+            : undefined,
         });
 
         setImportProgress({
           rowsImported: result.importOperation.rowsImported,
           rowsSkipped: result.importOperation.rowsSkipped,
+          duplicatesSkipped: result.importOperation.duplicatesSkipped,
+          duplicateDetails: result.importOperation.duplicateDetails,
+          errorDetails: result.importOperation.errorDetails,
         });
 
         setCurrentStep('complete');
@@ -132,8 +181,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const renderStepIndicator = () => {
     const steps = [
       { id: 'file-selection', label: 'Select File' },
+      { id: 'parse-config', label: 'Configure' },
       { id: 'column-mapping', label: 'Map Columns' },
-      { id: 'preview', label: 'Configure & Preview' },
+      { id: 'duplicate-detection', label: 'Duplicates' },
+      { id: 'preview', label: 'Preview' },
       { id: 'importing', label: 'Importing' },
       { id: 'complete', label: 'Complete' },
     ];
@@ -159,6 +210,112 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
             {index < steps.length - 1 && <div className="import-wizard-step-separator" />}
           </React.Fragment>
         ))}
+      </div>
+    );
+  };
+
+  const renderParseConfig = () => {
+    return (
+      <div>
+        <div style={{ background: '#fff3e0', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>📋 {selectedFile?.split(/[\\/]/).pop()}</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            Configure how to read this Excel file
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Excel Parsing Options</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Excel files can have different structures. Configure where your data actually starts and ends.
+        </p>
+
+        <div className="form-group">
+          <label>
+            <strong>Header Row Number</strong>
+            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#666' }}>
+              Which row contains the column headers?
+            </span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="20"
+            value={headerRow}
+            onChange={(e) => setHeaderRow(parseInt(e.target.value) || 1)}
+            placeholder="1"
+            style={{ maxWidth: '120px' }}
+          />
+          <div style={{ marginTop: '8px', fontSize: '13px', color: '#999' }}>
+            <strong>Examples:</strong>
+            <ul style={{ marginTop: '4px', paddingLeft: '20px' }}>
+              <li>Row 1 = Headers in first row (default)</li>
+              <li>Row 2 = Skip title, headers in second row</li>
+              <li>Row 3 = Skip title and blank row, headers in third row</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>
+            <strong>Skip Bottom Rows</strong>
+            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#666' }}>
+              How many rows at the bottom to skip (totals, footers)?
+            </span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={skipBottomRows}
+            onChange={(e) => setSkipBottomRows(parseInt(e.target.value) || 0)}
+            placeholder="0"
+            style={{ maxWidth: '120px' }}
+          />
+          <div style={{ marginTop: '8px', fontSize: '13px', color: '#999' }}>
+            <strong>Examples:</strong>
+            <ul style={{ marginTop: '4px', paddingLeft: '20px' }}>
+              <li>0 = Include all rows (default)</li>
+              <li>1 = Skip last row (e.g., "Total: 1,234")</li>
+              <li>2 = Skip last 2 rows (e.g., subtotals + grand total)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginTop: '24px' }}>
+          <h4 style={{ margin: '0 0 8px 0' }}>📊 Preview Configuration</h4>
+          <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.6' }}>
+            <strong>Reading from:</strong> Row {headerRow} (headers) → Row {headerRow + 1} (data starts)<br />
+            <strong>Excluding:</strong> {skipBottomRows === 0 ? 'No rows' : `Last ${skipBottomRows} row${skipBottomRows > 1 ? 's' : ''}`}
+          </div>
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderDuplicateDetection = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const schema = currentSheet.headers.map((header: string, idx: number) => ({
+      name: Object.values(columnMappings || {})[idx] || header,
+      type: currentSheet.detectedTypes[idx],
+    }));
+
+    return (
+      <div>
+        <h3 style={{ marginBottom: '20px' }}>Duplicate Detection</h3>
+        <p style={{ color: '#666', marginBottom: '20px' }}>
+          Configure how to handle duplicate rows in future imports. This prevents the same data from being imported multiple times.
+        </p>
+
+        <DuplicateDetectionSettings
+          schema={schema}
+          initialUniqueColumns={duplicateDetectionSettings.uniqueKeyColumns}
+          initialDuplicateAction={duplicateDetectionSettings.duplicateAction}
+          onSettingsChange={setDuplicateDetectionSettings}
+        />
       </div>
     );
   };
@@ -359,20 +516,134 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
         </p>
 
         {isSuccess && importProgress && (
-          <div className="completion-stats">
-            <div>
-              <div className="progress-stat-value">{importProgress.rowsImported.toLocaleString()}</div>
-              <div className="progress-stat-label">Rows Imported</div>
-            </div>
-            {importProgress.rowsSkipped > 0 && (
+          <>
+            <div className="completion-stats">
               <div>
-                <div className="progress-stat-value" style={{ color: '#ff9800' }}>
-                  {importProgress.rowsSkipped.toLocaleString()}
+                <div className="progress-stat-value">{importProgress.rowsImported.toLocaleString()}</div>
+                <div className="progress-stat-label">Rows Imported</div>
+              </div>
+              {(importProgress.duplicatesSkipped || 0) > 0 && (
+                <div>
+                  <div className="progress-stat-value" style={{ color: '#f44336' }}>
+                    {(importProgress.duplicatesSkipped || 0).toLocaleString()}
+                  </div>
+                  <div className="progress-stat-label">Duplicates Skipped</div>
                 </div>
-                <div className="progress-stat-label">Rows Skipped</div>
+              )}
+              {(importProgress.errorDetails?.length || 0) > 0 && (
+                <div>
+                  <div className="progress-stat-value" style={{ color: '#ff9800' }}>
+                    {(importProgress.errorDetails?.length || 0).toLocaleString()}
+                  </div>
+                  <div className="progress-stat-label">Errors</div>
+                </div>
+              )}
+            </div>
+
+            {importProgress.duplicateDetails && importProgress.duplicateDetails.length > 0 && (
+              <div style={{ marginTop: '20px', textAlign: 'left', width: '100%' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowDuplicates(!showDuplicates)}
+                  style={{ marginBottom: '10px' }}
+                >
+                  {showDuplicates ? '▼' : '▶'} Show Duplicate Rows ({importProgress.duplicateDetails.length})
+                </button>
+                
+                {showDuplicates && (
+                  <div style={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    backgroundColor: '#f9f9f9'
+                  }}>
+                    {importProgress.duplicateDetails.map((dup, idx) => (
+                      <div key={idx} style={{
+                        padding: '8px',
+                        marginBottom: '8px',
+                        backgroundColor: '#fff',
+                        borderRadius: '4px',
+                        border: '1px solid #e0e0e0'
+                      }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#f44336' }}>
+                          Row {dup.rowIndex + 2} {/* +2 because: +1 for 1-based indexing, +1 for header row */}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#666' }}>
+                          <div style={{ marginBottom: '4px', fontStyle: 'italic' }}>
+                            Duplicate key values:
+                          </div>
+                          {Object.entries(dup.uniqueKeyValues).map(([key, value]) => (
+                            <div key={key}>
+                              <strong>{key}:</strong> {String(value)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+
+            {importProgress.errorDetails && importProgress.errorDetails.length > 0 && (
+              <div style={{ marginTop: '20px', textAlign: 'left', width: '100%' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowErrors(!showErrors)}
+                  style={{ marginBottom: '10px' }}
+                >
+                  {showErrors ? '▼' : '▶'} Show Error Rows ({importProgress.errorDetails.length})
+                </button>
+                
+                {showErrors && (
+                  <div style={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    backgroundColor: '#f9f9f9'
+                  }}>
+                    {importProgress.errorDetails.map((err, idx) => (
+                      <div key={idx} style={{
+                        padding: '8px',
+                        marginBottom: '8px',
+                        backgroundColor: '#fff',
+                        borderRadius: '4px',
+                        border: '1px solid #e0e0e0'
+                      }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#ff9800' }}>
+                          Row {err.rowIndex + 2}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#d32f2f', marginBottom: '8px' }}>
+                          <strong>Error:</strong> {err.error}
+                        </div>
+                        {err.rowData && (
+                          <div style={{ fontSize: '12px', color: '#666' }}>
+                            <div style={{ marginBottom: '4px', fontStyle: 'italic' }}>
+                              Row data:
+                            </div>
+                            {Object.entries(err.rowData).slice(0, 5).map(([key, value]) => (
+                              <div key={key}>
+                                <strong>{key}:</strong> {String(value).substring(0, 50)}{String(value).length > 50 ? '...' : ''}
+                              </div>
+                            ))}
+                            {Object.keys(err.rowData).length > 5 && (
+                              <div style={{ fontStyle: 'italic', marginTop: '4px' }}>
+                                ...and {Object.keys(err.rowData).length - 5} more columns
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {!isSuccess && (
@@ -429,8 +700,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     switch (currentStep) {
       case 'file-selection':
         return renderFileSelection();
+      case 'parse-config':
+        return renderParseConfig();
       case 'column-mapping':
         return renderColumnMapping();
+      case 'duplicate-detection':
+        return renderDuplicateDetection();
       case 'preview':
         return renderPreview();
       case 'importing':
@@ -444,10 +719,18 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
   const canProceed = () => {
     if (currentStep === 'file-selection') {
-      return selectedFile && parsedData;
+      // Logic handled by onClick in this step
+      return false;
+    }
+    if (currentStep === 'parse-config') {
+      return headerRow > 0;
     }
     if (currentStep === 'column-mapping') {
       return columnMappings !== null;
+    }
+    if (currentStep === 'duplicate-detection') {
+       // Allow proceeding even if no duplicates selected (it's optional in settings)
+       return true;
     }
     if (currentStep === 'preview') {
       return tableName.trim() && displayName.trim() && columnMappings !== null;
@@ -472,7 +755,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'preview' || currentStep === 'column-mapping') && (
+            {(currentStep === 'parse-config' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -484,7 +767,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
               <button className="btn btn-primary" onClick={handleFinish}>
                 ✅ Finish
               </button>
-            ) : currentStep === 'column-mapping' ? null : currentStep !== 'importing' && (
+            ) : currentStep === 'parse-config' ? (
+              <button className="btn btn-primary" onClick={handleParseConfigComplete}>
+                Next: Parse Excel →
+              </button>
+            ) : (currentStep !== 'importing' && currentStep !== 'column-mapping') && (
               <button
                 className="btn btn-primary"
                 onClick={handleNext}

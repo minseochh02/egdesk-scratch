@@ -245,9 +245,9 @@ class AppUpdater {
 
   private setupUpdateHandlers(): void {
     // Update available - notify user
-    autoUpdater.on('update-available', (info) => {
+    autoUpdater.on('update-available', async (info) => {
       log.info('Update available:', info.version);
-      this.notifyUpdateAvailable(info);
+      await this.notifyUpdateAvailable(info);
     });
 
     // Update not available
@@ -287,13 +287,28 @@ class AppUpdater {
     });
   }
 
-  private notifyUpdateAvailable(info: any): void {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-available', {
-        version: info.version,
-        releaseDate: info.releaseDate,
-        releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+  private async notifyUpdateAvailable(info: any): Promise<void> {
+    // Check if auto-update is enabled
+    const store = getStore();
+    const autoUpdateEnabled = store?.get('userPreferences.autoUpdate') ?? false;
+
+    if (autoUpdateEnabled) {
+      log.info('Auto-update enabled, downloading update automatically...');
+      // Auto-download the update without user prompt
+      autoUpdater.downloadUpdate().catch((error) => {
+        log.error('Failed to auto-download update:', error);
+        this.notifyUpdateError(error);
       });
+    } else {
+      // Manual update mode - show dialog to user
+      log.info('Auto-update disabled, showing update dialog to user');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-available', {
+          version: info.version,
+          releaseDate: info.releaseDate,
+          releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+        });
+      }
     }
   }
 
@@ -308,12 +323,26 @@ class AppUpdater {
   }
 
   private notifyUpdateDownloaded(info: any): void {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-downloaded', {
-        version: info.version,
-        releaseDate: info.releaseDate,
-        releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
-      });
+    // Check if auto-update is enabled
+    const store = getStore();
+    const autoUpdateEnabled = store?.get('userPreferences.autoUpdate') ?? false;
+
+    if (autoUpdateEnabled) {
+      log.info('Auto-update enabled, installing update automatically...');
+      // Auto-install the update without user prompt
+      setTimeout(() => {
+        this.quitAndInstall();
+      }, 3000); // Give user 3 seconds to save work before restart
+    } else {
+      // Manual update mode - show dialog to user
+      log.info('Auto-update disabled, showing install dialog to user');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-downloaded', {
+          version: info.version,
+          releaseDate: info.releaseDate,
+          releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+        });
+      }
     }
   }
 
@@ -4419,6 +4448,19 @@ const createWindow = async () => {
 
     // Register User Data handlers
     registerUserDataIPCHandlers();
+
+    // Register Sync Configuration handlers
+    const { registerSyncConfigIPCHandlers } = await import('./sync-config/sync-config-ipc-handler');
+    registerSyncConfigIPCHandlers();
+
+    // Register File Watcher handlers
+    const { registerFileWatcherIPCHandlers } = await import('./sync-config/file-watcher-ipc-handler');
+    registerFileWatcherIPCHandlers();
+
+    // Initialize File Watcher Service
+    const { FileWatcherService } = await import('./sync-config/file-watcher-service');
+    const fileWatcherService = FileWatcherService.getInstance();
+    await fileWatcherService.initialize();
 
     // Register shell utility handlers
     ipcMain.handle('shell:open-path', async (_event, filePath: string) => {

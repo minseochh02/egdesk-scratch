@@ -26,6 +26,7 @@ export function initializeStore(): Promise<void> {
             language: 'ko',
             defaultSyncPath: '',
             autoSync: false,
+            autoUpdate: false, // Auto-update disabled by default
           },
           scheduledTasks: [],
           taskExecutions: [],
@@ -496,6 +497,38 @@ ipcMain.handle('prefs-set', async (event, preferences) => {
     return { success: true };
   } catch (error) {
     console.error('Error setting preferences:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Auto-update preference IPC handlers
+ipcMain.handle('auto-update-get-setting', async () => {
+  try {
+    const preferences = store.get('userPreferences');
+    const autoUpdate = preferences?.autoUpdate ?? false;
+    return { success: true, autoUpdate };
+  } catch (error) {
+    console.error('Error getting auto-update setting:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      autoUpdate: false,
+    };
+  }
+});
+
+ipcMain.handle('auto-update-set-setting', async (event, autoUpdate: boolean) => {
+  try {
+    const preferences = store.get('userPreferences') || {};
+    preferences.autoUpdate = autoUpdate;
+    store.set('userPreferences', preferences);
+    console.log(`✅ Auto-update setting changed to: ${autoUpdate}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting auto-update setting:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

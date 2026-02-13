@@ -55,8 +55,19 @@ export function detectColumnType(values: any[]): ColumnType {
   let allInteger = true;
   let allNumeric = true;
   let allDate = true;
+  let hasDateObjects = 0;
+  let hasDateStrings = 0;
 
   for (const value of validValues) {
+    // Check if it's a Date object (Excel dates)
+    if (value instanceof Date) {
+      allNumeric = false;
+      allInteger = false;
+      hasDateObjects++;
+      // Date objects are dates!
+      continue;
+    }
+    
     // Check if it's a number
     if (typeof value === 'number') {
       if (!Number.isInteger(value)) {
@@ -64,25 +75,39 @@ export function detectColumnType(values: any[]): ColumnType {
       }
       allDate = false;
     } else if (typeof value === 'string') {
-      // Try to parse as number
-      const num = parseFloat(value);
+      // Try to parse as number (for numeric columns)
+      const num = parseFloat(value.replace(/,/g, ''));
       if (!isNaN(num)) {
         if (!Number.isInteger(num)) {
           allInteger = false;
         }
+        // If it looks like a number, it's probably not a date
+        allDate = false;
       } else {
         allNumeric = false;
         allInteger = false;
       }
 
-      // Try to parse as date
-      const date = new Date(value);
-      if (isNaN(date.getTime())) {
+      // Try to parse as date (common formats: YYYY-MM-DD, YYYY/MM/DD, DD-MM-YYYY, etc.)
+      const datePatterns = [
+        /^\d{4}-\d{2}-\d{2}$/,          // YYYY-MM-DD
+        /^\d{4}\/\d{2}\/\d{2}$/,        // YYYY/MM/DD
+        /^\d{2}-\d{2}-\d{4}$/,          // DD-MM-YYYY
+        /^\d{2}\/\d{2}\/\d{4}$/,        // DD/MM/YYYY
+        /^\d{8}$/,                       // YYYYMMDD
+      ];
+      
+      const looksLikeDate = datePatterns.some(pattern => pattern.test(value.trim()));
+      if (looksLikeDate) {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+          hasDateStrings++;
+        } else {
+          allDate = false;
+        }
+      } else {
         allDate = false;
       }
-    } else if (value instanceof Date) {
-      allNumeric = false;
-      allInteger = false;
     } else {
       allNumeric = false;
       allInteger = false;
@@ -91,9 +116,14 @@ export function detectColumnType(values: any[]): ColumnType {
   }
 
   // Determine type based on analysis
+  // If we have ANY Date objects or date strings, it's a DATE column
+  if (hasDateObjects > 0 || hasDateStrings > 0) {
+    return 'DATE';
+  }
+  
+  if (allDate) return 'DATE';
   if (allInteger) return 'INTEGER';
   if (allNumeric) return 'REAL';
-  // Dates will be stored as TEXT in ISO format
   return 'TEXT';
 }
 
@@ -170,8 +200,8 @@ export async function parseExcelFile(
         if (cellValue === null || cellValue === undefined) {
           rowData[header] = null;
         } else if (cellValue instanceof Date) {
-          // Convert dates to ISO string
-          rowData[header] = cellValue.toISOString();
+          // Keep as Date object for detection - will be converted during insert
+          rowData[header] = cellValue;
         } else if (typeof cellValue === 'object' && 'result' in cellValue) {
           // Handle formula cells
           rowData[header] = cellValue.result;

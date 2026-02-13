@@ -4,6 +4,7 @@ import { TableList } from './TableList';
 import { TableViewer } from './TableViewer';
 import { ImportWizard } from './ImportWizard';
 import { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
+import { SyncConfigurationsManager } from './SyncConfigurationsManager';
 import './UserData.css';
 
 export const UserDataPage: React.FC = () => {
@@ -11,6 +12,7 @@ export const UserDataPage: React.FC = () => {
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
+  const [showSyncConfigManager, setShowSyncConfigManager] = useState(false);
 
   const handleSelectTable = (table: UserTable) => {
     setSelectedTable(table);
@@ -57,11 +59,14 @@ export const UserDataPage: React.FC = () => {
               <button className="btn btn-primary" onClick={() => setShowImportWizard(true)}>
                 📥 Import Excel
               </button>
-              <button className="btn btn-secondary" onClick={() => setShowBrowserSyncWizard(true)}>
-                🔄 Sync Browser Downloads
-              </button>
-            </>
-          )}
+            <button className="btn btn-secondary" onClick={() => setShowBrowserSyncWizard(true)}>
+              🔄 Sync Browser Downloads
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowSyncConfigManager(true)}>
+              ⚙️ Configurations
+            </button>
+          </>
+        )}
         </div>
       </div>
 
@@ -91,6 +96,13 @@ export const UserDataPage: React.FC = () => {
         <BrowserDownloadsSyncWizard
           onClose={() => setShowBrowserSyncWizard(false)}
           onComplete={handleImportComplete}
+        />
+      )}
+
+      {showSyncConfigManager && (
+        <SyncConfigurationsManager
+          userTables={tables}
+          onClose={() => setShowSyncConfigManager(false)}
         />
       )}
     </div>

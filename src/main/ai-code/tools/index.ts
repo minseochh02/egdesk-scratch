@@ -42,3 +42,7 @@ export { AppsScriptPushToDevTool } from './apps-script-push-to-dev';
 export { AppsScriptPullFromDevTool } from './apps-script-pull-from-dev';
 export { AppsScriptPushDevToProdTool } from './apps-script-push-dev-to-prod';
 export { AppsScriptPullProdToDevTool } from './apps-script-pull-prod-to-dev';
+export { UserDataListTablesTool } from './user-data-list-tables';
+export { UserDataQueryTool } from './user-data-query';
+export { UserDataSearchTool } from './user-data-search';
+export { UserDataAggregateTool } from './user-data-aggregate';

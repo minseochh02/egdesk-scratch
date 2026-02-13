@@ -70,6 +70,30 @@ class BCCardAutomator extends BaseCardAutomator {
     }
   }
 
+  /**
+   * Get a safe temp directory that avoids Windows permission issues
+   * @returns {string} Safe temp directory path
+   */
+  getSafeTempDir() {
+    try {
+      // Try app userData directory first
+      const { app } = require('electron');
+      const baseDir = path.join(app.getPath('userData'), 'temp');
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    } catch (error) {
+      // Fallback to user home directory
+      const userHome = os.homedir();
+      const baseDir = path.join(userHome, '.egdesk-temp');
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      return baseDir;
+    }
+  }
+
   // ============================================================================
   // MAIN LOGIN METHOD
   // ============================================================================
@@ -373,8 +397,9 @@ class BCCardAutomator extends BaseCardAutomator {
 
         this.log('Found Excel file in ZIP:', excelEntry.entryName);
 
-        // Extract to temp directory
-        extractDir = path.join(os.tmpdir(), `bc-card-cardlist-extract-${Date.now()}`);
+        // Extract to temp directory - use safe temp location
+        const safeBaseDir = this.getSafeTempDir();
+        extractDir = path.join(safeBaseDir, `bc-card-cardlist-extract-${Date.now()}`);
         fs.mkdirSync(extractDir, { recursive: true });
 
         zip.extractEntryTo(excelEntry, extractDir, false, true);
@@ -633,8 +658,9 @@ class BCCardAutomator extends BaseCardAutomator {
 
         this.log('Found Excel file in ZIP:', excelEntry.entryName);
 
-        // Extract to temp directory
-        extractDir = path.join(os.tmpdir(), `bc-card-extract-${Date.now()}`);
+        // Extract to temp directory - use safe temp location
+        const safeBaseDir = this.getSafeTempDir();
+        extractDir = path.join(safeBaseDir, `bc-card-extract-${Date.now()}`);
         fs.mkdirSync(extractDir, { recursive: true });
 
         zip.extractEntryTo(excelEntry, extractDir, false, true);

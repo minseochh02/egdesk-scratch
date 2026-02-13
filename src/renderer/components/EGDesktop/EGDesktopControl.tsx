@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faDesktop, faPowerOff, faCog, faCoffee, faMoon } from '../../utils/fontAwesomeIcons';
+import { faDesktop, faPowerOff, faCog, faCoffee, faMoon, faSync } from '../../utils/fontAwesomeIcons';
 import './EGDesktopControl.css';
 
 const EGDesktopControl: React.FC = () => {
@@ -10,10 +10,13 @@ const EGDesktopControl: React.FC = () => {
   const [notifications, setNotifications] = useState(true);
   const [keepAwakeActive, setKeepAwakeActive] = useState(false);
   const [keepAwakeLoading, setKeepAwakeLoading] = useState(false);
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
+  const [autoUpdateLoading, setAutoUpdateLoading] = useState(false);
 
   useEffect(() => {
     checkKeepAwakeStatus();
     checkAutoStartStatus();
+    checkAutoUpdateStatus();
   }, []);
 
   const checkKeepAwakeStatus = async () => {
@@ -35,6 +38,17 @@ const EGDesktopControl: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to check auto-start status:', error);
+    }
+  };
+
+  const checkAutoUpdateStatus = async () => {
+    try {
+      const result = await window.electron.updater.getAutoUpdateSetting();
+      if (result.success) {
+        setAutoUpdateEnabled(result.autoUpdate);
+      }
+    } catch (error) {
+      console.error('Failed to check auto-update status:', error);
     }
   };
 
@@ -63,6 +77,19 @@ const EGDesktopControl: React.FC = () => {
       console.error('Failed to toggle auto-start:', error);
     } finally {
       setAutoStartLoading(false);
+    }
+  };
+
+  const handleAutoUpdateToggle = async () => {
+    setAutoUpdateLoading(true);
+    try {
+      const newValue = !autoUpdateEnabled;
+      await window.electron.updater.setAutoUpdateSetting(newValue);
+      setAutoUpdateEnabled(newValue);
+    } catch (error) {
+      console.error('Failed to toggle auto-update:', error);
+    } finally {
+      setAutoUpdateLoading(false);
     }
   };
 
@@ -181,6 +208,32 @@ const EGDesktopControl: React.FC = () => {
                 checked={keepAwakeActive}
                 onChange={handleKeepAwakeToggle}
                 disabled={keepAwakeLoading}
+              />
+              <span className="egdesktop-toggle-slider"></span>
+            </label>
+          </div>
+
+          {/* Auto-Update Toggle */}
+          <div className="egdesktop-setting-item">
+            <div className="egdesktop-setting-info">
+              <div className="egdesktop-setting-title-with-icon">
+                <FontAwesomeIcon
+                  icon={faSync}
+                  className={autoUpdateLoading ? 'spinning' : ''}
+                  style={{ marginRight: '8px', color: autoUpdateEnabled ? '#007bff' : '#6c757d' }}
+                />
+                <h4 className="egdesktop-setting-title">Auto-Update</h4>
+              </div>
+              <p className="egdesktop-setting-description">
+                Automatically download and install app updates in the background
+              </p>
+            </div>
+            <label className="egdesktop-toggle-switch small">
+              <input
+                type="checkbox"
+                checked={autoUpdateEnabled}
+                onChange={handleAutoUpdateToggle}
+                disabled={autoUpdateLoading}
               />
               <span className="egdesktop-toggle-slider"></span>
             </label>

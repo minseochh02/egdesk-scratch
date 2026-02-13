@@ -23,6 +23,7 @@ import {
 import { SQLiteCompanyResearchManager } from './company-research';
 import { FinanceHubDbManager } from './financehub';
 import { UserDataDbManager } from './user-data';
+import { SyncConfigManager } from '../sync-config/sync-config-manager';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { restartPlaywrightScheduler } from '../scheduler/playwright-scheduler-instance';
@@ -67,6 +68,7 @@ export class SQLiteManager {
   private companyResearchManager: SQLiteCompanyResearchManager | null = null;
   private financeHubManager: FinanceHubDbManager | null = null;
   private userDataManager: UserDataDbManager | null = null;
+  private syncConfigManager: SyncConfigManager | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -114,6 +116,7 @@ export class SQLiteManager {
       this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
       this.userDataManager = new UserDataDbManager(this.userDataDb);
+      this.syncConfigManager = new SyncConfigManager(this.userDataDb);
       this.isInitialized = true;
 
       // Run cleanup migration for deleted Playwright tests
@@ -404,6 +407,17 @@ export class SQLiteManager {
       this.userDataManager = new UserDataDbManager(this.userDataDb!);
     }
     return this.userDataManager;
+  }
+
+  /**
+   * Get Sync Configuration Manager
+   */
+  public getSyncConfigManager(): SyncConfigManager {
+    this.ensureInitialized();
+    if (!this.syncConfigManager) {
+      this.syncConfigManager = new SyncConfigManager(this.userDataDb!);
+    }
+    return this.syncConfigManager;
   }
 
   /**

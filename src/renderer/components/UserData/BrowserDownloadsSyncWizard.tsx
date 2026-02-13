@@ -3,13 +3,14 @@ import { useUserData } from '../../hooks/useUserData';
 import { DataTable } from './shared/DataTable';
 import { VisualColumnMapper } from './VisualColumnMapper';
 import { ExistingTableMapper } from './ExistingTableMapper';
+import { DuplicateDetectionSettings } from './DuplicateDetectionSettings';
 
 interface BrowserDownloadsSyncWizardProps {
   onClose: () => void;
   onComplete: () => void;
 }
 
-type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
 
 interface BrowserDownloadFolder {
@@ -40,6 +41,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [selectedFile, setSelectedFile] = useState<BrowserDownloadFile | null>(null);
   const [headerRow, setHeaderRow] = useState<number>(1);
   const [skipBottomRows, setSkipBottomRows] = useState<number>(0);
+  const [deleteAfterImport, setDeleteAfterImport] = useState<boolean>(false);
+  const [archiveAfterImport, setArchiveAfterImport] = useState<boolean>(true);
   const [importMode, setImportMode] = useState<ImportMode>(null);
   const [parsedData, setParsedData] = useState<any>(null);
   const [selectedSheet, setSelectedSheet] = useState(0);
@@ -58,6 +61,15 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(true);
+  const [saveAsConfiguration, setSaveAsConfiguration] = useState<boolean>(true);
+  const [enableAutoSync, setEnableAutoSync] = useState<boolean>(false);
+  const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
+    uniqueKeyColumns: string[];
+    duplicateAction: 'skip' | 'update' | 'allow';
+  }>({
+    uniqueKeyColumns: [],
+    duplicateAction: 'skip',
+  });
 
   useEffect(() => {
     loadBrowserDownloadFolders();
@@ -105,6 +117,19 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     try {
       setError(null);
       setSelectedFolder(folder);
+      
+      // Check if a configuration already exists for this folder
+      try {
+        const existingConfig = await (window as any).electron.invoke('sync-config:get-by-folder', folder.path);
+        if (existingConfig.data) {
+          // Show a notification that a configuration exists
+          setError(`ℹ️ A sync configuration already exists for "${folder.scriptName}". You can manage it in the Configurations page.`);
+        }
+      } catch (err) {
+        console.warn('Error checking existing config:', err);
+        // Continue anyway
+      }
+      
       await loadFolderFiles(folder);
       setCurrentStep('file-selection');
     } catch (err) {
@@ -162,7 +187,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   ) => {
     setColumnMappings(mappings);
     setMergeConfig(mergeConfiguration);
-    setCurrentStep('preview');
+    setCurrentStep('duplicate-detection');
   };
 
   const handleExistingTableMappingComplete = (
@@ -171,7 +196,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   ) => {
     setSelectedTableId(tableId);
     setExistingTableColumnMappings(mappings);
-    setCurrentStep('preview');
+    setCurrentStep('duplicate-detection');
   };
 
   const handleBack = () => {
@@ -191,6 +216,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setColumnMappings(null);
       setExistingTableColumnMappings(null);
     } else if (currentStep === 'preview') {
+      setCurrentStep('duplicate-detection');
+    } else if (currentStep === 'duplicate-detection') {
       if (importMode === 'create-new') {
         setCurrentStep('column-mapping');
       } else {
@@ -227,6 +254,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             mergeConfig: mergeConfig || undefined,
             headerRow,
             skipBottomRows,
+            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+              ? duplicateDetectionSettings.uniqueKeyColumns 
+              : undefined,
+            duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+              ? duplicateDetectionSettings.duplicateAction 
+              : undefined,
           });
 
           setImportProgress({
@@ -252,6 +285,48 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             rowsImported: result.rowsImported,
             rowsSkipped: result.rowsSkipped,
           });
+
+          // Handle file after successful import
+          if (deleteAfterImport) {
+            await (window as any).electron.debug.deleteFile(selectedFile!.path);
+          } else if (archiveAfterImport) {
+            await (window as any).electron.debug.archiveFile(selectedFile!.path);
+          }
+        }
+
+        // Save configuration if requested
+        if (saveAsConfiguration && selectedFolder && (columnMappings || existingTableColumnMappings)) {
+          try {
+            const targetTableId = importMode === 'create-new' 
+              ? result.table?.id 
+              : selectedTableId;
+
+            const mappings = importMode === 'create-new'
+              ? columnMappings!
+              : existingTableColumnMappings!;
+
+            await (window as any).electron.invoke('sync-config:create', {
+              scriptFolderPath: selectedFolder.path,
+              scriptName: selectedFolder.scriptName,
+              folderName: selectedFolder.folderName,
+              targetTableId: targetTableId,
+              headerRow,
+              skipBottomRows,
+              sheetIndex: selectedSheet,
+              columnMappings: mappings,
+              uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+                ? duplicateDetectionSettings.uniqueKeyColumns 
+                : undefined,
+              duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+                ? duplicateDetectionSettings.duplicateAction 
+                : undefined,
+              fileAction: deleteAfterImport ? 'delete' : (archiveAfterImport ? 'archive' : 'keep'),
+              autoSyncEnabled: enableAutoSync,
+            });
+          } catch (configError) {
+            console.warn('Failed to save configuration:', configError);
+            // Don't fail the import if configuration save fails
+          }
         }
 
         setCurrentStep('complete');
@@ -293,9 +368,10 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       if (currentStep === 'parse-config') return 2;
       if (currentStep === 'import-mode') return 3;
       if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 4;
-      if (currentStep === 'preview') return 5;
-      if (currentStep === 'importing') return 6;
-      if (currentStep === 'complete') return 7;
+      if (currentStep === 'duplicate-detection') return 5;
+      if (currentStep === 'preview') return 6;
+      if (currentStep === 'importing') return 7;
+      if (currentStep === 'complete') return 8;
       return 0;
     };
 
@@ -513,6 +589,69 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
           </div>
         </div>
 
+        <div style={{ marginTop: '24px', padding: '16px', border: '1px solid #e0e0e0', borderRadius: '8px' }}>
+          <h4 style={{ margin: '0 0 12px 0' }}>🗂️ After Import</h4>
+          <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
+            What should happen to the Excel file after successful import?
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="fileAction"
+                checked={!deleteAfterImport && !archiveAfterImport}
+                onChange={() => {
+                  setDeleteAfterImport(false);
+                  setArchiveAfterImport(false);
+                }}
+              />
+              <div>
+                <strong>Keep Original</strong>
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                  Leave file in downloads folder (no action)
+                </div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="fileAction"
+                checked={archiveAfterImport && !deleteAfterImport}
+                onChange={() => {
+                  setDeleteAfterImport(false);
+                  setArchiveAfterImport(true);
+                }}
+              />
+              <div>
+                <strong>Move to "Processed" Folder</strong> <span style={{ color: '#4CAF50', fontSize: '12px' }}>← Recommended</span>
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                  Keeps backup in script/processed/ folder
+                </div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="fileAction"
+                checked={deleteAfterImport}
+                onChange={() => {
+                  setDeleteAfterImport(true);
+                  setArchiveAfterImport(false);
+                }}
+              />
+              <div>
+                <strong>Delete File</strong> <span style={{ color: '#f44336', fontSize: '12px' }}>⚠️ Permanent</span>
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                  Removes file completely (cannot undo)
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {error && <div className="error-message">{error}</div>}
       </div>
     );
@@ -621,6 +760,44 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     );
   };
 
+  const renderDuplicateDetection = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const schema = currentSheet.headers.map((header: string, idx: number) => ({
+      name: Object.values(columnMappings || existingTableColumnMappings || {})[idx] || header,
+      type: currentSheet.detectedTypes[idx],
+    }));
+
+    return (
+      <div>
+        <h3 style={{ marginBottom: '20px' }}>Step 5: Duplicate Detection</h3>
+        <p style={{ color: '#666', marginBottom: '20px' }}>
+          Configure how to handle duplicate rows in future imports. This prevents the same data from being imported multiple times.
+        </p>
+
+        <DuplicateDetectionSettings
+          schema={schema}
+          initialUniqueColumns={duplicateDetectionSettings.uniqueKeyColumns}
+          initialDuplicateAction={duplicateDetectionSettings.duplicateAction}
+          onSettingsChange={setDuplicateDetectionSettings}
+        />
+
+        <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+          <button className="btn btn-secondary" onClick={handleBack}>
+            ⬅️ Back
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => setCurrentStep('preview')}
+          >
+            Next: Review & Import →
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderPreview = () => {
     if (!parsedData) return null;
 
@@ -720,6 +897,42 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 rows={3}
               />
             </div>
+          </div>
+
+          <div style={{ marginTop: '20px', padding: '16px', background: '#f0f8ff', borderRadius: '8px', border: '1px solid #2196F3' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>💾 Save Configuration</h4>
+            
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', marginBottom: '12px' }}>
+              <input
+                type="checkbox"
+                checked={saveAsConfiguration}
+                onChange={(e) => setSaveAsConfiguration(e.target.checked)}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Remember this configuration</strong>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                  Save these settings so you can quickly re-import future files from "{selectedFolder?.scriptName}"
+                </div>
+              </div>
+            </label>
+
+            {saveAsConfiguration && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', marginLeft: '26px' }}>
+                <input
+                  type="checkbox"
+                  checked={enableAutoSync}
+                  onChange={(e) => setEnableAutoSync(e.target.checked)}
+                  style={{ marginTop: '3px' }}
+                />
+                <div>
+                  <strong>Enable Auto-Sync</strong> <span style={{ color: '#2196F3', fontSize: '12px' }}>✨ Phase 2</span>
+                  <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                    Automatically import new files when they are downloaded (file watcher)
+                  </div>
+                </div>
+              </label>
+            )}
           </div>
 
           {error && <div className="error-message">{error}</div>}
@@ -844,6 +1057,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         return renderColumnMapping();
       case 'existing-table-mapping':
         return renderExistingTableMapping();
+      case 'duplicate-detection':
+        return renderDuplicateDetection();
       case 'preview':
         return renderPreview();
       case 'importing':
@@ -883,7 +1098,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>

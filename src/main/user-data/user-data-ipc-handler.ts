@@ -8,6 +8,10 @@ import {
   sanitizeColumnName,
 } from './excel-parser';
 import { ExcelImportConfig, ColumnSchema } from './types';
+import {
+  autoDetectUniqueKeyColumns,
+  getRecommendedDuplicateAction,
+} from './duplicate-detection-helper';
 
 /**
  * User Data IPC Handlers
@@ -15,10 +19,14 @@ import { ExcelImportConfig, ColumnSchema } from './types';
  * Handles IPC communication for user data operations including Excel import
  */
 
+import { registerUpdateTableDuplicateSettingsHandler } from './update-table-duplicate-settings-ipc';
+
 /**
  * Register User Data IPC Handlers
  */
 export function registerUserDataIPCHandlers(): void {
+  // Register duplicate settings update handler
+  registerUpdateTableDuplicateSettingsHandler();
   /**
    * Parse Excel file and return preview data
    */
@@ -162,19 +170,30 @@ export function registerUserDataIPCHandlers(): void {
 
       console.log('Creating table with schema:', JSON.stringify(schema, null, 2));
 
+      // Auto-detect unique key columns for duplicate detection
+      const uniqueKeyColumns = autoDetectUniqueKeyColumns(schema);
+      const duplicateAction = getRecommendedDuplicateAction(schema);
+      
+      console.log('Auto-detected duplicate detection settings:');
+      console.log('  Unique Key Columns:', uniqueKeyColumns);
+      console.log('  Duplicate Action:', duplicateAction);
+
       // Create import operation
       let importOperation: any = null;
       let table: any = null;
       let tableId: string | null = null;
 
       try {
-        // Create table from schema
+        // Create table from schema with duplicate detection settings
         table = userDataManager.createTableFromSchema(config.displayName, schema, {
           description: config.description,
           createdFromFile: fileName,
+          uniqueKeyColumns: uniqueKeyColumns.length > 0 ? uniqueKeyColumns : undefined,
+          duplicateAction: uniqueKeyColumns.length > 0 ? duplicateAction : undefined,
         });
         tableId = table.id;
         console.log('Table created successfully:', tableId, 'Name:', table.tableName);
+        console.log('Duplicate detection:', uniqueKeyColumns.length > 0 ? 'ENABLED' : 'DISABLED');
 
         // Create import operation
         importOperation = userDataManager.createImportOperation({
@@ -230,6 +249,15 @@ export function registerUserDataIPCHandlers(): void {
         // Insert rows in batches
         const insertResult = userDataManager.insertRows(table.id, rowsToInsert);
 
+        console.log('Import results:', {
+          inserted: insertResult.inserted,
+          skipped: insertResult.skipped,
+          duplicates: insertResult.duplicates,
+          errors: insertResult.errors.length,
+          duplicateDetails: insertResult.duplicateDetails?.length || 0,
+          errorDetails: insertResult.errorDetails?.length || 0,
+        });
+
         // Complete import operation
         userDataManager.completeImportOperation(importOperation.id, {
           rowsImported: insertResult.inserted,
@@ -248,6 +276,9 @@ export function registerUserDataIPCHandlers(): void {
               ...importOperation,
               rowsImported: insertResult.inserted,
               rowsSkipped: insertResult.skipped,
+              duplicatesSkipped: insertResult.duplicates,
+              duplicateDetails: insertResult.duplicateDetails || [],
+              errorDetails: insertResult.errorDetails || [],
             },
           },
         };

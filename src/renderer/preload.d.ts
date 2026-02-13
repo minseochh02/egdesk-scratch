@@ -582,6 +582,7 @@ interface AuthAPI {
     switchAccount: (userId: string) => Promise<{ success: boolean; session?: any; error?: string }>;
     handleCallback: (url: string) => Promise<{ success: boolean; error?: string }>;
   getGoogleWorkspaceToken: () => Promise<{ success: boolean; token: any | null }>;
+  getGoogleWorkspaceTokenWithScopes: (requiredScopes: string[]) => Promise<{ success: boolean; token: any | null }>;
   debugForceRefreshToken: () => Promise<{ success: boolean; token?: any; message?: string; error?: string }>;
     saveSession: (session: any) => Promise<{ success: boolean; error?: string }>;
   callEdgeFunction: (options: any) => Promise<{ success: boolean; status?: number; statusText?: string; data?: any; error?: string }>;
@@ -668,6 +669,8 @@ interface UpdaterAPI {
     checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
     downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
     quitAndInstall: () => Promise<{ success: boolean; error?: string }>;
+    getAutoUpdateSetting: () => Promise<{ success: boolean; autoUpdate: boolean; error?: string }>;
+    setAutoUpdateSetting: (autoUpdate: boolean) => Promise<{ success: boolean; error?: string }>;
     onUpdateAvailable: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => () => void;
     onDownloadProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => () => void;
     onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string; releaseNotes?: string }) => void) => () => void;

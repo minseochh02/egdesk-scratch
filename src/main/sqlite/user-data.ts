@@ -51,6 +51,8 @@ export class UserDataDbManager {
     options?: {
       description?: string;
       createdFromFile?: string;
+      uniqueKeyColumns?: string[];
+      duplicateAction?: 'skip' | 'update' | 'allow';
     }
   ): UserTableWithSchema {
     // Validate input schema
@@ -93,7 +95,10 @@ export class UserDataDbManager {
           return 'id INTEGER PRIMARY KEY AUTOINCREMENT';
         }
 
-        const parts = [`"${col.name}"`, col.type];
+        // Convert DATE type to TEXT for SQLite storage
+        const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
+        
+        const parts = [`"${col.name}"`, sqliteType];
         if (col.notNull) parts.push('NOT NULL');
         if (col.defaultValue !== undefined) {
           if (typeof col.defaultValue === 'string') {
@@ -127,11 +132,16 @@ export class UserDataDbManager {
       this.database.exec(createTableSql);
 
       // Insert metadata (store full schema including ID column)
+      const uniqueKeyColumnsJson = options?.uniqueKeyColumns && options.uniqueKeyColumns.length > 0
+        ? JSON.stringify(options.uniqueKeyColumns)
+        : null;
+      
       const insertMetadata = this.database.prepare(`
         INSERT INTO user_tables (
           id, table_name, display_name, description, created_from_file,
-          row_count, column_count, created_at, updated_at, schema_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          row_count, column_count, created_at, updated_at, schema_json,
+          unique_key_columns, duplicate_action
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       console.log('Storing schema JSON:', schemaJson);
@@ -146,7 +156,9 @@ export class UserDataDbManager {
         fullSchema.length, // Include ID column in count
         now,
         now,
-        schemaJson // Use pre-validated JSON string
+        schemaJson, // Use pre-validated JSON string
+        uniqueKeyColumnsJson,
+        options?.duplicateAction || 'skip'
       );
 
       // Verify insertion
@@ -219,6 +231,8 @@ export class UserDataDbManager {
       columnCount: row.column_count || row.columnCount,
       createdAt: row.created_at || row.createdAt,
       updatedAt: row.updated_at || row.updatedAt,
+      uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
+      duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
       schema,
     };
   }
@@ -260,6 +274,8 @@ export class UserDataDbManager {
       columnCount: row.column_count || row.columnCount,
       createdAt: row.created_at || row.createdAt,
       updatedAt: row.updated_at || row.updatedAt,
+      uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
+      duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
       schema,
     };
   }
@@ -295,6 +311,8 @@ export class UserDataDbManager {
             columnCount: row.column_count || row.columnCount,
             createdAt: row.created_at || row.createdAt,
             updatedAt: row.updated_at || row.updatedAt,
+            uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
+            duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
             schema,
           };
         } catch (error) {
@@ -360,7 +378,17 @@ export class UserDataDbManager {
 
     let inserted = 0;
     let skipped = 0;
+    let duplicates = 0;
     const errors: string[] = [];
+    const duplicateDetails: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }> = [];
+    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+
+    // Parse duplicate detection settings
+    const uniqueKeyColumns: string[] = table.uniqueKeyColumns 
+      ? JSON.parse(table.uniqueKeyColumns) 
+      : [];
+    const duplicateAction = table.duplicateAction || 'skip';
+    const hasDuplicateDetection = uniqueKeyColumns.length > 0;
 
     // Filter out the ID column (first column) - SQLite will auto-generate it
     const dataColumns = table.schema.filter((col) => col.name !== 'id');
@@ -373,63 +401,105 @@ export class UserDataDbManager {
       `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
     );
 
+    // Prepare duplicate check statement if needed
+    let checkDuplicateStmt: any = null;
+    if (hasDuplicateDetection) {
+      const whereClause = uniqueKeyColumns
+        .map(col => `"${col}" = ?`)
+        .join(' AND ');
+      checkDuplicateStmt = this.database.prepare(
+        `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`
+      );
+    }
+
+    // Prepare update statement if needed
+    let updateStmt: any = null;
+    if (hasDuplicateDetection && duplicateAction === 'update') {
+      const updateColumns = dataColumns
+        .filter(col => !uniqueKeyColumns.includes(col.name))
+        .map(col => `"${col.name}" = ?`)
+        .join(', ');
+      const whereClause = uniqueKeyColumns
+        .map(col => `"${col}" = ?`)
+        .join(' AND ');
+      
+      if (updateColumns) {
+        updateStmt = this.database.prepare(
+          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`
+        );
+      }
+    }
+
     // Process rows in batches of 500
     const batchSize = 500;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
+    for (let batchStart = 0; batchStart < rows.length; batchStart += batchSize) {
+      const batch = rows.slice(batchStart, batchStart + batchSize);
 
       const transaction = this.database.transaction(() => {
-        for (const row of batch) {
+        for (let i = 0; i < batch.length; i++) {
+          const row = batch[i];
+          const rowIndex = batchStart + i;
+          
           try {
+            // Check for duplicate if duplicate detection is enabled
+            if (hasDuplicateDetection && checkDuplicateStmt) {
+              const uniqueKeyValues = uniqueKeyColumns.map(col => row[col]);
+              const existingRow = checkDuplicateStmt.get(...uniqueKeyValues);
+
+              if (existingRow) {
+                // Duplicate found!
+                duplicates++;
+                
+                // Track duplicate details
+                const uniqueKeyValuesObj: Record<string, any> = {};
+                uniqueKeyColumns.forEach((col, idx) => {
+                  uniqueKeyValuesObj[col] = uniqueKeyValues[idx];
+                });
+                duplicateDetails.push({ rowIndex, uniqueKeyValues: uniqueKeyValuesObj });
+
+                if (duplicateAction === 'skip') {
+                  // Skip this row
+                  skipped++;
+                  continue;
+                } else if (duplicateAction === 'update' && updateStmt) {
+                  // Update existing row
+                  const values = dataColumns.map((col) => {
+                    return this.convertValue(col, row[col.name]);
+                  });
+
+                  // Filter out unique key columns from update values
+                  const updateValues = values.filter((_, idx) => {
+                    return !uniqueKeyColumns.includes(dataColumns[idx].name);
+                  });
+
+                  // Add unique key values for WHERE clause
+                  const whereValues = uniqueKeyColumns.map(col => row[col]);
+
+                  updateStmt.run(...updateValues, ...whereValues);
+                  inserted++; // Count as "inserted" (actually updated)
+                  continue;
+                }
+                // If duplicateAction === 'allow', fall through to insert
+              }
+            }
+
             const values = dataColumns.map((col) => {
-              const value = row[col.name];
-              
-              // Handle null/undefined/empty
-              if (value === undefined || value === null || value === '') {
-                // Allow null unless column is NOT NULL
-                if (col.notNull) {
-                  throw new Error(`Column "${col.name}" cannot be null`);
-                }
-                return null;
-              }
-              
-              // Type conversions with validation
-              if (col.type === 'INTEGER') {
-                // Handle numeric strings with commas: "1,234" → 1234
-                const cleanValue = String(value).replace(/,/g, '');
-                const num = parseInt(cleanValue, 10);
-                if (isNaN(num)) {
-                  throw new Error(`Cannot convert "${value}" to INTEGER for column "${col.name}"`);
-                }
-                return num;
-              }
-              
-              if (col.type === 'REAL') {
-                // Handle numeric strings with commas: "1,234.56" → 1234.56
-                const cleanValue = String(value).replace(/,/g, '');
-                const num = parseFloat(cleanValue);
-                if (isNaN(num)) {
-                  throw new Error(`Cannot convert "${value}" to REAL for column "${col.name}"`);
-                }
-                return num;
-              }
-              
-              // TEXT: convert everything to string
-              // Handle dates by converting to ISO string if it's a Date object
-              if (value instanceof Date) {
-                return value.toISOString();
-              }
-              
-              return String(value);
+              return this.convertValue(col, row[col.name]);
             });
 
             insertStmt.run(...values);
             inserted++;
           } catch (error) {
             skipped++;
-            errors.push(
-              error instanceof Error ? error.message : 'Unknown error'
-            );
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(errorMessage);
+            
+            // Track error details with row info
+            errorDetails.push({
+              rowIndex,
+              error: errorMessage,
+              rowData: row
+            });
           }
         }
       });
@@ -440,7 +510,90 @@ export class UserDataDbManager {
     // Update row count
     this.updateRowCount(tableId);
 
-    return { inserted, skipped, errors };
+    return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
+  }
+
+  /**
+   * Convert value based on column type
+   * @private
+   */
+  private convertValue(col: ColumnSchema, value: any): any {
+    // Handle null/undefined/empty
+    if (value === undefined || value === null || value === '') {
+      if (col.notNull) {
+        throw new Error(`Column "${col.name}" cannot be null`);
+      }
+      return null;
+    }
+    
+    // Type conversions with validation
+    if (col.type === 'INTEGER') {
+      const cleanValue = String(value).replace(/,/g, '');
+      const num = parseInt(cleanValue, 10);
+      if (isNaN(num)) {
+        throw new Error(`Cannot convert "${value}" to INTEGER for column "${col.name}"`);
+      }
+      return num;
+    }
+    
+    if (col.type === 'REAL') {
+      const cleanValue = String(value).replace(/,/g, '');
+      const num = parseFloat(cleanValue);
+      if (isNaN(num)) {
+        throw new Error(`Cannot convert "${value}" to REAL for column "${col.name}"`);
+      }
+      return num;
+    }
+    
+    if (col.type === 'DATE') {
+      let dateObj: Date;
+      
+      if (value instanceof Date) {
+        dateObj = value;
+      } else if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const normalized = trimmed.replace(/\//g, '-');
+        dateObj = new Date(normalized);
+        
+        if (isNaN(dateObj.getTime())) {
+          const parts = trimmed.split(/[-/]/);
+          if (parts.length === 3) {
+            const first = parseInt(parts[0], 10);
+            const second = parseInt(parts[1], 10);
+            const third = parseInt(parts[2], 10);
+            
+            if (third > 31) {
+              dateObj = new Date(third, second - 1, first);
+            } else if (first > 31) {
+              dateObj = new Date(first, second - 1, third);
+            } else {
+              dateObj = new Date(first, second - 1, third);
+            }
+          }
+        }
+      } else if (typeof value === 'number') {
+        dateObj = new Date((value - 25569) * 86400 * 1000);
+      } else {
+        throw new Error(`Cannot convert "${value}" to DATE for column "${col.name}"`);
+      }
+      
+      if (isNaN(dateObj.getTime())) {
+        throw new Error(`Invalid date "${value}" for column "${col.name}"`);
+      }
+      
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      
+      return `${year}-${month}-${day}`;
+    }
+    
+    // TEXT: convert everything to string
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    
+    return String(value);
   }
 
   /**
