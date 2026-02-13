@@ -279,6 +279,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             columnMappings: existingTableColumnMappings,
             headerRow,
             skipBottomRows,
+            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+              ? duplicateDetectionSettings.uniqueKeyColumns 
+              : undefined,
+            duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
+              ? duplicateDetectionSettings.duplicateAction 
+              : undefined,
           });
 
           setImportProgress({

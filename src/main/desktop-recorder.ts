@@ -245,6 +245,8 @@ export class DesktopRecorder {
    * Start recording with a control window (for external use)
    */
   async startRecordingWithControlWindow(): Promise<void> {
+    console.log('[DesktopRecorder] ===== STARTING RECORDING WITH CONTROL WINDOW =====');
+    
     // Create and switch to new virtual desktop first
     console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
     const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
@@ -257,17 +259,29 @@ export class DesktopRecorder {
       // Additional verification: try to trigger a focus event to ensure we're on the new desktop
       console.log('[DesktopRecorder] Verifying desktop switch...');
       await this.verifyDesktopSwitch();
+    } else {
+      console.log('[DesktopRecorder] ⚠️ Virtual desktop creation failed, continuing on current desktop');
     }
 
     // Import and create control window on the new desktop
-    const { RecorderControlWindow } = await import('./recorder-control-window');
-    this.controlWindow = new RecorderControlWindow();
-    await this.controlWindow.create();
+    console.log('[DesktopRecorder] Creating control window...');
+    try {
+      const { RecorderControlWindow } = await import('./recorder-control-window');
+      this.controlWindow = new RecorderControlWindow();
+      console.log('[DesktopRecorder] RecorderControlWindow imported and instantiated');
+      
+      await this.controlWindow.create();
+      console.log('[DesktopRecorder] Control window creation completed');
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to create control window:', error.message);
+      console.error(error.stack);
+    }
 
     // Start recording (skip virtual desktop creation since we already did it)
+    console.log('[DesktopRecorder] Starting recording phase...');
     await this.startRecording({ createVirtualDesktop: false });
 
-    console.log('[DesktopRecorder] Control window created on recording desktop');
+    console.log('[DesktopRecorder] ===== CONTROL WINDOW SETUP COMPLETE =====');
   }
 
   /**
