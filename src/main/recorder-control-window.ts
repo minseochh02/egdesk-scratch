@@ -39,6 +39,7 @@ export class RecorderControlWindow {
       alwaysOnTop: true, // Float above other windows
       resizable: false,
       skipTaskbar: true, // Don't show in taskbar
+      show: false, // Don't show immediately
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -52,10 +53,19 @@ export class RecorderControlWindow {
     const htmlContent = this.generateControlHTML();
     await this.window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
 
-    // Show when ready
+    // Force window to appear on current desktop by showing and immediately focusing
     this.window.once('ready-to-show', () => {
-      this.window?.show();
-      console.log('[RecorderControl] Control window displayed');
+      if (this.window) {
+        // Small delay to ensure desktop context is ready
+        setTimeout(() => {
+          if (this.window && !this.window.isDestroyed()) {
+            this.window.show();
+            this.window.focus();
+            this.window.moveTop(); // Force to top of window stack
+            console.log('[RecorderControl] Control window displayed on current desktop');
+          }
+        }, 100);
+      }
     });
 
     // Clean up when closed
