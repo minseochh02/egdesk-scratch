@@ -222,6 +222,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeSyncConfigurationSchema(userDataDb); // Browser automation sync configurations
 
     // =============================================
+    // Migration 007: Add replace-date-range to sync_configurations
+    // =============================================
+    try {
+      const { migrate007SyncConfigReplaceDateRange } = await import('./migrations/007-sync-config-replace-date-range');
+      migrate007SyncConfigReplaceDateRange(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 007 error:', migrationError.message);
+    }
+
+    // =============================================
     // NOTE: transaction_datetime migration handled by migration 006
     // =============================================
     // Migration 006 (006-combine-datetime.ts) handles:
