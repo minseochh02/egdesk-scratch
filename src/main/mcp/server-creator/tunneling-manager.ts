@@ -210,8 +210,9 @@ export async function registerServerName(
  */
 export async function startTunnel(
   serverName: string,
-  localServerUrl: string = 'http://localhost:8080'
-): Promise<{ 
+  localServerUrl: string = 'http://localhost:8080',
+  apiKey?: string
+): Promise<{
   success: boolean; 
   message?: string; 
   error?: string;
@@ -277,6 +278,7 @@ export async function startTunnel(
       reconnectInterval: 5000,
       autoPrompt: false, // Don't prompt in GUI mode
       skipRegistration: true, // Registration handled by Supabase Edge Function above
+      apiKey,
     });
 
     // Start tunnel (this auto-registers and connects)

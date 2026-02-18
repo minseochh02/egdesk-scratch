@@ -10,6 +10,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import { app, BrowserWindow, ipcMain, shell, dialog, powerSaveBlocker } from 'electron';
 
@@ -2595,8 +2596,13 @@ const createWindow = async () => {
           captureLog(`🚀 [IPC] Starting tunnel: ${serverName}`);
           captureLog(`   Local server URL: ${localServerUrl || 'http://localhost:8080 (default)'}`);
           captureLog(`   Environment: SUPABASE_URL=${process.env.SUPABASE_URL ? 'set' : 'NOT SET'}, TUNNEL_SERVER_URL=${process.env.TUNNEL_SERVER_URL || 'default'}`);
-          
-          const result = await startTunnel(serverName, localServerUrl);
+
+          // Generate or preserve the static API key for Apps Script access
+          const existingMcpConfig = store.get('mcpConfiguration');
+          const existingApiKey = (existingMcpConfig?.tunnel?.apiKey as string) || randomUUID();
+          captureLog(`🔑 API key: ${existingApiKey.substring(0, 8)}... (${existingMcpConfig?.tunnel?.apiKey ? 'preserved' : 'new'})`);
+
+          const result = await startTunnel(serverName, localServerUrl, existingApiKey);
           
           // Merge logs from startTunnel
           if (result._logs) {
@@ -2618,9 +2624,15 @@ const createWindow = async () => {
                 publicUrl: result.publicUrl,
                 registeredAt: new Date().toISOString(),
                 lastConnectedAt: new Date().toISOString(),
+                apiKey: existingApiKey,
               };
               store.set('mcpConfiguration', mcpConfig);
               captureLog(`💾 Auto-saved tunnel configuration: ${result.publicUrl}`);
+
+              // Push API key to local server manager for defense-in-depth validation
+              const mcpLocalServerManager = getLocalServerManager();
+              mcpLocalServerManager.setApiKey(existingApiKey);
+              captureLog(`🔑 API key pushed to local server manager`);
             } catch (saveError) {
               captureLog(`⚠️ Failed to auto-save tunnel config: ${saveError}`);
               // Don't fail the whole operation if save fails

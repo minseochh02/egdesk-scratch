@@ -30,7 +30,7 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
       
       -- Auto-sync settings
       enabled BOOLEAN DEFAULT true,
-      auto_sync_enabled BOOLEAN DEFAULT false,
+      auto_sync_enabled BOOLEAN DEFAULT true,
       
       -- Duplicate detection
       unique_key_columns TEXT,

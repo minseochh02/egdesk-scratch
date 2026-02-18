@@ -51,6 +51,7 @@ export function initializeStore(): Promise<void> {
               publicUrl: '',
               registeredAt: '',
               lastConnectedAt: '',
+              apiKey: '',
             },
             
             // HTTP server settings
