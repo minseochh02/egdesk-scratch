@@ -234,6 +234,9 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         setIsImporting(true);
         setImportError(null);
 
+        // Declare result variable in outer scope so it's accessible for config save
+        let result: any = null;
+
         if (importMode === 'create-new') {
           // Validate inputs
           if (!tableName.trim() || !displayName.trim()) {
@@ -245,7 +248,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             throw new Error(`Table name "${validation.sanitizedName}" is already in use.`);
           }
 
-          const result = await importExcel({
+          result = await importExcel({
             filePath: selectedFile!.path,
             sheetIndex: selectedSheet,
             tableName,
@@ -278,7 +281,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             duplicateAction: duplicateDetectionSettings.duplicateAction,
           });
 
-          const result = await syncToExistingTable({
+          result = await syncToExistingTable({
             filePath: selectedFile!.path,
             sheetIndex: selectedSheet,
             tableId: selectedTableId,
@@ -306,8 +309,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         if (saveAsConfiguration && selectedFolder && (columnMappings || existingTableColumnMappings)) {
           try {
             const targetTableId = importMode === 'create-new'
-              ? result.table?.id
+              ? result?.table?.id
               : selectedTableId;
+
+            if (!targetTableId) {
+              throw new Error('Target table ID is missing. Import may have failed.');
+            }
 
             const mappings = importMode === 'create-new'
               ? columnMappings!
