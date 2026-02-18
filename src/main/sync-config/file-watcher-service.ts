@@ -327,18 +327,20 @@ export class FileWatcherService {
       const mappedRows = sheet.rows.map((row) => {
         const mappedRow: Record<string, any> = {};
         for (const [excelCol, tableCol] of Object.entries(config.columnMappings)) {
-          const colIndex = sheet.headers.indexOf(excelCol);
-          if (colIndex !== -1) {
-            mappedRow[tableCol] = row[colIndex];
-          }
+          // Row is an object with column names as keys, not an array
+          mappedRow[tableCol] = row[excelCol];
         }
         return mappedRow;
       });
 
-      // Insert rows (correct signature: tableId, rows)
-      const { inserted, skipped, duplicates } = userDataManager.insertRows(
+      // Insert rows with duplicate handling settings from config
+      const { inserted, skipped, duplicates } = userDataManager.insertRowsWithSettings(
         config.targetTableId,
-        mappedRows
+        mappedRows,
+        {
+          uniqueKeyColumns: config.uniqueKeyColumns || [],
+          duplicateAction: config.duplicateAction || 'skip',
+        }
       );
 
       // Complete import operation

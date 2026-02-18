@@ -174,20 +174,25 @@ export function registerUserDataIPCHandlers(): void {
       let uniqueKeyColumns: string[];
       let duplicateAction: string;
       
-      if (config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0) {
-        // Use manual selection from UI
+      if (config.uniqueKeyColumns !== undefined) {
+        // Use manual selection from UI 
         uniqueKeyColumns = config.uniqueKeyColumns;
         duplicateAction = config.duplicateAction || 'skip';
-        console.log('Using manual duplicate detection settings:');
-        console.log('  Unique Key Columns:', uniqueKeyColumns);
-        console.log('  Duplicate Action:', duplicateAction);
+        
+        if (uniqueKeyColumns.length > 0) {
+          console.log('Using manual duplicate detection settings (ENABLED):');
+          console.log('  Unique Key Columns:', uniqueKeyColumns);
+          console.log('  Duplicate Action:', duplicateAction);
+        } else {
+          console.log('Using manual duplicate detection settings (DISABLED):');
+          console.log('  Unique Key Columns: [] (disabled by user)');
+          console.log('  Duplicate Action: skip (no duplicate checking will occur)');
+        }
       } else {
-        // Auto-detect as fallback
-        uniqueKeyColumns = autoDetectUniqueKeyColumns(schema);
-        duplicateAction = getRecommendedDuplicateAction(schema);
-        console.log('Auto-detected duplicate detection settings:');
-        console.log('  Unique Key Columns:', uniqueKeyColumns);
-        console.log('  Duplicate Action:', duplicateAction);
+        // No manual config provided - disable duplicate detection entirely
+        uniqueKeyColumns = [];
+        duplicateAction = 'skip';
+        console.log('No duplicate detection configuration provided - importing all data without duplicate checking');
       }
 
       // Create import operation
@@ -429,6 +434,8 @@ export function registerUserDataIPCHandlers(): void {
     headerRow?: number;
     skipRows?: number;
     skipBottomRows?: number;
+    uniqueKeyColumns?: string[];
+    duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
   }) => {
     try {
       const manager = getSQLiteManager();
@@ -497,8 +504,50 @@ export function registerUserDataIPCHandlers(): void {
           return mappedRow;
         });
 
-        // Insert rows
-        const insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+        // Handle different duplicate actions
+        let insertResult;
+        
+        if (config.duplicateAction === 'replace-date-range') {
+          console.log('🔄 Sync operation using REPLACE DATE RANGE mode');
+          // For replace-date-range, use the special method
+          insertResult = userDataManager.replaceByDateRange(config.tableId, rowsToInsert);
+        } else if (config.uniqueKeyColumns !== undefined) {
+          console.log('🔄 Sync operation using temporary duplicate detection settings');
+          console.log('  uniqueKeyColumns:', config.uniqueKeyColumns);
+          console.log('  duplicateAction:', config.duplicateAction);
+          
+          // Temporarily override table settings for this sync operation
+          const originalTable = userDataManager.getTable(config.tableId);
+          const originalUniqueKeyColumns = originalTable.uniqueKeyColumns;
+          const originalDuplicateAction = originalTable.duplicateAction;
+          
+          try {
+            // Temporarily update table settings
+            const tempUniqueKeyColumns = config.uniqueKeyColumns.length > 0 
+              ? JSON.stringify(config.uniqueKeyColumns) 
+              : null;
+            const tempDuplicateAction = config.duplicateAction || 'skip';
+            
+            const updateStmt = userDataManager.database.prepare(
+              `UPDATE user_tables SET unique_key_columns = ?, duplicate_action = ? WHERE id = ?`
+            );
+            updateStmt.run(tempUniqueKeyColumns, tempDuplicateAction, config.tableId);
+            
+            // Insert with temporary settings
+            insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+            
+          } finally {
+            // Always restore original settings
+            const restoreStmt = userDataManager.database.prepare(
+              `UPDATE user_tables SET unique_key_columns = ?, duplicate_action = ? WHERE id = ?`
+            );
+            restoreStmt.run(originalUniqueKeyColumns, originalDuplicateAction, config.tableId);
+          }
+        } else {
+          console.log('🔄 Sync operation using table\'s existing duplicate detection settings');
+          // Use existing table settings
+          insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+        }
 
         // Complete import operation
         userDataManager.completeImportOperation(importOperation.id, {

@@ -39,19 +39,26 @@ export function DuplicateDetectionSettings({
   useEffect(() => {
     if (enabled && selectedColumns.size > 0) {
       const uniqueKeyColumns = Array.from(selectedColumns);
-      console.log(`🔧 DuplicateDetectionSettings: Sending ${uniqueKeyColumns.length} unique key columns:`, uniqueKeyColumns);
+      console.log(`🔧 DuplicateDetectionSettings: Sending enabled settings - columns:${uniqueKeyColumns.length}, action:${duplicateAction}`);
       onSettingsChange({
         uniqueKeyColumns,
         duplicateAction,
       });
+    } else if (duplicateAction === 'replace-date-range') {
+      // Special case: Replace Date Range doesn't need unique columns
+      console.log('🔧 DuplicateDetectionSettings: Sending replace-date-range settings (no columns needed)');
+      onSettingsChange({
+        uniqueKeyColumns: [],
+        duplicateAction: 'replace-date-range',
+      });
     } else {
-      console.log('🔧 DuplicateDetectionSettings: Sending empty unique key columns (disabled)');
+      console.log('🔧 DuplicateDetectionSettings: Sending disabled settings');
       onSettingsChange({
         uniqueKeyColumns: [],
         duplicateAction: 'skip',
       });
     }
-  }, [enabled, selectedColumns, duplicateAction, onSettingsChange]);
+  }, [enabled, selectedColumns, duplicateAction]);
 
   const toggleColumn = (columnName: string) => {
     const newSelected = new Set(selectedColumns);

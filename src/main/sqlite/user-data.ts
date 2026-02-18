@@ -21,7 +21,7 @@ import {
  * Manages user-created database tables, data operations, and import tracking
  */
 export class UserDataDbManager {
-  constructor(private database: Database.Database) {}
+  constructor(public database: Database.Database) {}
 
   /**
    * Sanitize table name for SQL safety
@@ -559,10 +559,205 @@ export class UserDataDbManager {
   }
 
   /**
-   * Replace data by date range - deletes existing data in the date range and inserts new data
-   * @private
+   * Insert rows with temporary duplicate detection settings (for sync operations)
    */
-  private replaceByDateRange(tableId: string, rows: any[]): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
+  insertRowsWithSettings(
+    tableId: string, 
+    rows: any[], 
+    tempSettings?: {
+      uniqueKeyColumns?: string[];
+      duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    }
+  ): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
+    
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    // Use temporary settings if provided, otherwise fall back to table's settings
+    let uniqueKeyColumns: string[];
+    let duplicateAction: string;
+    
+    if (tempSettings && tempSettings.uniqueKeyColumns !== undefined) {
+      uniqueKeyColumns = tempSettings.uniqueKeyColumns;
+      duplicateAction = tempSettings.duplicateAction || 'skip';
+      console.log('🔄 Using temporary sync settings:');
+      console.log('  Unique Key Columns:', uniqueKeyColumns);
+      console.log('  Duplicate Action:', duplicateAction);
+    } else {
+      // Fall back to table's stored settings
+      uniqueKeyColumns = table.uniqueKeyColumns ? JSON.parse(table.uniqueKeyColumns) : [];
+      duplicateAction = table.duplicateAction || 'skip';
+      console.log('📋 Using table\'s existing settings:');
+      console.log('  Unique Key Columns:', uniqueKeyColumns);
+      console.log('  Duplicate Action:', duplicateAction);
+    }
+
+    const hasDuplicateDetection = uniqueKeyColumns.length > 0;
+
+    // Handle replace-date-range mode
+    if (duplicateAction === 'replace-date-range') {
+      return this.replaceByDateRange(tableId, rows);
+    }
+
+    // Core insertion logic (same as insertRows but with override settings)
+    let inserted = 0;
+    let skipped = 0;
+    let duplicates = 0;
+    const errors: string[] = [];
+    const duplicateDetails: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }> = [];
+    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+
+    // Filter out the ID column (first column) - SQLite will auto-generate it
+    const dataColumns = table.schema.filter((col) => col.name !== 'id');
+
+    // Prepare column names (excluding ID)
+    const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
+    const placeholders = dataColumns.map(() => '?').join(', ');
+
+    const insertStmt = this.database.prepare(
+      `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+    );
+
+    // Prepare duplicate check statement if needed
+    let checkDuplicateStmt: any = null;
+    if (hasDuplicateDetection) {
+      // We'll build the query dynamically to handle NULLs properly
+      console.log(`🔍 Unique key columns: [${uniqueKeyColumns.join(', ')}]`);
+    }
+
+    // Prepare update statement if needed
+    let updateStmt: any = null;
+    if (hasDuplicateDetection && duplicateAction === 'update') {
+      const updateColumns = dataColumns
+        .filter(col => !uniqueKeyColumns.includes(col.name))
+        .map(col => `"${col.name}" = ?`)
+        .join(', ');
+      const whereClause = uniqueKeyColumns
+        .map(col => `"${col}" = ?`)
+        .join(' AND ');
+
+      if (updateColumns) {
+        updateStmt = this.database.prepare(
+          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`
+        );
+      }
+    }
+
+    // Process rows in batches of 500
+    const batchSize = 500;
+    for (let batchStart = 0; batchStart < rows.length; batchStart += batchSize) {
+      const batch = rows.slice(batchStart, batchStart + batchSize);
+
+      const transaction = this.database.transaction(() => {
+        for (let i = 0; i < batch.length; i++) {
+          const row = batch[i];
+          const rowIndex = batchStart + i;
+
+          try {
+            // Check for duplicate if duplicate detection is enabled
+            if (hasDuplicateDetection) {
+              // Convert unique key values using the same logic as insertStmt to ensure consistency
+              const uniqueKeyValues = uniqueKeyColumns.map(col => {
+                const colSchema = dataColumns.find(c => c.name === col);
+                if (colSchema) {
+                  return this.convertValue(colSchema, row[col]);
+                }
+                return row[col]; // Fallback to raw value
+              });
+
+              // Build dynamic query that handles NULL values properly
+              const whereClauses = uniqueKeyColumns.map((col, idx) => {
+                const value = uniqueKeyValues[idx];
+                return value === null ? `"${col}" IS NULL` : `"${col}" = ?`;
+              });
+              const whereClause = whereClauses.join(' AND ');
+              const sqlQuery = `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`;
+
+              // Prepare query parameters (excluding NULL values since they're handled with IS NULL)
+              const queryParams = uniqueKeyValues.filter(val => val !== null);
+
+              const checkStmt = this.database.prepare(sqlQuery);
+              const existingRow = checkStmt.get(...queryParams);
+
+              if (existingRow) {
+                // Duplicate found!
+                duplicates++;
+
+                // Track duplicate details
+                const uniqueKeyValuesObj: Record<string, any> = {};
+                uniqueKeyColumns.forEach((col, idx) => {
+                  uniqueKeyValuesObj[col] = uniqueKeyValues[idx];
+                });
+                duplicateDetails.push({ rowIndex, uniqueKeyValues: uniqueKeyValuesObj });
+
+                if (duplicateAction === 'skip') {
+                  // Skip this row
+                  skipped++;
+                  continue;
+                } else if (duplicateAction === 'update' && updateStmt) {
+                  // Update existing row
+                  const values = dataColumns.map((col) => {
+                    return this.convertValue(col, row[col.name]);
+                  });
+
+                  // Filter out unique key columns from update values
+                  const updateValues = values.filter((_, idx) => {
+                    return !uniqueKeyColumns.includes(dataColumns[idx].name);
+                  });
+
+                  // Add unique key values for WHERE clause (convert them same as insert)
+                  const whereValues = uniqueKeyColumns.map(col => {
+                    const colSchema = dataColumns.find(c => c.name === col);
+                    if (colSchema) {
+                      return this.convertValue(colSchema, row[col]);
+                    }
+                    return row[col];
+                  });
+
+                  updateStmt.run(...updateValues, ...whereValues);
+                  inserted++; // Count as "inserted" (actually updated)
+                  continue;
+                }
+                // If duplicateAction === 'allow', fall through to insert
+              }
+            }
+
+            const values = dataColumns.map((col) => {
+              return this.convertValue(col, row[col.name]);
+            });
+
+            insertStmt.run(...values);
+            inserted++;
+          } catch (error) {
+            skipped++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(errorMessage);
+
+            // Track error details with row info
+            errorDetails.push({
+              rowIndex,
+              error: errorMessage,
+              rowData: row
+            });
+          }
+        }
+      });
+
+      transaction();
+    }
+
+    // Update row count
+    this.updateRowCount(tableId);
+
+    return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
+  }
+
+  /**
+   * Replace data by date range - deletes existing data in the date range and inserts new data
+   */
+  replaceByDateRange(tableId: string, rows: any[]): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
     const table = this.getTable(tableId);
     if (!table) {
       throw new Error(`Table not found: ${tableId}`);
@@ -591,12 +786,38 @@ export class UserDataDbManager {
       
       rows.forEach((row, idx) => {
         try {
-          const dateValue = this.convertValue(dateColumns.find(c => c.name === primaryDateColumn)!, row[primaryDateColumn]);
+          // Debug logging for first few rows
+          if (idx < 3) {
+            console.log(`🔍 Row ${idx} keys:`, Object.keys(row));
+            console.log(`🔍 Row ${idx}["${primaryDateColumn}"]:`, row[primaryDateColumn]);
+          }
+
+          const rawValue = row[primaryDateColumn];
+          if (rawValue === undefined || rawValue === null || rawValue === '') {
+            if (idx < 3) {
+              console.warn(`⚠️ Row ${idx}: Empty date value for column "${primaryDateColumn}"`);
+            }
+            return; // Skip this row
+          }
+
+          const dateValue = this.convertValue(dateColumns.find(c => c.name === primaryDateColumn)!, rawValue);
           if (dateValue) {
             dateValues.push(new Date(dateValue));
+            if (idx < 3) {
+              console.log(`✓ Row ${idx}: Parsed date: ${new Date(dateValue).toISOString()}`);
+            }
+          } else {
+            if (idx < 3) {
+              console.warn(`⚠️ Row ${idx}: convertValue returned null/undefined for "${rawValue}"`);
+            }
           }
         } catch (error) {
-          console.warn(`⚠️ Could not parse date for row ${idx}: ${row[primaryDateColumn]}`);
+          if (idx < 3) {
+            console.warn(`⚠️ Could not parse date for row ${idx}:`, {
+              rawValue: row[primaryDateColumn],
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
         }
       });
 
@@ -675,8 +896,14 @@ export class UserDataDbManager {
    * @private
    */
   private convertValue(col: ColumnSchema, value: any): any {
-    // Handle null/undefined/empty
-    if (value === undefined || value === null || value === '') {
+    // Always trim string values first to remove leading/trailing whitespace
+    let processedValue = value;
+    if (typeof value === 'string') {
+      processedValue = value.trim();
+    }
+    
+    // Handle null/undefined/empty (after trimming)
+    if (processedValue === undefined || processedValue === null || processedValue === '') {
       if (col.notNull) {
         throw new Error(`Column "${col.name}" cannot be null`);
       }
@@ -685,19 +912,19 @@ export class UserDataDbManager {
     
     // Type conversions with validation
     if (col.type === 'INTEGER') {
-      const cleanValue = String(value).replace(/,/g, '');
+      const cleanValue = String(processedValue).replace(/,/g, '').trim();
       const num = parseInt(cleanValue, 10);
       if (isNaN(num)) {
-        throw new Error(`Cannot convert "${value}" to INTEGER for column "${col.name}"`);
+        throw new Error(`Cannot convert "${processedValue}" to INTEGER for column "${col.name}"`);
       }
       return num;
     }
     
     if (col.type === 'REAL') {
-      const cleanValue = String(value).replace(/,/g, '');
+      const cleanValue = String(processedValue).replace(/,/g, '').trim();
       const num = parseFloat(cleanValue);
       if (isNaN(num)) {
-        throw new Error(`Cannot convert "${value}" to REAL for column "${col.name}"`);
+        throw new Error(`Cannot convert "${processedValue}" to REAL for column "${col.name}"`);
       }
       return num;
     }
@@ -705,15 +932,14 @@ export class UserDataDbManager {
     if (col.type === 'DATE') {
       let dateObj: Date;
       
-      if (value instanceof Date) {
-        dateObj = value;
-      } else if (typeof value === 'string') {
-        const trimmed = value.trim();
-        const normalized = trimmed.replace(/\//g, '-');
+      if (processedValue instanceof Date) {
+        dateObj = processedValue;
+      } else if (typeof processedValue === 'string') {
+        const normalized = processedValue.replace(/\//g, '-');
         dateObj = new Date(normalized);
         
         if (isNaN(dateObj.getTime())) {
-          const parts = trimmed.split(/[-/]/);
+          const parts = processedValue.split(/[-/]/);
           if (parts.length === 3) {
             const first = parseInt(parts[0], 10);
             const second = parseInt(parts[1], 10);
@@ -728,14 +954,14 @@ export class UserDataDbManager {
             }
           }
         }
-      } else if (typeof value === 'number') {
-        dateObj = new Date((value - 25569) * 86400 * 1000);
+      } else if (typeof processedValue === 'number') {
+        dateObj = new Date((processedValue - 25569) * 86400 * 1000);
       } else {
-        throw new Error(`Cannot convert "${value}" to DATE for column "${col.name}"`);
+        throw new Error(`Cannot convert "${processedValue}" to DATE for column "${col.name}"`);
       }
       
       if (isNaN(dateObj.getTime())) {
-        throw new Error(`Invalid date "${value}" for column "${col.name}"`);
+        throw new Error(`Invalid date "${processedValue}" for column "${col.name}"`);
       }
       
       const year = dateObj.getFullYear();
@@ -745,12 +971,12 @@ export class UserDataDbManager {
       return `${year}-${month}-${day}`;
     }
     
-    // TEXT: convert everything to string
-    if (value instanceof Date) {
-      return value.toISOString();
+    // TEXT: convert everything to string and trim
+    if (processedValue instanceof Date) {
+      return processedValue.toISOString();
     }
     
-    return String(value);
+    return String(processedValue).trim();
   }
 
   /**

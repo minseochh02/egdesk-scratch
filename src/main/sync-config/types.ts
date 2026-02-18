@@ -24,7 +24,7 @@ export interface SyncConfiguration {
   
   // Duplicate detection
   uniqueKeyColumns?: string[]; // Columns that form unique key
-  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
   
   // File handling
   fileAction: FileAction;
@@ -56,7 +56,7 @@ export interface CreateSyncConfigurationData {
   sheetIndex?: number;
   columnMappings: Record<string, string>;
   uniqueKeyColumns?: string[]; // Columns that form unique key
-  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
   fileAction?: FileAction;
   autoSyncEnabled?: boolean;
 }
@@ -68,7 +68,7 @@ export interface UpdateSyncConfigurationData {
   sheetIndex?: number;
   columnMappings?: Record<string, string>;
   uniqueKeyColumns?: string[];
-  duplicateAction?: 'skip' | 'update' | 'allow';
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
   fileAction?: FileAction;
   enabled?: boolean;
   autoSyncEnabled?: boolean;

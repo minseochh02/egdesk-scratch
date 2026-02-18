@@ -259,6 +259,16 @@ export async function parseExcelFile(
       headers.forEach((header, idx) => {
         const cellValue = values[idx];
 
+        // Debug logging for date columns (first 3 rows only)
+        if (i - dataStartIndex < 3 && header === '일자') {
+          console.log(`🔍 Excel Parser - Row ${i - dataStartIndex}, Column "${header}":`, {
+            value: cellValue,
+            type: typeof cellValue,
+            isDate: cellValue instanceof Date,
+            rawValue: cellValue
+          });
+        }
+
         // Handle different cell value types
         if (cellValue === null || cellValue === undefined) {
           rowData[header] = null;

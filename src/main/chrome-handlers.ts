@@ -2015,6 +2015,13 @@ test('recorded test', async ({ page }) => {
         
         // Read the generated code
         let generatedCode = fs.readFileSync(fileToRun, 'utf8');
+        
+        // Fix download path to match current script name (in case script was renamed)
+        const currentScriptName = path.basename(fileToRun, '.spec.js');
+        const downloadPathPattern = /path\.join\(os\.homedir\(\), 'Downloads', 'EGDesk-Browser', '[^']+'\)/g;
+        const newDownloadPath = `path.join(os.homedir(), 'Downloads', 'EGDesk-Browser', '${currentScriptName}')`;
+        generatedCode = generatedCode.replace(downloadPathPattern, newDownloadPath);
+        console.log(`📁 Using current script name for downloads: ${currentScriptName}`);
 
         // Extract the test body
         let testBody = '';
@@ -2330,6 +2337,13 @@ test('recorded test', async ({ page }) => {
       
       // Read the generated code
       let generatedCode = fs.readFileSync(fileToRun, 'utf8');
+      
+      // Fix download path to match current script name (in case script was renamed)
+      const currentScriptName = path.basename(fileToRun, '.spec.js');
+      const downloadPathPattern = /path\.join\(os\.homedir\(\), 'Downloads', 'EGDesk-Browser', '[^']+'\)/g;
+      const newDownloadPath = `path.join(os.homedir(), 'Downloads', 'EGDesk-Browser', '${currentScriptName}')`;
+      generatedCode = generatedCode.replace(downloadPathPattern, newDownloadPath);
+      console.log(`📁 Using current script name for downloads: ${currentScriptName}`);
       
       console.log('Original code first few lines:', generatedCode.substring(0, 200));
       
@@ -2956,6 +2970,26 @@ const { chromium } = require('playwright-core');
           console.warn('⚠️ Could not rename download folder:', folderErr);
           // Don't fail the whole operation if folder rename fails
         }
+      }
+
+      // Update the script content to use the new download path
+      try {
+        let scriptContent = fs.readFileSync(newPath, 'utf8');
+        
+        // Replace the old script name in the download path with the new one
+        const oldDownloadPath = `'EGDesk-Browser', '${oldBasename}'`;
+        const newDownloadPath = `'EGDesk-Browser', '${newBasename}'`;
+        
+        if (scriptContent.includes(oldDownloadPath)) {
+          scriptContent = scriptContent.replace(new RegExp(oldDownloadPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newDownloadPath);
+          fs.writeFileSync(newPath, scriptContent);
+          console.log('✅ Updated script content download path:', oldBasename, '→', newBasename);
+        } else {
+          console.log('⚠️ Script content does not contain expected download path pattern');
+        }
+      } catch (contentErr) {
+        console.warn('⚠️ Could not update script content:', contentErr);
+        // Don't fail the whole operation if content update fails
       }
 
       return {
