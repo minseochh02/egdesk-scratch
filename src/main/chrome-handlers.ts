@@ -240,7 +240,7 @@ async function injectResumeUI(page: Page, sessionId: string, pausedAt: number, t
 /**
  * Helper to execute a single action
  */
-async function executeAction(page: Page, context: BrowserContext, action: RecordedAction, index: number, allActions: RecordedAction[], pageStack: Page[]): Promise<Page> {
+async function executeAction(page: Page, context: BrowserContext, action: RecordedAction, index: number, allActions: RecordedAction[], pageStack: Page[], scriptName?: string): Promise<Page> {
   console.log(`  ▶️ Executing action ${index + 1}: ${action.type}`);
 
   switch (action.type) {
@@ -310,7 +310,9 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         }
         const download = await downloadPromise;
         const suggestedFilename = download.suggestedFilename();
-        const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+        const downloadsPath = scriptName
+          ? path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName)
+          : path.join(app.getPath('downloads'), 'EGDesk-Playwright');
         if (!fs.existsSync(downloadsPath)) {
           fs.mkdirSync(downloadsPath, { recursive: true });
         }
@@ -1589,7 +1591,7 @@ test('recorded test', async ({ page }) => {
 
           // Launch browser and execute actions
           const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-partial-'));
-          const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+          const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser', activeRecorder.scriptName);
           if (!fs.existsSync(downloadsPath)) {
             fs.mkdirSync(downloadsPath, { recursive: true });
           }
@@ -1646,7 +1648,7 @@ test('recorded test', async ({ page }) => {
             }
 
             // Execute action
-            page = await executeAction(page, context, action, i, partialActions, pageStack);
+            page = await executeAction(page, context, action, i, partialActions, pageStack, activeRecorder.scriptName);
           }
 
           // Browser is now paused at action index

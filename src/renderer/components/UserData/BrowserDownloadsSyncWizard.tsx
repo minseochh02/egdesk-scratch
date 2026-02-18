@@ -305,13 +305,21 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         // Save configuration if requested
         if (saveAsConfiguration && selectedFolder && (columnMappings || existingTableColumnMappings)) {
           try {
-            const targetTableId = importMode === 'create-new' 
-              ? result.table?.id 
+            const targetTableId = importMode === 'create-new'
+              ? result.table?.id
               : selectedTableId;
 
             const mappings = importMode === 'create-new'
               ? columnMappings!
               : existingTableColumnMappings!;
+
+            console.log('🔧 Saving sync configuration:', {
+              scriptFolderPath: selectedFolder.path,
+              scriptName: selectedFolder.scriptName,
+              targetTableId,
+              duplicateAction: duplicateDetectionSettings.duplicateAction,
+              autoSyncEnabled: enableAutoSync,
+            });
 
             await (window as any).electron.invoke('sync-config:create', {
               scriptFolderPath: selectedFolder.path,
@@ -331,10 +339,19 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
               fileAction: deleteAfterImport ? 'delete' : (archiveAfterImport ? 'archive' : 'keep'),
               autoSyncEnabled: enableAutoSync,
             });
+
+            console.log('✅ Sync configuration saved successfully');
           } catch (configError) {
-            console.warn('Failed to save configuration:', configError);
-            // Don't fail the import if configuration save fails
+            console.error('❌ Failed to save configuration:', configError);
+            // Show error to user since this is important
+            alert(`Warning: Configuration could not be saved for auto-sync. Error: ${configError instanceof Error ? configError.message : 'Unknown error'}`);
           }
+        } else {
+          console.log('ℹ️ Skipping configuration save:', {
+            saveAsConfiguration,
+            hasSelectedFolder: !!selectedFolder,
+            hasColumnMappings: !!(columnMappings || existingTableColumnMappings)
+          });
         }
 
         setCurrentStep('complete');
