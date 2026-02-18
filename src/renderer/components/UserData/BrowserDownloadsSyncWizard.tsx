@@ -328,7 +328,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
               autoSyncEnabled: enableAutoSync,
             });
 
-            await (window as any).electron.invoke('sync-config:create', {
+            const syncConfigResponse = await (window as any).electron.invoke('sync-config:create', {
               scriptFolderPath: selectedFolder.path,
               scriptName: selectedFolder.scriptName,
               folderName: selectedFolder.folderName,
@@ -347,7 +347,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
               autoSyncEnabled: enableAutoSync,
             });
 
-            console.log('✅ Sync configuration saved successfully');
+            if (!syncConfigResponse.success) {
+              throw new Error(syncConfigResponse.error || 'Failed to save sync configuration');
+            }
+
+            console.log('✅ Sync configuration saved successfully:', syncConfigResponse.data);
           } catch (configError) {
             console.error('❌ Failed to save configuration:', configError);
             // Show error to user since this is important

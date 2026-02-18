@@ -21,18 +21,34 @@ export class SyncConfigManager {
    * Create a new sync configuration
    */
   createConfiguration(data: CreateSyncConfigurationData): SyncConfiguration {
+    console.log('📝 SyncConfigManager.createConfiguration called with:', {
+      scriptFolderPath: data.scriptFolderPath,
+      scriptName: data.scriptName,
+      targetTableId: data.targetTableId,
+      duplicateAction: data.duplicateAction,
+      autoSyncEnabled: data.autoSyncEnabled,
+    });
+
     const id = randomUUID();
     const now = new Date().toISOString();
 
     // Validate column mappings
     if (!data.columnMappings || Object.keys(data.columnMappings).length === 0) {
+      console.error('❌ Column mappings validation failed');
       throw new Error('Column mappings cannot be empty');
     }
 
     const columnMappingsJson = JSON.stringify(data.columnMappings);
 
     const uniqueKeyColumnsJson = data.uniqueKeyColumns ? JSON.stringify(data.uniqueKeyColumns) : null;
-    
+
+    console.log('💾 Preparing to insert sync configuration:', {
+      id,
+      uniqueKeyColumns: uniqueKeyColumnsJson,
+      duplicateAction: data.duplicateAction || 'skip',
+      autoSyncEnabled: data.autoSyncEnabled,
+    });
+
     const stmt = this.database.prepare(`
       INSERT INTO sync_configurations (
         id, script_folder_path, script_name, folder_name,
@@ -44,29 +60,47 @@ export class SyncConfigManager {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(
-      id,
-      data.scriptFolderPath,
-      data.scriptName,
-      data.folderName,
-      data.targetTableId,
-      data.headerRow || 1,
-      data.skipBottomRows || 0,
-      data.sheetIndex || 0,
-      columnMappingsJson,
-      uniqueKeyColumnsJson,
-      data.duplicateAction || 'skip',
-      data.fileAction || 'archive',
-      1, // enabled by default (SQLite boolean: 1 = true)
-      data.autoSyncEnabled ? 1 : 0, // Convert boolean to SQLite integer
-      0, // last_sync_rows_imported
-      0, // last_sync_rows_skipped
-      0, // last_sync_duplicates
-      now,
-      now
-    );
+    try {
+      const result = stmt.run(
+        id,
+        data.scriptFolderPath,
+        data.scriptName,
+        data.folderName,
+        data.targetTableId,
+        data.headerRow || 1,
+        data.skipBottomRows || 0,
+        data.sheetIndex || 0,
+        columnMappingsJson,
+        uniqueKeyColumnsJson,
+        data.duplicateAction || 'skip',
+        data.fileAction || 'archive',
+        1, // enabled by default (SQLite boolean: 1 = true)
+        data.autoSyncEnabled ? 1 : 0, // Convert boolean to SQLite integer
+        0, // last_sync_rows_imported
+        0, // last_sync_rows_skipped
+        0, // last_sync_duplicates
+        now,
+        now
+      );
 
-    return this.getConfiguration(id)!;
+      console.log('✅ Sync configuration inserted successfully:', {
+        id,
+        changes: result.changes,
+        lastInsertRowid: result.lastInsertRowid,
+      });
+    } catch (error) {
+      console.error('❌ Failed to insert sync configuration:', error);
+      throw error;
+    }
+
+    const config = this.getConfiguration(id);
+    if (!config) {
+      console.error('❌ Failed to retrieve created configuration:', id);
+      throw new Error('Configuration was created but could not be retrieved');
+    }
+
+    console.log('✅ Sync configuration created and retrieved:', config);
+    return config;
   }
 
   /**
