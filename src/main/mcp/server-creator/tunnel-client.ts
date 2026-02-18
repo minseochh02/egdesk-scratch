@@ -19,6 +19,7 @@ interface TunnelConfig {
   autoPrompt?: boolean;
   skipRegistration?: boolean;
   authToken?: string;  // User's access token for authenticated API calls
+  apiKey?: string;     // Static API key for Apps Script / service account access
 }
 
 interface TunnelRequest {
@@ -595,11 +596,20 @@ export class TunnelClient {
             this.tunnelId = connectedMsg.tunnel_id;
             this.publicUrl = connectedMsg.public_url;
             this.isConnecting = false;
-            
+
             console.log(`🎉 Tunnel established!`);
             console.log(`📡 Tunnel ID: ${this.tunnelId}`);
             console.log(`🌐 Public URL: ${this.publicUrl}`);
             console.log(`🔄 Forwarding to: ${this.config.localServerUrl}`);
+
+            // Register the static API key with the tunnel service
+            if (this.config.apiKey && this.ws && this.ws.readyState === WebSocket.OPEN) {
+              this.ws.send(JSON.stringify({
+                type: 'register_api_key',
+                api_key: this.config.apiKey,
+              }));
+              console.log(`🔑 Sent API key registration to tunnel service`);
+            }
           } else if (message.type === 'error') {
             console.error(`❌ Server error: ${message.message}`);
             this.isConnecting = false;

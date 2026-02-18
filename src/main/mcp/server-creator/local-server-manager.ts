@@ -101,6 +101,11 @@ export class LocalServerManager {
   private currentPort: number | null = null;
   private useHTTPS = false;
   private store = getStore();
+  private apiKey: string | null = null;
+
+  public setApiKey(key: string): void {
+    this.apiKey = key || null;
+  }
   
   // Services
   private gmailMCPService: GmailMCPService | null = null;
@@ -207,13 +212,23 @@ export class LocalServerManager {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key');
 
         // Handle OPTIONS preflight
         if (req.method === 'OPTIONS') {
           res.writeHead(200);
           res.end();
           return;
+        }
+
+        // API key validation for /user-data/* routes (defense-in-depth)
+        const reqPath = req.url?.split('?')[0] || '/';
+        if (this.apiKey && reqPath.startsWith('/user-data/')) {
+          if (req.headers['x-api-key'] !== this.apiKey) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid or missing X-Api-Key' }));
+            return;
+          }
         }
 
         try {

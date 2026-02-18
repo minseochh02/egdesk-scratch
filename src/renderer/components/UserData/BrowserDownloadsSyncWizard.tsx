@@ -62,7 +62,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [importError, setImportError] = useState<string | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [saveAsConfiguration, setSaveAsConfiguration] = useState<boolean>(true);
-  const [enableAutoSync, setEnableAutoSync] = useState<boolean>(false);
+  const [enableAutoSync, setEnableAutoSync] = useState<boolean>(true);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
     duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';

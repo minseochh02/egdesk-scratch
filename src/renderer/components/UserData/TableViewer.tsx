@@ -14,6 +14,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
   const [page, setPage] = useState(0);
   const [limit] = useState(100);
   const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   };
 
@@ -119,23 +121,42 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
         </div>
       </div>
 
-      <div className="table-viewer-body">
-        {loading ? (
+      <div className="table-viewer-body" style={{ position: 'relative' }}>
+        {initialLoad && loading ? (
           <div className="loading-spinner">
             <div className="spinner"></div>
           </div>
         ) : error ? (
           <div className="error-message">{error}</div>
         ) : (
-          <DataTable
-            columns={table.schema.map((col) => ({
-              name: col.name,
-              type: col.type,
-            }))}
-            rows={rows}
-            maxHeight="calc(100vh - 300px)"
-            onSort={handleSort}
-          />
+          <>
+            {loading && !initialLoad && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+                pointerEvents: 'none'
+              }}>
+                <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
+              </div>
+            )}
+            <DataTable
+              columns={table.schema.map((col) => ({
+                name: col.name,
+                type: col.type,
+              }))}
+              rows={rows}
+              maxHeight="calc(100vh - 300px)"
+              onSort={handleSort}
+            />
+          </>
         )}
       </div>
 
