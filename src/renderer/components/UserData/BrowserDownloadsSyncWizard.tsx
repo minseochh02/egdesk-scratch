@@ -65,7 +65,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [enableAutoSync, setEnableAutoSync] = useState<boolean>(false);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
-    duplicateAction: 'skip' | 'update' | 'allow';
+    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
   }>({
     uniqueKeyColumns: [],
     duplicateAction: 'skip',
@@ -196,8 +196,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   ) => {
     setSelectedTableId(tableId);
     setExistingTableColumnMappings(mappings);
-    // Skip duplicate detection for existing tables - use table's existing settings
-    setCurrentStep('preview');
+    // Show duplicate detection step to let user choose sync method
+    setCurrentStep('duplicate-detection');
   };
 
   const handleBack = () => {
@@ -217,15 +217,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setColumnMappings(null);
       setExistingTableColumnMappings(null);
     } else if (currentStep === 'preview') {
+      setCurrentStep('duplicate-detection');
+    } else if (currentStep === 'duplicate-detection') {
       if (importMode === 'create-new') {
-        setCurrentStep('duplicate-detection');
+        setCurrentStep('column-mapping');
       } else {
-        // For sync-existing, go back to table mapping (skip duplicate detection)
         setCurrentStep('existing-table-mapping');
       }
-    } else if (currentStep === 'duplicate-detection') {
-      // This should only be reachable for create-new mode
-      setCurrentStep('column-mapping');
     }
   };
 
@@ -257,11 +255,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             mergeConfig: mergeConfig || undefined,
             headerRow,
             skipBottomRows,
-            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-              ? duplicateDetectionSettings.uniqueKeyColumns 
+            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+              ? duplicateDetectionSettings.uniqueKeyColumns
               : undefined,
-            duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-              ? duplicateDetectionSettings.duplicateAction 
+            duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' || duplicateDetectionSettings.uniqueKeyColumns.length > 0
+              ? duplicateDetectionSettings.duplicateAction
               : undefined,
           });
 
@@ -275,6 +273,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             throw new Error('Please select a table and map columns');
           }
 
+          console.log('🔧 Browser Sync - About to call syncToExistingTable with:', {
+            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns,
+            duplicateAction: duplicateDetectionSettings.duplicateAction,
+          });
+
           const result = await syncToExistingTable({
             filePath: selectedFile!.path,
             sheetIndex: selectedSheet,
@@ -282,7 +285,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             columnMappings: existingTableColumnMappings,
             headerRow,
             skipBottomRows,
-            // Don't pass duplicate settings - let the existing table's settings be used
+            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns,
+            duplicateAction: duplicateDetectionSettings.duplicateAction,
           });
 
           setImportProgress({
@@ -318,11 +322,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
               skipBottomRows,
               sheetIndex: selectedSheet,
               columnMappings: mappings,
-              uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-                ? duplicateDetectionSettings.uniqueKeyColumns 
+              uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.uniqueKeyColumns
                 : undefined,
-              duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-                ? duplicateDetectionSettings.duplicateAction 
+              duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' || duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.duplicateAction
                 : undefined,
               fileAction: deleteAfterImport ? 'delete' : (archiveAfterImport ? 'archive' : 'keep'),
               autoSyncEnabled: enableAutoSync,

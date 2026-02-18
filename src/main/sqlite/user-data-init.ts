@@ -67,7 +67,7 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
   }
 
   if (!columnNames.includes('duplicate_action')) {
-    db.exec(`ALTER TABLE user_tables ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow'))`);
+    db.exec(`ALTER TABLE user_tables ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range'))`);
     console.log('✅ Added duplicate_action column to user_tables');
   }
 
