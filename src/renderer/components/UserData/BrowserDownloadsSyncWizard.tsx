@@ -196,7 +196,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   ) => {
     setSelectedTableId(tableId);
     setExistingTableColumnMappings(mappings);
-    setCurrentStep('duplicate-detection');
+    // Skip duplicate detection for existing tables - use table's existing settings
+    setCurrentStep('preview');
   };
 
   const handleBack = () => {
@@ -216,13 +217,15 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setColumnMappings(null);
       setExistingTableColumnMappings(null);
     } else if (currentStep === 'preview') {
-      setCurrentStep('duplicate-detection');
-    } else if (currentStep === 'duplicate-detection') {
       if (importMode === 'create-new') {
-        setCurrentStep('column-mapping');
+        setCurrentStep('duplicate-detection');
       } else {
+        // For sync-existing, go back to table mapping (skip duplicate detection)
         setCurrentStep('existing-table-mapping');
       }
+    } else if (currentStep === 'duplicate-detection') {
+      // This should only be reachable for create-new mode
+      setCurrentStep('column-mapping');
     }
   };
 
@@ -279,12 +282,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             columnMappings: existingTableColumnMappings,
             headerRow,
             skipBottomRows,
-            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-              ? duplicateDetectionSettings.uniqueKeyColumns 
-              : undefined,
-            duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-              ? duplicateDetectionSettings.duplicateAction 
-              : undefined,
+            // Don't pass duplicate settings - let the existing table's settings be used
           });
 
           setImportProgress({

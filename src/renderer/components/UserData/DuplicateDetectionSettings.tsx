@@ -4,10 +4,10 @@ import './UserData.css';
 interface DuplicateDetectionSettingsProps {
   schema: Array<{ name: string; type: string }>;
   initialUniqueColumns?: string[];
-  initialDuplicateAction?: 'skip' | 'update' | 'allow';
+  initialDuplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
   onSettingsChange: (settings: {
     uniqueKeyColumns: string[];
-    duplicateAction: 'skip' | 'update' | 'allow';
+    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
   }) => void;
 }
 
@@ -28,7 +28,7 @@ export function DuplicateDetectionSettings({
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(initialUniqueColumns)
   );
-  const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update' | 'allow'>(
+  const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update' | 'allow' | 'replace-date-range'>(
     initialDuplicateAction
   );
 
@@ -38,11 +38,14 @@ export function DuplicateDetectionSettings({
   // Notify parent of changes
   useEffect(() => {
     if (enabled && selectedColumns.size > 0) {
+      const uniqueKeyColumns = Array.from(selectedColumns);
+      console.log(`🔧 DuplicateDetectionSettings: Sending ${uniqueKeyColumns.length} unique key columns:`, uniqueKeyColumns);
       onSettingsChange({
-        uniqueKeyColumns: Array.from(selectedColumns),
+        uniqueKeyColumns,
         duplicateAction,
       });
     } else {
+      console.log('🔧 DuplicateDetectionSettings: Sending empty unique key columns (disabled)');
       onSettingsChange({
         uniqueKeyColumns: [],
         duplicateAction: 'skip',
@@ -249,6 +252,22 @@ export function DuplicateDetectionSettings({
                   <div className="radio-title">✅ Allow duplicates</div>
                   <div className="radio-description">
                     Insert all rows, even duplicates. For event logs or audit trails.
+                  </div>
+                </div>
+              </label>
+
+              <label className="radio-option">
+                <input
+                  type="radio"
+                  name="duplicate-action"
+                  value="replace-date-range"
+                  checked={duplicateAction === 'replace-date-range'}
+                  onChange={(e) => setDuplicateAction(e.target.value as any)}
+                />
+                <div className="radio-content">
+                  <div className="radio-title">📅 Replace date range</div>
+                  <div className="radio-description">
+                    Delete all existing data within the Excel's date range, then insert all Excel data. Treats Excel as source of truth for the time period.
                   </div>
                 </div>
               </label>

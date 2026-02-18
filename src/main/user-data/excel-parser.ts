@@ -225,10 +225,29 @@ export async function parseExcelFile(
     // Extract headers from specified row
     if (headerRowIndex < allRows.length) {
       const headerValues = allRows[headerRowIndex];
-      headers = headerValues.map((h, idx) => {
+      const rawHeaders = headerValues.map((h, idx) => {
         const headerValue = h !== null && h !== undefined ? String(h).trim() : `Column${idx + 1}`;
         return sanitizeColumnName(headerValue);
       });
+      
+      // Handle duplicate column names by adding suffixes
+      headers = [];
+      const headerCounts: Record<string, number> = {};
+      
+      rawHeaders.forEach((header) => {
+        if (headerCounts[header]) {
+          // This header already exists, add a suffix
+          headerCounts[header]++;
+          headers.push(`${header}${headerCounts[header]}`);
+        } else {
+          // First occurrence of this header
+          headerCounts[header] = 1;
+          headers.push(header);
+        }
+      });
+      
+      console.log('📝 Original headers:', headerValues.map(h => String(h).trim()));
+      console.log('📝 Processed headers:', headers);
     }
 
     // Extract data rows (skip top rows and bottom rows)

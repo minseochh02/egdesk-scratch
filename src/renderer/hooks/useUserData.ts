@@ -282,8 +282,6 @@ export function useUserData() {
       headerRow?: number;
       skipRows?: number;
       skipBottomRows?: number;
-      uniqueKeyColumns?: string[];
-      duplicateAction?: 'skip' | 'update' | 'allow';
     }) => {
       try {
         const result = await window.electron.invoke('user-data:sync-to-existing-table', config);
