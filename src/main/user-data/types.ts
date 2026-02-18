@@ -38,7 +38,7 @@ export interface UserTable {
   updatedAt: string;
   schemaJson: string; // JSON array of ColumnSchema
   uniqueKeyColumns?: string; // JSON array of column names that form unique key
-  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
 }
 
 /**
@@ -171,5 +171,5 @@ export interface ExcelImportConfig {
   skipRows?: number; // How many rows to skip at the top
   skipBottomRows?: number; // How many rows to skip at the bottom (totals)
   uniqueKeyColumns?: string[]; // Columns that form the unique key
-  duplicateAction?: 'skip' | 'update' | 'allow'; // How to handle duplicates
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
 }

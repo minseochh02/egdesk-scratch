@@ -389,6 +389,11 @@ export class UserDataDbManager {
       : [];
     const duplicateAction = table.duplicateAction || 'skip';
     const hasDuplicateDetection = uniqueKeyColumns.length > 0;
+    
+    // Handle replace-date-range mode
+    if (duplicateAction === 'replace-date-range') {
+      return this.replaceByDateRange(tableId, rows);
+    }
 
     // Filter out the ID column (first column) - SQLite will auto-generate it
     const dataColumns = table.schema.filter((col) => col.name !== 'id');
@@ -404,12 +409,8 @@ export class UserDataDbManager {
     // Prepare duplicate check statement if needed
     let checkDuplicateStmt: any = null;
     if (hasDuplicateDetection) {
-      const whereClause = uniqueKeyColumns
-        .map(col => `"${col}" = ?`)
-        .join(' AND ');
-      checkDuplicateStmt = this.database.prepare(
-        `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`
-      );
+      // We'll build the query dynamically to handle NULLs properly
+      console.log(`🔍 Unique key columns: [${uniqueKeyColumns.join(', ')}]`);
     }
 
     // Prepare update statement if needed
@@ -442,9 +443,47 @@ export class UserDataDbManager {
           
           try {
             // Check for duplicate if duplicate detection is enabled
-            if (hasDuplicateDetection && checkDuplicateStmt) {
-              const uniqueKeyValues = uniqueKeyColumns.map(col => row[col]);
-              const existingRow = checkDuplicateStmt.get(...uniqueKeyValues);
+            if (hasDuplicateDetection) {
+              // Convert unique key values using the same logic as insertStmt to ensure consistency
+              const uniqueKeyValues = uniqueKeyColumns.map(col => {
+                const colSchema = dataColumns.find(c => c.name === col);
+                if (colSchema) {
+                  return this.convertValue(colSchema, row[col]);
+                }
+                return row[col]; // Fallback to raw value
+              });
+              
+              // Build dynamic query that handles NULL values properly
+              const whereClauses = uniqueKeyColumns.map((col, idx) => {
+                const value = uniqueKeyValues[idx];
+                return value === null ? `"${col}" IS NULL` : `"${col}" = ?`;
+              });
+              const whereClause = whereClauses.join(' AND ');
+              const sqlQuery = `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`;
+              
+              // Prepare query parameters (excluding NULL values since they're handled with IS NULL)
+              const queryParams = uniqueKeyValues.filter(val => val !== null);
+              
+              // Debug logging for duplicate detection
+              if (rowIndex < 3) { // Log first 3 rows to avoid spam
+                console.log(`🔍 Duplicate check for row ${rowIndex}:`);
+                console.log(`   uniqueKeyColumns: [${uniqueKeyColumns.join(', ')}]`);
+                console.log(`   row keys: [${Object.keys(row).join(', ')}]`);
+                console.log(`   uniqueKeyValues (converted): [${uniqueKeyValues.join(', ')}]`);
+                console.log(`   🔍 Dynamic SQL: ${sqlQuery}`);
+                console.log(`   🔍 Query params: [${queryParams.join(', ')}]`);
+              }
+              
+              const checkStmt = this.database.prepare(sqlQuery);
+              const existingRow = checkStmt.get(...queryParams);
+
+              // Debug logging for duplicate detection results
+              if (rowIndex < 3) {
+                console.log(`   🔍 Query result: ${existingRow ? 'DUPLICATE FOUND' : 'No match'}`);
+                if (existingRow) {
+                  console.log(`   📎 Existing row ID: ${existingRow.id}`);
+                }
+              }
 
               if (existingRow) {
                 // Duplicate found!
@@ -472,8 +511,14 @@ export class UserDataDbManager {
                     return !uniqueKeyColumns.includes(dataColumns[idx].name);
                   });
 
-                  // Add unique key values for WHERE clause
-                  const whereValues = uniqueKeyColumns.map(col => row[col]);
+                  // Add unique key values for WHERE clause (convert them same as insert)
+                  const whereValues = uniqueKeyColumns.map(col => {
+                    const colSchema = dataColumns.find(c => c.name === col);
+                    if (colSchema) {
+                      return this.convertValue(colSchema, row[col]);
+                    }
+                    return row[col];
+                  });
 
                   updateStmt.run(...updateValues, ...whereValues);
                   inserted++; // Count as "inserted" (actually updated)
@@ -511,6 +556,118 @@ export class UserDataDbManager {
     this.updateRowCount(tableId);
 
     return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
+  }
+
+  /**
+   * Replace data by date range - deletes existing data in the date range and inserts new data
+   * @private
+   */
+  private replaceByDateRange(tableId: string, rows: any[]): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    // Find date columns in the schema
+    const dateColumns = table.schema.filter(col => col.type === 'DATE' && col.name !== 'id');
+    
+    if (dateColumns.length === 0) {
+      throw new Error('No date columns found in table. Replace-date-range mode requires at least one date column.');
+    }
+
+    // Use the first date column as the primary date column for range calculation
+    const primaryDateColumn = dateColumns[0].name;
+    console.log(`📅 Using "${primaryDateColumn}" as primary date column for range replacement`);
+
+    let inserted = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+
+    try {
+      // Convert all incoming row dates and find the date range
+      const dateValues: Date[] = [];
+      const dataColumns = table.schema.filter((col) => col.name !== 'id');
+      
+      rows.forEach((row, idx) => {
+        try {
+          const dateValue = this.convertValue(dateColumns.find(c => c.name === primaryDateColumn)!, row[primaryDateColumn]);
+          if (dateValue) {
+            dateValues.push(new Date(dateValue));
+          }
+        } catch (error) {
+          console.warn(`⚠️ Could not parse date for row ${idx}: ${row[primaryDateColumn]}`);
+        }
+      });
+
+      if (dateValues.length === 0) {
+        throw new Error(`No valid dates found in column "${primaryDateColumn}". Cannot determine date range.`);
+      }
+
+      // Calculate date range
+      const minDate = new Date(Math.min(...dateValues.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...dateValues.map(d => d.getTime())));
+      
+      console.log(`📅 Excel date range: ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`);
+
+      // Execute in a transaction
+      const transaction = this.database.transaction(() => {
+        // Delete existing data in the date range
+        const deleteStmt = this.database.prepare(
+          `DELETE FROM "${table.tableName}" WHERE "${primaryDateColumn}" >= ? AND "${primaryDateColumn}" <= ?`
+        );
+        const deletedRows = deleteStmt.run(minDate.toISOString().split('T')[0], maxDate.toISOString().split('T')[0]);
+        console.log(`🗑️ Deleted ${deletedRows.changes} existing rows in date range`);
+
+        // Insert all new rows
+        const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
+        const placeholders = dataColumns.map(() => '?').join(', ');
+        const insertStmt = this.database.prepare(
+          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+        );
+
+        rows.forEach((row, idx) => {
+          try {
+            const values = dataColumns.map((col) => {
+              return this.convertValue(col, row[col.name]);
+            });
+
+            insertStmt.run(...values);
+            inserted++;
+          } catch (error) {
+            skipped++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(errorMessage);
+            
+            errorDetails.push({
+              rowIndex: idx,
+              error: errorMessage,
+              rowData: row
+            });
+          }
+        });
+      });
+
+      transaction();
+
+      // Update row count
+      this.updateRowCount(tableId);
+
+      console.log(`✅ Date range replacement complete: ${inserted} inserted, ${skipped} errors`);
+
+      return { 
+        inserted, 
+        skipped, 
+        duplicates: 0, // No duplicates in replace mode
+        errors, 
+        duplicateDetails: [], // No duplicate tracking in replace mode
+        errorDetails 
+      };
+
+    } catch (error) {
+      console.error('❌ Date range replacement failed:', error);
+      throw error;
+    }
   }
 
   /**

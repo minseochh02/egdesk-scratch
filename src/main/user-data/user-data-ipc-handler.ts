@@ -170,13 +170,25 @@ export function registerUserDataIPCHandlers(): void {
 
       console.log('Creating table with schema:', JSON.stringify(schema, null, 2));
 
-      // Auto-detect unique key columns for duplicate detection
-      const uniqueKeyColumns = autoDetectUniqueKeyColumns(schema);
-      const duplicateAction = getRecommendedDuplicateAction(schema);
+      // Use manual selection if provided, otherwise auto-detect
+      let uniqueKeyColumns: string[];
+      let duplicateAction: string;
       
-      console.log('Auto-detected duplicate detection settings:');
-      console.log('  Unique Key Columns:', uniqueKeyColumns);
-      console.log('  Duplicate Action:', duplicateAction);
+      if (config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0) {
+        // Use manual selection from UI
+        uniqueKeyColumns = config.uniqueKeyColumns;
+        duplicateAction = config.duplicateAction || 'skip';
+        console.log('Using manual duplicate detection settings:');
+        console.log('  Unique Key Columns:', uniqueKeyColumns);
+        console.log('  Duplicate Action:', duplicateAction);
+      } else {
+        // Auto-detect as fallback
+        uniqueKeyColumns = autoDetectUniqueKeyColumns(schema);
+        duplicateAction = getRecommendedDuplicateAction(schema);
+        console.log('Auto-detected duplicate detection settings:');
+        console.log('  Unique Key Columns:', uniqueKeyColumns);
+        console.log('  Duplicate Action:', duplicateAction);
+      }
 
       // Create import operation
       let importOperation: any = null;
@@ -184,6 +196,10 @@ export function registerUserDataIPCHandlers(): void {
       let tableId: string | null = null;
 
       try {
+        // Debug: Log received unique key columns
+        console.log(`🔧 Received uniqueKeyColumns for table creation: [${uniqueKeyColumns?.join(', ') || 'none'}] (count: ${uniqueKeyColumns?.length || 0})`);
+        console.log(`🔧 Received duplicateAction: ${duplicateAction}`);
+        
         // Create table from schema with duplicate detection settings
         table = userDataManager.createTableFromSchema(config.displayName, schema, {
           description: config.description,
@@ -410,8 +426,6 @@ export function registerUserDataIPCHandlers(): void {
     sheetIndex: number;
     tableId: string;
     columnMappings: Record<string, string>;
-    uniqueKeyColumns?: string[];
-    duplicateAction?: 'skip' | 'update' | 'allow';
     headerRow?: number;
     skipRows?: number;
     skipBottomRows?: number;
@@ -429,13 +443,6 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Update table's duplicate detection settings if provided
-      if (config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0) {
-        userDataManager.updateTableDuplicateSettings(config.tableId, {
-          uniqueKeyColumns: config.uniqueKeyColumns,
-          duplicateAction: config.duplicateAction || 'skip',
-        });
-      }
 
       // Parse Excel file (with any parsing options)
       const parsedData = await parseExcelFile(config.filePath, {
@@ -461,13 +468,31 @@ export function registerUserDataIPCHandlers(): void {
       });
 
       try {
-        // Map Excel rows to table columns
+        // Map Excel rows to table columns using the same robust logic as regular import
         const rowsToInsert = selectedSheet.rows.map((row) => {
           const mappedRow: any = {};
 
-          Object.entries(config.columnMappings).forEach(([excelCol, tableCol]) => {
-            mappedRow[tableCol] = row[excelCol];
-          });
+          if (config.columnMappings) {
+            // Get unique DB column names
+            const uniqueDbColumns = new Set(Object.values(config.columnMappings));
+
+            uniqueDbColumns.forEach((dbColumnName) => {
+              // Simple 1:1 mapping - find the Excel column that maps to this DB column
+              const sourceExcelColumn = Object.entries(config.columnMappings).find(
+                ([_, sqlName]) => sqlName === dbColumnName
+              );
+
+              if (sourceExcelColumn) {
+                const [originalName] = sourceExcelColumn;
+                mappedRow[dbColumnName] = row[originalName];
+              }
+            });
+          } else {
+            // Fallback: direct mapping (shouldn't happen in normal sync)
+            Object.entries(config.columnMappings).forEach(([excelCol, tableCol]) => {
+              mappedRow[tableCol] = row[excelCol];
+            });
+          }
 
           return mappedRow;
         });
