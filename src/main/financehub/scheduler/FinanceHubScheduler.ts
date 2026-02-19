@@ -229,57 +229,113 @@ export class FinanceHubScheduler extends EventEmitter {
   // ============================================
 
   /**
-   * Backfill missing execution intents for past days
-   * This allows recovery to detect missed executions even if PC was completely off
+   * Backfill missing execution intents from last successful execution
+   * This allows recovery to detect missed executions even if PC was completely off for extended periods
+   * @param defaultLookbackDays - Fallback lookback for first run or new tasks (default: 30 days)
    */
-  private async backfillMissingIntents(lookbackDays: number): Promise<void> {
-    console.log(`[FinanceHubScheduler] Backfilling missing intents for last ${lookbackDays} days...`);
+  private async backfillMissingIntents(defaultLookbackDays: number = 30): Promise<void> {
+    console.log(`[FinanceHubScheduler] Backfilling missing intents from last successful execution...`);
 
     const recoveryService = getSchedulerRecoveryService();
     const intentsToCreate: Array<Omit<any, 'id' | 'createdAt' | 'updatedAt'>> = [];
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    // Generate intents for each past day
-    for (let daysAgo = 1; daysAgo <= lookbackDays; daysAgo++) {
-      const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - daysAgo);
-      const dateStr = pastDate.toISOString().split('T')[0];
+    // Helper to generate date range
+    const getDateRange = (startDate: Date, endDate: Date): string[] => {
+      const dates: string[] = [];
+      const current = new Date(startDate);
+      while (current <= endDate) {
+        dates.push(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+      }
+      return dates;
+    };
 
-      // Cards
-      for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
-        if (schedule && schedule.enabled) {
-          const entityKey = `card:${cardKey}`;
+    // Cards
+    for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
+      if (schedule && schedule.enabled) {
+        const entityKey = `card:${cardKey}`;
 
-          // Check if intent already exists for this date
+        // Get last successful execution date
+        const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
+
+        let startDate: Date;
+        if (lastSuccess) {
+          // Resume from day after last success
+          startDate = new Date(lastSuccess);
+          startDate.setDate(startDate.getDate() + 1);
+          console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
+        } else {
+          // First run: use default lookback
+          startDate = new Date(today);
+          startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
+        }
+
+        // Generate intents for date range (up to yesterday, not today)
+        for (const dateStr of getDateRange(startDate, yesterday)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('card', cardKey, schedule.time, dateStr));
           }
         }
       }
+    }
 
-      // Banks
-      for (const [bankKey, schedule] of Object.entries(this.settings.banks)) {
-        if (schedule && schedule.enabled) {
-          const entityKey = `bank:${bankKey}`;
+    // Banks
+    for (const [bankKey, schedule] of Object.entries(this.settings.banks)) {
+      if (schedule && schedule.enabled) {
+        const entityKey = `bank:${bankKey}`;
 
+        const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
+
+        let startDate: Date;
+        if (lastSuccess) {
+          startDate = new Date(lastSuccess);
+          startDate.setDate(startDate.getDate() + 1);
+          console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
+        } else {
+          startDate = new Date(today);
+          startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
+        }
+
+        for (const dateStr of getDateRange(startDate, yesterday)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('bank', bankKey, schedule.time, dateStr));
           }
         }
       }
+    }
 
-      // Tax
-      for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
-        // CRITICAL: Validate business name before processing
-        if (!businessName || businessName.trim() === '') {
-          console.warn(`[FinanceHubScheduler] Skipping invalid tax entry with empty business name`);
-          continue;
+    // Tax
+    for (const [businessName, schedule] of Object.entries(this.settings.tax)) {
+      // CRITICAL: Validate business name before processing
+      if (!businessName || businessName.trim() === '') {
+        console.warn(`[FinanceHubScheduler] Skipping invalid tax entry with empty business name`);
+        continue;
+      }
+
+      if (schedule && schedule.enabled) {
+        const entityKey = `tax:${businessName}`;
+
+        const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
+
+        let startDate: Date;
+        if (lastSuccess) {
+          startDate = new Date(lastSuccess);
+          startDate.setDate(startDate.getDate() + 1);
+          console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
+        } else {
+          startDate = new Date(today);
+          startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
-        
-        if (schedule && schedule.enabled) {
-          const entityKey = `tax:${businessName}`;
 
+        for (const dateStr of getDateRange(startDate, yesterday)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('tax', businessName, schedule.time, dateStr));
@@ -351,11 +407,12 @@ export class FinanceHubScheduler extends EventEmitter {
 
     await this.stop(); // Clear any existing timers and browsers
 
-    // CRITICAL: Backfill missing intents for past 3 days
-    // This ensures recovery can detect missed executions even if PC was off
+    // CRITICAL: Backfill missing intents from last successful execution
+    // This ensures recovery can detect missed executions even if PC was off for extended periods
+    // For first run or new tasks, defaults to 30 days lookback
     const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
     if (isProduction) {
-      await this.backfillMissingIntents(3);
+      await this.backfillMissingIntents(30);
     } else {
       console.log('[FinanceHubScheduler] Dev mode: Skipping backfill of historical intents');
     }

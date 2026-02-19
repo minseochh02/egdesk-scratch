@@ -107,6 +107,7 @@ export {
   faImage,
   faVideo,
   faMusic,
+  faRecordVinyl,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Network and connectivity icons

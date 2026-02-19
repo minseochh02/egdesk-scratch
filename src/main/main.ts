@@ -33,6 +33,8 @@ import { PHPDownloadManager } from './php/php-installer';
 import { BrowserController } from './browser-controller';
 import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 import { initializeStore, getStore } from './storage';
+import { getDeveloperWindows } from './coding/developer-windows';
+import { getDevServerManager } from './coding/dev-server-manager';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
 import { getEGDeskDevSpreadsheetService } from './egdesk-dev-spreadsheet';
@@ -3347,6 +3349,14 @@ const createWindow = async () => {
     } else {
       browserController.setMainWindow(mainWindow);
     }
+
+    // Initialize Developer Windows IPC handlers
+    getDeveloperWindows();
+    console.log('✅ Developer Windows IPC handlers registered');
+
+    // Initialize Dev Server Manager
+    getDevServerManager();
+    console.log('✅ Dev Server Manager initialized');
 
     // Initialize Scheduled Posts Executor - only once
     if (!scheduledPostsExecutor) {
