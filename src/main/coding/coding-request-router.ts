@@ -179,33 +179,40 @@ export async function proxyRequest(
 }
 
 /**
- * Inject base tag into HTML to fix asset path resolution
+ * Inject base tag and rewrite absolute URLs to relative
  * @param html - HTML content
  * @param basePath - Base path to inject (e.g., /t/tunnel-id/p/my-app/)
- * @returns Modified HTML with base tag
+ * @returns Modified HTML with base tag and rewritten URLs
  */
 function injectBaseTag(html: string, basePath: string): string {
+  let modifiedHtml = html;
+
   // Check if <base> tag already exists
-  if (html.includes('<base')) {
-    return html;
+  if (!modifiedHtml.includes('<base')) {
+    // Try to inject after <head> tag
+    const headMatch = modifiedHtml.match(/(<head[^>]*>)/i);
+    if (headMatch) {
+      const baseTag = `\n    <base href="${basePath}">`;
+      modifiedHtml = modifiedHtml.replace(headMatch[1], headMatch[1] + baseTag);
+    } else {
+      // Fallback: inject before first <script> or <link> tag
+      const scriptOrLinkMatch = modifiedHtml.match(/(<script|<link)/i);
+      if (scriptOrLinkMatch) {
+        const baseTag = `<base href="${basePath}">\n    `;
+        modifiedHtml = modifiedHtml.replace(scriptOrLinkMatch[1], baseTag + scriptOrLinkMatch[1]);
+      }
+    }
   }
 
-  // Try to inject after <head> tag
-  const headMatch = html.match(/(<head[^>]*>)/i);
-  if (headMatch) {
-    const baseTag = `\n    <base href="${basePath}">`;
-    return html.replace(headMatch[1], headMatch[1] + baseTag);
-  }
+  // Rewrite absolute URLs (starting with /) to relative URLs
+  // This makes them work with the <base> tag
+  // Match src="/..." and href="/..." but NOT src="//" (protocol-relative URLs)
+  modifiedHtml = modifiedHtml.replace(
+    /\b(src|href)="\/(?!\/)/gi,
+    '$1="'
+  );
 
-  // Fallback: inject before first <script> or <link> tag
-  const scriptOrLinkMatch = html.match(/(<script|<link)/i);
-  if (scriptOrLinkMatch) {
-    const baseTag = `<base href="${basePath}">\n    `;
-    return html.replace(scriptOrLinkMatch[1], baseTag + scriptOrLinkMatch[1]);
-  }
-
-  // If no suitable location found, return as-is
-  return html;
+  return modifiedHtml;
 }
 
 /**
