@@ -2635,6 +2635,12 @@ const createWindow = async () => {
               const mcpLocalServerManager = getLocalServerManager();
               mcpLocalServerManager.setApiKey(existingApiKey);
               captureLog(`🔑 API key pushed to local server manager`);
+
+              // Set tunnel ID in DevServerManager for Vite base path configuration
+              const { getDevServerManager } = require('./coding/dev-server-manager');
+              const devServerManager = getDevServerManager();
+              devServerManager.setTunnelId(serverName);
+              captureLog(`🔧 Tunnel ID set in DevServerManager for Vite projects`);
             } catch (saveError) {
               captureLog(`⚠️ Failed to auto-save tunnel config: ${saveError}`);
               // Don't fail the whole operation if save fails

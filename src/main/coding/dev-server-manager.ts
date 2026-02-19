@@ -22,9 +22,18 @@ interface ServerInfo {
 export class DevServerManager {
   private servers: Map<string, ServerInfo> = new Map();
   private portRange = { start: 3000, end: 3100 };
+  private tunnelId: string | null = null;
 
   constructor() {
     this.setupIpcHandlers();
+  }
+
+  /**
+   * Set the tunnel ID for generating Vite base paths
+   */
+  public setTunnelId(tunnelId: string) {
+    this.tunnelId = tunnelId;
+    console.log(`DevServerManager: Tunnel ID set to ${tunnelId}`);
   }
 
   private setupIpcHandlers() {
@@ -259,6 +268,7 @@ export class DevServerManager {
     // Determine command based on project type
     let command: string;
     let args: string[];
+    const projectName = path.basename(folderPath);
 
     switch (projectInfo.type) {
       case 'nextjs':
@@ -268,6 +278,13 @@ export class DevServerManager {
       case 'vite':
         command = projectInfo.packageManager;
         args = ['run', 'dev', '--', '--port', port.toString()];
+
+        // Add --base flag for tunneling if tunnel ID is set
+        if (this.tunnelId) {
+          const viteBasePath = `/t/${this.tunnelId}/p/${projectName}`;
+          args.push('--base', viteBasePath);
+          console.log(`Adding Vite --base flag: ${viteBasePath}`);
+        }
         break;
       case 'react':
         command = projectInfo.packageManager;
