@@ -780,10 +780,17 @@ export class TunnelClient {
           };
 
           const responseStr = JSON.stringify(response);
-          console.log(`📤 Sending response: ${responseStr.length} bytes, status: ${proxyResponse.statusCode}`);
+          console.log(`📤 Sending response: ${responseStr.length} bytes, status: ${proxyResponse.statusCode}, request_id: ${request.request_id}`);
+          console.log(`📤 Response preview:`, {
+            type: response.type,
+            request_id: response.request_id,
+            status_code: response.status_code,
+            bodyLength: response.body?.length || 0
+          });
 
           try {
             this.ws.send(responseStr);
+            console.log(`✅ Response sent successfully via WebSocket`);
             console.log(`← ${proxyResponse.statusCode} ${request.method} ${request.path}`);
           } catch (error) {
             console.error(`❌ Failed to send response through WebSocket:`, error);
