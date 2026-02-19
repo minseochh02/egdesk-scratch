@@ -17,6 +17,9 @@ import {
   faSearch,
   faUniversity,
   faVideo,
+  faDatabase,
+  faRobot,
+  faRecordVinyl,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -160,6 +163,19 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
+            <Link to="/coding" className="egdesk-landing-action-card egdesk-landing-coding-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faCog} />
+              </div>
+              <h3 className="egdesk-landing-card-title">New Coding</h3>
+              <p className="egdesk-landing-card-description">
+                New coding workspace for development tasks.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Development</span>
+              </div>
+            </Link>
+
             <Link to="/blog-connector" className="egdesk-landing-action-card egdesk-landing-scheduler-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faCalendarAlt} />
@@ -232,6 +248,51 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Browser Recording</span>
                 <span className="egdesk-landing-feature-tag">Test Automation</span>
                 <span className="egdesk-landing-feature-tag">Script Generation</span>
+              </div>
+            </Link>
+
+            <Link to="/desktop-recorder" className="egdesk-landing-action-card egdesk-landing-desktop-recorder-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faRecordVinyl} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Desktop Recorder</h3>
+              <p className="egdesk-landing-card-description">
+                Record desktop application interactions and automate workflows. Generate scripts for desktop automation and testing.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Desktop Recording</span>
+                <span className="egdesk-landing-feature-tag">App Automation</span>
+                <span className="egdesk-landing-feature-tag">Workflow Scripts</span>
+              </div>
+            </Link>
+
+            <Link to="/user-data" className="egdesk-landing-action-card egdesk-landing-userdata-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faDatabase} />
+              </div>
+              <h3 className="egdesk-landing-card-title">User Data</h3>
+              <p className="egdesk-landing-card-description">
+                Import and manage Excel/CSV files, sync browser downloads automatically, and query your data with SQL-like interface.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Data Import</span>
+                <span className="egdesk-landing-feature-tag">Auto Sync</span>
+                <span className="egdesk-landing-feature-tag">Table Viewer</span>
+              </div>
+            </Link>
+
+            <Link to="/rookie" className="egdesk-landing-action-card egdesk-landing-rookie-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faRobot} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Rookie Automation</h3>
+              <p className="egdesk-landing-card-description">
+                Create automation workflows to extract data from websites and apps. Export results to Excel or PDF automatically.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Workflow Builder</span>
+                <span className="egdesk-landing-feature-tag">Data Extraction</span>
+                <span className="egdesk-landing-feature-tag">Auto Export</span>
               </div>
             </Link>
 

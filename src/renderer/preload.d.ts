@@ -8,6 +8,7 @@ interface IpcRendererAPI {
   sendMessage(channel: string, ...args: unknown[]): void;
   on(channel: string, func: (...args: unknown[]) => void): (() => void) | undefined;
   once(channel: string, func: (...args: unknown[]) => void): void;
+  invoke(channel: string, ...args: unknown[]): Promise<any>;
 }
 
 /**
@@ -742,6 +743,17 @@ interface SchedulerRecoveryAPI {
 }
 
 /**
+ * Interface for Dev Server API.
+ */
+interface DevServerAPI {
+  analyzeFolder: (folderPath: string) => Promise<{ success: boolean; projectInfo?: any; error?: string }>;
+  start: (folderPath: string) => Promise<{ success: boolean; serverInfo?: any; error?: string }>;
+  stop: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
+  getStatus: (folderPath: string) => Promise<{ success: boolean; serverInfo?: any; error?: string }>;
+  getAll: () => Promise<{ success: boolean; servers?: any[]; error?: string }>;
+}
+
+/**
  * Main Electron API handler that exposes functionality to the renderer process
  */
 export interface IElectronAPI {
@@ -800,6 +812,7 @@ export interface IElectronAPI {
   keepAwake: KeepAwakeAPI;
   autoStart: AutoStartAPI;
   schedulerRecovery: SchedulerRecoveryAPI;
+  devServer: DevServerAPI;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

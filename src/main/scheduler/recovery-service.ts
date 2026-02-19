@@ -41,7 +41,7 @@ export interface MissedExecution {
 }
 
 export interface RecoveryOptions {
-  lookbackDays: number; // How far back to check (default: 3)
+  lookbackDays: number; // How far back to check (default: 365 days)
   autoExecute: boolean; // Auto-run or notify only (default: true)
   maxCatchUpExecutions: number; // Max tasks to execute (default: 3)
   priorityOrder: 'oldest_first' | 'newest_first';
@@ -322,11 +322,31 @@ export class SchedulerRecoveryService {
   }
 
   /**
+   * Get the last successful execution date for a specific task
+   * Returns null if no successful execution found
+   */
+  public async getLastSuccessfulExecutionDate(schedulerType: string, taskId: string): Promise<string | null> {
+    const db = this.getDb();
+
+    const result = db.prepare(`
+      SELECT MAX(intended_date) as last_success
+      FROM scheduler_execution_intents
+      WHERE scheduler_type = ?
+        AND task_id = ?
+        AND status = 'completed'
+    `).get(schedulerType, taskId) as { last_success: string | null } | undefined;
+
+    return result?.last_success || null;
+  }
+
+  /**
    * Detect missed executions within lookback window
+   * Since backfill now uses last successful execution date, this lookback is primarily a safety mechanism
+   * Default increased to 365 days to handle extended downtimes
    */
   public async detectMissedExecutions(options: Partial<RecoveryOptions> = {}): Promise<MissedExecution[]> {
     const db = this.getDb();
-    const lookbackDays = options.lookbackDays || 3;
+    const lookbackDays = options.lookbackDays || 365;
 
     // Calculate cutoff date
     const cutoffDate = new Date();
@@ -414,7 +434,7 @@ export class SchedulerRecoveryService {
    */
   public async recoverMissedExecutions(options: Partial<RecoveryOptions> = {}): Promise<RecoveryReport> {
     const defaultOptions: RecoveryOptions = {
-      lookbackDays: 3,
+      lookbackDays: 365,
       autoExecute: true,
       maxCatchUpExecutions: 3,
       priorityOrder: 'oldest_first',

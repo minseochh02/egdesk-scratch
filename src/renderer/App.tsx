@@ -35,6 +35,7 @@ import {
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
+import { Coding, DeveloperWindow, AIChat, WebsiteViewer } from './components/Coding';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import CompanyResearchPage from './components/CompanyResearchPage/CompanyResearchPage';
 import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
@@ -2048,22 +2049,22 @@ function NavigationBar({
     return () => window.removeEventListener('resize', checkWidth);
   }, []);
 
-  const isDevelopmentActive = [
-    '/homepage-editor',
-    '/egchatting',
+  const isMarketingActive = [
+    '/egbusiness-identity',
+    '/blog-connector',
+    '/social-media',
+    '/seo-analyzer',
+    '/ssl-analyzer',
+    '/company-research'
+  ].some(path => location.pathname.startsWith(path));
+
+  const isOperationsActive = [
+    '/finance-hub',
+    '/scheduler-status',
     '/browser-recorder',
     '/desktop-recorder',
     '/rookie',
     '/user-data'
-  ].some(path => location.pathname.startsWith(path));
-
-  const isMarketingActive = [
-    '/egbusiness-identity', 
-    '/blog-connector', 
-    '/social-media', 
-    '/seo-analyzer',
-    '/ssl-analyzer',
-    '/company-research'
   ].some(path => location.pathname.startsWith(path));
 
   const isSystemActive = [
@@ -2071,11 +2072,6 @@ function NavigationBar({
     '/docker',
     '/egdesktop',
     '/ai-keys'
-  ].some(path => location.pathname.startsWith(path));
-
-  const isOperationsActive = [
-    '/finance-hub',
-    '/scheduler-status'
   ].some(path => location.pathname.startsWith(path));
 
   // Check environment
@@ -2094,57 +2090,6 @@ function NavigationBar({
             <FontAwesomeIcon icon={faHome} />
             {!isNarrow && <span>Home</span>}
           </Link>
-
-          {/* Development Group */}
-          <NavDropdown
-            title="Development"
-            icon={faLaptopCode}
-            isActive={isDevelopmentActive}
-            isNarrow={isNarrow}
-          >
-            <Link
-              to="/homepage-editor"
-              className={`nav-dropdown-item ${location.pathname === '/homepage-editor' ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faCog} fixedWidth />
-              <span>Coding</span>
-            </Link>
-            <Link
-              to="/egchatting"
-              className={`nav-dropdown-item ${location.pathname === '/egchatting' ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faComments} fixedWidth />
-              <span>Chatting</span>
-            </Link>
-            <Link
-              to="/browser-recorder"
-              className={`nav-dropdown-item ${location.pathname === '/browser-recorder' ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faRobot} fixedWidth />
-              <span>Browser Recorder</span>
-            </Link>
-            <Link
-              to="/desktop-recorder"
-              className={`nav-dropdown-item ${location.pathname === '/desktop-recorder' ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faDesktop} fixedWidth />
-              <span>Desktop Recorder</span>
-            </Link>
-            <Link
-              to="/rookie"
-              className={`nav-dropdown-item ${location.pathname === '/rookie' ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faChessRook} fixedWidth />
-              <span>Rookie</span>
-            </Link>
-            <Link
-              to="/user-data"
-              className={`nav-dropdown-item ${location.pathname.startsWith('/user-data') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faDatabase} fixedWidth />
-              <span>User Database</span>
-            </Link>
-          </NavDropdown>
 
           {/* Marketing Group */}
           <NavDropdown 
@@ -2179,10 +2124,59 @@ function NavigationBar({
             </Link>
           </NavDropdown>
 
+          {/* Operations Group */}
+          <NavDropdown
+            title="Operations"
+            icon={faChartBar}
+            isActive={isOperationsActive}
+            isNarrow={isNarrow}
+          >
+            <Link
+              to="/browser-recorder"
+              className={`nav-dropdown-item ${location.pathname === '/browser-recorder' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faRobot} fixedWidth />
+              <span>Browser Recorder</span>
+            </Link>
+            <Link
+              to="/desktop-recorder"
+              className={`nav-dropdown-item ${location.pathname === '/desktop-recorder' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faDesktop} fixedWidth />
+              <span>Desktop Recorder</span>
+            </Link>
+            <Link
+              to="/rookie"
+              className={`nav-dropdown-item ${location.pathname === '/rookie' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faChessRook} fixedWidth />
+              <span>Rookie</span>
+            </Link>
+            <Link
+              to="/user-data"
+              className={`nav-dropdown-item ${location.pathname.startsWith('/user-data') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faDatabase} fixedWidth />
+              <span>User Database</span>
+            </Link>
+            <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faChartBar} fixedWidth />
+              <span>Finance Hub</span>
+            </Link>
+            <div
+              className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
+              onClick={() => navigate('/scheduler-status')}
+              style={{ cursor: 'pointer' }}
+            >
+              <FontAwesomeIcon icon={faClock} fixedWidth />
+              <span>Scheduler Status</span>
+            </div>
+          </NavDropdown>
+
           {/* System Group */}
-          <NavDropdown 
-            title="System" 
-            icon={faWrench} 
+          <NavDropdown
+            title="System"
+            icon={faWrench}
             isActive={isSystemActive}
             isNarrow={isNarrow}
           >
@@ -2202,27 +2196,6 @@ function NavigationBar({
               <FontAwesomeIcon icon={faRobot} fixedWidth />
               <span>API Keys</span>
             </Link>
-          </NavDropdown>
-
-          {/* Operations Group */}
-          <NavDropdown
-            title="Operations"
-            icon={faChartBar}
-            isActive={isOperationsActive}
-            isNarrow={isNarrow}
-          >
-            <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faChartBar} fixedWidth />
-              <span>Finance Hub</span>
-            </Link>
-            <div
-              className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
-              onClick={() => navigate('/scheduler-status')}
-              style={{ cursor: 'pointer' }}
-            >
-              <FontAwesomeIcon icon={faClock} fixedWidth />
-              <span>Scheduler Status</span>
-            </div>
           </NavDropdown>
 
           {/* Help & Tools - Kept as icons/buttons */}
@@ -2343,6 +2316,7 @@ function RouteWindowBoundsManager() {
 }
 
 function AppContent() {
+  const location = useLocation();
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showGoogleAuthModal, setShowGoogleAuthModal] = useState(false);
@@ -2602,18 +2576,23 @@ function AppContent() {
     return <SignInPage />;
   }
 
+  // Check if we should hide navigation (for coding windows)
+  const hideNavigation = location.pathname === '/coding/ai-chat' || location.pathname === '/coding/website-viewer';
+
   return (
     <>
       <RouteWindowBoundsManager />
       <ReauthRequiredNotification />
       <div className="app-container">
-        <NavigationBar 
-          showDebugModal={showDebugModal} 
-          setShowDebugModal={setShowDebugModal}
-          showSupportModal={showSupportModal}
-          setShowSupportModal={setShowSupportModal}
-        />
-        {(ollamaStatus === 'not_installed' || ollamaStatus === 'error') && (
+        {!hideNavigation && (
+          <NavigationBar
+            showDebugModal={showDebugModal}
+            setShowDebugModal={setShowDebugModal}
+            showSupportModal={showSupportModal}
+            setShowSupportModal={setShowSupportModal}
+          />
+        )}
+        {!hideNavigation && (ollamaStatus === 'not_installed' || ollamaStatus === 'error') && (
           <div className={`ollama-banner ${ollamaStatus}`}>
             <div className="ollama-banner__text">
               {ollamaStatus === 'error'
@@ -2640,7 +2619,7 @@ function AppContent() {
             </div>
           </div>
         )}
-        {ollamaStatus === 'installed' && gemmaStatus !== 'ready' && (
+        {!hideNavigation && ollamaStatus === 'installed' && gemmaStatus !== 'ready' && (
           <div className={`ollama-banner gemma ${gemmaStatus === 'error' ? 'error' : gemmaStatus}`}>
             <div className="ollama-banner__text">
               {gemmaStatus === 'pulling'
@@ -2801,6 +2780,10 @@ function AppContent() {
             />
             <Route path="/ai-keys" element={<AIKeysManager />} />
             <Route path="/homepage-editor" element={<HomepageEditor />} />
+            <Route path="/coding" element={<Coding />} />
+            <Route path="/coding/developer" element={<DeveloperWindow />} />
+            <Route path="/coding/ai-chat" element={<AIChat />} />
+            <Route path="/coding/website-viewer" element={<WebsiteViewer />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />
             <Route path="/company-research" element={<CompanyResearchPage />} />
             <Route path="/seo-analyzer" element={<EGSEOAnalyzer />} />
@@ -2808,6 +2791,8 @@ function AppContent() {
             <Route path="/egchatting" element={<EGChatting />} />
             <Route path="/egbusiness-identity" element={<EGBusinessIdentity />} />
             <Route path="/egbusiness-identity/preview" element={<BusinessIdentityTab />} />
+            <Route path="/social-media" element={<EGSocialMedia />} />
+            <Route path="/blog-connector" element={<EGBlogging />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
             <Route path="/user-data" element={<UserDataPage />} />
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
