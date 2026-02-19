@@ -179,37 +179,23 @@ export async function proxyRequest(
 }
 
 /**
- * Inject base tag and rewrite absolute URLs to relative
+ * Rewrite absolute URLs in HTML to include tunnel path prefix
  * @param html - HTML content
- * @param basePath - Base path to inject (e.g., /t/tunnel-id/p/my-app/)
- * @returns Modified HTML with base tag and rewritten URLs
+ * @param basePath - Base path prefix (e.g., /t/tunnel-id/p/my-app)
+ * @returns Modified HTML with rewritten URLs
  */
-function injectBaseTag(html: string, basePath: string): string {
-  let modifiedHtml = html;
+function rewriteAbsoluteUrls(html: string, basePath: string): string {
+  // Remove trailing slash from basePath if present
+  const prefix = basePath.replace(/\/$/, '');
 
-  // Check if <base> tag already exists
-  if (!modifiedHtml.includes('<base')) {
-    // Try to inject after <head> tag
-    const headMatch = modifiedHtml.match(/(<head[^>]*>)/i);
-    if (headMatch) {
-      const baseTag = `\n    <base href="${basePath}">`;
-      modifiedHtml = modifiedHtml.replace(headMatch[1], headMatch[1] + baseTag);
-    } else {
-      // Fallback: inject before first <script> or <link> tag
-      const scriptOrLinkMatch = modifiedHtml.match(/(<script|<link)/i);
-      if (scriptOrLinkMatch) {
-        const baseTag = `<base href="${basePath}">\n    `;
-        modifiedHtml = modifiedHtml.replace(scriptOrLinkMatch[1], baseTag + scriptOrLinkMatch[1]);
-      }
-    }
-  }
-
-  // Rewrite absolute URLs (starting with /) to relative URLs
-  // This makes them work with the <base> tag
+  // Rewrite src="/..." and href="/..." to include the full tunnel path
   // Match src="/..." and href="/..." but NOT src="//" (protocol-relative URLs)
-  modifiedHtml = modifiedHtml.replace(
+  // Also exclude URLs that already start with the prefix
+  let modifiedHtml = html.replace(
     /\b(src|href)="\/(?!\/)/gi,
-    '$1="'
+    (match, attr) => {
+      return `${attr}="${prefix}/`;
+    }
   );
 
   return modifiedHtml;
@@ -252,17 +238,17 @@ export async function handleProjectRequest(
   try {
     const response = await proxyRequest(method, route.targetUrl!, headers, body, queryParams);
 
-    // Inject <base> tag into HTML responses to fix asset path resolution
+    // Rewrite absolute URLs in HTML responses to include tunnel path
     const contentType = response.headers['content-type'] || '';
     if (contentType.includes('text/html')) {
       const parsed = parseProjectRoute(requestPath);
       if (parsed) {
-        // Construct base path: /t/{tunnel_id}/p/{project_name}/
+        // Construct base path: /t/{tunnel_id}/p/{project_name}
         const basePath = tunnelId
-          ? `/t/${tunnelId}/p/${parsed.projectName}/`
-          : `/p/${parsed.projectName}/`;
-        console.log(`🔧 Injecting <base href="${basePath}"> into HTML response`);
-        response.body = injectBaseTag(response.body, basePath);
+          ? `/t/${tunnelId}/p/${parsed.projectName}`
+          : `/p/${parsed.projectName}`;
+        console.log(`🔧 Rewriting absolute URLs with prefix: ${basePath}`);
+        response.body = rewriteAbsoluteUrls(response.body, basePath);
       }
     }
 
