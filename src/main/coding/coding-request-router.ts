@@ -213,7 +213,25 @@ export async function handleProjectRequest(
 
   // Proxy to target
   try {
-    const response = await proxyRequest(method, route.targetUrl!, headers, body, queryParams);
+    let targetUrl = route.targetUrl!;
+
+    // When tunnel is active, Vite projects are configured with --base flag
+    // They expect the full path including the tunnel prefix
+    if (tunnelId) {
+      const parsed = parseProjectRoute(requestPath);
+      if (parsed) {
+        const projectRegistry = getProjectRegistry();
+        const project = projectRegistry.getProject(parsed.projectName);
+
+        // Reconstruct full path including tunnel prefix
+        // Request: /p/oneconductor/foo → Proxy: /t/tunnel-id/p/oneconductor/foo to localhost:3000
+        const fullPath = `/t/${tunnelId}${requestPath}`;
+        targetUrl = `http://localhost:${project!.port}${fullPath}`;
+        console.log(`🔧 Tunneling mode - using full path for Vite: ${fullPath}`);
+      }
+    }
+
+    const response = await proxyRequest(method, targetUrl, headers, body, queryParams);
 
     // Note: URL rewriting removed - Vite's --base flag handles this automatically
     return response;
