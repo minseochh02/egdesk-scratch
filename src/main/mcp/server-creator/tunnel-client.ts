@@ -10,6 +10,8 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 import * as readline from 'readline';
+import { handleProjectRequest, parseProjectRoute } from '../../coding/coding-request-router';
+import { getProjectRegistry } from '../../coding/project-registry';
 
 interface TunnelConfig {
   tunnelServerUrl: string;
@@ -30,6 +32,7 @@ interface TunnelRequest {
   headers: Record<string, string>;
   query_params?: Record<string, string>;
   body?: string;
+  tunnel_id?: string;  // Tunnel ID for base path construction
 }
 
 interface TunnelResponse {
@@ -703,10 +706,90 @@ export class TunnelClient {
     try {
       console.log(`→ ${request.method} ${request.path}`);
 
-      // Forward request to local server
+      // Special endpoint: Get all coding projects
+      if (request.path === '/api/coding-projects' && request.method === 'GET') {
+        console.log('📋 Fetching coding projects from registry');
+
+        try {
+          const projectRegistry = getProjectRegistry();
+          const projects = projectRegistry.getAllProjects();
+
+          const response: TunnelResponse = {
+            type: 'response',
+            request_id: request.request_id,
+            status_code: 200,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              success: true,
+              projects: projects
+            })
+          };
+
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(response));
+            console.log(`← 200 GET /api/coding-projects (${projects.length} projects)`);
+          }
+
+          return;
+        } catch (error) {
+          console.error('Error fetching coding projects:', error);
+
+          const errorResponse: TunnelResponse = {
+            type: 'response',
+            request_id: request.request_id,
+            status_code: 500,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : 'Failed to fetch projects'
+            })
+          };
+
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(errorResponse));
+          }
+
+          return;
+        }
+      }
+
+      // Check if this is a coding project route (/p/{project_name}/...)
+      const projectRoute = parseProjectRoute(request.path);
+
+      if (projectRoute) {
+        // Handle as coding project request
+        console.log(`🔀 Routing to project: ${projectRoute.projectName} → ${projectRoute.path}`);
+
+        const proxyResponse = await handleProjectRequest(
+          request.path,
+          request.method,
+          request.headers,
+          request.body,
+          request.query_params,
+          request.tunnel_id  // Pass tunnel_id for base path construction
+        );
+
+        // Send response back through WebSocket
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          const response: TunnelResponse = {
+            type: 'response',
+            request_id: request.request_id,
+            status_code: proxyResponse.statusCode,
+            headers: proxyResponse.headers,
+            body: proxyResponse.body,
+          };
+
+          this.ws.send(JSON.stringify(response));
+          console.log(`← ${proxyResponse.statusCode} ${request.method} ${request.path}`);
+        }
+
+        return;
+      }
+
+      // Not a project route - forward to default local server (MCP server, etc.)
       const targetUrl = new URL(this.config.localServerUrl);
       const [pathname, search] = request.path.split('?');
-      
+
       const options: http.RequestOptions = {
         hostname: targetUrl.hostname,
         port: targetUrl.port || 80,
