@@ -243,7 +243,15 @@ export class DevServerManager {
     });
   }
 
-  private async startServer(folderPath: string): Promise<ServerInfo> {
+  public async startServer(folderPath: string): Promise<ServerInfo> {
+    // Check if tunnel is active for Vite projects
+    // We need tunnelId set to properly configure Vite's --base flag
+    if (!this.tunnelId) {
+      console.warn('⚠️ No tunnel ID set - dev servers will not work with website viewer');
+      console.warn('⚠️ Please start the MCP tunnel first before starting dev servers');
+      throw new Error('Tunnel not started. Please start the MCP tunnel in Settings first, then start the dev server.');
+    }
+
     // Check if server already running
     const existing = this.servers.get(folderPath);
     if (existing && existing.status === 'running') {
@@ -383,7 +391,7 @@ export class DevServerManager {
     return serverInfo;
   }
 
-  private async stopServer(folderPath: string): Promise<void> {
+  public async stopServer(folderPath: string): Promise<void> {
     const serverInfo = this.servers.get(folderPath);
 
     if (!serverInfo || !serverInfo.process) {
