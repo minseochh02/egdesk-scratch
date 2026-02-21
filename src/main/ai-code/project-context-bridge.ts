@@ -131,6 +131,40 @@ export class ProjectContextBridge {
   }
 
   /**
+   * Set temporary project path (for Coding AI)
+   * This allows the AI to work on a specific project folder
+   */
+  setTemporaryProjectPath(folderPath: string): void {
+    // Extract project name from folder path
+    const projectName = folderPath.split('/').pop() || 'Project';
+
+    this.currentProject = {
+      id: 'temp-' + Date.now(),
+      name: projectName,
+      path: folderPath,
+      type: 'other', // Will be detected if needed
+      lastAccessed: new Date(),
+      isActive: true,
+      isInitialized: false,
+      isGit: false,
+      createdAt: new Date(),
+      metadata: {}
+    };
+
+    console.log(`📁 Temporary project path set: ${folderPath}`);
+    console.log(`📁 Current project:`, this.currentProject);
+    console.log(`📁 Tools will resolve relative paths to: ${folderPath}`);
+  }
+
+  /**
+   * Clear temporary project (restore to previous state)
+   */
+  clearTemporaryProject(): void {
+    this.currentProject = null;
+    console.log('📁 Temporary project cleared');
+  }
+
+  /**
    * Get project context string for AI prompts
    */
   getProjectContextString(): string {

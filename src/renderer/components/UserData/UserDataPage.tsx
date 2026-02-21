@@ -8,7 +8,7 @@ import { SyncConfigurationsManager } from './SyncConfigurationsManager';
 import './UserData.css';
 
 export const UserDataPage: React.FC = () => {
-  const { tables, loading, error, fetchTables, deleteTable } = useUserData();
+  const { tables, loading, error, fetchTables, renameTable, deleteTable } = useUserData();
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
@@ -20,6 +20,22 @@ export const UserDataPage: React.FC = () => {
 
   const handleBackToList = () => {
     setSelectedTable(null);
+  };
+
+  const handleRenameTable = async (tableId: string, newTableName: string, newDisplayName: string) => {
+    try {
+      await renameTable(tableId, newTableName, newDisplayName);
+
+      // If the renamed table was selected, update the selected table
+      if (selectedTable && selectedTable.id === tableId) {
+        const updatedTable = tables.find(t => t.id === tableId);
+        if (updatedTable) {
+          setSelectedTable(updatedTable);
+        }
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to rename table');
+    }
   };
 
   const handleDeleteTable = async (tableId: string) => {
@@ -79,6 +95,7 @@ export const UserDataPage: React.FC = () => {
           <TableList
             tables={tables}
             onSelectTable={handleSelectTable}
+            onRenameTable={handleRenameTable}
             onDeleteTable={handleDeleteTable}
             onImportClick={() => setShowImportWizard(true)}
           />

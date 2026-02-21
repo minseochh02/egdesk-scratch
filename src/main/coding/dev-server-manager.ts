@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getProjectRegistry } from './project-registry';
+import { getStore } from '../storage';
 
 interface ProjectInfo {
   type: 'nextjs' | 'vite' | 'react' | 'unknown';
@@ -243,6 +244,294 @@ export class DevServerManager {
     });
   }
 
+  /**
+   * Install a single package as a dev dependency
+   */
+  private async installPackage(folderPath: string, packageName: string, packageManager: string, isDev: boolean = true): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`Installing ${packageName} in ${folderPath} using ${packageManager}...`);
+
+      // Build install command args based on package manager
+      let args: string[];
+      if (packageManager === 'npm') {
+        args = ['install', isDev ? '--save-dev' : '--save', packageName, '--legacy-peer-deps'];
+      } else if (packageManager === 'yarn') {
+        args = ['add', isDev ? '--dev' : '', packageName].filter(Boolean);
+      } else if (packageManager === 'pnpm') {
+        args = ['add', isDev ? '--save-dev' : '', packageName].filter(Boolean);
+      } else {
+        args = ['install', packageName];
+      }
+
+      // Clean environment
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
+      delete cleanEnv.TS_NODE_PROJECT;
+      delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+
+      const installProcess = spawn(packageManager, args, {
+        cwd: folderPath,
+        shell: true,
+        env: cleanEnv
+      });
+
+      let stdoutOutput = '';
+      let errorOutput = '';
+
+      installProcess.stdout?.on('data', (data) => {
+        stdoutOutput += data.toString();
+        console.log(`Install ${packageName}: ${data}`);
+      });
+
+      installProcess.stderr?.on('data', (data) => {
+        errorOutput += data.toString();
+        if (!data.toString().includes('WARN')) {
+          console.error(`Install ${packageName} error: ${data}`);
+        }
+      });
+
+      installProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log(`${packageName} installed successfully`);
+          resolve();
+        } else {
+          const errorMsg = `Failed to install ${packageName} (code ${code})\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+        }
+      });
+
+      installProcess.on('error', (error) => {
+        console.error(`Install ${packageName} process error:`, error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Ensure @egdesk/vite-api-plugin is installed for Vite projects
+   */
+  private async ensureViteApiPlugin(folderPath: string, packageManager: string): Promise<void> {
+    try {
+      const packageJsonPath = path.join(folderPath, 'package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+
+      // Check if plugin is already installed
+      const hasPlugin =
+        packageJson.devDependencies?.['@egdesk/vite-api-plugin'] ||
+        packageJson.dependencies?.['@egdesk/vite-api-plugin'];
+
+      if (hasPlugin) {
+        console.log('✓ @egdesk/vite-api-plugin already installed');
+        // Write EGDesk API key to environment file
+        this.writeEGDeskEnv(folderPath, 'vite');
+        // Still inject into vite.config if needed
+        await this.injectViteApiPlugin(folderPath);
+        return;
+      }
+
+      console.log('📦 Installing @egdesk/vite-api-plugin for API route support...');
+
+      // Use local package (link to packages/vite-api-plugin)
+      const pluginPath = path.join(__dirname, '../../packages/vite-api-plugin');
+
+      if (fs.existsSync(pluginPath)) {
+        // Install from local path
+        await this.installPackage(folderPath, `file:${pluginPath}`, packageManager, true);
+        console.log('✓ @egdesk/vite-api-plugin installed from local source');
+
+        // Write EGDesk API key to environment file
+        this.writeEGDeskEnv(folderPath, 'vite');
+
+        // Inject plugin into vite.config.js
+        await this.injectViteApiPlugin(folderPath);
+      } else {
+        console.warn('⚠️ Local @egdesk/vite-api-plugin not found at', pluginPath);
+        console.warn('⚠️ Skipping plugin installation. API routes will need manual setup.');
+      }
+    } catch (error) {
+      console.error('Failed to install @egdesk/vite-api-plugin:', error);
+      console.warn('⚠️ Continuing without API plugin. API routes will need manual setup.');
+      // Don't throw - continue server startup even if plugin install fails
+    }
+  }
+
+  /**
+   * Ensure @egdesk/next-api-plugin is installed and configured for Next.js projects
+   */
+  private async ensureNextApiPlugin(folderPath: string, packageManager: string): Promise<void> {
+    try {
+      const packageJsonPath = path.join(folderPath, 'package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+
+      // Check if plugin is already installed
+      const hasPlugin =
+        packageJson.devDependencies?.['@egdesk/next-api-plugin'] ||
+        packageJson.dependencies?.['@egdesk/next-api-plugin'];
+
+      if (hasPlugin) {
+        console.log('✓ @egdesk/next-api-plugin already installed');
+        // Write EGDesk API key to environment file
+        this.writeEGDeskEnv(folderPath, 'nextjs');
+        // Run setup to generate middleware and helpers
+        await this.setupNextApiPlugin(folderPath);
+        return;
+      }
+
+      console.log('📦 Installing @egdesk/next-api-plugin for database proxy support...');
+
+      // Use local package (link to packages/next-api-plugin)
+      const pluginPath = path.join(__dirname, '../../packages/next-api-plugin');
+
+      if (fs.existsSync(pluginPath)) {
+        // Install from local path
+        await this.installPackage(folderPath, `file:${pluginPath}`, packageManager, true);
+        console.log('✓ @egdesk/next-api-plugin installed from local source');
+
+        // Write EGDesk API key to environment file
+        this.writeEGDeskEnv(folderPath, 'nextjs');
+
+        // Run plugin setup to generate middleware and helpers
+        await this.setupNextApiPlugin(folderPath);
+      } else {
+        console.warn('⚠️ Local @egdesk/next-api-plugin not found at', pluginPath);
+        console.warn('⚠️ Skipping plugin installation. Database proxy will need manual setup.');
+      }
+    } catch (error) {
+      console.error('Failed to install @egdesk/next-api-plugin:', error);
+      console.warn('⚠️ Continuing without API plugin. Database proxy will need manual setup.');
+      // Don't throw - continue server startup even if plugin install fails
+    }
+  }
+
+  /**
+   * Run Next.js plugin setup to generate middleware and helper files
+   */
+  private async setupNextApiPlugin(folderPath: string): Promise<void> {
+    try {
+      console.log('🔧 Setting up Next.js API plugin...');
+
+      // Get API key from store
+      const store = getStore();
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      const apiKey = mcpConfig?.tunnel?.apiKey;
+
+      // Dynamically import the plugin (avoid build issues with conditional imports)
+      const { setupNextApiPlugin } = require('../../packages/next-api-plugin/src/index');
+
+      await setupNextApiPlugin(folderPath, {
+        egdeskUrl: 'http://localhost:8080',
+        apiKey
+      });
+
+      console.log('✓ Next.js API plugin setup complete');
+    } catch (error) {
+      console.error('Failed to setup Next.js API plugin:', error);
+      console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
+    }
+  }
+
+  private async injectViteApiPlugin(folderPath: string): Promise<void> {
+    try {
+      // Find vite.config file (.js, .ts, .mjs, etc.)
+      const configFiles = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs'];
+      let configPath: string | null = null;
+
+      for (const file of configFiles) {
+        const testPath = path.join(folderPath, file);
+        if (fs.existsSync(testPath)) {
+          configPath = testPath;
+          break;
+        }
+      }
+
+      if (!configPath) {
+        console.log('⚠️ No vite.config file found - skipping plugin injection');
+        return;
+      }
+
+      let configContent = fs.readFileSync(configPath, 'utf-8');
+
+      // Check if plugin is already used in plugins array (look for viteApiPlugin() call)
+      const pluginsArrayMatch = configContent.match(/plugins:\s*\[([\s\S]*?)\]/);
+      if (pluginsArrayMatch && pluginsArrayMatch[1].includes('viteApiPlugin')) {
+        console.log('✓ @egdesk/vite-api-plugin already configured in vite.config');
+        return;
+      }
+
+      console.log('🔧 Injecting @egdesk/vite-api-plugin into vite.config...');
+
+      // Add import statement
+      if (!configContent.includes('@egdesk/vite-api-plugin')) {
+        const importLine = "import { viteApiPlugin } from '@egdesk/vite-api-plugin'\n";
+        // Insert after last import statement or at the beginning
+        const lastImportMatch = configContent.match(/^import .+?$/gm);
+        if (lastImportMatch) {
+          const lastImport = lastImportMatch[lastImportMatch.length - 1];
+          configContent = configContent.replace(lastImport, lastImport + '\n' + importLine);
+        } else {
+          configContent = importLine + configContent;
+        }
+      }
+
+      // Add plugin to plugins array
+      const pluginsMatch2 = configContent.match(/plugins:\s*\[([\s\S]*?)\]/);
+      if (pluginsMatch2 && !pluginsMatch2[1].includes('viteApiPlugin')) {
+        const pluginsContent = pluginsMatch2[1].trim();
+        const newPluginsContent = pluginsContent
+          ? `${pluginsContent},\n    viteApiPlugin({ debug: true, routes: [] })`
+          : `viteApiPlugin({ debug: true, routes: [] })`;
+
+        configContent = configContent.replace(
+          /plugins:\s*\[([\s\S]*?)\]/,
+          `plugins: [\n    ${newPluginsContent}\n  ]`
+        );
+      }
+
+      fs.writeFileSync(configPath, configContent, 'utf-8');
+      console.log('✓ @egdesk/vite-api-plugin injected into vite.config');
+    } catch (error) {
+      console.error('Failed to inject plugin into vite.config:', error);
+      console.warn('⚠️ Please manually add the plugin to your vite.config file');
+    }
+  }
+
+  private writeEGDeskEnv(folderPath: string, framework: 'vite' | 'nextjs'): void {
+    try {
+      // Get API key from store
+      const store = getStore();
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      const apiKey = mcpConfig?.tunnel?.apiKey;
+
+      if (!apiKey) {
+        console.log('⚠️ No EGDesk API key found - skipping environment file');
+        return;
+      }
+
+      // Write to .env.local (both Vite and Next.js will automatically load this)
+      const envPath = path.join(folderPath, '.env.local');
+
+      // Use framework-specific environment variable prefixes
+      const prefix = framework === 'vite' ? 'VITE_' : 'NEXT_PUBLIC_';
+      const pluginName = framework === 'vite' ? '@egdesk/vite-api-plugin' : '@egdesk/next-api-plugin';
+
+      const envContent = [
+        '# EGDesk Configuration - Auto-generated',
+        `# This file is used by ${pluginName} for user-data access`,
+        '',
+        `${prefix}EGDESK_API_URL=http://localhost:8080`,
+        `${prefix}EGDESK_API_KEY=${apiKey}`,
+        ''
+      ].join('\n');
+
+      fs.writeFileSync(envPath, envContent, 'utf-8');
+      console.log('✓ EGDesk environment variables written to .env.local');
+    } catch (error) {
+      console.error('Failed to write EGDesk environment file:', error);
+    }
+  }
+
+
   public async startServer(folderPath: string): Promise<ServerInfo> {
     // Check if tunnel is active for Vite projects
     // We need tunnelId set to properly configure Vite's --base flag
@@ -268,6 +557,18 @@ export class DevServerManager {
     // Install dependencies if needed
     if (!projectInfo.hasNodeModules) {
       await this.installDependencies(folderPath, projectInfo.packageManager);
+    }
+
+    // For Vite projects, ensure API plugin is installed
+    // The plugin will automatically discover user-data tables when Vite starts
+    if (projectInfo.type === 'vite') {
+      await this.ensureViteApiPlugin(folderPath, projectInfo.packageManager);
+    }
+
+    // For Next.js projects, ensure API plugin is installed and configured
+    // The plugin will generate middleware and helper files
+    if (projectInfo.type === 'nextjs') {
+      await this.ensureNextApiPlugin(folderPath, projectInfo.packageManager);
     }
 
     // Find available port

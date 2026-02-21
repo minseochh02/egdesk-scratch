@@ -5,6 +5,7 @@ interface TableListProps {
   tables: UserTable[];
   onSelectTable: (table: UserTable) => void;
   onDeleteTable: (tableId: string) => void;
+  onRenameTable?: (tableId: string, newName: string, newDisplayName: string) => void;
   onImportClick: () => void;
 }
 
@@ -12,6 +13,7 @@ export const TableList: React.FC<TableListProps> = ({
   tables,
   onSelectTable,
   onDeleteTable,
+  onRenameTable,
   onImportClick,
 }) => {
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
@@ -20,6 +22,9 @@ export const TableList: React.FC<TableListProps> = ({
   const [tunnelLoading, setTunnelLoading] = useState(false);
   const [tunnelError, setTunnelError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [renamingTableId, setRenamingTableId] = useState<string | null>(null);
+  const [newTableName, setNewTableName] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return 'N/A';
@@ -38,6 +43,38 @@ export const TableList: React.FC<TableListProps> = ({
     if (window.confirm('Are you sure you want to delete this table? This action cannot be undone.')) {
       onDeleteTable(tableId);
     }
+  };
+
+  const handleRenameClick = (e: React.MouseEvent, table: UserTable) => {
+    e.stopPropagation();
+    setRenamingTableId(table.id);
+    setNewTableName(table.tableName);
+    setNewDisplayName(table.displayName);
+  };
+
+  const handleRenameSubmit = async (e: React.FormEvent, tableId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!newTableName.trim() || !newDisplayName.trim()) {
+      alert('Please enter both table name and display name');
+      return;
+    }
+
+    if (onRenameTable) {
+      await onRenameTable(tableId, newTableName.trim(), newDisplayName.trim());
+    }
+
+    setRenamingTableId(null);
+    setNewTableName('');
+    setNewDisplayName('');
+  };
+
+  const handleRenameCancel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingTableId(null);
+    setNewTableName('');
+    setNewDisplayName('');
   };
 
   const handleToggleSqlInfo = async (e: React.MouseEvent, tableId: string) => {
@@ -184,19 +221,68 @@ function testConnection() {
             onClick={() => onSelectTable(table)}
           >
             <div className="table-card-header">
-              <div>
-                <h3 className="table-card-title">{table.displayName}</h3>
-                <div className="table-card-subtitle">{table.tableName}</div>
-              </div>
-              <div className="table-card-actions">
-                <button
-                  className="btn-icon btn-danger btn-sm"
-                  onClick={(e) => handleDeleteClick(e, table.id)}
-                  title="Delete table"
+              {renamingTableId === table.id ? (
+                <form
+                  className="table-rename-form"
+                  onSubmit={(e) => handleRenameSubmit(e, table.id)}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  🗑️
-                </button>
-              </div>
+                  <div className="table-rename-inputs">
+                    <input
+                      type="text"
+                      className="table-rename-input"
+                      placeholder="Display Name"
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      autoFocus
+                    />
+                    <input
+                      type="text"
+                      className="table-rename-input small"
+                      placeholder="table_name"
+                      value={newTableName}
+                      onChange={(e) => setNewTableName(e.target.value)}
+                    />
+                  </div>
+                  <div className="table-rename-actions">
+                    <button type="submit" className="btn btn-sm btn-primary">
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={handleRenameCancel}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="table-card-title">{table.displayName}</h3>
+                    <div className="table-card-subtitle">{table.tableName}</div>
+                  </div>
+                  <div className="table-card-actions">
+                    {onRenameTable && (
+                      <button
+                        className="btn-icon btn-secondary btn-sm"
+                        onClick={(e) => handleRenameClick(e, table)}
+                        title="Rename table"
+                      >
+                        ✏️
+                      </button>
+                    )}
+                    <button
+                      className="btn-icon btn-danger btn-sm"
+                      onClick={(e) => handleDeleteClick(e, table.id)}
+                      title="Delete table"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="table-card-stats">

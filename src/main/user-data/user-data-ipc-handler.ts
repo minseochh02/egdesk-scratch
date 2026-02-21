@@ -359,6 +359,36 @@ export function registerUserDataIPCHandlers(): void {
   });
 
   /**
+   * Rename a table
+   */
+  ipcMain.handle('user-data:rename-table', async (event, tableId: string, newTableName: string, newDisplayName?: string) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+
+      const result = userDataManager.renameTable(tableId, newTableName, newDisplayName);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error,
+        };
+      }
+
+      return {
+        success: true,
+        data: result.table,
+      };
+    } catch (error) {
+      console.error('Error renaming table:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to rename table',
+      };
+    }
+  });
+
+  /**
    * Show file picker dialog for Excel files
    */
   ipcMain.handle('user-data:select-excel-file', async () => {
