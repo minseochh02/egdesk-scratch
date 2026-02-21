@@ -27,18 +27,64 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [registeredProject, setRegisteredProject] = useState<RegisteredProject | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nodeCheckDone, setNodeCheckDone] = useState(false);
 
   // Removed automatic window creation on mount
   // Windows will be created after dev server starts successfully
 
+  // Check Node.js installation on mount
+  useEffect(() => {
+    const checkNode = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.ipcRenderer) return;
+
+        const result = await electron.ipcRenderer.invoke('dev-server:check-node');
+
+        if (!result.success) {
+          setError('Failed to check Node.js installation');
+          return;
+        }
+
+        if (!result.hasNode || !result.hasNpm) {
+          const missing = [];
+          if (!result.hasNode) missing.push('Node.js');
+          if (!result.hasNpm) missing.push('npm');
+
+          const errorMessage = `${missing.join(' and ')} not installed.\n\n` +
+            `Please install Node.js from https://nodejs.org/\n` +
+            `Download the LTS version and restart EGDesk after installation.\n\n` +
+            `Detected versions:\n` +
+            `Node.js: ${result.nodeVersion || 'Not found'}\n` +
+            `npm: ${result.npmVersion || 'Not found'}`;
+
+          setError(errorMessage);
+          setNodeCheckDone(true);
+          return;
+        }
+
+        console.log(`✅ Node.js ${result.nodeVersion} and npm ${result.npmVersion} available`);
+        setNodeCheckDone(true);
+      } catch (err) {
+        console.error('Failed to check Node.js:', err);
+        setNodeCheckDone(true);
+      }
+    };
+
+    checkNode();
+  }, []);
+
   // Get folder path from localStorage if user selected one
   useEffect(() => {
+    // Don't start server until Node check is done
+    if (!nodeCheckDone) return;
+
     const storedPath = localStorage.getItem('selected-project-folder');
     if (storedPath) {
       setFolderPath(storedPath);
       startDevServer(storedPath);
     }
-  }, []);
+  }, [nodeCheckDone]);
 
   // Poll for registered project info
   useEffect(() => {
@@ -133,7 +179,10 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
 
       {loading && (
         <div className="developer-status">
-          <p>Starting development server...</p>
+          <p>🚀 Starting development server...</p>
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            If this is a new project, we're setting up Next.js for you. This may take a few minutes...
+          </p>
         </div>
       )}
 
@@ -141,6 +190,30 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
         <div className="developer-error">
           <p><strong>Error:</strong></p>
           <pre className="developer-error-detail">{error}</pre>
+          {(error.includes('Node.js') || error.includes('npm')) && (
+            <div style={{ marginTop: '16px' }}>
+              <button
+                onClick={() => {
+                  const electron = (window as any).electron;
+                  if (electron?.shell?.openExternal) {
+                    electron.shell.openExternal('https://nodejs.org/');
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#43853d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                Download Node.js (LTS)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

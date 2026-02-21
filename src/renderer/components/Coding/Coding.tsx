@@ -25,6 +25,31 @@ interface RegisteredProject {
 const Coding: React.FC = () => {
   const navigate = useNavigate();
   const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
+  const [nodeInstalled, setNodeInstalled] = useState<boolean | null>(null);
+  const [nodeVersion, setNodeVersion] = useState<string>('');
+  const [npmVersion, setNpmVersion] = useState<string>('');
+
+  // Check Node.js installation
+  useEffect(() => {
+    const checkNode = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.ipcRenderer) return;
+
+        const result = await electron.ipcRenderer.invoke('dev-server:check-node');
+        if (result.success) {
+          const hasNode = result.hasNode && result.hasNpm;
+          setNodeInstalled(hasNode);
+          setNodeVersion(result.nodeVersion || 'Not found');
+          setNpmVersion(result.npmVersion || 'Not found');
+        }
+      } catch (error) {
+        console.error('Failed to check Node.js:', error);
+      }
+    };
+
+    checkNode();
+  }, []);
 
   // Fetch projects from registry
   useEffect(() => {
@@ -125,6 +150,8 @@ const Coding: React.FC = () => {
           <button
             className="coding-btn coding-btn-primary"
             onClick={handleCreateNew}
+            disabled={nodeInstalled === false}
+            title={nodeInstalled === false ? 'Node.js is required to create projects' : ''}
           >
             <FontAwesomeIcon icon={faPlus} />
             <span>Create New</span>
@@ -138,6 +165,69 @@ const Coding: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {nodeInstalled === false && (
+        <div style={{
+          backgroundColor: '#fff3cd',
+          border: '1px solid #ffc107',
+          borderRadius: '8px',
+          padding: '16px',
+          margin: '16px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '24px' }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#856404' }}>
+                Node.js Not Installed
+              </h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#856404' }}>
+                Node.js and npm are required to use the Coding features. Please install Node.js to continue.
+              </p>
+              <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#856404' }}>
+                Detected: Node.js: {nodeVersion} | npm: {npmVersion}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const electron = (window as any).electron;
+                if (electron?.shell?.openExternal) {
+                  electron.shell.openExternal('https://nodejs.org/');
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#43853d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Download Node.js
+            </button>
+          </div>
+        </div>
+      )}
+
+      {nodeInstalled === true && (
+        <div style={{
+          backgroundColor: '#d4edda',
+          border: '1px solid #c3e6cb',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          margin: '16px 24px',
+          fontSize: '14px',
+          color: '#155724'
+        }}>
+          ✅ Node.js {nodeVersion} and npm {npmVersion} detected
+        </div>
+      )}
 
       <div className="coding-cards-grid">
         {registeredProjects.length === 0 && (

@@ -9,6 +9,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { CodingAIClient, CodingAIConfig } from './coding-ai-client';
 import { getGoogleApiKey } from '../gemini/index';
 import type { AIStreamEvent } from '../types/ai-types';
+import { getDeveloperWindows } from './developer-windows';
 
 interface ActiveClient {
   client: CodingAIClient;
@@ -135,12 +136,37 @@ class CodingAIHandler {
   private async streamResponse(activeClient: ActiveClient, message: string): Promise<void> {
     const { client, conversationId, sender } = activeClient;
 
+    // Tools that modify files and should trigger a refresh
+    const fileModifyingTools = ['write_file', 'partial_edit', 'move_file', 'delete_file'];
+    let shouldRefresh = false;
+
     try {
       // Process message and stream events
       for await (const event of client.processMessage(message, { conversationId })) {
         // Send event to renderer
         if (!sender.isDestroyed()) {
           sender.send('coding-ai:stream-event', event);
+        }
+
+        // Check if this is a successful tool response for a file-modifying tool
+        if (event.type === 'tool_call_response') {
+          const toolResponse = (event as any).data;
+          if (toolResponse?.success) {
+            // Get the original tool call to check the tool name
+            // We'll need to track this from the request
+            shouldRefresh = true; // Mark for refresh after conversation completes
+          }
+        }
+
+        // If conversation is finished, trigger refresh if needed
+        if (event.type === 'finished' && shouldRefresh) {
+          console.log('🔄 Triggering WebsiteViewer refresh after file modifications');
+          try {
+            const devWindows = getDeveloperWindows();
+            devWindows.refreshWebsiteViewer();
+          } catch (refreshError) {
+            console.warn('Failed to refresh WebsiteViewer:', refreshError);
+          }
         }
       }
     } catch (error) {

@@ -83,6 +83,7 @@ export type Channels =
   | 'navigate-to-synced-folder'
   | 'ai-stream-event'
   | 'coding-ai:stream-event'
+  | 'website-viewer:refresh'
   | 'auth:token-invalid';
 
 /**

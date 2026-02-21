@@ -30,6 +30,44 @@ export class DevServerManager {
   }
 
   /**
+   * Check if Node.js and npm are installed
+   */
+  private async checkNodeInstallation(): Promise<{ hasNode: boolean; hasNpm: boolean; nodeVersion?: string; npmVersion?: string }> {
+    const checkCommand = (command: string): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const child = spawn(command, ['--version'], { shell: true });
+        let output = '';
+
+        child.stdout?.on('data', (data) => {
+          output += data.toString();
+        });
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve(output.trim());
+          } else {
+            resolve(null);
+          }
+        });
+
+        child.on('error', () => {
+          resolve(null);
+        });
+      });
+    };
+
+    const nodeVersion = await checkCommand('node');
+    const npmVersion = await checkCommand('npm');
+
+    return {
+      hasNode: nodeVersion !== null,
+      hasNpm: npmVersion !== null,
+      nodeVersion: nodeVersion || undefined,
+      npmVersion: npmVersion || undefined
+    };
+  }
+
+  /**
    * Set the tunnel ID for generating Vite base paths
    */
   public setTunnelId(tunnelId: string) {
@@ -38,6 +76,16 @@ export class DevServerManager {
   }
 
   private setupIpcHandlers() {
+    ipcMain.handle('dev-server:check-node', async () => {
+      try {
+        const nodeCheck = await this.checkNodeInstallation();
+        return { success: true, ...nodeCheck };
+      } catch (error: any) {
+        console.error('Failed to check Node.js installation:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle('dev-server:analyze-folder', async (event, folderPath: string) => {
       try {
         const projectInfo = await this.analyzeFolder(folderPath);
@@ -134,6 +182,117 @@ export class DevServerManager {
         console.error('Failed to get project by path:', error);
         return { success: false, error: error.message };
       }
+    });
+  }
+
+  /**
+   * Check if a folder is empty or only contains hidden files
+   */
+  private isFolderEmpty(folderPath: string): boolean {
+    try {
+      const files = fs.readdirSync(folderPath);
+      // Filter out hidden files (starting with .)
+      const visibleFiles = files.filter(file => !file.startsWith('.'));
+      return visibleFiles.length === 0;
+    } catch (error) {
+      console.error('Failed to check if folder is empty:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Initialize a new Next.js project in the given folder
+   */
+  private async initializeNextJsProject(folderPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`🚀 Initializing Next.js project in ${folderPath}...`);
+
+      // Use create-next-app with default settings
+      // All flags to make it completely non-interactive
+      const args = [
+        'create-next-app@latest',
+        '.',  // Create in current directory
+        '--typescript',  // Use TypeScript
+        '--tailwind',  // Include Tailwind CSS
+        '--eslint',  // Include ESLint
+        '--app',  // Use App Router
+        '--src-dir',  // Use src/ directory
+        '--import-alias', '@/*',  // Set import alias
+        '--use-npm',  // Use npm as package manager
+        '--no-git',  // Don't initialize git (user may already have it)
+        '--skip-install'  // Skip npm install (we'll do it ourselves with better error handling)
+      ];
+
+      // Clean environment and add flags to force non-interactive mode
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
+      delete cleanEnv.TS_NODE_PROJECT;
+      delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+
+      // Force non-interactive mode to skip all prompts
+      cleanEnv.CI = 'true';  // Tells create-next-app we're in CI mode (no prompts)
+      cleanEnv.DISABLE_PROMPTS = 'true';  // Additional safety
+
+      const initProcess = spawn('npx', args, {
+        cwd: folderPath,
+        shell: true,
+        env: cleanEnv,
+        stdio: ['pipe', 'pipe', 'pipe']  // Allow us to pipe input if needed
+      });
+
+      // Pipe 'n' (No) to stdin to answer any prompts that might still appear
+      // This handles the React Compiler question and any other new prompts
+      if (initProcess.stdin) {
+        initProcess.stdin.write('n\n');  // Answer No to React Compiler
+        initProcess.stdin.end();
+      }
+
+      let stdoutOutput = '';
+      let errorOutput = '';
+
+      initProcess.stdout?.on('data', (data) => {
+        stdoutOutput += data.toString();
+        console.log(`Next.js init: ${data}`);
+      });
+
+      initProcess.stderr?.on('data', (data) => {
+        errorOutput += data.toString();
+        if (!data.toString().includes('WARN')) {
+          console.error(`Next.js init error: ${data}`);
+        }
+      });
+
+      initProcess.on('close', async (code) => {
+        if (code === 0) {
+          console.log('✅ Next.js project initialized successfully');
+          console.log('📦 Created files:');
+          console.log('  - src/app/page.tsx (Home page)');
+          console.log('  - src/app/layout.tsx (Root layout)');
+          console.log('  - package.json (Dependencies)');
+          console.log('  - tailwind.config.ts (Tailwind configuration)');
+          console.log('  - tsconfig.json (TypeScript configuration)');
+
+          // Now install dependencies since we skipped it during create-next-app
+          try {
+            console.log('📦 Installing dependencies...');
+            await this.installDependencies(folderPath, 'npm');
+            console.log('✅ Dependencies installed successfully');
+            resolve();
+          } catch (installError) {
+            console.error('Failed to install dependencies:', installError);
+            reject(installError);
+          }
+        } else {
+          const errorMsg = `Next.js initialization failed with code ${code}\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+        }
+      });
+
+      initProcess.on('error', (error) => {
+        console.error('Next.js init process error:', error);
+        reject(error);
+      });
     });
   }
 
@@ -574,6 +733,29 @@ export class DevServerManager {
 
 
   public async startServer(folderPath: string): Promise<ServerInfo> {
+    // Check if Node.js and npm are installed
+    console.log('🔍 Checking Node.js installation...');
+    const nodeCheck = await this.checkNodeInstallation();
+
+    if (!nodeCheck.hasNode || !nodeCheck.hasNpm) {
+      const missing = [];
+      if (!nodeCheck.hasNode) missing.push('Node.js');
+      if (!nodeCheck.hasNpm) missing.push('npm');
+
+      const errorMessage = `❌ ${missing.join(' and ')} not found on this system.\n\n` +
+        `Please install Node.js (which includes npm) to use the coding features:\n\n` +
+        `1. Visit https://nodejs.org/\n` +
+        `2. Download the LTS (Long Term Support) version\n` +
+        `3. Run the installer\n` +
+        `4. Restart EGDesk after installation\n\n` +
+        `Recommended: Node.js v20 or higher`;
+
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    console.log(`✅ Node.js ${nodeCheck.nodeVersion} and npm ${nodeCheck.npmVersion} detected`);
+
     // Check if tunnel is active for Vite projects
     // We need tunnelId set to properly configure Vite's --base flag
     if (!this.tunnelId) {
@@ -588,11 +770,17 @@ export class DevServerManager {
       return existing;
     }
 
+    // Check if folder is empty - if so, initialize Next.js
+    if (this.isFolderEmpty(folderPath)) {
+      console.log('📂 Empty folder detected - setting up Next.js project...');
+      await this.initializeNextJsProject(folderPath);
+    }
+
     // Analyze folder
     const projectInfo = await this.analyzeFolder(folderPath);
 
     if (!projectInfo.hasPackageJson) {
-      throw new Error('No package.json found in folder');
+      throw new Error('No package.json found in folder. This should not happen after initialization.');
     }
 
     // Install dependencies if needed

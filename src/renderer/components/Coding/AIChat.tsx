@@ -28,6 +28,7 @@ const AIChat: React.FC = () => {
   const keySelectorRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const eventListenerCleanupRef = useRef<(() => void) | null>(null);
+  const currentConversationIdRef = useRef<string | null>(null);
 
   // Get active Anthropic keys from store
   const anthropicKeys = useMemo(
@@ -100,6 +101,151 @@ const AIChat: React.FC = () => {
     };
   }, []);
 
+  // Quick undo (Ctrl/Cmd+Z) to revert last backup changes
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      const isUndo = (e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
+      if (!isUndo) return;
+
+      try {
+        e.preventDefault();
+
+        // Get the most recent backup
+        const electron = (window as any).electron;
+        if (!electron?.backup) {
+          const errorMsg: Message = {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: '❌ Backup system not available',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, errorMsg]);
+          return;
+        }
+
+        // Show loading message
+        const loadingMsg: Message = {
+          id: `loading-${Date.now()}`,
+          role: 'assistant',
+          content: '↩️ Reverting last change...',
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, loadingMsg]);
+
+        // Get available backups
+        const backupsResult = await electron.backup.getAvailableBackups();
+        const backups = Array.isArray(backupsResult)
+          ? backupsResult
+          : (backupsResult?.backups || []);
+
+        if (backups.length === 0) {
+          // Remove loading message and show error
+          setMessages(prev => prev.filter(msg => msg.id !== loadingMsg.id));
+          const errorMsg: Message = {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: '❌ No backups found to revert',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, errorMsg]);
+          return;
+        }
+
+        // Sort backups by timestamp (newest first)
+        const sorted = backups.slice().sort((a: any, b: any) => {
+          const ta = new Date(a.timestamp || a.createdAt || 0).getTime();
+          const tb = new Date(b.timestamp || b.createdAt || 0).getTime();
+          return tb - ta;
+        });
+
+        const mostRecent = sorted[0];
+        const conversationId = mostRecent.conversationId || mostRecent.id;
+
+        if (!conversationId) {
+          // Remove loading message and show error
+          setMessages(prev => prev.filter(msg => msg.id !== loadingMsg.id));
+          const errorMsg: Message = {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: '❌ Invalid backup data',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, errorMsg]);
+          return;
+        }
+
+        // Revert the conversation
+        const result = await electron.backup.revertConversation(conversationId);
+
+        // Remove loading message
+        setMessages(prev => prev.filter(msg => msg.id !== loadingMsg.id));
+
+        if (result?.success) {
+          // Show success message with details about what was reverted
+          const revertDetails = result.result;
+          const filesReverted = revertDetails?.filesReverted || [];
+          const filesDeleted = revertDetails?.filesDeleted || [];
+
+          let detailsText = `✅ Successfully reverted changes from conversation ${String(conversationId).slice(0, 8)}.\n\n`;
+
+          if (filesReverted.length > 0) {
+            detailsText += `📝 Files restored:\n${filesReverted.map((f: string) => `  - ${f}`).join('\n')}\n\n`;
+          }
+
+          if (filesDeleted.length > 0) {
+            detailsText += `🗑️ Files deleted:\n${filesDeleted.map((f: string) => `  - ${f}`).join('\n')}\n\n`;
+          }
+
+          detailsText += '💡 The AI has been notified of this revert. You can continue the conversation.';
+
+          const successMsg: Message = {
+            id: `success-${Date.now()}`,
+            role: 'assistant',
+            content: detailsText,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, successMsg]);
+
+          // Clear AI's in-memory conversation context so it doesn't assume reverted changes still exist
+          // But keep the UI messages so both user and AI can see the revert happened
+          try {
+            // Clear the backup's conversation if it's still active
+            await electron.ipcRenderer.invoke('coding-ai:clear-conversation', conversationId);
+
+            // Also clear the current conversation context if different
+            if (currentConversationIdRef.current && currentConversationIdRef.current !== conversationId) {
+              await electron.ipcRenderer.invoke('coding-ai:clear-conversation', currentConversationIdRef.current);
+            }
+
+            // Reset the conversation ID ref since we cleared it
+            currentConversationIdRef.current = null;
+          } catch (clearError) {
+            console.warn('Failed to clear AI conversation context:', clearError);
+          }
+        } else {
+          const errorMsg: Message = {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: `❌ Revert failed: ${result?.error || 'Unknown error'}`,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, errorMsg]);
+        }
+      } catch (err) {
+        const errorMsg: Message = {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: `❌ Revert error: ${err instanceof Error ? err.message : String(err)}`,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const sendMessage = async () => {
     if (!inputMessage.trim() || !projectPath || !selectedAnthropicKey) return;
 
@@ -134,6 +280,9 @@ const AIChat: React.FC = () => {
 
       // Setup event listener for streaming responses
       const conversationId = `coding-${Date.now()}`;
+
+      // Store conversation ID for potential revert operations
+      currentConversationIdRef.current = conversationId;
 
       const handleEvent = (streamEvent: any) => {
         if (streamEvent.conversationId === conversationId) {
