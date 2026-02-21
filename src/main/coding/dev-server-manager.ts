@@ -408,7 +408,7 @@ export class DevServerManager {
    * Run Next.js plugin setup to generate middleware and helper files
    */
   private async setupNextApiPlugin(folderPath: string): Promise<void> {
-    try {
+    return new Promise((resolve, reject) => {
       console.log('🔧 Setting up Next.js API plugin...');
 
       // Get API key from store
@@ -416,19 +416,60 @@ export class DevServerManager {
       const mcpConfig = store.get('mcpConfiguration') as any;
       const apiKey = mcpConfig?.tunnel?.apiKey;
 
-      // Dynamically import the plugin (avoid build issues with conditional imports)
-      const { setupNextApiPlugin } = require('../../packages/next-api-plugin/src/index');
+      // Build CLI arguments
+      const args = ['egdesk-next-setup', '--url', 'http://localhost:8080'];
+      if (apiKey) {
+        args.push('--api-key', apiKey);
+      }
 
-      await setupNextApiPlugin(folderPath, {
-        egdeskUrl: 'http://localhost:8080',
-        apiKey
+      // Clean environment
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
+      delete cleanEnv.TS_NODE_PROJECT;
+      delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+
+      // Run the CLI via npx
+      const setupProcess = spawn('npx', args, {
+        cwd: folderPath,
+        shell: true,
+        env: cleanEnv
       });
 
-      console.log('✓ Next.js API plugin setup complete');
-    } catch (error) {
-      console.error('Failed to setup Next.js API plugin:', error);
-      console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
-    }
+      let stdoutOutput = '';
+      let errorOutput = '';
+
+      setupProcess.stdout?.on('data', (data) => {
+        stdoutOutput += data.toString();
+        console.log(`Next.js setup: ${data}`);
+      });
+
+      setupProcess.stderr?.on('data', (data) => {
+        errorOutput += data.toString();
+        if (!data.toString().includes('WARN')) {
+          console.error(`Next.js setup error: ${data}`);
+        }
+      });
+
+      setupProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('✓ Next.js API plugin setup complete');
+          resolve();
+        } else {
+          const errorMsg = `Next.js plugin setup failed with code ${code}\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
+          console.error(errorMsg);
+          console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
+          // Don't reject - just warn and continue
+          resolve();
+        }
+      });
+
+      setupProcess.on('error', (error) => {
+        console.error('Next.js setup process error:', error);
+        console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
+        // Don't reject - just warn and continue
+        resolve();
+      });
+    });
   }
 
   private async injectViteApiPlugin(folderPath: string): Promise<void> {

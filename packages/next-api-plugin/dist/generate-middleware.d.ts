@@ -5,6 +5,6 @@
  * and forwards them to the EGDesk MCP server.
  */
 /**
- * Generate middleware.ts file in the project root
+ * Generate middleware.ts file in the correct location (root or src/)
  */
 export declare function generateMiddleware(projectPath: string): void;

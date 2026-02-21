@@ -118,7 +118,8 @@ export class AutonomousGeminiClient implements AIClientService {
         this.ollamaChatHistory = [];
 
         const projectContext = await this.getProjectContext();
-        const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
+        const framework = projectContextBridge.getProjectFramework();
+        const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined, framework);
         if (systemPrompt && systemPrompt.trim().length > 0) {
           this.ollamaChatHistory.push({
             role: 'system',
@@ -155,7 +156,8 @@ export class AutonomousGeminiClient implements AIClientService {
       this.genAI = new GoogleGenerativeAI(apiKey);
 
       const projectContext = await this.getProjectContext();
-      const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined);
+      const framework = projectContextBridge.getProjectFramework();
+      const systemPrompt = getEGDeskSystemPrompt(projectContext || undefined, framework);
 
       this.model = this.genAI.getGenerativeModel({
         model: targetModel,

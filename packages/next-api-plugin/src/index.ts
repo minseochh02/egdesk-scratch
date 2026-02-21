@@ -13,18 +13,20 @@ import {
   type UserDataTable
 } from './setup-userdata';
 import { generateMiddleware } from './generate-middleware';
+import { generateProxy } from './generate-proxy';
 import { generateHelpers } from './generate-helpers';
 
 export interface SetupOptions {
   egdeskUrl?: string;
   apiKey?: string;
+  useProxy?: boolean; // Use proxy.ts (Next.js 16+) instead of middleware.ts
 }
 
 /**
  * Main setup function for Next.js projects
  *
  * Discovers tables and generates all necessary files:
- * - middleware.ts (proxy interceptor)
+ * - proxy.ts or middleware.ts (proxy interceptor)
  * - egdesk.config.ts (table definitions)
  * - egdesk-helpers.ts (helper functions)
  * - .env.local (environment variables)
@@ -33,7 +35,7 @@ export async function setupNextApiPlugin(
   projectPath: string,
   options: SetupOptions = {}
 ): Promise<void> {
-  const { egdeskUrl = 'http://localhost:8080', apiKey } = options;
+  const { egdeskUrl = 'http://localhost:8080', apiKey, useProxy = true } = options;
 
   console.log('🔍 Discovering EGDesk user-data tables...');
 
@@ -61,14 +63,25 @@ export async function setupNextApiPlugin(
     // Generate all configuration files
     console.log('');
     console.log('📝 Generating configuration files...');
-    generateMiddleware(projectPath);
+
+    // Use proxy.ts (Next.js 16+) or middleware.ts (legacy)
+    if (useProxy) {
+      console.log('🔄 Using proxy.ts (Next.js 16+ recommended)');
+      generateProxy(projectPath);
+    } else {
+      console.log('🔄 Using middleware.ts (legacy)');
+      generateMiddleware(projectPath);
+    }
+
     generateConfigFile(projectPath, config);
     generateHelpers(projectPath);
     updateEnvLocal(projectPath, config);
 
+    const proxyFile = useProxy ? 'proxy.ts' : 'middleware.ts';
+
     console.log('');
     console.log('✅ Setup complete! Files generated:');
-    console.log('   - middleware.ts (database proxy)');
+    console.log(`   - ${proxyFile} (database proxy)`);
     console.log('   - egdesk.config.ts (type-safe config)');
     console.log('   - egdesk-helpers.ts (helper functions)');
     console.log('   - .env.local (environment variables)');
@@ -92,4 +105,5 @@ export async function setupNextApiPlugin(
 export type { UserDataTable, UserDataConfig } from './setup-userdata';
 export { discoverTables } from './setup-userdata';
 export { generateMiddleware } from './generate-middleware';
+export { generateProxy } from './generate-proxy';
 export { generateHelpers } from './generate-helpers';
