@@ -248,8 +248,8 @@ export async function callUserDataTool(
   };
 
   // Use proxy endpoint - works in both local and tunneled environments
-  // Relative URL (no leading slash) respects the current page's base path
-  const response = await fetch('__user_data_proxy', {
+  // Absolute URL with leading slash to ensure correct resolution from any route
+  const response = await fetch('/__user_data_proxy', {
     method: 'POST',
     headers,
     body: JSON.stringify({ tool: toolName, arguments: args })

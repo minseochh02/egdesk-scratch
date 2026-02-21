@@ -115,6 +115,17 @@ export class ProjectContextBridge {
   }
 
   /**
+   * Get project framework (vite, nextjs, etc.) for AI context
+   */
+  getProjectFramework(): 'vite' | 'nextjs' | 'unknown' {
+    if (!this.currentProject?.metadata?.framework) return 'unknown';
+    const framework = this.currentProject.metadata.framework.toLowerCase();
+    if (framework.includes('vite')) return 'vite';
+    if (framework.includes('next')) return 'nextjs';
+    return 'unknown';
+  }
+
+  /**
    * Get project metadata for AI context
    */
   getProjectMetadata(): Record<string, any> {
@@ -135,8 +146,31 @@ export class ProjectContextBridge {
    * This allows the AI to work on a specific project folder
    */
   setTemporaryProjectPath(folderPath: string): void {
+    const fs = require('fs');
+    const path = require('path');
+
     // Extract project name from folder path
     const projectName = folderPath.split('/').pop() || 'Project';
+
+    // Detect framework type
+    let framework: string | undefined;
+    try {
+      const packageJsonPath = path.join(folderPath, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+
+        // Detect framework from dependencies
+        if (packageJson.dependencies?.next || packageJson.devDependencies?.next) {
+          framework = 'Next.js';
+        } else if (packageJson.dependencies?.vite || packageJson.devDependencies?.vite) {
+          framework = 'Vite';
+        } else if (packageJson.dependencies?.react || packageJson.devDependencies?.react) {
+          framework = 'React';
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to detect framework:', error);
+    }
 
     this.currentProject = {
       id: 'temp-' + Date.now(),
@@ -148,10 +182,13 @@ export class ProjectContextBridge {
       isInitialized: false,
       isGit: false,
       createdAt: new Date(),
-      metadata: {}
+      metadata: {
+        framework
+      }
     };
 
     console.log(`📁 Temporary project path set: ${folderPath}`);
+    console.log(`📁 Detected framework: ${framework || 'unknown'}`);
     console.log(`📁 Current project:`, this.currentProject);
     console.log(`📁 Tools will resolve relative paths to: ${folderPath}`);
   }

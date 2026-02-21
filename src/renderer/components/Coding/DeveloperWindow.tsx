@@ -28,26 +28,8 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Call IPC to create developer windows
-    const createWindows = async () => {
-      try {
-        const electron = (window as any).electron;
-        if (electron?.ipcRenderer) {
-          const result = await electron.ipcRenderer.invoke('create-developer-windows');
-          if (result.success) {
-            console.log('Developer windows created successfully');
-          } else {
-            console.error('Failed to create developer windows:', result.error);
-          }
-        }
-      } catch (error) {
-        console.error('Error creating developer windows:', error);
-      }
-    };
-
-    createWindows();
-  }, []);
+  // Removed automatic window creation on mount
+  // Windows will be created after dev server starts successfully
 
   // Get folder path from localStorage if user selected one
   useEffect(() => {
@@ -118,6 +100,19 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
 
       // Store server URL for WebsiteViewer to access
       localStorage.setItem('dev-server-url', startResult.serverInfo.url);
+
+      // Now that server is ready, create the developer windows
+      try {
+        const result = await electron.ipcRenderer.invoke('create-developer-windows');
+        if (result.success) {
+          console.log('Developer windows created successfully');
+        } else {
+          console.error('Failed to create developer windows:', result.error);
+        }
+      } catch (windowError) {
+        console.error('Error creating developer windows:', windowError);
+        // Don't fail the whole flow if window creation fails
+      }
     } catch (err: any) {
       console.error('Error starting dev server:', err);
       setError(err.message);
