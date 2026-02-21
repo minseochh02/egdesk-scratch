@@ -14,23 +14,27 @@ export class ListDirectoryTool implements ToolExecutor {
   dangerous = false;
 
   async execute(params: { dirPath?: string }, signal?: AbortSignal, conversationId?: string): Promise<Array<{name: string; type: string; path: string}>> {
-    // Use provided dirPath or fall back to current project directory
-    let targetPath = params.dirPath;
-    
-    if (!targetPath) {
-      // Try to get current project path from context
-      const projectPath = projectContextBridge.getCurrentProjectPath();
-      const hasProject = projectContextBridge.hasCurrentProject();
-      
-      console.log(`🔍 No dirPath provided. Project available: ${hasProject}, Project path: ${projectPath}, CWD: ${process.cwd()}`);
-      
-      targetPath = projectPath;
-      if (!targetPath || targetPath === process.cwd()) {
-        // Fall back to current working directory if no project context
-        targetPath = process.cwd();
-        console.log(`⚠️ Using fallback directory: ${targetPath}`);
+    // Get project path from context
+    const projectPath = projectContextBridge.getCurrentProjectPath();
+    const hasProject = projectContextBridge.hasCurrentProject();
+
+    let targetPath: string;
+
+    if (!params.dirPath) {
+      // No dirPath provided - use project directory
+      console.log(`🔍 No dirPath provided. Project available: ${hasProject}, Project path: ${projectPath}`);
+      targetPath = hasProject && projectPath ? projectPath : process.cwd();
+      console.log(`✅ Using directory: ${targetPath}`);
+    } else {
+      // dirPath provided - resolve it against project path if relative
+      if (path.isAbsolute(params.dirPath)) {
+        targetPath = params.dirPath;
+        console.log(`📂 Using absolute dirPath: ${targetPath}`);
       } else {
-        console.log(`✅ Using project directory: ${targetPath}`);
+        // Relative path - resolve against project directory
+        const basePath = hasProject && projectPath ? projectPath : process.cwd();
+        targetPath = path.resolve(basePath, params.dirPath);
+        console.log(`📂 Resolved relative dirPath "${params.dirPath}" to: ${targetPath} (base: ${basePath})`);
       }
     }
 

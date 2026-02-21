@@ -27,6 +27,7 @@ const AIChat: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const keySelectorRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const eventListenerCleanupRef = useRef<(() => void) | null>(null);
 
   // Get active Anthropic keys from store
   const anthropicKeys = useMemo(
@@ -89,6 +90,16 @@ const AIChat: React.FC = () => {
     };
   }, [showKeyDropdown]);
 
+  // Cleanup event listener on unmount
+  useEffect(() => {
+    return () => {
+      if (eventListenerCleanupRef.current) {
+        eventListenerCleanupRef.current();
+        eventListenerCleanupRef.current = null;
+      }
+    };
+  }, []);
+
   const sendMessage = async () => {
     if (!inputMessage.trim() || !projectPath || !selectedAnthropicKey) return;
 
@@ -115,10 +126,16 @@ const AIChat: React.FC = () => {
 
       const apiKey = selectedAnthropicKey.fields?.apiKey || '';
 
+      // Clean up previous event listener if any
+      if (eventListenerCleanupRef.current) {
+        eventListenerCleanupRef.current();
+        eventListenerCleanupRef.current = null;
+      }
+
       // Setup event listener for streaming responses
       const conversationId = `coding-${Date.now()}`;
 
-      const handleEvent = (_event: any, streamEvent: any) => {
+      const handleEvent = (streamEvent: any) => {
         if (streamEvent.conversationId === conversationId) {
           console.log('📥 Received stream event:', streamEvent.type);
           handleStreamEvent(streamEvent);
@@ -126,12 +143,20 @@ const AIChat: React.FC = () => {
           // Stop loading when finished or error
           if (streamEvent.type === AIEventType.Finished || streamEvent.type === AIEventType.Error) {
             setIsLoading(false);
+            // Cleanup listener after conversation ends
+            if (eventListenerCleanupRef.current) {
+              eventListenerCleanupRef.current();
+              eventListenerCleanupRef.current = null;
+            }
           }
         }
       };
 
-      // Register event listener
-      electron.ipcRenderer.on('coding-ai:stream-event', handleEvent);
+      // Register event listener (the on method returns an unsubscribe function)
+      const unsubscribe = electron.ipcRenderer.on('coding-ai:stream-event', handleEvent);
+
+      // Store cleanup function
+      eventListenerCleanupRef.current = unsubscribe;
 
       // Send message to Coding AI
       const result = await electron.ipcRenderer.invoke('coding-ai:send-message', {
@@ -151,14 +176,6 @@ const AIChat: React.FC = () => {
 
       console.log('✅ Message sent to Coding AI');
 
-      // Cleanup listener when done
-      const cleanup = () => {
-        electron.ipcRenderer.removeListener('coding-ai:stream-event', handleEvent);
-      };
-
-      // Auto-cleanup after timeout
-      setTimeout(cleanup, 310000); // Slightly longer than timeoutMs
-
     } catch (error: any) {
       console.error('Error sending message:', error);
 
@@ -171,6 +188,12 @@ const AIChat: React.FC = () => {
 
       setMessages(prev => [...prev, errorMessage]);
       setIsLoading(false);
+
+      // Cleanup listener on error
+      if (eventListenerCleanupRef.current) {
+        eventListenerCleanupRef.current();
+        eventListenerCleanupRef.current = null;
+      }
     }
   };
 
@@ -325,7 +348,7 @@ const AIChat: React.FC = () => {
   };
 
   const handleKeySelection = (key: AIKey) => {
-    setSelectedGoogleKey(key);
+    setSelectedAnthropicKey(key);
     setShowKeyDropdown(false);
   };
 

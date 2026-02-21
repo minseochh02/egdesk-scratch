@@ -25,7 +25,7 @@ export const ExcelUploadDialog: React.FC<ExcelUploadDialogProps> = ({ table, onC
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
-    duplicateAction: 'skip' | 'update' | 'allow';
+    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
   }>({
     uniqueKeyColumns: [],
     duplicateAction: 'skip',

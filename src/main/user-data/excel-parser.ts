@@ -1,4 +1,5 @@
-import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
+import fs from 'fs/promises';
 import path from 'path';
 import {
   ParsedExcelData,
@@ -195,8 +196,10 @@ export async function parseExcelFile(
     skipBottomRows?: number; // How many rows to skip at the bottom (default: 0)
   }
 ): Promise<ParsedExcelData> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
+  // Read file as buffer using fs, then pass to XLSX
+  // This supports both .xls (binary) and .xlsx (ZIP) formats
+  const buffer = await fs.readFile(filePath);
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
 
   const headerRow = options?.headerRow || 1;
   const skipRows = options?.skipRows || 0;
@@ -204,18 +207,19 @@ export async function parseExcelFile(
 
   const sheets: ParsedExcelData['sheets'] = [];
 
-  workbook.eachSheet((worksheet, sheetId) => {
-    const allRows: any[][] = [];
-    let headers: string[] = [];
-    let totalRows = 0;
+  workbook.SheetNames.forEach((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName];
 
-    // First pass: collect all rows
-    worksheet.eachRow((row, rowNumber) => {
-      const values = row.values as any[];
-      // ExcelJS includes a null at index 0, so we slice it
-      allRows.push(values.slice(1));
-      totalRows = rowNumber;
+    // Convert sheet to array of arrays (includes all rows)
+    const allRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: false,
+      dateNF: 'yyyy-mm-dd',
+      defval: null
     });
+
+    let headers: string[] = [];
+    const totalRows = allRows.length;
 
     // Calculate which rows to use
     const headerRowIndex = headerRow - 1; // Convert to 0-based
@@ -229,11 +233,11 @@ export async function parseExcelFile(
         const headerValue = h !== null && h !== undefined ? String(h).trim() : `Column${idx + 1}`;
         return sanitizeColumnName(headerValue);
       });
-      
+
       // Handle duplicate column names by adding suffixes
       headers = [];
       const headerCounts: Record<string, number> = {};
-      
+
       rawHeaders.forEach((header) => {
         if (headerCounts[header]) {
           // This header already exists, add a suffix
@@ -245,39 +249,44 @@ export async function parseExcelFile(
           headers.push(header);
         }
       });
-      
+
       console.log('📝 Original headers:', headerValues.map(h => String(h).trim()));
       console.log('📝 Processed headers:', headers);
     }
+
+    // Get raw worksheet data with dates preserved
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: true,  // Keep raw values including Date objects
+      defval: null
+    });
 
     // Extract data rows (skip top rows and bottom rows)
     const rows: any[] = [];
     for (let i = dataStartIndex; i < dataEndIndex && i < allRows.length; i++) {
       const rowData: any = {};
       const values = allRows[i];
+      const rawValues = rawData[i] || [];
 
       headers.forEach((header, idx) => {
         const cellValue = values[idx];
+        const rawValue = rawValues[idx];
 
         // Debug logging for date columns (first 3 rows only)
         if (i - dataStartIndex < 3 && header === '일자') {
           console.log(`🔍 Excel Parser - Row ${i - dataStartIndex}, Column "${header}":`, {
             value: cellValue,
             type: typeof cellValue,
-            isDate: cellValue instanceof Date,
-            rawValue: cellValue
+            rawValue: rawValue,
+            isDate: rawValue instanceof Date,
           });
         }
 
-        // Handle different cell value types
-        if (cellValue === null || cellValue === undefined) {
+        // Prefer raw value if it's a Date object
+        if (rawValue instanceof Date) {
+          rowData[header] = rawValue;
+        } else if (cellValue === null || cellValue === undefined) {
           rowData[header] = null;
-        } else if (cellValue instanceof Date) {
-          // Keep as Date object for detection - will be converted during insert
-          rowData[header] = cellValue;
-        } else if (typeof cellValue === 'object' && 'result' in cellValue) {
-          // Handle formula cells
-          rowData[header] = cellValue.result;
         } else {
           rowData[header] = cellValue;
         }
@@ -287,7 +296,7 @@ export async function parseExcelFile(
       const hasData = Object.values(rowData).some(
         (v) => v !== null && v !== undefined && v !== ''
       );
-      
+
       if (hasData) {
         // Skip summary rows (totals, etc.)
         if (!isSummaryRow(rowData)) {
@@ -300,7 +309,7 @@ export async function parseExcelFile(
       const detectedTypes = detectColumnTypes(rows, headers);
 
       sheets.push({
-        name: worksheet.name,
+        name: sheetName,
         headers,
         rows,
         detectedTypes,
@@ -359,13 +368,7 @@ export function validateExcelFile(filePath: string): { valid: boolean; error?: s
  * Get sheet names from Excel file
  */
 export async function getSheetNames(filePath: string): Promise<string[]> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
-
-  const sheetNames: string[] = [];
-  workbook.eachSheet((worksheet) => {
-    sheetNames.push(worksheet.name);
-  });
-
-  return sheetNames;
+  const buffer = await fs.readFile(filePath);
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  return workbook.SheetNames;
 }

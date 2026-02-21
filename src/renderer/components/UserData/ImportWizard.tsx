@@ -9,7 +9,7 @@ interface ImportWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'file-selection' | 'parse-config' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'file-selection' | 'parse-config' | 'table-info' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete }) => {
   const { parseExcel, importExcel, selectExcelFile, validateTableName } = useUserData();
@@ -27,7 +27,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
-    duplicateAction: 'skip' | 'update' | 'allow';
+    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
   }>({
     uniqueKeyColumns: [],
     duplicateAction: 'skip',
@@ -62,19 +62,19 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const handleParseConfigComplete = async () => {
     try {
       setError(null);
-      
+
       // Parse the Excel file with configured options
       const parsed = await parseExcel(selectedFile!, {
         headerRow,
         skipBottomRows,
       });
-      
+
       setParsedData(parsed);
       setTableName(parsed.suggestedTableName);
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
       setSelectedSheet(0);
 
-      setCurrentStep('column-mapping');
+      setCurrentStep('table-info');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse Excel file');
     }
@@ -93,9 +93,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
-    } else if (currentStep === 'column-mapping') {
+    } else if (currentStep === 'table-info') {
       setCurrentStep('parse-config');
-      setParsedData(null);
+    } else if (currentStep === 'column-mapping') {
+      setCurrentStep('table-info');
       setColumnMappings(null);
     } else if (currentStep === 'duplicate-detection') {
       setCurrentStep('column-mapping');
@@ -105,14 +106,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   };
 
   const handleNext = async () => {
-    if (currentStep === 'duplicate-detection') {
-      // Move to preview step
-      setCurrentStep('preview');
-      return;
-    }
-
-    if (currentStep === 'preview') {
-      // Validate inputs
+    if (currentStep === 'table-info') {
+      // Validate table name
       if (!tableName.trim()) {
         setError('Please enter a table name');
         return;
@@ -132,7 +127,22 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           return;
         }
 
-        // Start import
+        setError(null);
+        setCurrentStep('column-mapping');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to validate table name');
+      }
+      return;
+    }
+
+    if (currentStep === 'duplicate-detection') {
+      // Move to preview step
+      setCurrentStep('preview');
+      return;
+    }
+
+    if (currentStep === 'preview') {
+      // Start import (table name already validated in table-info step)
         setCurrentStep('importing');
         setIsImporting(true);
         setImportError(null);
@@ -162,14 +172,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           duplicateDetails: result.importOperation.duplicateDetails,
           errorDetails: result.importOperation.errorDetails,
         });
-
-        setCurrentStep('complete');
-      } catch (err) {
-        setImportError(err instanceof Error ? err.message : 'Import failed');
-        setCurrentStep('complete');
-      } finally {
-        setIsImporting(false);
-      }
     }
   };
 
@@ -182,6 +184,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     const steps = [
       { id: 'file-selection', label: 'Select File' },
       { id: 'parse-config', label: 'Configure' },
+      { id: 'table-info', label: 'Table Info' },
       { id: 'column-mapping', label: 'Map Columns' },
       { id: 'duplicate-detection', label: 'Duplicates' },
       { id: 'preview', label: 'Preview' },
@@ -345,6 +348,71 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     );
   };
 
+  const renderTableInfo = () => {
+    return (
+      <div>
+        <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>📋 {selectedFile?.split(/[\\/]/).pop()}</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            Name your new table
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Table Information</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Give your table a name and description. You can change these later.
+        </p>
+
+        <div className="form-group">
+          <label>Table Name *</label>
+          <input
+            type="text"
+            value={tableName}
+            onChange={(e) => {
+              let value = e.target.value;
+              // Convert to lowercase and remove invalid characters
+              value = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+              // Ensure doesn't start with number
+              if (/^\d/.test(value)) {
+                value = 'table_' + value;
+              }
+              setTableName(value);
+            }}
+            placeholder="e.g., sales_data"
+          />
+          <small style={{ color: '#999', fontSize: '12px' }}>
+            Internal database table name (lowercase, alphanumeric and underscores only)
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label>Display Name *</label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g., Sales Data 2024"
+          />
+          <small style={{ color: '#999', fontSize: '12px' }}>
+            Human-readable name shown in the UI
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label>Description (optional)</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add a description for this table..."
+            rows={3}
+          />
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
   const renderPreview = () => {
     if (!parsedData || !columnMappings) return null;
 
@@ -409,53 +477,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
     return (
       <div className="preview-section">
-        <div className="preview-config">
-          <h3 style={{ marginTop: 0 }}>Table Configuration</h3>
-
-          <div className="form-group">
-            <label>Table Name *</label>
-            <input
-              type="text"
-              value={tableName}
-              onChange={(e) => {
-                let value = e.target.value;
-                // Convert to lowercase and remove invalid characters
-                value = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-                // Ensure doesn't start with number
-                if (/^\d/.test(value)) {
-                  value = 'table_' + value;
-                }
-                setTableName(value);
-              }}
-              placeholder="e.g., sales_data"
-            />
-            <small style={{ color: '#999', fontSize: '12px' }}>
-              Internal database table name (lowercase, alphanumeric and underscores only)
-            </small>
-          </div>
-
-          <div className="form-group">
-            <label>Display Name *</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="e.g., Sales Data 2024"
-            />
-            <small style={{ color: '#999', fontSize: '12px' }}>
-              Human-readable name shown in the UI
-            </small>
-          </div>
-
-          <div className="form-group">
-            <label>Description (optional)</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add a description for this table..."
-              rows={3}
-            />
-          </div>
+        <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 8px 0' }}>Import Summary</h4>
+          <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
+            <strong>Table:</strong> {displayName} ({tableName})<br />
+            <strong>Total Rows:</strong> {currentSheet.rows.length.toLocaleString()}<br />
+            <strong>Columns:</strong> {uniqueDbColumns.length}
+          </p>
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -702,6 +730,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
         return renderFileSelection();
       case 'parse-config':
         return renderParseConfig();
+      case 'table-info':
+        return renderTableInfo();
       case 'column-mapping':
         return renderColumnMapping();
       case 'duplicate-detection':
@@ -725,6 +755,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     if (currentStep === 'parse-config') {
       return headerRow > 0;
     }
+    if (currentStep === 'table-info') {
+      return tableName.trim() && displayName.trim();
+    }
     if (currentStep === 'column-mapping') {
       return columnMappings !== null;
     }
@@ -733,7 +766,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
        return true;
     }
     if (currentStep === 'preview') {
-      return tableName.trim() && displayName.trim() && columnMappings !== null;
+      return columnMappings !== null;
     }
     return false;
   };
@@ -755,7 +788,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'parse-config' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
+            {(currentStep === 'parse-config' || currentStep === 'table-info' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>

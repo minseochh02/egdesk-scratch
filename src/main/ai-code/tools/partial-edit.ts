@@ -47,12 +47,9 @@ export class PartialEditTool implements ToolExecutor {
     if (!path.isAbsolute(params.filePath)) {
       const projectPath = projectContextBridge.getCurrentProjectPath();
       const hasProject = projectContextBridge.hasCurrentProject();
-      
-      if (hasProject && projectPath && projectPath !== process.cwd()) {
-        resolvedPath = path.resolve(projectPath, params.filePath);
-      } else {
-        resolvedPath = path.resolve(process.cwd(), params.filePath);
-      }
+
+      const basePath = hasProject && projectPath ? projectPath : process.cwd();
+      resolvedPath = path.resolve(basePath, params.filePath);
     }
 
     try {
@@ -289,12 +286,9 @@ export class PartialEditTool implements ToolExecutor {
     if (!path.isAbsolute(params.filePath)) {
       const projectPath = projectContextBridge.getCurrentProjectPath();
       const hasProject = projectContextBridge.hasCurrentProject();
-      
-      if (hasProject && projectPath && projectPath !== process.cwd()) {
-        resolvedPath = path.resolve(projectPath, params.filePath);
-      } else {
-        resolvedPath = path.resolve(process.cwd(), params.filePath);
-      }
+
+      const basePath = hasProject && projectPath ? projectPath : process.cwd();
+      resolvedPath = path.resolve(basePath, params.filePath);
     }
 
     // Check if file exists

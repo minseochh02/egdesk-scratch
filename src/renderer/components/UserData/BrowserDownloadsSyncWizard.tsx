@@ -10,7 +10,7 @@ interface BrowserDownloadsSyncWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'table-info' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
 
 interface BrowserDownloadFolder {
@@ -173,9 +173,9 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
   const handleImportModeSelect = (mode: ImportMode) => {
     setImportMode(mode);
-    
+
     if (mode === 'create-new') {
-      setCurrentStep('column-mapping');
+      setCurrentStep('table-info');
     } else if (mode === 'sync-existing') {
       setCurrentStep('existing-table-mapping');
     }
@@ -212,9 +212,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setCurrentStep('parse-config');
       setParsedData(null);
       setImportMode(null);
-    } else if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') {
+    } else if (currentStep === 'table-info') {
       setCurrentStep('import-mode');
+    } else if (currentStep === 'column-mapping') {
+      setCurrentStep('table-info');
       setColumnMappings(null);
+    } else if (currentStep === 'existing-table-mapping') {
+      setCurrentStep('import-mode');
       setExistingTableColumnMappings(null);
     } else if (currentStep === 'preview') {
       setCurrentStep('duplicate-detection');
@@ -228,6 +232,35 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   };
 
   const handleNext = async () => {
+    if (currentStep === 'table-info') {
+      // Validate table name
+      if (!tableName.trim()) {
+        setError('Please enter a table name');
+        return;
+      }
+
+      if (!displayName.trim()) {
+        setError('Please enter a display name');
+        return;
+      }
+
+      // Validate table name availability
+      try {
+        const validation = await validateTableName(tableName);
+
+        if (!validation.available) {
+          setError(`Table name "${validation.sanitizedName}" is already in use. Please choose a different name.`);
+          return;
+        }
+
+        setError(null);
+        setCurrentStep('column-mapping');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to validate table name');
+      }
+      return;
+    }
+
     if (currentStep === 'preview') {
       try {
         setCurrentStep('importing');
@@ -238,16 +271,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         let result: any = null;
 
         if (importMode === 'create-new') {
-          // Validate inputs
-          if (!tableName.trim() || !displayName.trim()) {
-            throw new Error('Please enter table name and display name');
-          }
-
-          const validation = await validateTableName(tableName);
-          if (!validation.available) {
-            throw new Error(`Table name "${validation.sanitizedName}" is already in use.`);
-          }
-
+          // Table name already validated in table-info step
           result = await importExcel({
             filePath: selectedFile!.path,
             sheetIndex: selectedSheet,
@@ -403,6 +427,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       if (currentStep === 'file-selection') return 1;
       if (currentStep === 'parse-config') return 2;
       if (currentStep === 'import-mode') return 3;
+      if (currentStep === 'table-info') return 4;
       if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 4;
       if (currentStep === 'duplicate-detection') return 5;
       if (currentStep === 'preview') return 6;
@@ -693,6 +718,69 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     );
   };
 
+  const renderTableInfo = () => {
+    return (
+      <div>
+        <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>📋 {selectedFile?.name}</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            Name your new table
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Table Information</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Give your table a name and description. You can change these later.
+        </p>
+
+        <div className="form-group">
+          <label>Table Name *</label>
+          <input
+            type="text"
+            value={tableName}
+            onChange={(e) => {
+              let value = e.target.value;
+              value = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+              if (/^\d/.test(value)) {
+                value = 'table_' + value;
+              }
+              setTableName(value);
+            }}
+            placeholder="e.g., sales_data"
+          />
+          <small style={{ color: '#999', fontSize: '12px' }}>
+            Internal database table name (lowercase, alphanumeric and underscores only)
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label>Display Name *</label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g., Sales Data 2024"
+          />
+          <small style={{ color: '#999', fontSize: '12px' }}>
+            Human-readable name shown in the UI
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label>Description (optional)</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add a description for this table..."
+            rows={3}
+          />
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
   const renderImportMode = () => {
     return (
       <div>
@@ -894,45 +982,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
       return (
         <div className="preview-section">
-          <div className="preview-config">
-            <h3 style={{ marginTop: 0 }}>Table Configuration</h3>
-
-            <div className="form-group">
-              <label>Table Name *</label>
-              <input
-                type="text"
-                value={tableName}
-                onChange={(e) => {
-                  let value = e.target.value;
-                  value = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-                  if (/^\d/.test(value)) {
-                    value = 'table_' + value;
-                  }
-                  setTableName(value);
-                }}
-                placeholder="e.g., sales_data"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Display Name *</label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g., Sales Data 2024"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Description (optional)</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add a description for this table..."
-                rows={3}
-              />
-            </div>
+          <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 8px 0' }}>Import Summary</h4>
+            <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
+              <strong>Table:</strong> {displayName} ({tableName})<br />
+              <strong>Total Rows:</strong> {currentSheet.rows.length.toLocaleString()}<br />
+              <strong>Columns:</strong> {uniqueDbColumns.length}
+            </p>
           </div>
 
           <div style={{ marginTop: '20px', padding: '16px', background: '#f0f8ff', borderRadius: '8px', border: '1px solid #2196F3' }}>
@@ -1089,6 +1145,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         return renderParseConfig();
       case 'import-mode':
         return renderImportMode();
+      case 'table-info':
+        return renderTableInfo();
       case 'column-mapping':
         return renderColumnMapping();
       case 'existing-table-mapping':
@@ -1107,9 +1165,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   };
 
   const canProceed = () => {
+    if (currentStep === 'table-info') {
+      return tableName.trim() && displayName.trim();
+    }
     if (currentStep === 'preview') {
       if (importMode === 'create-new') {
-        return tableName.trim() && displayName.trim() && columnMappings !== null;
+        return columnMappings !== null;
       } else if (importMode === 'sync-existing') {
         return selectedTableId !== null && existingTableColumnMappings !== null;
       }
@@ -1134,7 +1195,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'table-info' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -1153,6 +1214,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 disabled={loadingFiles}
               >
                 {loadingFiles ? 'Parsing...' : 'Next: Parse Excel →'}
+              </button>
+            ) : currentStep === 'table-info' ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleNext}
+                disabled={!canProceed()}
+              >
+                Next ➡️
               </button>
             ) : currentStep === 'preview' ? (
               <button
