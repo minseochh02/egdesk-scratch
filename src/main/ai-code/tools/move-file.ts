@@ -21,16 +21,14 @@ export class MoveFileTool implements ToolExecutor {
     // Resolve relative paths against current project directory to match other tools
     const hasProject = projectContextBridge.hasCurrentProject();
     const projectPath = projectContextBridge.getCurrentProjectPath();
+    const basePath = hasProject && projectPath ? projectPath : process.cwd();
+
     const from = path.isAbsolute(sourcePath)
       ? sourcePath
-      : hasProject && projectPath && projectPath !== process.cwd()
-        ? path.resolve(projectPath, sourcePath)
-        : path.resolve(process.cwd(), sourcePath);
+      : path.resolve(basePath, sourcePath);
     const toBase = path.isAbsolute(destPath)
       ? destPath
-      : hasProject && projectPath && projectPath !== process.cwd()
-        ? path.resolve(projectPath, destPath)
-        : path.resolve(process.cwd(), destPath);
+      : path.resolve(basePath, destPath);
 
     await fsp.mkdir(path.dirname(toBase), { recursive: true });
     const destExists = await existsAsync(toBase);
