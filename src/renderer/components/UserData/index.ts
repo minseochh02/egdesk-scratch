@@ -2,6 +2,7 @@ export { UserDataPage } from './UserDataPage';
 export { TableList } from './TableList';
 export { TableViewer } from './TableViewer';
 export { ImportWizard } from './ImportWizard';
+export { ExcelUploadDialog } from './ExcelUploadDialog';
 export { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
 export { ExistingTableMapper } from './ExistingTableMapper';
 export { SyncConfigurationsManager } from './SyncConfigurationsManager';

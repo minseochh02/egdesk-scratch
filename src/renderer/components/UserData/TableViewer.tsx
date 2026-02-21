@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserTable, useUserData, QueryOptions } from '../../hooks/useUserData';
 import { DataTable } from './shared/DataTable';
+import { ExcelUploadDialog } from './ExcelUploadDialog';
 
 interface TableViewerProps {
   table: UserTable;
@@ -19,6 +20,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -71,6 +73,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
     setPage(0); // Reset to first page when sorting
   };
 
+  const handleUploadComplete = () => {
+    fetchData(); // Refresh the table data after upload
+  };
+
   const totalPages = Math.ceil(total / limit);
   const canGoPrevious = page > 0;
   const canGoNext = page < totalPages - 1;
@@ -118,6 +124,13 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
               </button>
             )}
           </form>
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowUploadDialog(true)}
+            style={{ marginLeft: '8px' }}
+          >
+            📤 Upload Excel
+          </button>
         </div>
       </div>
 
@@ -199,6 +212,14 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
           </button>
         </div>
       </div>
+
+      {showUploadDialog && (
+        <ExcelUploadDialog
+          table={table}
+          onClose={() => setShowUploadDialog(false)}
+          onComplete={handleUploadComplete}
+        />
+      )}
     </div>
   );
 };
