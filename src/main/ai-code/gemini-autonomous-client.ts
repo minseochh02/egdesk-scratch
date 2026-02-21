@@ -132,20 +132,26 @@ export class AutonomousGeminiClient implements AIClientService {
 
       // Default to Gemini cloud workflow
       // Get API key from config or key manager
+      console.log('🔑 Received config.apiKey:', config.apiKey ? `${config.apiKey.substring(0, 10)}...` : 'EMPTY');
+
       let apiKey = config.apiKey;
       if (!apiKey || apiKey.trim() === '') {
+        console.log('🔑 No API key in config, trying key manager...');
         const keyInfo = getGoogleApiKey();
         apiKey = keyInfo.apiKey || '';
         if (!apiKey) {
           console.warn('⚠️ No Google API key found in config or key manager');
           throw new Error('No Google API key available. Please add one in the AI Keys Manager.');
         }
-        console.log('✅ Retrieved API key from key manager');
+        console.log('✅ Retrieved API key from key manager:', apiKey ? `${apiKey.substring(0, 10)}...` : 'EMPTY');
+      } else {
+        console.log('✅ Using API key from config:', apiKey ? `${apiKey.substring(0, 10)}...` : 'EMPTY');
       }
 
       // Store config with resolved API key
       this.config = { ...config, model: targetModel, apiKey };
 
+      console.log('🔑 Creating GoogleGenerativeAI with API key:', apiKey ? `${apiKey.substring(0, 10)}...` : 'EMPTY');
       this.genAI = new GoogleGenerativeAI(apiKey);
 
       const projectContext = await this.getProjectContext();
@@ -187,7 +193,7 @@ export class AutonomousGeminiClient implements AIClientService {
    * NEW: Autonomous streaming conversation with tool execution
    */
   async *sendMessageStream(
-    message: string, 
+    message: string,
     options: {
       tools?: ToolDefinition[];
       toolContext?: 'filesystem' | 'apps-script' | 'all';
@@ -195,6 +201,7 @@ export class AutonomousGeminiClient implements AIClientService {
       timeoutMs?: number;
       autoExecuteTools?: boolean;
       context?: Record<string, any>;
+      projectPath?: string; // Added for Coding AI
     } = {}
   ): AsyncGenerator<AIStreamEvent> {
     if (!this.isConfigured()) {
@@ -206,8 +213,20 @@ export class AutonomousGeminiClient implements AIClientService {
       return;
     }
 
+    // Set temporary project path for Coding AI if provided
+    const projectPath = options.projectPath || options.context?.projectPath;
+    if (projectPath) {
+      console.log(`📁 Setting temporary project path for this conversation: ${projectPath}`);
+      projectContextBridge.setTemporaryProjectPath(projectPath);
+    }
+
     if (this.mode === 'ollama') {
       yield* this.sendMessageStreamOllama(message, options);
+      // Clear temporary project path after conversation
+      const projectPathToClear = options.projectPath || options.context?.projectPath;
+      if (projectPathToClear) {
+        projectContextBridge.clearTemporaryProject();
+      }
       return;
     }
 
@@ -225,11 +244,15 @@ export class AutonomousGeminiClient implements AIClientService {
     };
 
     // If a custom systemPrompt is provided in context, create a temporary model instance for this conversation
+    console.log('🔍 Model check: this.model exists?', !!this.model);
+    console.log('🔍 Model check: this.genAI exists?', !!this.genAI);
+    console.log('🔍 Model check: this.config exists?', !!this.config);
+
     let conversationModel = this.model;
     if (options.context?.systemPrompt && this.genAI) {
       const customSystemPrompt = options.context.systemPrompt;
       console.log('🔄 Creating temporary model instance with custom system prompt (length:', customSystemPrompt.length, 'chars)');
-      
+
       conversationModel = this.genAI.getGenerativeModel({
         model: this.config?.model || 'gemini-2.5-flash',
         generationConfig: {
@@ -239,6 +262,12 @@ export class AutonomousGeminiClient implements AIClientService {
         },
         systemInstruction: customSystemPrompt
       });
+      console.log('🔄 Temporary model created');
+    }
+
+    console.log('🔍 Final conversationModel exists?', !!conversationModel);
+    if (!conversationModel) {
+      throw new Error('Model not configured - please call ai-configure first');
     }
 
     // Create conversation in SQLite
@@ -655,19 +684,13 @@ export class AutonomousGeminiClient implements AIClientService {
                   timestamp: new Date()
                 };
 
-                // Add tool response to conversation history
+                // Add tool response to conversation history (role: 'user' with functionResponse per Gemini API spec)
                 this.addToHistory({
-                  role: 'model',
-                  parts: [part],
-                  timestamp: new Date()
-                });
-
-                this.addToHistory({
-                  role: 'model',
+                  role: 'user',
                   parts: [{
                     functionResponse: {
                       name: toolCallRequest.name,
-                      response: toolResponse.success 
+                      response: toolResponse.success
                         ? (typeof toolResponse.result === 'object' && !Array.isArray(toolResponse.result)
                             ? toolResponse.result  // Already an object, use directly
                             : { result: toolResponse.result })  // Wrap primitives and arrays
@@ -759,6 +782,13 @@ export class AutonomousGeminiClient implements AIClientService {
       reason: turnNumber >= (this.conversationState?.maxTurns || 20) ? 'max_turns' : 'tool_calls_complete',
       timestamp: new Date()
     };
+
+    // Clear temporary project path after conversation
+    const projectPathToClear = options.projectPath || options.context?.projectPath;
+    if (projectPathToClear) {
+      console.log('📁 Clearing temporary project path after conversation');
+      projectContextBridge.clearTemporaryProject();
+    }
   }
 
   /**
@@ -770,6 +800,14 @@ export class AutonomousGeminiClient implements AIClientService {
       const currentPath = ctx.currentPath as string | undefined;
       const currentUrl = ctx.currentUrl as string | undefined;
       const projectPath = ctx.projectPath as string | undefined;
+
+      // Coding AI mode: If projectPath is set but no currentUrl (no preview window)
+      if (projectPath && !currentUrl && !currentPath) {
+        console.log('🎯 Coding AI mode detected - project:', projectPath);
+        return `Working on React project in: ${projectPath}. Main app file: src/App.jsx. Config file: vite.config.js. Use relative paths like "src/App.jsx" or "vite.config.js" - they will be resolved to the project folder automatically.`;
+      }
+
+      // Homepage Editor mode: Has currentPath/currentUrl from preview window
       if (!currentPath && !currentUrl) return null;
       const parts: string[] = [];
       if (currentPath) parts.push(`route: ${currentPath}`);

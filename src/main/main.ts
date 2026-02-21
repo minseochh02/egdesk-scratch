@@ -35,6 +35,7 @@ import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser
 import { initializeStore, getStore } from './storage';
 import { getDeveloperWindows } from './coding/developer-windows';
 import { getDevServerManager } from './coding/dev-server-manager';
+import { codingAIHandler } from './coding/coding-ai-handler';
 import { exec } from 'child_process';
 import { isGitInstalled, GitError } from './utils/git';
 import { getEGDeskDevSpreadsheetService } from './egdesk-dev-spreadsheet';
@@ -4476,6 +4477,9 @@ const createWindow = async () => {
 
     // Register User Data handlers
     registerUserDataIPCHandlers();
+
+    // Initialize Coding AI handler (singleton auto-registers IPC handlers)
+    void codingAIHandler;
 
     // Register Sync Configuration handlers
     const { registerSyncConfigIPCHandlers } = await import('./sync-config/sync-config-ipc-handler');

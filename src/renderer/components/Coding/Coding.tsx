@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle, faPlus, faCopy } from '@fortawesome/free-solid-svg-icons';
+import { faCircle, faPlus, faCopy, faStop } from '@fortawesome/free-solid-svg-icons';
 import './Coding.css';
 
 interface Project {
@@ -97,6 +97,26 @@ const Coding: React.FC = () => {
     // TODO: Implement template selection
   };
 
+  const handleStopServer = async (folderPath: string, projectName: string) => {
+    try {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) {
+        console.error('Electron IPC not available');
+        return;
+      }
+
+      const result = await electron.ipcRenderer.invoke('dev-server:stop', folderPath);
+
+      if (result.success) {
+        console.log(`Server stopped successfully for ${projectName}`);
+      } else {
+        console.error('Failed to stop server:', result.error);
+      }
+    } catch (error) {
+      console.error('Error stopping server:', error);
+    }
+  };
+
   return (
     <div className="coding-container">
       <div className="coding-header">
@@ -159,6 +179,20 @@ const Coding: React.FC = () => {
               <div className="coding-project-detail">
                 <span className="coding-detail-label">Folder:</span>
                 <span className="coding-detail-value coding-identifier">{project.folderPath}</span>
+              </div>
+
+              <div className="coding-card-actions">
+                <button
+                  className="coding-btn coding-btn-danger coding-btn-small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStopServer(project.folderPath, project.projectName);
+                  }}
+                  disabled={project.status !== 'running'}
+                >
+                  <FontAwesomeIcon icon={faStop} />
+                  <span>Stop Server</span>
+                </button>
               </div>
             </div>
           </div>

@@ -86,6 +86,25 @@ export function useUserData() {
   }, []);
 
   /**
+   * Rename a table
+   */
+  const renameTable = useCallback(async (tableId: string, newTableName: string, newDisplayName: string): Promise<UserTable | null> => {
+    try {
+      const result = await window.electron.invoke('user-data:rename-table', tableId, newTableName, newDisplayName);
+
+      if (result.success) {
+        // Refresh tables list
+        await fetchTables();
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to rename table');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchTables]);
+
+  /**
    * Delete a table
    */
   const deleteTable = useCallback(async (tableId: string): Promise<boolean> => {
@@ -313,6 +332,7 @@ export function useUserData() {
     error,
     fetchTables,
     getTable,
+    renameTable,
     deleteTable,
     queryTable,
     searchTable,

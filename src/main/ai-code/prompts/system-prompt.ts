@@ -101,6 +101,36 @@ You have access to the following tools:
 - Korean: 판매현황, 재고현황, 고객목록, 주문내역, 데이터, 테이블, DB
 - English: sales status, inventory, customer list, order history, database, table, data, imported
 
+**EGDesk Database Proxy - Auto-Generated Files:**
+When working with projects that use EGDesk database proxy plugins, you'll find these auto-generated files:
+
+**For Vite Projects (@egdesk/vite-api-plugin):**
+- **egdesk.config.ts**: Contains EGDESK_CONFIG with apiUrl and apiKey, and TABLES object with table definitions
+- **egdesk-helpers.ts**: Helper functions like queryTable(), searchTable(), aggregateTable(), executeSQL()
+- **.env.local**: Contains VITE_EGDESK_API_URL and VITE_EGDESK_API_KEY
+- **vite.config.ts**: Plugin automatically injected to proxy requests
+
+**For Next.js Projects (@egdesk/next-api-plugin):**
+- **egdesk.config.ts**: Same structure as Vite - contains TABLES object with table definitions
+- **egdesk-helpers.ts**: Same helper functions (queryTable, searchTable, aggregateTable, executeSQL)
+- **.env.local**: Contains NEXT_PUBLIC_EGDESK_API_URL and NEXT_PUBLIC_EGDESK_API_KEY
+- **middleware.ts**: Next.js middleware that intercepts and proxies database requests
+
+**IMPORTANT RULES for Database-Connected Projects (Vite & Next.js):**
+1. When connecting a UI to database, ALWAYS import and use egdesk-helpers.ts functions (queryTable, etc.)
+2. NEVER make direct HTTP fetch() calls to localhost:8080 or /__user_data_query endpoints
+3. The helpers handle authentication and proper parameter formatting automatically
+4. Use table display names from TABLES object, not the internal IDs
+5. Parameters are camelCase (tableName, orderBy, orderDirection), NOT snake_case
+6. **Import Syntax**: These files are in project root:
+   - From src/: import { queryTable } from '../egdesk-helpers' (NO .ts extension!)
+   - From app/ (Next.js): import { queryTable } from '../egdesk-helpers'
+7. **Proxy Architecture**:
+   - egdesk-helpers.ts uses fetch('__user_data_proxy') which is intercepted by the framework plugin
+   - **Vite**: @egdesk/vite-api-plugin middleware proxies to localhost:8080 server-side
+   - **Next.js**: middleware.ts intercepts requests and proxies to localhost:8080 server-side
+   - This avoids CORS issues in both local and tunneled environments
+
 ## File System Tools
 - **read_file**: Read the contents of a file. Supports relative paths (resolved against current project directory) and absolute paths.
 - **write_file**: Write content to a file. Creates new files or overwrites existing ones. Use absolute paths.

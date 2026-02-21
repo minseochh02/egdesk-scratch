@@ -111,6 +111,46 @@
   gap: 8px;
 }
 
+/* Table Rename Form */
+.table-rename-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.table-rename-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.table-rename-input {
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.table-rename-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.table-rename-input.small {
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  color: #666;
+}
+
+.table-rename-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .table-card-stats {
   display: flex;
   gap: 16px;

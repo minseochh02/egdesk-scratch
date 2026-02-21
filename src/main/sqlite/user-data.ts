@@ -324,6 +324,67 @@ export class UserDataDbManager {
   }
 
   /**
+   * Rename a table (both the actual table and metadata)
+   */
+  renameTable(tableId: string, newTableName: string, newDisplayName?: string): { success: boolean; error?: string; table?: UserTableWithSchema } {
+    try {
+      // Get the existing table
+      const table = this.getTable(tableId);
+      if (!table) {
+        return { success: false, error: 'Table not found' };
+      }
+
+      // Sanitize the new table name for SQL safety
+      const sanitizedNewTableName = newTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+
+      // Check if the new table name already exists
+      const existingTable = this.getTableByName(sanitizedNewTableName);
+      if (existingTable && existingTable.id !== tableId) {
+        return { success: false, error: `A table with name "${sanitizedNewTableName}" already exists` };
+      }
+
+      // If names are the same, just update display name
+      if (table.tableName === sanitizedNewTableName && !newDisplayName) {
+        return { success: false, error: 'New table name is the same as the current name' };
+      }
+
+      const transaction = this.database.transaction(() => {
+        // Rename the actual SQLite table (only if name changed)
+        if (table.tableName !== sanitizedNewTableName) {
+          this.database.exec(`ALTER TABLE "${table.tableName}" RENAME TO "${sanitizedNewTableName}"`);
+        }
+
+        // Update metadata
+        const updateStmt = this.database.prepare(
+          `UPDATE user_tables
+           SET table_name = ?,
+               display_name = ?,
+               updated_at = ?
+           WHERE id = ?`
+        );
+        updateStmt.run(
+          sanitizedNewTableName,
+          newDisplayName || newTableName,
+          new Date().toISOString(),
+          tableId
+        );
+      });
+
+      transaction();
+
+      // Return the updated table
+      const updatedTable = this.getTable(tableId);
+      return { success: true, table: updatedTable || undefined };
+    } catch (error) {
+      console.error('Error renaming table:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to rename table',
+      };
+    }
+  }
+
+  /**
    * Delete a table and all its data
    */
   deleteTable(tableId: string): boolean {
