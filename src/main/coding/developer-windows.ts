@@ -30,6 +30,16 @@ export class DeveloperWindows {
         return { success: false, error: error.message };
       }
     });
+
+    ipcMain.handle('refresh-website-viewer', async () => {
+      try {
+        this.refreshWebsiteViewer();
+        return { success: true };
+      } catch (error: any) {
+        console.error('Failed to refresh website viewer:', error);
+        return { success: false, error: error.message };
+      }
+    });
   }
 
   private async createWindows() {
@@ -177,6 +187,13 @@ export class DeveloperWindows {
 
   public cleanup() {
     this.closeWindows();
+  }
+
+  public refreshWebsiteViewer() {
+    if (this.websiteViewerWindow && !this.websiteViewerWindow.isDestroyed()) {
+      console.log('🔄 Sending refresh event to WebsiteViewer window');
+      this.websiteViewerWindow.webContents.send('website-viewer:refresh');
+    }
   }
 }
 

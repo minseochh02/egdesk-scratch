@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGlobe, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import './WebsiteViewer.css';
@@ -6,6 +6,8 @@ import './WebsiteViewer.css';
 const WebsiteViewer: React.FC = () => {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     // Check for dev server URL in localStorage
@@ -22,6 +24,24 @@ const WebsiteViewer: React.FC = () => {
     };
 
     checkForServer();
+  }, []);
+
+  // Listen for refresh events
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('🔄 WebsiteViewer: Received refresh event');
+      // Force iframe reload by updating key
+      setRefreshKey(prev => prev + 1);
+    };
+
+    const electron = (window as any).electron;
+    if (electron?.ipcRenderer) {
+      // Listen for refresh events
+      const unsubscribe = electron.ipcRenderer.on('website-viewer:refresh', handleRefresh);
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    }
   }, []);
 
   if (loading && !serverUrl) {
@@ -52,6 +72,8 @@ const WebsiteViewer: React.FC = () => {
   return (
     <div className="website-viewer-container">
       <iframe
+        key={refreshKey}
+        ref={iframeRef}
         src={serverUrl}
         className="website-viewer-iframe"
         title="Website Preview"

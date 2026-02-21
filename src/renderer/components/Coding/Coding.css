@@ -43,8 +43,14 @@
   color: white;
 }
 
-.coding-btn-primary:hover {
+.coding-btn-primary:hover:not(:disabled) {
   background: #0056b3;
+}
+
+.coding-btn-primary:disabled {
+  background: #6c757d;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .coding-btn-secondary {

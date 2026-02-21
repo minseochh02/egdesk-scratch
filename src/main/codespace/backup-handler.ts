@@ -5,6 +5,7 @@
 
 import { ipcMain } from 'electron';
 import { backupManager, BackupInfo, RevertResult, RevertSummary } from './backup-manager';
+import { getDeveloperWindows } from '../coding/developer-windows';
 
 export class BackupHandler {
   constructor() {
@@ -49,11 +50,23 @@ export class BackupHandler {
       try {
         console.log(`🔄 IPC: Reverting conversation ${conversationId}`);
         const result = await backupManager.revertConversation(conversationId);
+
+        // Trigger WebsiteViewer refresh after successful revert
+        if (result) {
+          try {
+            console.log('🔄 Triggering WebsiteViewer refresh after backup revert');
+            const devWindows = getDeveloperWindows();
+            devWindows.refreshWebsiteViewer();
+          } catch (refreshError) {
+            console.warn('Failed to refresh WebsiteViewer after revert:', refreshError);
+          }
+        }
+
         return { success: true, result };
       } catch (error) {
         console.error('Failed to revert conversation:', error);
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
         };
       }
@@ -64,11 +77,23 @@ export class BackupHandler {
       try {
         console.log(`🔄 IPC: Reverting to conversation ${targetConversationId}`);
         const summary = await backupManager.revertToConversation(targetConversationId);
+
+        // Trigger WebsiteViewer refresh after successful revert
+        if (summary) {
+          try {
+            console.log('🔄 Triggering WebsiteViewer refresh after backup revert');
+            const devWindows = getDeveloperWindows();
+            devWindows.refreshWebsiteViewer();
+          } catch (refreshError) {
+            console.warn('Failed to refresh WebsiteViewer after revert:', refreshError);
+          }
+        }
+
         return { success: true, summary };
       } catch (error) {
         console.error('Failed to revert to conversation:', error);
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
         };
       }
