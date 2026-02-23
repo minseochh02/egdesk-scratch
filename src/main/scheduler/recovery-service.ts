@@ -854,17 +854,40 @@ export class SchedulerRecoveryService {
   public async cleanupInvalidIntents(): Promise<number> {
     const db = this.getDb();
 
+    let totalCleaned = 0;
+
     // Delete intents with null/undefined critical fields
-    const result = db.prepare(`
+    const nullResult = db.prepare(`
       DELETE FROM scheduler_execution_intents
       WHERE intended_date IS NULL
         OR task_id IS NULL
         OR scheduler_type IS NULL
     `).run();
 
-    console.log(`[RecoveryService] Cleaned up ${result.changes} invalid intents`);
+    totalCleaned += nullResult.changes;
+    if (nullResult.changes > 0) {
+      console.log(`[RecoveryService] Cleaned up ${nullResult.changes} invalid intents (null fields)`);
+    }
 
-    return result.changes;
+    // CRITICAL: Fix timezone-broken intents from old version
+    // Old version created intents with execution windows 24 hours in the future
+    // This fixes them by deleting intents where execution_window_end is AFTER intended_date
+    const brokenTimezones = db.prepare(`
+      DELETE FROM scheduler_execution_intents
+      WHERE scheduler_type = 'financehub'
+        AND status IN ('pending', 'failed')
+        AND date(execution_window_end) > intended_date
+    `).run();
+
+    totalCleaned += brokenTimezones.changes;
+    if (brokenTimezones.changes > 0) {
+      this.debugLog(`Cleaned up ${brokenTimezones.changes} timezone-broken intents (will be recreated by backfill)`);
+      console.log(`[RecoveryService] Cleaned up ${brokenTimezones.changes} timezone-broken intents`);
+    }
+
+    console.log(`[RecoveryService] Cleaned up ${totalCleaned} invalid intents total`);
+
+    return totalCleaned;
   }
 }
 
