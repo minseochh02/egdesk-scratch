@@ -171,27 +171,27 @@ export default class MenuBuilder {
         {
           label: 'Learn More',
           click() {
-            shell.openExternal('https://github.com/taesung/egdesk');
+            shell.openExternal('https://github.com/minseochh02/egdesk-scratch');
           },
         },
         {
           label: 'Documentation',
           click() {
             shell.openExternal(
-              'https://github.com/taesung/egdesk/wiki',
+              'https://github.com/minseochh02/egdesk-scratch/wiki',
             );
           },
         },
         {
           label: 'Community Discussions',
           click() {
-            shell.openExternal('https://github.com/taesung/egdesk/discussions');
+            shell.openExternal('https://github.com/minseochh02/egdesk-scratch/discussions');
           },
         },
         {
           label: 'Search Issues',
           click() {
-            shell.openExternal('https://github.com/taesung/egdesk/issues');
+            shell.openExternal('https://github.com/minseochh02/egdesk-scratch/issues');
           },
         },
       ],
@@ -286,27 +286,27 @@ export default class MenuBuilder {
           {
             label: 'Learn More',
             click() {
-              shell.openExternal('https://github.com/taesung/egdesk');
+              shell.openExternal('https://github.com/minseochh02/egdesk-scratch');
             },
           },
           {
             label: 'Documentation',
             click() {
               shell.openExternal(
-                'https://github.com/taesung/egdesk/wiki',
+                'https://github.com/minseochh02/egdesk-scratch/wiki',
               );
             },
           },
           {
             label: 'Community Discussions',
             click() {
-              shell.openExternal('https://github.com/taesung/egdesk/discussions');
+              shell.openExternal('https://github.com/minseochh02/egdesk-scratch/discussions');
             },
           },
           {
             label: 'Search Issues',
             click() {
-              shell.openExternal('https://github.com/taesung/egdesk/issues');
+              shell.openExternal('https://github.com/minseochh02/egdesk-scratch/issues');
             },
           },
         ],
