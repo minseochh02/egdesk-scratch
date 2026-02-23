@@ -250,12 +250,12 @@ export class SheetsService {
   /**
    * Get spreadsheet metadata (title, sheets list, dimensions)
    */
-  async getSpreadsheet(spreadsheetId: string): Promise<SpreadsheetMetadata> {
+  async getSpreadsheet(spreadsheetId: string, preferServiceAccount: boolean = false): Promise<SpreadsheetMetadata> {
     // Include gridProperties to get row/column counts
     const endpoint = `/${spreadsheetId}?fields=spreadsheetId,properties.title,spreadsheetUrl,sheets.properties`;
-    
-    const data = await this.fetchSheets<any>(endpoint);
-    
+
+    const data = await this.fetchSheets<any>(endpoint, {}, preferServiceAccount);
+
     return {
       spreadsheetId: data.spreadsheetId,
       title: data.properties?.title || 'Untitled Spreadsheet',
@@ -363,7 +363,7 @@ export class SheetsService {
   /**
    * Create a new spreadsheet
    */
-  async createSpreadsheet(title: string, data?: string[][]): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
+  async createSpreadsheet(title: string, data?: string[][], preferServiceAccount: boolean = false): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
     const body: any = {
       properties: {
         title,
@@ -386,11 +386,11 @@ export class SheetsService {
     const response = await this.fetchSheets<any>('', {
       method: 'POST',
       body: JSON.stringify(body),
-    });
+    }, preferServiceAccount);
 
     // If data is provided, write it to the sheet
     if (data && data.length > 0 && response.spreadsheetId) {
-      await this.updateRange(response.spreadsheetId, 'Sheet1!A1', data);
+      await this.updateRange(response.spreadsheetId, 'Sheet1!A1', data, preferServiceAccount);
     }
 
     return {
@@ -513,16 +513,25 @@ export class SheetsService {
     customTitle?: string
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string; wasCreated: boolean }> {
     console.log('🔄 Starting unified spreadsheet sync flow...');
-    
+
+    // Try to get service account token first
+    const serviceAccountToken = await this.getServiceAccountToken([
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive.file'
+    ]);
+
+    const useServiceAccount = !!serviceAccountToken;
+    console.log(`🔑 Using ${useServiceAccount ? 'service account' : 'personal OAuth'} for spreadsheet operations`);
+
     // Step 1: Check if spreadsheet exists
     let spreadsheetId = persistentSpreadsheetId;
     let wasCreated = false;
-    
+
     if (spreadsheetId) {
       try {
-        // Verify spreadsheet still exists and is accessible (using personal OAuth)
+        // Verify spreadsheet still exists and is accessible
         console.log('📋 Checking existing spreadsheet accessibility...');
-        await this.getSpreadsheet(spreadsheetId);
+        await this.getSpreadsheet(spreadsheetId, useServiceAccount);
         console.log('✅ Existing spreadsheet is accessible');
       } catch (error) {
         console.warn('⚠️ Persistent spreadsheet not accessible, will create new one:', error);
@@ -530,32 +539,64 @@ export class SheetsService {
       }
     }
 
-    // Step 2: Create new spreadsheet if needed (using personal OAuth)
+    // Step 2: Create new spreadsheet if needed
     if (!spreadsheetId) {
-      console.log('📝 Creating new spreadsheet with personal OAuth...');
-      
+      console.log(`📝 Creating new spreadsheet with ${useServiceAccount ? 'service account' : 'personal OAuth'}...`);
+
       const title = customTitle || 'EGDesk 거래내역';
-      const result = await this.createTransactionsSpreadsheet(title, [], banks, accounts);
-      
+      const result = await this.createTransactionsSpreadsheet(title, [], banks, accounts, useServiceAccount);
+
       spreadsheetId = result.spreadsheetId;
       wasCreated = true;
       console.log(`✅ Created new spreadsheet: ${spreadsheetId}`);
+
+      // If created with service account, share with user so they can view it
+      if (useServiceAccount && wasCreated) {
+        try {
+          const authService = getAuthService();
+          const { session } = await authService.getSession();
+          const userEmail = session?.user?.email;
+
+          if (userEmail) {
+            console.log(`🔗 Sharing spreadsheet with user: ${userEmail}`);
+            const oauth2Client = new OAuth2Client();
+            oauth2Client.setCredentials({ access_token: serviceAccountToken.access_token });
+            const driveApi = google.drive({ version: 'v3', auth: oauth2Client });
+
+            await driveApi.permissions.create({
+              fileId: spreadsheetId,
+              requestBody: {
+                role: 'writer',
+                type: 'user',
+                emailAddress: userEmail
+              },
+              sendNotificationEmail: false
+            });
+
+            console.log(`✅ Shared spreadsheet with user: ${userEmail}`);
+          }
+        } catch (shareError) {
+          console.warn('⚠️ Could not share spreadsheet with user:', shareError);
+        }
+      }
     }
 
-    // Step 3: Ensure service account has access to spreadsheet
-    console.log('🔗 Ensuring service account access...');
-    const hasServiceAccess = await this.ensureServiceAccountAccess(spreadsheetId);
-    
-    if (!hasServiceAccess) {
-      console.warn('⚠️ Could not ensure service account access, continuing with personal OAuth');
+    // Step 3: Ensure service account has access to spreadsheet (if not already using service account)
+    if (!useServiceAccount) {
+      console.log('🔗 Ensuring service account access for future automated updates...');
+      const hasServiceAccess = await this.ensureServiceAccountAccess(spreadsheetId);
+
+      if (!hasServiceAccess) {
+        console.warn('⚠️ Could not ensure service account access, continuing with personal OAuth');
+      }
     }
 
-    // Step 4: Update data using service account token (with fallback to personal OAuth)
+    // Step 4: Update data
     console.log('📊 Updating spreadsheet data...');
-    await this.updateTransactionsData(spreadsheetId, transactions, banks, accounts, hasServiceAccess);
+    await this.updateTransactionsData(spreadsheetId, transactions, banks, accounts, useServiceAccount);
 
     console.log('✅ Unified spreadsheet sync completed');
-    
+
     return {
       spreadsheetId,
       spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
@@ -660,7 +701,8 @@ export class SheetsService {
     title: string,
     transactions: any[],
     banks: Record<string, any>,
-    accounts: any[]
+    accounts: any[],
+    preferServiceAccount: boolean = false
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
     // Check if these are card transactions
     const isCardTransactions = transactions.length > 0 &&
@@ -728,21 +770,23 @@ export class SheetsService {
     const data = [headers, ...rows];
 
     // Create the spreadsheet
-    const result = await this.createSpreadsheet(title, data);
+    const result = await this.createSpreadsheet(title, data, preferServiceAccount);
 
     // Format the headers
     if (result.spreadsheetId) {
-      await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+      await this.formatHeaders(result.spreadsheetId, 'Sheet1', preferServiceAccount);
     }
 
-    // Move to Transactions folder
-    try {
-      const driveService = getDriveService();
-      await driveService.moveFileToFolder(result.spreadsheetId, 'Transactions');
-      console.log('✅ Moved transactions spreadsheet to EGDesk/Transactions/');
-    } catch (error) {
-      console.warn('⚠️ Could not organize spreadsheet:', error);
-      // Don't fail the entire operation if folder organization fails
+    // Move to Transactions folder (only if using personal OAuth, service account can't organize folders)
+    if (!preferServiceAccount) {
+      try {
+        const driveService = getDriveService();
+        await driveService.moveFileToFolder(result.spreadsheetId, 'Transactions');
+        console.log('✅ Moved transactions spreadsheet to EGDesk/Transactions/');
+      } catch (error) {
+        console.warn('⚠️ Could not organize spreadsheet:', error);
+        // Don't fail the entire operation if folder organization fails
+      }
     }
 
     return result;
