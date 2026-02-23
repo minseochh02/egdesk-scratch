@@ -387,7 +387,7 @@ export class SchedulerRecoveryService {
 
     // CRITICAL: Log ALL intents in the database for debugging
     const allIntents = db.prepare(`
-      SELECT scheduler_type, task_id, intended_date, status, retry_count, error_message
+      SELECT scheduler_type, task_id, intended_date, status, retry_count, error_message, execution_window_end
       FROM scheduler_execution_intents
       WHERE intended_date >= ?
       ORDER BY intended_date DESC, intended_time DESC
