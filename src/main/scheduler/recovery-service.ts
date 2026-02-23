@@ -383,6 +383,25 @@ export class SchedulerRecoveryService {
     cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
+    this.debugLog(`Detecting missed executions: lookback=${lookbackDays} days, cutoff=${cutoffDateStr}`);
+
+    // CRITICAL: Log ALL intents in the database for debugging
+    const allIntents = db.prepare(`
+      SELECT scheduler_type, task_id, intended_date, status, retry_count, error_message
+      FROM scheduler_execution_intents
+      WHERE intended_date >= ?
+      ORDER BY intended_date DESC, intended_time DESC
+      LIMIT 50
+    `).all(cutoffDateStr);
+
+    this.debugLog(`Found ${allIntents.length} total intent(s) in lookback window:`);
+    for (const intent of allIntents as any[]) {
+      this.debugLog(`  ${intent.task_id} [${intent.intended_date}] status=${intent.status} retry=${intent.retry_count || 0}`);
+      if (intent.error_message) {
+        this.debugLog(`    error: ${intent.error_message}`);
+      }
+    }
+
     // CRITICAL FIX: Reset stuck 'running' tasks
     // If a task has been in 'running' state for > 1 hour, it's stuck (app crashed mid-execution)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -734,11 +753,12 @@ export class SchedulerRecoveryService {
       return;
     }
 
-    this.debugLog(`Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
-    console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
+    this.debugLog(`Calling scheduler.syncEntity("${entityType}", "${entityId}", "${missed.intendedDate}")...`);
+    console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}", "${missed.intendedDate}")...`);
 
-    // Sync specific entity instead of all entities
-    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
+    // CRITICAL: Pass the intendedDate so the scheduler marks the correct intent
+    // Without this, it would mark today's intent instead of the missed intent
+    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId, missed.intendedDate);
 
     this.debugLog(`✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
     console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);

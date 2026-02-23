@@ -234,6 +234,7 @@ export class FinanceHubScheduler extends EventEmitter {
    * @param defaultLookbackDays - Fallback lookback for first run or new tasks (default: 30 days)
    */
   private async backfillMissingIntents(defaultLookbackDays: number = 30): Promise<void> {
+    this.debugLog(`Backfilling missing intents (defaultLookbackDays=${defaultLookbackDays})...`);
     console.log(`[FinanceHubScheduler] Backfilling missing intents from last successful execution...`);
 
     const recoveryService = getSchedulerRecoveryService();
@@ -261,16 +262,20 @@ export class FinanceHubScheduler extends EventEmitter {
         // Get last successful execution date
         const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
 
+        this.debugLog(`${entityKey}: lastSuccess=${lastSuccess || 'none'}`);
+
         let startDate: Date;
         if (lastSuccess) {
           // Resume from day after last success
           startDate = new Date(lastSuccess);
           startDate.setDate(startDate.getDate() + 1);
+          this.debugLog(`${entityKey}: Backfilling from ${startDate.toISOString().split('T')[0]} (day after last success)`);
           console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
         } else {
           // First run: use default lookback
           startDate = new Date(today);
           startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          this.debugLog(`${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days from ${startDate.toISOString().split('T')[0]}`);
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
@@ -291,14 +296,18 @@ export class FinanceHubScheduler extends EventEmitter {
 
         const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
 
+        this.debugLog(`${entityKey}: lastSuccess=${lastSuccess || 'none'}`);
+
         let startDate: Date;
         if (lastSuccess) {
           startDate = new Date(lastSuccess);
           startDate.setDate(startDate.getDate() + 1);
+          this.debugLog(`${entityKey}: Backfilling from ${startDate.toISOString().split('T')[0]} (day after last success)`);
           console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
         } else {
           startDate = new Date(today);
           startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          this.debugLog(`${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days from ${startDate.toISOString().split('T')[0]}`);
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
@@ -324,14 +333,18 @@ export class FinanceHubScheduler extends EventEmitter {
 
         const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
 
+        this.debugLog(`${entityKey}: lastSuccess=${lastSuccess || 'none'}`);
+
         let startDate: Date;
         if (lastSuccess) {
           startDate = new Date(lastSuccess);
           startDate.setDate(startDate.getDate() + 1);
+          this.debugLog(`${entityKey}: Backfilling from ${startDate.toISOString().split('T')[0]} (day after last success)`);
           console.log(`[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`);
         } else {
           startDate = new Date(today);
           startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          this.debugLog(`${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days from ${startDate.toISOString().split('T')[0]}`);
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
@@ -377,9 +390,11 @@ export class FinanceHubScheduler extends EventEmitter {
     const [targetHour, targetMinute] = timeStr.split(':').map(Number);
     const entityKey = `${entityType}:${entityId}`;
 
-    // Create date at the scheduled time
-    const scheduledTime = new Date(dateStr);
-    scheduledTime.setHours(targetHour, targetMinute, 0, 0);
+    // CRITICAL: Parse date in LOCAL timezone, not UTC
+    // new Date("2026-02-23") parses as UTC, which causes timezone issues
+    // Split and construct in local timezone instead
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const scheduledTime = new Date(year, month - 1, day, targetHour, targetMinute, 0, 0);
 
     const windowEnd = new Date(scheduledTime.getTime() + 30 * 60 * 1000); // 30-minute window
 
@@ -611,11 +626,11 @@ export class FinanceHubScheduler extends EventEmitter {
   // Sync Execution
   // ============================================
 
-  private async executeEntitySync(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, retryCount = 0): Promise<void> {
+  private async executeEntitySync(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, retryCount = 0, intendedDate?: string): Promise<void> {
     const entityKey = `${entityType}:${entityId}`;
 
-    this.debugLog(`═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
-    console.log(`[FinanceHubScheduler] ═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}) ═══`);
+    this.debugLog(`═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}, intendedDate=${intendedDate || 'today'}) ═══`);
+    console.log(`[FinanceHubScheduler] ═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}, intendedDate=${intendedDate || 'today'}) ═══`);
 
     // CRITICAL: Clear retry timer if this is a retry execution
     // The timer already fired, so remove it from tracking
@@ -643,30 +658,43 @@ export class FinanceHubScheduler extends EventEmitter {
     this.debugLog(`✓ Not currently syncing, proceeding...`);
     console.log(`[FinanceHubScheduler] ✓ Not currently syncing, proceeding...`);
 
-    const today = new Date().toISOString().split('T')[0];
+    // CRITICAL: Use intendedDate if provided (from recovery), otherwise use today
+    // This ensures recovery marks the ORIGINAL missed intent, not today's intent
+    const targetDate = intendedDate || new Date().toISOString().split('T')[0];
     const executionId = randomUUID();
     const recoveryService = getSchedulerRecoveryService();
 
-    // Deduplication: Check if already ran today
+    this.debugLog(`Using targetDate: ${targetDate} (intendedDate=${intendedDate}, isRecovery=${!!intendedDate})`);
+
+    // Deduplication: Check if already ran on the target date
     const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
 
     if (isProduction) {
       try {
-        const hasRun = await recoveryService.hasRunToday('financehub', entityKey);
-        this.debugLog(`hasRunToday('${entityKey}') returned: ${hasRun}`);
-        console.log(`[FinanceHubScheduler] hasRunToday('${entityKey}') returned:`, hasRun);
-        if (hasRun) {
-          this.debugLog(`❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
-          console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already synced today - skipping duplicate execution`);
+        // CRITICAL FIX: Check if already ran on TARGET date, not just today
+        // For recovery, this checks the intended date. For scheduled runs, this checks today.
+        const hasRun = await recoveryService.intentExistsForDate('financehub', entityKey, targetDate);
+        const existingIntent = await recoveryService.getDb().prepare(`
+          SELECT status FROM scheduler_execution_intents
+          WHERE scheduler_type = 'financehub'
+            AND task_id = ?
+            AND intended_date = ?
+        `).get(entityKey, targetDate);
+
+        this.debugLog(`Intent check for ${targetDate}: exists=${hasRun}, status=${existingIntent?.status || 'none'}`);
+
+        if (existingIntent && existingIntent.status === 'completed') {
+          this.debugLog(`❌ EXIT POINT 3: ${entityKey} already completed for ${targetDate} - skipping duplicate execution`);
+          console.log(`[FinanceHubScheduler] ❌ EXIT POINT 3: ${entityKey} already completed for ${targetDate} - skipping duplicate execution`);
           return;
         }
       } catch (error) {
-        this.debugLog(`Failed to check hasRunToday: ${error}`);
-        console.error(`[FinanceHubScheduler] Failed to check hasRunToday for ${entityKey}:`, error);
+        this.debugLog(`Failed to check intent status: ${error}`);
+        console.error(`[FinanceHubScheduler] Failed to check intent status for ${entityKey}:`, error);
       }
     } else {
-      this.debugLog(`ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
-      console.log(`[FinanceHubScheduler] ℹ️ Dev mode: Skipping hasRunToday check - allowing multiple runs per day`);
+      this.debugLog(`ℹ️ Dev mode: Skipping intent check - allowing multiple runs`);
+      console.log(`[FinanceHubScheduler] ℹ️ Dev mode: Skipping intent check - allowing multiple runs`);
     }
 
     this.debugLog(`✓ Passed all checks, starting sync for ${entityKey}...`);
@@ -676,9 +704,9 @@ export class FinanceHubScheduler extends EventEmitter {
     this.updateSyncStatus('running');
     this.emit('sync-started', { entityType, entityId });
 
-    // Mark intent as running
+    // Mark intent as running (use targetDate, not today!)
     try {
-      await recoveryService.markIntentRunning('financehub', entityKey, today, executionId);
+      await recoveryService.markIntentRunning('financehub', entityKey, targetDate, executionId);
     } catch (error) {
       console.error(`[FinanceHubScheduler] Failed to mark intent as running for ${entityKey}:`, error);
     }
@@ -721,7 +749,7 @@ export class FinanceHubScheduler extends EventEmitter {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${error}`);
         // Mark as skipped instead of failed to prevent recovery retries
         try {
-          await recoveryService.markIntentSkipped('financehub', entityKey, today, `permanent_error: ${error}`);
+          await recoveryService.markIntentSkipped('financehub', entityKey, targetDate, `permanent_error: ${error}`);
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent as skipped:`, err);
         }
@@ -731,7 +759,7 @@ export class FinanceHubScheduler extends EventEmitter {
         // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
         // This prevents the task from getting stuck in 'running' state if app shuts down before retry
         try {
-          await recoveryService.markIntentFailed('financehub', entityKey, today, new Error(error || 'Unknown error'));
+          await recoveryService.markIntentFailed('financehub', entityKey, targetDate, new Error(error || 'Unknown error'));
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent as failed during retry:`, err);
         }
@@ -755,7 +783,8 @@ export class FinanceHubScheduler extends EventEmitter {
             console.log(`[FinanceHubScheduler] Waiting 2s before retry to ensure Arduino port is released...`);
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
-          this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
+          // CRITICAL: Pass intendedDate to retry so it marks the correct intent
+          this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1, intendedDate);
         }, this.settings.retryDelayMinutes * 60 * 1000);
 
         this.syncTimers.set(entityKey, retryTimer);
@@ -803,9 +832,9 @@ export class FinanceHubScheduler extends EventEmitter {
         // Mark intent as completed or failed
         try {
           if (success) {
-            await recoveryService.markIntentCompleted('financehub', entityKey, today, executionId);
+            await recoveryService.markIntentCompleted('financehub', entityKey, targetDate, executionId);
           } else {
-            await recoveryService.markIntentFailed('financehub', entityKey, today, new Error(error || 'Unknown error'));
+            await recoveryService.markIntentFailed('financehub', entityKey, targetDate, new Error(error || 'Unknown error'));
           }
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent status for ${entityKey}:`, err);
@@ -831,7 +860,7 @@ export class FinanceHubScheduler extends EventEmitter {
         console.log(`[FinanceHubScheduler] ${entityKey} has permanent error - skipping retries: ${errorMessage}`);
         // Mark as skipped instead of failed to prevent recovery retries
         try {
-          await recoveryService.markIntentSkipped('financehub', entityKey, today, `permanent_error: ${errorMessage}`);
+          await recoveryService.markIntentSkipped('financehub', entityKey, targetDate, `permanent_error: ${errorMessage}`);
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent as skipped:`, err);
         }
@@ -843,7 +872,7 @@ export class FinanceHubScheduler extends EventEmitter {
         // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
         // This prevents the task from getting stuck in 'running' state if app shuts down before retry
         try {
-          await recoveryService.markIntentFailed('financehub', entityKey, today, error as Error);
+          await recoveryService.markIntentFailed('financehub', entityKey, targetDate, error as Error);
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent as failed during retry:`, err);
         }
@@ -860,7 +889,8 @@ export class FinanceHubScheduler extends EventEmitter {
         this.syncingEntities.delete(entityKey);
 
         const retryTimer = setTimeout(() => {
-          this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1);
+          // CRITICAL: Pass intendedDate to retry so it marks the correct intent
+          this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1, intendedDate);
         }, this.settings.retryDelayMinutes * 60 * 1000);
 
         this.syncTimers.set(entityKey, retryTimer);
@@ -877,7 +907,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
         // Mark intent as failed
         try {
-          await recoveryService.markIntentFailed('financehub', entityKey, today, error as Error);
+          await recoveryService.markIntentFailed('financehub', entityKey, targetDate, error as Error);
         } catch (err) {
           console.error(`[FinanceHubScheduler] Failed to mark intent as failed for ${entityKey}:`, err);
         }
@@ -1967,9 +1997,9 @@ export class FinanceHubScheduler extends EventEmitter {
     console.log(`[FinanceHubScheduler] ✅ Manual sync completed - processed ${entitiesToSync.length} entities`);
   }
 
-  public async syncEntity(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<void> {
-    this.debugLog(`═══ syncEntity() called: ${entityType}:${entityId} ═══`);
-    console.log(`[FinanceHubScheduler] ═══ syncEntity() called: ${entityType}:${entityId} ═══`);
+  public async syncEntity(entityType: 'card' | 'bank' | 'tax', entityId: string, intendedDate?: string): Promise<void> {
+    this.debugLog(`═══ syncEntity() called: ${entityType}:${entityId}, intendedDate=${intendedDate || 'today'} ═══`);
+    console.log(`[FinanceHubScheduler] ═══ syncEntity() called: ${entityType}:${entityId}, intendedDate=${intendedDate || 'today'} ═══`);
 
     const schedule =
       entityType === 'card'
@@ -1987,9 +2017,9 @@ export class FinanceHubScheduler extends EventEmitter {
       throw new Error(`No schedule found for ${entityType}:${entityId}`);
     }
 
-    this.debugLog(`✓ Calling executeEntitySync for ${entityType}:${entityId}...`);
-    console.log(`[FinanceHubScheduler] ✓ Calling executeEntitySync for ${entityType}:${entityId}...`);
-    return this.executeEntitySync(entityType, entityId, schedule.time);
+    this.debugLog(`✓ Calling executeEntitySync for ${entityType}:${entityId} with intendedDate=${intendedDate || 'today'}...`);
+    console.log(`[FinanceHubScheduler] ✓ Calling executeEntitySync for ${entityType}:${entityId} with intendedDate=${intendedDate || 'today'}...`);
+    return this.executeEntitySync(entityType, entityId, schedule.time, 0, intendedDate);
   }
 
   // ============================================
