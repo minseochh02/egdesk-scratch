@@ -1143,7 +1143,7 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       automator = cards.createCardAutomator(cardCompanyId, {
-        headless: false, // CRITICAL FIX: Use visible browser like manual UI (headless causes hangs/failures)
+        headless: false, // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
         arduinoPort,
         manualPassword: false
       });
@@ -1422,7 +1422,7 @@ export class FinanceHubScheduler extends EventEmitter {
       // Create bank automator
       const { createAutomator } = require('../index');
       automator = createAutomator(bankId, {
-        headless: false // CRITICAL FIX: Use visible browser like manual UI (headless causes hangs/failures)
+        headless: false // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
       });
 
       // Track active browser

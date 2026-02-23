@@ -397,6 +397,7 @@ export class SchedulerRecoveryService {
     this.debugLog(`Found ${allIntents.length} total intent(s) in lookback window:`);
     for (const intent of allIntents as any[]) {
       this.debugLog(`  ${intent.task_id} [${intent.intended_date}] status=${intent.status} retry=${intent.retry_count || 0}`);
+      this.debugLog(`    window_end: ${intent.execution_window_end}`);
       if (intent.error_message) {
         this.debugLog(`    error: ${intent.error_message}`);
       }
@@ -497,13 +498,18 @@ export class SchedulerRecoveryService {
 
     const opts = { ...defaultOptions, ...options };
 
+    this.debugLog('🔄 Starting recovery process...');
+    this.debugLog(`Options: lookbackDays=${opts.lookbackDays}, autoExecute=${opts.autoExecute}, maxCatchUp=${opts.maxCatchUpExecutions}`);
     console.log('[RecoveryService] 🔄 Starting recovery process...');
     console.log('[RecoveryService] Options:', opts);
 
     // Clean up invalid intents first (e.g., from deleted tasks)
+    this.debugLog('Calling cleanupInvalidIntents()...');
     try {
-      await this.cleanupInvalidIntents();
+      const cleaned = await this.cleanupInvalidIntents();
+      this.debugLog(`cleanupInvalidIntents() completed: cleaned ${cleaned} intent(s)`);
     } catch (error) {
+      this.debugLog(`cleanupInvalidIntents() FAILED: ${error}`);
       console.warn('[RecoveryService] Failed to cleanup invalid intents:', error);
     }
 
@@ -852,11 +858,13 @@ export class SchedulerRecoveryService {
    * Clean up invalid or corrupted intents (e.g., from deleted tasks)
    */
   public async cleanupInvalidIntents(): Promise<number> {
+    this.debugLog('>>> cleanupInvalidIntents() ENTERED');
     const db = this.getDb();
 
     let totalCleaned = 0;
 
     // Delete intents with null/undefined critical fields
+    this.debugLog('Checking for null field intents...');
     const nullResult = db.prepare(`
       DELETE FROM scheduler_execution_intents
       WHERE intended_date IS NULL
@@ -865,6 +873,7 @@ export class SchedulerRecoveryService {
     `).run();
 
     totalCleaned += nullResult.changes;
+    this.debugLog(`Null fields cleanup: ${nullResult.changes} deleted`);
     if (nullResult.changes > 0) {
       console.log(`[RecoveryService] Cleaned up ${nullResult.changes} invalid intents (null fields)`);
     }
@@ -872,6 +881,7 @@ export class SchedulerRecoveryService {
     // CRITICAL: Fix timezone-broken intents from old version
     // Old version created intents with execution windows 24 hours in the future
     // This fixes them by deleting intents where execution_window_end is AFTER intended_date
+    this.debugLog('Checking for timezone-broken intents...');
     const brokenTimezones = db.prepare(`
       DELETE FROM scheduler_execution_intents
       WHERE scheduler_type = 'financehub'
@@ -880,11 +890,13 @@ export class SchedulerRecoveryService {
     `).run();
 
     totalCleaned += brokenTimezones.changes;
+    this.debugLog(`Timezone-broken cleanup: ${brokenTimezones.changes} deleted`);
     if (brokenTimezones.changes > 0) {
       this.debugLog(`Cleaned up ${brokenTimezones.changes} timezone-broken intents (will be recreated by backfill)`);
       console.log(`[RecoveryService] Cleaned up ${brokenTimezones.changes} timezone-broken intents`);
     }
 
+    this.debugLog(`<<< cleanupInvalidIntents() EXITING: total=${totalCleaned}`);
     console.log(`[RecoveryService] Cleaned up ${totalCleaned} invalid intents total`);
 
     return totalCleaned;

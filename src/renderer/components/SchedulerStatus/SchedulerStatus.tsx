@@ -70,6 +70,7 @@ const SchedulerStatus: React.FC = () => {
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [debugLog, setDebugLog] = useState<string>('');
   const [showDebugLog, setShowDebugLog] = useState(false);
+  const [debugLogType, setDebugLogType] = useState<'scheduler' | 'recovery'>('scheduler');
 
   // Load data
   const loadSchedulerData = async () => {
@@ -349,18 +350,23 @@ const SchedulerStatus: React.FC = () => {
     }
   };
 
-  const loadDebugLog = async () => {
+  const loadDebugLog = async (type: 'scheduler' | 'recovery') => {
     try {
-      const result = await window.electron.invoke('finance-hub:scheduler:get-debug-log');
+      setDebugLogType(type);
+      const ipcChannel = type === 'scheduler'
+        ? 'finance-hub:scheduler:get-debug-log'
+        : 'scheduler-recovery:get-debug-log';
+
+      const result = await window.electron.invoke(ipcChannel);
       if (result.success) {
         setDebugLog(result.log);
         setShowDebugLog(true);
       } else {
-        alert(`Failed to load debug log: ${result.error}`);
+        alert(`Failed to load ${type} debug log: ${result.error}`);
       }
     } catch (error) {
-      console.error('Error loading debug log:', error);
-      alert('Failed to load debug log');
+      console.error(`Error loading ${type} debug log:`, error);
+      alert(`Failed to load ${type} debug log`);
     }
   };
 
@@ -464,8 +470,11 @@ const SchedulerStatus: React.FC = () => {
           <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={loadSchedulerData}>
             <FontAwesomeIcon icon={faRedo} /> Refresh
           </button>
-          <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={loadDebugLog}>
-            📋 View Debug Log
+          <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={() => loadDebugLog('scheduler')}>
+            📋 Scheduler Log
+          </button>
+          <button className="scheduler-status__btn scheduler-status__btn--secondary" onClick={() => loadDebugLog('recovery')}>
+            📋 Recovery Log
           </button>
         </div>
       </div>
@@ -496,13 +505,29 @@ const SchedulerStatus: React.FC = () => {
             gap: '16px',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, color: '#F9FAFB' }}>📋 Scheduler Debug Log (Last 500 lines)</h2>
-              <button
-                className="scheduler-status__btn scheduler-status__btn--danger"
-                onClick={() => setShowDebugLog(false)}
-              >
-                Close
-              </button>
+              <h2 style={{ margin: 0, color: '#F9FAFB' }}>
+                📋 {debugLogType === 'scheduler' ? 'Scheduler' : 'Recovery'} Debug Log (Last 500 lines)
+              </h2>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`scheduler-status__btn ${debugLogType === 'scheduler' ? 'scheduler-status__btn--primary' : 'scheduler-status__btn--secondary'}`}
+                  onClick={() => loadDebugLog('scheduler')}
+                >
+                  Scheduler
+                </button>
+                <button
+                  className={`scheduler-status__btn ${debugLogType === 'recovery' ? 'scheduler-status__btn--primary' : 'scheduler-status__btn--secondary'}`}
+                  onClick={() => loadDebugLog('recovery')}
+                >
+                  Recovery
+                </button>
+                <button
+                  className="scheduler-status__btn scheduler-status__btn--danger"
+                  onClick={() => setShowDebugLog(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <pre style={{
               background: '#0A0E1A',
@@ -730,13 +755,18 @@ const SchedulerStatus: React.FC = () => {
                     <th>Task</th>
                     <th>Date</th>
                     <th>Time</th>
+                    <th>Window End</th>
+                    <th>Window Passed?</th>
                     <th>Executed At</th>
                     <th>Completed At</th>
                     <th>Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIntents.map((intent) => (
+                  {filteredIntents.map((intent) => {
+                    const windowEnd = new Date(intent.executionWindowEnd);
+                    const windowPassed = windowEnd < new Date();
+                    return (
                     <tr key={intent.id} className={`scheduler-status__intent-row scheduler-status__intent-row--${intent.status}`}>
                       <td>
                         <span className={`scheduler-status__scheduler-badge scheduler-status__scheduler-badge--${intent.schedulerType}`}>
@@ -776,6 +806,17 @@ const SchedulerStatus: React.FC = () => {
                       <td className="scheduler-status__task-name">{intent.taskName}</td>
                       <td>{intent.intendedDate}</td>
                       <td>{intent.intendedTime}</td>
+                      <td>
+                        <div title={intent.executionWindowEnd}>
+                          {windowEnd.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#6B7280' }}>
+                          {intent.executionWindowEnd}
+                        </div>
+                      </td>
+                      <td style={{ color: windowPassed ? '#10B981' : '#F59E0B', fontWeight: 'bold' }}>
+                        {windowPassed ? '✓ Yes' : '✗ No'}
+                      </td>
                       <td>{intent.actualExecutionTime ? new Date(intent.actualExecutionTime).toLocaleTimeString() : '-'}</td>
                       <td>{intent.completedAt ? new Date(intent.completedAt).toLocaleTimeString() : '-'}</td>
                       <td>
@@ -791,7 +832,8 @@ const SchedulerStatus: React.FC = () => {
                         )}
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.56",
+  "version": "1.0.57",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -24,9 +24,9 @@
   },
   "license": "MIT",
   "author": {
-    "name": "Taesung",
-    "email": "contact@taesung.com",
-    "url": "https://taesung.com"
+    "name": "Minseo Cha",
+    "email": "minseochh02@gmail.com",
+    "url": "https://www.quus.cloud/"
   },
   "main": "./.erb/dll/main.bundle.dev.js",
   "scripts": {
@@ -237,7 +237,7 @@
   },
   "build": {
     "productName": "EGDesk",
-    "appId": "com.taesung.egdesk",
+    "appId": "com.quus.egdesk",
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": [
