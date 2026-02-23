@@ -1,10 +1,9 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execSync } from 'child_process';
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
-import { getNodeRuntimeManager } from './node-runtime-manager';
 
 interface ProjectInfo {
   type: 'nextjs' | 'vite' | 'react' | 'unknown';
@@ -33,37 +32,27 @@ export class DevServerManager {
   }
 
   /**
-   * Initialize Node.js runtime
+   * Initialize Node.js runtime (no longer needed - using system npm)
    */
   private async initializeRuntime(): Promise<void> {
-    try {
-      const runtimeManager = getNodeRuntimeManager();
-      await runtimeManager.initialize();
-      this.runtimeInitialized = true;
-      console.log('✅ Node.js runtime initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize Node.js runtime:', error);
-    }
+    this.runtimeInitialized = true;
+    console.log('✅ Using system Node.js and npm');
   }
 
   /**
-   * Check if Node.js and npm are available (using bundled runtime)
+   * Check if Node.js and npm are available (using system installation)
    */
   private async checkNodeInstallation(): Promise<{ hasNode: boolean; hasNpm: boolean; nodeVersion?: string; npmVersion?: string }> {
     try {
-      // Ensure runtime is initialized
-      if (!this.runtimeInitialized) {
-        await this.initializeRuntime();
-      }
-
-      const runtimeManager = getNodeRuntimeManager();
-      const runtimeInfo = runtimeManager.getRuntimeInfo();
+      // Check system node and npm
+      const nodeVersion = execSync('node --version', { encoding: 'utf-8' }).trim();
+      const npmVersion = execSync('npm --version', { encoding: 'utf-8' }).trim();
 
       return {
-        hasNode: true, // Always true since we use Electron's Node.js
-        hasNpm: true, // Always true since we bundle or download npm
-        nodeVersion: runtimeInfo.nodeVersion,
-        npmVersion: runtimeInfo.npmVersion
+        hasNode: true,
+        hasNpm: true,
+        nodeVersion,
+        npmVersion
       };
     } catch (error) {
       console.error('Failed to check Node.js installation:', error);
@@ -240,11 +229,11 @@ export class DevServerManager {
       cleanEnv.CI = 'true';  // Tells create-next-app we're in CI mode (no prompts)
       cleanEnv.DISABLE_PROMPTS = 'true';  // Additional safety
 
-      // Use runtime manager for npx (which comes with npm)
-      const runtimeManager = getNodeRuntimeManager();
-      const initProcess = runtimeManager.spawn('npm', ['exec', '--', 'create-next-app@latest', ...args.slice(1)], {
+      // Use system npx
+      const initProcess = spawn('npx', ['create-next-app@latest', ...args.slice(1)], {
         cwd: folderPath,
         env: cleanEnv,
+        shell: true,
         stdio: ['pipe', 'pipe', 'pipe']  // Allow us to pipe input if needed
       });
 
@@ -370,11 +359,8 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Use runtime manager for package installation
-      const runtimeManager = getNodeRuntimeManager();
-      const installProcess = packageManager === 'npm'
-        ? runtimeManager.spawn('npm', args, { cwd: folderPath, env: cleanEnv })
-        : spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
+      // Use system package manager
+      const installProcess = spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -436,11 +422,8 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Use runtime manager for package installation
-      const runtimeManager = getNodeRuntimeManager();
-      const installProcess = packageManager === 'npm'
-        ? runtimeManager.spawn('npm', args, { cwd: folderPath, env: cleanEnv })
-        : spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
+      // Use system package manager
+      const installProcess = spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -595,10 +578,10 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Run the CLI via npx (using runtime manager)
-      const runtimeManager = getNodeRuntimeManager();
-      const setupProcess = runtimeManager.spawn('npm', ['exec', '--', ...args], {
+      // Run the CLI via system npx
+      const setupProcess = spawn('npx', args, {
         cwd: folderPath,
+        shell: true,
         env: cleanEnv
       });
 
@@ -739,6 +722,107 @@ export class DevServerManager {
     }
   }
 
+  /**
+   * Backup next.config.js before modification
+   */
+  private async backupNextConfig(folderPath: string): Promise<void> {
+    const configFiles = ['next.config.js', 'next.config.mjs', 'next.config.ts'];
+
+    for (const file of configFiles) {
+      const configPath = path.join(folderPath, file);
+      const backupPath = path.join(folderPath, `${file}.egdesk-backup`);
+
+      if (fs.existsSync(configPath)) {
+        await fs.promises.copyFile(configPath, backupPath);
+        console.log(`📦 Backed up ${file} to ${file}.egdesk-backup`);
+        return;
+      }
+    }
+
+    console.log('ℹ️ No next.config found, will create one');
+  }
+
+  /**
+   * Configure next.config.js to read basePath from environment variable
+   */
+  private async configureNextJsBasePath(folderPath: string): Promise<void> {
+    const configFiles = ['next.config.js', 'next.config.mjs', 'next.config.ts'];
+    let configPath: string | null = null;
+
+    // Find existing config
+    for (const file of configFiles) {
+      const filePath = path.join(folderPath, file);
+      if (fs.existsSync(filePath)) {
+        configPath = filePath;
+        break;
+      }
+    }
+
+    // Create new config if none exists
+    if (!configPath) {
+      configPath = path.join(folderPath, 'next.config.js');
+      const newConfig = `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  basePath: process.env.EGDESK_BASE_PATH || '',
+  assetPrefix: process.env.EGDESK_BASE_PATH || '',
+};
+
+export default nextConfig;
+`;
+      await fs.promises.writeFile(configPath, newConfig, 'utf8');
+      console.log(`✅ Created next.config.js with dynamic basePath`);
+      return;
+    }
+
+    // Modify existing config to read from environment variable
+    let content = await fs.promises.readFile(configPath, 'utf8');
+
+    // Check if already configured
+    if (content.includes('EGDESK_BASE_PATH')) {
+      console.log('✓ next.config.js already configured for dynamic basePath');
+      return;
+    }
+
+    // Simple injection: add to config object
+    // Match: const nextConfig = { or const nextConfig: NextConfig = {
+    const configObjectMatch = content.match(/(const\s+\w+Config\s*:\s*\w+\s*=\s*\{)|(const\s+\w+Config\s*=\s*\{)/);
+
+    if (configObjectMatch) {
+      const matchedPattern = configObjectMatch[0];
+      const insertPoint = configObjectMatch.index! + matchedPattern.length;
+      const injection = `
+  basePath: process.env.EGDESK_BASE_PATH || '',
+  assetPrefix: process.env.EGDESK_BASE_PATH || '',`;
+
+      content = content.slice(0, insertPoint) + injection + content.slice(insertPoint);
+      await fs.promises.writeFile(configPath, content, 'utf8');
+      console.log(`✅ Configured ${path.basename(configPath)} to read basePath from EGDESK_BASE_PATH`);
+    } else {
+      console.warn('⚠️ Could not parse next.config - may need manual configuration');
+    }
+  }
+
+  /**
+   * Restore original next.config.js
+   */
+  private async restoreNextConfig(folderPath: string): Promise<void> {
+    const configFiles = ['next.config.js', 'next.config.mjs', 'next.config.ts'];
+
+    for (const file of configFiles) {
+      const configPath = path.join(folderPath, file);
+      const backupPath = path.join(folderPath, `${file}.egdesk-backup`);
+
+      if (fs.existsSync(backupPath)) {
+        await fs.promises.copyFile(backupPath, configPath);
+        await fs.promises.unlink(backupPath);
+        console.log(`✅ Restored ${file} from backup`);
+        return;
+      }
+    }
+
+    console.log('ℹ️ No backup found to restore');
+  }
+
 
   public async startServer(folderPath: string): Promise<ServerInfo> {
     // Ensure runtime is initialized
@@ -800,6 +884,13 @@ export class DevServerManager {
     // The plugin will generate middleware and helper files
     if (projectInfo.type === 'nextjs') {
       await this.ensureNextApiPlugin(folderPath, projectInfo.packageManager);
+
+      // Configure basePath for tunnel support
+      if (this.tunnelId) {
+        console.log(`🔧 Configuring Next.js for tunnel support...`);
+        await this.backupNextConfig(folderPath);
+        await this.configureNextJsBasePath(folderPath);
+      }
     }
 
     // Find available port
@@ -843,36 +934,25 @@ export class DevServerManager {
     delete cleanEnv.TS_NODE_PROJECT;
     delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-    // Spawn the dev server process using runtime manager
-    const runtimeManager = getNodeRuntimeManager();
-    const serverProcess = command === 'npm' || command === 'yarn' || command === 'pnpm'
-      ? (command === 'npm'
-          ? runtimeManager.spawn('npm', args, {
-              cwd: folderPath,
-              env: {
-                ...cleanEnv,
-                PORT: port.toString(),
-                NODE_ENV: 'development'
-              }
-            })
-          : spawn(command, args, {
-              cwd: folderPath,
-              shell: true,
-              env: {
-                ...cleanEnv,
-                PORT: port.toString(),
-                NODE_ENV: 'development'
-              }
-            }))
-      : spawn(command, args, {
-          cwd: folderPath,
-          shell: true,
-          env: {
-            ...cleanEnv,
-            PORT: port.toString(),
-            NODE_ENV: 'development'
-          }
-        });
+    // For Next.js, set basePath via environment variable
+    const serverEnv = {
+      ...cleanEnv,
+      PORT: port.toString(),
+      NODE_ENV: 'development'
+    };
+
+    if (projectInfo.type === 'nextjs' && this.tunnelId) {
+      const basePath = `/t/${this.tunnelId}/p/${projectName}`;
+      serverEnv.EGDESK_BASE_PATH = basePath;
+      console.log(`🔧 Setting EGDESK_BASE_PATH=${basePath} for Next.js`);
+    }
+
+    // Spawn the dev server process using system npm/yarn/pnpm
+    const serverProcess = spawn(command, args, {
+      cwd: folderPath,
+      shell: true,
+      env: serverEnv
+    });
 
     const serverInfo: ServerInfo = {
       port,
@@ -886,7 +966,7 @@ export class DevServerManager {
 
     // Register project in registry
     const projectRegistry = getProjectRegistry();
-    projectRegistry.register(folderPath, port, serverInfo.url, 'starting');
+    projectRegistry.register(folderPath, port, serverInfo.url, 'starting', projectInfo.type);
 
     // Monitor output for "ready" status
     serverProcess.stdout?.on('data', (data) => {
@@ -948,6 +1028,12 @@ export class DevServerManager {
 
     if (!serverInfo || !serverInfo.process) {
       throw new Error('No server running for this folder');
+    }
+
+    // Restore Next.js config if it was modified
+    const projectInfo = await this.analyzeFolder(folderPath);
+    if (projectInfo.type === 'nextjs') {
+      await this.restoreNextConfig(folderPath);
     }
 
     return new Promise((resolve, reject) => {

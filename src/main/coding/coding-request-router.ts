@@ -127,7 +127,9 @@ export async function proxyRequest(
         headers: {
           ...headers,
           // Ensure host header points to target
-          'host': `${parsedUrl.hostname}:${parsedUrl.port}`
+          'host': `${parsedUrl.hostname}:${parsedUrl.port}`,
+          // Disable compression to avoid decoding issues in proxy
+          'accept-encoding': 'identity'
         },
       };
 
@@ -215,25 +217,36 @@ export async function handleProjectRequest(
   try {
     let targetUrl = route.targetUrl!;
 
-    // When tunnel is active, Vite projects are configured with --base flag
-    // They expect the full path including the tunnel prefix
+    // Path handling depends on project type and tunnel mode
     if (tunnelId) {
       const parsed = parseProjectRoute(requestPath);
       if (parsed) {
         const projectRegistry = getProjectRegistry();
         const project = projectRegistry.getProject(parsed.projectName);
 
-        // Reconstruct full path including tunnel prefix
-        // Request: /p/oneconductor/foo → Proxy: /t/tunnel-id/p/oneconductor/foo to localhost:3000
-        const fullPath = `/t/${tunnelId}${requestPath}`;
-        targetUrl = `http://localhost:${project!.port}${fullPath}`;
-        console.log(`🔧 Tunneling mode - using full path for Vite: ${fullPath}`);
+        if (project?.type === 'vite') {
+          // Vite: Send full path including tunnel prefix
+          // Vite's --base flag handles stripping the prefix
+          const fullPath = `/t/${tunnelId}${requestPath}`;
+          targetUrl = `http://localhost:${project.port}${fullPath}`;
+          console.log(`🔧 Vite project - using full path: ${fullPath}`);
+        } else if (project?.type === 'nextjs') {
+          // Next.js: Send full path including tunnel prefix
+          // Next.js basePath config expects the full path
+          const fullPath = `/t/${tunnelId}${requestPath}`;
+          targetUrl = `http://localhost:${project.port}${fullPath}`;
+          console.log(`🔧 Next.js project - using full path: ${fullPath}`);
+        } else {
+          // Unknown/React: Log warning and try full path (backward compatibility)
+          const fullPath = `/t/${tunnelId}${requestPath}`;
+          targetUrl = `http://localhost:${project!.port}${fullPath}`;
+          console.log(`⚠️ Unknown project type (${project?.type}) - using full path: ${fullPath}`);
+        }
       }
     }
 
     const response = await proxyRequest(method, targetUrl, headers, body, queryParams);
 
-    // Note: URL rewriting removed - Vite's --base flag handles this automatically
     return response;
   } catch (error) {
     console.error(`❌ Failed to proxy request to ${route.targetUrl}:`, error);

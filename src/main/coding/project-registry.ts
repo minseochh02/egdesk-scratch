@@ -7,6 +7,7 @@ export interface RegisteredProject {
   url: string;
   status: 'starting' | 'running' | 'stopped' | 'error';
   registeredAt: string;
+  type?: 'nextjs' | 'vite' | 'react' | 'unknown';
 }
 
 export class ProjectRegistry {
@@ -15,7 +16,13 @@ export class ProjectRegistry {
   /**
    * Register a project (called when dev server starts)
    */
-  register(folderPath: string, port: number, url: string, status: 'starting' | 'running' | 'stopped' | 'error'): RegisteredProject {
+  register(
+    folderPath: string,
+    port: number,
+    url: string,
+    status: 'starting' | 'running' | 'stopped' | 'error',
+    type?: 'nextjs' | 'vite' | 'react' | 'unknown'
+  ): RegisteredProject {
     // Use folder name as project name
     const projectName = path.basename(folderPath);
 
@@ -25,11 +32,12 @@ export class ProjectRegistry {
       port,
       url,
       status,
-      registeredAt: new Date().toISOString()
+      registeredAt: new Date().toISOString(),
+      type
     };
 
     this.projects.set(projectName, project);
-    console.log(`✅ Registered project: ${projectName} on port ${port}`);
+    console.log(`✅ Registered project: ${projectName} (${type || 'unknown'}) on port ${port}`);
 
     return project;
   }
