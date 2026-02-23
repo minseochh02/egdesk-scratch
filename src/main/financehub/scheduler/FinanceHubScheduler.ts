@@ -1548,6 +1548,7 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   private async syncTax(businessName: string): Promise<{ success: boolean; error?: string; salesInserted?: number; purchaseInserted?: number }> {
+    this.debugLog(`→→→ syncTax() called for: ${businessName}`);
     console.log(`[FinanceHubScheduler] Syncing tax invoices for business: ${businessName}`);
 
     // CRITICAL: Add timeout to entire sync operation (15 minutes max for tax - it's slower)
@@ -1561,9 +1562,13 @@ export class FinanceHubScheduler extends EventEmitter {
       const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
       const savedCertificates = hometaxConfig.selectedCertificates || {};
 
+      this.debugLog(`Checking for certificate with key: "${businessName}"`);
+      this.debugLog(`Available certificate keys: ${Object.keys(savedCertificates).join(', ')}`);
+
       const certData = savedCertificates[businessName];  // Use businessName as key
 
       if (!certData) {
+        this.debugLog(`❌ Certificate not found for key: "${businessName}"`);
         return {
           success: false,
           error: 'Certificate not found in saved data'
@@ -1571,11 +1576,14 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       if (!certData.certificatePassword) {
+        this.debugLog(`❌ Certificate password not saved for: "${businessName}"`);
         return {
           success: false,
           error: 'Certificate password not saved'
         };
       }
+
+      this.debugLog(`✓ Certificate found with password, proceeding with collection...`);
 
       // Collect invoices (download Excel files)
       const result = await collectTaxInvoices(certData, certData.certificatePassword);
