@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
+import { getNodeRuntimeManager } from './node-runtime-manager';
 
 interface ProjectInfo {
   type: 'nextjs' | 'vite' | 'react' | 'unknown';
@@ -24,47 +25,53 @@ export class DevServerManager {
   private servers: Map<string, ServerInfo> = new Map();
   private portRange = { start: 3000, end: 3100 };
   private tunnelId: string | null = null;
+  private runtimeInitialized: boolean = false;
 
   constructor() {
     this.setupIpcHandlers();
+    this.initializeRuntime();
   }
 
   /**
-   * Check if Node.js and npm are installed
+   * Initialize Node.js runtime
+   */
+  private async initializeRuntime(): Promise<void> {
+    try {
+      const runtimeManager = getNodeRuntimeManager();
+      await runtimeManager.initialize();
+      this.runtimeInitialized = true;
+      console.log('✅ Node.js runtime initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Node.js runtime:', error);
+    }
+  }
+
+  /**
+   * Check if Node.js and npm are available (using bundled runtime)
    */
   private async checkNodeInstallation(): Promise<{ hasNode: boolean; hasNpm: boolean; nodeVersion?: string; npmVersion?: string }> {
-    const checkCommand = (command: string): Promise<string | null> => {
-      return new Promise((resolve) => {
-        const child = spawn(command, ['--version'], { shell: true });
-        let output = '';
+    try {
+      // Ensure runtime is initialized
+      if (!this.runtimeInitialized) {
+        await this.initializeRuntime();
+      }
 
-        child.stdout?.on('data', (data) => {
-          output += data.toString();
-        });
+      const runtimeManager = getNodeRuntimeManager();
+      const runtimeInfo = runtimeManager.getRuntimeInfo();
 
-        child.on('close', (code) => {
-          if (code === 0) {
-            resolve(output.trim());
-          } else {
-            resolve(null);
-          }
-        });
-
-        child.on('error', () => {
-          resolve(null);
-        });
-      });
-    };
-
-    const nodeVersion = await checkCommand('node');
-    const npmVersion = await checkCommand('npm');
-
-    return {
-      hasNode: nodeVersion !== null,
-      hasNpm: npmVersion !== null,
-      nodeVersion: nodeVersion || undefined,
-      npmVersion: npmVersion || undefined
-    };
+      return {
+        hasNode: true, // Always true since we use Electron's Node.js
+        hasNpm: true, // Always true since we bundle or download npm
+        nodeVersion: runtimeInfo.nodeVersion,
+        npmVersion: runtimeInfo.npmVersion
+      };
+    } catch (error) {
+      console.error('Failed to check Node.js installation:', error);
+      return {
+        hasNode: false,
+        hasNpm: false
+      };
+    }
   }
 
   /**
@@ -233,9 +240,10 @@ export class DevServerManager {
       cleanEnv.CI = 'true';  // Tells create-next-app we're in CI mode (no prompts)
       cleanEnv.DISABLE_PROMPTS = 'true';  // Additional safety
 
-      const initProcess = spawn('npx', args, {
+      // Use runtime manager for npx (which comes with npm)
+      const runtimeManager = getNodeRuntimeManager();
+      const initProcess = runtimeManager.spawn('npm', ['exec', '--', 'create-next-app@latest', ...args.slice(1)], {
         cwd: folderPath,
-        shell: true,
         env: cleanEnv,
         stdio: ['pipe', 'pipe', 'pipe']  // Allow us to pipe input if needed
       });
@@ -362,11 +370,11 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      const installProcess = spawn(packageManager, args, {
-        cwd: folderPath,
-        shell: true,
-        env: cleanEnv
-      });
+      // Use runtime manager for package installation
+      const runtimeManager = getNodeRuntimeManager();
+      const installProcess = packageManager === 'npm'
+        ? runtimeManager.spawn('npm', args, { cwd: folderPath, env: cleanEnv })
+        : spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -428,11 +436,11 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      const installProcess = spawn(packageManager, args, {
-        cwd: folderPath,
-        shell: true,
-        env: cleanEnv
-      });
+      // Use runtime manager for package installation
+      const runtimeManager = getNodeRuntimeManager();
+      const installProcess = packageManager === 'npm'
+        ? runtimeManager.spawn('npm', args, { cwd: folderPath, env: cleanEnv })
+        : spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -587,10 +595,10 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Run the CLI via npx
-      const setupProcess = spawn('npx', args, {
+      // Run the CLI via npx (using runtime manager)
+      const runtimeManager = getNodeRuntimeManager();
+      const setupProcess = runtimeManager.spawn('npm', ['exec', '--', ...args], {
         cwd: folderPath,
-        shell: true,
         env: cleanEnv
       });
 
@@ -733,28 +741,22 @@ export class DevServerManager {
 
 
   public async startServer(folderPath: string): Promise<ServerInfo> {
-    // Check if Node.js and npm are installed
-    console.log('🔍 Checking Node.js installation...');
+    // Ensure runtime is initialized
+    if (!this.runtimeInitialized) {
+      await this.initializeRuntime();
+    }
+
+    // Check Node.js runtime
+    console.log('🔍 Checking Node.js runtime...');
     const nodeCheck = await this.checkNodeInstallation();
 
     if (!nodeCheck.hasNode || !nodeCheck.hasNpm) {
-      const missing = [];
-      if (!nodeCheck.hasNode) missing.push('Node.js');
-      if (!nodeCheck.hasNpm) missing.push('npm');
-
-      const errorMessage = `❌ ${missing.join(' and ')} not found on this system.\n\n` +
-        `Please install Node.js (which includes npm) to use the coding features:\n\n` +
-        `1. Visit https://nodejs.org/\n` +
-        `2. Download the LTS (Long Term Support) version\n` +
-        `3. Run the installer\n` +
-        `4. Restart EGDesk after installation\n\n` +
-        `Recommended: Node.js v20 or higher`;
-
+      const errorMessage = `❌ Failed to initialize Node.js runtime. Please restart the application.`;
       console.error(errorMessage);
       throw new Error(errorMessage);
     }
 
-    console.log(`✅ Node.js ${nodeCheck.nodeVersion} and npm ${nodeCheck.npmVersion} detected`);
+    console.log(`✅ Using Node.js ${nodeCheck.nodeVersion} and npm ${nodeCheck.npmVersion}`);
 
     // Check if tunnel is active for Vite projects
     // We need tunnelId set to properly configure Vite's --base flag
@@ -841,16 +843,36 @@ export class DevServerManager {
     delete cleanEnv.TS_NODE_PROJECT;
     delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-    // Spawn the dev server process
-    const serverProcess = spawn(command, args, {
-      cwd: folderPath,
-      shell: true,
-      env: {
-        ...cleanEnv,
-        PORT: port.toString(),
-        NODE_ENV: 'development'
-      }
-    });
+    // Spawn the dev server process using runtime manager
+    const runtimeManager = getNodeRuntimeManager();
+    const serverProcess = command === 'npm' || command === 'yarn' || command === 'pnpm'
+      ? (command === 'npm'
+          ? runtimeManager.spawn('npm', args, {
+              cwd: folderPath,
+              env: {
+                ...cleanEnv,
+                PORT: port.toString(),
+                NODE_ENV: 'development'
+              }
+            })
+          : spawn(command, args, {
+              cwd: folderPath,
+              shell: true,
+              env: {
+                ...cleanEnv,
+                PORT: port.toString(),
+                NODE_ENV: 'development'
+              }
+            }))
+      : spawn(command, args, {
+          cwd: folderPath,
+          shell: true,
+          env: {
+            ...cleanEnv,
+            PORT: port.toString(),
+            NODE_ENV: 'development'
+          }
+        });
 
     const serverInfo: ServerInfo = {
       port,

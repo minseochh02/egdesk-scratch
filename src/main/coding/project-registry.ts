@@ -5,7 +5,7 @@ export interface RegisteredProject {
   folderPath: string;
   port: number;
   url: string;
-  status: 'running' | 'stopped' | 'error';
+  status: 'starting' | 'running' | 'stopped' | 'error';
   registeredAt: string;
 }
 
@@ -15,7 +15,7 @@ export class ProjectRegistry {
   /**
    * Register a project (called when dev server starts)
    */
-  register(folderPath: string, port: number, url: string, status: 'running' | 'stopped' | 'error'): RegisteredProject {
+  register(folderPath: string, port: number, url: string, status: 'starting' | 'running' | 'stopped' | 'error'): RegisteredProject {
     // Use folder name as project name
     const projectName = path.basename(folderPath);
 
@@ -37,7 +37,7 @@ export class ProjectRegistry {
   /**
    * Update project status
    */
-  updateStatus(projectName: string, status: 'running' | 'stopped' | 'error'): void {
+  updateStatus(projectName: string, status: 'starting' | 'running' | 'stopped' | 'error'): void {
     const project = this.projects.get(projectName);
     if (project) {
       project.status = status;

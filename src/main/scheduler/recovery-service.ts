@@ -1,6 +1,9 @@
 import { randomUUID } from 'crypto';
 import { getSQLiteManager } from '../sqlite/manager';
 import Database from 'better-sqlite3';
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Scheduler Recovery Service
@@ -64,9 +67,36 @@ export interface RecoveryReport {
 
 export class SchedulerRecoveryService {
   private static instance: SchedulerRecoveryService | null = null;
+  private debugLogPath: string;
 
   private constructor() {
-    // Private constructor for singleton
+    // Create debug log file path
+    const logDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'logs')
+      : path.join(process.cwd(), 'logs');
+
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    this.debugLogPath = path.join(logDir, 'recovery-debug.log');
+    this.debugLog('='.repeat(80));
+    this.debugLog(`RecoveryService initialized at ${new Date().toISOString()}`);
+    this.debugLog('='.repeat(80));
+  }
+
+  /**
+   * Write debug log to file (visible in production)
+   */
+  private debugLog(message: string): void {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+
+    try {
+      fs.appendFileSync(this.debugLogPath, logMessage);
+    } catch (error) {
+      console.error('Failed to write recovery debug log:', error);
+    }
   }
 
   public static getInstance(): SchedulerRecoveryService {
@@ -396,15 +426,20 @@ export class SchedulerRecoveryService {
 
     const pendingIntents = db.prepare(query).all(...params) as any[];
 
+    this.debugLog(`Found ${pendingIntents.length} pending/failed intent(s) in database`);
+
     // Convert to MissedExecution format (SQLite returns snake_case columns)
     const missedExecutions: MissedExecution[] = pendingIntents.map((intent: any) => {
       const windowEnd = new Date(intent.execution_window_end);
       const now = new Date();
       const daysMissed = Math.floor((now.getTime() - windowEnd.getTime()) / (1000 * 60 * 60 * 24));
 
+      this.debugLog(`Intent: taskId="${intent.task_id}", status="${intent.status}", date="${intent.intended_date}"`);
+
       // Log failed tasks separately for visibility
       if (intent.status === 'failed') {
         const retryCount = intent.retry_count || 0;
+        this.debugLog(`  Failed task: retry ${retryCount}/5, error: ${intent.error_message || 'none'}`);
         console.log(`[RecoveryService] Found failed task to retry: ${intent.task_name} (${intent.intended_date})`);
         console.log(`[RecoveryService]   Retry count: ${retryCount}/5`);
         if (intent.error_message) {
@@ -422,6 +457,7 @@ export class SchedulerRecoveryService {
       };
     });
 
+    this.debugLog(`Returning ${missedExecutions.length} missed execution(s)`);
     return missedExecutions;
   }
 
@@ -500,6 +536,7 @@ export class SchedulerRecoveryService {
     if (opts.autoExecute) {
       for (const missed of toExecute) {
         try {
+          this.debugLog(`Executing missed task: ${missed.taskId} (${missed.intendedDate})`);
           console.log(`[RecoveryService] Executing missed task: ${missed.taskName} (${missed.intendedDate})`);
           await this.executeTaskByType(missed);
 
@@ -512,12 +549,15 @@ export class SchedulerRecoveryService {
           );
           console.log(`[RecoveryService] ✅ Marked ${missed.taskId} (${missed.intendedDate}) as completed`);
 
+          this.debugLog(`✓ Task completed successfully: ${missed.taskId}`);
           executionResults.push({
             intentId: missed.intentId,
             taskName: missed.taskName,
             success: true,
           });
         } catch (error) {
+          this.debugLog(`❌ Task execution failed: ${missed.taskId}`);
+          this.debugLog(`   Error: ${error instanceof Error ? error.message : String(error)}`);
           console.error(`[RecoveryService] Failed to execute ${missed.taskName}:`, error);
 
           await this.markIntentFailed(
@@ -653,6 +693,7 @@ export class SchedulerRecoveryService {
    * Execute FinanceHub sync task
    */
   private async executeFinanceHubTask(missed: MissedExecution): Promise<void> {
+    this.debugLog(`►►► executeFinanceHubTask() called for: ${missed.taskId}`);
     console.log(`[RecoveryService] ►►► executeFinanceHubTask() called for: ${missed.taskId}`);
 
     const { getFinanceHubScheduler } = await import('../financehub/scheduler/FinanceHubScheduler');
@@ -663,9 +704,11 @@ export class SchedulerRecoveryService {
     const [entityType, ...entityIdParts] = missed.taskId.split(':');
     const entityId = entityIdParts.join(':'); // Rejoin in case entity ID has colons
 
+    this.debugLog(`Parsed taskId: entityType="${entityType}", entityId="${entityId}"`);
     console.log(`[RecoveryService] Parsed taskId: entityType="${entityType}", entityId="${entityId}"`);
 
     if (!entityType || !entityId || entityId.trim() === '') {
+      this.debugLog(`❌ Invalid taskId format: "${missed.taskId}"`);
       console.error(`[RecoveryService] Invalid taskId format: "${missed.taskId}" - entityType="${entityType}", entityId="${entityId}"`);
       console.error(`[RecoveryService] This usually means the scheduler has an entry with empty/undefined ID`);
       console.error(`[RecoveryService] Check your financeHubScheduler settings for entries with empty keys`);
@@ -676,22 +719,28 @@ export class SchedulerRecoveryService {
     // CRITICAL: Check if scheduler is already syncing this entity or has retry scheduled
     const syncingEntities = scheduler.getSyncingEntities();
     const hasRetry = scheduler.hasRetryScheduled(missed.taskId);
-    
+
+    this.debugLog(`Sync state check: isSyncing=${syncingEntities.includes(missed.taskId)}, hasRetry=${hasRetry}`);
+
     if (syncingEntities.includes(missed.taskId)) {
+      this.debugLog(`⚠️ ${missed.taskId} is already syncing - skipping recovery`);
       console.log(`[RecoveryService] ⚠️  ${missed.taskId} is already syncing - skipping recovery to prevent duplicate`);
       return;
     }
-    
+
     if (hasRetry) {
+      this.debugLog(`⚠️ ${missed.taskId} already has a retry scheduled - skipping recovery`);
       console.log(`[RecoveryService] ⚠️  ${missed.taskId} already has a retry scheduled - skipping recovery to prevent duplicate`);
       return;
     }
 
+    this.debugLog(`Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
     console.log(`[RecoveryService] Calling scheduler.syncEntity("${entityType}", "${entityId}")...`);
 
     // Sync specific entity instead of all entities
     await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId);
 
+    this.debugLog(`✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
     console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
   }
 

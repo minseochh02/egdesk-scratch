@@ -641,16 +641,16 @@ export class SheetsService {
     // Clear existing data and add new data
     try {
       // Clear the entire sheet
-      await this.clearRange(spreadsheetId, 'Sheet1');
+      await this.clearRange(spreadsheetId, 'Sheet1', preferServiceAccount);
     } catch (error) {
       console.warn('Failed to clear existing data, continuing anyway:', error);
     }
 
     // Add new data
-    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data, preferServiceAccount);
 
     // Format headers
-    await this.formatHeaders(spreadsheetId, 'Sheet1');
+    await this.formatHeaders(spreadsheetId, 'Sheet1', preferServiceAccount);
   }
 
   /**
@@ -986,16 +986,16 @@ export class SheetsService {
     // Clear existing data and add new data
     try {
       // Clear the entire sheet
-      await this.clearRange(spreadsheetId, 'Sheet1');
+      await this.clearRange(spreadsheetId, 'Sheet1', preferServiceAccount);
     } catch (error) {
       console.warn('Failed to clear existing data, continuing anyway:', error);
     }
 
     // Add new data
-    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data, preferServiceAccount);
 
     // Format headers
-    await this.formatHeaders(spreadsheetId, 'Sheet1');
+    await this.formatHeaders(spreadsheetId, 'Sheet1', preferServiceAccount);
   }
 
   /**
@@ -1141,16 +1141,16 @@ export class SheetsService {
     // Clear existing data and add new data
     try {
       // Clear the entire sheet
-      await this.clearRange(spreadsheetId, 'Sheet1');
+      await this.clearRange(spreadsheetId, 'Sheet1', preferServiceAccount);
     } catch (error) {
       console.warn('Failed to clear existing data, continuing anyway:', error);
     }
 
     // Add new data
-    await this.updateRange(spreadsheetId, 'Sheet1!A1', data);
+    await this.updateRange(spreadsheetId, 'Sheet1!A1', data, preferServiceAccount);
 
     // Format headers
-    await this.formatHeaders(spreadsheetId, 'Sheet1');
+    await this.formatHeaders(spreadsheetId, 'Sheet1', preferServiceAccount);
   }
 
   // ============================================
