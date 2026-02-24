@@ -19,6 +19,7 @@ interface RegisteredProject {
   url: string;
   status: 'running' | 'stopped' | 'error';
   registeredAt: string;
+  type?: 'nextjs' | 'vite' | 'react' | 'unknown';
 }
 
 const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
@@ -28,6 +29,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nodeCheckDone, setNodeCheckDone] = useState(false);
+  const [tunnelId, setTunnelId] = useState<string | null>(null);
 
   // Removed automatic window creation on mount
   // Windows will be created after dev server starts successfully
@@ -72,6 +74,29 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     };
 
     checkNode();
+  }, []);
+
+  // Get tunnel ID from Electron Store
+  useEffect(() => {
+    const fetchTunnelId = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.ipcRenderer) return;
+
+        const result = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+        if (result.success && result.config?.tunnel?.tunnelId) {
+          setTunnelId(result.config.tunnel.tunnelId);
+        }
+      } catch (err) {
+        console.error('Failed to fetch tunnel config:', err);
+      }
+    };
+
+    fetchTunnelId();
+
+    // Poll every 5 seconds to update tunnel status
+    const interval = setInterval(fetchTunnelId, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Get folder path from localStorage if user selected one
@@ -220,14 +245,40 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       {registeredProject && (
         <div className="developer-status">
           <p><strong>Project Name:</strong> {registeredProject.projectName}</p>
+          <p><strong>Type:</strong> {registeredProject.type || 'unknown'}</p>
           <p><strong>Status:</strong> {registeredProject.status}</p>
-          <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+
+          {tunnelId && registeredProject.type === 'nextjs' ? (
+            <>
+              <p><strong>Tunnel URL:</strong> <a
+                href={`https://tunneling-service.onrender.com/t/${tunnelId}/p/${registeredProject.projectName}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: '#0070f3' }}
+              >
+                https://tunneling-service.onrender.com/t/{tunnelId}/p/{registeredProject.projectName}/
+              </a></p>
+              <p style={{ fontSize: '12px', color: '#f5a623', marginTop: '8px' }}>
+                ⚠️ Note: For Next.js projects, localhost access is disabled to support tunnel routing. Use the tunnel URL above.
+              </p>
+            </>
+          ) : tunnelId ? (
+            <>
+              <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+              <p><strong>Tunnel URL:</strong> <a
+                href={`https://tunneling-service.onrender.com/t/${tunnelId}/p/${registeredProject.projectName}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: '#0070f3' }}
+              >
+                https://tunneling-service.onrender.com/t/{tunnelId}/p/{registeredProject.projectName}/
+              </a></p>
+            </>
+          ) : (
+            <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+          )}
+
           <p><strong>Port:</strong> {registeredProject.port}</p>
-          <p className="developer-tunnel-info">
-            <strong>Public Access:</strong> When tunnel is active, your project will be accessible at:
-            <br />
-            <code>https://tunneling-service.onrender.com/t/&#123;tunnel_id&#125;/p/{registeredProject.projectName}/</code>
-          </p>
         </div>
       )}
 
