@@ -1,12 +1,12 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faEnvelope, 
-  faCheck, 
+import {
+  faEnvelope,
+  faCheck,
   faServer,
-  faCircleCheck, 
-  faCircleXmark, 
-  faSpinner, 
+  faCircleCheck,
+  faCircleXmark,
+  faSpinner,
   faTriangleExclamation,
   faChartBar,
   faClock,
@@ -16,7 +16,8 @@ import {
   faExclamationTriangle as faExclamationCircleIcon,
   faTimes,
   faCopy,
-  faEdit
+  faEdit,
+  faWallet
 } from '../../utils/fontAwesomeIcons';
 import './RunningServers.css';
 
@@ -34,7 +35,7 @@ export interface AccessLevelConfig {
 export interface RunningMCPServer {
   id: string;
   name: string;
-  type: 'gmail' | 'custom' | 'builtin';
+  type: 'gmail' | 'custom' | 'builtin' | 'financehub';
   email?: string;
   adminEmail?: string;
   address: string;
@@ -169,8 +170,8 @@ const RunningServersSection: React.FC<RunningServersSectionProps> = ({
             <div key={server.id} className="running-servers-card">
               <div className="running-servers-card-header">
                 <div className="mcp-server-info-container">
-                  <div className={`mcp-server-icon-box ${server.type === 'gmail' ? 'gmail-icon-box' : ''}`}>
-                    <FontAwesomeIcon icon={server.type === 'gmail' ? faEnvelope : faServer} />
+                  <div className={`mcp-server-icon-box ${server.type === 'gmail' ? 'gmail-icon-box' : ''} ${server.type === 'financehub' ? 'financehub-icon-box' : ''}`}>
+                    <FontAwesomeIcon icon={server.type === 'gmail' ? faEnvelope : server.type === 'financehub' ? faWallet : faServer} />
                   </div>
                   <div className="mcp-server-text-details">
                     <div className="mcp-server-name-container">
@@ -509,12 +510,12 @@ const RunningServersSection: React.FC<RunningServersSectionProps> = ({
                 </>
               )}
 
-              {server.type === 'gmail' && (
+              {(server.type === 'gmail' || server.type === 'financehub') && (
                 <div className="running-servers-card-actions">
                   <button
                     className="running-servers-action-btn running-servers-dashboard-btn"
                     onClick={() => handleViewDashboard(server)}
-                    title="View Gmail dashboard"
+                    title={server.type === 'gmail' ? "View Gmail dashboard" : "View FinanceHub dashboard"}
                   >
                     <FontAwesomeIcon icon={faChartBar} />
                     Dashboard

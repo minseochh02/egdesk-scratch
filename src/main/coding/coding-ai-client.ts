@@ -307,6 +307,7 @@ export class CodingAIClient {
     const availableTools = toolRegistry.getToolDefinitions()
       .filter(tool => {
         return tool.name.startsWith('user_data_') ||
+               tool.name.startsWith('financehub_') ||
                ['read_file', 'write_file', 'partial_edit', 'list_directory'].includes(tool.name);
       });
 
@@ -468,8 +469,9 @@ export class CodingAIClient {
     // Get available tools in Gemini format
     const availableTools = toolRegistry.getToolDefinitions()
       .filter(tool => {
-        // Include file tools and user_data tools
+        // Include file tools, user_data tools, and financehub tools
         return tool.name.startsWith('user_data_') ||
+               tool.name.startsWith('financehub_') ||
                ['read_file', 'write_file', 'partial_edit', 'list_directory'].includes(tool.name);
       });
 

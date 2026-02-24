@@ -127,6 +127,7 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     ['nh-card', 'NH Card', 'NH농협카드', '#00B140', '💳', 1, 'https://card.nonghyup.com/'],
     ['bc-card', 'BC Card', 'BC카드', '#E20613', '💳', 1, 'https://wisebiz.bccard.com/app/corp/Intro.corp'],
     ['shinhan-card', 'Shinhan Card', '신한카드', '#0046FF', '💳', 1, 'https://www.shinhancard.com/'],
+    ['hana-card', 'Hana Card', '하나카드', '#009775', '💳', 1, 'https://www.hanacard.co.kr/'],
     ['kb-card', 'KB Card', 'KB국민카드', '#FFBC00', '💳', 0, 'https://www.kbcard.com/'],
     ['samsung-card', 'Samsung Card', '삼성카드', '#1428A0', '💳', 0, 'https://www.samsungcard.com/'],
     ['hyundai-card', 'Hyundai Card', '현대카드', '#000000', '💳', 0, 'https://www.hyundaicard.com/'],
@@ -343,6 +344,13 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     UPDATE banks SET supports_automation = 1 WHERE id = 'shinhan-card'
   `);
   updateShinhanCard.run();
+
+  // Migration: Ensure Hana Card exists in existing databases
+  const ensureHanaCard = db.prepare(`
+    INSERT OR IGNORE INTO banks (id, name, name_ko, color, icon, supports_automation, login_url)
+    VALUES ('hana-card', 'Hana Card', '하나카드', '#009775', '💳', 1, 'https://www.hanacard.co.kr/')
+  `);
+  ensureHanaCard.run();
 
   console.log('✅ Finance Hub multi-bank schema initialized');
 }

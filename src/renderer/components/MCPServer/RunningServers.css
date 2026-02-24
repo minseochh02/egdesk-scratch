@@ -327,6 +327,11 @@
   box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
 }
 
+.mcp-server-icon-box.financehub-icon-box {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 .mcp-server-text-details {
   flex: 1;
   min-width: 0;
