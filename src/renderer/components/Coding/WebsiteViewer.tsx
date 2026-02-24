@@ -13,11 +13,16 @@ const WebsiteViewer: React.FC = () => {
     // Check for dev server URL in localStorage
     const checkForServer = () => {
       const url = localStorage.getItem('dev-server-url');
+      console.log('🔍 DEBUG WebsiteViewer: Checking localStorage for dev-server-url');
+      console.log('🔍 DEBUG WebsiteViewer: Found URL:', url);
+
       if (url) {
-        console.log('Found dev server URL:', url);
+        console.log('✅ WebsiteViewer: Found dev server URL:', url);
+        console.log('🔍 DEBUG WebsiteViewer: Setting serverUrl state to:', url);
         setServerUrl(url);
         setLoading(false);
       } else {
+        console.log('⏳ WebsiteViewer: No URL yet, will retry in 1 second');
         // Keep checking every second
         setTimeout(checkForServer, 1000);
       }
@@ -69,6 +74,9 @@ const WebsiteViewer: React.FC = () => {
     );
   }
 
+  console.log('🔍 DEBUG WebsiteViewer: Rendering with serverUrl:', serverUrl);
+  console.log('🔍 DEBUG WebsiteViewer: refreshKey:', refreshKey);
+
   return (
     <div className="website-viewer-container">
       <iframe
@@ -78,6 +86,13 @@ const WebsiteViewer: React.FC = () => {
         className="website-viewer-iframe"
         title="Website Preview"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        onLoad={() => {
+          console.log('✅ WebsiteViewer: iframe loaded successfully');
+          console.log('🔍 DEBUG WebsiteViewer: iframe src after load:', iframeRef.current?.src);
+        }}
+        onError={(e) => {
+          console.error('❌ WebsiteViewer: iframe error:', e);
+        }}
       />
     </div>
   );
