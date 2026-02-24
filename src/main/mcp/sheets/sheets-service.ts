@@ -68,26 +68,28 @@ export class SheetsService {
     expires_in: number;
   } | null> {
     try {
-      const authService = getAuthService();
-      
-      // Get current user session for authentication
-      const { session } = await authService.getSession();
-      if (!session?.access_token) {
-        console.error('No active session for service account token request');
-        return null;
-      }
-
       const supabaseUrl = process.env.SUPABASE_URL || 'https://cbptgzaubhcclkmvkiua.supabase.co';
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
       const edgeFunctionUrl = `${supabaseUrl}/functions/v1/get-service-account-token`;
 
       console.log('🔑 Requesting service account token from edge function...');
 
+      // Try to use user session if available, otherwise use anon key
+      const authService = getAuthService();
+      const { session } = await authService.getSession();
+      const authToken = session?.access_token || supabaseAnonKey;
+
+      if (!authToken) {
+        console.error('❌ No authentication token available (neither user session nor anon key)');
+        return null;
+      }
+
       const requestBody = scopes ? { scopes } : {};
-      
+
       const response = await fetch(edgeFunctionUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -946,7 +948,8 @@ export class SheetsService {
   async updateTaxInvoicesData(
     spreadsheetId: string,
     invoices: any[],
-    invoiceType: 'sales' | 'purchase'
+    invoiceType: 'sales' | 'purchase',
+    preferServiceAccount: boolean = false
   ): Promise<void> {
     // All 33 columns from the Excel/database
     const headers = [
@@ -1147,7 +1150,8 @@ export class SheetsService {
    */
   async updateCashReceiptsData(
     spreadsheetId: string,
-    receipts: any[]
+    receipts: any[],
+    preferServiceAccount: boolean = false
   ): Promise<void> {
     // All 11 columns from the cash receipts database
     const headers = [
