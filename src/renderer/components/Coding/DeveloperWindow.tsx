@@ -203,7 +203,8 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
         // Get tunnel config
         const tunnelConfigResult = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
         if (tunnelConfigResult.success && tunnelConfigResult.config?.tunnel?.tunnelId) {
-          const projectName = require('path').basename(path);
+          // Extract project name from path (last segment)
+          const projectName = path.split('/').filter(Boolean).pop() || path.split('\\').filter(Boolean).pop() || 'project';
           const tunnelUrl = `https://tunneling-service.onrender.com/t/${tunnelConfigResult.config.tunnel.tunnelId}/p/${projectName}/`;
           viewerUrl = tunnelUrl;
           console.log('📡 Using tunnel URL for Next.js project:', tunnelUrl);
