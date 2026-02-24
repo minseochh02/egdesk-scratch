@@ -35,7 +35,11 @@ import {
   UserDataListTablesTool,
   UserDataQueryTool,
   UserDataSearchTool,
-  UserDataAggregateTool
+  UserDataAggregateTool,
+  FinanceHubListBanksTool,
+  FinanceHubListAccountsTool,
+  FinanceHubQueryTransactionsTool,
+  FinanceHubGetStatisticsTool
 } from './tools';
 
 
@@ -423,7 +427,112 @@ export class ToolRegistry {
           },
           required: ['table_name', 'column', 'function']
         };
-      
+
+      case 'financehub_list_banks':
+        return {
+          type: 'object',
+          properties: {},
+          required: []
+        };
+
+      case 'financehub_list_accounts':
+        return {
+          type: 'object',
+          properties: {
+            bankId: {
+              type: 'string',
+              description: 'Optional: Filter by specific bank ID (e.g., "shinhan", "kookmin")'
+            },
+            isActive: {
+              type: 'boolean',
+              description: 'Optional: Filter by active status (true = active accounts only)'
+            }
+          },
+          required: []
+        };
+
+      case 'financehub_query_transactions':
+        return {
+          type: 'object',
+          properties: {
+            accountId: {
+              type: 'string',
+              description: 'Optional: Filter by account ID'
+            },
+            bankId: {
+              type: 'string',
+              description: 'Optional: Filter by bank ID'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Optional: Start date filter (YYYY-MM-DD format)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'Optional: End date filter (YYYY-MM-DD format)'
+            },
+            category: {
+              type: 'string',
+              description: 'Optional: Filter by transaction category'
+            },
+            minAmount: {
+              type: 'number',
+              description: 'Optional: Minimum transaction amount'
+            },
+            maxAmount: {
+              type: 'number',
+              description: 'Optional: Maximum transaction amount'
+            },
+            searchText: {
+              type: 'string',
+              description: 'Optional: Search in description, memo, or counterparty fields'
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional: Maximum number of transactions to return (default: 100, max: 1000)'
+            },
+            offset: {
+              type: 'number',
+              description: 'Optional: Number of transactions to skip for pagination'
+            },
+            orderBy: {
+              type: 'string',
+              enum: ['date', 'amount', 'balance'],
+              description: 'Optional: Column to sort by (default: date)'
+            },
+            orderDir: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              description: 'Optional: Sort direction (default: desc)'
+            }
+          },
+          required: []
+        };
+
+      case 'financehub_get_statistics':
+        return {
+          type: 'object',
+          properties: {
+            accountId: {
+              type: 'string',
+              description: 'Optional: Filter by account ID'
+            },
+            bankId: {
+              type: 'string',
+              description: 'Optional: Filter by bank ID'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Optional: Start date filter (YYYY-MM-DD format)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'Optional: End date filter (YYYY-MM-DD format)'
+            }
+          },
+          required: []
+        };
+
       default:
         return {
           type: 'object',
@@ -589,6 +698,12 @@ export class ToolRegistry {
     this.registerTool(new UserDataQueryTool());
     this.registerTool(new UserDataSearchTool());
     this.registerTool(new UserDataAggregateTool());
+
+    // FinanceHub Tools
+    this.registerTool(new FinanceHubListBanksTool());
+    this.registerTool(new FinanceHubListAccountsTool());
+    this.registerTool(new FinanceHubQueryTransactionsTool());
+    this.registerTool(new FinanceHubGetStatisticsTool());
   }
 }
 

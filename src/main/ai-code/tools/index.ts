@@ -46,3 +46,7 @@ export { UserDataListTablesTool } from './user-data-list-tables';
 export { UserDataQueryTool } from './user-data-query';
 export { UserDataSearchTool } from './user-data-search';
 export { UserDataAggregateTool } from './user-data-aggregate';
+export { FinanceHubListBanksTool } from './financehub-list-banks';
+export { FinanceHubListAccountsTool } from './financehub-list-accounts';
+export { FinanceHubQueryTransactionsTool } from './financehub-query-transactions';
+export { FinanceHubGetStatisticsTool } from './financehub-get-statistics';

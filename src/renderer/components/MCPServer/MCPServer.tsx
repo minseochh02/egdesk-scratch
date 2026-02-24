@@ -83,7 +83,7 @@ interface AccessLevelConfig {
 interface RunningMCPServer {
   id: string;
   name: string;
-  type: 'gmail' | 'custom' | 'builtin';
+  type: 'gmail' | 'custom' | 'builtin' | 'financehub';
   email?: string;
   adminEmail?: string;
   address: string;

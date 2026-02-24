@@ -5,6 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { SerialPort } = require('serialport');
+const XLSX = require('xlsx');
 const { BaseCardAutomator } = require('../../core');
 const { HANA_CARD_INFO, HANA_CARD_CONFIG } = require('./config');
 
@@ -26,6 +27,8 @@ class HanaCardAutomator extends BaseCardAutomator {
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
+    this.isOnTransactionsPage = false; // Track if we're already on transactions page
+    this.cachedDepartments = null; // Store parsed departments to reuse across getCards and getTransactions
 
     // Ensure output directories exist
     if (!fs.existsSync(this.outputDir)) {
@@ -134,7 +137,17 @@ class HanaCardAutomator extends BaseCardAutomator {
       this.log('Waiting for main frame to load...');
       await this.page.waitForTimeout(2000); // Give frames time to load
 
-      const mainFrame = this.page.frame({ name: 'hsci' }) || this.page.frame({ id: 'hsci' });
+      let mainFrame = null;
+      const initialFrames = this.page.frames();
+      this.log(`Searching for hsci frame among ${initialFrames.length} frames...`);
+
+      for (const frame of initialFrames) {
+        if (frame.name() === 'hsci') {
+          mainFrame = frame;
+          break;
+        }
+      }
+
       if (!mainFrame) {
         throw new Error('Could not find main frame (hsci)');
       }
@@ -166,9 +179,52 @@ class HanaCardAutomator extends BaseCardAutomator {
       this.log('Waiting for login form to load...');
       await this.page.waitForTimeout(3000);
 
-      // Step 8: Fill user ID (login form should now be visible)
+      // Step 8: Find the login form - it might be in a different frame or newly loaded frame
+      this.log('Searching for login form in frames...');
+
+      // Try to find login form in all frames
+      const allFrames = this.page.frames();
+      this.log(`Found ${allFrames.length} frames total`);
+
+      let loginFrame = null;
+      let idLocator = null;
+
+      // First try the main frame (hsci)
+      try {
+        idLocator = this.mainFrame.locator(`xpath=${this.config.xpaths.idInput}`);
+        const isVisible = await idLocator.isVisible({ timeout: 2000 });
+        if (isVisible) {
+          this.log('Login form found in main frame (hsci)');
+          loginFrame = this.mainFrame;
+        }
+      } catch (e) {
+        this.log('Login form not in main frame, searching other frames...');
+      }
+
+      // If not found in main frame, search all frames
+      if (!loginFrame) {
+        for (const frame of allFrames) {
+          try {
+            const testLocator = frame.locator(`xpath=${this.config.xpaths.idInput}`);
+            const isVisible = await testLocator.isVisible({ timeout: 1000 });
+            if (isVisible) {
+              this.log(`Login form found in frame: ${frame.name() || frame.url()}`);
+              loginFrame = frame;
+              idLocator = testLocator;
+              break;
+            }
+          } catch (e) {
+            // Continue searching
+          }
+        }
+      }
+
+      if (!loginFrame || !idLocator) {
+        throw new Error('Could not find login form in any frame');
+      }
+
+      // Step 8: Fill user ID
       this.log('Entering user ID...');
-      const idLocator = this.getLocatorInFrame(this.config.xpaths.idInput);
       await idLocator.click({ timeout: this.config.timeouts.elementWait });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
       await idLocator.fill(userId, { timeout: this.config.timeouts.elementWait });
@@ -176,7 +232,7 @@ class HanaCardAutomator extends BaseCardAutomator {
 
       // Step 9: Fill password (Arduino HID or Manual)
       this.log('Entering password...');
-      const passwordLocator = this.getLocatorInFrame(this.config.xpaths.passwordInput);
+      const passwordLocator = loginFrame.locator(`xpath=${this.config.xpaths.passwordInput}`);
       await passwordLocator.click({ timeout: this.config.timeouts.elementWait });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
@@ -209,12 +265,46 @@ class HanaCardAutomator extends BaseCardAutomator {
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 10: Submit login (press Enter or find submit button)
-      this.log('Submitting login form...');
-      await this.page.keyboard.press('Enter');
+      // Step 10: Submit login by clicking the login button
+      this.log('Clicking login submit button...');
+      const loginSubmitButton = loginFrame.locator(`xpath=${this.config.xpaths.loginSubmitButton}`);
+      await loginSubmitButton.click({ timeout: this.config.timeouts.elementWait });
       await this.page.waitForTimeout(this.config.delays.afterLogin);
 
-      // Step 11: Start session keep-alive
+      // Step 11: Handle post-login popup if it exists (do this first before frame context)
+      this.log('Checking for post-login popup...');
+      await this.page.waitForTimeout(2000); // Give page time to load popup
+      await this.handlePostLoginPopup();
+
+      // Step 12: Re-establish frame context after login and popup (page may have reloaded)
+      this.log('Re-establishing frame context after login...');
+      await this.page.waitForTimeout(1000); // Give frames time to reload
+
+      // Find the hsci frame by name
+      let newMainFrame = null;
+      const postLoginFrames = this.page.frames();
+      this.log(`Searching for hsci frame among ${postLoginFrames.length} frames...`);
+
+      for (const frame of postLoginFrames) {
+        const frameName = frame.name();
+        const frameUrl = frame.url();
+        this.log(`Frame: name="${frameName}", url="${frameUrl}"`);
+
+        if (frameName === 'hsci') {
+          newMainFrame = frame;
+          this.log(`Found hsci frame by name`);
+          break;
+        }
+      }
+
+      if (newMainFrame) {
+        this.mainFrame = newMainFrame;
+        this.log('Successfully re-established main frame (hsci) after login');
+      } else {
+        this.log('Warning: Could not find main frame (hsci) after login, using existing reference');
+      }
+
+      // Step 13: Start session keep-alive
       this.startSessionKeepAlive();
 
       this.log('Login successful!');
@@ -368,6 +458,79 @@ class HanaCardAutomator extends BaseCardAutomator {
   }
 
   /**
+   * Handles post-login popup if it exists (on main page or in frames)
+   */
+  async handlePostLoginPopup() {
+    try {
+      this.log('Waiting for post-login popup...');
+
+      // Try multiple strategies to find and close the popup
+
+      // Strategy 1: Try the configured XPath on main page
+      try {
+        const popupLocator = this.page.locator(`xpath=${this.config.xpaths.postLoginPopupClose}`);
+        const isVisible = await popupLocator.isVisible({ timeout: 3000 });
+        if (isVisible) {
+          this.log('Post-login popup found on main page, closing it...');
+          await popupLocator.click({ timeout: this.config.timeouts.elementWait });
+          await this.page.waitForTimeout(1000);
+          this.log('Post-login popup closed');
+          return;
+        }
+      } catch (e) {
+        this.log('Popup not found on main page, trying frames...');
+      }
+
+      // Strategy 2: Search all frames for the popup
+      const popupFrames = this.page.frames();
+      for (const frame of popupFrames) {
+        try {
+          const popupLocator = frame.locator(`xpath=${this.config.xpaths.postLoginPopupClose}`);
+          const isVisible = await popupLocator.isVisible({ timeout: 1000 });
+          if (isVisible) {
+            this.log(`Post-login popup found in frame: ${frame.name() || frame.url()}, closing it...`);
+            await popupLocator.click({ timeout: this.config.timeouts.elementWait });
+            await this.page.waitForTimeout(1000);
+            this.log('Post-login popup closed');
+            return;
+          }
+        } catch (e) {
+          // Continue searching
+        }
+      }
+
+      // Strategy 3: Try common close button selectors
+      const commonSelectors = [
+        'button[class*="close"]',
+        'button[class*="btn-close"]',
+        'a[class*="close"]',
+        '.modal button',
+        '.popup button',
+      ];
+
+      for (const selector of commonSelectors) {
+        try {
+          const closeButton = this.page.locator(selector).first();
+          const isVisible = await closeButton.isVisible({ timeout: 1000 });
+          if (isVisible) {
+            this.log(`Post-login popup close button found with selector: ${selector}`);
+            await closeButton.click({ timeout: this.config.timeouts.elementWait });
+            await this.page.waitForTimeout(1000);
+            this.log('Post-login popup closed');
+            return;
+          }
+        } catch (e) {
+          // Continue trying
+        }
+      }
+
+      this.log('No post-login popup found after trying all strategies');
+    } catch (e) {
+      this.log(`Error handling post-login popup: ${e.message}`, 'error');
+    }
+  }
+
+  /**
    * Helper to get locator in frame (supports both CSS and XPath)
    */
   getLocatorInFrame(selector) {
@@ -389,31 +552,582 @@ class HanaCardAutomator extends BaseCardAutomator {
 
   /**
    * Gets all cards for the logged-in user
+   * Cards are listed on the transactions page (승인내역) under each department/branch
    * @returns {Promise<Array>} Array of card information
    */
   async getCards() {
     if (!this.page) throw new Error('Browser page not initialized');
 
     try {
-      this.log('Getting card list...');
+      this.log('Getting card list from transactions page...');
 
-      // For now, return a default card structure
-      // This can be enhanced later to navigate to card list page and extract actual cards
-      return [{
-        cardNumber: 'default',
-        cardName: 'Hana Card',
-        cardCompanyId: 'hana-card',
-        cardType: 'corporate',
-      }];
+      // Step 1: Navigate to transactions page (승인내역) only if not already there
+      if (!this.isOnTransactionsPage) {
+        this.log('Navigating to transactions page (승인내역)...');
+        await this.clickElementInFrame(this.config.xpaths.transactionButton);
+        await this.page.waitForTimeout(this.config.delays.afterNavigation);
+        this.isOnTransactionsPage = true;
+      } else {
+        this.log('Already on transactions page, skipping navigation');
+      }
+
+      // Step 2: Wait for organization tree and card table to load
+      this.log('Waiting for organization tree to load...');
+      await this.page.waitForTimeout(2000);
+
+      // Step 3: Parse organization tree to get all departments
+      this.log('Parsing organization tree to get all departments...');
+      const treeLocator = this.getLocatorInFrame(this.config.xpaths.organizationTree);
+      const isTreeVisible = await treeLocator.isVisible({ timeout: this.config.timeouts.elementWait });
+
+      if (!isTreeVisible) {
+        throw new Error('Organization tree not visible');
+      }
+
+      this.log('Organization tree found');
+      const treeHTML = await treeLocator.innerHTML();
+      const departments = this.parseOrganizationTree(treeHTML);
+
+      if (departments.length === 0) {
+        throw new Error('No departments found in organization tree');
+      }
+
+      // Cache departments list for reuse in getTransactions
+      this.cachedDepartments = departments;
+      this.log(`Cached ${departments.length} departments for future use`);
+
+      // Step 4: Iterate through all departments and collect cards
+      const allCards = [];
+      const cardsByDepartment = new Map(); // Track cards by department to avoid duplicates
+
+      for (const dept of departments) {
+        this.log(`\n--- Checking cards for department ${dept.name} ---`);
+
+        // Select department
+        await this.selectDepartment(dept.id, dept.name);
+        await this.page.waitForTimeout(1000);
+
+        // Find the card table in frames
+        this.log('Searching for card table in frames...');
+        const cardFrames = this.page.frames();
+        let cardTableFrame = null;
+        let cardTableBody = null;
+
+        // Search all frames for the card table
+        for (const frame of cardFrames) {
+          try {
+            const testLocator = frame.locator(this.config.xpaths.cardTableBody);
+            const isVisible = await testLocator.isVisible({ timeout: 2000 });
+            if (isVisible) {
+              this.log(`Card table found in frame: ${frame.name() || frame.url()}`);
+              cardTableFrame = frame;
+              cardTableBody = testLocator;
+              break;
+            }
+          } catch (e) {
+            // Continue searching
+          }
+        }
+
+        if (cardTableFrame && cardTableBody) {
+          // Parse card table for this department
+          const cardTableHTML = await cardTableBody.innerHTML();
+          const deptCards = this.parseCardTable(cardTableHTML);
+
+          this.log(`Found ${deptCards.length} cards for ${dept.name}`);
+
+          // Add department info to each card and deduplicate by card number
+          for (const card of deptCards) {
+            card.departments = card.departments || [];
+            card.departments.push({
+              id: dept.id,
+              name: dept.name
+            });
+
+            // Use card number as unique key
+            if (!cardsByDepartment.has(card.cardNumber)) {
+              cardsByDepartment.set(card.cardNumber, card);
+            } else {
+              // Card already exists, just add this department to its list
+              const existingCard = cardsByDepartment.get(card.cardNumber);
+              existingCard.departments.push({
+                id: dept.id,
+                name: dept.name
+              });
+            }
+          }
+        } else {
+          this.log(`No card table found for department ${dept.name}`);
+        }
+      }
+
+      // Convert map to array
+      allCards.push(...Array.from(cardsByDepartment.values()));
+
+      this.log(`\n=== Total unique cards found: ${allCards.length} ===`);
+      return allCards;
 
     } catch (error) {
-      this.error('Failed to get cards:', error.message);
+      this.log('Failed to get cards:', error.message);
       throw error;
     }
   }
 
+  /**
+   * Parses the card table HTML to extract card information
+   * @param {string} html - Card table tbody HTML
+   * @returns {Array} Array of card objects
+   */
+  parseCardTable(html) {
+    const cards = [];
+
+    // Match all table rows
+    const rowRegex = /<tr>([\s\S]*?)<\/tr>/g;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(html)) !== null) {
+      const rowHTML = rowMatch[1];
+
+      // Extract card number from first <td><a>
+      const cardNumberMatch = /<a[^>]*>([^<]+)<\/a>/.exec(rowHTML);
+      if (!cardNumberMatch) continue;
+
+      const cardNumber = cardNumberMatch[1].trim();
+
+      // Extract all td contents
+      const tdRegex = /<td[^>]*>(?:<a[^>]*>[^<]+<\/a>|([^<]+))<\/td>/g;
+      const tdContents = [];
+      let tdMatch;
+
+      while ((tdMatch = tdRegex.exec(rowHTML)) !== null) {
+        // If there's an <a> tag, we already got it from cardNumberMatch
+        // Otherwise get the text content from capture group 1
+        if (tdMatch[1]) {
+          tdContents.push(tdMatch[1].trim());
+        }
+      }
+
+      // Row structure: cardNumber, userName, cardType, status, issueDate
+      // tdContents will have: [userName, cardType, status, issueDate]
+      if (tdContents.length >= 4) {
+        cards.push({
+          cardNumber: cardNumber,
+          cardName: `Hana Card - ${tdContents[0]}`, // userName as card name
+          cardCompanyId: 'hana-card',
+          cardType: 'corporate',
+          userName: tdContents[0], // 이용자
+          type: tdContents[1], // 구분 (공용, etc.)
+          status: tdContents[2], // 상태 (정상, etc.)
+          issueDate: tdContents[3], // 발급일
+        });
+      }
+    }
+
+    this.log(`Parsed ${cards.length} cards from table`);
+    return cards;
+  }
+
+  /**
+   * Parses organization tree HTML to extract department information
+   * @param {string} html - Organization tree HTML
+   * @returns {Array} Array of {id, name, level} objects
+   */
+  parseOrganizationTree(html) {
+    const departments = [];
+
+    // Match all cls3Level list items (third-level departments)
+    const cls3Regex = /<li class="cls3Level" id="(\d+)">.*?<a href="javascript:setTreeSelected\('3', '(\d+)', '([^']+)',/g;
+
+    let match;
+    while ((match = cls3Regex.exec(html)) !== null) {
+      departments.push({
+        id: match[2],
+        name: match[3],
+        level: 3
+      });
+    }
+
+    this.log(`Found ${departments.length} departments: ${departments.map(d => d.name).join(', ')}`);
+    return departments;
+  }
+
+  /**
+   * Selects a department in the organization tree
+   * @param {string} departmentId - Department ID (e.g., '340002')
+   * @param {string} departmentName - Department name (for logging)
+   */
+  async selectDepartment(departmentId, departmentName) {
+    this.log(`Selecting department: ${departmentName} (ID: ${departmentId})`);
+
+    // Click the department link using its ID
+    const selector = `//li[@id="${departmentId}"]//a`;
+    await this.clickElementInFrame(selector);
+    await this.page.waitForTimeout(this.config.delays.betweenActions);
+  }
+
+  /**
+   * Converts YYYY-MM-DD to YYYYMMDD format
+   * @param {string} dateStr - Date in YYYY-MM-DD format
+   * @returns {string} Date in YYYYMMDD format
+   */
+  formatDateForHanaCard(dateStr) {
+    return dateStr.replace(/-/g, '');
+  }
+
+  /**
+   * Sets date range for transaction query
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   */
+  async setDateRange(startDate, endDate) {
+    const formattedStartDate = this.formatDateForHanaCard(startDate);
+    const formattedEndDate = this.formatDateForHanaCard(endDate);
+
+    this.log(`Setting date range: ${formattedStartDate} to ${formattedEndDate}`);
+
+    // Set start date
+    const startDateLocator = this.getLocatorInFrame(this.config.xpaths.startDateInput);
+    await startDateLocator.click({ timeout: this.config.timeouts.elementWait });
+    await this.page.waitForTimeout(300);
+    // Select all twice to ensure everything is selected
+    await this.page.keyboard.press('Control+A');
+    await this.page.waitForTimeout(100);
+    await this.page.keyboard.press('Control+A');
+    await this.page.waitForTimeout(200);
+    await startDateLocator.fill(formattedStartDate, { timeout: this.config.timeouts.elementWait });
+    await this.page.waitForTimeout(300);
+    // Close date picker by pressing Escape
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(500);
+
+    // Set end date
+    const endDateLocator = this.getLocatorInFrame(this.config.xpaths.endDateInput);
+    await endDateLocator.click({ timeout: this.config.timeouts.elementWait });
+    await this.page.waitForTimeout(300);
+    // Select all twice to ensure everything is selected
+    await this.page.keyboard.press('Control+A');
+    await this.page.waitForTimeout(100);
+    await this.page.keyboard.press('Control+A');
+    await this.page.waitForTimeout(200);
+    await endDateLocator.fill(formattedEndDate, { timeout: this.config.timeouts.elementWait });
+    await this.page.waitForTimeout(300);
+    // Close date picker by pressing Escape
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(500);
+
+    this.log('Date range set successfully');
+  }
+
+  /**
+   * Clicks the query button to search for transactions
+   */
+  async submitTransactionQuery() {
+    this.log('Submitting transaction query...');
+    await this.clickElementInFrame(this.config.xpaths.queryButton);
+    await this.page.waitForTimeout(this.config.delays.afterSearch);
+  }
+
+  /**
+   * Clicks "More" button repeatedly until all transactions are loaded
+   */
+  async loadAllTransactions() {
+    this.log('Loading all transactions (clicking More button until it disappears)...');
+
+    let clickCount = 0;
+    while (true) {
+      try {
+        const moreButtonLocator = this.getLocatorInFrame(this.config.xpaths.moreButton);
+
+        // Check if button is visible (not display: none)
+        const isVisible = await moreButtonLocator.isVisible({ timeout: 2000 });
+
+        if (!isVisible) {
+          this.log('More button is no longer visible, all transactions loaded');
+          break;
+        }
+
+        // Click the more button
+        clickCount++;
+        this.log(`Clicking More button (click #${clickCount})...`);
+        await moreButtonLocator.click({ timeout: this.config.timeouts.elementWait });
+        await this.page.waitForTimeout(1500); // Wait for more transactions to load
+
+      } catch (error) {
+        // If button is not found or not visible, we're done
+        this.log('More button not found or not clickable, all transactions loaded');
+        break;
+      }
+    }
+
+    this.log(`Finished loading transactions (clicked More button ${clickCount} times)`);
+  }
+
+  /**
+   * Downloads transactions as Excel file
+   * @returns {Promise<string|null>} Path to downloaded file, or null if no transactions
+   */
+  async downloadTransactionExcel() {
+    this.log('Checking if Excel download is available...');
+
+    // Check if Excel download button is visible (means there are transactions)
+    try {
+      const excelButtonLocator = this.getLocatorInFrame(this.config.xpaths.excelDownloadButton);
+      const isVisible = await excelButtonLocator.isVisible({ timeout: 3000 });
+
+      if (!isVisible) {
+        this.log('Excel download button not visible - likely no transactions for this department');
+        return null;
+      }
+
+      this.log('Excel download button found, downloading...');
+
+      // Set up download promise before clicking
+      const downloadPromise = this.page.waitForEvent('download', {
+        timeout: this.config.timeouts.downloadWait
+      });
+
+      // Click Excel download button
+      await this.clickElementInFrame(this.config.xpaths.excelDownloadButton);
+
+      // Wait for download to complete
+      const download = await downloadPromise;
+      const fileName = download.suggestedFilename();
+      const downloadPath = path.join(this.downloadDir, fileName);
+
+      await download.saveAs(downloadPath);
+      this.log(`Excel file downloaded: ${downloadPath}`);
+
+      return downloadPath;
+    } catch (error) {
+      this.log(`Excel download not available: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Parses Excel file to extract transaction data
+   * Column headers start at row 6:
+   * NO, 이용일, 이용시간, 카드번호, 승인번호, 승인금액, 승인취소금액, 가맹점명, 업종명, 가맹점번호,
+   * 가맹점사업자번호, 이용구분, 할부기간, 매입, 매입금액, 매출취소금액, 매입일, 상태, 부가세, 하위몰정보
+   *
+   * @param {string} filePath - Path to Excel file
+   * @param {Object} departmentInfo - Department information to add to each transaction
+   * @returns {Array} Array of transaction objects
+   */
+  parseExcelTransactions(filePath, departmentInfo = {}) {
+    this.log(`Parsing Excel file: ${filePath}`);
+
+    // Read Excel file as buffer to avoid permission issues
+    const fileBuffer = fs.readFileSync(filePath);
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+
+    // Convert to JSON, starting from row 6 (header row)
+    // Range option starts from A6 to skip the first 5 rows
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+      range: 5, // Start from row 6 (0-indexed, so 5)
+      header: [
+        'no',
+        'usageDate',
+        'usageTime',
+        'cardNumber',
+        'approvalNumber',
+        'approvalAmount',
+        'approvalCancelAmount',
+        'merchantName',
+        'businessType',
+        'merchantNumber',
+        'merchantBusinessNumber',
+        'usageType',
+        'installmentPeriod',
+        'purchase',
+        'purchaseAmount',
+        'salesCancelAmount',
+        'purchaseDate',
+        'status',
+        'vat',
+        'subMallInfo'
+      ],
+      defval: '' // Default value for empty cells
+    });
+
+    // Filter out empty rows and map to transaction objects
+    const transactions = jsonData
+      .filter(row => row.usageDate || row.approvalNumber) // Filter rows with actual data
+      .map(row => {
+        const approvalAmount = this.parseAmount(row.approvalAmount);
+        const approvalCancelAmount = this.parseAmount(row.approvalCancelAmount);
+        const purchaseAmount = this.parseAmount(row.purchaseAmount);
+        const salesCancelAmount = this.parseAmount(row.salesCancelAmount);
+        const vat = this.parseAmount(row.vat);
+
+        // Calculate net amount (approval + cancellation)
+        // If both exist, the cancellation is usually negative
+        const netAmount = approvalAmount + approvalCancelAmount;
+
+        // Determine if this is a cancelled transaction
+        const isCancelled = approvalCancelAmount !== 0 || row.status === '승인취소';
+
+        return {
+          // Basic transaction info
+          no: row.no,
+          usageDate: row.usageDate,
+          usageTime: row.usageTime,
+          cardNumber: row.cardNumber,
+          approvalNumber: row.approvalNumber,
+
+          // Amounts
+          approvalAmount,
+          approvalCancelAmount,
+          purchaseAmount,
+          salesCancelAmount,
+          vat,
+          netAmount, // Net amount after cancellation
+
+          // Merchant info
+          merchantName: row.merchantName,
+          businessType: row.businessType,
+          merchantNumber: row.merchantNumber,
+          merchantBusinessNumber: row.merchantBusinessNumber,
+          subMallInfo: row.subMallInfo,
+
+          // Additional info
+          usageType: row.usageType,
+          installmentPeriod: row.installmentPeriod,
+          purchase: row.purchase,
+          purchaseDate: row.purchaseDate,
+          status: row.status,
+          isCancelled, // Flag indicating if transaction was cancelled
+
+          // Department info
+          department: departmentInfo.name,
+          departmentId: departmentInfo.id,
+
+          // Metadata
+          source: 'hana-card',
+          excelFile: path.basename(filePath)
+        };
+      });
+
+    this.log(`Parsed ${transactions.length} transactions from Excel file`);
+    return transactions;
+  }
+
+  /**
+   * Parses amount strings to numbers (handles Korean number formatting)
+   * @param {string|number} amount - Amount value
+   * @returns {number} Parsed amount
+   */
+  parseAmount(amount) {
+    if (!amount) return 0;
+    if (typeof amount === 'number') return amount;
+
+    // Remove commas and convert to number
+    const cleaned = String(amount).replace(/,/g, '');
+    const parsed = parseFloat(cleaned);
+
+    return isNaN(parsed) ? 0 : parsed;
+  }
+
+  /**
+   * Gets transactions for all cards across all departments within a date range
+   * Note: Hana Card downloads all transactions per department, not per individual card
+   * @param {string} cardNumber - Card number (IGNORED - we download all cards)
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @returns {Promise<Array>} Array of transactions across all departments
+   */
   async getTransactions(cardNumber, startDate, endDate) {
-    throw new Error('Hana Card transaction fetching is not yet implemented');
+    if (!this.page) throw new Error('Browser page not initialized');
+
+    try {
+      this.log(`Getting transactions from ${startDate} to ${endDate} across all departments...`);
+      this.log(`Note: cardNumber parameter (${cardNumber}) is ignored - downloading all transactions`);
+
+      // Step 1: Navigate to transactions page if not already there
+      if (!this.isOnTransactionsPage) {
+        this.log('Navigating to transactions page (승인내역)...');
+        await this.clickElementInFrame(this.config.xpaths.transactionButton);
+        await this.page.waitForTimeout(this.config.delays.afterNavigation);
+        this.isOnTransactionsPage = true;
+      } else {
+        this.log('Already on transactions page from getCards(), reusing existing tree');
+      }
+
+      // Step 2: Get departments list (use cached if available, otherwise parse tree)
+      let departments;
+
+      if (this.cachedDepartments && this.cachedDepartments.length > 0) {
+        this.log(`Using cached departments list (${this.cachedDepartments.length} departments)`);
+        departments = this.cachedDepartments;
+      } else {
+        this.log('No cached departments, parsing organization tree...');
+        await this.page.waitForTimeout(2000);
+
+        const treeLocator = this.getLocatorInFrame(this.config.xpaths.organizationTree);
+        const isTreeVisible = await treeLocator.isVisible({ timeout: this.config.timeouts.elementWait });
+
+        if (!isTreeVisible) {
+          throw new Error('Organization tree not visible');
+        }
+
+        this.log('Organization tree found');
+        const treeHTML = await treeLocator.innerHTML();
+        departments = this.parseOrganizationTree(treeHTML);
+
+        if (departments.length === 0) {
+          throw new Error('No departments found in organization tree');
+        }
+
+        // Cache for future use
+        this.cachedDepartments = departments;
+      }
+
+      // Step 3: Iterate through all departments and collect transactions
+      const allTransactions = [];
+
+      for (const dept of departments) {
+        this.log(`\n--- Processing department ${dept.name} ---`);
+
+        // Select department
+        await this.selectDepartment(dept.id, dept.name);
+
+        // Set date range
+        await this.setDateRange(startDate, endDate);
+
+        // Submit query
+        await this.submitTransactionQuery();
+
+        // Load all transactions by clicking More button
+        await this.loadAllTransactions();
+
+        // Download Excel file
+        const excelPath = await this.downloadTransactionExcel();
+
+        // Parse Excel file if download was successful (null means no transactions)
+        if (excelPath) {
+          const deptTransactions = this.parseExcelTransactions(excelPath, {
+            name: dept.name,
+            id: dept.id
+          });
+
+          this.log(`Extracted ${deptTransactions.length} transactions from ${dept.name}`);
+          allTransactions.push(...deptTransactions);
+        } else {
+          this.log(`No transactions found for ${dept.name}, skipping to next department`);
+        }
+
+        this.log(`Completed processing for ${dept.name}`);
+      }
+
+      this.log(`\n=== Total transactions collected: ${allTransactions.length} ===`);
+      return allTransactions;
+
+    } catch (error) {
+      this.log(`Failed to get transactions: ${error.message}`, 'error');
+      throw error;
+    }
   }
 }
 

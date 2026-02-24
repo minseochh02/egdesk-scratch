@@ -14,17 +14,32 @@ const HANA_CARD_INFO = {
 };
 
 const HANA_CARD_XPATHS = {
-  // Initial popup
+  // Initial popup (before login)
   initialPopup: '/html/body/div[1]/section/div/div',
   initialPopupClose: '/html/body/div[1]/section/div/button',
+
+  // Post-login popup
+  postLoginPopupClose: '/html/body/div[1]/section/div/button',
 
   // Navigation - Use text-based XPath or CSS for more reliable selection
   businessSelector: '//a[contains(text(), "기업")]', // 기업 selector using text
   loginButton: '/html/body/div[7]/header/div/nav[1]/ul[2]/li[1]/a', // Login button after 기업
 
-  // Login form - Using ID selectors (simpler and more reliable)
-  idInput: '#USER_ID',
-  passwordInput: '#PASSWORD',
+  // Login form - Full XPaths (login form is in main page, not in hsci frame)
+  idInput: '/html/body/div[2]/div[4]/div/div/div[6]/form/div/div/div/div[1]/div/div[1]/div/div[1]/div[1]/div/div[1]/input',
+  passwordInput: '/html/body/div[2]/div[4]/div/div/div[6]/form/div/div/div/div[1]/div/div[1]/div/div[1]/div[2]/div/div[1]/input[1]',
+  loginSubmitButton: '/html/body/div[2]/div[4]/div/div/div[6]/form/div/div/div/div[1]/div/div[1]/div/div[2]/div/ul/li/button',
+
+  // Transaction-related selectors
+  transactionButton: '/html/body/div[7]/div/article[1]/div[1]/div[2]/a[2]', // 승인내역
+  organizationTree: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/article[1]/div[1]/div[1]/div[1]',
+  cardTableContainer: '#simul > div.sch_tab > div.right > div',
+  cardTableBody: '#commTab1',
+  startDateInput: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/div/form/fieldset/ul[1]/li[4]/input[1]',
+  endDateInput: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/div/form/fieldset/ul[1]/li[4]/input[2]',
+  queryButton: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/div/form/fieldset/ul[2]/li/a',
+  moreButton: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/article[3]/div/a',
+  excelDownloadButton: '/html/body/div[2]/div[4]/div/div/div[2]/div/div/div/article[3]/div/div[1]/ul[2]/li[3]/a',
 
   // Legacy fields (kept for compatibility)
   keyboardLower: '',
@@ -34,8 +49,6 @@ const HANA_CARD_XPATHS = {
   userNameText: '',
   inquiryUrl: '',
   inquiryButton: '',
-  startDateInput: '',
-  endDateInput: '',
 };
 
 const HANA_CARD_TIMEOUTS = {

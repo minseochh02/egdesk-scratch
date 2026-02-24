@@ -857,12 +857,13 @@ const FinanceHub: React.FC = () => {
   // ============================================
 
   const handleSyncCardTransactions = async (cardCompanyId: string, cardNumber: string, period: 'day' | 'week' | 'month' | '3months' | '6months' | 'year' = '3months') => {
-    // For Shinhan Card and BC Card, use connection ID as sync state (fetches all cards at once)
-    const syncStateKey = (cardCompanyId === 'bc-card' || cardCompanyId === 'shinhan-card') ? cardCompanyId : cardNumber;
+    // For Shinhan Card, BC Card, and Hana Card, use connection ID as sync state (fetches all cards at once)
+    const syncStateKey = (cardCompanyId === 'bc-card' || cardCompanyId === 'shinhan-card' || cardCompanyId === 'hana-card') ? cardCompanyId : cardNumber;
     setIsSyncingCard(syncStateKey);
     try {
       // Shinhan Card has strict ~7 day limit, limit to week max
       // BC Card has strict 30-day limit, so use day-based calculation instead of month-based
+      // Hana Card downloads all cards at once from all departments (supports up to 1 year)
       let dateRange;
       if (cardCompanyId === 'shinhan-card') {
         // Shinhan Card: Max 7 days
@@ -904,8 +905,8 @@ const FinanceHub: React.FC = () => {
 
       const cardConnection = connectedCards.find(c => c.cardCompanyId === cardCompanyId);
 
-      // For Shinhan Card, transactions are for ALL cards - group by card and import separately
-      if (cardCompanyId === 'shinhan-card') {
+      // For Shinhan Card, BC Card, and Hana Card, transactions are for ALL cards - group by card and import separately
+      if (cardCompanyId === 'shinhan-card' || cardCompanyId === 'bc-card' || cardCompanyId === 'hana-card') {
         console.log('[Shinhan Card] Processing transactions for all cards...');
 
         // Group transactions by card number (이용카드 or cardUsed column)
@@ -986,7 +987,9 @@ const FinanceHub: React.FC = () => {
           }
         }
 
-        alert(`✅ 전체 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 카드 수: ${transactionsByCard.size}개\n\n※ 신한카드는 모든 카드의 거래내역을 한번에 조회합니다${spreadsheetMsg}`);
+        const cardCompanyName = cardCompanyId === 'shinhan-card' ? '신한카드' : cardCompanyId === 'bc-card' ? 'BC카드' : '하나카드';
+        const scopeMsg = cardCompanyId === 'hana-card' ? '모든 부서·카드의 거래내역을 한번에 조회합니다' : '모든 카드의 거래내역을 한번에 조회합니다';
+        alert(`✅ 전체 카드 거래내역 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 카드 수: ${transactionsByCard.size}개\n\n※ ${cardCompanyName}는 ${scopeMsg}${spreadsheetMsg}`);
 
       } else {
         // Other cards: import normally with single card number
@@ -2371,7 +2374,7 @@ const FinanceHub: React.FC = () => {
                             {connection.status === 'disconnected' && '연결 끊김'}
                           </span>
                         </div>
-                        {(connection.cardCompanyId === 'bc-card' || connection.cardCompanyId === 'shinhan-card') && connection.cards && connection.cards.length > 0 && (
+                        {(connection.cardCompanyId === 'bc-card' || connection.cardCompanyId === 'shinhan-card' || connection.cardCompanyId === 'hana-card') && connection.cards && connection.cards.length > 0 && (
                           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                               <div style={{
@@ -2383,7 +2386,7 @@ const FinanceHub: React.FC = () => {
                                 color: '#856404',
                                 flex: 1
                               }}>
-                                <strong>⚠️ {connection.cardCompanyId === 'shinhan-card' ? '신한카드: 최대 7일' : 'BC카드: 최대 1개월'}</strong>, 모든 카드 일괄 동기화
+                                <strong>⚠️ {connection.cardCompanyId === 'shinhan-card' ? '신한카드: 최대 7일' : connection.cardCompanyId === 'bc-card' ? 'BC카드: 최대 1개월' : '하나카드: 최대 1년'}</strong>, 모든 부서·카드 일괄 동기화
                               </div>
                             </div>
                             <div className="finance-hub__sync-dropdown" style={{ display: 'inline-block' }}>
@@ -2404,10 +2407,25 @@ const FinanceHub: React.FC = () => {
                                   <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'week'); setShowCardSyncOptions(null); }}>
                                     <FontAwesomeIcon icon={faClock} /> 1주일 {connection.cardCompanyId === 'shinhan-card' && '(최대)'}
                                   </button>
-                                  {connection.cardCompanyId !== 'shinhan-card' && (
+                                  {connection.cardCompanyId === 'shinhan-card' ? null : connection.cardCompanyId === 'bc-card' ? (
                                     <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
                                       <FontAwesomeIcon icon={faClock} /> 1개월 (최대)
                                     </button>
+                                  ) : (
+                                    <>
+                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
+                                        <FontAwesomeIcon icon={faClock} /> 1개월
+                                      </button>
+                                      <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '3months'); setShowCardSyncOptions(null); }}>
+                                        <FontAwesomeIcon icon={faClock} /> 3개월
+                                      </button>
+                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '6months'); setShowCardSyncOptions(null); }}>
+                                        <FontAwesomeIcon icon={faClock} /> 6개월
+                                      </button>
+                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'year'); setShowCardSyncOptions(null); }}>
+                                        <FontAwesomeIcon icon={faClock} /> 1년 (최대)
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               )}
@@ -2426,7 +2444,7 @@ const FinanceHub: React.FC = () => {
                                   {cardItem.balance && cardItem.balance > 0 && (
                                     <span className="finance-hub__account-balance">{formatCurrency(cardItem.balance)}</span>
                                   )}
-                                  {connection.cardCompanyId !== 'bc-card' && connection.cardCompanyId !== 'shinhan-card' && (
+                                  {connection.cardCompanyId !== 'bc-card' && connection.cardCompanyId !== 'shinhan-card' && connection.cardCompanyId !== 'hana-card' && (
                                     <div className="finance-hub__sync-dropdown">
                                       <button
                                         className="finance-hub__btn finance-hub__btn--icon"

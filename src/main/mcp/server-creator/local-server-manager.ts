@@ -24,6 +24,7 @@ import { AppsScriptMCPService } from '../apps-script/apps-script-mcp-service';
 import { ConversationsMCPService } from '../conversations/conversations-mcp-service';
 import { SheetsMCPService } from '../sheets/sheets-mcp-service';
 import { UserDataMCPService } from '../user-data/user-data-mcp-service';
+import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 
@@ -52,6 +53,15 @@ function getUserDataDatabasePath(): string {
   }
   // Fallback for standalone mode
   return process.env.USERDATA_DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/user_data.db';
+}
+
+// FinanceHub Database path helper
+function getFinanceHubDatabasePath(): string {
+  if (app) {
+    return path.join(app.getPath('userData'), 'database', 'financehub.db');
+  }
+  // Fallback for standalone mode
+  return process.env.FINANCEHUB_DB_PATH || '/Users/minseocha/Library/Application Support/egdesk/database/financehub.db';
 }
 
 export interface HTTPServerOptions {
@@ -115,6 +125,7 @@ export class LocalServerManager {
   private conversationsMCPService: ConversationsMCPService | null = null;
   private sheetsMCPService: SheetsMCPService | null = null;
   private userDataMCPService: UserDataMCPService | null = null;
+  private financeHubMCPService: FinanceHubMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -458,6 +469,12 @@ export class LocalServerManager {
       return;
     }
 
+    // FinanceHub MCP Server endpoints (REST API)
+    if (url.startsWith('/financehub')) {
+      await this.handleFinanceHubEndpoint(req, res, url);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -494,6 +511,8 @@ export class LocalServerManager {
         '/sheets/tools/call - Call a Sheets tool',
         '/user-data/tools - List User Data tools',
         '/user-data/tools/call - Call a User Data tool',
+        '/financehub/tools - List FinanceHub tools',
+        '/financehub/tools/call - Call a FinanceHub tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -602,6 +621,16 @@ export class LocalServerManager {
       this.userDataMCPService = new UserDataMCPService(database);
     }
     return this.userDataMCPService;
+  }
+
+  private getFinanceHubMCPService(): FinanceHubMCPService {
+    if (!this.financeHubMCPService) {
+      const dbPath = getFinanceHubDatabasePath();
+      const Database = require('better-sqlite3');
+      const database = new Database(dbPath);
+      this.financeHubMCPService = new FinanceHubMCPService(database);
+    }
+    return this.financeHubMCPService;
   }
 
   /**
@@ -1409,6 +1438,80 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle FinanceHub MCP endpoint
+   */
+  private async handleFinanceHubEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // Check if financehub server is enabled
+    if (!this.isMCPServerEnabled('financehub')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'FinanceHub MCP server is not enabled. Enable it first.',
+        hint: 'Use: ipcRenderer.invoke("mcp-server-enable", "financehub")'
+      }));
+      return;
+    }
+
+    // List FinanceHub tools
+    if (url === '/financehub/tools' && req.method === 'GET') {
+      this.handleFinanceHubToolsList(res);
+      return;
+    }
+
+    // Call a FinanceHub tool
+    if (url === '/financehub/tools/call' && req.method === 'POST') {
+      await this.handleFinanceHubToolCall(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'FinanceHub MCP endpoint not found'
+    }));
+  }
+
+  /**
+   * Handle FinanceHub tools list
+   */
+  private handleFinanceHubToolsList(res: http.ServerResponse): void {
+    const service = this.getFinanceHubMCPService();
+    const tools = service.listTools();
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle FinanceHub tool call
+   */
+  private async handleFinanceHubToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Missing "tool" parameter' }));
+        return;
+      }
+
+      console.log(`💰 Calling FinanceHub tool: ${tool}`);
+      const service = this.getFinanceHubMCPService();
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, result }, null, 2));
+    } catch (error) {
+      console.error('Error calling FinanceHub tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle FileSystem tools list
    */
   private handleFilesystemToolsList(res: http.ServerResponse): void {
@@ -2030,6 +2133,11 @@ export class LocalServerManager {
         name: 'user-data',
         enabled: true, // Enabled by default
         description: 'User Data MCP Server - Query and analyze user-imported database tables (Excel, CSV)'
+      },
+      {
+        name: 'financehub',
+        enabled: true, // Enabled by default per user preference
+        description: 'FinanceHub MCP Server - Query Korean bank accounts and transactions (read-only)'
       }
     ];
   }
