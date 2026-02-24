@@ -171,18 +171,24 @@ export class NodeRuntimeManager {
   private checkResourcesNpm(): string | null {
     try {
       const resourcesPath = process.resourcesPath;
+
+      // Check for npm bundled in resources/npm directory
       const npmCliPath = path.join(resourcesPath, 'npm', 'bin', 'npm-cli.js');
+      console.log(`  Checking for npm at: ${npmCliPath}`);
 
       if (fs.existsSync(npmCliPath)) {
+        console.log(`  ✅ Found bundled npm at: ${npmCliPath}`);
         return npmCliPath;
       }
 
-      // Also check for npm-prefix package (lighter alternative)
+      // Fallback: check for npm-prefix package (lighter alternative)
       const npmPrefixPath = path.join(resourcesPath, 'npm-prefix', 'cli.js');
       if (fs.existsSync(npmPrefixPath)) {
+        console.log(`  ✅ Found npm-prefix at: ${npmPrefixPath}`);
         return npmPrefixPath;
       }
 
+      console.log('  ⚠️ No bundled npm found in resources');
       return null;
     } catch (error) {
       console.error('Error checking resources npm:', error);
@@ -211,42 +217,117 @@ export class NodeRuntimeManager {
 
   /**
    * Download npm to app data directory
-   * Downloads a minimal npm package (npm-programmatic or similar)
+   * Downloads the full npm package from the registry
    */
   private async downloadNpm(): Promise<string> {
     const appDataPath = app.getPath('userData');
     const npmDir = path.join(appDataPath, 'bundled-npm');
+
+    console.log('📥 Downloading npm to app data directory...');
+    console.log(`   Target: ${npmDir}`);
 
     // Create directory
     if (!fs.existsSync(npmDir)) {
       fs.mkdirSync(npmDir, { recursive: true });
     }
 
-    // For now, create a minimal npm wrapper that uses npx
-    // This is a lightweight solution that leverages npx (comes with Node.js 8.2.0+)
-    const npmWrapperPath = path.join(npmDir, 'cli.js');
+    const npmVersion = '10.9.2'; // Use a stable npm version
+    const tarballUrl = `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`;
+    const tarballPath = path.join(appDataPath, 'npm.tgz');
 
-    const wrapperContent = `#!/usr/bin/env node
-// Minimal npm wrapper using npx
-const { spawn } = require('child_process');
-const args = process.argv.slice(2);
+    try {
+      // Download tarball
+      console.log(`   Downloading npm ${npmVersion}...`);
+      await this.downloadFile(tarballUrl, tarballPath);
 
-// Use npx which comes with modern Node.js
-const child = spawn('npx', ['npm@latest', ...args], {
-  stdio: 'inherit',
-  shell: true
-});
+      // Extract tarball
+      console.log('   Extracting...');
+      await this.extractTarball(tarballPath, npmDir);
 
-child.on('close', (code) => {
-  process.exit(code || 0);
-});
+      // Clean up tarball
+      fs.unlinkSync(tarballPath);
+
+      const npmCliPath = path.join(npmDir, 'bin', 'npm-cli.js');
+
+      if (!fs.existsSync(npmCliPath)) {
+        throw new Error('npm-cli.js not found after extraction');
+      }
+
+      console.log('✅ npm downloaded successfully');
+      return npmCliPath;
+    } catch (error) {
+      console.error('❌ Failed to download npm:', error);
+
+      // Fallback: create error message wrapper
+      const errorWrapperPath = path.join(npmDir, 'cli.js');
+      const errorContent = `#!/usr/bin/env node
+console.error('ERROR: npm is not available.');
+console.error('Please install Node.js and npm from https://nodejs.org/');
+process.exit(1);
 `;
+      fs.writeFileSync(errorWrapperPath, errorContent, 'utf-8');
+      return errorWrapperPath;
+    }
+  }
 
-    fs.writeFileSync(npmWrapperPath, wrapperContent, 'utf-8');
-    fs.chmodSync(npmWrapperPath, '755');
+  /**
+   * Download a file from URL
+   */
+  private downloadFile(url: string, dest: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      https.get(url, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          // Follow redirect
+          return this.downloadFile(response.headers.location!, dest)
+            .then(resolve)
+            .catch(reject);
+        }
 
-    console.log('✅ Created npm wrapper using npx');
-    return npmWrapperPath;
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: ${response.statusCode}`));
+          return;
+        }
+
+        const file = fs.createWriteStream(dest);
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+
+        file.on('error', (err) => {
+          fs.unlinkSync(dest);
+          reject(err);
+        });
+      }).on('error', reject);
+    });
+  }
+
+  /**
+   * Extract tarball to directory
+   */
+  private extractTarball(tarballPath: string, destDir: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const { exec } = require('child_process');
+
+      // Ensure dest directory exists
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
+      // Use tar command to extract
+      exec(
+        `tar -xzf "${tarballPath}" -C "${destDir}" --strip-components=1`,
+        (error: any, stdout: any, stderr: any) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   }
 
   /**
