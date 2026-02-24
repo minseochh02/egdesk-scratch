@@ -747,19 +747,191 @@ export class DevServerManager {
       const prefix = framework === 'vite' ? 'VITE_' : 'NEXT_PUBLIC_';
       const pluginName = framework === 'vite' ? '@egdesk/vite-api-plugin' : '@egdesk/next-api-plugin';
 
-      const envContent = [
+      // Read existing .env.local if it exists
+      let existingContent = '';
+      let existingLines: string[] = [];
+      if (fs.existsSync(envPath)) {
+        existingContent = fs.readFileSync(envPath, 'utf-8');
+        existingLines = existingContent.split('\n');
+      }
+
+      // Parse existing variables (preserve non-EGDesk variables)
+      const filteredLines: string[] = [];
+      let inEGDeskSection = false;
+
+      for (const line of existingLines) {
+        // Check if we're entering EGDesk section
+        if (line.includes('# EGDesk Configuration')) {
+          inEGDeskSection = true;
+          continue; // Skip this line, we'll add fresh EGDesk section
+        }
+
+        // Check if we're exiting EGDesk section (empty line after EGDesk vars)
+        if (inEGDeskSection && line.trim() === '') {
+          inEGDeskSection = false;
+          continue; // Skip the trailing empty line
+        }
+
+        // Skip lines within EGDesk section
+        if (inEGDeskSection) {
+          continue;
+        }
+
+        // Skip individual EGDesk variables if not in section (fallback)
+        if (line.includes('EGDESK_API_URL') || line.includes('EGDESK_API_KEY')) {
+          continue;
+        }
+
+        // Preserve all other lines
+        filteredLines.push(line);
+      }
+
+      // Remove trailing empty lines from preserved content
+      while (filteredLines.length > 0 && filteredLines[filteredLines.length - 1].trim() === '') {
+        filteredLines.pop();
+      }
+
+      // Build new content with EGDesk section
+      const egdeskSection = [
         '# EGDesk Configuration - Auto-generated',
         `# This file is used by ${pluginName} for user-data access`,
         '',
         `${prefix}EGDESK_API_URL=http://localhost:8080`,
         `${prefix}EGDESK_API_KEY=${apiKey}`,
         ''
+      ];
+
+      // Combine: existing vars + EGDesk section
+      const finalContent = [
+        ...filteredLines,
+        ...(filteredLines.length > 0 ? [''] : []), // Add separator if there's existing content
+        ...egdeskSection
       ].join('\n');
 
-      fs.writeFileSync(envPath, envContent, 'utf-8');
-      console.log('✓ EGDesk environment variables written to .env.local');
+      fs.writeFileSync(envPath, finalContent, 'utf-8');
+      console.log('✓ EGDesk environment variables written to .env.local (preserved existing variables)');
     } catch (error) {
       console.error('Failed to write EGDesk environment file:', error);
+    }
+  }
+
+  /**
+   * Write EGDesk development guide README to Next.js project folder
+   * This helps AI assistants understand how to handle basePath in client-side code
+   */
+  private writeEGDeskReadme(folderPath: string): void {
+    try {
+      const readmePath = path.join(folderPath, 'EGDESK-README.md');
+
+      const readmeContent = `# EGDesk Development Guide
+
+This Next.js project is running in EGDesk with tunneling support.
+
+## ⚠️ Important: Client-Side API Calls
+
+**Next.js basePath does NOT automatically apply to client-side \`fetch()\` calls.**
+
+This is a known Next.js limitation that affects all projects using \`basePath\`.
+
+### ❌ Wrong - Will Return 404
+
+\`\`\`javascript
+// This will fail when running through EGDesk tunnel
+fetch('/api/transactions')
+\`\`\`
+
+### ✅ Correct - Use Environment Variable
+
+\`\`\`javascript
+const basePath = process.env.NEXT_PUBLIC_EGDESK_BASE_PATH || '';
+fetch(\`\${basePath}/api/transactions\`)
+\`\`\`
+
+## Recommended: Create API Wrapper Function
+
+Create a reusable wrapper in \`lib/api.ts\`:
+
+\`\`\`typescript
+// lib/api.ts
+const basePath = process.env.NEXT_PUBLIC_EGDESK_BASE_PATH || '';
+
+export async function apiFetch(path: string, options?: RequestInit) {
+  // Automatically prepend basePath to relative URLs
+  const url = path.startsWith('/') && !path.startsWith('//')
+    ? \`\${basePath}\${path}\`
+    : path;
+  return fetch(url, options);
+}
+\`\`\`
+
+Then use it everywhere instead of \`fetch()\`:
+
+\`\`\`typescript
+import { apiFetch } from '@/lib/api';
+
+// In your components
+const response = await apiFetch('/api/transactions');
+const data = await response.json();
+\`\`\`
+
+## Environment Variables Provided by EGDesk
+
+EGDesk automatically sets these when starting your dev server:
+
+- \`NEXT_PUBLIC_EGDESK_BASE_PATH\` - The tunnel path prefix (e.g., \`/t/abc123/p/my-app\`)
+- \`NEXT_PUBLIC_EGDESK_API_KEY\` - Your EGDesk API key (for database/sheets access)
+- \`NEXT_PUBLIC_EGDESK_API_URL\` - EGDesk API endpoint (usually \`http://localhost:8080\`)
+
+## What Works Automatically
+
+✅ Next.js routing (\`router.push()\`, \`<Link>\`, etc.)
+✅ Server-side rendering and API routes
+✅ Static assets (\`/_next/static/...\`)
+✅ Images via \`next/image\`
+
+❌ Client-side \`fetch()\` calls - **You must handle this manually**
+
+## For AI Assistants
+
+When building features for this Next.js project:
+
+1. **Always create \`lib/api.ts\` wrapper** at the start of the project
+2. **Use \`apiFetch()\` instead of \`fetch()\`** for all API calls in components
+3. **Never use bare \`fetch('/api/...')\`** - it will fail in EGDesk tunnel
+4. **Inform the user** about this limitation when implementing API features
+
+## Troubleshooting
+
+### API calls return 404
+
+Check if you're using \`fetch()\` directly instead of the wrapper:
+
+\`\`\`javascript
+// ❌ This will fail
+fetch('/api/users')
+
+// ✅ Use this instead
+const basePath = process.env.NEXT_PUBLIC_EGDESK_BASE_PATH || '';
+fetch(\`\${basePath}/api/users\`)
+
+// ✅ Or better, use the wrapper
+apiFetch('/api/users')
+\`\`\`
+
+### Assets (fonts, CSS) return 404
+
+This usually means the basePath configuration wasn't applied correctly.
+EGDesk automatically configures this - try restarting the dev server.
+
+---
+
+*This file is auto-generated by EGDesk. Do not modify.*
+`;
+
+      fs.writeFileSync(readmePath, readmeContent, 'utf-8');
+      console.log('✓ EGDesk development guide written to EGDESK-README.md');
+    } catch (error) {
+      console.error('Failed to write EGDesk README:', error);
     }
   }
 
@@ -803,10 +975,15 @@ export class DevServerManager {
     if (!configPath) {
       configPath = path.join(folderPath, 'next.config.js');
       const newConfig = `/** @type {import('next').NextConfig} */
+console.log('🔍 DEBUG next.config.js: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);
+
 const nextConfig = {
   basePath: process.env.EGDESK_BASE_PATH || '',
   assetPrefix: process.env.EGDESK_BASE_PATH || '',
 };
+
+console.log('🔍 DEBUG next.config.js: basePath =', nextConfig.basePath);
+console.log('🔍 DEBUG next.config.js: assetPrefix =', nextConfig.assetPrefix);
 
 export default nextConfig;
 `;
@@ -824,6 +1001,21 @@ export default nextConfig;
       return;
     }
 
+    // Add debug logging before the config
+    const debugLogging = `\nconsole.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);\n`;
+
+    // Find import statement or beginning of file to insert debug
+    const firstImportMatch = content.match(/^import\s/m);
+    if (firstImportMatch && firstImportMatch.index !== undefined) {
+      // Insert after imports
+      const lastImportIndex = content.lastIndexOf('import');
+      const afterImportLine = content.indexOf('\n', lastImportIndex) + 1;
+      content = content.slice(0, afterImportLine) + debugLogging + content.slice(afterImportLine);
+    } else {
+      // Insert at beginning
+      content = debugLogging + content;
+    }
+
     // Simple injection: add to config object
     // Match: const nextConfig = { or const nextConfig: NextConfig = {
     const configObjectMatch = content.match(/(const\s+\w+Config\s*:\s*\w+\s*=\s*\{)|(const\s+\w+Config\s*=\s*\{)/);
@@ -836,8 +1028,17 @@ export default nextConfig;
   assetPrefix: process.env.EGDESK_BASE_PATH || '',`;
 
       content = content.slice(0, insertPoint) + injection + content.slice(insertPoint);
+
+      // Add logging after the config object
+      const configEndMatch = content.indexOf('};', insertPoint);
+      if (configEndMatch !== -1) {
+        const afterConfigEnd = configEndMatch + 2;
+        const configLogging = `\n\nconsole.log('🔍 DEBUG next.config: Final config basePath =', nextConfig.basePath);\nconsole.log('🔍 DEBUG next.config: Final config assetPrefix =', nextConfig.assetPrefix);\n`;
+        content = content.slice(0, afterConfigEnd) + configLogging + content.slice(afterConfigEnd);
+      }
+
       await fs.promises.writeFile(configPath, content, 'utf8');
-      console.log(`✅ Configured ${path.basename(configPath)} to read basePath from EGDESK_BASE_PATH`);
+      console.log(`✅ Configured ${path.basename(configPath)} to read basePath from EGDESK_BASE_PATH (with debug logging)`);
     } else {
       console.warn('⚠️ Could not parse next.config - may need manual configuration');
     }
@@ -862,6 +1063,21 @@ export default nextConfig;
     }
 
     console.log('ℹ️ No backup found to restore');
+  }
+
+  /**
+   * Remove EGDesk README from project folder
+   */
+  private removeEGDeskReadme(folderPath: string): void {
+    try {
+      const readmePath = path.join(folderPath, 'EGDESK-README.md');
+      if (fs.existsSync(readmePath)) {
+        fs.unlinkSync(readmePath);
+        console.log('✓ Removed EGDESK-README.md');
+      }
+    } catch (error) {
+      console.error('Failed to remove EGDesk README:', error);
+    }
   }
 
 
@@ -931,6 +1147,7 @@ export default nextConfig;
         console.log(`🔧 Configuring Next.js for tunnel support...`);
         await this.backupNextConfig(folderPath);
         await this.configureNextJsBasePath(folderPath);
+        this.writeEGDeskReadme(folderPath);
       }
     }
 
@@ -985,10 +1202,24 @@ export default nextConfig;
     if (projectInfo.type === 'nextjs' && this.tunnelId) {
       const basePath = `/t/${this.tunnelId}/p/${projectName}`;
       serverEnv.EGDESK_BASE_PATH = basePath;
+      // Also expose to client-side for fetch calls
+      serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
       console.log(`🔧 Setting EGDESK_BASE_PATH=${basePath} for Next.js`);
+      console.log(`🔧 Setting NEXT_PUBLIC_EGDESK_BASE_PATH=${basePath} for client-side`);
+      console.log(`🔍 DEBUG: Full environment for Next.js process:`);
+      console.log(`   - EGDESK_BASE_PATH: ${serverEnv.EGDESK_BASE_PATH}`);
+      console.log(`   - NEXT_PUBLIC_EGDESK_BASE_PATH: ${serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH}`);
+      console.log(`   - PORT: ${serverEnv.PORT}`);
+      console.log(`   - NODE_ENV: ${serverEnv.NODE_ENV}`);
+      console.log(`   - PATH: ${serverEnv.PATH?.substring(0, 100)}...`);
     }
 
     // Spawn the dev server process using system npm/yarn/pnpm
+    console.log(`🔍 DEBUG: Spawning process with command: ${command} ${args.join(' ')}`);
+    console.log(`🔍 DEBUG: Working directory: ${folderPath}`);
+    console.log(`🔍 DEBUG: Shell: true`);
+    console.log(`🔍 DEBUG: Environment variables count: ${Object.keys(serverEnv).length}`);
+
     const serverProcess = spawn(command, args, {
       cwd: folderPath,
       shell: true,
@@ -1028,6 +1259,12 @@ export default nextConfig;
         projectRegistry.updateStatus(projectName, 'running');
 
         console.log(`Dev server ready at ${serverInfo.url}`);
+
+        // For Next.js, check if basePath was applied
+        if (projectInfo.type === 'nextjs' && this.tunnelId) {
+          console.log(`🔍 DEBUG: Next.js started. Expected URL with basePath would be: http://localhost:${port}/t/${this.tunnelId}/p/${projectName}/`);
+          console.log(`🔍 DEBUG: If you see just http://localhost:${port}, the env var is NOT being read by Next.js`);
+        }
       }
     });
 
@@ -1071,10 +1308,11 @@ export default nextConfig;
       throw new Error('No server running for this folder');
     }
 
-    // Restore Next.js config if it was modified
+    // Restore Next.js config and remove README if it was modified
     const projectInfo = await this.analyzeFolder(folderPath);
     if (projectInfo.type === 'nextjs') {
       await this.restoreNextConfig(folderPath);
+      this.removeEGDeskReadme(folderPath);
     }
 
     return new Promise((resolve, reject) => {

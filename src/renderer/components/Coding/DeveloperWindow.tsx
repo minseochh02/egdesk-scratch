@@ -81,11 +81,23 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     const fetchTunnelId = async () => {
       try {
         const electron = (window as any).electron;
-        if (!electron?.ipcRenderer) return;
+        if (!electron?.ipcRenderer) {
+          console.log('🔍 DEBUG DeveloperWindow: No electron IPC available');
+          return;
+        }
 
+        console.log('🔍 DEBUG DeveloperWindow: Fetching tunnel config...');
         const result = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
-        if (result.success && result.config?.tunnel?.tunnelId) {
-          setTunnelId(result.config.tunnel.tunnelId);
+        console.log('🔍 DEBUG DeveloperWindow: Tunnel config result:', result);
+
+        // The tunnel ID is stored as 'serverName' in the tunnel object
+        const tunnelId = result.tunnel?.serverName;
+
+        if (result.success && tunnelId) {
+          console.log('🔍 DEBUG DeveloperWindow: Setting tunnelId to:', tunnelId);
+          setTunnelId(tunnelId);
+        } else {
+          console.log('🔍 DEBUG DeveloperWindow: No tunnel ID found in config');
         }
       } catch (err) {
         console.error('Failed to fetch tunnel config:', err);
@@ -199,19 +211,34 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       // For Next.js projects, use tunnel URL instead of localhost
       let viewerUrl = startResult.serverInfo.url;
 
+      console.log(`🔍 DEBUG DeveloperWindow: Project type is ${analyzeResult.projectInfo.type}`);
+      console.log(`🔍 DEBUG DeveloperWindow: Default server URL is ${viewerUrl}`);
+
       if (analyzeResult.projectInfo.type === 'nextjs') {
         // Get tunnel config
         const tunnelConfigResult = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
-        if (tunnelConfigResult.success && tunnelConfigResult.config?.tunnel?.tunnelId) {
+        console.log(`🔍 DEBUG DeveloperWindow: Tunnel config result:`, tunnelConfigResult);
+
+        // The tunnel ID is stored as 'serverName' in the tunnel object
+        const tunnelId = tunnelConfigResult.tunnel?.serverName;
+
+        if (tunnelConfigResult.success && tunnelId) {
           // Extract project name from path (last segment)
           const projectName = path.split('/').filter(Boolean).pop() || path.split('\\').filter(Boolean).pop() || 'project';
-          const tunnelUrl = `https://tunneling-service.onrender.com/t/${tunnelConfigResult.config.tunnel.tunnelId}/p/${projectName}/`;
-          viewerUrl = tunnelUrl;
-          console.log('📡 Using tunnel URL for Next.js project:', tunnelUrl);
+          const port = startResult.serverInfo.port;
+          // For Next.js, use localhost with full basePath
+          const nextJsUrl = `http://localhost:${port}/t/${tunnelId}/p/${projectName}/`;
+          viewerUrl = nextJsUrl;
+          console.log(`🔍 DEBUG DeveloperWindow: Extracted project name: ${projectName}`);
+          console.log(`🔍 DEBUG DeveloperWindow: Constructed Next.js URL with basePath: ${nextJsUrl}`);
+          console.log('📡 Using localhost URL with basePath for Next.js project:', nextJsUrl);
+        } else {
+          console.log('⚠️ DEBUG DeveloperWindow: No tunnel ID found, using localhost URL');
         }
       }
 
       // Store server URL for WebsiteViewer to access
+      console.log(`🔍 DEBUG DeveloperWindow: Setting localStorage 'dev-server-url' to: ${viewerUrl}`);
       localStorage.setItem('dev-server-url', viewerUrl);
 
       // Now that server is ready, create the developer windows
@@ -312,18 +339,27 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
           <p><strong>Type:</strong> {registeredProject.type || 'unknown'}</p>
           <p><strong>Status:</strong> {registeredProject.status}</p>
 
+          {(() => {
+            console.log('🔍 DEBUG DeveloperWindow RENDER: tunnelId =', tunnelId);
+            console.log('🔍 DEBUG DeveloperWindow RENDER: registeredProject.type =', registeredProject.type);
+            console.log('🔍 DEBUG DeveloperWindow RENDER: registeredProject.url =', registeredProject.url);
+            console.log('🔍 DEBUG DeveloperWindow RENDER: registeredProject.projectName =', registeredProject.projectName);
+            console.log('🔍 DEBUG DeveloperWindow RENDER: Will show tunnel URL?', tunnelId && registeredProject.type === 'nextjs');
+            return null;
+          })()}
+
           {tunnelId && registeredProject.type === 'nextjs' ? (
             <>
-              <p><strong>Tunnel URL:</strong> <a
-                href={`https://tunneling-service.onrender.com/t/${tunnelId}/p/${registeredProject.projectName}/`}
+              <p><strong>URL:</strong> <a
+                href={`http://localhost:${registeredProject.port}/t/${tunnelId}/p/${registeredProject.projectName}/`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: '#0070f3' }}
               >
-                https://tunneling-service.onrender.com/t/{tunnelId}/p/{registeredProject.projectName}/
+                http://localhost:{registeredProject.port}/t/{tunnelId}/p/{registeredProject.projectName}/
               </a></p>
               <p style={{ fontSize: '12px', color: '#f5a623', marginTop: '8px' }}>
-                ⚠️ Note: For Next.js projects, localhost access is disabled to support tunnel routing. Use the tunnel URL above.
+                ⚠️ Note: Next.js projects are configured with basePath for tunnel support. Access via tunnel or the URL above.
               </p>
             </>
           ) : tunnelId ? (
