@@ -64,6 +64,37 @@ export class DevServerManager {
   }
 
   /**
+   * Kill process running on specific port
+   */
+  private async killProcessOnPort(port: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`🔪 Attempting to kill process on port ${port}...`);
+
+      const platform = process.platform;
+      let command: string;
+
+      if (platform === 'win32') {
+        // Windows: Find PID and kill it
+        command = `netstat -ano | findstr :${port} && FOR /F "tokens=5" %P IN ('netstat -ano ^| findstr :${port}') DO taskkill /PID %P /F`;
+      } else {
+        // macOS/Linux: Use lsof and kill
+        command = `lsof -ti:${port} | xargs kill -9 || true`;
+      }
+
+      try {
+        execSync(command, { encoding: 'utf-8', shell: true, stdio: 'ignore' });
+        console.log(`✅ Successfully killed process on port ${port}`);
+      } catch (error) {
+        // It's ok if no process was found on that port
+        console.log(`ℹ️ No process found on port ${port} or already killed`);
+      }
+
+      // Give it a moment to fully release the port
+      setTimeout(() => resolve(), 500);
+    });
+  }
+
+  /**
    * Set the tunnel ID for generating Vite base paths
    */
   public setTunnelId(tunnelId: string) {
@@ -142,6 +173,16 @@ export class DevServerManager {
         return { success: true, servers: allServers };
       } catch (error: any) {
         console.error('Failed to get all servers:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('dev-server:kill-port', async (event, port: number) => {
+      try {
+        await this.killProcessOnPort(port);
+        return { success: true };
+      } catch (error: any) {
+        console.error('Failed to kill process on port:', error);
         return { success: false, error: error.message };
       }
     });

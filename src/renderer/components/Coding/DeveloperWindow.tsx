@@ -123,6 +123,13 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
         const result = await electron.ipcRenderer.invoke('project-registry:get-by-path', folderPath);
         if (result.success && result.project) {
           setRegisteredProject(result.project);
+
+          // Update WebsiteViewer URL if this is a Next.js project with active tunnel
+          if (result.project.type === 'nextjs' && tunnelId) {
+            const tunnelUrl = `https://tunneling-service.onrender.com/t/${tunnelId}/p/${result.project.projectName}/`;
+            localStorage.setItem('dev-server-url', tunnelUrl);
+            console.log('📡 Updated viewer URL to tunnel:', tunnelUrl);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch registered project:', err);
@@ -136,7 +143,27 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     const interval = setInterval(checkRegisteredProject, 2000);
 
     return () => clearInterval(interval);
-  }, [folderPath]);
+  }, [folderPath, tunnelId]);
+
+  const killPortProcess = async (port: number) => {
+    try {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) return;
+
+      console.log(`Attempting to kill process on port ${port}...`);
+      const result = await electron.ipcRenderer.invoke('dev-server:kill-port', port);
+
+      if (result.success) {
+        alert(`✅ Successfully killed process on port ${port}`);
+        setError(null);
+      } else {
+        alert(`❌ Failed to kill process: ${result.error}`);
+      }
+    } catch (err: any) {
+      console.error('Error killing port process:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
 
   const startDevServer = async (path: string) => {
     setLoading(true);
@@ -169,8 +196,22 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       console.log('Dev server started:', startResult.serverInfo);
       setServerInfo(startResult.serverInfo);
 
+      // For Next.js projects, use tunnel URL instead of localhost
+      let viewerUrl = startResult.serverInfo.url;
+
+      if (analyzeResult.projectInfo.type === 'nextjs') {
+        // Get tunnel config
+        const tunnelConfigResult = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+        if (tunnelConfigResult.success && tunnelConfigResult.config?.tunnel?.tunnelId) {
+          const projectName = require('path').basename(path);
+          const tunnelUrl = `https://tunneling-service.onrender.com/t/${tunnelConfigResult.config.tunnel.tunnelId}/p/${projectName}/`;
+          viewerUrl = tunnelUrl;
+          console.log('📡 Using tunnel URL for Next.js project:', tunnelUrl);
+        }
+      }
+
       // Store server URL for WebsiteViewer to access
-      localStorage.setItem('dev-server-url', startResult.serverInfo.url);
+      localStorage.setItem('dev-server-url', viewerUrl);
 
       // Now that server is ready, create the developer windows
       try {
@@ -239,6 +280,28 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
               </button>
             </div>
           )}
+          {(error.includes('EADDRINUSE') || error.includes('port') || error.includes('3000')) && (
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                Port may be in use. Click below to force kill any process on port 3000:
+              </p>
+              <button
+                onClick={() => killPortProcess(3000)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#dc3545',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                Kill Process on Port 3000
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -293,6 +356,33 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       {!folderPath && !loading && (
         <div className="developer-empty">
           <p>No project folder selected. Please go back and select a folder.</p>
+        </div>
+      )}
+
+      {/* Port utilities section */}
+      {folderPath && (
+        <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+          <p style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>🔧 Port Utilities</p>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={() => killPortProcess(3000)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '500'
+              }}
+            >
+              Kill Port 3000
+            </button>
+            <span style={{ fontSize: '12px', color: '#666' }}>
+              Use this if dev server fails to start due to port conflict
+            </span>
+          </div>
         </div>
       )}
     </div>
