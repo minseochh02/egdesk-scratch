@@ -907,21 +907,21 @@ const FinanceHub: React.FC = () => {
 
       // For Shinhan Card, BC Card, and Hana Card, transactions are for ALL cards - group by card and import separately
       if (cardCompanyId === 'shinhan-card' || cardCompanyId === 'bc-card' || cardCompanyId === 'hana-card') {
-        console.log('[Shinhan Card] Processing transactions for all cards...');
+        console.log(`[${cardCompanyId}] Processing transactions for all cards...`);
 
-        // Group transactions by card number (이용카드 or cardUsed column)
+        // Group transactions by card number (이용카드, cardUsed, or cardNumber column)
         const transactionsByCard = new Map();
 
         transactionsData.forEach((tx: any) => {
-          const txCardNumber = tx['이용카드'] || tx.cardUsed || 'unknown';
+          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || 'unknown';
           if (!transactionsByCard.has(txCardNumber)) {
             transactionsByCard.set(txCardNumber, []);
           }
           transactionsByCard.get(txCardNumber).push(tx);
         });
 
-        console.log(`[Shinhan Card] Found transactions for ${transactionsByCard.size} different cards`);
-        console.log('[Shinhan Card] Card numbers:', Array.from(transactionsByCard.keys()));
+        console.log(`[${cardCompanyId}] Found transactions for ${transactionsByCard.size} different cards`);
+        console.log(`[${cardCompanyId}] Card numbers:`, Array.from(transactionsByCard.keys()));
 
         let totalInserted = 0;
         let totalSkipped = 0;

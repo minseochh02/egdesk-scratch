@@ -49,6 +49,7 @@ export interface RecoveryOptions {
   maxCatchUpExecutions: number; // Max tasks to execute (default: 3)
   priorityOrder: 'oldest_first' | 'newest_first';
   schedulerFilter?: string[]; // Only recover specific schedulers
+  debugForceRun?: boolean; // Debug mode: run recovery on all tasks regardless of execution window (default: false)
 }
 
 export interface RecoveryReport {
@@ -383,7 +384,12 @@ export class SchedulerRecoveryService {
     cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
-    this.debugLog(`Detecting missed executions: lookback=${lookbackDays} days, cutoff=${cutoffDateStr}`);
+    const debugMode = options.debugForceRun || false;
+
+    this.debugLog(`Detecting missed executions: lookback=${lookbackDays} days, cutoff=${cutoffDateStr}, debugForceRun=${debugMode}`);
+    if (debugMode) {
+      console.log(`[RecoveryService] 🐛 DEBUG MODE: Will detect ALL pending/failed tasks regardless of execution window`);
+    }
 
     // CRITICAL: Log ALL intents in the database for debugging
     const allIntents = db.prepare(`
@@ -423,16 +429,20 @@ export class SchedulerRecoveryService {
     // CRITICAL FIX: Include 'failed' status so failed tasks can be retried on restart
     // SAFETY: Exclude tasks that have been retried too many times (max 5 total attempts)
     // SAFETY: Exclude 'skipped' tasks (permanent errors like missing credentials)
+    // DEBUG MODE: If debugForceRun is true, ignore execution window check
     let query = `
       SELECT * FROM scheduler_execution_intents
       WHERE status IN ('pending', 'failed')
         AND intended_date >= ?
-        AND execution_window_end < ?
+        ${debugMode ? '' : 'AND execution_window_end < ?'}
         AND COALESCE(retry_count, 0) < 5
       ORDER BY intended_date ASC, intended_time ASC
     `;
 
-    const params: any[] = [cutoffDateStr, new Date().toISOString()];
+    const params: any[] = [cutoffDateStr];
+    if (!debugMode) {
+      params.push(new Date().toISOString());
+    }
 
     // Apply scheduler filter if provided
     if (options.schedulerFilter && options.schedulerFilter.length > 0) {

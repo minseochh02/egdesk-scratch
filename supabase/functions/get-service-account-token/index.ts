@@ -47,29 +47,51 @@ serve(async (req) => {
     console.log("[ServiceAccountToken] Starting service account token generation");
 
     // ========================================================================
-    // 1. Verify user authentication
+    // 1. Verify authentication (user session OR anon key)
     // ========================================================================
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: { Authorization: req.headers.get("Authorization")! },
-        },
-      }
-    );
+    const authHeader = req.headers.get("Authorization");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-
-    if (authError || !user) {
-      console.error("[ServiceAccountToken] Authentication failed:", authError?.message);
+    if (!authHeader) {
+      console.error("[ServiceAccountToken] No Authorization header provided");
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("[ServiceAccountToken] User authenticated:", user.id);
+    // Extract the token from "Bearer <token>"
+    const providedToken = authHeader.replace(/^Bearer\s+/i, '');
+
+    // Check if it's the anon key (scheduler mode) or a user session token
+    const isAnonKey = providedToken === supabaseAnonKey;
+
+    if (isAnonKey) {
+      console.log("[ServiceAccountToken] Authenticated with anon key (scheduler mode)");
+    } else {
+      // Validate user session
+      const supabaseClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        supabaseAnonKey,
+        {
+          global: {
+            headers: { Authorization: authHeader },
+          },
+        }
+      );
+
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+
+      if (authError || !user) {
+        console.error("[ServiceAccountToken] Authentication failed:", authError?.message);
+        return new Response(
+          JSON.stringify({ success: false, error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log("[ServiceAccountToken] User authenticated:", user.id);
+    }
 
     // ========================================================================
     // 2. Get service account credentials from environment

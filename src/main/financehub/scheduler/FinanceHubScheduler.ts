@@ -814,7 +814,7 @@ export class FinanceHubScheduler extends EventEmitter {
         if (success && this.settings.spreadsheetSyncEnabled) {
           try {
             console.log(`[FinanceHubScheduler] 📊 Exporting ${entityKey} to spreadsheet...`);
-            const exportResult = await this.exportToSpreadsheet();
+            const exportResult = await this.exportToSpreadsheet(entityType, entityId);
 
             if (exportResult.success) {
               console.log(`[FinanceHubScheduler] ✅ Spreadsheet updated: ${exportResult.spreadsheetUrl}`);
@@ -1772,18 +1772,112 @@ export class FinanceHubScheduler extends EventEmitter {
    * Export collected data to Google Spreadsheet
    * This can be called periodically or after syncs complete
    */
-  private async exportToSpreadsheet(): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
+  private async exportToSpreadsheet(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
     try {
       console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet via Service Account...');
 
       const { getSheetsService } = await import('../../mcp/sheets/sheets-service');
       const { getSQLiteManager } = await import('../../sqlite/manager');
+      const { getFinanceHubDatabase } = await import('../../sqlite/init');
 
       const sheetsService = getSheetsService();
       const sqliteManager = getSQLiteManager();
       const financeHubDb = sqliteManager.getFinanceHubDatabase();
+      const store = getStore();
 
-      // Export all recent data to spreadsheet
+      // Handle tax invoices separately
+      if (entityType === 'tax') {
+        console.log(`[FinanceHubScheduler] Exporting tax invoices for business: ${entityId}`);
+
+        const hometaxDb = getFinanceHubDatabase();
+
+        // Get business number from database by finding invoices for this business
+        // For sales invoices: 공급자상호 (supplier) = our business
+        // For purchase invoices: 공급받는자상호 (buyer) = our business
+        const invoiceRow = hometaxDb.prepare(`
+          SELECT business_number FROM tax_invoices
+          WHERE 공급자상호 = ? OR 공급받는자상호 = ?
+          LIMIT 1
+        `).get(entityId, entityId) as any;
+
+        if (!invoiceRow || !invoiceRow.business_number) {
+          console.warn(`[FinanceHubScheduler] No invoices found for business "${entityId}" - may need to run sync first`);
+          return { success: false, error: 'No invoices found for this business. Run sync first.' };
+        }
+
+        const businessNumber = invoiceRow.business_number;
+
+        // Export sales invoices
+        const salesInvoices = hometaxDb.prepare(`
+          SELECT * FROM tax_invoices
+          WHERE business_number = ? AND invoice_type = 'sales'
+          ORDER BY 작성일자 DESC
+          LIMIT 1000
+        `).all(businessNumber);
+
+        if (salesInvoices && salesInvoices.length > 0) {
+          // Get existing spreadsheet URL from database
+          const { getSpreadsheetUrl } = await import('../../sqlite/hometax');
+          const urlResult = getSpreadsheetUrl(hometaxDb, businessNumber, 'sales');
+          const existingUrl = urlResult.success ? urlResult.spreadsheetUrl : undefined;
+
+          console.log(`[FinanceHubScheduler] Sales invoices - existing URL: ${existingUrl || 'none'}`);
+
+          const result = await sheetsService.exportTaxInvoicesToSpreadsheet(
+            salesInvoices,
+            'sales',
+            existingUrl || undefined,
+            true // preferServiceAccount
+          );
+
+          if (result.success && result.spreadsheetUrl) {
+            // Save to database
+            const { saveSpreadsheetUrl } = await import('../../sqlite/hometax');
+            saveSpreadsheetUrl(hometaxDb, businessNumber, 'sales', result.spreadsheetUrl);
+            console.log(`[FinanceHubScheduler] ✅ Sales invoices exported: ${result.spreadsheetUrl}`);
+          }
+        }
+
+        // Export purchase invoices
+        const purchaseInvoices = hometaxDb.prepare(`
+          SELECT * FROM tax_invoices
+          WHERE business_number = ? AND invoice_type = 'purchase'
+          ORDER BY 작성일자 DESC
+          LIMIT 1000
+        `).all(businessNumber);
+
+        if (purchaseInvoices && purchaseInvoices.length > 0) {
+          // Get existing spreadsheet URL from database
+          const { getSpreadsheetUrl } = await import('../../sqlite/hometax');
+          const urlResult = getSpreadsheetUrl(hometaxDb, businessNumber, 'purchase');
+          const existingUrl = urlResult.success ? urlResult.spreadsheetUrl : undefined;
+
+          console.log(`[FinanceHubScheduler] Purchase invoices - existing URL: ${existingUrl || 'none'}`);
+
+          const result = await sheetsService.exportTaxInvoicesToSpreadsheet(
+            purchaseInvoices,
+            'purchase',
+            existingUrl || undefined,
+            true // preferServiceAccount
+          );
+
+          if (result.success && result.spreadsheetUrl) {
+            // Save to database
+            const { saveSpreadsheetUrl } = await import('../../sqlite/hometax');
+            saveSpreadsheetUrl(hometaxDb, businessNumber, 'purchase', result.spreadsheetUrl);
+            console.log(`[FinanceHubScheduler] ✅ Purchase invoices exported: ${result.spreadsheetUrl}`);
+
+            return {
+              success: true,
+              spreadsheetUrl: result.spreadsheetUrl
+            };
+          }
+        }
+
+        return { success: true, spreadsheetUrl: 'Tax invoices exported' };
+      }
+
+      // Handle bank/card transactions (existing logic)
       const transactions = financeHubDb.prepare(`
         SELECT * FROM transactions
         ORDER BY date DESC, time DESC
@@ -1799,10 +1893,9 @@ export class FinanceHubScheduler extends EventEmitter {
         banksMap[bank.id] = bank;
       }
 
-      const store = getStore();
       const financeHub = store.get('financeHub') as any || {};
-      if (!financeHub.syncSpreadsheets) {
-        financeHub.syncSpreadsheets = {};
+      if (!financeHub.persistentSpreadsheets) {
+        financeHub.persistentSpreadsheets = {};
       }
 
       // Use unified spreadsheet service with automatic service account setup
@@ -1810,16 +1903,16 @@ export class FinanceHubScheduler extends EventEmitter {
         transactions,
         banksMap,
         accounts,
-        financeHub.syncSpreadsheets?.['scheduler-sync']?.spreadsheetId,
+        financeHub.persistentSpreadsheets?.['scheduler-sync']?.spreadsheetId,
         'EGDesk FinanceHub Sync' // Custom title for scheduler
       );
 
-      // Update stored metadata
-      if (!financeHub.syncSpreadsheets) {
-        financeHub.syncSpreadsheets = {};
+      // Update stored metadata (use persistentSpreadsheets to match manual sync storage)
+      if (!financeHub.persistentSpreadsheets) {
+        financeHub.persistentSpreadsheets = {};
       }
-      
-      financeHub.syncSpreadsheets['scheduler-sync'] = {
+
+      financeHub.persistentSpreadsheets['scheduler-sync'] = {
         spreadsheetId: transactionsResult.spreadsheetId,
         spreadsheetUrl: transactionsResult.spreadsheetUrl,
         title: 'EGDesk FinanceHub Sync',
@@ -1839,11 +1932,11 @@ export class FinanceHubScheduler extends EventEmitter {
 
     } catch (error) {
       console.error('[FinanceHubScheduler] ❌ Service account spreadsheet export failed:', error);
-      
+
       // Fallback to OAuth if service account fails
       console.log('[FinanceHubScheduler] Attempting OAuth fallback for spreadsheet export...');
       try {
-        return await this.exportToSpreadsheetOAuth();
+        return await this.exportToSpreadsheetOAuth(entityType, entityId);
       } catch (fallbackError) {
         console.error('[FinanceHubScheduler] ❌ OAuth fallback also failed:', fallbackError);
         return {
@@ -1857,7 +1950,7 @@ export class FinanceHubScheduler extends EventEmitter {
   /**
    * OAuth-based spreadsheet export (fallback method)
    */
-  private async exportToSpreadsheetOAuth(): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
+  private async exportToSpreadsheetOAuth(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
     try {
       console.log('[FinanceHubScheduler] 📊 Exporting to Google Spreadsheet via OAuth (fallback)...');
 

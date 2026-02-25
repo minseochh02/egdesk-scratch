@@ -464,7 +464,7 @@ export class SheetsService {
   async formatHeaders(spreadsheetId: string, sheetName: string = 'Sheet1', preferServiceAccount: boolean = false): Promise<void> {
     try {
       // Get the spreadsheet metadata to find the correct sheet ID
-      const metadata = await this.getSpreadsheet(spreadsheetId);
+      const metadata = await this.getSpreadsheet(spreadsheetId, preferServiceAccount);
       const sheet = metadata.sheets.find(s => s.title === sheetName) || metadata.sheets[0];
       
       if (!sheet) {
@@ -801,7 +801,8 @@ export class SheetsService {
   async exportTaxInvoicesToSpreadsheet(
     invoices: any[],
     invoiceType: 'sales' | 'purchase',
-    existingSpreadsheetUrl?: string
+    existingSpreadsheetUrl?: string,
+    preferServiceAccount: boolean = false
   ): Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; error?: string }> {
     try {
       // Extract spreadsheet ID from URL if provided
@@ -813,8 +814,18 @@ export class SheetsService {
 
           // Try to update existing spreadsheet
           try {
-            await this.getSpreadsheet(spreadsheetId);
-            await this.updateTaxInvoicesData(spreadsheetId, invoices, invoiceType);
+            await this.getSpreadsheet(spreadsheetId, preferServiceAccount);
+            await this.updateTaxInvoicesData(spreadsheetId, invoices, invoiceType, preferServiceAccount);
+
+            // Ensure service account has access for future automated updates (if not already using service account)
+            if (!preferServiceAccount && spreadsheetId) {
+              console.log('🔗 Ensuring service account access to existing tax invoice spreadsheet for future automated updates...');
+              const hasServiceAccess = await this.ensureServiceAccountAccess(spreadsheetId);
+
+              if (!hasServiceAccess) {
+                console.warn('⚠️ Could not ensure service account access to existing tax invoice spreadsheet');
+              }
+            }
 
             return {
               success: true,
@@ -912,21 +923,33 @@ export class SheetsService {
       const data = [headers, ...rows];
 
       // Create the spreadsheet
-      const result = await this.createSpreadsheet(title, data);
+      const result = await this.createSpreadsheet(title, data, preferServiceAccount);
 
       // Format the headers
       if (result.spreadsheetId) {
-        await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+        await this.formatHeaders(result.spreadsheetId, 'Sheet1', preferServiceAccount);
       }
 
-      // Move to Tax Invoices folder
-      try {
-        const driveService = getDriveService();
-        await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
-        console.log('✅ Moved tax invoice spreadsheet to EGDesk/Tax Invoices/');
-      } catch (error) {
-        console.warn('⚠️ Could not organize spreadsheet:', error);
-        // Don't fail the entire operation if folder organization fails
+      // Ensure service account has access for future automated updates (if not already using service account)
+      if (!preferServiceAccount && result.spreadsheetId) {
+        console.log('🔗 Ensuring service account access to tax invoice spreadsheet for future automated updates...');
+        const hasServiceAccess = await this.ensureServiceAccountAccess(result.spreadsheetId);
+
+        if (!hasServiceAccess) {
+          console.warn('⚠️ Could not ensure service account access to tax invoice spreadsheet, continuing with personal OAuth');
+        }
+      }
+
+      // Move to Tax Invoices folder (only if using personal OAuth)
+      if (!preferServiceAccount) {
+        try {
+          const driveService = getDriveService();
+          await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
+          console.log('✅ Moved tax invoice spreadsheet to EGDesk/Tax Invoices/');
+        } catch (error) {
+          console.warn('⚠️ Could not organize spreadsheet:', error);
+          // Don't fail the entire operation if folder organization fails
+        }
       }
 
       return {
@@ -1051,7 +1074,8 @@ export class SheetsService {
    */
   async exportCashReceiptsToSpreadsheet(
     receipts: any[],
-    existingSpreadsheetUrl?: string
+    existingSpreadsheetUrl?: string,
+    preferServiceAccount: boolean = false
   ): Promise<{ success: boolean; spreadsheetId?: string; spreadsheetUrl?: string; error?: string }> {
     try {
       // Extract spreadsheet ID from URL if provided
@@ -1063,8 +1087,18 @@ export class SheetsService {
 
           // Try to update existing spreadsheet
           try {
-            await this.getSpreadsheet(spreadsheetId);
-            await this.updateCashReceiptsData(spreadsheetId, receipts);
+            await this.getSpreadsheet(spreadsheetId, preferServiceAccount);
+            await this.updateCashReceiptsData(spreadsheetId, receipts, preferServiceAccount);
+
+            // Ensure service account has access for future automated updates (if not already using service account)
+            if (!preferServiceAccount && spreadsheetId) {
+              console.log('🔗 Ensuring service account access to existing cash receipt spreadsheet for future automated updates...');
+              const hasServiceAccess = await this.ensureServiceAccountAccess(spreadsheetId);
+
+              if (!hasServiceAccess) {
+                console.warn('⚠️ Could not ensure service account access to existing cash receipt spreadsheet');
+              }
+            }
 
             return {
               success: true,
@@ -1115,21 +1149,33 @@ export class SheetsService {
       const data = [headers, ...rows];
 
       // Create the spreadsheet
-      const result = await this.createSpreadsheet(title, data);
+      const result = await this.createSpreadsheet(title, data, preferServiceAccount);
 
       // Format the headers
       if (result.spreadsheetId) {
-        await this.formatHeaders(result.spreadsheetId, 'Sheet1');
+        await this.formatHeaders(result.spreadsheetId, 'Sheet1', preferServiceAccount);
       }
 
-      // Move to Tax Invoices folder (or create a separate Cash Receipts folder)
-      try {
-        const driveService = getDriveService();
-        await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
-        console.log('✅ Moved cash receipt spreadsheet to EGDesk/Tax Invoices/');
-      } catch (error) {
-        console.warn('⚠️ Could not organize spreadsheet:', error);
-        // Don't fail the entire operation if folder organization fails
+      // Ensure service account has access for future automated updates (if not already using service account)
+      if (!preferServiceAccount && result.spreadsheetId) {
+        console.log('🔗 Ensuring service account access to cash receipt spreadsheet for future automated updates...');
+        const hasServiceAccess = await this.ensureServiceAccountAccess(result.spreadsheetId);
+
+        if (!hasServiceAccess) {
+          console.warn('⚠️ Could not ensure service account access to cash receipt spreadsheet, continuing with personal OAuth');
+        }
+      }
+
+      // Move to Tax Invoices folder (only if using personal OAuth)
+      if (!preferServiceAccount) {
+        try {
+          const driveService = getDriveService();
+          await driveService.moveFileToFolder(result.spreadsheetId, 'Tax Invoices');
+          console.log('✅ Moved cash receipt spreadsheet to EGDesk/Tax Invoices/');
+        } catch (error) {
+          console.warn('⚠️ Could not organize spreadsheet:', error);
+          // Don't fail the entire operation if folder organization fails
+        }
       }
 
       return {
@@ -1220,11 +1266,14 @@ export class SheetsService {
   }
 
   private extractHeadquarters(metadata: any, cardCompanyId: string): string {
-    return cardCompanyId === 'bc-card' ? (metadata?.headquartersName || '') : '';
+    if (cardCompanyId === 'bc-card' || cardCompanyId === 'hana-card') {
+      return metadata?.headquartersName || '';
+    }
+    return '';
   }
 
   private extractDepartment(metadata: any, cardCompanyId: string): string {
-    if (cardCompanyId === 'bc-card') {
+    if (cardCompanyId === 'bc-card' || cardCompanyId === 'hana-card') {
       return metadata?.departmentName || '';
     }
     if (cardCompanyId === 'kb-card') {

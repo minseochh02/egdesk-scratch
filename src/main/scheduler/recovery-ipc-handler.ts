@@ -160,5 +160,44 @@ export function registerSchedulerRecoveryHandlers(): void {
     }
   });
 
+  // Debug: Reset completed tasks to pending for testing
+  ipcMain.handle('scheduler-recovery-debug-reset', async (event, options) => {
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+      const db = recoveryService['getDb']();
+
+      const lookbackDays = options?.lookbackDays || 7;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
+      const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+      const result = db.prepare(`
+        UPDATE scheduler_execution_intents
+        SET status = 'pending',
+            retry_count = 0,
+            error_message = NULL,
+            actual_execution_id = NULL,
+            actual_started_at = NULL,
+            actual_completed_at = NULL,
+            updated_at = datetime('now')
+        WHERE intended_date >= ?
+          AND status IN ('completed', 'failed')
+          ${options?.schedulerType ? 'AND scheduler_type = ?' : ''}
+      `).run(options?.schedulerType ? [cutoffDateStr, options.schedulerType] : [cutoffDateStr]);
+
+      console.log(`[RecoveryService] 🐛 DEBUG: Reset ${result.changes} task(s) to pending`);
+
+      return {
+        success: true,
+        data: { resetCount: result.changes }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   console.log('✅ Scheduler recovery IPC handlers registered');
 }
