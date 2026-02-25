@@ -2731,6 +2731,7 @@ auth: {
     hasRunToday: (schedulerType: string, taskId: string) =>
       ipcRenderer.invoke('scheduler-recovery-has-run-today', schedulerType, taskId),
     cleanup: (retentionDays?: number) => ipcRenderer.invoke('scheduler-recovery-cleanup', retentionDays),
+    debugReset: (options?: any) => ipcRenderer.invoke('scheduler-recovery-debug-reset', options),
     onRecoveryReport: (callback: (report: any) => void) => {
       const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(args[0] as any);
       ipcRenderer.on('scheduler:recovery-report', subscription);

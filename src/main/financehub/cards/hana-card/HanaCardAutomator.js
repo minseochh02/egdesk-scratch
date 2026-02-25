@@ -923,14 +923,40 @@ class HanaCardAutomator extends BaseCardAutomator {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // Convert to JSON, starting from row 6 (header row)
-    // Range option starts from A6 to skip the first 5 rows
+    // Extract metadata from first 5 rows (본부명, 부서명, etc.)
+    const metadataRows = XLSX.utils.sheet_to_json(worksheet, {
+      range: 0,
+      header: 1, // Use array format
+      defval: ''
+    });
+
+    // Try to extract 본부명 and 부서명 from the first few rows
+    let headquartersName = '';
+    let departmentName = '';
+
+    for (let i = 0; i < Math.min(5, metadataRows.length); i++) {
+      const row = metadataRows[i];
+      const rowStr = row.join(' ');
+
+      // Look for patterns like "본부명: XXX" or just the value
+      if (row[0] && row[0].toString().includes('본부')) {
+        headquartersName = row[1] || row[0].toString().replace(/본부명\s*:?\s*/g, '').trim();
+      }
+      if (row[0] && row[0].toString().includes('부서')) {
+        departmentName = row[1] || row[0].toString().replace(/부서명\s*:?\s*/g, '').trim();
+      }
+    }
+
+    this.log(`Extracted metadata - 본부명: ${headquartersName}, 부서명: ${departmentName}`);
+
+    // Convert to JSON, starting from row 7 (first data row, skipping header at row 6)
+    // Range option starts from A7 to skip the first 6 rows (5 metadata rows + 1 header row)
     const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-      range: 5, // Start from row 6 (0-indexed, so 5)
+      range: 6, // Start from row 7 (0-indexed, so 6) - skip metadata (1-5) and header (6)
       header: [
         'no',
-        'usageDate',
-        'usageTime',
+        'usageDate',           // 이용일 = 접수일자/승인일자
+        'usageTime',           // 이용시간 = 접수시간/승인시간
         'cardNumber',
         'approvalNumber',
         'approvalAmount',
@@ -972,8 +998,8 @@ class HanaCardAutomator extends BaseCardAutomator {
         return {
           // Basic transaction info
           no: row.no,
-          usageDate: row.usageDate,
-          usageTime: row.usageTime,
+          usageDate: row.usageDate,           // 이용일 = 접수일자/승인일자
+          usageTime: row.usageTime,           // 이용시간 = 접수시간/승인시간
           cardNumber: row.cardNumber,
           approvalNumber: row.approvalNumber,
 
@@ -1000,9 +1026,13 @@ class HanaCardAutomator extends BaseCardAutomator {
           status: row.status,
           isCancelled, // Flag indicating if transaction was cancelled
 
-          // Department info
-          department: departmentInfo.name,
+          // Department/Organization info
+          // 부서명 = department name from parsed organization tree
+          // 본부명 = headquarters name from Excel metadata (if available)
+          department: departmentInfo.name,           // 부서명 (legacy field)
+          departmentName: departmentInfo.name,       // 부서명 (for export compatibility)
           departmentId: departmentInfo.id,
+          headquartersName: headquartersName || '',  // 본부명 (from Excel metadata)
 
           // Metadata
           source: 'hana-card',
@@ -1122,7 +1152,16 @@ class HanaCardAutomator extends BaseCardAutomator {
       }
 
       this.log(`\n=== Total transactions collected: ${allTransactions.length} ===`);
-      return allTransactions;
+
+      // Return in the same format as BC Card and Shinhan Card (for UI compatibility)
+      return [{
+        status: 'downloaded',
+        filename: 'hana-card-transactions',
+        path: this.downloadDir,
+        extractedData: {
+          transactions: allTransactions
+        }
+      }];
 
     } catch (error) {
       this.log(`Failed to get transactions: ${error.message}`, 'error');

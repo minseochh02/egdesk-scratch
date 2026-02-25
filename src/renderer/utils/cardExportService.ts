@@ -153,11 +153,14 @@ function extractCardCompany(cardCompanyId: string): string {
 }
 
 function extractHeadquarters(metadata: any, cardCompanyId: string): string {
-  return cardCompanyId === 'bc-card' ? (metadata.headquartersName || '') : '';
+  if (cardCompanyId === 'bc-card' || cardCompanyId === 'hana-card') {
+    return metadata.headquartersName || '';
+  }
+  return '';
 }
 
 function extractDepartment(metadata: any, cardCompanyId: string): string {
-  if (cardCompanyId === 'bc-card' || cardCompanyId === 'kb-card') {
+  if (cardCompanyId === 'bc-card' || cardCompanyId === 'kb-card' || cardCompanyId === 'hana-card') {
     return metadata.departmentName || '';
   }
   return '';
