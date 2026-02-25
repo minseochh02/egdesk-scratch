@@ -194,6 +194,27 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   public async updateSettings(newSettings: Partial<ScheduleSettings>): Promise<void> {
+    // CRITICAL: Validate tax schedules - remove entries with empty business names
+    // Empty business names cause corrupted taskIds like "tax:" which break recovery
+    let validatedTaxSchedules = newSettings.tax || {};
+    if (newSettings.tax) {
+      const invalidBusinessNames: string[] = [];
+      validatedTaxSchedules = Object.fromEntries(
+        Object.entries(newSettings.tax).filter(([businessName, schedule]) => {
+          if (!businessName || businessName.trim() === '') {
+            invalidBusinessNames.push(businessName);
+            console.warn(`[FinanceHubScheduler] ⚠️  Rejecting tax schedule with empty business name`);
+            return false;
+          }
+          return true;
+        })
+      );
+
+      if (invalidBusinessNames.length > 0) {
+        console.warn(`[FinanceHubScheduler] ⚠️  Filtered out ${invalidBusinessNames.length} invalid tax schedule(s) with empty business names`);
+      }
+    }
+
     // Deep merge for nested objects
     this.settings = {
       ...this.settings,
@@ -208,7 +229,7 @@ export class FinanceHubScheduler extends EventEmitter {
       },
       tax: {
         ...this.settings.tax,
-        ...(newSettings.tax || {}),
+        ...validatedTaxSchedules,
       },
     };
     this.saveSettings();

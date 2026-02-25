@@ -748,7 +748,18 @@ export class SchedulerRecoveryService {
       console.error(`[RecoveryService] This usually means the scheduler has an entry with empty/undefined ID`);
       console.error(`[RecoveryService] Check your financeHubScheduler settings for entries with empty keys`);
       console.error(`[RecoveryService] For tax entities, the ID should be the business name, not number`);
-      throw new Error(`Invalid taskId format: "${missed.taskId}" (entityType="${entityType}", entityId="${entityId}")`);
+
+      // CRITICAL: Mark this intent as skipped instead of throwing
+      // This prevents one corrupted task from blocking the entire recovery
+      await this.markIntentSkipped(
+        missed.schedulerType,
+        missed.taskId,
+        missed.intendedDate,
+        `Invalid taskId format: empty entity ID (${missed.taskId})`
+      );
+
+      console.log(`[RecoveryService] ⚠️  Marked corrupted task as skipped: ${missed.taskId}`);
+      return;
     }
 
     // CRITICAL: Check if scheduler is already syncing this entity or has retry scheduled
@@ -886,6 +897,26 @@ export class SchedulerRecoveryService {
     this.debugLog(`Null fields cleanup: ${nullResult.changes} deleted`);
     if (nullResult.changes > 0) {
       console.log(`[RecoveryService] Cleaned up ${nullResult.changes} invalid intents (null fields)`);
+    }
+
+    // CRITICAL: Delete intents with empty/corrupted taskIds (e.g., "tax:" with no entity ID)
+    // This happens when a tax schedule is saved with an empty business name
+    this.debugLog('Checking for empty/corrupted taskIds...');
+    const emptyTaskIdResult = db.prepare(`
+      DELETE FROM scheduler_execution_intents
+      WHERE task_id LIKE '%:'
+        AND (
+          task_id NOT LIKE '%:%:%'
+          OR task_id LIKE '%: %'
+          OR task_id LIKE '% :%'
+        )
+    `).run();
+
+    totalCleaned += emptyTaskIdResult.changes;
+    this.debugLog(`Empty taskId cleanup: ${emptyTaskIdResult.changes} deleted`);
+    if (emptyTaskIdResult.changes > 0) {
+      console.log(`[RecoveryService] Cleaned up ${emptyTaskIdResult.changes} corrupted taskIds (empty entity IDs)`);
+      console.log(`[RecoveryService] These were likely created from tax schedules with empty business names`);
     }
 
     // CRITICAL: Fix timezone-broken intents from old version
