@@ -1878,6 +1878,9 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       // Handle bank/card transactions (existing logic)
+      // Determine which spreadsheet to use based on entity type
+      const spreadsheetKey = entityType === 'card' ? 'card-spreadsheet' : 'bank-spreadsheet';
+
       const transactions = financeHubDb.prepare(`
         SELECT * FROM transactions
         ORDER BY date DESC, time DESC
@@ -1898,24 +1901,30 @@ export class FinanceHubScheduler extends EventEmitter {
         financeHub.persistentSpreadsheets = {};
       }
 
+      // Use the same spreadsheet key as manual sync
+      const existingSpreadsheetId = financeHub.persistentSpreadsheets?.[spreadsheetKey]?.spreadsheetId;
+      const title = entityType === 'card' ? 'EGDesk 카드 거래내역' : 'EGDesk 은행 거래내역';
+
+      console.log(`[FinanceHubScheduler] Using spreadsheet key: ${spreadsheetKey}, existing ID: ${existingSpreadsheetId || 'none'}`);
+
       // Use unified spreadsheet service with automatic service account setup
       const transactionsResult = await sheetsService.getOrCreateTransactionsSpreadsheet(
         transactions,
         banksMap,
         accounts,
-        financeHub.persistentSpreadsheets?.['scheduler-sync']?.spreadsheetId,
-        'EGDesk FinanceHub Sync' // Custom title for scheduler
+        existingSpreadsheetId,
+        title
       );
 
-      // Update stored metadata (use persistentSpreadsheets to match manual sync storage)
+      // Update stored metadata (use same key as manual sync)
       if (!financeHub.persistentSpreadsheets) {
         financeHub.persistentSpreadsheets = {};
       }
 
-      financeHub.persistentSpreadsheets['scheduler-sync'] = {
+      financeHub.persistentSpreadsheets[spreadsheetKey] = {
         spreadsheetId: transactionsResult.spreadsheetId,
         spreadsheetUrl: transactionsResult.spreadsheetUrl,
-        title: 'EGDesk FinanceHub Sync',
+        title: title,
         lastUpdated: new Date().toISOString(),
         recordCount: transactions.length,
         wasCreated: transactionsResult.wasCreated,
@@ -1961,6 +1970,9 @@ export class FinanceHubScheduler extends EventEmitter {
       const sqliteManager = getSQLiteManager();
       const financeHubDb = sqliteManager.getFinanceHubDatabase();
 
+      // Determine which spreadsheet to use based on entity type
+      const spreadsheetKey = entityType === 'card' ? 'card-spreadsheet' : 'bank-spreadsheet';
+
       // Export all recent data to spreadsheet
       const transactions = financeHubDb.prepare(`
         SELECT * FROM transactions
@@ -1981,20 +1993,21 @@ export class FinanceHubScheduler extends EventEmitter {
       if (!financeHub.persistentSpreadsheets) {
         financeHub.persistentSpreadsheets = {};
       }
-      const persistentSpreadsheetId = financeHub.persistentSpreadsheets['scheduler-sync']?.spreadsheetId;
+      const persistentSpreadsheetId = financeHub.persistentSpreadsheets[spreadsheetKey]?.spreadsheetId;
+      const title = entityType === 'card' ? 'EGDesk 카드 거래내역' : 'EGDesk 은행 거래내역';
 
       const transactionsResult = await sheetsService.getOrCreateTransactionsSpreadsheet(
         transactions,
         banksMap,
         accounts,
         persistentSpreadsheetId,
-        'EGDesk 거래내역 (OAuth)' // Mark as OAuth version
+        title
       );
 
-      financeHub.persistentSpreadsheets['scheduler-sync'] = {
+      financeHub.persistentSpreadsheets[spreadsheetKey] = {
         spreadsheetId: transactionsResult.spreadsheetId,
         spreadsheetUrl: transactionsResult.spreadsheetUrl,
-        title: 'EGDesk 거래내역 (OAuth)',
+        title: title,
         lastUpdated: new Date().toISOString(),
       };
       store.set('financeHub', financeHub);
