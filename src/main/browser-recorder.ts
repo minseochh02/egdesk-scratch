@@ -1464,6 +1464,12 @@ export class BrowserRecorder {
           (window as any).__playwrightRecorderDateMarkingMode = true;
           (window as any).__playwrightRecorderDateMarkingStep = 'year';
 
+          // Attach the date marking mousedown listener (capture phase)
+          if ((window as any).__dateMarkingMousedownHandler) {
+            document.addEventListener('mousedown', (window as any).__dateMarkingMousedownHandler, true);
+            console.log('📅 Attached date marking mousedown listener');
+          }
+
           // Show instructions
           dateMarkingInstructions = document.createElement('div');
           dateMarkingInstructions.id = 'date-marking-instructions';
@@ -1597,6 +1603,12 @@ export class BrowserRecorder {
           markDateBtn.style.background = '#9C27B0';
           markDateBtn.style.borderColor = '#7B1FA2';
 
+          // Detach the date marking mousedown listener
+          if ((window as any).__dateMarkingMousedownHandler) {
+            document.removeEventListener('mousedown', (window as any).__dateMarkingMousedownHandler, true);
+            console.log('📅 Detached date marking mousedown listener');
+          }
+
           // Clear window state
           (window as any).__playwrightRecorderDateMarkingMode = false;
           (window as any).__playwrightRecorderDateMarkingStep = null;
@@ -1691,6 +1703,12 @@ export class BrowserRecorder {
           markDateBtn.classList.remove('active');
           markDateBtn.style.background = '#9C27B0';
           markDateBtn.style.borderColor = '#7B1FA2';
+
+          // Detach the date marking mousedown listener
+          if ((window as any).__dateMarkingMousedownHandler) {
+            document.removeEventListener('mousedown', (window as any).__dateMarkingMousedownHandler, true);
+            console.log('📅 Detached date marking mousedown listener');
+          }
 
           (window as any).__playwrightRecorderDateMarkingMode = false;
           (window as any).__playwrightRecorderDateMarkingStep = null;
@@ -3115,7 +3133,13 @@ export class BrowserRecorder {
       // Using mousedown in capture phase to intercept BEFORE regular click handlers
       const dateMarkingProcessedElements = new WeakSet<HTMLElement>();
 
-      document.addEventListener('mousedown', (e) => {
+      // Create the date marking mousedown handler as a named function for dynamic attachment/detachment
+      const dateMarkingMousedownHandler = (e: MouseEvent) => {
+        // CHECK MODE FIRST - before any DOM operations to avoid performance overhead
+        if (!(window as any).__playwrightRecorderDateMarkingMode) {
+          return;
+        }
+
         const target = e.target as HTMLElement;
 
         // Skip recorder UI elements, date offset modal, and date marking banner
@@ -3127,11 +3151,6 @@ export class BrowserRecorder {
             target.id === 'date-marking-instructions' ||
             (target.parentElement && target.parentElement.closest('#date-marking-instructions'))) {
           console.log('⏭️ Skipping mousedown on recorder UI or date marking banner');
-          return;
-        }
-
-        // Only process if in date marking mode
-        if (!(window as any).__playwrightRecorderDateMarkingMode) {
           return;
         }
 
@@ -3661,7 +3680,10 @@ export class BrowserRecorder {
             }
           });
         }
-      }, true); // Capture phase - runs before regular handlers
+      }; // End of dateMarkingMousedownHandler function
+
+      // Store the handler reference globally so it can be attached/detached when entering/exiting date marking mode
+      (window as any).__dateMarkingMousedownHandler = dateMarkingMousedownHandler;
 
       // Track processed clicks to avoid duplicates
       const processedClicks = new WeakMap<Event, boolean>();
@@ -3697,42 +3719,46 @@ export class BrowserRecorder {
           return;
         }
 
+        // Capture target immediately but defer ALL processing to avoid interfering with page
         const target = e.target as HTMLElement;
-
-        // Early check: Skip if clicking on or within date marking banner (catches all elements including text)
-        if (isWithinDateMarkingBanner(target)) {
-          console.log('⏭️ Skipping click on date marking banner or its children');
-          return;
-        }
         const now = Date.now();
 
-        // Skip ALL clicks when in date marking mode (handled by mousedown listener)
-        // This prevents regular click recording from interfering with date marking
-        if ((window as any).__playwrightRecorderDateMarkingMode) {
-          console.log('📅 Skipping click in date marking mode (handled by mousedown)');
-          return;
-        }
-
-        // Skip clicks on elements that were just marked in date marking mode
-        if ((window as any).__dateMarkedElements && (window as any).__dateMarkedElements.has(target)) {
-          console.log('📅 Skipping click on date marked element');
-          return;
-        }
-
-        // Deduplicate clicks on same target within 50ms
-        if (lastClickTarget === target && (now - lastClickTime) < 50) {
-          console.log('⏭️ Duplicate click detected, skipping');
-          return;
-        }
-
-        console.log('🖱️ Click detected on:', target.tagName, target.id || target.className);
-        console.log('🖱️ Document:', target.ownerDocument === document ? 'main page' : 'different document');
-        console.log('🖱️ Coordinate mode:', isCoordinateMode);
-
-        // Mark this event as processed
+        // Mark this event as processed immediately
         processedClicks.set(e, true);
-        lastClickTime = now;
-        lastClickTarget = target;
+
+        // DEFER ALL PROCESSING - this prevents ANY interference with the page's click handlers
+        setTimeout(() => {
+          // Early check: Skip if clicking on or within date marking banner (catches all elements including text)
+          if (isWithinDateMarkingBanner(target)) {
+            console.log('⏭️ Skipping click on date marking banner or its children');
+            return;
+          }
+
+          // Skip ALL clicks when in date marking mode (handled by mousedown listener)
+          // This prevents regular click recording from interfering with date marking
+          if ((window as any).__playwrightRecorderDateMarkingMode) {
+            console.log('📅 Skipping click in date marking mode (handled by mousedown)');
+            return;
+          }
+
+          // Skip clicks on elements that were just marked in date marking mode
+          if ((window as any).__dateMarkedElements && (window as any).__dateMarkedElements.has(target)) {
+            console.log('📅 Skipping click on date marked element');
+            return;
+          }
+
+          // Deduplicate clicks on same target within 50ms
+          if (lastClickTarget === target && (now - lastClickTime) < 50) {
+            console.log('⏭️ Duplicate click detected, skipping');
+            return;
+          }
+
+          console.log('🖱️ Click detected on:', target.tagName, target.id || target.className);
+          console.log('🖱️ Document:', target.ownerDocument === document ? 'main page' : 'different document');
+          console.log('🖱️ Coordinate mode:', isCoordinateMode);
+
+          lastClickTime = now;
+          lastClickTarget = target;
 
         // CRITICAL: Check if this click is in an iframe
         // Clicks in iframes have different ownerDocument
@@ -4492,20 +4518,12 @@ export class BrowserRecorder {
         } else {
           console.error('❌ __playwrightRecorderOnClick not available!');
         }
+        }, 0); // End of deferred processing - ensures zero interference with page
       };
-      
-      // Track clicks - add multiple listeners to catch events even if stopPropagation is used
 
-      // 1. Document-level capture phase (earliest possible)
-      document.addEventListener('click', handleClick, true);
-
-      // 2. Window-level capture phase
-      // DISABLED: Redundant - document capture phase already catches everything
-      // window.addEventListener('click', handleClick, true);
-
-      // 3. Document-level bubble phase (fallback)
-      // DISABLED: Redundant - capture phase runs first
-      // document.addEventListener('click', handleClick, false);
+      // Track clicks using BUBBLING PHASE to avoid interfering with page functionality
+      // Bubbling phase runs AFTER the button's handlers, so data-service frameworks work correctly
+      document.addEventListener('click', handleClick, false);
       
       // 4. Override dispatchEvent to intercept all click events
       // TESTING: Disabled to isolate issue
