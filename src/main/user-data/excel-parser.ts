@@ -5,6 +5,7 @@ import {
   ParsedExcelData,
   ColumnType,
   ColumnSplitSuggestion,
+  DataIsland,
 } from './types';
 
 /**
@@ -46,7 +47,7 @@ export function sanitizeColumnName(header: string): string {
 /**
  * Detect column type from sample data
  */
-export function detectColumnType(values: any[]): ColumnType {
+export function detectColumnType(values: any[], columnName?: string): ColumnType {
   // Filter out null and undefined values
   const validValues = values.filter((v) => v !== null && v !== undefined && v !== '');
 
@@ -59,6 +60,22 @@ export function detectColumnType(values: any[]): ColumnType {
   let allDate = true;
   let hasDateObjects = 0;
   let hasDateStrings = 0;
+  let hasNonDateDashes = false; // Track if we see dashes that aren't part of dates
+
+  // Date patterns for validation
+  const datePatterns = [
+    /^\d{4}-\d{2}-\d{2}$/,          // YYYY-MM-DD
+    /^\d{4}\/\d{2}\/\d{2}$/,        // YYYY/MM/DD
+    /^\d{2}-\d{2}-\d{4}$/,          // DD-MM-YYYY
+    /^\d{2}\/\d{2}\/\d{4}$/,        // DD/MM/YYYY
+    /^\d{2}\/\d{2}\/\d{2}$/,        // YY/MM/DD or DD/MM/YY
+    /^\d{8}$/,                       // YYYYMMDD
+    // Date patterns with suffixes (e.g., "26/02/02-1", "2024/01/15-2")
+    /^\d{2}\/\d{2}\/\d{2}-\d+$/,    // YY/MM/DD-N
+    /^\d{4}\/\d{2}\/\d{2}-\d+$/,    // YYYY/MM/DD-N
+    /^\d{2}\/\d{2}\/\d{4}-\d+$/,    // DD/MM/YYYY-N
+    /^\d{4}-\d{2}-\d{2}-\d+$/,      // YYYY-MM-DD-N
+  ];
 
   for (const value of validValues) {
     // Check if it's a Date object (Excel dates)
@@ -66,10 +83,9 @@ export function detectColumnType(values: any[]): ColumnType {
       allNumeric = false;
       allInteger = false;
       hasDateObjects++;
-      // Date objects are dates!
       continue;
     }
-    
+
     // Check if it's a number
     if (typeof value === 'number') {
       if (!Number.isInteger(value)) {
@@ -77,37 +93,76 @@ export function detectColumnType(values: any[]): ColumnType {
       }
       allDate = false;
     } else if (typeof value === 'string') {
-      // Try to parse as number (for numeric columns)
-      const num = parseFloat(value.replace(/,/g, ''));
-      if (!isNaN(num)) {
-        if (!Number.isInteger(num)) {
+      const trimmedValue = value.trim();
+
+      // FIRST: Check for dashes that are NOT part of date patterns
+      // Examples: "123-45-67890", "ABC-DEF", etc.
+      if (trimmedValue.includes('-')) {
+        const looksLikeDate = datePatterns.some(pattern => pattern.test(trimmedValue));
+        if (!looksLikeDate) {
+          // Contains dash but not a date → it's TEXT (like business numbers)
+          hasNonDateDashes = true;
+          allNumeric = false;
           allInteger = false;
+          allDate = false;
+          continue;
         }
-        // If it looks like a number, it's probably not a date
-        allDate = false;
-      } else {
-        allNumeric = false;
-        allInteger = false;
       }
 
-      // Try to parse as date (common formats: YYYY-MM-DD, YYYY/MM/DD, DD-MM-YYYY, etc.)
-      const datePatterns = [
-        /^\d{4}-\d{2}-\d{2}$/,          // YYYY-MM-DD
-        /^\d{4}\/\d{2}\/\d{2}$/,        // YYYY/MM/DD
-        /^\d{2}-\d{2}-\d{4}$/,          // DD-MM-YYYY
-        /^\d{2}\/\d{2}\/\d{4}$/,        // DD/MM/YYYY
-        /^\d{8}$/,                       // YYYYMMDD
-      ];
-      
-      const looksLikeDate = datePatterns.some(pattern => pattern.test(value.trim()));
+      // SECOND: Check if it's a date pattern
+      const looksLikeDate = datePatterns.some(pattern => pattern.test(trimmedValue));
       if (looksLikeDate) {
-        const date = new Date(value);
-        if (!isNaN(date.getTime())) {
+        // Strip suffix if present (e.g., "26/02/02-1" → "26/02/02")
+        let dateStr = trimmedValue;
+        const suffixMatch = trimmedValue.match(/^(.+)-\d+$/);
+        if (suffixMatch) {
+          dateStr = suffixMatch[1];
+        }
+
+        // Try to parse the date
+        // Handle YY/MM/DD format (assume 20YY for years 00-99)
+        let date: Date | null = null;
+
+        if (/^\d{2}\/\d{2}\/\d{2}$/.test(dateStr)) {
+          // YY/MM/DD format - parse manually
+          const parts = dateStr.split('/');
+          const year = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10);
+          const day = parseInt(parts[2], 10);
+
+          // Assume 20YY for years 00-99
+          const fullYear = year < 100 ? 2000 + year : year;
+          date = new Date(fullYear, month - 1, day);
+        } else {
+          // Standard date formats
+          date = new Date(dateStr);
+        }
+
+        if (date && !isNaN(date.getTime())) {
           hasDateStrings++;
+          allNumeric = false;
+          allInteger = false;
         } else {
           allDate = false;
         }
+        continue;
+      }
+
+      // THIRD: Try to parse as number (handle commas for numeric columns)
+      // Remove commas: "1,234,567" → "1234567"
+      const withoutCommas = trimmedValue.replace(/,/g, '');
+      const num = parseFloat(withoutCommas);
+
+      if (!isNaN(num) && /^-?[\d,]+(\.\d+)?$/.test(trimmedValue)) {
+        // It's a valid number (possibly with commas)
+        if (!Number.isInteger(num)) {
+          allInteger = false;
+        }
+        allDate = false;
       } else {
+        // Can't parse as number
+        allNumeric = false;
+        allInteger = false;
         allDate = false;
       }
     } else {
@@ -118,11 +173,16 @@ export function detectColumnType(values: any[]): ColumnType {
   }
 
   // Determine type based on analysis
+  // If we found dashes that aren't dates (like "123-45-67890"), it's TEXT
+  if (hasNonDateDashes) {
+    return 'TEXT';
+  }
+
   // If we have ANY Date objects or date strings, it's a DATE column
   if (hasDateObjects > 0 || hasDateStrings > 0) {
     return 'DATE';
   }
-  
+
   if (allDate) return 'DATE';
   if (allInteger) return 'INTEGER';
   if (allNumeric) return 'REAL';
@@ -152,10 +212,179 @@ function rowHasMergedCells(rowIndex: number, merges: any[] | undefined): boolean
 }
 
 /**
- * Check if a row is likely a summary/total row
- * Now primarily uses merged cell detection as the most reliable indicator
+ * Quick check if data looks like a pivot table (for use during parsing)
+ * Checks if first 1-2 columns have many empty cells with data in other columns
  */
-function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[]): boolean {
+function isPivotTableQuickCheck(recentRows: any[], headers: string[]): boolean {
+  if (recentRows.length < 3 || headers.length < 2) {
+    return false;
+  }
+
+  // Check first 1-2 columns for empty cells
+  const maxCategoryColumns = Math.min(2, headers.length - 1);
+
+  for (let numCategoryCols = 1; numCategoryCols <= maxCategoryColumns; numCategoryCols++) {
+    let emptyCount = 0;
+    let subtotalCount = 0;
+
+    for (const row of recentRows) {
+      // Count empty cells in category columns
+      for (let col = 0; col < numCategoryCols; col++) {
+        const header = headers[col];
+        const value = row[header];
+        if (value === null || value === undefined || value === '') {
+          emptyCount++;
+          break; // Count once per row
+        }
+      }
+
+      // Count subtotal rows
+      const firstColValue = row[headers[0]];
+      if (typeof firstColValue === 'string' && firstColValue.trim().endsWith(' 계')) {
+        subtotalCount++;
+      }
+    }
+
+    const emptyRatio = emptyCount / recentRows.length;
+
+    // Quick heuristic: 30%+ empty + subtotals = likely pivot table
+    if (emptyRatio >= 0.3 && subtotalCount >= 1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Detect if rows have pivot table structure (hierarchical with empty cells for grouping)
+ * Returns the number of category columns (usually 1-2) or 0 if not a pivot table
+ */
+function detectPivotTableStructure(rows: any[], headers: string[]): number {
+  if (rows.length < 3 || headers.length < 2) {
+    return 0; // Not enough data to determine
+  }
+
+  // Check first 1-2 columns for pivot table characteristics
+  const maxCategoryColumns = Math.min(2, headers.length - 1);
+
+  for (let numCategoryCols = 1; numCategoryCols <= maxCategoryColumns; numCategoryCols++) {
+    let emptyCount = 0;
+    let subtotalCount = 0;
+    let hasDataInOtherColumns = true;
+
+    // Analyze the first numCategoryCols columns
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
+      // Count empty cells in category columns
+      let hasEmptyInCategoryCol = false;
+      for (let col = 0; col < numCategoryCols; col++) {
+        const header = headers[col];
+        const value = row[header];
+        if (value === null || value === undefined || value === '') {
+          hasEmptyInCategoryCol = true;
+          emptyCount++;
+        }
+      }
+
+      // Check if row has data in value columns (beyond category columns)
+      if (hasEmptyInCategoryCol) {
+        let hasData = false;
+        for (let col = numCategoryCols; col < headers.length; col++) {
+          const header = headers[col];
+          const value = row[header];
+          if (value !== null && value !== undefined && value !== '') {
+            hasData = true;
+            break;
+          }
+        }
+        if (!hasData) {
+          hasDataInOtherColumns = false;
+        }
+      }
+
+      // Count subtotal rows (rows ending with " 계")
+      const firstColValue = row[headers[0]];
+      if (typeof firstColValue === 'string' && firstColValue.trim().endsWith(' 계')) {
+        subtotalCount++;
+      }
+    }
+
+    // Pivot table characteristics:
+    // 1. Has empty cells in category columns (at least 20% of rows)
+    // 2. Has subtotal rows (at least 1)
+    // 3. Empty category cells still have data in other columns
+    const emptyRatio = emptyCount / (rows.length * numCategoryCols);
+
+    if (emptyRatio >= 0.2 && subtotalCount >= 1 && hasDataInOtherColumns) {
+      console.log(`📊 Detected pivot table structure with ${numCategoryCols} category column(s)`);
+      console.log(`   Empty cells: ${emptyCount} (${(emptyRatio * 100).toFixed(1)}%)`);
+      console.log(`   Subtotal rows: ${subtotalCount}`);
+      return numCategoryCols;
+    }
+  }
+
+  return 0; // Not a pivot table
+}
+
+/**
+ * Forward-fill empty cells in category columns (for pivot tables)
+ * Fills empty cells with the most recent non-empty value from above
+ */
+function forwardFillCategoryColumns(rows: any[], headers: string[], numCategoryColumns: number): any[] {
+  if (numCategoryColumns === 0 || rows.length === 0) {
+    return rows;
+  }
+
+  console.log(`🔄 Forward-filling ${numCategoryColumns} category column(s)`);
+
+  const filledRows = [];
+  const lastValues: string[] = new Array(numCategoryColumns).fill('');
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = { ...rows[i] };
+
+    // Check if this is a subtotal row (ends with " 계")
+    const firstColValue = row[headers[0]];
+    const isSubtotal = typeof firstColValue === 'string' && firstColValue.trim().endsWith(' 계');
+
+    // Forward-fill each category column
+    for (let col = 0; col < numCategoryColumns; col++) {
+      const header = headers[col];
+      const value = row[header];
+
+      if (value === null || value === undefined || value === '') {
+        // Empty cell - use last value (unless it's a subtotal row)
+        if (!isSubtotal && lastValues[col]) {
+          row[header] = lastValues[col];
+        }
+      } else {
+        // Non-empty cell - update last value
+        lastValues[col] = String(value).trim();
+      }
+    }
+
+    // Reset tracking after subtotal rows
+    if (isSubtotal) {
+      lastValues.fill('');
+    }
+
+    filledRows.push(row);
+  }
+
+  console.log(`   ✅ Forward-fill complete for ${filledRows.length} rows`);
+  return filledRows;
+}
+
+/**
+ * Check if a row is likely a summary/total row that should be skipped
+ * Now primarily uses merged cell detection as the most reliable indicator
+ *
+ * Note: Pivot table subtotal rows (e.g., "미수금 계") are NOT considered skip-worthy
+ * because they're part of the hierarchical data structure
+ */
+function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[], isPivotTable: boolean = false): boolean {
   // Primary detection: Check for merged cells (most reliable)
   if (rowIndex !== undefined && merges !== undefined) {
     if (rowHasMergedCells(rowIndex, merges)) {
@@ -163,7 +392,25 @@ function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[]): boolean 
     }
   }
 
-  // Fallback: Keyword-based detection for cases without merged cells
+  // For pivot tables, don't skip subtotal rows (they're part of the data hierarchy)
+  if (isPivotTable) {
+    // Only skip grand total rows like "총합계", "합계" (standalone)
+    const values = Object.values(rowData);
+    const firstNonNull = values.find(v => v !== null && v !== undefined && v !== '');
+
+    if (typeof firstNonNull === 'string') {
+      const trimmedVal = firstNonNull.trim();
+      // Only skip if it's EXACTLY a grand total keyword (not "Category 계")
+      if (trimmedVal === '총합계' || trimmedVal === '합계' || trimmedVal === '소계' ||
+          trimmedVal === 'Total' || trimmedVal === 'Grand Total') {
+        return true;
+      }
+    }
+
+    return false; // Keep subtotal rows in pivot tables
+  }
+
+  // Non-pivot table: Original behavior - skip all summary rows
   const summaryKeywords = ['total', 'grand total', 'sum', 'average', '합계', '총합계', '소계', '평균', '계'];
 
   // Check values in the row
@@ -203,43 +450,91 @@ export function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] 
 
   return headers.map((header) => {
     const values = sampleRows.map((row) => row[header]);
-    return detectColumnType(values);
+    return detectColumnType(values, header);
   });
+}
+
+/**
+ * Check if column name suggests it's a date column
+ */
+function isDateColumnName(columnName: string): boolean {
+  const lowerName = columnName.toLowerCase();
+  const dateKeywords = [
+    'date', 'day', 'time', 'datetime',
+    '일자', '날짜', '일시', '시간', '거래일', '발생일', '등록일', '작성일',
+    '월_일', // month_day format (sanitized)
+    '월/일', // month/day format (original)
+    '월', // month (Korean)
+  ];
+
+  // Check if it includes any keyword
+  const hasKeyword = dateKeywords.some(keyword => lowerName.includes(keyword));
+
+  if (hasKeyword) {
+    console.log(`✓ Column "${columnName}" recognized as date column`);
+  }
+
+  return hasKeyword;
 }
 
 /**
  * Detect if a column contains "date + number" pattern (e.g., "2026/02/20 -8")
  * Returns split suggestion if pattern is detected
+ *
+ * IMPORTANT: Only suggests split if column name indicates it's a date column
  */
 export function detectDateWithNumberPattern(
   columnName: string,
   values: any[]
 ): ColumnSplitSuggestion | null {
+  // FIRST: Check if column name suggests it's a date column
+  // If not, don't even check the data - avoid false positives
+  if (!isDateColumnName(columnName)) {
+    return null;
+  }
+
   const validValues = values.filter((v) => v !== null && v !== undefined && v !== '');
 
   if (validValues.length === 0) {
     return null;
   }
 
-  // Pattern: Date + space + optional minus + number
-  // Examples: "2026/02/20 -8", "2024-01-15 3", "2026/02/20 -9"
-  // Note: We capture the minus sign but will parse as positive number
-  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
+  // Pattern: Date + optional space + optional minus + number
+  // Examples: "2026/02/20 -8", "2024-01-15 3", "2026/01/29-7", "26/02/02-1"
+  // Note: Space is optional, we capture the minus sign but will parse as positive number
+  // Support both YYYY and YY year formats
+  const dateWithNumberPattern4Digit = /^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/; // YYYY-MM-DD-N
+  const dateWithNumberPattern2Digit = /^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;  // YY-MM-DD-N
 
   let matchCount = 0;
   let totalNonEmpty = 0;
 
+  // Debug: Show first 5 values for testing
+  const sampleValues = validValues.slice(0, 5);
+  console.log(`🔍 Checking column "${columnName}" for split pattern. Sample values:`, sampleValues);
+
   for (const value of validValues) {
     if (typeof value === 'string') {
       totalNonEmpty++;
-      if (dateWithNumberPattern.test(value.trim())) {
+      const trimmed = value.trim();
+      const matches4 = dateWithNumberPattern4Digit.test(trimmed);
+      const matches2 = dateWithNumberPattern2Digit.test(trimmed);
+
+      if (matches4 || matches2) {
         matchCount++;
+      } else if (totalNonEmpty <= 5) {
+        // Debug first 5 non-matches
+        console.log(`   ✗ "${trimmed}" → No match (4-digit: ${matches4}, 2-digit: ${matches2})`);
       }
     }
   }
 
+  console.log(`📊 Pattern check results: ${matchCount}/${totalNonEmpty} values matched (${((matchCount/totalNonEmpty)*100).toFixed(1)}%)`);
+
+
   // If 80%+ of non-empty values match the pattern, suggest split
   if (totalNonEmpty > 0 && matchCount / totalNonEmpty >= 0.8) {
+    console.log(`💡 Column "${columnName}" matches date-with-number pattern (${matchCount}/${totalNonEmpty} rows)`);
     return {
       originalColumn: columnName,
       suggestedColumns: [
@@ -284,6 +579,185 @@ export function detectSplitSuggestions(
   });
 
   return suggestions;
+}
+
+/**
+ * Detect data islands in a spreadsheet
+ * Islands are separate tables within one sheet, identified by:
+ * - Title pattern: "number space dot text" (e.g., "3. 자금의 증가")
+ * - Headers on the next non-empty row
+ * - Data rows until summary row (합계, 소계, etc.)
+ */
+export function detectDataIslands(
+  allRows: any[][],
+  rawData: any[][],
+  merges: any[] | undefined,
+  skipRows: number = 0
+): DataIsland[] {
+  const islands: DataIsland[] = [];
+
+  // Title pattern: number + space + dot + space + text
+  // Examples: "3. 자금의 증가", "1. 매출현황"
+  const titlePattern = /^\d+\s+\.\s+(.+)$/;
+
+  let i = skipRows;
+  while (i < allRows.length) {
+    const row = allRows[i];
+    if (!row || row.length === 0) {
+      i++;
+      continue;
+    }
+
+    // Check if first cell matches title pattern
+    const firstCell = row[0];
+    if (typeof firstCell === 'string') {
+      const titleMatch = firstCell.trim().match(titlePattern);
+
+      if (titleMatch) {
+        const title = firstCell.trim();
+        const titleRowIndex = i;
+
+        console.log(`🏝️  Found island title at row ${titleRowIndex + 1}: "${title}"`);
+
+        // Find header row (next non-empty row)
+        let headerRowIndex = -1;
+        for (let j = i + 1; j < allRows.length; j++) {
+          const headerRow = allRows[j];
+          if (headerRow && headerRow.some((cell: any) => cell !== null && cell !== undefined && cell !== '')) {
+            headerRowIndex = j;
+            break;
+          }
+        }
+
+        if (headerRowIndex === -1) {
+          console.log(`   ⚠️  No headers found for island "${title}"`);
+          i++;
+          continue;
+        }
+
+        // Extract headers
+        const headerValues = allRows[headerRowIndex];
+        const headers = headerValues.map((h: any, idx: number) => {
+          const headerValue = h !== null && h !== undefined ? String(h).trim() : `Column${idx + 1}`;
+          return sanitizeColumnName(headerValue);
+        });
+
+        // Handle duplicate headers
+        const uniqueHeaders: string[] = [];
+        const headerCounts: Record<string, number> = {};
+        headers.forEach((header: string) => {
+          if (headerCounts[header]) {
+            headerCounts[header]++;
+            uniqueHeaders.push(`${header}${headerCounts[header]}`);
+          } else {
+            headerCounts[header] = 1;
+            uniqueHeaders.push(header);
+          }
+        });
+
+        // Find data rows (until summary row)
+        const dataStartIndex = headerRowIndex + 1;
+        let dataEndIndex = dataStartIndex;
+        const islandRows: any[] = [];
+        let islandIsPivotTable = false; // Will be determined after collecting some rows
+
+        for (let j = dataStartIndex; j < allRows.length; j++) {
+          const dataRow = allRows[j];
+          const rawRow = rawData[j] || [];
+
+          // Build row object
+          const rowData: any = {};
+          uniqueHeaders.forEach((header, idx) => {
+            const cellValue = dataRow[idx];
+            const rawValue = rawRow[idx];
+
+            // Prefer raw value if it's a Date object
+            if (rawValue instanceof Date) {
+              rowData[header] = rawValue;
+            } else if (cellValue === null || cellValue === undefined) {
+              rowData[header] = null;
+            } else {
+              rowData[header] = cellValue;
+            }
+          });
+
+          // Check if row has data
+          const hasData = Object.values(rowData).some(
+            (v) => v !== null && v !== undefined && v !== ''
+          );
+
+          if (!hasData) {
+            // Empty row might signal end of island
+            dataEndIndex = j;
+            break;
+          }
+
+          // Quick pivot table check after collecting ~10 rows
+          if (islandRows.length === 10) {
+            islandIsPivotTable = isPivotTableQuickCheck(islandRows, uniqueHeaders);
+            if (islandIsPivotTable) {
+              console.log(`   📊 Island "${title}" appears to be a pivot table - keeping subtotal rows`);
+            }
+          }
+
+          // Check if it's a summary row
+          // For pivot tables, keep subtotal rows (they're part of the hierarchy)
+          if (isSummaryRow(rowData, j, merges, islandIsPivotTable)) {
+            console.log(`   📊 Found summary row at ${j + 1} for island "${title}"`);
+            dataEndIndex = j;
+            break;
+          }
+
+          // Check if next row is a new island title
+          const nextRow = allRows[j + 1];
+          if (nextRow && nextRow[0] && typeof nextRow[0] === 'string') {
+            if (titlePattern.test(nextRow[0].trim())) {
+              console.log(`   🏝️  Next island detected at row ${j + 2}`);
+              dataEndIndex = j + 1;
+              break;
+            }
+          }
+
+          islandRows.push(rowData);
+        }
+
+        // Only add island if it has data
+        if (islandRows.length > 0) {
+          // Detect and handle pivot table structure for this island
+          const numCategoryColumns = detectPivotTableStructure(islandRows, uniqueHeaders);
+          if (numCategoryColumns > 0) {
+            console.log(`   📊 Island "${title}" is a pivot table with ${numCategoryColumns} category column(s)`);
+            islandRows = forwardFillCategoryColumns(islandRows, uniqueHeaders, numCategoryColumns);
+          }
+
+          const detectedTypes = detectColumnTypes(islandRows, uniqueHeaders);
+
+          islands.push({
+            title,
+            titleRowIndex,
+            headerRowIndex,
+            dataStartIndex,
+            dataEndIndex,
+            headers: uniqueHeaders,
+            rows: islandRows,
+            detectedTypes,
+            rowCount: islandRows.length,
+          });
+
+          console.log(`   ✅ Island "${title}": ${islandRows.length} rows, ${uniqueHeaders.length} columns`);
+        }
+
+        // Continue from where this island ended
+        i = dataEndIndex;
+      } else {
+        i++;
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return islands;
 }
 
 /**
@@ -370,6 +844,8 @@ export async function parseExcelFile(
 
     // Extract data rows (skip top rows and bottom rows)
     const rows: any[] = [];
+    let isPivotTable = false; // Will be determined after collecting some rows
+
     for (let i = dataStartIndex; i < dataEndIndex && i < allRows.length; i++) {
       const rowData: any = {};
       const values = allRows[i];
@@ -405,9 +881,18 @@ export async function parseExcelFile(
       );
 
       if (hasData) {
+        // Quick pivot table check after collecting ~15 rows
+        if (rows.length === 15) {
+          isPivotTable = isPivotTableQuickCheck(rows, headers);
+          if (isPivotTable) {
+            console.log('📊 Quick check: This appears to be a pivot table - keeping subtotal rows');
+          }
+        }
+
         // Skip summary rows (totals, etc.)
         // Pass row index and merge info for merged cell detection
-        if (!isSummaryRow(rowData, i, merges)) {
+        // For pivot tables, keep subtotal rows (they're part of the hierarchy)
+        if (!isSummaryRow(rowData, i, merges, isPivotTable)) {
           rows.push(rowData);
         } else {
           console.log(`⏭️  Skipping summary row ${i + 1}:`, Object.values(rowData).slice(0, 3).join(' | '));
@@ -416,6 +901,12 @@ export async function parseExcelFile(
     }
 
     if (headers.length > 0 && rows.length > 0) {
+      // Detect and handle pivot table structure
+      const numCategoryColumns = detectPivotTableStructure(rows, headers);
+      if (numCategoryColumns > 0) {
+        rows = forwardFillCategoryColumns(rows, headers, numCategoryColumns);
+      }
+
       const detectedTypes = detectColumnTypes(rows, headers);
       const splitSuggestions = detectSplitSuggestions(rows, headers);
 
@@ -426,12 +917,23 @@ export async function parseExcelFile(
         });
       }
 
+      // Detect data islands
+      const detectedIslands = detectDataIslands(allRows, rawData, merges, skipRows);
+
+      if (detectedIslands.length > 0) {
+        console.log(`🏝️  Found ${detectedIslands.length} data island(s) in sheet "${sheetName}"`);
+        detectedIslands.forEach((island) => {
+          console.log(`   "${island.title}": ${island.rowCount} rows`);
+        });
+      }
+
       sheets.push({
         name: sheetName,
         headers,
         rows,
         detectedTypes,
         splitSuggestions: splitSuggestions.length > 0 ? splitSuggestions : undefined,
+        detectedIslands: detectedIslands.length > 0 ? detectedIslands : undefined,
       });
     }
   });
@@ -508,14 +1010,20 @@ export function applySplitColumn(
   }
 
   // Pattern for splitting - ignores minus sign, captures only the digits
-  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
+  // Space is optional to handle both "2026/01/30 -5" and "2026/01/29-7"
+  // Support both YYYY and YY year formats
+  const dateWithNumberPattern4Digit = /^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/; // YYYY-MM-DD-N
+  const dateWithNumberPattern2Digit = /^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;  // YY-MM-DD-N
 
   // Create new headers (replace original with two new columns)
   const newHeaders = [...sheetData.headers];
   newHeaders.splice(originalIndex, 1, newColumnNames.date, newColumnNames.number);
 
   // Create new rows with split data
-  const newRows = sheetData.rows.map((row) => {
+  let splitSuccessCount = 0;
+  let splitFailCount = 0;
+
+  const newRows = sheetData.rows.map((row, idx) => {
     const newRow = { ...row };
     const originalValue = row[originalColumn];
 
@@ -523,25 +1031,48 @@ export function applySplitColumn(
     delete newRow[originalColumn];
 
     if (typeof originalValue === 'string') {
-      const match = originalValue.trim().match(dateWithNumberPattern);
+      const trimmed = originalValue.trim();
+      // Try 4-digit year pattern first, then 2-digit
+      let match = trimmed.match(dateWithNumberPattern4Digit);
+      let matchType = '4-digit';
+
+      if (!match) {
+        match = trimmed.match(dateWithNumberPattern2Digit);
+        matchType = '2-digit';
+      }
 
       if (match) {
         // Successfully split - parse as positive number
         newRow[newColumnNames.date] = match[1]; // Date part
         newRow[newColumnNames.number] = parseInt(match[2], 10); // Number part (always positive)
+        splitSuccessCount++;
+
+        // Debug first few splits
+        if (idx < 3) {
+          console.log(`✂️  Split row ${idx}: "${trimmed}" → date:"${match[1]}", number:${match[2]} (${matchType})`);
+        }
       } else {
         // Fallback if pattern doesn't match
         newRow[newColumnNames.date] = originalValue;
         newRow[newColumnNames.number] = null;
+        splitFailCount++;
+
+        // Debug first few failures
+        if (idx < 3) {
+          console.log(`✗ Split failed row ${idx}: "${trimmed}" → No match`);
+        }
       }
     } else {
       // Non-string value, keep as-is in date column
       newRow[newColumnNames.date] = originalValue;
       newRow[newColumnNames.number] = null;
+      splitFailCount++;
     }
 
     return newRow;
   });
+
+  console.log(`✂️  Split complete: ${splitSuccessCount} success, ${splitFailCount} failed`);
 
   // Update detected types (replace original type with two new types)
   const newDetectedTypes = [...sheetData.detectedTypes];

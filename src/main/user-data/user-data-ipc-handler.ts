@@ -83,7 +83,22 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      const selectedSheet = parsedData.sheets[config.sheetIndex];
+      let selectedSheet = parsedData.sheets[config.sheetIndex];
+
+      // Apply column splits if they were applied in the frontend
+      if (config.appliedSplits && config.appliedSplits.length > 0) {
+        console.log(`✂️  Applying ${config.appliedSplits.length} column split(s) to backend data`);
+
+        config.appliedSplits.forEach((split) => {
+          const { applySplitColumn } = require('./excel-parser');
+          selectedSheet = applySplitColumn(selectedSheet, split.originalColumn, {
+            date: split.dateColumn,
+            number: split.numberColumn,
+          });
+          console.log(`   ✂️  Split "${split.originalColumn}" → ["${split.dateColumn}", "${split.numberColumn}"]`);
+        });
+      }
+
       const fileName = path.basename(config.filePath);
 
       // Build column schema based on columnMappings and mergeConfig
@@ -211,7 +226,18 @@ export function registerUserDataIPCHandlers(): void {
         // Debug: Log received unique key columns
         console.log(`🔧 Received uniqueKeyColumns for table creation: [${uniqueKeyColumns?.join(', ') || 'none'}] (count: ${uniqueKeyColumns?.length || 0})`);
         console.log(`🔧 Received duplicateAction: ${duplicateAction}`);
-        
+        console.log(`🔧 Add timestamp column: ${config.addTimestamp ? 'YES' : 'NO'}`);
+
+        // Add imported_at column if requested
+        if (config.addTimestamp) {
+          schema.push({
+            name: 'imported_at',
+            type: 'TEXT', // Store as ISO string in SQLite
+            notNull: false,
+          });
+          console.log('✅ Added imported_at timestamp column to schema');
+        }
+
         // Create table from schema with duplicate detection settings
         table = userDataManager.createTableFromSchema(config.displayName, schema, {
           description: config.description,
@@ -230,6 +256,7 @@ export function registerUserDataIPCHandlers(): void {
         });
 
         // Prepare rows for insertion - map original headers to SQL names with merge support
+        const currentTimestamp = new Date().toISOString();
         const rowsToInsert = selectedSheet.rows.map((row) => {
           const mappedRow: any = {};
 
@@ -269,6 +296,11 @@ export function registerUserDataIPCHandlers(): void {
               const sanitizedName = sanitizeColumnName(originalHeader);
               mappedRow[sanitizedName] = row[originalHeader];
             });
+          }
+
+          // Add timestamp if requested
+          if (config.addTimestamp) {
+            mappedRow['imported_at'] = currentTimestamp;
           }
 
           return mappedRow;
@@ -461,6 +493,118 @@ export function registerUserDataIPCHandlers(): void {
   });
 
   /**
+   * Import pre-parsed island data as a new table
+   */
+  ipcMain.handle('user-data:import-island', async (event, config: {
+    tableName: string;
+    displayName: string;
+    description?: string;
+    headers: string[];
+    rows: any[];
+    detectedTypes: string[];
+    uniqueKeyColumns?: string[];
+    duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+
+      // Build column schema from headers and detected types
+      const schema: ColumnSchema[] = config.headers.map((header, idx) => ({
+        name: header,
+        type: config.detectedTypes[idx] as ColumnType,
+        notNull: false,
+      }));
+
+      // Ensure table name is sanitized
+      const sanitizedTableName = sanitizeTableName(config.tableName);
+
+      // Check if table already exists
+      const existingTable = userDataManager.getTableByName(sanitizedTableName);
+      if (existingTable) {
+        return {
+          success: false,
+          error: `A table with name "${sanitizedTableName}" already exists`,
+        };
+      }
+
+      console.log(`📦 Creating island table "${sanitizedTableName}" with ${config.rows.length} rows`);
+
+      // Create table
+      const table = userDataManager.createTableFromSchema(config.displayName, schema, {
+        description: config.description,
+        uniqueKeyColumns: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
+          ? config.uniqueKeyColumns
+          : undefined,
+        duplicateAction: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
+          ? config.duplicateAction
+          : undefined,
+      });
+
+      console.log(`✅ Island table created: ${table.id}`);
+
+      // Create import operation
+      const importOperation = userDataManager.createImportOperation({
+        tableId: table.id,
+        fileName: 'island_import',
+      });
+
+      try {
+        // Insert rows
+        const insertResult = userDataManager.insertRows(table.id, config.rows);
+
+        console.log(`📊 Island import results: ${insertResult.inserted} inserted, ${insertResult.skipped} skipped`);
+
+        // Complete import operation
+        userDataManager.completeImportOperation(importOperation.id, {
+          rowsImported: insertResult.inserted,
+          rowsSkipped: insertResult.skipped,
+          errorMessage: insertResult.errors.length > 0
+            ? insertResult.errors.slice(0, 5).join('; ')
+            : undefined,
+        });
+
+        return {
+          success: true,
+          data: {
+            table,
+            importOperation: {
+              ...importOperation,
+              rowsImported: insertResult.inserted,
+              rowsSkipped: insertResult.skipped,
+            },
+          },
+        };
+      } catch (error) {
+        console.error('Island import failed:', error);
+
+        // Complete import operation with error
+        userDataManager.completeImportOperation(importOperation.id, {
+          rowsImported: 0,
+          rowsSkipped: 0,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+
+        // Clean up: Drop the table
+        try {
+          manager.getUserDataDatabase().exec(`DROP TABLE IF EXISTS "${table.tableName}"`);
+          manager.getUserDataDatabase().prepare('DELETE FROM user_tables WHERE id = ?').run(table.id);
+        } catch (cleanupError) {
+          console.error('Error during cleanup:', cleanupError);
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error importing island:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to import island',
+      };
+    }
+  });
+
+  /**
    * Sync Excel data to existing table
    */
   ipcMain.handle('user-data:sync-to-existing-table', async (event, config: {
@@ -473,6 +617,7 @@ export function registerUserDataIPCHandlers(): void {
     skipBottomRows?: number;
     uniqueKeyColumns?: string[];
     duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    addTimestamp?: boolean;
   }) => {
     try {
       const manager = getSQLiteManager();
@@ -505,6 +650,23 @@ export function registerUserDataIPCHandlers(): void {
       const selectedSheet = parsedData.sheets[config.sheetIndex];
       const fileName = path.basename(config.filePath);
 
+      // Add imported_at column if requested and it doesn't exist
+      if (config.addTimestamp) {
+        const hasImportedAt = table.schema.some(col => col.name === 'imported_at');
+        if (!hasImportedAt) {
+          console.log('⏰ Adding imported_at column to existing table');
+          const db = manager.getUserDataDatabase();
+          db.exec(`ALTER TABLE "${table.tableName}" ADD COLUMN "imported_at" TEXT`);
+
+          // Update table metadata
+          const newSchema = [...table.schema, { name: 'imported_at', type: 'TEXT' as any, notNull: false }];
+          db.prepare(`UPDATE user_tables SET schema_json = ?, column_count = ? WHERE id = ?`)
+            .run(JSON.stringify(newSchema), newSchema.length, config.tableId);
+
+          console.log('✅ imported_at column added successfully');
+        }
+      }
+
       // Create import operation
       const importOperation = userDataManager.createImportOperation({
         tableId: config.tableId,
@@ -513,6 +675,7 @@ export function registerUserDataIPCHandlers(): void {
 
       try {
         // Map Excel rows to table columns using the same robust logic as regular import
+        const currentTimestamp = new Date().toISOString();
         const rowsToInsert = selectedSheet.rows.map((row) => {
           const mappedRow: any = {};
 
@@ -536,6 +699,11 @@ export function registerUserDataIPCHandlers(): void {
             Object.entries(config.columnMappings).forEach(([excelCol, tableCol]) => {
               mappedRow[tableCol] = row[excelCol];
             });
+          }
+
+          // Add timestamp if requested
+          if (config.addTimestamp) {
+            mappedRow['imported_at'] = currentTimestamp;
           }
 
           return mappedRow;

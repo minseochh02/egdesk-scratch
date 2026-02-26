@@ -69,7 +69,18 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
   if (!columnNames.includes('duplicate_action')) {
     db.exec(`ALTER TABLE user_tables ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range'))`);
     console.log('✅ Added duplicate_action column to user_tables');
+  } else {
+    // Update CHECK constraint to include new action (SQLite requires recreating the table for this)
+    // For now, we'll skip the constraint update - it will only validate on new rows
+    // The CHECK constraint will be updated when a new table is created
   }
+
+  // Note: replace_column is deprecated (replaced by unique key column selection + skip/update toggle)
+  // Keeping this commented for reference, but no longer adding to new installations
+  // if (!columnNames.includes('replace_column')) {
+  //   db.exec(`ALTER TABLE user_tables ADD COLUMN replace_column TEXT`);
+  //   console.log('✅ Added replace_column column to user_tables');
+  // }
 
   console.log('✅ User Data database schema initialized');
 }

@@ -52,6 +52,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
   const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null);
+  const [appliedSplitsState, setAppliedSplitsState] = useState<Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>>([]);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [existingTableColumnMappings, setExistingTableColumnMappings] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +68,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
     duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    addTimestamp?: boolean;
   }>({
     uniqueKeyColumns: [],
     duplicateAction: 'skip',
+    addTimestamp: false,
   });
   const [acceptedSplits, setAcceptedSplits] = useState<Set<string>>(new Set());
 
@@ -191,6 +194,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
     // Apply accepted splits
     let updatedSheet = currentSheet;
+    const splits: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }> = [];
 
     acceptedSplits.forEach((originalColumn) => {
       const suggestion = currentSheet.splitSuggestions?.find(
@@ -205,11 +209,21 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
           const dateColName = suggestion.suggestedColumns[0].name;
           const numberColName = suggestion.suggestedColumns[1].name;
 
+          // Track this split
+          splits.push({
+            originalColumn,
+            dateColumn: dateColName,
+            numberColumn: numberColName,
+          });
+
           // Update headers
           newHeaders.splice(originalIndex, 1, dateColName, numberColName);
 
-          // Update rows - pattern ignores minus sign
-          const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
+          // Update rows - pattern ignores minus sign, space is optional
+          // Support both YYYY and YY year formats
+          const dateWithNumberPattern4Digit = /^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
+          const dateWithNumberPattern2Digit = /^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
+
           const newRows = updatedSheet.rows.map((row: any) => {
             const newRow = { ...row };
             const originalValue = row[originalColumn];
@@ -217,7 +231,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             delete newRow[originalColumn];
 
             if (typeof originalValue === 'string') {
-              const match = originalValue.trim().match(dateWithNumberPattern);
+              const trimmed = originalValue.trim();
+              // Try 4-digit year pattern first, then 2-digit
+              let match = trimmed.match(dateWithNumberPattern4Digit);
+              if (!match) {
+                match = trimmed.match(dateWithNumberPattern2Digit);
+              }
+
               if (match) {
                 newRow[dateColName] = match[1];
                 newRow[numberColName] = parseInt(match[2], 10); // Always positive
@@ -263,6 +283,9 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       types[header] = updatedSheet.detectedTypes[idx];
     });
     setColumnTypes(types);
+
+    // Save applied splits
+    setAppliedSplitsState(splits);
 
     setCurrentStep('import-mode');
   };
@@ -384,14 +407,17 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             columnMappings: columnMappings || undefined,
             columnTypes: columnTypes || undefined,
             mergeConfig: mergeConfig || undefined,
+            appliedSplits: appliedSplitsState.length > 0 ? appliedSplitsState : undefined,
             headerRow,
             skipBottomRows,
             uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
               ? duplicateDetectionSettings.uniqueKeyColumns
               : undefined,
-            duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' || duplicateDetectionSettings.uniqueKeyColumns.length > 0
+            duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' ||
+              duplicateDetectionSettings.uniqueKeyColumns.length > 0
               ? duplicateDetectionSettings.duplicateAction
               : undefined,
+            addTimestamp: duplicateDetectionSettings.addTimestamp,
           });
 
           setImportProgress({
@@ -418,6 +444,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             skipBottomRows,
             uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns,
             duplicateAction: duplicateDetectionSettings.duplicateAction,
+            addTimestamp: duplicateDetectionSettings.addTimestamp,
           });
 
           setImportProgress({
@@ -468,9 +495,15 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
               uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
                 ? duplicateDetectionSettings.uniqueKeyColumns
                 : undefined,
-              duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' || duplicateDetectionSettings.uniqueKeyColumns.length > 0
+              duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' ||
+                duplicateDetectionSettings.duplicateAction === 'replace-by-column' ||
+                duplicateDetectionSettings.uniqueKeyColumns.length > 0
                 ? duplicateDetectionSettings.duplicateAction
                 : undefined,
+              replaceColumn: duplicateDetectionSettings.duplicateAction === 'replace-by-column'
+                ? duplicateDetectionSettings.replaceColumn
+                : undefined,
+              addTimestamp: duplicateDetectionSettings.addTimestamp,
               fileAction: deleteAfterImport ? 'delete' : (archiveAfterImport ? 'archive' : 'keep'),
               autoSyncEnabled: enableAutoSync,
             });
@@ -1020,9 +1053,12 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                       }}
                     >
                       {sampleValues.map((val: any, idx: number) => {
-                        const match = String(val)
-                          .trim()
-                          .match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/);
+                        const trimmed = String(val).trim();
+                        // Try 4-digit year pattern first, then 2-digit
+                        let match = trimmed.match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/);
+                        if (!match) {
+                          match = trimmed.match(/^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/);
+                        }
                         return (
                           <div key={idx} style={{ marginBottom: '4px' }}>
                             "{val}" →{' '}
@@ -1126,6 +1162,100 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
           </div>
         )}
 
+        {/* Add Import Timestamp Option */}
+        <div style={{
+          marginBottom: '24px',
+          padding: '16px',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '8px',
+          border: '1px solid #e0e0e0'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <input
+              type="checkbox"
+              id="add-timestamp-column"
+              checked={duplicateDetectionSettings.addTimestamp || false}
+              onChange={(e) => setDuplicateDetectionSettings({
+                ...duplicateDetectionSettings,
+                addTimestamp: e.target.checked
+              })}
+              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+            />
+            <label
+              htmlFor="add-timestamp-column"
+              style={{ fontWeight: 600, fontSize: '15px', cursor: 'pointer', margin: 0 }}
+            >
+              ⏰ Add Import Timestamp Column
+            </label>
+          </div>
+
+          {duplicateDetectionSettings.addTimestamp && (
+            <div style={{
+              marginLeft: '30px',
+              fontSize: '13px',
+              color: '#666',
+              lineHeight: '1.6'
+            }}>
+              <div style={{ marginBottom: '8px' }}>
+                ✓ Will add a column named <code style={{
+                  backgroundColor: '#e9ecef',
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  fontFamily: 'monospace'
+                }}>imported_at</code> to track when data was imported
+              </div>
+              <div style={{ fontSize: '12px', color: '#888' }}>
+                Example: 2026-02-26T10:30:45.123Z
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Replace Existing Data Toggle */}
+        <div style={{
+          marginBottom: '24px',
+          padding: '16px',
+          backgroundColor: '#fff3cd',
+          borderRadius: '8px',
+          border: '1px solid #ffc107'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <input
+              type="checkbox"
+              id="replace-existing-data"
+              checked={duplicateDetectionSettings.duplicateAction === 'update'}
+              onChange={(e) => setDuplicateDetectionSettings({
+                ...duplicateDetectionSettings,
+                duplicateAction: e.target.checked ? 'update' : 'skip'
+              })}
+              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+            />
+            <label
+              htmlFor="replace-existing-data"
+              style={{ fontWeight: 600, fontSize: '15px', cursor: 'pointer', margin: 0 }}
+            >
+              🔄 Replace Existing Data with Incoming Data
+            </label>
+          </div>
+
+          <div style={{
+            marginLeft: '30px',
+            fontSize: '13px',
+            color: '#856404',
+            lineHeight: '1.6'
+          }}>
+            {duplicateDetectionSettings.duplicateAction === 'update' ? (
+              <div>
+                ✓ Incoming data will <strong>update/replace</strong> existing rows with matching values
+              </div>
+            ) : (
+              <div>
+                ✓ Duplicate rows will be <strong>skipped</strong> (existing data preserved)
+              </div>
+            )}
+          </div>
+        </div>
+
         <VisualColumnMapper
           excelColumns={currentSheet.headers.map((header: string, idx: number) => ({
             name: header,
@@ -1178,6 +1308,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
           schema={schema}
           initialUniqueColumns={duplicateDetectionSettings.uniqueKeyColumns}
           initialDuplicateAction={duplicateDetectionSettings.duplicateAction}
+          initialAddTimestamp={duplicateDetectionSettings.addTimestamp}
           onSettingsChange={setDuplicateDetectionSettings}
         />
 

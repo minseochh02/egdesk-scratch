@@ -154,6 +154,21 @@ export interface ColumnSplitSuggestion {
 }
 
 /**
+ * Detected data island within a spreadsheet
+ */
+export interface DataIsland {
+  title: string; // e.g., "3. 자금의 증가"
+  titleRowIndex: number; // 0-based row index of title
+  headerRowIndex: number; // 0-based row index of headers
+  dataStartIndex: number; // 0-based row index where data starts
+  dataEndIndex: number; // 0-based row index where data ends (exclusive)
+  headers: string[];
+  rows: any[];
+  detectedTypes: ColumnType[];
+  rowCount: number;
+}
+
+/**
  * Parsed Excel file data
  */
 export interface ParsedExcelData {
@@ -163,6 +178,7 @@ export interface ParsedExcelData {
     rows: any[];
     detectedTypes: ColumnType[];
     splitSuggestions?: ColumnSplitSuggestion[]; // Suggested column splits
+    detectedIslands?: DataIsland[]; // Detected data islands
   }>;
   selectedSheet: number;
   suggestedTableName: string;
@@ -180,9 +196,11 @@ export interface ExcelImportConfig {
   columnMappings?: Record<string, string>; // originalName: newName
   columnTypes?: Record<string, ColumnType>; // columnName: type
   mergeConfig?: Record<string, { sources: string[]; separator: string }>; // dbColumnName: { sources, separator }
+  appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>; // Applied column splits
   headerRow?: number; // Which row contains headers (1-based)
   skipRows?: number; // How many rows to skip at the top
   skipBottomRows?: number; // How many rows to skip at the bottom (totals)
   uniqueKeyColumns?: string[]; // Columns that form the unique key
   duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
+  addTimestamp?: boolean; // Whether to add imported_at timestamp column
 }
