@@ -4,6 +4,7 @@ import path from 'path';
 import {
   ParsedExcelData,
   ColumnType,
+  ColumnSplitSuggestion,
 } from './types';
 
 /**
@@ -207,6 +208,84 @@ export function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] 
 }
 
 /**
+ * Detect if a column contains "date + number" pattern (e.g., "2026/02/20 -8")
+ * Returns split suggestion if pattern is detected
+ */
+export function detectDateWithNumberPattern(
+  columnName: string,
+  values: any[]
+): ColumnSplitSuggestion | null {
+  const validValues = values.filter((v) => v !== null && v !== undefined && v !== '');
+
+  if (validValues.length === 0) {
+    return null;
+  }
+
+  // Pattern: Date + space + optional minus + number
+  // Examples: "2026/02/20 -8", "2024-01-15 3", "2026/02/20 -9"
+  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/;
+
+  let matchCount = 0;
+  let totalNonEmpty = 0;
+
+  for (const value of validValues) {
+    if (typeof value === 'string') {
+      totalNonEmpty++;
+      if (dateWithNumberPattern.test(value.trim())) {
+        matchCount++;
+      }
+    }
+  }
+
+  // If 80%+ of non-empty values match the pattern, suggest split
+  if (totalNonEmpty > 0 && matchCount / totalNonEmpty >= 0.8) {
+    return {
+      originalColumn: columnName,
+      suggestedColumns: [
+        {
+          name: columnName, // Keep original name for date part
+          type: 'DATE',
+        },
+        {
+          name: `${columnName}_번호`, // Add "_번호" (number) suffix
+          type: 'INTEGER',
+        },
+      ],
+      pattern: 'date-with-number',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Detect split suggestions for all columns
+ */
+export function detectSplitSuggestions(
+  rows: any[],
+  headers: string[]
+): ColumnSplitSuggestion[] {
+  const suggestions: ColumnSplitSuggestion[] = [];
+
+  headers.forEach((header) => {
+    const values = rows.map((row) => row[header]);
+
+    // Check for date-with-number pattern
+    const dateNumberSuggestion = detectDateWithNumberPattern(header, values);
+    if (dateNumberSuggestion) {
+      suggestions.push(dateNumberSuggestion);
+    }
+
+    // Future: Add more pattern detections here
+    // - Phone numbers (area code + number)
+    // - Addresses (structured parts)
+    // etc.
+  });
+
+  return suggestions;
+}
+
+/**
  * Parse Excel file and extract data with schema detection
  */
 export async function parseExcelFile(
@@ -337,12 +416,21 @@ export async function parseExcelFile(
 
     if (headers.length > 0 && rows.length > 0) {
       const detectedTypes = detectColumnTypes(rows, headers);
+      const splitSuggestions = detectSplitSuggestions(rows, headers);
+
+      if (splitSuggestions.length > 0) {
+        console.log(`💡 Found ${splitSuggestions.length} column split suggestion(s):`);
+        splitSuggestions.forEach((suggestion) => {
+          console.log(`   "${suggestion.originalColumn}" → [${suggestion.suggestedColumns.map(c => `"${c.name}" (${c.type})`).join(', ')}]`);
+        });
+      }
 
       sheets.push({
         name: sheetName,
         headers,
         rows,
         detectedTypes,
+        splitSuggestions: splitSuggestions.length > 0 ? splitSuggestions : undefined,
       });
     }
   });
@@ -401,4 +489,67 @@ export async function getSheetNames(filePath: string): Promise<string[]> {
   const buffer = await fs.readFile(filePath);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   return workbook.SheetNames;
+}
+
+/**
+ * Apply column split to parsed data
+ * Splits a column with "date + number" pattern into separate date and number columns
+ */
+export function applySplitColumn(
+  sheetData: ParsedExcelData['sheets'][0],
+  originalColumn: string,
+  newColumnNames: { date: string; number: string }
+): ParsedExcelData['sheets'][0] {
+  const originalIndex = sheetData.headers.indexOf(originalColumn);
+
+  if (originalIndex === -1) {
+    throw new Error(`Column "${originalColumn}" not found`);
+  }
+
+  // Pattern for splitting
+  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/;
+
+  // Create new headers (replace original with two new columns)
+  const newHeaders = [...sheetData.headers];
+  newHeaders.splice(originalIndex, 1, newColumnNames.date, newColumnNames.number);
+
+  // Create new rows with split data
+  const newRows = sheetData.rows.map((row) => {
+    const newRow = { ...row };
+    const originalValue = row[originalColumn];
+
+    // Remove original column
+    delete newRow[originalColumn];
+
+    if (typeof originalValue === 'string') {
+      const match = originalValue.trim().match(dateWithNumberPattern);
+
+      if (match) {
+        // Successfully split
+        newRow[newColumnNames.date] = match[1]; // Date part
+        newRow[newColumnNames.number] = parseInt(match[2], 10); // Number part
+      } else {
+        // Fallback if pattern doesn't match
+        newRow[newColumnNames.date] = originalValue;
+        newRow[newColumnNames.number] = null;
+      }
+    } else {
+      // Non-string value, keep as-is in date column
+      newRow[newColumnNames.date] = originalValue;
+      newRow[newColumnNames.number] = null;
+    }
+
+    return newRow;
+  });
+
+  // Update detected types (replace original type with two new types)
+  const newDetectedTypes = [...sheetData.detectedTypes];
+  newDetectedTypes.splice(originalIndex, 1, 'DATE', 'INTEGER');
+
+  return {
+    ...sheetData,
+    headers: newHeaders,
+    rows: newRows,
+    detectedTypes: newDetectedTypes,
+  };
 }
