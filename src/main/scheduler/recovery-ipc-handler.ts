@@ -199,5 +199,72 @@ export function registerSchedulerRecoveryHandlers(): void {
     }
   });
 
+  // Debug: Create a new intent for a specific task/date
+  ipcMain.handle('scheduler-recovery-debug-create-intent', async (event, options) => {
+    try {
+      const recoveryService = getSchedulerRecoveryService();
+
+      const {
+        schedulerType = 'financehub',
+        taskId,
+        taskName,
+        intendedDate, // YYYY-MM-DD, defaults to tomorrow
+        intendedTime = '09:00',
+      } = options;
+
+      if (!taskId || !taskName) {
+        return {
+          success: false,
+          error: 'taskId and taskName are required'
+        };
+      }
+
+      // Default to tomorrow if no date provided
+      let targetDate = intendedDate;
+      if (!targetDate) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        targetDate = tomorrow.toISOString().split('T')[0];
+      }
+
+      // Create execution window (24 hours starting from intended time)
+      const windowStart = new Date(`${targetDate}T${intendedTime}:00`);
+      const windowEnd = new Date(windowStart);
+      windowEnd.setHours(windowEnd.getHours() + 24);
+
+      const intentId = await recoveryService.createIntent({
+        schedulerType,
+        taskId,
+        taskName,
+        intendedDate: targetDate,
+        intendedTime,
+        executionWindowStart: windowStart.toISOString(),
+        executionWindowEnd: windowEnd.toISOString(),
+        status: 'pending',
+      });
+
+      console.log(`[RecoveryService] 🐛 DEBUG: Created intent ${intentId} for ${taskId} on ${targetDate}`);
+
+      return {
+        success: true,
+        data: {
+          intentId,
+          schedulerType,
+          taskId,
+          taskName,
+          intendedDate: targetDate,
+          intendedTime,
+          executionWindowStart: windowStart.toISOString(),
+          executionWindowEnd: windowEnd.toISOString(),
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   console.log('✅ Scheduler recovery IPC handlers registered');
 }

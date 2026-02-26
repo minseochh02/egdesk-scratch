@@ -74,6 +74,28 @@ export function registerFinanceHubSchedulerHandlers(): void {
     }
   });
 
+  // Trigger sync for a specific entity
+  ipcMain.handle('finance-hub:scheduler:sync-entity', async (event, options) => {
+    try {
+      const { entityType, entityId, intendedDate } = options;
+
+      if (!entityType || !entityId) {
+        return {
+          success: false,
+          error: 'entityType and entityId are required',
+        };
+      }
+
+      await scheduler.syncEntity(entityType, entityId, intendedDate);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Entity sync failed',
+      };
+    }
+  });
+
   // Get last sync info
   ipcMain.handle('finance-hub:scheduler:last-sync-info', async () => {
     try {

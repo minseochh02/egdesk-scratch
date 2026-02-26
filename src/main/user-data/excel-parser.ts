@@ -129,42 +129,63 @@ export function detectColumnType(values: any[]): ColumnType {
 }
 
 /**
- * Check if a row is likely a summary/total row
+ * Check if a row contains merged cells (0-based row index)
  */
-function isSummaryRow(rowData: any): boolean {
-  const summaryKeywords = ['total', 'grand total', 'sum', 'average', '합계', '총합계', '소계', '평균'];
-  
-  // Check values in the row
-  const values = Object.values(rowData);
-  
-  // Check first few columns usually containing the label
-  // Also check if multiple columns have the same summary value (like "총합계" in the error report)
-  let summaryKeywordCount = 0;
+function rowHasMergedCells(rowIndex: number, merges: any[] | undefined): boolean {
+  if (!merges || merges.length === 0) {
+    return false;
+  }
 
-  for (const val of values) {
-    if (typeof val === 'string') {
-      const lowerVal = val.toLowerCase().trim();
-      // Exact match or starts with keyword (e.g. "Total Sales")
-      if (summaryKeywords.some(k => lowerVal === k || lowerVal.startsWith(k))) {
-        summaryKeywordCount++;
-      }
+  // Check if this row is part of any merge range
+  return merges.some((merge) => {
+    const startRow = merge.s.r;
+    const endRow = merge.e.r;
+    const startCol = merge.s.c;
+    const endCol = merge.e.c;
+
+    // Row has merged cells if:
+    // 1. It's within the merge range
+    // 2. The merge spans multiple columns (horizontal merge)
+    return rowIndex >= startRow && rowIndex <= endRow && endCol > startCol;
+  });
+}
+
+/**
+ * Check if a row is likely a summary/total row
+ * Now primarily uses merged cell detection as the most reliable indicator
+ */
+function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[]): boolean {
+  // Primary detection: Check for merged cells (most reliable)
+  if (rowIndex !== undefined && merges !== undefined) {
+    if (rowHasMergedCells(rowIndex, merges)) {
+      return true;
     }
   }
 
-  // If we found keywords, it's likely a summary row
-  // The user reported "총합계" in multiple columns, so checking for count > 0 is probably safe enough for the first column
-  // But let's be slightly more specific: usually the summary label is in the first few non-null columns
-  
+  // Fallback: Keyword-based detection for cases without merged cells
+  const summaryKeywords = ['total', 'grand total', 'sum', 'average', '합계', '총합계', '소계', '평균', '계'];
+
+  // Check values in the row
+  const values = Object.values(rowData);
+
   const firstNonNull = values.find(v => v !== null && v !== undefined && v !== '');
   if (typeof firstNonNull === 'string') {
-     const lowerVal = firstNonNull.toLowerCase().trim();
+     const trimmedVal = firstNonNull.trim();
+     const lowerVal = trimmedVal.toLowerCase();
+
+     // Check if it starts with keyword or ends with ' 계' (common Korean pattern)
      if (summaryKeywords.some(k => lowerVal === k || lowerVal.startsWith(k))) {
+       return true;
+     }
+
+     // Check for Korean subtotal pattern: "회사명 계", "그룹명 계", etc.
+     if (trimmedVal.endsWith(' 계')) {
        return true;
      }
   }
 
-  // Also catch the specific case where "총합계" appears (user reported it in '일자' column which might not be the first)
-  if (values.some(v => typeof v === 'string' && (v === '총합계' || v === '합계'))) {
+  // Also catch cases where summary keywords appear in any column
+  if (values.some(v => typeof v === 'string' && (v === '총합계' || v === '합계' || v === '소계'))) {
     return true;
   }
 
@@ -209,6 +230,12 @@ export async function parseExcelFile(
 
   workbook.SheetNames.forEach((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
+
+    // Extract merge information from worksheet
+    const merges = worksheet['!merges'];
+    if (merges && merges.length > 0) {
+      console.log(`📊 Found ${merges.length} merged cell range(s) in sheet "${sheetName}"`);
+    }
 
     // Convert sheet to array of arrays (includes all rows)
     const allRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
@@ -299,8 +326,11 @@ export async function parseExcelFile(
 
       if (hasData) {
         // Skip summary rows (totals, etc.)
-        if (!isSummaryRow(rowData)) {
+        // Pass row index and merge info for merged cell detection
+        if (!isSummaryRow(rowData, i, merges)) {
           rows.push(rowData);
+        } else {
+          console.log(`⏭️  Skipping summary row ${i + 1}:`, Object.values(rowData).slice(0, 3).join(' | '));
         }
       }
     }
