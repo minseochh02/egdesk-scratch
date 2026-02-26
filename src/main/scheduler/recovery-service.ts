@@ -937,6 +937,25 @@ export class SchedulerRecoveryService {
       console.log(`[RecoveryService] Cleaned up ${brokenTimezones.changes} timezone-broken intents`);
     }
 
+    // CRITICAL: Fix timezone-broken intents where execution window is in the FUTURE but intended_date is TODAY
+    // Example: intended_date='2026-02-26' but window_start='2026-02-26T21:00:00Z' (tomorrow in local time)
+    // This happens when scheduler calculates nextSync for tomorrow but UTC date conversion gives today
+    this.debugLog('Checking for future execution window with past intended_date...');
+    const now = new Date();
+    const futureWindowPastDate = db.prepare(`
+      DELETE FROM scheduler_execution_intents
+      WHERE scheduler_type = 'financehub'
+        AND status IN ('pending', 'failed')
+        AND execution_window_start > ?
+        AND intended_date < date('now', '+1 day')
+    `).run(now.toISOString());
+
+    totalCleaned += futureWindowPastDate.changes;
+    this.debugLog(`Future window/past date cleanup: ${futureWindowPastDate.changes} deleted`);
+    if (futureWindowPastDate.changes > 0) {
+      console.log(`[RecoveryService] Cleaned up ${futureWindowPastDate.changes} intents with future execution window but past intended date`);
+    }
+
     this.debugLog(`<<< cleanupInvalidIntents() EXITING: total=${totalCleaned}`);
     console.log(`[RecoveryService] Cleaned up ${totalCleaned} invalid intents total`);
 

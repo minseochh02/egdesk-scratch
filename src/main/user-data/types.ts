@@ -142,6 +142,18 @@ export interface AggregationResult {
 }
 
 /**
+ * Suggestion to split a column into multiple columns
+ */
+export interface ColumnSplitSuggestion {
+  originalColumn: string;
+  suggestedColumns: Array<{
+    name: string;
+    type: ColumnType;
+  }>;
+  pattern: 'date-with-number'; // Can extend with more patterns later
+}
+
+/**
  * Parsed Excel file data
  */
 export interface ParsedExcelData {
@@ -150,6 +162,7 @@ export interface ParsedExcelData {
     headers: string[];
     rows: any[];
     detectedTypes: ColumnType[];
+    splitSuggestions?: ColumnSplitSuggestion[]; // Suggested column splits
   }>;
   selectedSheet: number;
   suggestedTableName: string;
