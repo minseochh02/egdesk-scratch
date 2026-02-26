@@ -110,13 +110,20 @@ export function registerUserDataIPCHandlers(): void {
 
           // Get type from first source column
           const firstSourceName = sourceExcelColumns[0];
-          const originalIndex = selectedSheet.headers.indexOf(firstSourceName);
 
-          if (originalIndex === -1) {
-            throw new Error(`Source column not found in Excel: ${firstSourceName}`);
+          // Check if column type is explicitly provided (e.g., from split columns)
+          let columnType = config.columnTypes?.[firstSourceName];
+
+          // If not provided, try to find it in the sheet
+          if (!columnType) {
+            const originalIndex = selectedSheet.headers.indexOf(firstSourceName);
+
+            if (originalIndex === -1) {
+              throw new Error(`Source column not found in Excel: ${firstSourceName}`);
+            }
+
+            columnType = selectedSheet.detectedTypes[originalIndex];
           }
-
-          const columnType = config.columnTypes?.[firstSourceName] || selectedSheet.detectedTypes[originalIndex];
 
           return {
             name: dbColumnName,

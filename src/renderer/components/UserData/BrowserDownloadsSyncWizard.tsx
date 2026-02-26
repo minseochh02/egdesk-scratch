@@ -51,6 +51,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   const [description, setDescription] = useState('');
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
+  const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [existingTableColumnMappings, setExistingTableColumnMappings] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +256,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     };
 
     setParsedData(newParsedData);
+
+    // Build columnTypes map for all columns in the updated sheet
+    const types: Record<string, string> = {};
+    updatedSheet.headers.forEach((header: string, idx: number) => {
+      types[header] = updatedSheet.detectedTypes[idx];
+    });
+    setColumnTypes(types);
+
     setCurrentStep('import-mode');
   };
 
@@ -373,6 +382,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             displayName,
             description: description.trim() || undefined,
             columnMappings: columnMappings || undefined,
+            columnTypes: columnTypes || undefined,
             mergeConfig: mergeConfig || undefined,
             headerRow,
             skipBottomRows,

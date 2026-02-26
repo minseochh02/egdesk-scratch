@@ -25,6 +25,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const [description, setDescription] = useState('');
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
+  const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
     duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
@@ -170,14 +171,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           displayName,
           description: description.trim() || undefined,
           columnMappings: columnMappings || undefined,
+          columnTypes: columnTypes || undefined,
           mergeConfig: mergeConfig || undefined,
           headerRow,
           skipBottomRows,
-          uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-            ? duplicateDetectionSettings.uniqueKeyColumns 
+          uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+            ? duplicateDetectionSettings.uniqueKeyColumns
             : undefined,
-          duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 
-            ? duplicateDetectionSettings.duplicateAction 
+          duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+            ? duplicateDetectionSettings.duplicateAction
             : undefined,
         });
 
@@ -312,6 +314,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     };
 
     setParsedData(newParsedData);
+
+    // Build columnTypes map for all columns in the updated sheet
+    const types: Record<string, string> = {};
+    updatedSheet.headers.forEach((header: string, idx: number) => {
+      types[header] = updatedSheet.detectedTypes[idx];
+    });
+    setColumnTypes(types);
+
     setCurrentStep('table-info');
   };
 
