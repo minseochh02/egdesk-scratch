@@ -223,7 +223,8 @@ export function detectDateWithNumberPattern(
 
   // Pattern: Date + space + optional minus + number
   // Examples: "2026/02/20 -8", "2024-01-15 3", "2026/02/20 -9"
-  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/;
+  // Note: We capture the minus sign but will parse as positive number
+  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
 
   let matchCount = 0;
   let totalNonEmpty = 0;
@@ -506,8 +507,8 @@ export function applySplitColumn(
     throw new Error(`Column "${originalColumn}" not found`);
   }
 
-  // Pattern for splitting
-  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/;
+  // Pattern for splitting - ignores minus sign, captures only the digits
+  const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
 
   // Create new headers (replace original with two new columns)
   const newHeaders = [...sheetData.headers];
@@ -525,9 +526,9 @@ export function applySplitColumn(
       const match = originalValue.trim().match(dateWithNumberPattern);
 
       if (match) {
-        // Successfully split
+        // Successfully split - parse as positive number
         newRow[newColumnNames.date] = match[1]; // Date part
-        newRow[newColumnNames.number] = parseInt(match[2], 10); // Number part
+        newRow[newColumnNames.number] = parseInt(match[2], 10); // Number part (always positive)
       } else {
         // Fallback if pattern doesn't match
         newRow[newColumnNames.date] = originalValue;

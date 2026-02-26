@@ -261,8 +261,6 @@ export class FinanceHubScheduler extends EventEmitter {
     const recoveryService = getSchedulerRecoveryService();
     const intentsToCreate: Array<Omit<any, 'id' | 'createdAt' | 'updatedAt'>> = [];
     const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
 
     // Helper to generate date range
     const getDateRange = (startDate: Date, endDate: Date): string[] => {
@@ -304,8 +302,8 @@ export class FinanceHubScheduler extends EventEmitter {
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
-        // Generate intents for date range (up to yesterday, not today)
-        for (const dateStr of getDateRange(startDate, yesterday)) {
+        // Generate intents for date range (including today for missed executions)
+        for (const dateStr of getDateRange(startDate, today)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('card', cardKey, schedule.time, dateStr));
@@ -336,7 +334,7 @@ export class FinanceHubScheduler extends EventEmitter {
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
-        for (const dateStr of getDateRange(startDate, yesterday)) {
+        for (const dateStr of getDateRange(startDate, today)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('bank', bankKey, schedule.time, dateStr));
@@ -373,7 +371,7 @@ export class FinanceHubScheduler extends EventEmitter {
           console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
         }
 
-        for (const dateStr of getDateRange(startDate, yesterday)) {
+        for (const dateStr of getDateRange(startDate, today)) {
           const exists = await this.intentExistsForDate(entityKey, dateStr);
           if (!exists) {
             intentsToCreate.push(this.createHistoricalIntent('tax', businessName, schedule.time, dateStr));
@@ -693,7 +691,17 @@ export class FinanceHubScheduler extends EventEmitter {
 
     // CRITICAL: Use intendedDate if provided (from recovery), otherwise use today
     // This ensures recovery marks the ORIGINAL missed intent, not today's intent
-    const targetDate = intendedDate || new Date().toISOString().split('T')[0];
+    // CRITICAL: Use local date, not UTC date
+    let targetDate: string;
+    if (intendedDate) {
+      targetDate = intendedDate;
+    } else {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      targetDate = `${year}-${month}-${day}`;
+    }
     const executionId = randomUUID();
     const recoveryService = getSchedulerRecoveryService();
 

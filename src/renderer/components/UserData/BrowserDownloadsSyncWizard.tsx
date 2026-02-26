@@ -10,7 +10,7 @@ interface BrowserDownloadsSyncWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'import-mode' | 'table-info' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'column-split' | 'import-mode' | 'table-info' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
 
 interface BrowserDownloadFolder {
@@ -70,6 +70,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     uniqueKeyColumns: [],
     duplicateAction: 'skip',
   });
+  const [acceptedSplits, setAcceptedSplits] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadBrowserDownloadFolders();
@@ -157,18 +158,104 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         headerRow,
         skipBottomRows,
       });
-      
+
       setParsedData(parsed);
       setTableName(parsed.suggestedTableName);
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
       setSelectedSheet(0);
+      setAcceptedSplits(new Set());
 
-      setCurrentStep('import-mode');
+      // Check if we have split suggestions
+      const currentSheet = parsed.sheets[0];
+      if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+        setCurrentStep('column-split');
+      } else {
+        setCurrentStep('import-mode');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse Excel file');
     } finally {
       setLoadingFiles(false);
     }
+  };
+
+  const handleApplySplits = () => {
+    if (!parsedData) return;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    if (!currentSheet.splitSuggestions) {
+      setCurrentStep('import-mode');
+      return;
+    }
+
+    // Apply accepted splits
+    let updatedSheet = currentSheet;
+
+    acceptedSplits.forEach((originalColumn) => {
+      const suggestion = currentSheet.splitSuggestions?.find(
+        (s) => s.originalColumn === originalColumn
+      );
+
+      if (suggestion) {
+        const newHeaders = [...updatedSheet.headers];
+        const originalIndex = newHeaders.indexOf(originalColumn);
+
+        if (originalIndex !== -1) {
+          const dateColName = suggestion.suggestedColumns[0].name;
+          const numberColName = suggestion.suggestedColumns[1].name;
+
+          // Update headers
+          newHeaders.splice(originalIndex, 1, dateColName, numberColName);
+
+          // Update rows - pattern ignores minus sign
+          const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
+          const newRows = updatedSheet.rows.map((row: any) => {
+            const newRow = { ...row };
+            const originalValue = row[originalColumn];
+
+            delete newRow[originalColumn];
+
+            if (typeof originalValue === 'string') {
+              const match = originalValue.trim().match(dateWithNumberPattern);
+              if (match) {
+                newRow[dateColName] = match[1];
+                newRow[numberColName] = parseInt(match[2], 10); // Always positive
+              } else {
+                newRow[dateColName] = originalValue;
+                newRow[numberColName] = null;
+              }
+            } else {
+              newRow[dateColName] = originalValue;
+              newRow[numberColName] = null;
+            }
+
+            return newRow;
+          });
+
+          // Update detected types
+          const newDetectedTypes = [...updatedSheet.detectedTypes];
+          newDetectedTypes.splice(originalIndex, 1, 'DATE', 'INTEGER');
+
+          updatedSheet = {
+            ...updatedSheet,
+            headers: newHeaders,
+            rows: newRows,
+            detectedTypes: newDetectedTypes,
+          };
+        }
+      }
+    });
+
+    // Update parsedData with the modified sheet
+    const newParsedData = {
+      ...parsedData,
+      sheets: parsedData.sheets.map((sheet: any, idx: number) =>
+        idx === selectedSheet ? updatedSheet : sheet
+      ),
+    };
+
+    setParsedData(newParsedData);
+    setCurrentStep('import-mode');
   };
 
   const handleImportModeSelect = (mode: ImportMode) => {
@@ -208,9 +295,16 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     } else if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
-    } else if (currentStep === 'import-mode') {
+    } else if (currentStep === 'column-split') {
       setCurrentStep('parse-config');
-      setParsedData(null);
+    } else if (currentStep === 'import-mode') {
+      // Check if there were split suggestions
+      const currentSheet = parsedData?.sheets[selectedSheet];
+      if (currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+        setCurrentStep('column-split');
+      } else {
+        setCurrentStep('parse-config');
+      }
       setImportMode(null);
     } else if (currentStep === 'table-info') {
       setCurrentStep('import-mode');
@@ -415,6 +509,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       { id: 'folder-selection', label: 'Select Script' },
       { id: 'file-selection', label: 'Select File' },
       { id: 'parse-config', label: 'Configure' },
+      { id: 'column-split', label: 'Split Columns' },
       { id: 'import-mode', label: 'Import Mode' },
       { id: 'mapping', label: 'Map Columns' },
       { id: 'preview', label: 'Preview' },
@@ -426,13 +521,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       if (currentStep === 'folder-selection') return 0;
       if (currentStep === 'file-selection') return 1;
       if (currentStep === 'parse-config') return 2;
-      if (currentStep === 'import-mode') return 3;
-      if (currentStep === 'table-info') return 4;
-      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 4;
-      if (currentStep === 'duplicate-detection') return 5;
-      if (currentStep === 'preview') return 6;
-      if (currentStep === 'importing') return 7;
-      if (currentStep === 'complete') return 8;
+      if (currentStep === 'column-split') return 3;
+      if (currentStep === 'import-mode') return 4;
+      if (currentStep === 'table-info') return 5;
+      if (currentStep === 'column-mapping' || currentStep === 'existing-table-mapping') return 5;
+      if (currentStep === 'duplicate-detection') return 6;
+      if (currentStep === 'preview') return 7;
+      if (currentStep === 'importing') return 8;
+      if (currentStep === 'complete') return 9;
       return 0;
     };
 
@@ -774,6 +870,174 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
             placeholder="Add a description for this table..."
             rows={3}
           />
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
+  const renderColumnSplit = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const suggestions = currentSheet.splitSuggestions || [];
+
+    if (suggestions.length === 0) {
+      setCurrentStep('import-mode');
+      return null;
+    }
+
+    return (
+      <div>
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>💡 Column Split Suggestions</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            We detected columns that contain multiple values. You can split them for easier querying.
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Suggested Column Splits</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Select which columns you'd like to split. You can always keep them as-is.
+        </p>
+
+        {suggestions.map((suggestion) => {
+          const isAccepted = acceptedSplits.has(suggestion.originalColumn);
+          const sampleValues = currentSheet.rows
+            .slice(0, 3)
+            .map((row: any) => row[suggestion.originalColumn])
+            .filter((v: any) => v != null);
+
+          return (
+            <div
+              key={suggestion.originalColumn}
+              style={{
+                border: `2px solid ${isAccepted ? '#4caf50' : '#e0e0e0'}`,
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                backgroundColor: isAccepted ? '#f1f8f4' : '#fff',
+              }}
+              onClick={() => {
+                const newAccepted = new Set(acceptedSplits);
+                if (isAccepted) {
+                  newAccepted.delete(suggestion.originalColumn);
+                } else {
+                  newAccepted.add(suggestion.originalColumn);
+                }
+                setAcceptedSplits(newAccepted);
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={isAccepted}
+                  onChange={() => {}}
+                  style={{ marginRight: '8px', width: '20px', height: '20px' }}
+                />
+                <strong style={{ fontSize: '16px' }}>{suggestion.originalColumn}</strong>
+                <span
+                  style={{
+                    marginLeft: '8px',
+                    padding: '2px 8px',
+                    background: '#fff3e0',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    color: '#f57c00',
+                  }}
+                >
+                  {suggestion.pattern}
+                </span>
+              </div>
+
+              <div style={{ marginLeft: '28px', color: '#666', fontSize: '14px' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Will split into:</strong>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto 1fr',
+                    gap: '12px',
+                    alignItems: 'center',
+                    marginBottom: '12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      background: '#e8f5e9',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', color: '#666' }}>Column 1</div>
+                    <strong>{suggestion.suggestedColumns[0].name}</strong>
+                    <div style={{ fontSize: '11px', color: '#999' }}>
+                      ({suggestion.suggestedColumns[0].type})
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '20px' }}>+</div>
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      background: '#e3f2fd',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', color: '#666' }}>Column 2</div>
+                    <strong>{suggestion.suggestedColumns[1].name}</strong>
+                    <div style={{ fontSize: '11px', color: '#999' }}>
+                      ({suggestion.suggestedColumns[1].type})
+                    </div>
+                  </div>
+                </div>
+
+                {sampleValues.length > 0 && (
+                  <div style={{ fontSize: '12px' }}>
+                    <strong>Example values:</strong>
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        padding: '8px',
+                        background: '#f5f5f5',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {sampleValues.map((val: any, idx: number) => {
+                        const match = String(val)
+                          .trim()
+                          .match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/);
+                        return (
+                          <div key={idx} style={{ marginBottom: '4px' }}>
+                            "{val}" →{' '}
+                            {match ? (
+                              <>
+                                <span style={{ color: '#4caf50' }}>"{match[1]}"</span> +{' '}
+                                <span style={{ color: '#2196f3' }}>{match[2]}</span>
+                              </>
+                            ) : (
+                              <span style={{ color: '#ff9800' }}>No split</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={{ background: '#fff3e0', padding: '12px', borderRadius: '6px', marginTop: '16px' }}>
+          <strong>💡 Tip:</strong> Splitting columns makes it easier to filter and query by date or
+          number separately. You can always query the original combined format later if needed.
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -1143,6 +1407,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         return renderFileSelection();
       case 'parse-config':
         return renderParseConfig();
+      case 'column-split':
+        return renderColumnSplit();
       case 'import-mode':
         return renderImportMode();
       case 'table-info':
@@ -1195,7 +1461,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'import-mode' || currentStep === 'table-info' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'column-split' || currentStep === 'import-mode' || currentStep === 'table-info' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -1214,6 +1480,10 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 disabled={loadingFiles}
               >
                 {loadingFiles ? 'Parsing...' : 'Next: Parse Excel →'}
+              </button>
+            ) : currentStep === 'column-split' ? (
+              <button className="btn btn-primary" onClick={handleApplySplits}>
+                {acceptedSplits.size > 0 ? `Apply ${acceptedSplits.size} Split(s) →` : 'Skip Splits →'}
               </button>
             ) : currentStep === 'table-info' ? (
               <button
