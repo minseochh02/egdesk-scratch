@@ -264,8 +264,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           // Update headers
           newHeaders.splice(originalIndex, 1, dateColName, numberColName);
 
-          // Update rows
-          const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/;
+          // Update rows - pattern ignores minus sign
+          const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
           const newRows = updatedSheet.rows.map((row: any) => {
             const newRow = { ...row };
             const originalValue = row[originalColumn];
@@ -276,7 +276,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
               const match = originalValue.trim().match(dateWithNumberPattern);
               if (match) {
                 newRow[dateColName] = match[1];
-                newRow[numberColName] = parseInt(match[2], 10);
+                newRow[numberColName] = parseInt(match[2], 10); // Always positive
               } else {
                 newRow[dateColName] = originalValue;
                 newRow[numberColName] = null;
@@ -451,7 +451,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
                       {sampleValues.map((val: any, idx: number) => {
                         const match = String(val)
                           .trim()
-                          .match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s+(-?\d+)$/);
+                          .match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/);
                         return (
                           <div key={idx} style={{ marginBottom: '4px' }}>
                             "{val}" →{' '}
