@@ -269,7 +269,11 @@ export class FinanceHubScheduler extends EventEmitter {
       const dates: string[] = [];
       const current = new Date(startDate);
       while (current <= endDate) {
-        dates.push(current.toISOString().split('T')[0]);
+        // CRITICAL: Use local date, not UTC date
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        const day = String(current.getDate()).padStart(2, '0');
+        dates.push(`${year}-${month}-${day}`);
         current.setDate(current.getDate() + 1);
       }
       return dates;
@@ -584,11 +588,19 @@ export class FinanceHubScheduler extends EventEmitter {
       const recoveryService = getSchedulerRecoveryService();
       const windowEnd = new Date(nextSync.getTime() + 30 * 60 * 1000); // 30-minute execution window
 
+      // CRITICAL: Use local date, not UTC date
+      // nextSync.toISOString() converts to UTC which can be a different date
+      // Example: 2026-02-27 06:00 KST → 2026-02-26T21:00:00.000Z (wrong date!)
+      const year = nextSync.getFullYear();
+      const month = String(nextSync.getMonth() + 1).padStart(2, '0');
+      const day = String(nextSync.getDate()).padStart(2, '0');
+      const intendedDateLocal = `${year}-${month}-${day}`;
+
       await recoveryService.createIntent({
         schedulerType: 'financehub',
         taskId: entityKey,
         taskName: `${entityType} sync: ${entityId}`,
-        intendedDate: nextSync.toISOString().split('T')[0],
+        intendedDate: intendedDateLocal,
         intendedTime: timeStr,
         executionWindowStart: nextSync.toISOString(),
         executionWindowEnd: windowEnd.toISOString(),
