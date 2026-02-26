@@ -5,9 +5,11 @@ interface DuplicateDetectionSettingsProps {
   schema: Array<{ name: string; type: string }>;
   initialUniqueColumns?: string[];
   initialDuplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  initialAddTimestamp?: boolean;
   onSettingsChange: (settings: {
     uniqueKeyColumns: string[];
     duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    addTimestamp?: boolean;
   }) => void;
 }
 
@@ -22,8 +24,13 @@ export function DuplicateDetectionSettings({
   schema,
   initialUniqueColumns = [],
   initialDuplicateAction = 'skip',
+  initialReplaceColumn,
+  initialAddTimestamp = false,
   onSettingsChange,
 }: DuplicateDetectionSettingsProps) {
+  // Filter out ID column (auto-generated)
+  const availableColumns = schema.filter(col => col.name !== 'id');
+
   const [enabled, setEnabled] = useState(initialUniqueColumns.length > 0);
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(initialUniqueColumns)
@@ -31,18 +38,17 @@ export function DuplicateDetectionSettings({
   const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update' | 'allow' | 'replace-date-range'>(
     initialDuplicateAction
   );
-
-  // Filter out ID column (auto-generated)
-  const availableColumns = schema.filter(col => col.name !== 'id');
+  const [addTimestamp, setAddTimestamp] = useState<boolean>(initialAddTimestamp);
 
   // Notify parent of changes
   useEffect(() => {
     if (enabled && selectedColumns.size > 0) {
       const uniqueKeyColumns = Array.from(selectedColumns);
-      console.log(`🔧 DuplicateDetectionSettings: Sending enabled settings - columns:${uniqueKeyColumns.length}, action:${duplicateAction}`);
+      console.log(`🔧 DuplicateDetectionSettings: Sending enabled settings - columns:${uniqueKeyColumns.length}, action:${duplicateAction}, timestamp:${addTimestamp}`);
       onSettingsChange({
         uniqueKeyColumns,
         duplicateAction,
+        addTimestamp,
       });
     } else if (duplicateAction === 'replace-date-range') {
       // Special case: Replace Date Range doesn't need unique columns
@@ -50,15 +56,17 @@ export function DuplicateDetectionSettings({
       onSettingsChange({
         uniqueKeyColumns: [],
         duplicateAction: 'replace-date-range',
+        addTimestamp,
       });
     } else {
       console.log('🔧 DuplicateDetectionSettings: Sending disabled settings');
       onSettingsChange({
         uniqueKeyColumns: [],
         duplicateAction: 'skip',
+        addTimestamp,
       });
     }
-  }, [enabled, selectedColumns, duplicateAction]);
+  }, [enabled, selectedColumns, duplicateAction, addTimestamp]);
 
   const toggleColumn = (columnName: string) => {
     const newSelected = new Set(selectedColumns);
@@ -278,6 +286,7 @@ export function DuplicateDetectionSettings({
                   </div>
                 </div>
               </label>
+
             </div>
           </div>
 

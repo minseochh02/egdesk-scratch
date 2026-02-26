@@ -9,10 +9,10 @@ interface ImportWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'file-selection' | 'parse-config' | 'column-split' | 'table-info' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'file-selection' | 'parse-config' | 'island-selection' | 'column-split' | 'table-info' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete }) => {
-  const { parseExcel, importExcel, selectExcelFile, validateTableName } = useUserData();
+  const { parseExcel, importExcel, importIsland, selectExcelFile, validateTableName } = useUserData();
 
   const [currentStep, setCurrentStep] = useState<WizardStep>('file-selection');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -26,12 +26,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
   const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null);
+  const [appliedSplits, setAppliedSplits] = useState<Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>>([]);
   const [duplicateDetectionSettings, setDuplicateDetectionSettings] = useState<{
     uniqueKeyColumns: string[];
     duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    addTimestamp?: boolean;
   }>({
     uniqueKeyColumns: [],
     duplicateAction: 'skip',
+    addTimestamp: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [importProgress, setImportProgress] = useState<{
@@ -41,11 +44,18 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     duplicateDetails?: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }>;
     errorDetails?: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }>;
   } | null>(null);
+  const [multiTableImportResults, setMultiTableImportResults] = useState<Array<{
+    tableName: string;
+    displayName: string;
+    rowsImported: number;
+    rowsSkipped: number;
+  }> | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [acceptedSplits, setAcceptedSplits] = useState<Set<string>>(new Set());
+  const [selectedIslands, setSelectedIslands] = useState<Set<number>>(new Set()); // Island indices
 
   const handleFileSelect = async () => {
     try {
@@ -76,10 +86,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
       setSelectedSheet(0);
       setAcceptedSplits(new Set());
+      setSelectedIslands(new Set());
 
-      // Check if we have split suggestions
+      // Check flow: islands → splits → table-info
       const currentSheet = parsed.sheets[0];
-      if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+
+      // Check if we have detected islands
+      if (currentSheet.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        setCurrentStep('island-selection');
+      } else if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
         setCurrentStep('column-split');
       } else {
         setCurrentStep('table-info');
@@ -102,13 +117,23 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
-    } else if (currentStep === 'column-split') {
+    } else if (currentStep === 'island-selection') {
       setCurrentStep('parse-config');
+    } else if (currentStep === 'column-split') {
+      // Check if there were islands
+      const currentSheet = parsedData?.sheets[selectedSheet];
+      if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        setCurrentStep('island-selection');
+      } else {
+        setCurrentStep('parse-config');
+      }
     } else if (currentStep === 'table-info') {
-      // Check if there were split suggestions
+      // Check navigation backwards
       const currentSheet = parsedData?.sheets[selectedSheet];
       if (currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
         setCurrentStep('column-split');
+      } else if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        setCurrentStep('island-selection');
       } else {
         setCurrentStep('parse-config');
       }
@@ -173,14 +198,17 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           columnMappings: columnMappings || undefined,
           columnTypes: columnTypes || undefined,
           mergeConfig: mergeConfig || undefined,
+          appliedSplits: appliedSplits.length > 0 ? appliedSplits : undefined,
           headerRow,
           skipBottomRows,
           uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
             ? duplicateDetectionSettings.uniqueKeyColumns
             : undefined,
-          duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+          duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
+            duplicateDetectionSettings.duplicateAction === 'replace-date-range'
             ? duplicateDetectionSettings.duplicateAction
             : undefined,
+          addTimestamp: duplicateDetectionSettings.addTimestamp,
         });
 
         setImportProgress({
@@ -202,6 +230,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     const steps = [
       { id: 'file-selection', label: 'Select File' },
       { id: 'parse-config', label: 'Configure' },
+      { id: 'island-selection', label: 'Select Islands' },
       { id: 'column-split', label: 'Split Columns' },
       { id: 'table-info', label: 'Table Info' },
       { id: 'column-mapping', label: 'Map Columns' },
@@ -247,6 +276,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
     // Apply accepted splits by calling the window API
     let updatedSheet = currentSheet;
+    const splits: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }> = [];
 
     acceptedSplits.forEach((originalColumn) => {
       const suggestion = currentSheet.splitSuggestions?.find(
@@ -263,11 +293,21 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           const dateColName = suggestion.suggestedColumns[0].name;
           const numberColName = suggestion.suggestedColumns[1].name;
 
+          // Track this split
+          splits.push({
+            originalColumn,
+            dateColumn: dateColName,
+            numberColumn: numberColName,
+          });
+
           // Update headers
           newHeaders.splice(originalIndex, 1, dateColName, numberColName);
 
-          // Update rows - pattern ignores minus sign
-          const dateWithNumberPattern = /^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/;
+          // Update rows - pattern ignores minus sign, space is optional
+          // Support both YYYY and YY year formats
+          const dateWithNumberPattern4Digit = /^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
+          const dateWithNumberPattern2Digit = /^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
+
           const newRows = updatedSheet.rows.map((row: any) => {
             const newRow = { ...row };
             const originalValue = row[originalColumn];
@@ -275,7 +315,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
             delete newRow[originalColumn];
 
             if (typeof originalValue === 'string') {
-              const match = originalValue.trim().match(dateWithNumberPattern);
+              const trimmed = originalValue.trim();
+              // Try 4-digit year pattern first, then 2-digit
+              let match = trimmed.match(dateWithNumberPattern4Digit);
+              if (!match) {
+                match = trimmed.match(dateWithNumberPattern2Digit);
+              }
+
               if (match) {
                 newRow[dateColName] = match[1];
                 newRow[numberColName] = parseInt(match[2], 10); // Always positive
@@ -322,7 +368,210 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     });
     setColumnTypes(types);
 
+    // Save applied splits
+    setAppliedSplits(splits);
+
     setCurrentStep('table-info');
+  };
+
+  const handleIslandSelection = () => {
+    if (!parsedData) return;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const islands = currentSheet.detectedIslands || [];
+
+    // If islands are selected, we'll import them as multiple tables
+    if (selectedIslands.size > 0) {
+      // Jump directly to importing step and create multiple tables
+      setCurrentStep('importing');
+      importMultipleIslands();
+      return;
+    }
+
+    // No islands selected, use full sheet data
+    if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+      setCurrentStep('column-split');
+    } else {
+      setCurrentStep('table-info');
+    }
+  };
+
+  const importMultipleIslands = async () => {
+    if (!parsedData || !selectedFile) return;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const islands = currentSheet.detectedIslands || [];
+    const selectedIslandsList = Array.from(selectedIslands).sort();
+
+    setIsImporting(true);
+    setImportError(null);
+
+    const results: Array<{
+      tableName: string;
+      displayName: string;
+      rowsImported: number;
+      rowsSkipped: number;
+    }> = [];
+
+    try {
+      for (const islandIndex of selectedIslandsList) {
+        const island = islands[islandIndex];
+        if (!island) continue;
+
+        // Generate table name from island title
+        // "3. 자금의 증가" → "자금의증가"
+        const cleanTitle = island.title.replace(/^\d+\s+\.\s+/, '').trim();
+        const baseTableName = sanitizeTableName(cleanTitle);
+        const islandTableName = `${parsedData.suggestedTableName}_${baseTableName}`;
+        const islandDisplayName = cleanTitle;
+
+        console.log(`📦 Importing island "${island.title}" as table "${islandTableName}"`);
+
+        // Import the island using pre-parsed data
+        const result = await importIsland({
+          tableName: islandTableName,
+          displayName: islandDisplayName,
+          description: `Imported from island: ${island.title}`,
+          headers: island.headers,
+          rows: island.rows,
+          detectedTypes: island.detectedTypes,
+          // No duplicate detection for islands by default
+          uniqueKeyColumns: [],
+          duplicateAction: 'skip',
+        });
+
+        results.push({
+          tableName: islandTableName,
+          displayName: islandDisplayName,
+          rowsImported: result.importOperation.rowsImported,
+          rowsSkipped: result.importOperation.rowsSkipped,
+        });
+
+        console.log(`✅ Island "${island.title}" imported: ${result.importOperation.rowsImported} rows`);
+      }
+
+      setMultiTableImportResults(results);
+      setCurrentStep('complete');
+    } catch (err) {
+      console.error('Multi-island import failed:', err);
+      setImportError(err instanceof Error ? err.message : 'Failed to import islands');
+      setCurrentStep('complete');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Helper function to sanitize table names
+  const sanitizeTableName = (name: string): string => {
+    return name.replace(/[^a-zA-Z0-9_가-힣]/g, '_').toLowerCase();
+  };
+
+  const renderIslandSelection = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const islands = currentSheet.detectedIslands || [];
+
+    if (islands.length === 0) {
+      // No islands, skip to next step
+      handleIslandSelection();
+      return null;
+    }
+
+    return (
+      <div>
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>🏝️ Multiple Data Tables Detected</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            This spreadsheet contains {islands.length} separate data table{islands.length > 1 ? 's' : ''}.
+            Select which one(s) you'd like to import.
+          </p>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Select Islands to Import</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          Each island will be imported as a separate table.
+        </p>
+
+        {islands.map((island, idx) => {
+          const isSelected = selectedIslands.has(idx);
+
+          return (
+            <div
+              key={idx}
+              style={{
+                border: `2px solid ${isSelected ? '#4caf50' : '#e0e0e0'}`,
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                backgroundColor: isSelected ? '#f1f8f4' : '#fff',
+              }}
+              onClick={() => {
+                const newSelected = new Set(selectedIslands);
+                if (isSelected) {
+                  newSelected.delete(idx);
+                } else {
+                  newSelected.add(idx);
+                }
+                setSelectedIslands(newSelected);
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => {}}
+                  style={{ marginRight: '8px', width: '20px', height: '20px' }}
+                />
+                <strong style={{ fontSize: '16px' }}>{island.title}</strong>
+              </div>
+
+              <div style={{ marginLeft: '28px', color: '#666', fontSize: '14px' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>📊 {island.rowCount} rows</strong> × <strong>{island.headers.length} columns</strong>
+                </div>
+
+                <div style={{ fontSize: '13px', color: '#999' }}>
+                  <strong>Columns:</strong> {island.headers.slice(0, 5).join(', ')}
+                  {island.headers.length > 5 && ` +${island.headers.length - 5} more`}
+                </div>
+
+                {island.rows.length > 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '12px' }}>
+                    <strong>Sample data:</strong>
+                    <div style={{
+                      marginTop: '4px',
+                      padding: '8px',
+                      background: '#f5f5f5',
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      maxHeight: '100px',
+                      overflow: 'auto'
+                    }}>
+                      {island.rows.slice(0, 2).map((row, rowIdx) => (
+                        <div key={rowIdx} style={{ marginBottom: '4px' }}>
+                          {Object.values(row).slice(0, 3).map(String).join(' | ')}
+                          {Object.values(row).length > 3 && ' ...'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={{ background: '#fff3e0', padding: '12px', borderRadius: '6px', marginTop: '16px' }}>
+          <strong>💡 Tip:</strong> Select multiple islands to import them all as separate tables.
+          If you don't select any, the full spreadsheet will be imported as one table.
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
   };
 
   const renderColumnSplit = () => {
@@ -459,9 +708,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
                       }}
                     >
                       {sampleValues.map((val: any, idx: number) => {
-                        const match = String(val)
-                          .trim()
-                          .match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s+-?(\d+)$/);
+                        const trimmed = String(val).trim();
+                        // Try 4-digit year pattern first, then 2-digit
+                        let match = trimmed.match(/^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/);
+                        if (!match) {
+                          match = trimmed.match(/^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/);
+                        }
                         return (
                           <div key={idx} style={{ marginBottom: '4px' }}>
                             "{val}" →{' '}
@@ -594,6 +846,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           schema={schema}
           initialUniqueColumns={duplicateDetectionSettings.uniqueKeyColumns}
           initialDuplicateAction={duplicateDetectionSettings.duplicateAction}
+          initialAddTimestamp={duplicateDetectionSettings.addTimestamp}
           onSettingsChange={setDuplicateDetectionSettings}
         />
       </div>
@@ -816,11 +1069,48 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
         </h2>
         <p className="completion-message">
           {isSuccess
-            ? 'Your Excel data has been successfully imported'
+            ? multiTableImportResults
+              ? `Successfully imported ${multiTableImportResults.length} tables from island data`
+              : 'Your Excel data has been successfully imported'
             : importError || 'An error occurred during import'}
         </p>
 
-        {isSuccess && importProgress && (
+        {/* Multi-table island import results */}
+        {isSuccess && multiTableImportResults && (
+          <div className="completion-stats" style={{ marginTop: '20px' }}>
+            <div style={{ width: '100%', textAlign: 'left' }}>
+              <h3 style={{ marginBottom: '16px', fontSize: '18px' }}>
+                📊 {multiTableImportResults.length} Tables Created
+              </h3>
+              {multiTableImportResults.map((result, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '12px',
+                    marginBottom: '12px',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '6px',
+                    backgroundColor: '#f9f9f9',
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '6px' }}>
+                    {result.displayName}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#666' }}>
+                    Table: <code style={{ backgroundColor: '#e0e0e0', padding: '2px 6px', borderRadius: '3px' }}>{result.tableName}</code>
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
+                    ✅ {result.rowsImported.toLocaleString()} rows imported
+                    {result.rowsSkipped > 0 && ` • ⏭️  ${result.rowsSkipped.toLocaleString()} rows skipped`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Single table import results */}
+        {isSuccess && importProgress && !multiTableImportResults && (
           <>
             <div className="completion-stats">
               <div>
@@ -1007,6 +1297,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
         return renderFileSelection();
       case 'parse-config':
         return renderParseConfig();
+      case 'island-selection':
+        return renderIslandSelection();
       case 'column-split':
         return renderColumnSplit();
       case 'table-info':
@@ -1067,7 +1359,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'parse-config' || currentStep === 'column-split' || currentStep === 'table-info' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
+            {(currentStep === 'parse-config' || currentStep === 'island-selection' || currentStep === 'column-split' || currentStep === 'table-info' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -1082,6 +1374,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
             ) : currentStep === 'parse-config' ? (
               <button className="btn btn-primary" onClick={handleParseConfigComplete}>
                 Next: Parse Excel →
+              </button>
+            ) : currentStep === 'island-selection' ? (
+              <button className="btn btn-primary" onClick={handleIslandSelection}>
+                {selectedIslands.size > 0 ? `Import ${selectedIslands.size} Island(s) →` : 'Import Full Sheet →'}
               </button>
             ) : currentStep === 'column-split' ? (
               <button className="btn btn-primary" onClick={handleApplySplits}>

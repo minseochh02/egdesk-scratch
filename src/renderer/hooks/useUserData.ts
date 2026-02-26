@@ -206,11 +206,13 @@ export function useUserData() {
       columnMappings?: Record<string, string>;
       columnTypes?: Record<string, string>;
       mergeConfig?: Record<string, { sources: string[]; separator: string }>;
+      appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>;
       headerRow?: number;
       skipRows?: number;
       skipBottomRows?: number;
       uniqueKeyColumns?: string[];
-      duplicateAction?: 'skip' | 'update' | 'allow';
+      duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+      addTimestamp?: boolean;
     }) => {
       try {
         const result = await window.electron.invoke('user-data:import-excel', config);
@@ -290,6 +292,37 @@ export function useUserData() {
   }, []);
 
   /**
+   * Import pre-parsed island data as a new table
+   */
+  const importIsland = useCallback(
+    async (config: {
+      tableName: string;
+      displayName: string;
+      description?: string;
+      headers: string[];
+      rows: any[];
+      detectedTypes: string[];
+      uniqueKeyColumns?: string[];
+      duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    }) => {
+      try {
+        const result = await window.electron.invoke('user-data:import-island', config);
+
+        if (result.success) {
+          // Refresh tables list
+          await fetchTables();
+          return result.data;
+        } else {
+          throw new Error(result.error || 'Failed to import island');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    [fetchTables]
+  );
+
+  /**
    * Sync Excel data to existing table
    */
   const syncToExistingTable = useCallback(
@@ -303,6 +336,7 @@ export function useUserData() {
       skipBottomRows?: number;
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+      addTimestamp?: boolean;
     }) => {
       try {
         const result = await window.electron.invoke('user-data:sync-to-existing-table', config);
@@ -338,6 +372,7 @@ export function useUserData() {
     searchTable,
     parseExcel,
     importExcel,
+    importIsland,
     selectExcelFile,
     validateTableName,
     getImportOperations,

@@ -52,7 +52,7 @@ export class UserDataDbManager {
       description?: string;
       createdFromFile?: string;
       uniqueKeyColumns?: string[];
-      duplicateAction?: 'skip' | 'update' | 'allow';
+      duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
     }
   ): UserTableWithSchema {
     // Validate input schema
@@ -313,6 +313,7 @@ export class UserDataDbManager {
             updatedAt: row.updated_at || row.updatedAt,
             uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
             duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
+            replaceColumn: row.replace_column || row.replaceColumn,
             schema,
           };
         } catch (error) {
@@ -450,7 +451,7 @@ export class UserDataDbManager {
       : [];
     const duplicateAction = table.duplicateAction || 'skip';
     const hasDuplicateDetection = uniqueKeyColumns.length > 0;
-    
+
     // Handle replace-date-range mode
     if (duplicateAction === 'replace-date-range') {
       return this.replaceByDateRange(tableId, rows);
@@ -599,7 +600,13 @@ export class UserDataDbManager {
             skipped++;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             errors.push(errorMessage);
-            
+
+            // Log first 3 errors for debugging
+            if (errorDetails.length < 3) {
+              console.error(`❌ Row ${rowIndex} insert failed:`, errorMessage);
+              console.error(`   Row data:`, JSON.stringify(row, null, 2));
+            }
+
             // Track error details with row info
             errorDetails.push({
               rowIndex,
@@ -623,8 +630,8 @@ export class UserDataDbManager {
    * Insert rows with temporary duplicate detection settings (for sync operations)
    */
   insertRowsWithSettings(
-    tableId: string, 
-    rows: any[], 
+    tableId: string,
+    rows: any[],
     tempSettings?: {
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
@@ -815,6 +822,7 @@ export class UserDataDbManager {
     return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
   }
 
+
   /**
    * Replace data by date range - deletes existing data in the date range and inserts new data
    */
@@ -973,16 +981,30 @@ export class UserDataDbManager {
     
     // Type conversions with validation
     if (col.type === 'INTEGER') {
-      const cleanValue = String(processedValue).replace(/,/g, '').trim();
+      const stringValue = String(processedValue);
+
+      // Reject values with dashes (like "123-45-67890")
+      if (stringValue.includes('-') && !/^-?\d+$/.test(stringValue.replace(/,/g, ''))) {
+        throw new Error(`Cannot convert "${processedValue}" to INTEGER for column "${col.name}" (contains dashes)`);
+      }
+
+      const cleanValue = stringValue.replace(/,/g, '').trim();
       const num = parseInt(cleanValue, 10);
       if (isNaN(num)) {
         throw new Error(`Cannot convert "${processedValue}" to INTEGER for column "${col.name}"`);
       }
       return num;
     }
-    
+
     if (col.type === 'REAL') {
-      const cleanValue = String(processedValue).replace(/,/g, '').trim();
+      const stringValue = String(processedValue);
+
+      // Reject values with dashes (like "123-45-67890")
+      if (stringValue.includes('-') && !/^-?\d+(\.\d+)?$/.test(stringValue.replace(/,/g, ''))) {
+        throw new Error(`Cannot convert "${processedValue}" to REAL for column "${col.name}" (contains dashes)`);
+      }
+
+      const cleanValue = stringValue.replace(/,/g, '').trim();
       const num = parseFloat(cleanValue);
       if (isNaN(num)) {
         throw new Error(`Cannot convert "${processedValue}" to REAL for column "${col.name}"`);
@@ -992,25 +1014,40 @@ export class UserDataDbManager {
     
     if (col.type === 'DATE') {
       let dateObj: Date;
-      
+
       if (processedValue instanceof Date) {
         dateObj = processedValue;
       } else if (typeof processedValue === 'string') {
-        const normalized = processedValue.replace(/\//g, '-');
+        // Strip suffix if present (e.g., "26/02/02-1" → "26/02/02")
+        let dateStr = processedValue;
+        const suffixMatch = processedValue.match(/^(.+)-\d+$/);
+        if (suffixMatch) {
+          dateStr = suffixMatch[1];
+        }
+
+        const normalized = dateStr.replace(/\//g, '-');
         dateObj = new Date(normalized);
-        
+
         if (isNaN(dateObj.getTime())) {
-          const parts = processedValue.split(/[-/]/);
+          const parts = dateStr.split(/[-/]/);
           if (parts.length === 3) {
             const first = parseInt(parts[0], 10);
             const second = parseInt(parts[1], 10);
             const third = parseInt(parts[2], 10);
-            
-            if (third > 31) {
+
+            // Check for YY/MM/DD format (all parts are <= 99)
+            if (first <= 99 && second <= 12 && third <= 31) {
+              // Assume 20YY for years 00-99
+              const fullYear = first < 100 ? 2000 + first : first;
+              dateObj = new Date(fullYear, second - 1, third);
+            } else if (third > 31) {
+              // YYYY format at end
               dateObj = new Date(third, second - 1, first);
             } else if (first > 31) {
+              // YYYY format at start
               dateObj = new Date(first, second - 1, third);
             } else {
+              // Ambiguous - assume first is year
               dateObj = new Date(first, second - 1, third);
             }
           }
@@ -1020,15 +1057,15 @@ export class UserDataDbManager {
       } else {
         throw new Error(`Cannot convert "${processedValue}" to DATE for column "${col.name}"`);
       }
-      
+
       if (isNaN(dateObj.getTime())) {
         throw new Error(`Invalid date "${processedValue}" for column "${col.name}"`);
       }
-      
+
       const year = dateObj.getFullYear();
       const month = String(dateObj.getMonth() + 1).padStart(2, '0');
       const day = String(dateObj.getDate()).padStart(2, '0');
-      
+
       return `${year}-${month}-${day}`;
     }
     
