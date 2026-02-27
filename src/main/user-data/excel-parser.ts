@@ -481,18 +481,12 @@ function isDateColumnName(columnName: string): boolean {
  * Detect if a column contains "date + number" pattern (e.g., "2026/02/20 -8")
  * Returns split suggestion if pattern is detected
  *
- * IMPORTANT: Only suggests split if column name indicates it's a date column
+ * Detects based on actual data values, regardless of column name
  */
 export function detectDateWithNumberPattern(
   columnName: string,
   values: any[]
 ): ColumnSplitSuggestion | null {
-  // FIRST: Check if column name suggests it's a date column
-  // If not, don't even check the data - avoid false positives
-  if (!isDateColumnName(columnName)) {
-    return null;
-  }
-
   const validValues = values.filter((v) => v !== null && v !== undefined && v !== '');
 
   if (validValues.length === 0) {
@@ -522,6 +516,10 @@ export function detectDateWithNumberPattern(
 
       if (matches4 || matches2) {
         matchCount++;
+        if (matchCount <= 3) {
+          // Debug first 3 matches
+          console.log(`   ✓ "${trimmed}" → Match (4-digit: ${matches4}, 2-digit: ${matches2})`);
+        }
       } else if (totalNonEmpty <= 5) {
         // Debug first 5 non-matches
         console.log(`   ✗ "${trimmed}" → No match (4-digit: ${matches4}, 2-digit: ${matches2})`);
